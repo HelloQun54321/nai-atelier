@@ -1,5 +1,5 @@
 import { spawn, execSync } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, readdirSync, statSync } from 'fs';
 import { platform } from 'os';
 
 const IS_WINDOWS = platform() === 'win32';
@@ -30,16 +30,42 @@ function ensureDependencies() {
     }
   }
   
-  try {
-    execSync('npx wrangler --version', { stdio: 'pipe', shell: IS_WINDOWS });
-  } catch {
+  const localWrangler = IS_WINDOWS ? 'node_modules/.bin/wrangler.cmd' : 'node_modules/.bin/wrangler';
+  if (!existsSync(localWrangler)) {
     console.log('\x1b[33mwrangler 未安装，正在安装...\x1b[0m');
     const installCmd = IS_WINDOWS ? 'npm.cmd' : 'npm';
     execSync(`${installCmd} install wrangler --save-dev`, { stdio: 'inherit', shell: IS_WINDOWS });
   }
 }
 
+const BUILD_OUTPUTS = ['dist/index.html', 'dist/_worker.js'];
+const BUILD_INPUTS = [
+  'App.tsx', 'index.tsx', 'index.html', 'index.css', 'types.ts',
+  'package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts',
+  'components', 'config', 'services', 'worker'
+];
+
+function getNewestMtime(path) {
+  if (!existsSync(path)) return 0;
+  const stats = statSync(path);
+  if (!stats.isDirectory()) return stats.mtimeMs;
+  return readdirSync(path, { withFileTypes: true }).reduce((latest, entry) => {
+    return Math.max(latest, getNewestMtime(`${path}/${entry.name}`));
+  }, stats.mtimeMs);
+}
+
+function needsBuild() {
+  if (BUILD_OUTPUTS.some(path => !existsSync(path))) return true;
+  const oldestOutput = Math.min(...BUILD_OUTPUTS.map(path => statSync(path).mtimeMs));
+  const newestInput = Math.max(...BUILD_INPUTS.map(getNewestMtime));
+  return newestInput > oldestOutput;
+}
+
 function buildLatest() {
+  if (!needsBuild()) {
+    console.log('\x1b[90m代码未变化，跳过构建。\x1b[0m');
+    return;
+  }
   console.log('\x1b[33m正在构建最新版本...\x1b[0m');
   const buildCmd = IS_WINDOWS ? 'npm.cmd' : 'npm';
   try {
@@ -102,12 +128,13 @@ function startServer() {
     '--binding', 'LOCAL_HISTORY_ENABLED=true',
     '--binding', 'PERSONAL_MODE_ENABLED=true',
     '--port', '3000',
-    '--compatibility-date', '2024-04-01'
+    '--compatibility-date', '2024-04-01',
+    '--show-interactive-dev-session=false'
   ];
   
   const spawnOpts = IS_WINDOWS ? { stdio: 'inherit' } : { stdio: 'inherit', shell: false };
-  const cmd = IS_WINDOWS ? process.env.comspec || 'cmd.exe' : 'npx';
-  const cmdArgs = IS_WINDOWS ? ['/c', 'npx', 'wrangler', ...args] : ['wrangler', ...args];
+  const cmd = IS_WINDOWS ? process.env.comspec || 'cmd.exe' : './node_modules/.bin/wrangler';
+  const cmdArgs = IS_WINDOWS ? ['/c', 'node_modules\\.bin\\wrangler.cmd', ...args] : args;
   
   const child = spawn(cmd, cmdArgs, spawnOpts);
   openWhenReady();

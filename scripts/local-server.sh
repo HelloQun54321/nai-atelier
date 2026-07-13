@@ -45,4 +45,5 @@ npx wrangler pages dev dist \
     --binding LOCAL_HISTORY_ENABLED=true \
     --binding PERSONAL_MODE_ENABLED=true \
     --port 3000 \
-    --compatibility-date 2024-04-01
+    --compatibility-date 2024-04-01 \
+    --show-interactive-dev-session=false
