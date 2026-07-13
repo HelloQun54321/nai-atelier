@@ -22,14 +22,14 @@
 
 NovelAI Prompt Manager 是一个专为 NovelAI 用户打造的现代化提示词管理平台。
 
-**v0.4.x 重大更新**：项目已从纯前端应用升级为基于 Cloudflare Workers 的**全栈应用**。引入了 D1 数据库和 R2 对象存储，实现了多用户管理、云端数据同步、图片持久化存储等功能，同时保留了本地生成历史的隐私性。
+当前独立版本定位为**单人本地应用**：启动后直接进入，不提供账号、密码、游客、角色或用户管理功能。D1 和 R2 由本地 Worker 使用，数据统一保存在 `local-data`。
 
 ### 💡 核心价值
 
 - ⛓️ **Prompt Chain** - 像管理代码一样管理提示词，支持基础层、模块层、变量层的解耦与组合。
-- ☁️ **云端同步** - 所有画师串、灵感图、配置信息通过 Cloudflare D1 存储，多端实时同步。
-- 🖼️ **R2 图床** - 集成 Cloudflare R2 对象存储，上传封面和灵感图不再占用本地空间，支持流式上传。
-- 👥 **多用户系统** - 内置完善的 Auth 系统，支持管理员（Admin）和普通用户，适合小团队或个人多设备使用。
+- 💾 **本地持久化** - 画师串、灵感图、配置和历史图片统一保存在本机 `local-data`。
+- 🖼️ **本地 R2 图床** - 封面、灵感图和历史图片由本地 R2 管理，并随数据目录一起备份。
+- 👤 **个人模式** - 无需登录，启动后直接使用；不包含账号、游客、角色和权限管理。
 - 🧩 **模块化设计** - 将光影、构图、人物特征拆分为独立模块，灵活开关测试。
 - 🎨 **画师军火库** - 内置权重计算、Gacha 随机抽取、批量导入功能。
 - 🔒 **隐私安全** - 绘图 API Key 仅存储在本地；本地模式下的生成历史保存在 `local-data`，不会上传到云端。
@@ -169,13 +169,9 @@ npx wrangler pages project create nai-prompt-manager --production-branch main ||
 ```
 > 注意：此命令用于在构建时自动绑定资源并部署。如果使用 Git 集成部署，通常只需 `npm run build`，并在控制台手动绑定 D1 (变量名 `DB`) 和 R2 (变量名 `BUCKET`)。上述命令适用于某些特定的 CI/CD 流程或确保资源绑定的场景。
 
-### 4. 部署与初始化
+### 4. 运行方式
 
-1. 推送代码到 Git 仓库，触发 Cloudflare Pages 构建。
-2. 部署完成后，访问你的 Pages 域名。
-3. 系统会自动初始化数据库结构。
-4. 默认管理员账号：`admin`，密码：`admin_996`。
-5. **强烈建议**：首次登录后，进入“我的 -> 个人设置”修改密码。
+当前个人版本仅支持本地运行。执行 `npm run dev:local` 后直接访问 `http://localhost:3000`，无需登录。请勿将此个人版本作为公开网站部署。
 
 ---
 
@@ -185,26 +181,22 @@ npx wrangler pages project create nai-prompt-manager --production-branch main ||
 首次生成图片时，在编辑器右上角输入你的 NovelAI API Key。
 > 🔑 Key 存储在浏览器 LocalStorage 中，并通过 HTTPS Header 发送给 Worker 代理，Worker 不会保存你的 Key。
 
-### 权限说明
-- **Admin (管理员)**：
-  - 管理所有用户、画师数据。
-  - 可以查看和删除所有人的公开数据。
-  - 创建新用户。
-- **User (普通用户)**：
-  - 创建、编辑、删除自己的 Prompt Chain。
-  - 只能管理自己的灵感图。
-  - 有存储空间配额限制（默认 300MB）。
+### 个人模式
+
+- 启动后直接进入应用，没有登录页和退出操作。
+- 所有内容都视为本机所有者的数据，不进行账号归属或角色权限判断。
+- 旧管理员记录只作为兼容现有数据的内部关联 ID，不再用于登录。
 
 ---
 
 ## 🛠️ 技术架构
 
 - **Frontend**: React 19, TypeScript, Tailwind CSS, Vite
-- **Backend (Serverless)**: Cloudflare Workers (Functions)
-- **Database**: Cloudflare D1 (SQLite)
-- **Storage**: Cloudflare R2 (Object Storage)
+- **Backend**: 本地 Cloudflare Workers 运行时
+- **Database**: 本地 D1 (SQLite)
+- **Storage**: 本地 R2 Object Storage
 - **Local History Storage**: 本地 D1 + R2（通过 `local-data` 持久化）；云端部署默认禁用
-- **Security**: BCrypt password hashing, HttpOnly Session Cookies
+- **Access Model**: 单人本地模式，无账号与会话
 
 ---
 

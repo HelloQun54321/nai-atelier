@@ -423,9 +423,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
                   <div className="mt-auto flex justify-between items-center pt-2 border-t border-gray-100 dark:border-gray-700/50">
                      <div className="flex flex-col min-w-0 mr-2">
-                        <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 truncate" title={chain.username}>
-                            @{chain.username || 'Unknown'}
-                        </span>
                         <span className="text-[10px] text-gray-400 dark:text-gray-500 truncate">
                             {new Date(chain.updatedAt).toLocaleString('zh-CN', { hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                         </span>

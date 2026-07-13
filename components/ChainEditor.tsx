@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { PromptChain, PromptModule, User, CharacterParams, NAIParams, LocalGenItem } from '../types';
+import { PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem } from '../types';
 import { compilePrompt } from '../services/promptUtils';
 import { generateImage } from '../services/naiService';
 import { localHistory } from '../services/localHistory';
@@ -13,7 +13,6 @@ import { ChainEditorPreview } from './ChainEditorPreview';
 interface ChainEditorProps {
     chain: PromptChain;
     allChains: PromptChain[]; // Need access to other chains for importing
-    currentUser: User;
     onUpdateChain: (id: string, updates: Partial<PromptChain>) => void;
     onBack: () => void;
     onFork: (chain: PromptChain, targetType?: 'style' | 'character') => void;
@@ -22,12 +21,10 @@ interface ChainEditorProps {
     externalImportToken?: number;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, currentUser, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken }) => {
-    // Permission Check
-    // Guests are allowed to EDIT (in memory) for testing, but NOT SAVE.
-    const isGuest = currentUser.role === 'guest';
-    const isOwner = !isGuest && (chain.userId === currentUser.id || currentUser.role === 'admin');
-    const canEdit = isOwner || isGuest; // Both can interact with inputs now
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken }) => {
+    const isOwner = true;
+    const isGuest = false;
+    const canEdit = true;
 
     // Distinguish Editor Mode
     const isCharacterMode = chain.type === 'character';
@@ -36,7 +33,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
     const [chainName, setChainName] = useState(chain.name);
     const [chainDesc, setChainDesc] = useState(chain.description);
     const [chainTags, setChainTags] = useState<string[]>(chain.tags || []);
-    const [guestHidden, setGuestHidden] = useState(chain.guestHidden || false);
     const [isEditingInfo, setIsEditingInfo] = useState(false);
 
     // --- Prompt State ---
@@ -87,12 +83,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
         setImportTab(chain.type === 'character' ? 'style' : 'character');
     }, [showImportPreset, chain.type]);
 
-    // Sync dirty state with parent (ONLY IF NOT GUEST)
+    // Sync dirty state with parent.
     useEffect(() => {
-        if (!isGuest) {
-            setIsDirty(hasChanges);
-        }
-    }, [hasChanges, setIsDirty, isGuest]);
+        setIsDirty(hasChanges);
+    }, [hasChanges, setIsDirty]);
 
     // --- Testing State ---
     const [activeModules, setActiveModules] = useState<Record<string, boolean>>({});
@@ -231,7 +225,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
         setChainName(chain.name);
         setChainDesc(chain.description);
         setChainTags(chain.tags || []);
-        setGuestHidden(chain.guestHidden || false);
 
         // Default subject to empty, not '1girl'
         const savedVars = chain.variableValues || {};
@@ -251,7 +244,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
         if (savedKey) setApiKey(savedKey);
         void reloadPreviewHistory(sourceChainId);
 
-    }, [chain.id, chain.basePrompt, chain.negativePrompt, chain.modules, chain.params, chain.name, chain.description, chain.variableValues, chain.guestHidden]);
+    }, [chain.id, chain.basePrompt, chain.negativePrompt, chain.modules, chain.params, chain.name, chain.description, chain.variableValues]);
     // Dependency note: we still list props to satisfy linter, but the guard 'if (prevChainId === chain.id) return' blocks re-execution.
 
     // --- sessionStorage 侦听：接收来自历史/灵感页面的一键导入数据 ---
@@ -749,7 +742,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
             name: chainName,
             description: chainDesc,
             tags: chainTags,
-            guestHidden,
             basePrompt,
             negativePrompt,
             modules: updatedModules,
@@ -1374,21 +1366,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                                 {hasChanges ? <span className="text-yellow-600 dark:text-yellow-500 font-medium">⚠️ 未保存</span> : <span className="text-green-600 dark:text-green-500">✅ 已保存</span>}
                             </div>
                             <div className="flex items-center gap-2 md:gap-3">
-                                {/* 游客不可见 Checkbox */}
-                                <label className="flex items-center gap-1.5 cursor-pointer select-none" title="勾选后游客无法查看此预设">
-                                    <input
-                                        type="checkbox"
-                                        checked={guestHidden}
-                                        onChange={(e) => {
-                                            setGuestHidden(e.target.checked);
-                                            markChange();
-                                        }}
-                                        className="w-3.5 h-3.5 rounded text-red-600 focus:ring-red-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600"
-                                    />
-                                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300 hidden md:inline">
-                                        游客不可见
-                                    </span>
-                                </label>
                                 <button
                                     onClick={handleSaveAll}
                                     disabled={!hasChanges}

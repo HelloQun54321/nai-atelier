@@ -11,7 +11,7 @@
     "deploy": "npm run build && npx wrangler pages project create nai-prompt-manager --production-branch main || true && npx wrangler pages deploy dist --project-name=nai-prompt-manager --commit-message=deploy",
     "manual-deploy": "npm run build && npx wrangler pages deploy dist --project-name=nai-prompt-manager --branch=main --commit-message=deploy",
     "dev:local": "node scripts/local-server.mjs",
-    "dev:local:quick": "npx wrangler pages dev dist --persist-to ./local-data --binding LOCAL_HISTORY_ENABLED=true --port 3000",
+    "dev:local:quick": "npx wrangler pages dev dist --persist-to ./local-data --binding LOCAL_HISTORY_ENABLED=true --binding PERSONAL_MODE_ENABLED=true --port 3000",
     "dev:local:watch": "concurrently -k \"vite build --watch\" \"esbuild worker/index.ts --bundle --format=esm --outfile=dist/_worker.js --platform=browser --watch\" \"npm run dev:local:quick\"",
     "dev:local:win": "scripts\\local-server.bat",
     "dev:local:linux": "sh scripts/local-server.sh"

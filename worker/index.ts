@@ -44,6 +44,7 @@ interface Env {
   MASTER_KEY: string; 
   R2_PUBLIC_URL?: string; // Kept for legacy compatibility if needed
   LOCAL_HISTORY_ENABLED?: string;
+  PERSONAL_MODE_ENABLED?: string;
   // GUEST_PASSCODE removed, now stored in DB
 }
 
@@ -1403,6 +1404,48 @@ function mapLocalHistoryRow(row: any) {
   };
 }
 
+async function getLocalOwner(db: D1Database) {
+  const savedOwner = await db.prepare("SELECT value FROM settings WHERE key = 'personal_owner_id_v2'")
+    .first<{value: string}>();
+  let owner = savedOwner?.value
+    ? await db.prepare('SELECT id, username, role, storage_usage, max_storage FROM users WHERE id = ?')
+        .bind(savedOwner.value).first<any>()
+    : null;
+
+  if (!owner) {
+    try {
+      owner = await db.prepare(`
+        SELECT id, username, role, storage_usage, max_storage
+        FROM users u WHERE role != 'guest'
+        ORDER BY
+          (SELECT COUNT(*) FROM local_generation_history h WHERE h.user_id = u.id) DESC,
+          (SELECT COUNT(*) FROM chains c WHERE c.user_id = u.id) DESC,
+          (SELECT COUNT(*) FROM inspirations i WHERE i.user_id = u.id) DESC,
+          CASE WHEN role = 'admin' THEN 0 ELSE 1 END,
+          created_at ASC
+        LIMIT 1
+      `).first<any>();
+    } catch {
+      owner = await db.prepare(`
+        SELECT id, username, role, storage_usage, max_storage
+        FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1
+      `).first<any>();
+    }
+  }
+  if (!owner) {
+    const id = 'local-owner';
+    await db.prepare(`
+      INSERT OR IGNORE INTO users (id, username, password, role, created_at, storage_usage)
+      VALUES (?, 'local', '', 'admin', ?, 0)
+    `).bind(id, Date.now()).run();
+    owner = await db.prepare('SELECT id, username, role, storage_usage, max_storage FROM users WHERE id = ?')
+      .bind(id).first<any>();
+  }
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('personal_owner_id_v2', ?)")
+    .bind(owner!.id).run();
+  return owner!;
+}
+
 // Constants
 const MAX_STORAGE_QUOTA = 300 * 1024 * 1024; // 300MB
 
@@ -1871,6 +1914,26 @@ export default {
     try {
       if (path === '/api/init') { await initDB(); return json({ success: true }); }
 
+      if (env.PERSONAL_MODE_ENABLED !== 'true') {
+        return error('This personal build only supports local operation', 403);
+      }
+
+      // Personal mode: no login, guest, logout, password, or account management.
+      if (path.startsWith('/api/auth/')) {
+        if (path === '/api/auth/me' && method === 'GET') {
+          try { await db.prepare('SELECT 1 FROM users').first(); } catch { await initDB(); }
+          const owner = await getLocalOwner(db);
+          return json({
+            id: owner.id,
+            username: '本机用户',
+            role: 'admin',
+            storageUsage: owner.storage_usage || 0,
+            maxStorage: owner.max_storage || null,
+          });
+        }
+        return error('Account authentication is disabled in personal mode', 410);
+      }
+
       // --- PUBLIC: Benchmark Config (Read) ---
       if (path === '/api/config/benchmarks' && method === 'GET') {
           const res = await db.prepare('SELECT value FROM settings WHERE key = ?').bind('benchmark_config').first<{value: string}>();
@@ -1991,8 +2054,11 @@ export default {
       }
 
       // --- Authenticated Logic ---
-      const currentUser = await getSessionUser();
-      if (!currentUser) return error('Unauthorized', 401);
+      const currentUser = await getLocalOwner(db);
+
+      if (path.startsWith('/api/users') || path.startsWith('/api/admin/guest-setting')) {
+        return error('Account management is disabled in personal mode', 410);
+      }
 
       // --- Local-only generation history (D1 metadata + R2 images) ---
       if (path === '/api/local-history/status' && method === 'GET') {

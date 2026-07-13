@@ -1,27 +1,11 @@
 
-import { PromptChain, Artist, Inspiration, User, ChainType, UsageStats, SystemLogQuery, SystemLogResponse } from '../types';
+import { PromptChain, Artist, Inspiration, User, ChainType } from '../types';
 import { api } from './api';
 
 class DBService {
-  // --- Auth ---
-  async login(username: string, password: string): Promise<{ success: boolean, user: User }> {
-    return await api.post('/auth/login', { username, password });
-  }
-
-  async guestLogin(passcode: string): Promise<{ success: boolean, user: User }> {
-    return await api.post('/auth/guest-login', { passcode });
-  }
-
-  async logout(): Promise<void> {
-    await api.post('/auth/logout', {});
-  }
-
+  // Personal-mode local owner metadata.
   async getMe(): Promise<User> {
     return await api.get('/auth/me');
-  }
-
-  async updatePassword(password: string): Promise<void> {
-    await api.put('/users/password', { password });
   }
 
   // --- Global Settings (Config) ---
@@ -34,42 +18,6 @@ class DBService {
     await api.put('/config/benchmarks', { config });
   }
 
-  // --- Users (Admin) ---
-  async createUser(username: string, password: string): Promise<void> {
-    await api.post('/users', { username, password });
-  }
-
-  async getUsers(): Promise<User[]> {
-    const res = await api.get('/users');
-    // 兼容后端返回的分页格式 {data: [...], pagination: {...}}
-    return Array.isArray(res) ? res : (res.data || []);
-  }
-
-  async deleteUser(id: string): Promise<void> {
-    await api.delete(`/users/${id}`);
-  }
-
-  async updateUserQuota(userId: string, maxStorage: number): Promise<void> {
-    await api.put(`/users/${userId}/quota`, { maxStorage });
-  }
-
-  async updateUserRole(userId: string, role: string, resetQuota = false): Promise<{ success: boolean; role: string; maxStorage: number }> {
-    return await api.put(`/users/${userId}/role`, { role, resetQuota });
-  }
-
-  // --- Admin: Guest Settings & Import ---
-  async getGuestCode(): Promise<string> {
-    const res = await api.get('/admin/guest-setting');
-    return res.passcode;
-  }
-
-  async updateGuestCode(passcode: string): Promise<void> {
-    await api.put('/admin/guest-setting', { passcode });
-  }
-
-  async importArtistFromGithub(name: string, url: string): Promise<void> {
-    await api.post('/admin/import-github', { name, url });
-  }
 
   async logClientEvent(event: {
     category: string;
@@ -159,25 +107,6 @@ class DBService {
     await api.post('/inspirations/bulk-delete', { ids });
   }
 
-  // --- Admin: Usage Statistics ---
-  async getUsageStats(): Promise<UsageStats> {
-    return await api.get('/admin/stats');
-  }
-
-  async getSystemLogs(query: SystemLogQuery = {}): Promise<SystemLogResponse> {
-    const params = new URLSearchParams();
-    if (query.page !== undefined) params.set('page', String(query.page));
-    if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize));
-    if (query.category) params.set('category', query.category);
-    if (query.status) params.set('status', query.status);
-    if (query.q) params.set('q', query.q);
-    const suffix = params.toString() ? `?${params.toString()}` : '';
-    return await api.get(`/admin/logs${suffix}`);
-  }
-
-  async clearOldLogs(): Promise<void> {
-    await api.post('/admin/clear-logs', {});
-  }
 }
 
 export const db = new DBService();
