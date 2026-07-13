@@ -1,0 +1,40 @@
+{
+  "name": "nai-prompt-manager",
+  "private": true,
+  "version": "0.5.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build && npm run build:worker",
+    "build:worker": "esbuild worker/index.ts --bundle --format=esm --outfile=dist/_worker.js --platform=browser",
+    "preview": "vite preview",
+    "deploy": "npm run build && npx wrangler pages project create nai-prompt-manager --production-branch main || true && npx wrangler pages deploy dist --project-name=nai-prompt-manager --commit-message=deploy",
+    "manual-deploy": "npm run build && npx wrangler pages deploy dist --project-name=nai-prompt-manager --branch=main --commit-message=deploy",
+    "dev:local": "node scripts/local-server.mjs",
+    "dev:local:quick": "npx wrangler pages dev dist --persist-to ./local-data --port 3000",
+    "dev:local:watch": "concurrently -k \"vite build --watch\" \"esbuild worker/index.ts --bundle --format=esm --outfile=dist/_worker.js --platform=browser --watch\" \"npm run dev:local:quick\"",
+    "dev:local:win": "scripts\\local-server.bat",
+    "dev:local:linux": "sh scripts/local-server.sh"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "jszip": "^3.10.1",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250214.0",
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.1.2",
+    "concurrently": "^9.2.1",
+    "esbuild": "^0.25.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.4.1",
+    "wrangler": "^4.81.1"
+  }
+}

@@ -1,0 +1,116 @@
+
+@import "tailwindcss";
+
+@theme {
+  --color-gray-750: #2d3748;
+  --color-gray-850: #1a202c;
+  --color-gray-950: #171923;
+}
+
+/* VIP 用户样式 */
+.vip-username {
+  background: linear-gradient(
+    90deg,
+    #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: rainbow 3s linear infinite;
+}
+
+@keyframes rainbow {
+  0% { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #9ca3af #f3f4f6;
+}
+
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+*::-webkit-scrollbar-track {
+  background: #f3f4f6;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+  border: 3px solid #f3f4f6;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+.dark * {
+  scrollbar-color: #64748b #111827;
+}
+
+.dark *::-webkit-scrollbar-track {
+  background: #111827;
+}
+
+.dark *::-webkit-scrollbar-thumb {
+  background: #64748b;
+  border-color: #111827;
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.vip-badge {
+  position: relative;
+  border: 2px solid transparent;
+  background: linear-gradient(#f3f4f6, #f3f4f6) padding-box,
+              linear-gradient(90deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3) border-box;
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.5), 0 0 20px rgba(255, 215, 0, 0.3);
+  animation: glow 2s ease-in-out infinite alternate;
+}
+
+.dark .vip-badge {
+  background: linear-gradient(#111827, #111827) padding-box,
+              linear-gradient(90deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3) border-box;
+}
+
+@keyframes glow {
+  0% { box-shadow: 0 0 5px rgba(255, 215, 0, 0.5), 0 0 10px rgba(255, 215, 0, 0.3); }
+  100% { box-shadow: 0 0 15px rgba(255, 215, 0, 0.8), 0 0 30px rgba(255, 215, 0, 0.5); }
+}
+
+/* VIP 角标 */
+.vip-crown {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
+  border-radius: 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+  border: 1px solid rgba(255, 215, 0, 0.5);
+}
+
+/* VIP 文字标签 */
+.vip-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: bold;
+  background: linear-gradient(135deg, #ffd700, #ff8c00);
+  color: #1a1a2e;
+  border-radius: 4px;
+  margin-left: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}

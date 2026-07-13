@@ -1,0 +1,5 @@
+{
+  "name": "NaiPromptManager",
+  "description": "A professional tool for managing, versioning, and testing NovelAI prompt chains with variable support.",
+  "requestFramePermissions": []
+}
