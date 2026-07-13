@@ -27,6 +27,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
     const [totalCount, setTotalCount] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
     const [jumpPage, setJumpPage] = useState('');
+    const [migrationProgress, setMigrationProgress] = useState<{ current: number; total: number } | null>(null);
     
     // 缓存管理
     const [pageCache, setPageCache] = useState<Record<number, LocalGenItem[]>>({});
@@ -220,7 +221,22 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
             void refreshPageRef.current(targetPage, true);
         });
 
-        void refreshPageRef.current(1, true);
+        const initialize = async () => {
+            setMigrationProgress({ current: 0, total: 0 });
+            try {
+                const migratedCount = await localHistory.prepare(setMigrationProgress);
+                if (migratedCount > 0) {
+                    notify(`已将 ${migratedCount} 张历史图片迁移到本地数据目录`);
+                }
+            } catch (e: any) {
+                notify('历史图片迁移失败，浏览器原数据已保留: ' + (e?.message || '未知错误'), 'error');
+            } finally {
+                setMigrationProgress(null);
+                void refreshPageRef.current(1, true);
+            }
+        };
+
+        void initialize();
         return unsubscribe;
     }, []);
 
@@ -468,13 +484,21 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                 <div className="flex justify-between items-center mb-4">
                     <div>
                         <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">本地生图历史</h1>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">仅存储在您的浏览器中</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">保存在本机 local-data，不上传云端</p>
+                        {migrationProgress && (
+                            <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-1">
+                                {migrationProgress.total > 0
+                                    ? `正在迁移浏览器历史 ${migrationProgress.current}/${migrationProgress.total}，请勿关闭页面…`
+                                    : '正在检查浏览器历史…'}
+                            </p>
+                        )}
                     </div>
                     <div className="flex gap-2 md:gap-3 items-center">
                         <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center">共 {totalCount} 张</div>
                         <div className="relative">
                             <button 
                                 onClick={() => setShowCleanMenu(!showCleanMenu)} 
+                                disabled={migrationProgress !== null}
                                 className="px-3 py-1 md:px-4 md:py-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded text-xs md:text-sm hover:bg-red-200 dark:hover:bg-red-900/50 flex items-center gap-1"
                             >
                                 清理
@@ -507,7 +531,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                         </div>
                         <button
                             onClick={handleRefresh}
-                            disabled={isLoading}
+                            disabled={isLoading || migrationProgress !== null}
                             className="px-3 py-1 md:px-4 md:py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded text-xs md:text-sm hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-wait"
                         >
                             {isLoading ? '刷新中…' : '刷新'}

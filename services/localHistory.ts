@@ -1,5 +1,6 @@
 
 import { LocalGenItem, NAIParams } from '../types';
+import { api } from './api';
 
 const DB_NAME = 'NAI_History_DB';
 const STORE_NAME = 'generations';
@@ -11,10 +12,17 @@ export type LocalHistoryChange = {
     external?: boolean;
 };
 
+export type LocalHistoryMigrationProgress = {
+    current: number;
+    total: number;
+};
+
 class LocalHistoryService {
     private db: IDBDatabase | null = null;
     private listeners = new Set<(change: LocalHistoryChange) => void>();
     private channel: BroadcastChannel | null = null;
+    private remoteEnabled: boolean | null = null;
+    private migrationPromise: Promise<number> | null = null;
 
     constructor() {
         if (typeof BroadcastChannel !== 'undefined') {
@@ -39,6 +47,50 @@ class LocalHistoryService {
     private emit(change: LocalHistoryChange) {
         this.notifyListeners(change);
         this.channel?.postMessage(change);
+    }
+
+    private async isRemoteEnabled(): Promise<boolean> {
+        if (this.remoteEnabled !== null) return this.remoteEnabled;
+        try {
+            const result = await api.get('/local-history/status');
+            this.remoteEnabled = result.enabled === true;
+            return this.remoteEnabled;
+        } catch {
+            return false;
+        }
+    }
+
+    async prepare(onProgress?: (progress: LocalHistoryMigrationProgress) => void): Promise<number> {
+        if (!(await this.isRemoteEnabled())) return 0;
+        if (this.migrationPromise) return this.migrationPromise;
+
+        this.migrationPromise = (async () => {
+            const total = await this.getBrowserCount();
+            if (total === 0) return 0;
+
+            const batchSize = 10;
+            let migrated = 0;
+            for (let page = 0; migrated < total; page++) {
+                const batch = await this.getBrowserPage(page, batchSize);
+                if (batch.length === 0) break;
+                for (const item of batch) {
+                    await api.post('/local-history', item);
+                    migrated++;
+                    onProgress?.({ current: migrated, total });
+                }
+            }
+
+            if (migrated !== total) throw new Error(`迁移数量不一致：${migrated}/${total}`);
+            await this.clearBrowserHistory();
+            this.emit({ type: 'add' });
+            return migrated;
+        })();
+
+        try {
+            return await this.migrationPromise;
+        } finally {
+            this.migrationPromise = null;
+        }
     }
 
     private async open(): Promise<IDBDatabase> {
@@ -100,6 +152,12 @@ class LocalHistoryService {
             createdAt: Date.now()
         };
 
+        if (await this.isRemoteEnabled()) {
+            const result = await api.post('/local-history', item);
+            this.emit({ type: 'add', id: item.id });
+            return result.item as LocalGenItem;
+        }
+
         return new Promise((resolve, reject) => {
             const transaction = db.transaction([STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
@@ -133,6 +191,10 @@ class LocalHistoryService {
 
     async getBySourceChain(sourceChainId: string, limit = 80): Promise<LocalGenItem[]> {
         if (!sourceChainId) return [];
+        if (await this.isRemoteEnabled()) {
+            const result = await api.get(`/local-history?sourceChainId=${encodeURIComponent(sourceChainId)}&limit=${limit}`);
+            return result.items || [];
+        }
         const db = await this.open();
 
         return new Promise((resolve, reject) => {
@@ -167,6 +229,10 @@ class LocalHistoryService {
     }
 
     async unlinkFromSourceChain(id: string): Promise<LocalGenItem | null> {
+        if (await this.isRemoteEnabled()) {
+            const result = await api.put(`/local-history/${encodeURIComponent(id)}/unlink`, {});
+            return result.item || null;
+        }
         const db = await this.open();
 
         return new Promise((resolve, reject) => {
@@ -197,6 +263,10 @@ class LocalHistoryService {
 
     async unlinkAllFromSourceChain(sourceChainId: string): Promise<number> {
         if (!sourceChainId) return 0;
+        if (await this.isRemoteEnabled()) {
+            const result = await api.post('/local-history/unlink-source', { sourceChainId });
+            return Number(result.count || 0);
+        }
         const db = await this.open();
 
         return new Promise((resolve, reject) => {
@@ -233,6 +303,11 @@ class LocalHistoryService {
     }
 
     async delete(id: string): Promise<void> {
+        if (await this.isRemoteEnabled()) {
+            await api.delete(`/local-history/${encodeURIComponent(id)}`);
+            this.emit({ type: 'delete', id });
+            return;
+        }
         const db = await this.open();
         return new Promise((resolve, reject) => {
             const transaction = db.transaction([STORE_NAME], 'readwrite');
@@ -248,15 +323,22 @@ class LocalHistoryService {
     }
     
     async clear(): Promise<void> {
+        if (await this.isRemoteEnabled()) {
+            await api.delete('/local-history');
+            this.emit({ type: 'clear' });
+            return;
+        }
+        await this.clearBrowserHistory();
+        this.emit({ type: 'clear' });
+    }
+
+    private async clearBrowserHistory(): Promise<void> {
         const db = await this.open();
         return new Promise((resolve, reject) => {
             const transaction = db.transaction([STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
             const request = store.clear();
-            transaction.oncomplete = () => {
-                this.emit({ type: 'clear' });
-                resolve();
-            };
+            transaction.oncomplete = () => resolve();
             transaction.onerror = () => reject(transaction.error);
             request.onerror = () => reject(request.error);
         });
@@ -269,6 +351,14 @@ class LocalHistoryService {
      * @returns 当前页的记录数组
      */
     async getPage(page: number, pageSize: number): Promise<LocalGenItem[]> {
+        if (await this.isRemoteEnabled()) {
+            const result = await api.get(`/local-history?page=${Math.max(0, page)}&pageSize=${Math.max(1, pageSize)}`);
+            return result.items || [];
+        }
+        return this.getBrowserPage(page, pageSize);
+    }
+
+    private async getBrowserPage(page: number, pageSize: number): Promise<LocalGenItem[]> {
         const db = await this.open();
         const safePage = Math.max(0, Math.floor(page));
         const safePageSize = Math.max(0, Math.floor(pageSize));
@@ -315,6 +405,14 @@ class LocalHistoryService {
      * @returns 记录总数
      */
     async getCount(): Promise<number> {
+        if (await this.isRemoteEnabled()) {
+            const result = await api.get('/local-history/count');
+            return Number(result.count || 0);
+        }
+        return this.getBrowserCount();
+    }
+
+    private async getBrowserCount(): Promise<number> {
         const db = await this.open();
         return new Promise((resolve, reject) => {
             const transaction = db.transaction([STORE_NAME], 'readonly');
@@ -332,6 +430,12 @@ class LocalHistoryService {
      * @returns 删除的记录数量
      */
     async deleteOlderThan(days: number): Promise<number> {
+        if (await this.isRemoteEnabled()) {
+            const result = await api.post('/local-history/cleanup', { days });
+            const count = Number(result.deletedCount || 0);
+            if (count > 0) this.emit({ type: 'cleanup' });
+            return count;
+        }
         const db = await this.open();
         const cutoffTime = Date.now() - (days * 24 * 60 * 60 * 1000);
         
@@ -377,6 +481,12 @@ class LocalHistoryService {
      * @returns 删除的记录数量
      */
     async keepOnly(n: number): Promise<number> {
+        if (await this.isRemoteEnabled()) {
+            const result = await api.post('/local-history/cleanup', { keepCount: n });
+            const count = Number(result.deletedCount || 0);
+            if (count > 0) this.emit({ type: 'cleanup' });
+            return count;
+        }
         const db = await this.open();
         
         return new Promise((resolve, reject) => {
@@ -424,6 +534,10 @@ class LocalHistoryService {
      * @returns 记录数量
      */
     async countOlderThan(days: number): Promise<number> {
+        if (await this.isRemoteEnabled()) {
+            const result = await api.get(`/local-history/count-older?days=${Math.max(1, Math.floor(days))}`);
+            return Number(result.count || 0);
+        }
         const db = await this.open();
         const cutoffTime = Date.now() - (days * 24 * 60 * 60 * 1000);
         

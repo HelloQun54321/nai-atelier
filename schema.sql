@@ -62,6 +62,23 @@ CREATE TABLE inspirations (
   created_at INTEGER
 );
 
+CREATE TABLE local_generation_history (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  image_key TEXT NOT NULL,
+  image_type TEXT DEFAULT 'image/png',
+  prompt TEXT DEFAULT '',
+  negative_prompt TEXT DEFAULT '',
+  params TEXT DEFAULT '{}',
+  source_chain_id TEXT,
+  source_chain_name TEXT,
+  source_chain_type TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX idx_local_history_user_created
+  ON local_generation_history(user_id, created_at DESC);
+
 -- 访问日志表（用于统计）
 CREATE TABLE access_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

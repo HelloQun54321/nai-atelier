@@ -32,7 +32,7 @@ NovelAI Prompt Manager 是一个专为 NovelAI 用户打造的现代化提示词
 - 👥 **多用户系统** - 内置完善的 Auth 系统，支持管理员（Admin）和普通用户，适合小团队或个人多设备使用。
 - 🧩 **模块化设计** - 将光影、构图、人物特征拆分为独立模块，灵活开关测试。
 - 🎨 **画师军火库** - 内置权重计算、Gacha 随机抽取、批量导入功能。
-- 🔒 **隐私安全** - 绘图 API Key 仅存储在本地，生成历史（History）默认存储在浏览器 IndexedDB，保护隐私。
+- 🔒 **隐私安全** - 绘图 API Key 仅存储在本地；本地模式下的生成历史保存在 `local-data`，不会上传到云端。
 
 ---
 
@@ -58,7 +58,8 @@ NovelAI Prompt Manager 是一个专为 NovelAI 用户打造的现代化提示词
   - **自动解析**：上传 PNG 图片自动读取 NAI 元数据（Prompt/Seed/Steps）。
   - 支持批量管理与删除。
 - **本地历史 (GenHistory)**：
-  - 生成的图片自动保存在浏览器 IndexedDB。
+  - 生成图片和参数自动保存到本机 `local-data`（D1 + R2），清空浏览器数据不会丢失。
+  - 首次升级会自动迁移原浏览器 IndexedDB 历史，全部保存成功后才删除浏览器副本。
   - 支持一键“发布”到云端灵感图库。
 
 ---
@@ -202,7 +203,7 @@ npx wrangler pages project create nai-prompt-manager --production-branch main ||
 - **Backend (Serverless)**: Cloudflare Workers (Functions)
 - **Database**: Cloudflare D1 (SQLite)
 - **Storage**: Cloudflare R2 (Object Storage)
-- **Local Storage**: IndexedDB (Dexie-like raw implementation)
+- **Local History Storage**: 本地 D1 + R2（通过 `local-data` 持久化）；云端部署默认禁用
 - **Security**: BCrypt password hashing, HttpOnly Session Cookies
 
 ---

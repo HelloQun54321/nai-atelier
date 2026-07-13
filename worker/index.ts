@@ -43,6 +43,7 @@ interface Env {
   BUCKET?: R2Bucket; // R2 Binding
   MASTER_KEY: string; 
   R2_PUBLIC_URL?: string; // Kept for legacy compatibility if needed
+  LOCAL_HISTORY_ENABLED?: string;
   // GUEST_PASSCODE removed, now stored in DB
 }
 
@@ -1343,7 +1344,64 @@ const INIT_SQL = `
     key TEXT PRIMARY KEY,
     value TEXT
   );
+  CREATE TABLE IF NOT EXISTS local_generation_history (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    image_key TEXT NOT NULL,
+    image_type TEXT DEFAULT 'image/png',
+    prompt TEXT DEFAULT '',
+    negative_prompt TEXT DEFAULT '',
+    params TEXT DEFAULT '{}',
+    source_chain_id TEXT,
+    source_chain_name TEXT,
+    source_chain_type TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_local_history_user_created
+    ON local_generation_history(user_id, created_at DESC);
 `;
+
+async function ensureLocalHistorySchema(db: D1Database) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS local_generation_history (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      image_key TEXT NOT NULL,
+      image_type TEXT DEFAULT 'image/png',
+      prompt TEXT DEFAULT '',
+      negative_prompt TEXT DEFAULT '',
+      params TEXT DEFAULT '{}',
+      source_chain_id TEXT,
+      source_chain_name TEXT,
+      source_chain_type TEXT,
+      created_at INTEGER NOT NULL
+    )
+  `).run();
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_local_history_user_created
+    ON local_generation_history(user_id, created_at DESC)`).run();
+}
+
+function localHistoryEnabled(env: Env) {
+  return env.LOCAL_HISTORY_ENABLED === 'true';
+}
+
+function parseStoredJson(value: string | null | undefined, fallback: any) {
+  try { return value ? JSON.parse(value) : fallback; } catch { return fallback; }
+}
+
+function mapLocalHistoryRow(row: any) {
+  return {
+    id: row.id,
+    imageUrl: `/api/local-history/${encodeURIComponent(row.id)}/image`,
+    prompt: row.prompt || '',
+    negativePrompt: row.negative_prompt || '',
+    params: parseStoredJson(row.params, {}),
+    sourceChainId: row.source_chain_id || undefined,
+    sourceChainName: row.source_chain_name || undefined,
+    sourceChainType: row.source_chain_type || undefined,
+    createdAt: Number(row.created_at || 0),
+  };
+}
 
 // Constants
 const MAX_STORAGE_QUOTA = 300 * 1024 * 1024; // 300MB
@@ -1935,6 +1993,167 @@ export default {
       // --- Authenticated Logic ---
       const currentUser = await getSessionUser();
       if (!currentUser) return error('Unauthorized', 401);
+
+      // --- Local-only generation history (D1 metadata + R2 images) ---
+      if (path === '/api/local-history/status' && method === 'GET') {
+        const enabled = localHistoryEnabled(env) && Boolean(env.BUCKET);
+        if (enabled) await ensureLocalHistorySchema(db);
+        return json({ enabled });
+      }
+
+      if (path.startsWith('/api/local-history')) {
+        if (!localHistoryEnabled(env)) return error('Local history is disabled', 404);
+        if (!env.BUCKET) return error('Local history storage is unavailable', 503);
+        await ensureLocalHistorySchema(db);
+
+        const deleteHistoryRows = async (rows: Array<{id: string, image_key: string}>) => {
+          for (const row of rows) {
+            await env.BUCKET!.delete(row.image_key);
+            await db.prepare('DELETE FROM local_generation_history WHERE id = ? AND user_id = ?')
+              .bind(row.id, currentUser.id).run();
+          }
+          return rows.length;
+        };
+
+        const imageMatch = path.match(/^\/api\/local-history\/([^/]+)\/image$/);
+        if (imageMatch && method === 'GET') {
+          const id = decodeURIComponent(imageMatch[1]);
+          const row = await db.prepare('SELECT image_key FROM local_generation_history WHERE id = ? AND user_id = ?')
+            .bind(id, currentUser.id).first<{image_key: string}>();
+          if (!row) return error('History image not found', 404);
+          const object = await env.BUCKET.get(row.image_key);
+          if (!object) return error('History image file not found', 404);
+          const headers = new Headers();
+          object.writeHttpMetadata(headers);
+          headers.set('etag', object.httpEtag);
+          headers.set('Cache-Control', 'private, max-age=31536000, immutable');
+          return new Response(object.body, { headers });
+        }
+
+        if (path === '/api/local-history' && method === 'GET') {
+          const sourceChainId = url.searchParams.get('sourceChainId');
+          if (sourceChainId) {
+            const limit = clampInt(url.searchParams.get('limit'), 80, 1, 200);
+            const result = await db.prepare(`
+              SELECT * FROM local_generation_history
+              WHERE user_id = ? AND source_chain_id = ?
+              ORDER BY created_at DESC LIMIT ?
+            `).bind(currentUser.id, sourceChainId, limit).all<any>();
+            return json({ items: result.results.map(mapLocalHistoryRow) });
+          }
+
+          const page = clampInt(url.searchParams.get('page'), 0, 0, 1000000);
+          const pageSize = clampInt(url.searchParams.get('pageSize'), 20, 1, 100);
+          const count = await db.prepare('SELECT COUNT(*) AS count FROM local_generation_history WHERE user_id = ?')
+            .bind(currentUser.id).first<{count: number}>();
+          const result = await db.prepare(`
+            SELECT * FROM local_generation_history
+            WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?
+          `).bind(currentUser.id, pageSize, page * pageSize).all<any>();
+          return json({ items: result.results.map(mapLocalHistoryRow), count: Number(count?.count || 0) });
+        }
+
+        if (path === '/api/local-history/count' && method === 'GET') {
+          const result = await db.prepare('SELECT COUNT(*) AS count FROM local_generation_history WHERE user_id = ?')
+            .bind(currentUser.id).first<{count: number}>();
+          return json({ count: Number(result?.count || 0) });
+        }
+
+        if (path === '/api/local-history' && method === 'POST') {
+          const body = await request.json() as any;
+          const id = String(body.id || crypto.randomUUID());
+          const match = String(body.imageUrl || '').match(/^data:image\/(png|jpe?g|webp);base64,(.+)$/i);
+          if (!match) return error('Invalid history image data', 400);
+          const imageType = `image/${match[1].toLowerCase() === 'jpg' ? 'jpeg' : match[1].toLowerCase()}`;
+          const extension = imageType === 'image/jpeg' ? 'jpg' : imageType.split('/')[1];
+          const binary = atob(match[2]);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const imageKey = `local-history/${currentUser.id}/${id}.${extension}`;
+          const existing = await db.prepare('SELECT image_key FROM local_generation_history WHERE id = ? AND user_id = ?')
+            .bind(id, currentUser.id).first<{image_key: string}>();
+
+          await env.BUCKET.put(imageKey, bytes.buffer, { httpMetadata: { contentType: imageType } });
+          await db.prepare(`
+            INSERT OR REPLACE INTO local_generation_history (
+              id, user_id, image_key, image_type, prompt, negative_prompt, params,
+              source_chain_id, source_chain_name, source_chain_type, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).bind(
+            id, currentUser.id, imageKey, imageType, body.prompt || '', body.negativePrompt || '',
+            JSON.stringify(body.params || {}), body.sourceChainId || null, body.sourceChainName || null,
+            body.sourceChainType || null, Number(body.createdAt || Date.now())
+          ).run();
+          if (existing?.image_key && existing.image_key !== imageKey) await env.BUCKET.delete(existing.image_key);
+          return json({ item: mapLocalHistoryRow({
+            id, image_key: imageKey, prompt: body.prompt, negative_prompt: body.negativePrompt,
+            params: JSON.stringify(body.params || {}), source_chain_id: body.sourceChainId,
+            source_chain_name: body.sourceChainName, source_chain_type: body.sourceChainType,
+            created_at: Number(body.createdAt || Date.now())
+          }) });
+        }
+
+        if (path === '/api/local-history' && method === 'DELETE') {
+          const result = await db.prepare('SELECT id, image_key FROM local_generation_history WHERE user_id = ?')
+            .bind(currentUser.id).all<{id: string, image_key: string}>();
+          return json({ deletedCount: await deleteHistoryRows(result.results) });
+        }
+
+        if (path === '/api/local-history/cleanup' && method === 'POST') {
+          const body = await request.json() as any;
+          let result: D1Result<{id: string, image_key: string}>;
+          if (Number.isFinite(body.days)) {
+            const cutoff = Date.now() - Math.max(1, Math.floor(body.days)) * 86400000;
+            result = await db.prepare('SELECT id, image_key FROM local_generation_history WHERE user_id = ? AND created_at < ?')
+              .bind(currentUser.id, cutoff).all<{id: string, image_key: string}>();
+          } else {
+            const keepCount = Math.max(1, Math.floor(Number(body.keepCount || 1)));
+            result = await db.prepare(`
+              SELECT id, image_key FROM local_generation_history WHERE user_id = ?
+              ORDER BY created_at DESC LIMIT -1 OFFSET ?
+            `).bind(currentUser.id, keepCount).all<{id: string, image_key: string}>();
+          }
+          return json({ deletedCount: await deleteHistoryRows(result.results) });
+        }
+
+        if (path === '/api/local-history/count-older' && method === 'GET') {
+          const days = clampInt(url.searchParams.get('days'), 7, 1, 36500);
+          const cutoff = Date.now() - days * 86400000;
+          const result = await db.prepare('SELECT COUNT(*) AS count FROM local_generation_history WHERE user_id = ? AND created_at < ?')
+            .bind(currentUser.id, cutoff).first<{count: number}>();
+          return json({ count: Number(result?.count || 0) });
+        }
+
+        if (path === '/api/local-history/unlink-source' && method === 'POST') {
+          const { sourceChainId } = await request.json() as any;
+          const result = await db.prepare(`
+            UPDATE local_generation_history SET source_chain_id = NULL, source_chain_name = NULL, source_chain_type = NULL
+            WHERE user_id = ? AND source_chain_id = ?
+          `).bind(currentUser.id, sourceChainId).run();
+          return json({ count: Number(result.meta?.changes || 0) });
+        }
+
+        const unlinkMatch = path.match(/^\/api\/local-history\/([^/]+)\/unlink$/);
+        if (unlinkMatch && method === 'PUT') {
+          const id = decodeURIComponent(unlinkMatch[1]);
+          await db.prepare(`
+            UPDATE local_generation_history SET source_chain_id = NULL, source_chain_name = NULL, source_chain_type = NULL
+            WHERE id = ? AND user_id = ?
+          `).bind(id, currentUser.id).run();
+          const row = await db.prepare('SELECT * FROM local_generation_history WHERE id = ? AND user_id = ?')
+            .bind(id, currentUser.id).first<any>();
+          return json({ item: row ? mapLocalHistoryRow(row) : null });
+        }
+
+        const deleteMatch = path.match(/^\/api\/local-history\/([^/]+)$/);
+        if (deleteMatch && method === 'DELETE') {
+          const id = decodeURIComponent(deleteMatch[1]);
+          const row = await db.prepare('SELECT id, image_key FROM local_generation_history WHERE id = ? AND user_id = ?')
+            .bind(id, currentUser.id).first<{id: string, image_key: string}>();
+          if (row) await deleteHistoryRows([row]);
+          return json({ success: true });
+        }
+      }
 
       if (path === '/api/aitag/cache/status' && method === 'GET') {
         try { await ensureAitagCacheSchema(db); } catch (e) { await initDB(); }

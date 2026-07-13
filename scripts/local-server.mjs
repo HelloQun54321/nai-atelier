@@ -99,6 +99,7 @@ function startServer() {
   const args = [
     'pages', 'dev', 'dist',
     '--persist-to', './local-data',
+    '--binding', 'LOCAL_HISTORY_ENABLED=true',
     '--port', '3000',
     '--compatibility-date', '2024-04-01'
   ];
