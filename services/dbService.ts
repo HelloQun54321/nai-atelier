@@ -28,7 +28,8 @@ class DBService {
     message?: string;
     metadata?: Record<string, any>;
   }): Promise<void> {
-    await api.post('/client-logs', event);
+    // Persistent audit logging is disabled in personal mode.
+    void event;
   }
 
   // --- Chains ---

@@ -1446,6 +1446,15 @@ async function getLocalOwner(db: D1Database) {
   return owner!;
 }
 
+async function removeLegacyLoggingStorage(db: D1Database) {
+  const marker = await db.prepare("SELECT value FROM settings WHERE key = 'personal_logging_removed_v1'")
+    .first<{value: string}>();
+  if (marker?.value === '1') return;
+  await db.prepare('DROP TABLE IF EXISTS access_logs').run();
+  await db.prepare('DROP TABLE IF EXISTS daily_stats').run();
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('personal_logging_removed_v1', '1')").run();
+}
+
 // Constants
 const MAX_STORAGE_QUOTA = 300 * 1024 * 1024; // 300MB
 
@@ -1584,6 +1593,11 @@ async function writeSystemLog(
     durationMs?: number;
   }
 ) {
+  // Persistent audit logging is intentionally disabled in personal mode.
+  void db;
+  void options;
+  return;
+
   const ip = options.request.headers.get('CF-Connecting-IP') ||
              options.request.headers.get('X-Forwarded-For') ||
              'unknown';
@@ -1658,6 +1672,11 @@ async function logAccess(
 
 // Helper: 更新每日统计
 async function incrementDailyStat(db: D1Database, field: string) {
+  // Usage statistics are part of the removed multi-user logging system.
+  void db;
+  void field;
+  return;
+
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   try {
     await db.prepare(`
@@ -1849,25 +1868,6 @@ export default {
       try { await ensureAitagCacheSchema(db); } catch (e) { console.error('Aitag cache table init failed', e) }
       
 
-      // 创建/升级系统日志表
-      try {
-        await ensureAccessLogsSchema(db);
-      } catch (e) { console.error('Access logs table init failed', e) }
-
-      // 创建每日统计表
-      try {
-        await db.prepare(`
-          CREATE TABLE IF NOT EXISTS daily_stats (
-            date TEXT PRIMARY KEY,
-            total_requests INTEGER DEFAULT 0,
-            api_requests INTEGER DEFAULT 0,
-            guest_logins INTEGER DEFAULT 0,
-            user_logins INTEGER DEFAULT 0,
-            generate_requests INTEGER DEFAULT 0
-          )
-        `).run();
-      } catch (e) { console.error('Daily stats table init failed', e) }
-
       // Default Admin
       try {
         const admin = await db.prepare('SELECT * FROM users WHERE username = ?').bind('admin').first();
@@ -1917,6 +1917,8 @@ export default {
       if (env.PERSONAL_MODE_ENABLED !== 'true') {
         return error('This personal build only supports local operation', 403);
       }
+
+      await removeLegacyLoggingStorage(db);
 
       // Personal mode: no login, guest, logout, password, or account management.
       if (path.startsWith('/api/auth/')) {
@@ -2056,7 +2058,13 @@ export default {
       // --- Authenticated Logic ---
       const currentUser = await getLocalOwner(db);
 
-      if (path.startsWith('/api/users') || path.startsWith('/api/admin/guest-setting')) {
+      if (
+        path.startsWith('/api/users') ||
+        path.startsWith('/api/admin/guest-setting') ||
+        path.startsWith('/api/admin/logs') ||
+        path.startsWith('/api/admin/clear-logs') ||
+        path === '/api/client-logs'
+      ) {
         return error('Account management is disabled in personal mode', 410);
       }
 
