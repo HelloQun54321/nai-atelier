@@ -135,14 +135,26 @@ const App = () => {
     const handleVisibilityChange = () => {
       if (document.hidden) resetRevealedImages();
     };
+    const handlePointerMove = (event: PointerEvent) => {
+      if (event.pointerType !== 'mouse') return;
+
+      document.querySelectorAll<HTMLImageElement>('img[data-safe-revealed="true"]').forEach(image => {
+        const rect = image.getBoundingClientRect();
+        const isInsideImage = event.clientX >= rect.left && event.clientX <= rect.right
+          && event.clientY >= rect.top && event.clientY <= rect.bottom;
+        if (!isInsideImage) delete image.dataset.safeRevealed;
+      });
+    };
 
     window.addEventListener('blur', resetRevealedImages);
     window.addEventListener('keydown', handleKeyDown);
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('pointermove', handlePointerMove, true);
     return () => {
       window.removeEventListener('blur', resetRevealedImages);
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('pointermove', handlePointerMove, true);
     };
   }, [safeMode]);
 
@@ -173,7 +185,11 @@ const App = () => {
   const handleSafeModeClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!safeMode || !(event.target instanceof HTMLElement)) return;
     const image = findImageAtPointer(event.target, event.clientX, event.clientY);
-    if (!image || image.dataset.safeModeIgnore === 'true' || image.dataset.safeRevealed === 'true') return;
+    if (!image) {
+      resetRevealedImages();
+      return;
+    }
+    if (image.dataset.safeModeIgnore === 'true' || image.dataset.safeRevealed === 'true') return;
 
     event.preventDefault();
     event.stopPropagation();
