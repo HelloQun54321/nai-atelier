@@ -5,8 +5,41 @@ const DB_NAME = 'NAI_History_DB';
 const STORE_NAME = 'generations';
 const DB_VERSION = 2;
 
+export type LocalHistoryChange = {
+    type: 'add' | 'delete' | 'clear' | 'cleanup';
+    id?: string;
+    external?: boolean;
+};
+
 class LocalHistoryService {
     private db: IDBDatabase | null = null;
+    private listeners = new Set<(change: LocalHistoryChange) => void>();
+    private channel: BroadcastChannel | null = null;
+
+    constructor() {
+        if (typeof BroadcastChannel !== 'undefined') {
+            this.channel = new BroadcastChannel('nai-local-history');
+            this.channel.onmessage = (event: MessageEvent<LocalHistoryChange>) => {
+                if (event.data?.type) {
+                    this.notifyListeners({ ...event.data, external: true });
+                }
+            };
+        }
+    }
+
+    subscribe(listener: (change: LocalHistoryChange) => void): () => void {
+        this.listeners.add(listener);
+        return () => this.listeners.delete(listener);
+    }
+
+    private notifyListeners(change: LocalHistoryChange) {
+        this.listeners.forEach(listener => listener(change));
+    }
+
+    private emit(change: LocalHistoryChange) {
+        this.notifyListeners(change);
+        this.channel?.postMessage(change);
+    }
 
     private async open(): Promise<IDBDatabase> {
         if (this.db) return this.db;
@@ -34,6 +67,10 @@ class LocalHistoryService {
 
             request.onsuccess = (event) => {
                 this.db = (event.target as IDBOpenDBRequest).result;
+                this.db.onversionchange = () => {
+                    this.db?.close();
+                    this.db = null;
+                };
                 resolve(this.db);
             };
 
@@ -68,7 +105,11 @@ class LocalHistoryService {
             const store = transaction.objectStore(STORE_NAME);
             const request = store.add(item);
 
-            request.onsuccess = () => resolve(item);
+            transaction.oncomplete = () => {
+                this.emit({ type: 'add', id: item.id });
+                resolve(item);
+            };
+            transaction.onerror = () => reject(transaction.error);
             request.onerror = () => reject(request.error);
         });
     }
@@ -197,7 +238,11 @@ class LocalHistoryService {
             const transaction = db.transaction([STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
             const request = store.delete(id);
-            request.onsuccess = () => resolve();
+            transaction.oncomplete = () => {
+                this.emit({ type: 'delete', id });
+                resolve();
+            };
+            transaction.onerror = () => reject(transaction.error);
             request.onerror = () => reject(request.error);
         });
     }
@@ -208,7 +253,11 @@ class LocalHistoryService {
             const transaction = db.transaction([STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
             const request = store.clear();
-            request.onsuccess = () => resolve();
+            transaction.oncomplete = () => {
+                this.emit({ type: 'clear' });
+                resolve();
+            };
+            transaction.onerror = () => reject(transaction.error);
             request.onerror = () => reject(request.error);
         });
     }
@@ -220,8 +269,45 @@ class LocalHistoryService {
      * @returns 当前页的记录数组
      */
     async getPage(page: number, pageSize: number): Promise<LocalGenItem[]> {
-        const results = await this.getAll();
-        return results.slice(page * pageSize, (page + 1) * pageSize);
+        const db = await this.open();
+        const safePage = Math.max(0, Math.floor(page));
+        const safePageSize = Math.max(0, Math.floor(pageSize));
+
+        if (safePageSize === 0) return [];
+
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_NAME], 'readonly');
+            const store = transaction.objectStore(STORE_NAME);
+            const index = store.index('createdAt');
+            const request = index.openCursor(null, 'prev');
+            const results: LocalGenItem[] = [];
+            const offset = safePage * safePageSize;
+            let positioned = offset === 0;
+
+            request.onsuccess = (event) => {
+                const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>).result;
+                if (!cursor) {
+                    resolve(results);
+                    return;
+                }
+
+                if (!positioned) {
+                    positioned = true;
+                    cursor.advance(offset);
+                    return;
+                }
+
+                results.push(cursor.value as LocalGenItem);
+                if (results.length >= safePageSize) {
+                    resolve(results);
+                    return;
+                }
+                cursor.continue();
+            };
+
+            request.onerror = () => reject(request.error);
+            transaction.onerror = () => reject(transaction.error);
+        });
     }
 
     /**
@@ -261,6 +347,7 @@ class LocalHistoryService {
             
             // 事务完成处理
             transaction.oncomplete = () => {
+                if (deletedCount > 0) this.emit({ type: 'cleanup' });
                 resolve(deletedCount);
             };
             
@@ -301,6 +388,7 @@ class LocalHistoryService {
             
             // 事务完成处理
             transaction.oncomplete = () => {
+                if (deletedCount > 0) this.emit({ type: 'cleanup' });
                 resolve(deletedCount);
             };
             

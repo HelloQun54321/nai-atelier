@@ -26,11 +26,15 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
     const [totalPages, setTotalPages] = useState(0);
     const [totalCount, setTotalCount] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
+    const [jumpPage, setJumpPage] = useState('');
     
     // 缓存管理
     const [pageCache, setPageCache] = useState<Record<number, LocalGenItem[]>>({});
     const pageCacheRef = useRef<Record<number, LocalGenItem[]>>({});
     const inflightPagesRef = useRef<Record<number, Promise<LocalGenItem[]>>>({});
+    const currentPageRef = useRef(1);
+    const loadRequestRef = useRef(0);
+    const refreshPageRef = useRef<(page: number, force?: boolean) => Promise<void>>(async () => undefined);
 
     // 清理相关状态
     const [showCleanMenu, setShowCleanMenu] = useState(false);
@@ -72,10 +76,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
         }
     };
 
-    useEffect(() => {
-        goToPage(1);
-    }, []);
-
     const { PAGE_SIZE } = PAGINATION_CONFIG;
 
     const setCacheState = (nextCache: Record<number, LocalGenItem[]>) => {
@@ -98,24 +98,29 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
     };
 
     // 获取页面数据（优先从缓存）
-    const getPageData = async (page: number): Promise<LocalGenItem[]> => {
+    const getPageData = async (page: number, force = false): Promise<LocalGenItem[]> => {
         const cached = pageCacheRef.current[page];
-        if (cached) {
+        if (!force && cached) {
             return cached;
         }
 
         const inflight = inflightPagesRef.current[page];
-        if (inflight) {
+        if (!force && inflight) {
             return inflight;
         }
 
-        const request = localHistory.getPage(page - 1, PAGE_SIZE)
+        let request: Promise<LocalGenItem[]>;
+        request = localHistory.getPage(page - 1, PAGE_SIZE)
             .then(data => {
-                delete inflightPagesRef.current[page];
+                if (inflightPagesRef.current[page] === request) {
+                    delete inflightPagesRef.current[page];
+                }
                 return data;
             })
             .catch(error => {
-                delete inflightPagesRef.current[page];
+                if (inflightPagesRef.current[page] === request) {
+                    delete inflightPagesRef.current[page];
+                }
                 throw error;
             });
 
@@ -123,7 +128,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
         return request;
     };
 
-    const preloadPage = async (page: number, totalPages: number) => {
+    const preloadPage = async (page: number, totalPages: number, centerPage: number) => {
         if (page < 1 || page > totalPages) {
             return;
         }
@@ -131,13 +136,17 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
         try {
             const data = await getPageData(page);
 
+            if (currentPageRef.current !== centerPage) {
+                return;
+            }
+
             if (!pageCacheRef.current[page]) {
                 const nextCache = {
                     ...pageCacheRef.current,
                     [page]: data,
                 };
                 setCacheState(nextCache);
-                trimCacheAroundPage(currentPage, totalPages, nextCache);
+                trimCacheAroundPage(centerPage, totalPages, nextCache);
             }
         } catch (e) {
             console.warn('预加载页面失败:', e);
@@ -146,26 +155,24 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
 
     // 跳转到指定页
     const goToPage = async (page: number, force: boolean = false) => {
-        if (isLoading) return;
-        
-        // 计算总页数
-        const count = await localHistory.getCount();
-        const calculatedTotalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
-        
-        // 边界检查
-        const targetPage = Math.max(1, Math.min(page, calculatedTotalPages));
-        
-        // 如果不是强制刷新，且目标页与当前页相同，则跳过
-        if (!force && targetPage === currentPage && items.length > 0) return;
-        
+        const requestId = ++loadRequestRef.current;
         setIsLoading(true);
-        setCurrentPage(targetPage);
-        setTotalPages(calculatedTotalPages);
-        setTotalCount(count);
-        
+
         try {
-            // 获取页面数据
-            const data = await getPageData(targetPage);
+            const count = await localHistory.getCount();
+            const calculatedTotalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
+            const targetPage = Math.max(1, Math.min(page, calculatedTotalPages));
+
+            if (requestId !== loadRequestRef.current) return;
+
+            currentPageRef.current = targetPage;
+            setCurrentPage(targetPage);
+            setTotalPages(calculatedTotalPages);
+            setTotalCount(count);
+
+            const data = await getPageData(targetPage, force);
+            if (requestId !== loadRequestRef.current) return;
+
             setItems(data);
             
             // 更新缓存并清理
@@ -178,19 +185,44 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
             
             // 预加载相邻页面（当前页 +1 和 -1）
             if (targetPage > 1) {
-                void preloadPage(targetPage - 1, calculatedTotalPages);
+                void preloadPage(targetPage - 1, calculatedTotalPages, targetPage);
             }
             if (targetPage < calculatedTotalPages) {
-                void preloadPage(targetPage + 1, calculatedTotalPages);
+                void preloadPage(targetPage + 1, calculatedTotalPages, targetPage);
             }
             
         } catch (e) {
             console.error('加载页面失败:', e);
-            notify('加载失败，请重试', 'error');
+            if (requestId === loadRequestRef.current) {
+                notify('加载失败，请重试', 'error');
+            }
         } finally {
-            setIsLoading(false);
+            if (requestId === loadRequestRef.current) {
+                setIsLoading(false);
+            }
         }
     };
+
+    refreshPageRef.current = goToPage;
+
+    useEffect(() => {
+        const unsubscribe = localHistory.subscribe(change => {
+            if (change.type !== 'add' && !change.external) return;
+
+            setCacheState({});
+            inflightPagesRef.current = {};
+            setLightbox(current => (
+                change.type === 'clear' || change.type === 'cleanup' || current?.id === change.id
+                    ? null
+                    : current
+            ));
+            const targetPage = change.type === 'add' ? 1 : currentPageRef.current;
+            void refreshPageRef.current(targetPage, true);
+        });
+
+        void refreshPageRef.current(1, true);
+        return unsubscribe;
+    }, []);
 
     // 生成页码按钮
     const getPageButtons = (): number[] => {
@@ -204,7 +236,10 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
             }
         } else {
             // 总页数较多，显示当前页附近的页码
-            const start = Math.max(1, currentPage - 3);
+            const start = Math.min(
+                Math.max(1, currentPage - 3),
+                totalPages - maxButtons + 1
+            );
             const end = Math.min(totalPages, start + maxButtons - 1);
             
             for (let i = start; i <= end; i++) {
@@ -237,35 +272,51 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
     const handleDelete = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
         if (confirm('确定删除这张图片记录吗？(无法恢复)')) {
-            await localHistory.delete(id);
-            if (lightbox?.id === id) setLightbox(null);
-            // 清空缓存并强制刷新当前页
-            setCacheState({});
-            await goToPage(currentPage, true);
-            void db.logClientEvent({
-                category: 'history',
-                action: 'history_delete',
-                resourceType: 'local_history',
-                resourceId: id,
-                message: '删除本地生图历史记录',
-            }).catch(console.error);
+            try {
+                await localHistory.delete(id);
+                if (lightbox?.id === id) setLightbox(null);
+                // 清空缓存并强制刷新当前页
+                setCacheState({});
+                inflightPagesRef.current = {};
+                await goToPage(currentPageRef.current, true);
+                void db.logClientEvent({
+                    category: 'history',
+                    action: 'history_delete',
+                    resourceType: 'local_history',
+                    resourceId: id,
+                    message: '删除本地生图历史记录',
+                }).catch(console.error);
+            } catch (e: any) {
+                notify('删除失败: ' + (e?.message || '未知错误'), 'error');
+            }
         }
     };
 
     const handleClearAll = async () => {
         if (confirm('确定清空所有本地生图历史吗？')) {
-            const countBefore = await localHistory.getCount();
-            await localHistory.clear();
-            setItems([]);
-            setTotalCount(0);
-            setShowCleanMenu(false);
-            void db.logClientEvent({
-                category: 'history',
-                action: 'history_clear_all',
-                resourceType: 'local_history',
-                message: '清空所有本地生图历史',
-                metadata: { countBefore },
-            }).catch(console.error);
+            try {
+                const countBefore = await localHistory.getCount();
+                await localHistory.clear();
+                loadRequestRef.current++;
+                setItems([]);
+                setTotalCount(0);
+                setTotalPages(1);
+                currentPageRef.current = 1;
+                setCurrentPage(1);
+                setCacheState({});
+                inflightPagesRef.current = {};
+                setLightbox(null);
+                setShowCleanMenu(false);
+                void db.logClientEvent({
+                    category: 'history',
+                    action: 'history_clear_all',
+                    resourceType: 'local_history',
+                    message: '清空所有本地生图历史',
+                    metadata: { countBefore },
+                }).catch(console.error);
+            } catch (e: any) {
+                notify('清空失败: ' + (e?.message || '未知错误'), 'error');
+            }
         }
     };
 
@@ -286,23 +337,35 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
 
     const handleCleanConfirm = async () => {
         try {
+            const normalizedValue = Math.floor(cleanMode === 'days' ? cleanDays : cleanCount);
+            if (!Number.isFinite(normalizedValue) || normalizedValue < 1) {
+                notify(cleanMode === 'days' ? '请输入有效天数' : '请输入有效保留数量', 'error');
+                return;
+            }
+
             let deletedCount = 0;
             if (cleanMode === 'days') {
-                deletedCount = await localHistory.deleteOlderThan(cleanDays);
+                deletedCount = await localHistory.deleteOlderThan(normalizedValue);
             } else {
-                deletedCount = await localHistory.keepOnly(cleanCount);
+                deletedCount = await localHistory.keepOnly(normalizedValue);
             }
             setShowCleanModal(false);
             // 清空缓存，强制刷新页面数据和总数
             setCacheState({});
+            inflightPagesRef.current = {};
             await goToPage(1, true); // 强制重新加载第一页，刷新总数
             notify('清理完成');
             void db.logClientEvent({
                 category: 'history',
                 action: 'history_cleanup',
                 resourceType: 'local_history',
-                message: cleanMode === 'days' ? `删除 ${cleanDays} 天前的本地历史` : `本地历史只保留最近 ${cleanCount} 张`,
-                metadata: { mode: cleanMode, days: cleanDays, keepCount: cleanCount, deletedCount },
+                message: cleanMode === 'days' ? `删除 ${normalizedValue} 天前的本地历史` : `本地历史只保留最近 ${normalizedValue} 张`,
+                metadata: {
+                    mode: cleanMode,
+                    days: cleanMode === 'days' ? normalizedValue : undefined,
+                    keepCount: cleanMode === 'count' ? normalizedValue : undefined,
+                    deletedCount,
+                },
             }).catch(console.error);
         } catch (e: any) {
             notify('清理失败: ' + e.message, 'error');
@@ -393,6 +456,12 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
         }
     };
 
+    const handleRefresh = async () => {
+        setCacheState({});
+        inflightPagesRef.current = {};
+        await goToPage(currentPageRef.current, true);
+    };
+
     return (
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
             <header className="p-4 md:p-6 bg-white dark:bg-gray-800 shadow-md border-b border-gray-200 dark:border-gray-700 z-10 flex-shrink-0">
@@ -436,8 +505,12 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                 </div>
                             )}
                         </div>
-                        <button onClick={() => goToPage(currentPage)} className="px-3 py-1 md:px-4 md:py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded text-xs md:text-sm hover:bg-gray-200 dark:hover:bg-gray-600">
-                            刷新
+                        <button
+                            onClick={handleRefresh}
+                            disabled={isLoading}
+                            className="px-3 py-1 md:px-4 md:py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded text-xs md:text-sm hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-wait"
+                        >
+                            {isLoading ? '刷新中…' : '刷新'}
                         </button>
                     </div>
                 </div>
@@ -471,6 +544,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                     <button
                                         key={page}
                                         onClick={() => goToPage(page)}
+                                        disabled={isLoading}
                                         className={`px-2 py-1 text-xs rounded border transition-colors ${
                                             page === currentPage
                                                 ? 'bg-indigo-500 text-white border-indigo-500'
@@ -509,25 +583,30 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                 min="1"
                                 max={totalPages}
                                 placeholder="页码"
+                                value={jumpPage}
+                                disabled={isLoading}
+                                onChange={e => setJumpPage(e.target.value)}
                                 className="w-16 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                         const page = parseInt((e.target as HTMLInputElement).value);
                                         if (page >= 1 && page <= totalPages) {
-                                            goToPage(page);
+                                            void goToPage(page);
+                                            setJumpPage('');
                                         }
                                     }
                                 }}
                             />
                             <button
                                 onClick={() => {
-                                    const input = document.querySelector('input[placeholder="页码"]') as HTMLInputElement;
-                                    const page = parseInt(input.value);
+                                    const page = parseInt(jumpPage);
                                     if (page >= 1 && page <= totalPages) {
-                                        goToPage(page);
+                                        void goToPage(page);
+                                        setJumpPage('');
                                     }
                                 }}
-                                className="px-2 py-1 text-xs bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors"
+                                disabled={isLoading}
+                                className="px-2 py-1 text-xs bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors disabled:opacity-50"
                             >
                                 跳转
                             </button>
@@ -557,7 +636,13 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                     className="group relative aspect-square bg-gray-200 dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border border-gray-200 dark:border-gray-700 hover:border-indigo-500 transition-colors"
                                     onClick={() => setLightbox(item)}
                                 >
-                                    <img src={item.imageUrl} className="w-full h-full object-cover" loading="lazy" />
+                                    <img
+                                        src={item.imageUrl}
+                                        alt={`生成于 ${new Date(item.createdAt).toLocaleString()} 的图片`}
+                                        className="w-full h-full object-cover"
+                                        loading="lazy"
+                                        decoding="async"
+                                    />
                                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                                     <div className="absolute top-2 right-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button onClick={(e) => handleDelete(item.id, e)} className="p-1.5 bg-red-500 text-white rounded-full shadow hover:bg-red-600">
@@ -592,7 +677,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                     <div className="bg-white dark:bg-gray-900 w-full max-w-6xl h-[85vh] md:h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row" onClick={e => e.stopPropagation()}>
                         {/* Image Area */}
                         <div className="flex-1 bg-gray-100 dark:bg-black/50 flex items-center justify-center p-4 relative h-[45%] md:h-auto border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800">
-                            <img src={lightbox.imageUrl} className="max-w-full max-h-full object-contain shadow-lg" />
+                            <img src={lightbox.imageUrl} alt="历史生成图片预览" className="max-w-full max-h-full object-contain shadow-lg" decoding="async" />
                         </div>
 
                         {/* Details Area */}
@@ -682,8 +767,13 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                         min="1"
                                         value={cleanDays}
                                         onChange={e => {
-                                            setCleanDays(Number(e.target.value));
-                                            localHistory.countOlderThan(Number(e.target.value)).then(setCleanPreviewCount);
+                                            const value = Number(e.target.value);
+                                            setCleanDays(value);
+                                            if (Number.isFinite(value) && value >= 1) {
+                                                localHistory.countOlderThan(value).then(setCleanPreviewCount);
+                                            } else {
+                                                setCleanPreviewCount(0);
+                                            }
                                         }}
                                         className="w-full px-3 py-2 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm outline-none dark:text-white"
                                     />
@@ -696,10 +786,15 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                         min="1"
                                         value={cleanCount}
                                         onChange={e => {
-                                            setCleanCount(Number(e.target.value));
-                                            localHistory.getCount().then(count => {
-                                                setCleanPreviewCount(Math.max(0, count - Number(e.target.value)));
-                                            });
+                                            const value = Number(e.target.value);
+                                            setCleanCount(value);
+                                            if (Number.isFinite(value) && value >= 1) {
+                                                localHistory.getCount().then(count => {
+                                                    setCleanPreviewCount(Math.max(0, count - value));
+                                                });
+                                            } else {
+                                                setCleanPreviewCount(0);
+                                            }
                                         }}
                                         className="w-full px-3 py-2 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm outline-none dark:text-white"
                                     />
@@ -716,7 +811,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                             </button>
                             <button
                                 onClick={handleCleanConfirm}
-                                className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold"
+                                disabled={!Number.isFinite(cleanMode === 'days' ? cleanDays : cleanCount) || (cleanMode === 'days' ? cleanDays : cleanCount) < 1}
+                                className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 确认删除
                             </button>
