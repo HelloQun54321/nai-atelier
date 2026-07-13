@@ -1,0 +1,22 @@
+{
+  "source": "https://docs.novelai.net/en/image/tags/",
+  "tags": [
+    "masterpiece",
+    "best quality",
+    "amazing quality",
+    "great quality",
+    "normal quality",
+    "bad quality",
+    "worst quality",
+    "very aesthetic",
+    "aesthetic",
+    "displeasing",
+    "very displeasing",
+    "fur dataset",
+    "background dataset"
+  ],
+  "yearTagRange": {
+    "start": 1900,
+    "end": 2026
+  }
+}

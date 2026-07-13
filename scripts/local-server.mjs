@@ -42,7 +42,7 @@ const BUILD_OUTPUTS = ['dist/index.html', 'dist/_worker.js'];
 const BUILD_INPUTS = [
   'App.tsx', 'index.tsx', 'index.html', 'index.css', 'types.ts',
   'package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts',
-  'components', 'config', 'services', 'worker'
+  'components', 'config', 'services', 'worker', 'public'
 ];
 
 function getNewestMtime(path) {

@@ -9,6 +9,7 @@ import { db } from '../services/dbService';
 import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY } from '../services/metadataService';
 import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
+import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 
 interface ChainEditorProps {
     chain: PromptChain;
@@ -1171,12 +1172,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                     )}
                                 </div>
                             </div>
-                            <textarea
+                            <TagAutocompleteTextarea
                                 disabled={!canEdit}
                                 className={`w-full border rounded-lg p-3 outline-none font-mono text-sm leading-relaxed min-h-[100px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500'}`}
                                 value={basePrompt}
                                 placeholder="画风标签，如 masterpiece、best quality、画师tag等，英文逗号分隔"
-                                onChange={(e) => { setBasePrompt(e.target.value); markChange() }}
+                                onValueChange={(nextValue) => { setBasePrompt(nextValue); markChange() }}
                             />
                         </section>
 
@@ -1238,11 +1239,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                                 )}
                                             </div>
                                         </div>
-                                        <textarea
+                                        <TagAutocompleteTextarea
                                             disabled={!canEdit}
                                             className={`w-full rounded p-2 outline-none font-mono text-xs h-16 resize-none ${!canEdit ? 'bg-transparent text-gray-500' : 'bg-white dark:bg-gray-900/50 border border-gray-300 dark:border-gray-700/30 text-gray-800 dark:text-gray-300 focus:ring-1 focus:ring-indigo-500/50'}`}
                                             value={mod.content}
-                                            onChange={(e) => handleModuleChange(idx, 'content', e.target.value)}
+                                            onValueChange={(nextValue) => handleModuleChange(idx, 'content', nextValue)}
                                         />
                                     </div>
                                 ))}
@@ -1287,20 +1288,20 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                             <div className="flex-1 space-y-2">
                                                 <div>
                                                     <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">人物描述</label>
-                                                    <textarea
+                                                    <TagAutocompleteTextarea
                                                         disabled={!canEdit}
                                                         value={char.prompt}
-                                                        onChange={(e) => updateCharacter(idx, { prompt: e.target.value })}
+                                                        onValueChange={(nextValue) => updateCharacter(idx, { prompt: nextValue })}
                                                         className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-16 resize-none focus:ring-1 focus:ring-indigo-500 outline-none"
                                                         placeholder="人物描述"
                                                     />
                                                 </div>
                                                 <div>
                                                     <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">专属负面</label>
-                                                    <textarea
+                                                    <TagAutocompleteTextarea
                                                         disabled={!canEdit}
                                                         value={char.negativePrompt || ''}
-                                                        onChange={(e) => updateCharacter(idx, { negativePrompt: e.target.value })}
+                                                        onValueChange={(nextValue) => updateCharacter(idx, { negativePrompt: nextValue })}
                                                         className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-10 resize-none focus:ring-1 focus:ring-indigo-500 outline-none placeholder-gray-400"
                                                         placeholder="选填"
                                                     />
@@ -1342,11 +1343,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         {/* Negative Prompt */}
                         <section className="mb-8">
                             <label className="block text-sm font-semibold text-red-500 dark:text-red-400 mb-2">全局负面提示词</label>
-                            <textarea
+                            <TagAutocompleteTextarea
                                 disabled={!canEdit}
                                 className={`w-full border rounded-lg p-3 outline-none font-mono text-sm leading-relaxed min-h-[80px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-red-900 dark:text-red-100/80 focus:ring-1 focus:ring-red-500/50'}`}
                                 value={negativePrompt}
-                                onChange={(e) => { setNegativePrompt(e.target.value); markChange() }}
+                                onValueChange={(nextValue) => { setNegativePrompt(nextValue); markChange() }}
                             />
                         </section>
 
