@@ -8,11 +8,13 @@ interface LayoutProps {
   activeView?: string;
   isDark: boolean;
   toggleTheme: () => void;
+  safeMode: boolean;
+  toggleSafeMode: () => void;
   toast?: { message: string, type: 'success' | 'error' } | null;
   hideNav?: boolean;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentView, activeView = currentView, isDark, toggleTheme, toast, hideNav }) => {
+export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentView, activeView = currentView, isDark, toggleTheme, safeMode, toggleSafeMode, toast, hideNav }) => {
   const navItems = [
     { id: 'list', label: '画师串', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /> },
     { id: 'characters', label: '角色串', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> },
@@ -45,6 +47,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-white text-sm shadow-md">N</div>
           <span className="font-bold text-gray-800 dark:text-gray-200 text-sm">NAI Manager</span>
         </div>
+        <button
+          onClick={toggleSafeMode}
+          aria-label="切换安全模式"
+          aria-pressed={safeMode}
+          className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}
+          title={safeMode ? '安全模式已开启' : '安全模式已关闭'}
+        >
+          🛡️
+        </button>
       </div>
 
       {/* Desktop Sidebar (Hidden on Mobile) */}
@@ -73,6 +84,19 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         </nav>
 
         <div className="p-4 border-t border-gray-200 dark:border-gray-800 flex flex-col gap-3">
+          <button
+            onClick={toggleSafeMode}
+            aria-pressed={safeMode}
+            className={`w-full flex items-center justify-center md:justify-start p-2 rounded-lg transition-colors ${safeMode
+              ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+              : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+            }`}
+            title="开启后所有图片默认模糊；点击单张图片可临时显示"
+          >
+            <span className="text-xl mr-0 md:mr-2">🛡️</span>
+            <span className="hidden md:block text-sm font-medium">安全模式：{safeMode ? '开' : '关'}</span>
+          </button>
+
           <button
             onClick={toggleTheme}
             className="w-full flex items-center justify-center md:justify-start p-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"

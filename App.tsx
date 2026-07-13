@@ -46,6 +46,7 @@ const App = () => {
 
   // Theme State
   const [isDark, setIsDark] = useState(() => localStorage.getItem('nai_theme') === 'dark');
+  const [safeMode, setSafeMode] = useState(() => localStorage.getItem('nai_safe_mode') === 'true');
 
   // Toast State
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
@@ -110,6 +111,74 @@ const App = () => {
   }, [isDark]);
 
   const toggleTheme = () => setIsDark(!isDark);
+
+  const resetRevealedImages = () => {
+    document.querySelectorAll<HTMLImageElement>('img[data-safe-revealed="true"]').forEach(image => {
+      delete image.dataset.safeRevealed;
+    });
+  };
+
+  const toggleSafeMode = () => {
+    resetRevealedImages();
+    setSafeMode(enabled => !enabled);
+  };
+
+  useEffect(() => {
+    localStorage.setItem('nai_safe_mode', String(safeMode));
+    resetRevealedImages();
+
+    if (!safeMode) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') resetRevealedImages();
+    };
+    const handleVisibilityChange = () => {
+      if (document.hidden) resetRevealedImages();
+    };
+
+    window.addEventListener('blur', resetRevealedImages);
+    window.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('blur', resetRevealedImages);
+      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [safeMode]);
+
+  useEffect(() => {
+    if (safeMode) resetRevealedImages();
+  }, [view, safeMode]);
+
+  const findImageAtPointer = (target: HTMLElement, clientX: number, clientY: number) => {
+    if (target instanceof HTMLImageElement) return target;
+
+    let current: HTMLElement | null = target;
+    for (let depth = 0; current && depth < 6; depth++, current = current.parentElement) {
+      const candidates = Array.from(current.querySelectorAll<HTMLImageElement>('img'))
+        .filter(image => {
+          const rect = image.getBoundingClientRect();
+          return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+        })
+        .sort((a, b) => {
+          const aRect = a.getBoundingClientRect();
+          const bRect = b.getBoundingClientRect();
+          return aRect.width * aRect.height - bRect.width * bRect.height;
+        });
+      if (candidates[0]) return candidates[0];
+    }
+    return null;
+  };
+
+  const handleSafeModeClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!safeMode || !(event.target instanceof HTMLElement)) return;
+    const image = findImageAtPointer(event.target, event.clientX, event.clientY);
+    if (!image || image.dataset.safeModeIgnore === 'true' || image.dataset.safeRevealed === 'true') return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    image.dataset.safeRevealed = 'true';
+  };
 
   const keepViewMounted = (targetView: ViewState) => {
     if (!isKeepAliveView(targetView)) return;
@@ -337,13 +406,18 @@ const App = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen">
+    <div
+      className={`flex flex-col h-screen ${safeMode ? 'safe-mode' : ''}`}
+      onClickCapture={handleSafeModeClickCapture}
+    >
       <Layout
         onNavigate={handleNavigate}
         currentView={view}
         activeView={getActiveView()}
         isDark={isDark}
         toggleTheme={toggleTheme}
+        safeMode={safeMode}
+        toggleSafeMode={toggleSafeMode}
         toast={toast}
         hideNav={view === 'edit' || view === 'playground'}
       >
