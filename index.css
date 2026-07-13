@@ -124,7 +124,7 @@
   transition: filter 160ms ease, transform 160ms ease;
 }
 
-/* 避免页面自身的长动画拖慢解除模糊，例如军火库和灵感的 700ms 懒加载过渡。 */
+/* 避免页面自身的长动画拖慢解除模糊，例如画师tag和灵感的 700ms 懒加载过渡。 */
 .safe-mode img[data-safe-revealed="true"]:not([data-safe-mode-ignore="true"]) {
   transition: filter 160ms ease, transform 160ms ease !important;
 }
