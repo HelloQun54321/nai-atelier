@@ -6,7 +6,7 @@ import { api } from '../services/api'; // Import api for updating
 import { db } from '../services/dbService'; // Import DB to fetch config
 import { ArtistLibraryConfig } from './ArtistLibraryConfig';
 import { ArtistLibraryCart } from './ArtistLibraryCart';
-import { ArtistDictionaryEntry, getArtistDictionaryCount, getPopularArtistDictionary, searchArtistDictionary } from '../services/tagDictionary';
+import { ArtistDictionaryEntry, getArtistDictionaryPage, searchArtistDictionary } from '../services/tagDictionary';
 
 interface CartItem {
     name: string;
@@ -22,14 +22,6 @@ interface ArtistLibraryProps {
     notify: (msg: string, type?: 'success' | 'error') => void;
     currentUser?: User | null; // Add current user prop for permission check
 }
-
-// Helper to get first char
-const getGroupChar = (name: string) => {
-    const char = name.charAt(0).toUpperCase();
-    return /[A-Z]/.test(char) ? char : '#';
-};
-
-const ALPHABET = '#ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 // Helper: Compress Base64 Image to JPEG
 const compressImage = (base64: string, quality: number = 0.8): Promise<string> => {
@@ -156,11 +148,17 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     const [lightboxState, setLightboxState] = useState<{ artistIdx: number, slotIdx: number } | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const [isLoading, setIsLoading] = useState(false);
-    const [popularCatalogArtists, setPopularCatalogArtists] = useState<ArtistDictionaryEntry[]>([]);
+    const [loadedCatalogArtists, setLoadedCatalogArtists] = useState<ArtistDictionaryEntry[]>([]);
     const [catalogSearchResults, setCatalogSearchResults] = useState<ArtistDictionaryEntry[]>([]);
     const [artistCatalogCount, setArtistCatalogCount] = useState(0);
     const [isCatalogLoading, setIsCatalogLoading] = useState(true);
+    const [isLoadingMoreCatalog, setIsLoadingMoreCatalog] = useState(false);
+    const [hasMoreCatalog, setHasMoreCatalog] = useState(false);
     const catalogSearchRequestRef = useRef(0);
+    const catalogSentinelRef = useRef<HTMLDivElement>(null);
+    const nextCatalogPageRef = useRef(0);
+    const catalogPageCountRef = useRef(0);
+    const catalogPageLoadingRef = useRef(false);
 
     // New State for features
     const [history, setHistory] = useState<{ text: string, time: string }[]>([]);
@@ -245,13 +243,33 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
         }
     }, []);
 
+    const loadNextCatalogPage = useCallback(async () => {
+        if (catalogPageLoadingRef.current || nextCatalogPageRef.current >= catalogPageCountRef.current) return;
+        catalogPageLoadingRef.current = true;
+        setIsLoadingMoreCatalog(true);
+        try {
+            const result = await getArtistDictionaryPage(nextCatalogPageRef.current);
+            setLoadedCatalogArtists(previous => [...previous, ...result.entries]);
+            nextCatalogPageRef.current = result.page + 1;
+            setHasMoreCatalog(nextCatalogPageRef.current < result.pageCount);
+        } catch (error) {
+            console.warn('Unable to load more artist tags:', error);
+        } finally {
+            catalogPageLoadingRef.current = false;
+            setIsLoadingMoreCatalog(false);
+        }
+    }, []);
+
     useEffect(() => {
         let cancelled = false;
-        Promise.all([getPopularArtistDictionary(500), getArtistDictionaryCount()])
-            .then(([popular, count]) => {
+        getArtistDictionaryPage(0)
+            .then(result => {
                 if (cancelled) return;
-                setPopularCatalogArtists(popular);
-                setArtistCatalogCount(count);
+                setLoadedCatalogArtists(result.entries);
+                setArtistCatalogCount(result.total);
+                nextCatalogPageRef.current = 1;
+                catalogPageCountRef.current = result.pageCount;
+                setHasMoreCatalog(result.pageCount > 1);
             })
             .catch(error => console.warn('Artist tag catalog is unavailable:', error))
             .finally(() => {
@@ -265,7 +283,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
         const requestId = ++catalogSearchRequestRef.current;
         if (!query) {
             setCatalogSearchResults([]);
-            setIsCatalogLoading(false);
             return;
         }
 
@@ -285,6 +302,19 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
         }, 180);
         return () => window.clearTimeout(timer);
     }, [searchTerm]);
+
+    useEffect(() => {
+        if (searchTerm.trim() || !hasMoreCatalog) return;
+        const sentinel = catalogSentinelRef.current;
+        const root = scrollContainerRef.current;
+        if (!sentinel || !root) return;
+
+        const observer = new IntersectionObserver(entries => {
+            if (entries[0]?.isIntersecting) void loadNextCatalogPage();
+        }, { root, rootMargin: '800px 0px' });
+        observer.observe(sentinel);
+        return () => observer.disconnect();
+    }, [hasMoreCatalog, loadNextCatalogPage, searchTerm]);
 
     // API Key 存储状态：是否记住（持久化到 localStorage）
     const [rememberApiKey, setRememberApiKey] = useState(() => {
@@ -378,11 +408,27 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     };
 
     const availableArtists = useMemo(() => {
-        const catalogEntries = searchTerm.trim() ? catalogSearchResults : popularCatalogArtists;
-        const byName = new Map<string, Artist>();
+        const catalogEntries = searchTerm.trim() ? catalogSearchResults : loadedCatalogArtists;
+        const catalogByName = new Map(catalogEntries.map(entry => [entry.name.toLowerCase(), entry]));
+        const included = new Set<string>();
+        const result: Artist[] = [];
+
+        for (const artist of [...(artistsData || [])].sort((a, b) => a.name.localeCompare(b.name))) {
+            const key = artist.name.toLowerCase();
+            const catalogEntry = catalogByName.get(key);
+            included.add(key);
+            result.push({
+                ...artist,
+                chineseName: catalogEntry?.chinese,
+                postCount: catalogEntry?.postCount,
+                catalogOnly: false
+            });
+        }
 
         for (const entry of catalogEntries) {
-            byName.set(entry.name.toLowerCase(), {
+            const key = entry.name.toLowerCase();
+            if (included.has(key)) continue;
+            result.push({
                 id: catalogArtistId(entry.name),
                 name: entry.name,
                 imageUrl: '',
@@ -393,20 +439,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
             });
         }
 
-        for (const artist of artistsData || []) {
-            const key = artist.name.toLowerCase();
-            const catalogArtist = byName.get(key);
-            byName.set(key, {
-                ...catalogArtist,
-                ...artist,
-                chineseName: catalogArtist?.chineseName,
-                postCount: catalogArtist?.postCount,
-                catalogOnly: false
-            });
-        }
-
-        return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
-    }, [artistsData, catalogSearchResults, popularCatalogArtists, searchTerm]);
+        return result;
+    }, [artistsData, catalogSearchResults, loadedCatalogArtists, searchTerm]);
 
     // MEMOIZED Filtered Artists to prevent stutter during layout changes
     const filteredArtists = useMemo(() => {
@@ -482,19 +516,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
         setShowImport(false);
         setImportText('');
         notify(`已导入 ${newItems.length} 位画师`);
-    };
-
-    const scrollToLetter = (char: string) => {
-        // Scroll within the container instead of window to avoid hiding toolbar
-        const container = scrollContainerRef.current;
-        if (!container) return;
-
-        const el = document.getElementById(`anchor-${char}`);
-        if (el) {
-            // Calculate offset relative to container
-            const topPos = el.offsetTop - container.offsetTop;
-            container.scrollTo({ top: topPos, behavior: 'smooth' });
-        }
     };
 
     // --- Config Modal Logic (Refactored to separate component) ---
@@ -902,7 +923,9 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
                 <div className="flex justify-between items-center flex-wrap gap-2">
                     <div className="text-xs text-gray-500 dark:text-gray-400" title="画师名称来自每日更新的中英对照 Tag 词库；预览图保存在本地">
-                        本地预览 {artistsData?.length || 0} · 画师目录 {artistCatalogCount.toLocaleString('zh-CN')}
+                        {searchTerm.trim() ? '搜索结果' : '当前显示'} {filteredArtists.length.toLocaleString('zh-CN')}
+                        {' · '}完整目录 {artistCatalogCount.toLocaleString('zh-CN')}
+                        {' · '}本地预览 {artistsData?.length || 0}
                     </div>
                     {/* View Toggle (Only show in Grid mode, or keep for general settings) */}
                     {layoutMode === 'grid' && (
@@ -1026,21 +1049,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
             {/* ... rest of the component (sidebar, main content, lightbox, logs, modals) remains mostly the same, 
           only ensure variable names match and the file is complete ... */}
 
-            {/* --- A-Z Navigation Sidebar (Moved to LEFT) --- */}
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 z-20 hidden md:flex flex-col gap-0.5 bg-white/80 dark:bg-gray-800/80 backdrop-blur rounded-r-lg p-1 shadow-lg border border-l-0 border-gray-200 dark:border-gray-700 max-h-[80%] overflow-y-auto no-scrollbar">
-                {ALPHABET.map(char => (
-                    <button
-                        key={char}
-                        onClick={() => scrollToLetter(char)}
-                        className="text-[10px] w-5 h-5 flex items-center justify-center rounded hover:bg-indigo-100 dark:hover:bg-indigo-900 text-gray-500 dark:text-gray-400 font-bold"
-                    >
-                        {char}
-                    </button>
-                ))}
-            </div>
-
             {/* --- Main Content Area --- */}
-            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-6 md:pl-14 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
+            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
                 {isLoading && (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-50/80 dark:bg-gray-900/80 z-20">
                         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
@@ -1056,9 +1066,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                         {filteredArtists.map((artist, idx) => {
                             const isSelected = !!cart.find(c => c.name === artist.name);
                             const isFav = favorites.has(artist.name);
-                            const prevChar = idx > 0 ? getGroupChar(filteredArtists[idx - 1].name) : '';
-                            const currChar = getGroupChar(artist.name);
-                            const isAnchor = currChar !== prevChar;
                             let displayImg = artist.imageUrl || artist.benchmarks?.[0] || artist.previewUrl || '';
                             let isBenchmarkMissing = false;
 
@@ -1079,7 +1086,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                             return (
                                 <div
                                     key={artist.id}
-                                    id={isAnchor ? `anchor-${currChar}` : undefined}
                                     className={`group relative bg-white dark:bg-gray-800 rounded-xl overflow-hidden border transition-all cursor-pointer shadow-sm hover:shadow-lg ${isSelected ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500'}`}
                                     onClick={() => toggleCart(artist.name)}
                                 >
@@ -1173,14 +1179,10 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                         {filteredArtists.map((artist, idx) => {
                             const isSelected = !!cart.find(c => c.name === artist.name);
                             const isFav = favorites.has(artist.name);
-                            const prevChar = idx > 0 ? getGroupChar(filteredArtists[idx - 1].name) : '';
-                            const currChar = getGroupChar(artist.name);
-                            const isAnchor = currChar !== prevChar;
 
                             return (
                                 <div
                                     key={artist.id}
-                                    id={isAnchor ? `anchor-${currChar}` : undefined}
                                     className={`bg-white dark:bg-gray-800 rounded-xl border p-4 shadow-sm ${isSelected ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500' : 'border-gray-200 dark:border-gray-700'}`}
                                     onClick={() => toggleCart(artist.name)}
                                 >
@@ -1289,6 +1291,18 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                                 </div>
                             );
                         })}
+                    </div>
+                )}
+
+                {!searchTerm.trim() && (
+                    <div ref={catalogSentinelRef} className="flex min-h-20 items-center justify-center py-6 text-sm text-gray-400">
+                        {isLoadingMoreCatalog ? (
+                            <span className="flex items-center gap-2"><span className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />正在加载更多画师…</span>
+                        ) : hasMoreCatalog ? (
+                            <button type="button" onClick={() => void loadNextCatalogPage()} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">继续向下滚动加载更多</button>
+                        ) : artistCatalogCount > 0 ? (
+                            <span>已加载完整画师目录</span>
+                        ) : null}
                     </div>
                 )}
             </div>

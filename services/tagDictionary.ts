@@ -10,6 +10,8 @@ interface TagDictionaryManifest {
   chineseShards: Record<string, string>;
   popular: Record<string, TagDictionaryEntry[]>;
   popularArtists: TagDictionaryEntry[];
+  artistPageSize: number;
+  artistPages: string[];
 }
 
 export interface TagSuggestion {
@@ -139,6 +141,45 @@ export const getPopularArtistDictionary = async (limit = 500): Promise<ArtistDic
 export const getArtistDictionaryCount = async () => {
   const manifest = await loadManifest();
   return manifest.categoryCounts?.artist || 0;
+};
+
+export interface ArtistDictionaryPage {
+  entries: ArtistDictionaryEntry[];
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  total: number;
+}
+
+export const getArtistDictionaryPage = async (page: number): Promise<ArtistDictionaryPage> => {
+  const manifest = await loadManifest();
+  const normalizedPage = Math.max(0, Math.trunc(page));
+  const filename = manifest.artistPages?.[normalizedPage];
+  let entries: TagDictionaryEntry[] = [];
+
+  if (filename) {
+    const cacheKey = `artist-page:${normalizedPage}`;
+    if (!shardPromises.has(cacheKey)) {
+      shardPromises.set(cacheKey, fetch(`/tag-data/artist-pages/${filename}?v=${encodeURIComponent(manifest.generatedAt)}`)
+        .then(response => {
+          if (!response.ok) throw new Error(`Artist dictionary page failed: ${response.status}`);
+          return response.json() as Promise<TagDictionaryEntry[]>;
+        })
+        .catch(error => {
+          shardPromises.delete(cacheKey);
+          throw error;
+        }));
+    }
+    entries = await shardPromises.get(cacheKey)!;
+  }
+
+  return {
+    entries: entries.map(mapArtistEntry),
+    page: normalizedPage,
+    pageCount: manifest.artistPages?.length || 0,
+    pageSize: manifest.artistPageSize || 500,
+    total: manifest.categoryCounts?.artist || 0
+  };
 };
 
 export const searchArtistDictionary = async (rawQuery: string, limit = 200): Promise<ArtistDictionaryEntry[]> => {

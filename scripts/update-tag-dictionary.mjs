@@ -40,7 +40,7 @@ async function readCurrentSourceMetadata() {
   try {
     const manifest = JSON.parse(await readFile(MANIFEST_FILE, 'utf8'));
     return {
-      canSkipRegeneration: Number(manifest.version) >= 3 && Array.isArray(manifest.popularArtists),
+      canSkipRegeneration: Number(manifest.version) >= 4 && Array.isArray(manifest.artistPages),
       validators: manifest.sourceValidators || {
         [manifest.sourceDownloadUrl || TRANSLATION_DATABASE_URL]: {
           etag: manifest.sourceEtag || '',
@@ -144,6 +144,20 @@ async function writeShards(shards, directoryName) {
   return shardMap;
 }
 
+async function writeArtistPages(entries, pageSize = 500) {
+  const directory = path.join(OUTPUT_DIR, 'artist-pages');
+  await mkdir(directory, { recursive: true });
+  const pages = [];
+
+  for (let offset = 0; offset < entries.length; offset += pageSize) {
+    const filename = `${String(pages.length).padStart(4, '0')}.json`;
+    await writeFile(path.join(directory, filename), JSON.stringify(entries.slice(offset, offset + pageSize)));
+    pages.push(filename);
+  }
+
+  return { pages, pageSize };
+}
+
 async function main() {
   const temporaryDatabase = path.join(tmpdir(), `nai-tag-translation-${process.pid}.sqlite`);
   let database;
@@ -222,13 +236,14 @@ async function main() {
       popular[prefix] = entries.sort(rankEntries).slice(0, 24);
     }
 
-    const popularArtists = [...deduplicated.values()]
+    const rankedArtists = [...deduplicated.values()]
       .filter(entry => entry[2] === 1)
-      .sort(rankEntries)
-      .slice(0, 1000);
+      .sort(rankEntries);
+    const popularArtists = rankedArtists.slice(0, 1000);
+    const artistPagination = await writeArtistPages(rankedArtists);
 
     const manifest = {
-      version: 3,
+      version: 4,
       generatedAt: new Date().toISOString(),
       sourceDownloadUrl: sourceMetadata.downloadUrl,
       sourceValidators: sourceMetadata.validators,
@@ -243,7 +258,9 @@ async function main() {
       shards: shardMap,
       chineseShards: chineseShardMap,
       popular,
-      popularArtists
+      popularArtists,
+      artistPageSize: artistPagination.pageSize,
+      artistPages: artistPagination.pages
     };
 
     await writeFile(path.join(OUTPUT_DIR, 'manifest.json'), JSON.stringify(manifest));
