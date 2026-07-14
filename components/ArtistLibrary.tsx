@@ -6,7 +6,7 @@ import { api } from '../services/api'; // Import api for updating
 import { db } from '../services/dbService'; // Import DB to fetch config
 import { ArtistLibraryConfig } from './ArtistLibraryConfig';
 import { ArtistLibraryCart } from './ArtistLibraryCart';
-import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryPage, searchArtistDictionary } from '../services/tagDictionary';
+import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryEntriesAt, getArtistDictionaryPage, searchArtistDictionary } from '../services/tagDictionary';
 
 interface CartItem {
     name: string;
@@ -139,6 +139,8 @@ interface LogEntry {
     type: 'success' | 'error' | 'info';
 }
 
+type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
+
 export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleTheme, artistsData, onRefresh, notify, currentUser }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
@@ -171,7 +173,18 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     const [showHistory, setShowHistory] = useState(false);
     const [showImport, setShowImport] = useState(false);
     const [importText, setImportText] = useState('');
-    const [gachaCount, setGachaCount] = useState(3);
+    const [gachaCount, setGachaCount] = useState<6 | 12 | 24>(() => {
+        const saved = Number(localStorage.getItem('nai_artist_gacha_count'));
+        return saved === 6 || saved === 24 ? saved : 12;
+    });
+    const [gachaMode, setGachaMode] = useState<ArtistGachaMode>(() => {
+        const saved = localStorage.getItem('nai_artist_gacha_mode');
+        return saved === 'uniform' || saved === 'popular' ? saved : 'mixed';
+    });
+    const [gachaArtists, setGachaArtists] = useState<ArtistDictionaryEntry[] | null>(null);
+    const [isGachaLoading, setIsGachaLoading] = useState(false);
+    const recentGachaIndicesRef = useRef<number[][]>([]);
+    const catalogScrollTopRef = useRef(0);
 
     // Layout State
     const [layoutMode, setLayoutMode] = useState<'grid' | 'list'>('grid');
@@ -328,7 +341,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     }, [artistSort, searchTerm]);
 
     useEffect(() => {
-        if (searchTerm.trim() || !hasMoreCatalog) return;
+        if (searchTerm.trim() || gachaArtists || !hasMoreCatalog) return;
         const sentinel = catalogSentinelRef.current;
         const root = scrollContainerRef.current;
         if (!sentinel || !root) return;
@@ -338,7 +351,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
         }, { root, rootMargin: '800px 0px' });
         observer.observe(sentinel);
         return () => observer.disconnect();
-    }, [hasMoreCatalog, loadNextCatalogPage, searchTerm]);
+    }, [gachaArtists, hasMoreCatalog, loadNextCatalogPage, searchTerm]);
 
     // API Key 存储状态：是否记住（持久化到 localStorage）
     const [rememberApiKey, setRememberApiKey] = useState(() => {
@@ -432,7 +445,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     };
 
     const availableArtists = useMemo(() => {
-        const catalogEntries = searchTerm.trim() ? catalogSearchResults : loadedCatalogArtists;
+        const catalogEntries = searchTerm.trim() ? catalogSearchResults : (gachaArtists || loadedCatalogArtists);
         const persistedByName = new Map((artistsData || []).map(artist => [artist.name.toLowerCase(), artist]));
         const included = new Set<string>();
         const result: Artist[] = [];
@@ -453,17 +466,19 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
             });
         }
 
-        for (const artist of [...(artistsData || [])].sort((a, b) => a.name.localeCompare(b.name))) {
-            const key = artist.name.toLowerCase();
-            if (included.has(key)) continue;
-            result.push({
-                ...artist,
-                catalogOnly: false
-            });
+        if (!gachaArtists) {
+            for (const artist of [...(artistsData || [])].sort((a, b) => a.name.localeCompare(b.name))) {
+                const key = artist.name.toLowerCase();
+                if (included.has(key)) continue;
+                result.push({
+                    ...artist,
+                    catalogOnly: false
+                });
+            }
         }
 
         return result;
-    }, [artistsData, catalogSearchResults, loadedCatalogArtists, searchTerm]);
+    }, [artistsData, catalogSearchResults, gachaArtists, loadedCatalogArtists, searchTerm]);
 
     // MEMOIZED Filtered Artists to prevent stutter during layout changes
     const filteredArtists = useMemo(() => {
@@ -479,21 +494,55 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
     // --- New Features Logic ---
 
-    const gacha = () => {
-        const pool = showFavOnly ? availableArtists.filter(a => favorites.has(a.name)) : availableArtists;
-        if (pool.length === 0) return;
+    const drawGachaIndex = (mode: ArtistGachaMode, total: number) => {
+        if (mode === 'uniform') return Math.floor(Math.random() * total);
+        if (mode === 'popular') return Math.min(total - 1, Math.floor(Math.pow(Math.random(), 2.3) * total));
+        const activePoolSize = Math.min(20_000, total);
+        return Math.random() < 0.7
+            ? Math.floor(Math.random() * activePoolSize)
+            : Math.floor(Math.random() * total);
+    };
 
-        // Pick random count
-        const count = Math.min(Math.max(1, gachaCount), 50);
-        const newCart = [...cart];
+    const drawGacha = async () => {
+        if (artistCatalogCount <= 0 || isGachaLoading) return;
+        if (!gachaArtists) catalogScrollTopRef.current = scrollContainerRef.current?.scrollTop || 0;
 
-        for (let i = 0; i < count; i++) {
-            const randomArtist = pool[Math.floor(Math.random() * pool.length)];
-            if (!newCart.find(c => c.name === randomArtist.name)) {
-                newCart.push({ name: randomArtist.name, weight: 0 });
+        setIsGachaLoading(true);
+        setSearchTerm('');
+        setShowFavOnly(false);
+        localStorage.setItem('nai_artist_gacha_mode', gachaMode);
+        localStorage.setItem('nai_artist_gacha_count', String(gachaCount));
+
+        try {
+            const recentIndices = new Set(recentGachaIndicesRef.current.flat());
+            const selectedIndices = new Set<number>();
+            let attempts = 0;
+            while (selectedIndices.size < gachaCount && attempts < 10_000) {
+                attempts += 1;
+                const index = drawGachaIndex(gachaMode, artistCatalogCount);
+                if (!recentIndices.has(index)) selectedIndices.add(index);
             }
+            while (selectedIndices.size < gachaCount) {
+                selectedIndices.add(drawGachaIndex(gachaMode, artistCatalogCount));
+            }
+
+            const indices = [...selectedIndices];
+            const artists = await getArtistDictionaryEntriesAt(indices);
+            setGachaArtists(artists);
+            recentGachaIndicesRef.current = [...recentGachaIndicesRef.current, indices].slice(-5);
+            scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+        } catch (error) {
+            console.warn('Artist gacha failed:', error);
+            notify('抽卡失败，请稍后重试', 'error');
+        } finally {
+            setIsGachaLoading(false);
         }
-        setCart(newCart);
+    };
+
+    const returnToCatalog = () => {
+        setSearchTerm('');
+        setGachaArtists(null);
+        requestAnimationFrame(() => scrollContainerRef.current?.scrollTo({ top: catalogScrollTopRef.current }));
     };
 
     const handleImport = () => {
@@ -946,15 +995,60 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
                 <div className="flex justify-between items-center flex-wrap gap-2">
                     <div className="text-xs text-gray-500 dark:text-gray-400" title="画师名称来自每日更新的中英对照 Tag 词库；预览图保存在本地">
-                        {searchTerm.trim() ? '搜索结果' : '当前显示'} {filteredArtists.length.toLocaleString('zh-CN')}
+                        {searchTerm.trim() ? '搜索结果' : gachaArtists ? '抽卡结果' : '当前显示'} {filteredArtists.length.toLocaleString('zh-CN')}
                         {' · '}完整目录 {artistCatalogCount.toLocaleString('zh-CN')}
                         {' · '}本地预览 {artistsData?.length || 0}
+                    </div>
+                    <div className="flex items-center gap-1 rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-1 dark:border-fuchsia-900/60 dark:bg-fuchsia-950/30">
+                        <select
+                            value={gachaMode}
+                            onChange={event => setGachaMode(event.target.value as ArtistGachaMode)}
+                            className="rounded-md bg-transparent px-1.5 py-1 text-xs text-fuchsia-700 outline-none dark:text-fuchsia-300"
+                            aria-label="抽卡模式"
+                            title="选择画师抽卡模式"
+                        >
+                            <option value="mixed">惊喜混合</option>
+                            <option value="uniform">完全随机</option>
+                            <option value="popular">热门画师</option>
+                        </select>
+                        <select
+                            value={gachaCount}
+                            onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)}
+                            className="rounded-md bg-transparent px-1 py-1 text-xs text-fuchsia-700 outline-none dark:text-fuchsia-300"
+                            aria-label="抽卡数量"
+                            title="选择每批抽取数量"
+                        >
+                            <option value={6}>6 位</option>
+                            <option value={12}>12 位</option>
+                            <option value={24}>24 位</option>
+                        </select>
+                        <button
+                            type="button"
+                            onClick={() => void drawGacha()}
+                            disabled={isGachaLoading || artistCatalogCount <= 0}
+                            className="flex items-center gap-1 rounded-md bg-fuchsia-600 px-2.5 py-1 text-xs font-bold text-white shadow-sm transition-colors hover:bg-fuchsia-500 disabled:cursor-wait disabled:opacity-60"
+                            title="从完整画师目录随机抽取，最近五批尽量不重复"
+                        >
+                            <span className={isGachaLoading ? 'animate-spin' : ''}>{isGachaLoading ? '◌' : '🎲'}</span>
+                            {gachaArtists ? '再抽一批' : '随机抽卡'}
+                        </button>
+                        {gachaArtists && (
+                            <button
+                                type="button"
+                                onClick={returnToCatalog}
+                                className="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800"
+                                title="返回抽卡前的目录位置"
+                            >
+                                返回目录
+                            </button>
+                        )}
                     </div>
                     <select
                         value={artistSort}
                         onChange={event => setArtistSort(event.target.value as ArtistDictionarySort)}
-                        className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 outline-none hover:border-indigo-400 focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
-                        title="画师目录排序"
+                        disabled={!!gachaArtists}
+                        className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 outline-none hover:border-indigo-400 focus:border-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
+                        title={gachaArtists ? '返回目录后可调整排序' : '画师目录排序'}
                     >
                         <option value="popular">热度：高到低</option>
                         <option value="least">热度：低到高</option>
@@ -1330,7 +1424,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                     </div>
                 )}
 
-                {!searchTerm.trim() && (
+                {!searchTerm.trim() && !gachaArtists && (
                     <div ref={catalogSentinelRef} className="flex min-h-20 items-center justify-center py-6 text-sm text-gray-400">
                         {isLoadingMoreCatalog ? (
                             <span className="flex items-center gap-2"><span className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />正在加载更多画师…</span>

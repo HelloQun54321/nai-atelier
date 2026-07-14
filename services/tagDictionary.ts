@@ -191,6 +191,30 @@ export const getArtistDictionaryPage = async (page: number, sort: ArtistDictiona
   };
 };
 
+export const getArtistDictionaryEntriesAt = async (indices: number[]): Promise<ArtistDictionaryEntry[]> => {
+  if (indices.length === 0) return [];
+
+  const manifest = await loadManifest();
+  const pageSize = manifest.artistPageSize || 500;
+  const total = manifest.categoryCounts?.artist || 0;
+  const validIndices = [...new Set(indices)]
+    .map(index => Math.trunc(index))
+    .filter(index => index >= 0 && index < total);
+  const pageNumbers = [...new Set(validIndices.map(index => Math.floor(index / pageSize)))];
+  const pages = new Map<number, ArtistDictionaryEntry[]>();
+
+  await Promise.all(pageNumbers.map(async pageNumber => {
+    const page = await getArtistDictionaryPage(pageNumber, 'popular');
+    pages.set(pageNumber, page.entries);
+  }));
+
+  return validIndices.flatMap(index => {
+    const pageNumber = Math.floor(index / pageSize);
+    const entry = pages.get(pageNumber)?.[index % pageSize];
+    return entry ? [entry] : [];
+  });
+};
+
 export const searchArtistDictionary = async (rawQuery: string, limit = 200, sort: ArtistDictionarySort = 'popular'): Promise<ArtistDictionaryEntry[]> => {
   const query = normalizeTagQuery(rawQuery);
   if (!query) return getPopularArtistDictionary(limit);
