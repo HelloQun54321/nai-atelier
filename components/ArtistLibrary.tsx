@@ -192,6 +192,15 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     // View Settings
     // Grid: Columns (3-15)
     const [gridCols, setGridCols] = useState(6);
+    const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
+
+    useEffect(() => {
+        const media = window.matchMedia('(max-width: 767px)');
+        const sync = () => setIsMobileViewport(media.matches);
+        sync();
+        media.addEventListener('change', sync);
+        return () => media.removeEventListener('change', sync);
+    }, []);
     // List: Image Width (px)
     const [listImgWidth, setListImgWidth] = useState(128);
 
@@ -1206,7 +1215,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                     /* --- GRID LAYOUT (Dynamic Columns using gridCols) --- */
                     <div
                         className="grid gap-2 md:gap-4 md:pr-6 transition-all"
-                        style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}
+                        style={{ gridTemplateColumns: `repeat(${isMobileViewport ? 2 : gridCols}, minmax(0, 1fr))` }}
                     >
                         {filteredArtists.map((artist, idx) => {
                             const isSelected = !!cart.find(c => c.name === artist.name);

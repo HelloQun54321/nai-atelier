@@ -1,12 +1,44 @@
 import { spawn, execSync } from 'child_process';
-import { existsSync, readdirSync, statSync } from 'fs';
-import { platform } from 'os';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'fs';
+import { randomBytes, randomInt } from 'crypto';
+import { networkInterfaces, platform } from 'os';
 import { startTagUpdateServer } from './tag-update-server.mjs';
 
 const IS_WINDOWS = platform() === 'win32';
 const IS_TERMUX = process.env.TERMUX_VERSION || existsSync('/data/data/com.termux');
 const LOCAL_URL = 'http://127.0.0.1:3000';
 const DISPLAY_URL = 'http://localhost:3000';
+const LAN_CONFIG_FILE = 'local-data/lan-access.json';
+
+function loadLanAccessConfig() {
+  try {
+    const saved = JSON.parse(readFileSync(LAN_CONFIG_FILE, 'utf8'));
+    if (/^\d{4}$/.test(saved.pin) && typeof saved.secret === 'string' && saved.secret.length >= 32) return saved;
+  } catch {
+    // Generate the local-only config below.
+  }
+  mkdirSync('local-data', { recursive: true });
+  const config = {
+    pin: String(randomInt(0, 10_000)).padStart(4, '0'),
+    secret: randomBytes(32).toString('base64url'),
+  };
+  writeFileSync(LAN_CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+  return config;
+}
+
+function getLanUrls() {
+  const addresses = [];
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries || []) {
+      if (entry.family !== 'IPv4' || entry.internal) continue;
+      if (/^(169\.254|0\.)/.test(entry.address)) continue;
+      addresses.push(entry.address);
+    }
+  }
+  const unique = [...new Set(addresses)];
+  unique.sort((a, b) => Number(!/^192\.168\./.test(a)) - Number(!/^192\.168\./.test(b)));
+  return unique.map(address => `http://${address}:3000`);
+}
 
 function checkCommand(cmd) {
   try {
@@ -118,9 +150,18 @@ async function openWhenReady() {
 }
 
 function startServer() {
+  const lanAccess = loadLanAccessConfig();
+  const lanUrls = getLanUrls();
   console.log('\x1b[32m启动本地服务 (端口 3000)...\x1b[0m');
   console.log('\x1b[90m数据存储位置: ./local-data/\x1b[0m');
-  console.log('\x1b[90m访问地址: http://localhost:3000\x1b[0m');
+  console.log('\x1b[90m电脑访问地址: http://localhost:3000\x1b[0m');
+  if (lanUrls.length > 0) {
+    console.log('\x1b[36m手机访问地址:\x1b[0m');
+    lanUrls.forEach(url => console.log(`  ${url}`));
+    console.log(`\x1b[33m局域网四位密码: ${lanAccess.pin}\x1b[0m`);
+  } else {
+    console.log('\x1b[33m未检测到可用的家庭网络地址。\x1b[0m');
+  }
   console.log('');
   
   const args = [
@@ -128,6 +169,9 @@ function startServer() {
     '--persist-to', './local-data',
     '--binding', 'LOCAL_HISTORY_ENABLED=true',
     '--binding', 'PERSONAL_MODE_ENABLED=true',
+    '--binding', `LAN_ACCESS_PIN=${lanAccess.pin}`,
+    '--binding', `LAN_ACCESS_SECRET=${lanAccess.secret}`,
+    '--ip', '0.0.0.0',
     '--port', '3000',
     '--compatibility-date', '2024-04-01',
     '--show-interactive-dev-session=false'

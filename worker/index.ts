@@ -45,6 +45,8 @@ interface Env {
   R2_PUBLIC_URL?: string; // Kept for legacy compatibility if needed
   LOCAL_HISTORY_ENABLED?: string;
   PERSONAL_MODE_ENABLED?: string;
+  LAN_ACCESS_PIN?: string;
+  LAN_ACCESS_SECRET?: string;
   // GUEST_PASSCODE removed, now stored in DB
 }
 
@@ -108,6 +110,62 @@ const AITAG_CACHE_DELAY_MIN_MS = 800;
 const AITAG_CACHE_DELAY_MAX_MS = 1200;
 const AITAG_CONFIG_VERSION = '260528a';
 const LOG_STRING_LIMIT = 600;
+const LAN_ACCESS_COOKIE = 'nai_lan_access';
+const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+const lanAccessAttempts = new Map<string, { failures: number; blockedUntil: number }>();
+
+const isLoopbackHostname = (hostname: string) => {
+  const normalized = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1';
+};
+
+const encodeBase64Url = (bytes: Uint8Array) => {
+  let binary = '';
+  bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '');
+};
+
+const signLanAccessValue = async (value: string, secret: string) => {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value));
+  return encodeBase64Url(new Uint8Array(signature));
+};
+
+const createLanAccessToken = async (secret: string) => {
+  const expiresAt = Date.now() + LAN_SESSION_MAX_AGE_SECONDS * 1000;
+  const nonce = crypto.randomUUID();
+  const value = `${expiresAt}.${nonce}`;
+  return `${value}.${await signLanAccessValue(value, secret)}`;
+};
+
+const hasValidLanAccess = async (request: Request, secret: string) => {
+  if (!secret) return false;
+  const token = parseCookies(request)[LAN_ACCESS_COOKIE];
+  if (!token) return false;
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  const [expiresAt, nonce, signature] = parts;
+  if (!/^\d+$/.test(expiresAt) || Number(expiresAt) <= Date.now() || !nonce || !signature) return false;
+  const expected = await signLanAccessValue(`${expiresAt}.${nonce}`, secret);
+  if (expected.length !== signature.length) return false;
+  let difference = 0;
+  for (let index = 0; index < expected.length; index++) difference |= expected.charCodeAt(index) ^ signature.charCodeAt(index);
+  return difference === 0;
+};
+
+const getLanAttemptKey = (request: Request) =>
+  request.headers.get('CF-Connecting-IP') ||
+  request.headers.get('X-Forwarded-For') ||
+  request.headers.get('User-Agent') ||
+  'lan-device';
+
+const lanAccessRequired = () => json({ error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' }, 401);
 
 const clampInt = (value: string | null, fallback: number, min: number, max: number) => {
   const parsed = Number.parseInt(value || '', 10);
@@ -1836,8 +1894,57 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
+    const isLocalComputer = isLoopbackHostname(url.hostname);
+    const isLanAuthorized = isLocalComputer || await hasValidLanAccess(request, env.LAN_ACCESS_SECRET || '');
 
-    // --- R2 Asset Proxy Route (Allow public GET access) ---
+    if (path === '/api/lan/status' && method === 'GET') {
+      return json({ required: !isLocalComputer, authorized: isLanAuthorized });
+    }
+
+    if (path === '/api/lan/unlock' && method === 'POST') {
+      if (isLocalComputer) return json({ success: true, authorized: true });
+      const configuredPin = String(env.LAN_ACCESS_PIN || '');
+      const secret = String(env.LAN_ACCESS_SECRET || '');
+      if (!/^\d{4}$/.test(configuredPin) || secret.length < 16) {
+        return error('局域网访问密码尚未正确配置，请重新启动电脑端服务', 503);
+      }
+
+      const attemptKey = getLanAttemptKey(request);
+      const attempt = lanAccessAttempts.get(attemptKey) || { failures: 0, blockedUntil: 0 };
+      if (attempt.blockedUntil > Date.now()) {
+        return json({ error: '尝试次数过多，请一分钟后再试', code: 'LAN_ACCESS_BLOCKED', retryAfter: Math.ceil((attempt.blockedUntil - Date.now()) / 1000) }, 429);
+      }
+
+      const payload = await request.json().catch(() => ({})) as { pin?: string };
+      if (!/^\d{4}$/.test(payload.pin || '') || payload.pin !== configuredPin) {
+        const failures = attempt.failures + 1;
+        const blockedUntil = failures >= 5 ? Date.now() + 60_000 : 0;
+        lanAccessAttempts.set(attemptKey, { failures: blockedUntil ? 0 : failures, blockedUntil });
+        return json({
+          error: blockedUntil ? '连续输错5次，请一分钟后再试' : '密码不正确',
+          code: blockedUntil ? 'LAN_ACCESS_BLOCKED' : 'LAN_ACCESS_DENIED',
+          attemptsRemaining: blockedUntil ? 0 : 5 - failures,
+        }, blockedUntil ? 429 : 401);
+      }
+
+      lanAccessAttempts.delete(attemptKey);
+      const token = await createLanAccessToken(secret);
+      return json({ success: true, authorized: true }, 200, {
+        'Set-Cookie': `${LAN_ACCESS_COOKIE}=${token}; Max-Age=${LAN_SESSION_MAX_AGE_SECONDS}; Path=/; HttpOnly; SameSite=Strict`,
+      });
+    }
+
+    if (path === '/api/lan/lock' && method === 'POST') {
+      return json({ success: true }, 200, {
+        'Set-Cookie': `${LAN_ACCESS_COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict`,
+      });
+    }
+
+    if (!isLanAuthorized && path.startsWith('/api/')) {
+      return lanAccessRequired();
+    }
+
+    // --- R2 Asset Proxy Route (LAN sessions are checked above) ---
     if (path.startsWith('/api/assets/') && method === 'GET') {
         if (!env.BUCKET) return error('Bucket not configured', 503);
         const rawKey = path.replace('/api/assets/', '');
@@ -1936,6 +2043,13 @@ export default {
 
       if (env.PERSONAL_MODE_ENABLED !== 'true') {
         return error('This personal build only supports local operation', 403);
+      }
+
+      try {
+        await db.prepare('SELECT 1 FROM users LIMIT 1').first();
+        await db.prepare('SELECT 1 FROM settings LIMIT 1').first();
+      } catch {
+        await initDB();
       }
 
       await removeLegacyLoggingStorage(db);

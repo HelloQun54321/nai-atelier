@@ -7,6 +7,27 @@
   --color-gray-950: #171923;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  overscroll-behavior: none;
+}
+
+@media (max-width: 767px) {
+  button,
+  select,
+  input[type="range"] {
+    touch-action: manipulation;
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+}
+
 /* VIP 用户样式 */
 .vip-username {
   background: linear-gradient(

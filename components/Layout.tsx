@@ -18,6 +18,7 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentView, activeView = currentView, isDark, toggleTheme, safeMode, toggleSafeMode, toast, hideNav, notify }) => {
   const [showSettings, setShowSettings] = useState(false);
+  const [showMobileMore, setShowMobileMore] = useState(false);
   const navItems = [
     { id: 'list', label: '画师串', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /> },
     { id: 'characters', label: '角色库', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> },
@@ -27,9 +28,18 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { id: 'playground', label: '实验室', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /> }, // Reusing icon for now or use Flask
     { id: 'history', label: '历史', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /> },
   ];
+  const mobilePrimaryIds = new Set(['list', 'characters', 'library', 'playground']);
+  const mobilePrimaryItems = navItems.filter(item => mobilePrimaryIds.has(item.id));
+  const mobileMoreItems = navItems.filter(item => !mobilePrimaryIds.has(item.id));
+  const activeMobileMore = mobileMoreItems.some(item => item.id === activeView);
+  const currentLabel = navItems.find(item => item.id === activeView)?.label || 'NaiPromptManager';
+  const navigateMobile = (id: string) => {
+    setShowMobileMore(false);
+    onNavigate(id as any);
+  };
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans transition-colors duration-300 relative">
+    <div className="relative flex h-[100dvh] bg-gray-50 font-sans text-gray-900 transition-colors duration-300 dark:bg-gray-900 dark:text-gray-100">
 
       {/* Toast Notification */}
       {toast && (
@@ -48,7 +58,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4 z-40">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-white text-sm shadow-md">N</div>
-          <span className="font-bold text-gray-800 dark:text-gray-200 text-sm">NAI Manager</span>
+          <div className="min-w-0">
+            <div className="truncate text-[10px] font-medium uppercase tracking-wider text-gray-400">NAI Manager</div>
+            <div className="truncate text-sm font-bold text-gray-800 dark:text-gray-200">{currentLabel}</div>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -132,18 +145,42 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       </aside>
 
       {/* Main Content (Added pt-14 for mobile header) */}
-      <main className={`flex-1 overflow-hidden flex flex-col relative bg-white dark:bg-gray-900 transition-colors duration-300 ${hideNav ? 'pb-0' : 'pb-16'} md:pb-0 pt-14 md:pt-0`}>
+      <main className={`flex-1 overflow-hidden flex flex-col relative bg-white dark:bg-gray-900 transition-colors duration-300 ${hideNav ? 'pb-0' : 'pb-[calc(4.25rem+env(safe-area-inset-bottom))]'} md:pb-0 pt-14 md:pt-0`}>
         {children}
       </main>
 
       {/* Mobile Bottom Navigation */}
       {!hideNav && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-950 border-t border-gray-200 dark:border-gray-800 flex justify-around items-center h-16 z-50 pb-safe">
-          {navItems.map(item => (
+        <>
+          {showMobileMore && (
+            <div className="md:hidden fixed inset-0 z-[60] bg-black/45 backdrop-blur-sm" onClick={() => setShowMobileMore(false)}>
+              <div className="absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-900" onClick={event => event.stopPropagation()}>
+                <div className="mb-2 flex items-center justify-between px-2 py-1">
+                  <span className="text-sm font-bold text-gray-900 dark:text-white">更多功能</span>
+                  <button onClick={() => setShowMobileMore(false)} className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-xl dark:bg-gray-800" aria-label="关闭更多菜单">×</button>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {mobileMoreItems.map(item => (
+                    <button key={item.id} onClick={() => navigateMobile(item.id)} className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-2xl ${activeView === item.id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>
+                      <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">{item.icon}</svg>
+                      <span className="text-xs font-medium">{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
+                  <button onClick={() => { setShowMobileMore(false); setShowSettings(true); }} className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-2xl bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"><span className="text-xl">⚙️</span><span className="text-[11px]">设置</span></button>
+                  <button onClick={toggleSafeMode} className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-2xl ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="text-xl">🛡️</span><span className="text-[11px]">安全模式</span></button>
+                  <button onClick={toggleTheme} className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-2xl bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"><span className="text-xl">{isDark ? '🌙' : '☀️'}</span><span className="text-[11px]">切换主题</span></button>
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] items-start justify-around border-t border-gray-200 bg-white/95 px-1 pt-1.5 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-gray-800 dark:bg-gray-950/95">
+          {mobilePrimaryItems.map(item => (
             <button
               key={item.id}
-              onClick={() => onNavigate(item.id as any)}
-              className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeView === item.id
+              onClick={() => navigateMobile(item.id)}
+              className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-1 rounded-xl ${activeView === item.id
                   ? 'text-indigo-600 dark:text-indigo-400'
                   : 'text-gray-500 dark:text-gray-500'
                 }`}
@@ -152,7 +189,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
               <span className="text-[10px] font-medium">{item.label}</span>
             </button>
           ))}
+          <button onClick={() => setShowMobileMore(previous => !previous)} className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-1 rounded-xl ${showMobileMore || activeMobileMore ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-500'}`}>
+            <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+            <span className="text-[10px] font-medium">更多</span>
+          </button>
         </div>
+        </>
       )}
 
       <GlobalSettings open={showSettings} onClose={() => setShowSettings(false)} notify={notify} />

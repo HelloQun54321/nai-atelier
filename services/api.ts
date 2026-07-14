@@ -35,8 +35,11 @@ const getHeaders = (extraHeaders?: Record<string, string>) => {
 // Handle response globally
 const handleResponse = async (res: Response) => {
     if (res.status === 401) {
-        // Optional: Trigger global logout or redirect logic if needed
-        // For now, let component handle the error message
+        const cloned = res.clone();
+        const payload = await cloned.json().catch(() => null);
+        if (payload?.code === 'LAN_ACCESS_REQUIRED' && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('nai-lan-access-required'));
+        }
     }
     if (!res.ok) throw new Error(await res.text());
     return res.json();

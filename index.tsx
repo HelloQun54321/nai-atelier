@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ConfirmDialogProvider } from './components/ConfirmDialog';
+import { LanAccessGate } from './components/LanAccessGate';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -11,8 +12,10 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <ConfirmDialogProvider>
-      <App />
-    </ConfirmDialogProvider>
+    <LanAccessGate>
+      <ConfirmDialogProvider>
+        <App />
+      </ConfirmDialogProvider>
+    </LanAccessGate>
   </React.StrictMode>
 );
