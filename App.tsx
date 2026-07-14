@@ -8,6 +8,7 @@ import { InspirationGallery } from './components/InspirationGallery';
 import { GenHistory } from './components/GenHistory';
 import { AitagGallery } from './components/AitagGallery';
 import { useConfirmDialog } from './components/ConfirmDialog';
+import { CharacterLibrary } from './components/CharacterLibrary';
 import { db } from './services/dbService';
 import { PromptChain, User, Artist, Inspiration, ChainType } from './types';
 
@@ -332,16 +333,14 @@ const App = () => {
           isGuest={false}
         />;
       case 'characters':
-        return <ChainList
+        return <CharacterLibrary
           chains={chains}
-          type="character"
           onCreate={handleCreateChain}
           onSelect={(id) => handleNavigate('edit', id)}
           onDelete={handleDelete}
-          onRefresh={() => refreshData(true)}
-          isLoading={loading}
+          onRefresh={async () => { await refreshData(true); }}
+          onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
           notify={notify}
-          isGuest={false}
         />;
       case 'edit':
         const editChain = getSelectedChain();

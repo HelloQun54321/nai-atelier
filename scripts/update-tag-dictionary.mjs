@@ -40,7 +40,11 @@ async function readCurrentSourceMetadata() {
   try {
     const manifest = JSON.parse(await readFile(MANIFEST_FILE, 'utf8'));
     return {
-      canSkipRegeneration: Number(manifest.version) >= 5 && Array.isArray(manifest.artistPages) && Array.isArray(manifest.artistNamePages),
+      canSkipRegeneration: Number(manifest.version) >= 6
+        && Array.isArray(manifest.artistPages)
+        && Array.isArray(manifest.artistNamePages)
+        && Array.isArray(manifest.characterPages)
+        && Array.isArray(manifest.characterNamePages),
       validators: manifest.sourceValidators || {
         [manifest.sourceDownloadUrl || TRANSLATION_DATABASE_URL]: {
           etag: manifest.sourceEtag || '',
@@ -244,8 +248,16 @@ async function main() {
     const artistsByName = [...rankedArtists].sort((a, b) => a[0].localeCompare(b[0], 'en'));
     const artistNamePagination = await writeArtistPages(artistsByName, 'artist-name-pages');
 
+    const rankedCharacters = [...deduplicated.values()]
+      .filter(entry => entry[2] === 4)
+      .sort(rankEntries);
+    const popularCharacters = rankedCharacters.slice(0, 1000);
+    const characterPagination = await writeArtistPages(rankedCharacters, 'character-pages');
+    const charactersByName = [...rankedCharacters].sort((a, b) => a[0].localeCompare(b[0], 'en'));
+    const characterNamePagination = await writeArtistPages(charactersByName, 'character-name-pages');
+
     const manifest = {
-      version: 5,
+      version: 6,
       generatedAt: new Date().toISOString(),
       sourceDownloadUrl: sourceMetadata.downloadUrl,
       sourceValidators: sourceMetadata.validators,
@@ -263,7 +275,11 @@ async function main() {
       popularArtists,
       artistPageSize: artistPagination.pageSize,
       artistPages: artistPagination.pages,
-      artistNamePages: artistNamePagination.pages
+      artistNamePages: artistNamePagination.pages,
+      popularCharacters,
+      characterPageSize: characterPagination.pageSize,
+      characterPages: characterPagination.pages,
+      characterNamePages: characterNamePagination.pages
     };
 
     await writeFile(path.join(OUTPUT_DIR, 'manifest.json'), JSON.stringify(manifest));

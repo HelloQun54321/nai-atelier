@@ -13,6 +13,10 @@ interface TagDictionaryManifest {
   artistPageSize: number;
   artistPages: string[];
   artistNamePages: string[];
+  popularCharacters: TagDictionaryEntry[];
+  characterPageSize: number;
+  characterPages: string[];
+  characterNamePages: string[];
 }
 
 export interface TagSuggestion {
@@ -237,6 +241,106 @@ export const searchArtistDictionary = async (rawQuery: string, limit = 200, sort
   return matchingEntries
     .slice(0, limit)
     .map(mapArtistEntry);
+};
+
+export interface CharacterDictionaryEntry {
+  name: string;
+  chinese: string;
+  postCount: number;
+}
+
+export type CharacterDictionarySort = ArtistDictionarySort;
+
+export interface CharacterDictionaryPage {
+  entries: CharacterDictionaryEntry[];
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  total: number;
+}
+
+const mapCharacterEntry = (entry: TagDictionaryEntry): CharacterDictionaryEntry => ({
+  name: entry[0],
+  chinese: entry[1],
+  postCount: entry[3]
+});
+
+export const getCharacterDictionaryPage = async (page: number, sort: CharacterDictionarySort = 'popular'): Promise<CharacterDictionaryPage> => {
+  const manifest = await loadManifest();
+  const normalizedPage = Math.max(0, Math.trunc(page));
+  const isNameSort = sort === 'name-asc' || sort === 'name-desc';
+  const isReverse = sort === 'least' || sort === 'name-desc';
+  const pageFiles = (isNameSort ? manifest.characterNamePages : manifest.characterPages) || [];
+  const physicalPage = isReverse ? pageFiles.length - 1 - normalizedPage : normalizedPage;
+  const filename = pageFiles[physicalPage];
+  let entries: TagDictionaryEntry[] = [];
+
+  if (filename) {
+    const directory = isNameSort ? 'character-name-pages' : 'character-pages';
+    const cacheKey = `${directory}:${physicalPage}`;
+    if (!shardPromises.has(cacheKey)) {
+      shardPromises.set(cacheKey, fetch(`/tag-data/${directory}/${filename}?v=${encodeURIComponent(manifest.generatedAt)}`)
+        .then(response => {
+          if (!response.ok) throw new Error(`Character dictionary page failed: ${response.status}`);
+          return response.json() as Promise<TagDictionaryEntry[]>;
+        })
+        .catch(error => {
+          shardPromises.delete(cacheKey);
+          throw error;
+        }));
+    }
+    entries = await shardPromises.get(cacheKey)!;
+    if (isReverse) entries = [...entries].reverse();
+  }
+
+  return {
+    entries: entries.map(mapCharacterEntry),
+    page: normalizedPage,
+    pageCount: pageFiles.length,
+    pageSize: manifest.characterPageSize || 500,
+    total: manifest.categoryCounts?.character || 0
+  };
+};
+
+export const getCharacterDictionaryEntriesAt = async (indices: number[]): Promise<CharacterDictionaryEntry[]> => {
+  if (indices.length === 0) return [];
+  const manifest = await loadManifest();
+  const pageSize = manifest.characterPageSize || 500;
+  const total = manifest.categoryCounts?.character || 0;
+  const validIndices = [...new Set(indices.map(index => Math.trunc(index)).filter(index => index >= 0 && index < total))];
+  const pageNumbers = [...new Set(validIndices.map(index => Math.floor(index / pageSize)))];
+  const pages = new Map<number, CharacterDictionaryEntry[]>();
+
+  await Promise.all(pageNumbers.map(async pageNumber => {
+    const result = await getCharacterDictionaryPage(pageNumber, 'popular');
+    pages.set(pageNumber, result.entries);
+  }));
+
+  return validIndices.flatMap(index => {
+    const entry = pages.get(Math.floor(index / pageSize))?.[index % pageSize];
+    return entry ? [entry] : [];
+  });
+};
+
+export const searchCharacterDictionary = async (rawQuery: string, limit = 200, sort: CharacterDictionarySort = 'popular'): Promise<CharacterDictionaryEntry[]> => {
+  const query = normalizeTagQuery(rawQuery);
+  if (!query) return [];
+  const manifest = await loadManifest();
+  const { entries: queryEntries, isChineseQuery } = await loadQueryEntries(manifest, query);
+  const entries = !isChineseQuery && query.length === 1
+    ? (manifest.popularCharacters || [])
+    : queryEntries;
+  const matchingEntries = entries
+    .filter(entry => entry[2] === 4 && (isChineseQuery ? entry[1] : entry[0]).toLowerCase().startsWith(query));
+
+  matchingEntries.sort((a, b) => {
+    if (sort === 'least') return a[3] - b[3] || a[0].localeCompare(b[0]);
+    if (sort === 'name-asc') return a[0].localeCompare(b[0]);
+    if (sort === 'name-desc') return b[0].localeCompare(a[0]);
+    return b[3] - a[3] || a[0].localeCompare(b[0]);
+  });
+
+  return matchingEntries.slice(0, limit).map(mapCharacterEntry);
 };
 
 export const preloadTagDictionary = () => {
