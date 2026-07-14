@@ -40,6 +40,7 @@ async function readCurrentSourceMetadata() {
   try {
     const manifest = JSON.parse(await readFile(MANIFEST_FILE, 'utf8'));
     return {
+      canSkipRegeneration: Number(manifest.version) >= 3 && Array.isArray(manifest.popularArtists),
       validators: manifest.sourceValidators || {
         [manifest.sourceDownloadUrl || TRANSLATION_DATABASE_URL]: {
           etag: manifest.sourceEtag || '',
@@ -48,7 +49,7 @@ async function readCurrentSourceMetadata() {
       }
     };
   } catch {
-    return { validators: {} };
+    return { canSkipRegeneration: false, validators: {} };
   }
 }
 
@@ -82,8 +83,8 @@ async function downloadTranslationDatabase(targetPath) {
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       const headers = { 'User-Agent': USER_AGENT };
-      if (validator.etag) headers['If-None-Match'] = validator.etag;
-      if (!validator.etag && validator.lastModified) headers['If-Modified-Since'] = validator.lastModified;
+      if (currentSource.canSkipRegeneration && validator.etag) headers['If-None-Match'] = validator.etag;
+      if (currentSource.canSkipRegeneration && !validator.etag && validator.lastModified) headers['If-Modified-Since'] = validator.lastModified;
 
       try {
         const response = await fetch(sourceUrl, {
@@ -221,8 +222,13 @@ async function main() {
       popular[prefix] = entries.sort(rankEntries).slice(0, 24);
     }
 
+    const popularArtists = [...deduplicated.values()]
+      .filter(entry => entry[2] === 1)
+      .sort(rankEntries)
+      .slice(0, 1000);
+
     const manifest = {
-      version: 2,
+      version: 3,
       generatedAt: new Date().toISOString(),
       sourceDownloadUrl: sourceMetadata.downloadUrl,
       sourceValidators: sourceMetadata.validators,
@@ -236,7 +242,8 @@ async function main() {
       categories: categoryNames,
       shards: shardMap,
       chineseShards: chineseShardMap,
-      popular
+      popular,
+      popularArtists
     };
 
     await writeFile(path.join(OUTPUT_DIR, 'manifest.json'), JSON.stringify(manifest));

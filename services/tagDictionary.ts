@@ -4,10 +4,12 @@ interface TagDictionaryManifest {
   version: number;
   generatedAt: string;
   count: number;
+  categoryCounts: Record<string, number>;
   categories: Record<string, string>;
   shards: Record<string, string>;
   chineseShards: Record<string, string>;
   popular: Record<string, TagDictionaryEntry[]>;
+  popularArtists: TagDictionaryEntry[];
 }
 
 export interface TagSuggestion {
@@ -72,21 +74,31 @@ const loadShard = async (manifest: TagDictionaryManifest, key: string, language:
   return shardPromises.get(cacheKey)!;
 };
 
-export const searchTagDictionary = async (rawQuery: string, limit = 10): Promise<TagSuggestion[]> => {
-  const query = normalizeTagQuery(rawQuery);
-  if (!query) return [];
-
-  const manifest = await loadManifest();
+const loadQueryEntries = async (manifest: TagDictionaryManifest, query: string) => {
   const isChineseQuery = /[\u3400-\u9fff]/.test(query[0]);
   const chineseFirstCharacter = Array.from(query)[0];
   const chineseShardKey = chineseFirstCharacter
     ? (chineseFirstCharacter.codePointAt(0)! % 256).toString(16).padStart(2, '0')
     : '';
-  const entries = isChineseQuery
-    ? await loadShard(manifest, chineseShardKey, 'chinese')
-    : query.length === 1
-      ? (manifest.popular[query[0]] || [])
-      : await loadShard(manifest, query.slice(0, 2).padEnd(2, ' '), 'english');
+
+  if (isChineseQuery) {
+    return { entries: await loadShard(manifest, chineseShardKey, 'chinese'), isChineseQuery };
+  }
+  if (query.length === 1) {
+    return { entries: manifest.popular[query[0]] || [], isChineseQuery };
+  }
+  return {
+    entries: await loadShard(manifest, query.slice(0, 2).padEnd(2, ' '), 'english'),
+    isChineseQuery
+  };
+};
+
+export const searchTagDictionary = async (rawQuery: string, limit = 10): Promise<TagSuggestion[]> => {
+  const query = normalizeTagQuery(rawQuery);
+  if (!query) return [];
+
+  const manifest = await loadManifest();
+  const { entries, isChineseQuery } = await loadQueryEntries(manifest, query);
 
   return entries
     .filter(entry => (isChineseQuery ? entry[1] : entry[0]).toLowerCase().startsWith(query))
@@ -105,6 +117,45 @@ export const searchTagDictionary = async (rawQuery: string, limit = 10): Promise
       postCount: entry[3],
       isNovelAI: entry[4] === 1
     }));
+};
+
+export interface ArtistDictionaryEntry {
+  name: string;
+  chinese: string;
+  postCount: number;
+}
+
+const mapArtistEntry = (entry: TagDictionaryEntry): ArtistDictionaryEntry => ({
+  name: entry[0],
+  chinese: entry[1],
+  postCount: entry[3]
+});
+
+export const getPopularArtistDictionary = async (limit = 500): Promise<ArtistDictionaryEntry[]> => {
+  const manifest = await loadManifest();
+  return (manifest.popularArtists || []).slice(0, limit).map(mapArtistEntry);
+};
+
+export const getArtistDictionaryCount = async () => {
+  const manifest = await loadManifest();
+  return manifest.categoryCounts?.artist || 0;
+};
+
+export const searchArtistDictionary = async (rawQuery: string, limit = 200): Promise<ArtistDictionaryEntry[]> => {
+  const query = normalizeTagQuery(rawQuery);
+  if (!query) return getPopularArtistDictionary(limit);
+
+  const manifest = await loadManifest();
+  const { entries: queryEntries, isChineseQuery } = await loadQueryEntries(manifest, query);
+  const entries = !isChineseQuery && query.length === 1
+    ? (manifest.popularArtists || [])
+    : queryEntries;
+
+  return entries
+    .filter(entry => entry[2] === 1 && (isChineseQuery ? entry[1] : entry[0]).toLowerCase().startsWith(query))
+    .sort((a, b) => b[3] - a[3] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(mapArtistEntry);
 };
 
 export const preloadTagDictionary = () => {

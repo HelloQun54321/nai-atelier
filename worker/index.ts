@@ -1455,6 +1455,26 @@ async function removeLegacyLoggingStorage(db: D1Database) {
   await db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('personal_logging_removed_v1', '1')").run();
 }
 
+async function removeLegacyArtistLibrary(env: Env, db: D1Database) {
+  const marker = await db.prepare("SELECT value FROM settings WHERE key = 'artist_catalog_local_v2'")
+    .first<{value: string}>();
+  if (marker?.value === '1') return;
+
+  const result = await db.prepare('SELECT image_url, preview_url, benchmarks FROM artists').all<any>();
+  const assetUrls = new Set<string>();
+  for (const artist of result.results || []) {
+    if (artist.image_url) assetUrls.add(artist.image_url);
+    if (artist.preview_url) assetUrls.add(artist.preview_url);
+    for (const url of parseStoredJson(artist.benchmarks, [])) {
+      if (url) assetUrls.add(url);
+    }
+  }
+
+  for (const url of assetUrls) await deleteR2File(env, url);
+  await db.prepare('DELETE FROM artists').run();
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('artist_catalog_local_v2', '1')").run();
+}
+
 // Constants
 const MAX_STORAGE_QUOTA = 300 * 1024 * 1024; // 300MB
 
@@ -1919,6 +1939,7 @@ export default {
       }
 
       await removeLegacyLoggingStorage(db);
+      await removeLegacyArtistLibrary(env, db);
 
       // Personal mode: no login, guest, logout, password, or account management.
       if (path.startsWith('/api/auth/')) {
@@ -2611,49 +2632,6 @@ export default {
             },
           });
           return json({ success: true });
-      }
-
-      // --- ADMIN: Import GitHub Artist (Stream to R2) ---
-      if (path === '/api/admin/import-github' && method === 'POST') {
-          if (currentUser.role !== 'admin') return error('Forbidden', 403);
-          if (!env.BUCKET) return error('R2 Bucket not configured', 503);
-
-          const { name, url: githubUrl } = await request.json() as any;
-          if (!name || !githubUrl) return error('Missing name or url', 400);
-
-          const ghRes = await fetch(githubUrl);
-          if (!ghRes.ok) return error(`Failed to fetch from GitHub: ${ghRes.statusText}`, 502);
-
-          const contentType = ghRes.headers.get('content-type') || 'image/png';
-          const ext = contentType.split('/')[1] || 'png';
-          const id = crypto.randomUUID(); 
-          const filename = `artists/${id}_gh.${ext}`;
-
-          await env.BUCKET.put(filename, ghRes.body, {
-              httpMetadata: { contentType }
-          });
-
-          const r2Url = `/api/assets/${filename}`;
-          const existing = await db.prepare('SELECT id FROM artists WHERE name = ?').bind(name).first<{id: string}>();
-          
-          if (existing) {
-              await db.prepare('UPDATE artists SET image_url = ? WHERE id = ?').bind(r2Url, existing.id).run();
-          } else {
-              await db.prepare('INSERT INTO artists (id, name, image_url) VALUES (?, ?, ?)').bind(id, name, r2Url).run();
-          }
-
-          await writeSystemLog(db, {
-            user: currentUser,
-            request,
-            action: existing ? 'artist_github_import_update' : 'artist_github_import_create',
-            category: 'artist',
-            resourceType: 'artist',
-            resourceId: existing?.id || id,
-            message: `从 GitHub 导入画师：${name}`,
-            metadata: { name, source: 'github', imageUrl: r2Url },
-          });
-
-          return json({ success: true, id: existing?.id || id, imageUrl: r2Url });
       }
 
       // --- Admin Guest Setting ---

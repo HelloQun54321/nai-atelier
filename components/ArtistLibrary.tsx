@@ -6,6 +6,7 @@ import { api } from '../services/api'; // Import api for updating
 import { db } from '../services/dbService'; // Import DB to fetch config
 import { ArtistLibraryConfig } from './ArtistLibraryConfig';
 import { ArtistLibraryCart } from './ArtistLibraryCart';
+import { ArtistDictionaryEntry, getArtistDictionaryCount, getPopularArtistDictionary, searchArtistDictionary } from '../services/tagDictionary';
 
 interface CartItem {
     name: string;
@@ -136,6 +137,7 @@ const DEFAULT_BENCHMARK_CONFIG: BenchmarkConfig = {
 interface GenTask {
     uniqueId: string;
     artistId: string;
+    artistName: string;
     slot: number;
 }
 
@@ -154,6 +156,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     const [lightboxState, setLightboxState] = useState<{ artistIdx: number, slotIdx: number } | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [popularCatalogArtists, setPopularCatalogArtists] = useState<ArtistDictionaryEntry[]>([]);
+    const [catalogSearchResults, setCatalogSearchResults] = useState<ArtistDictionaryEntry[]>([]);
+    const [artistCatalogCount, setArtistCatalogCount] = useState(0);
+    const [isCatalogLoading, setIsCatalogLoading] = useState(true);
+    const catalogSearchRequestRef = useRef(0);
 
     // New State for features
     const [history, setHistory] = useState<{ text: string, time: string }[]>([]);
@@ -181,11 +188,9 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
     const [apiKey, setApiKey] = useState('');
     
-    // Check if current user is admin
-    const isAdmin = currentUser?.role === 'admin';
-    
-    // Check if current user can manage artists (admin + vip)
-    const canManageArtists = currentUser?.role ? ['admin', 'vip'].includes(currentUser.role) : false;
+    // Personal mode: the local owner always manages this library.
+    const isAdmin = true;
+    const canManageArtists = true;
 
     // Queue System
     const [taskQueue, setTaskQueue] = useState<GenTask[]>([]);
@@ -239,6 +244,47 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
             }
         }
     }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+        Promise.all([getPopularArtistDictionary(500), getArtistDictionaryCount()])
+            .then(([popular, count]) => {
+                if (cancelled) return;
+                setPopularCatalogArtists(popular);
+                setArtistCatalogCount(count);
+            })
+            .catch(error => console.warn('Artist tag catalog is unavailable:', error))
+            .finally(() => {
+                if (!cancelled) setIsCatalogLoading(false);
+            });
+        return () => { cancelled = true; };
+    }, []);
+
+    useEffect(() => {
+        const query = searchTerm.trim();
+        const requestId = ++catalogSearchRequestRef.current;
+        if (!query) {
+            setCatalogSearchResults([]);
+            setIsCatalogLoading(false);
+            return;
+        }
+
+        setIsCatalogLoading(true);
+        const timer = window.setTimeout(() => {
+            searchArtistDictionary(query, 200)
+                .then(results => {
+                    if (requestId === catalogSearchRequestRef.current) setCatalogSearchResults(results);
+                })
+                .catch(error => {
+                    if (requestId === catalogSearchRequestRef.current) setCatalogSearchResults([]);
+                    console.warn('Artist tag search failed:', error);
+                })
+                .finally(() => {
+                    if (requestId === catalogSearchRequestRef.current) setIsCatalogLoading(false);
+                });
+        }, 180);
+        return () => window.clearTimeout(timer);
+    }, [searchTerm]);
 
     // API Key 存储状态：是否记住（持久化到 localStorage）
     const [rememberApiKey, setRememberApiKey] = useState(() => {
@@ -322,20 +368,62 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
         notify('组合串已复制！');
     };
 
+    const catalogArtistId = (name: string) => {
+        let hash = 2166136261;
+        for (let index = 0; index < name.length; index++) {
+            hash ^= name.charCodeAt(index);
+            hash = Math.imul(hash, 16777619);
+        }
+        return `catalog-${(hash >>> 0).toString(16)}`;
+    };
+
+    const availableArtists = useMemo(() => {
+        const catalogEntries = searchTerm.trim() ? catalogSearchResults : popularCatalogArtists;
+        const byName = new Map<string, Artist>();
+
+        for (const entry of catalogEntries) {
+            byName.set(entry.name.toLowerCase(), {
+                id: catalogArtistId(entry.name),
+                name: entry.name,
+                imageUrl: '',
+                benchmarks: [],
+                chineseName: entry.chinese,
+                postCount: entry.postCount,
+                catalogOnly: true
+            });
+        }
+
+        for (const artist of artistsData || []) {
+            const key = artist.name.toLowerCase();
+            const catalogArtist = byName.get(key);
+            byName.set(key, {
+                ...catalogArtist,
+                ...artist,
+                chineseName: catalogArtist?.chineseName,
+                postCount: catalogArtist?.postCount,
+                catalogOnly: false
+            });
+        }
+
+        return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+    }, [artistsData, catalogSearchResults, popularCatalogArtists, searchTerm]);
+
     // MEMOIZED Filtered Artists to prevent stutter during layout changes
     const filteredArtists = useMemo(() => {
-        return (artistsData || []).filter(a => {
+        return availableArtists.filter(a => {
             if (showFavOnly && !favorites.has(a.name)) return false;
-            if (searchTerm) return a.name.toLowerCase().includes(searchTerm.toLowerCase());
+            if (searchTerm) {
+                const query = searchTerm.toLowerCase();
+                return a.name.toLowerCase().includes(query) || a.chineseName?.toLowerCase().includes(query);
+            }
             return true;
         });
-    }, [artistsData, showFavOnly, favorites, searchTerm]);
+    }, [availableArtists, showFavOnly, favorites, searchTerm]);
 
     // --- New Features Logic ---
 
     const gacha = () => {
-        if (!artistsData) return;
-        const pool = showFavOnly ? artistsData.filter(a => favorites.has(a.name)) : artistsData;
+        const pool = showFavOnly ? availableArtists.filter(a => favorites.has(a.name)) : availableArtists;
         if (pool.length === 0) return;
 
         // Pick random count
@@ -374,7 +462,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
             }
 
             // Match with known artists
-            const matched = (artistsData || []).find(a => a.name.toLowerCase() === name.toLowerCase());
+            const matched = availableArtists.find(a => a.name.toLowerCase() === name.toLowerCase());
             if (matched) {
                 // Avoid duplicates in batch
                 if (!newItems.find(i => i.name === matched.name)) {
@@ -464,7 +552,9 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
             try {
                 // Find the artist info
-                const artist = artistsData?.find(a => a.id === task.artistId);
+                const artist = artistsData?.find(a => a.id === task.artistId)
+                    || availableArtists.find(a => a.id === task.artistId)
+                    || { id: task.artistId, name: task.artistName, imageUrl: '', benchmarks: [], catalogOnly: true };
                 if (!artist) {
                     throw new Error(`Artist ID ${task.artistId} not found`);
                 }
@@ -534,7 +624,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                     await new Promise(res => setTimeout(res, 60000));
                 }
 
-                const artistName = artistsData?.find(a => a.id === task.artistId)?.name || 'Unknown';
+                const artistName = artistsData?.find(a => a.id === task.artistId)?.name || task.artistName || 'Unknown';
                 const logMsg = is429
                     ? `Rate Limit (429) for ${artistName}. Task moved to Retry Queue.`
                     : `Failed: ${artistName} - ${errMsg}`;
@@ -571,7 +661,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
         };
 
         processNext();
-    }, [taskQueue, isProcessing, isPaused, apiKey, config, artistsData, onRefresh, notify]);
+    }, [taskQueue, isProcessing, isPaused, apiKey, config, artistsData, availableArtists, onRefresh, notify]);
 
     // (The rest of the file remains unchanged, omitted for brevity as per instructions to only include changes if possible, but minimal diff implies keeping context if necessary. I'll include the rest to be safe and runnable)
     // ... (Code for queueGeneration, retryFailedTasks, queueMissingGenerations, lightbox logic, etc.)
@@ -588,6 +678,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
         const newTasks = slots.map(s => ({
             uniqueId: crypto.randomUUID(),
             artistId: artist.id,
+            artistName: artist.name,
             slot: s
         }));
 
@@ -643,6 +734,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                         newTasks.push({
                             uniqueId: crypto.randomUUID(),
                             artistId: artist.id,
+                            artistName: artist.name,
                             slot: slotIndex
                         });
                     } else {
@@ -720,13 +812,14 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
         const { slotIdx } = lightboxState;
         if (slotIdx === -1) {
-            return { src: artist.imageUrl, name: artist.name };
+            const src = artist.imageUrl || artist.benchmarks?.[0] || artist.previewUrl;
+            return src ? { src, name: artist.name } : null;
         }
         // Fallback logic for slot 0 to use legacy previewUrl if benchmark array is empty
         const src = artist.benchmarks?.[slotIdx] || (slotIdx === 0 ? artist.previewUrl : null);
         const slotName = config.slots[slotIdx]?.label || `Slot ${slotIdx + 1}`;
 
-        return { src, name: `${artist.name} - ${slotName}` };
+        return src ? { src, name: `${artist.name} - ${slotName}` } : null;
     }, [lightboxState, filteredArtists, config.slots]);
 
 
@@ -737,7 +830,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
             <div className="p-4 bg-white dark:bg-gray-800 shadow-md flex flex-col items-stretch gap-4 z-10 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
 
                 <div className="flex gap-2 w-full">
-                    {/* 刷新按钮：仅对可管理画师的角色显示（admin + vip） */}
+                    {/* Refresh locally persisted artists */}
                     {canManageArtists && (
                         <button
                             onClick={handleRefresh}
@@ -796,16 +889,21 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                     <div className="flex-1 relative">
                         <input
                             type="text"
-                            placeholder="搜索 / 粘贴 Prompt..."
+                            placeholder="搜索全部画师 Tag（支持中文）..."
                             className="w-full pl-4 pr-10 py-2 rounded-full border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:border-indigo-500 transition-colors"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />
-                        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-xs border border-gray-300 dark:border-gray-600 px-1.5 rounded pointer-events-none">/</div>
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">
+                            {isCatalogLoading ? <span className="inline-block h-3 w-3 animate-spin rounded-full border border-gray-400 border-t-transparent" /> : '/'}
+                        </div>
                     </div>
                 </div>
 
                 <div className="flex justify-between items-center flex-wrap gap-2">
+                    <div className="text-xs text-gray-500 dark:text-gray-400" title="画师名称来自每日更新的中英对照 Tag 词库；预览图保存在本地">
+                        本地预览 {artistsData?.length || 0} · 画师目录 {artistCatalogCount.toLocaleString('zh-CN')}
+                    </div>
                     {/* View Toggle (Only show in Grid mode, or keep for general settings) */}
                     {layoutMode === 'grid' && (
                         <div className="flex bg-gray-100 dark:bg-gray-900 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
@@ -961,7 +1059,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                             const prevChar = idx > 0 ? getGroupChar(filteredArtists[idx - 1].name) : '';
                             const currChar = getGroupChar(artist.name);
                             const isAnchor = currChar !== prevChar;
-                            let displayImg = artist.imageUrl;
+                            let displayImg = artist.imageUrl || artist.benchmarks?.[0] || artist.previewUrl || '';
                             let isBenchmarkMissing = false;
 
                             if (viewMode === 'benchmark') {
@@ -986,12 +1084,21 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                                     onClick={() => toggleCart(artist.name)}
                                 >
                                     <div className="aspect-[2/3] relative overflow-hidden bg-gray-200 dark:bg-gray-900">
-                                        {!isBenchmarkMissing ? (
+                                        {displayImg && !isBenchmarkMissing ? (
                                             <LazyImage src={displayImg} alt={artist.name} />
                                         ) : (
                                             <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
                                                 <span className="text-2xl mb-1">🤖</span>
-                                                <span className="text-[10px]">No Data</span>
+                                                <span className="text-[10px]">尚未生成本地预览</span>
+                                                {apiKey && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(event) => queueGeneration(artist, [viewMode === 'benchmark' ? activeSlot : 0], event)}
+                                                        className="mt-2 rounded bg-indigo-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-indigo-500"
+                                                    >
+                                                        生成预览
+                                                    </button>
+                                                )}
                                             </div>
                                         )}
                                         {(isTaskPending || isTaskRunning || isTaskFailed) && (
@@ -1054,6 +1161,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                                     </div>
                                     <div className="p-2 md:p-3 bg-white dark:bg-gray-800 text-center border-t border-gray-100 dark:border-gray-700">
                                         <div className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-red-500' : 'text-gray-700 dark:text-gray-300'}`}>{artist.name}</div>
+                                        {artist.chineseName && <div className="mt-0.5 truncate text-[10px] text-gray-400" title={artist.chineseName}>{artist.chineseName}</div>}
                                     </div>
                                 </div>
                             )
@@ -1087,6 +1195,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                                             >
                                                 {artist.name}
                                             </h3>
+                                            {artist.chineseName && <span className="text-sm text-gray-400">{artist.chineseName}</span>}
                                             <button onClick={(e) => toggleFav(artist.name, e)} className={`${isFav ? 'text-yellow-500' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}>
                                                 <svg className="w-5 h-5" fill={isFav ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.563.044.8.77.38 1.178l-4.244 4.134a.563.563 0 00-.153.476l1.24 5.376c.13.565-.487 1.01-.967.756L12 18.232l-4.894 3.08c-.48.254-1.097-.19-.967-.756l1.24-5.376a.563.563 0 00-.153-.476L2.985 10.575c-.42-.408-.183-1.134.38-1.178l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" /></svg>
                                             </button>
@@ -1111,10 +1220,19 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                                             style={{ width: `${listImgWidth}px` }}
                                         >
                                             <div className="aspect-[2/3] rounded-lg overflow-hidden relative cursor-zoom-in" onClick={() => setLightboxState({ artistIdx: idx, slotIdx: -1 })}>
-                                                <LazyImage src={artist.imageUrl} alt="原图" />
-                                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                                                {artist.imageUrl || artist.benchmarks?.[0] || artist.previewUrl ? (
+                                                    <LazyImage src={artist.imageUrl || artist.benchmarks?.[0] || artist.previewUrl || ''} alt="本地预览" />
+                                                ) : (
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100 text-gray-400 dark:bg-gray-900">
+                                                        <span className="text-xs">尚无预览</span>
+                                                        {apiKey && (
+                                                            <button type="button" onClick={(event) => queueGeneration(artist, [0], event)} className="mt-2 rounded bg-indigo-600 px-2 py-1 text-[10px] text-white">生成</button>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                <div className="pointer-events-none absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
                                             </div>
-                                            <span className="text-[10px] text-center font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">原图</span>
+                                            <span className="text-[10px] text-center font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">本地预览</span>
                                         </div>
 
                                         {config.slots.map((slot, i) => {

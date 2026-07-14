@@ -83,6 +83,9 @@ export interface Artist {
   imageUrl: string; // Original (Danbooru) image
   previewUrl?: string; // Legacy: Single benchmark
   benchmarks?: string[]; // New: Array of 3 benchmark images [Face, Body, Scene]
+  chineseName?: string; // Local bilingual tag catalog label
+  postCount?: number; // Danbooru usage count for catalog ranking
+  catalogOnly?: boolean; // Not persisted until a local preview is generated
 }
 
 // Inspiration Gallery Types
