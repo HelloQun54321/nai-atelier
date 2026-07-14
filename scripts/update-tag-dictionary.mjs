@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUTPUT_DIR = path.join(ROOT, 'public', 'tag-data');
+const MANIFEST_FILE = path.join(OUTPUT_DIR, 'manifest.json');
 const NAI_TAGS_FILE = path.join(ROOT, 'data', 'novelai-v45-tags.json');
 const TRANSLATION_DATABASE_URL = 'https://raw.githubusercontent.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table/main/tag.sqlite';
 const TRANSLATION_PROJECT_URL = 'https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table';
@@ -32,16 +33,42 @@ const normalizeChinese = (name) => String(name)
 
 const rankEntries = (a, b) => b[4] - a[4] || b[3] - a[3] || a[0].localeCompare(b[0]);
 
+async function readCurrentSourceMetadata() {
+  try {
+    const manifest = JSON.parse(await readFile(MANIFEST_FILE, 'utf8'));
+    return {
+      etag: manifest.sourceEtag || '',
+      lastModified: manifest.sourceLastModified || ''
+    };
+  } catch {
+    return { etag: '', lastModified: '' };
+  }
+}
+
 async function downloadTranslationDatabase(targetPath) {
+  console.log('TAG_UPDATE_PHASE=checking');
   console.log('Downloading the latest bilingual Danbooru tag database...');
+  const currentSource = await readCurrentSourceMetadata();
+  const headers = { 'User-Agent': USER_AGENT };
+  if (currentSource.etag) headers['If-None-Match'] = currentSource.etag;
+  if (!currentSource.etag && currentSource.lastModified) headers['If-Modified-Since'] = currentSource.lastModified;
   const response = await fetch(TRANSLATION_DATABASE_URL, {
     cache: 'no-store',
-    headers: { 'User-Agent': USER_AGENT }
+    headers
   });
+  if (response.status === 304) {
+    console.log('TAG_UPDATE_RESULT=unchanged');
+    return null;
+  }
   if (!response.ok) throw new Error(`Translation database download failed: ${response.status} ${response.statusText}`);
+  console.log('TAG_UPDATE_PHASE=downloading');
   const bytes = new Uint8Array(await response.arrayBuffer());
   await writeFile(targetPath, bytes);
   console.log(`Downloaded ${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB`);
+  return {
+    etag: response.headers.get('etag') || '',
+    lastModified: response.headers.get('last-modified') || ''
+  };
 }
 
 async function writeShards(shards, directoryName) {
@@ -65,7 +92,9 @@ async function main() {
   let database;
 
   try {
-    await downloadTranslationDatabase(temporaryDatabase);
+    const sourceMetadata = await downloadTranslationDatabase(temporaryDatabase);
+    if (!sourceMetadata) return;
+    console.log('TAG_UPDATE_PHASE=generating');
     database = new DatabaseSync(temporaryDatabase, { readOnly: true });
 
     const categoryCounts = Object.fromEntries(Object.values(categoryNames).map(name => [name, 0]));
@@ -139,6 +168,8 @@ async function main() {
     const manifest = {
       version: 2,
       generatedAt: new Date().toISOString(),
+      sourceEtag: sourceMetadata.etag,
+      sourceLastModified: sourceMetadata.lastModified,
       sources: {
         translations: TRANSLATION_PROJECT_URL,
         translationDatabase: TRANSLATION_DATABASE_URL,
@@ -154,6 +185,7 @@ async function main() {
 
     await writeFile(path.join(OUTPUT_DIR, 'manifest.json'), JSON.stringify(manifest));
     console.log(`Wrote ${manifest.count} bilingual tags across ${englishShards.size} English and ${chineseShards.size} Chinese shards`);
+    console.log('TAG_UPDATE_RESULT=updated');
   } finally {
     database?.close();
     await rm(temporaryDatabase, { force: true });

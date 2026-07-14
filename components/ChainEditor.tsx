@@ -10,6 +10,7 @@ import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY } from '../se
 import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
+import { TagDictionaryUpdater } from './TagDictionaryUpdater';
 
 interface ChainEditorProps {
     chain: PromptChain;
@@ -1095,7 +1096,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         </button>
                     )}
 
-                    {/* Reset Button (Playground Only) */}
+                    {/* Tag Dictionary & Reset Controls (Playground Only) */}
+                    {chain.id === 'playground' && (
+                        <TagDictionaryUpdater notify={notify} />
+                    )}
                     {chain.id === 'playground' && (
                         <button
                             onClick={handleReset}

@@ -30,6 +30,7 @@ const CATEGORY_LABELS: Record<number, string> = {
 
 let manifestPromise: Promise<TagDictionaryManifest> | null = null;
 const shardPromises = new Map<string, Promise<TagDictionaryEntry[]>>();
+let cacheVersion = Date.now();
 
 export const normalizeTagQuery = (value: string) => value
   .replaceAll('_', ' ')
@@ -39,7 +40,7 @@ export const normalizeTagQuery = (value: string) => value
 
 const loadManifest = () => {
   if (!manifestPromise) {
-    manifestPromise = fetch('/tag-data/manifest.json')
+    manifestPromise = fetch(`/tag-data/manifest.json?v=${cacheVersion}`, { cache: 'no-store' })
       .then(response => {
         if (!response.ok) throw new Error(`Tag dictionary manifest failed: ${response.status}`);
         return response.json() as Promise<TagDictionaryManifest>;
@@ -58,7 +59,7 @@ const loadShard = async (manifest: TagDictionaryManifest, key: string, language:
   const cacheKey = `${language}:${key}`;
   const directory = language === 'chinese' ? 'zh-shards' : 'shards';
   if (!shardPromises.has(cacheKey)) {
-    shardPromises.set(cacheKey, fetch(`/tag-data/${directory}/${filename}`)
+    shardPromises.set(cacheKey, fetch(`/tag-data/${directory}/${filename}?v=${encodeURIComponent(manifest.generatedAt)}`)
       .then(response => {
         if (!response.ok) throw new Error(`Tag dictionary shard failed: ${response.status}`);
         return response.json() as Promise<TagDictionaryEntry[]>;
@@ -108,4 +109,10 @@ export const searchTagDictionary = async (rawQuery: string, limit = 10): Promise
 
 export const preloadTagDictionary = () => {
   void loadManifest().catch(error => console.warn('Tag autocomplete is unavailable:', error));
+};
+
+export const resetTagDictionaryCache = () => {
+  cacheVersion = Date.now();
+  manifestPromise = null;
+  shardPromises.clear();
 };

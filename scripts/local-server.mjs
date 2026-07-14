@@ -1,6 +1,7 @@
 import { spawn, execSync } from 'child_process';
 import { existsSync, readdirSync, statSync } from 'fs';
 import { platform } from 'os';
+import { startTagUpdateServer } from './tag-update-server.mjs';
 
 const IS_WINDOWS = platform() === 'win32';
 const IS_TERMUX = process.env.TERMUX_VERSION || existsSync('/data/data/com.termux');
@@ -136,6 +137,7 @@ function startServer() {
   const cmd = IS_WINDOWS ? process.env.comspec || 'cmd.exe' : './node_modules/.bin/wrangler';
   const cmdArgs = IS_WINDOWS ? ['/c', 'node_modules\\.bin\\wrangler.cmd', ...args] : args;
   
+  const tagUpdateServer = startTagUpdateServer();
   const child = spawn(cmd, cmdArgs, spawnOpts);
   openWhenReady();
   
@@ -145,6 +147,7 @@ function startServer() {
   });
   
   child.on('exit', (code) => {
+    tagUpdateServer.close();
     if (code !== 0 && code !== null) {
       console.error(`\x1b[31m服务异常退出，退出码: ${code}\x1b[0m`);
     }
