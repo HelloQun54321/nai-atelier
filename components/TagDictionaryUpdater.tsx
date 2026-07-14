@@ -125,7 +125,7 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
               )}
 
               <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-                检查时会先比较上游版本；没有变化便不会重复下载。发现新版后会下载约 30 MB 数据、重新生成分片并应用到当前项目。
+                检查时会先比较上游版本；没有变化便不会重复下载。网络中断时会自动重试并切换备用线路，现有词库不会受到影响。
               </p>
             </div>
 

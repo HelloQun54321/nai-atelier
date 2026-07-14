@@ -70,6 +70,7 @@ async function runTagUpdate() {
   updateState.startedAt = new Date().toISOString();
   updateState.finishedAt = null;
   let updateResult = '';
+  let detailedError = '';
 
   try {
     await runCommand(process.execPath, ['--no-warnings', UPDATE_SCRIPT], line => {
@@ -87,6 +88,12 @@ async function runTagUpdate() {
 
       const result = line.match(/^TAG_UPDATE_RESULT=(\w+)$/)?.[1];
       if (result) updateResult = result;
+
+      const message = line.match(/^TAG_UPDATE_MESSAGE=(.+)$/)?.[1];
+      if (message) updateState.message = decodeURIComponent(message);
+
+      const errorMessage = line.match(/^TAG_UPDATE_ERROR=(.+)$/)?.[1];
+      if (errorMessage) detailedError = decodeURIComponent(errorMessage);
     });
 
     if (updateResult === 'unchanged') {
@@ -108,7 +115,7 @@ async function runTagUpdate() {
     updateState.message = 'Tag 词库更新完成';
   } catch (error) {
     updateState.phase = 'error';
-    updateState.message = error instanceof Error ? error.message : '更新失败';
+    updateState.message = detailedError || (error instanceof Error ? error.message : '更新失败');
     console.error('[Tag 更新]', error);
   } finally {
     updateState.running = false;

@@ -8,7 +8,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUTPUT_DIR = path.join(ROOT, 'public', 'tag-data');
 const MANIFEST_FILE = path.join(OUTPUT_DIR, 'manifest.json');
 const NAI_TAGS_FILE = path.join(ROOT, 'data', 'novelai-v45-tags.json');
-const TRANSLATION_DATABASE_URL = 'https://raw.githubusercontent.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table/main/tag.sqlite';
+const TRANSLATION_DATABASE_URL = process.env.NAI_TAG_DATABASE_URL
+  || 'https://raw.githubusercontent.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table/main/tag.sqlite';
+const TRANSLATION_DATABASE_FALLBACK_URL = process.env.NAI_TAG_DATABASE_FALLBACK_URL
+  || 'https://cdn.jsdelivr.net/gh/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table@main/tag.sqlite';
 const TRANSLATION_PROJECT_URL = 'https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table';
 const USER_AGENT = 'NaiPromptManager/0.5.0 (private local tag dictionary updater)';
 
@@ -37,38 +40,91 @@ async function readCurrentSourceMetadata() {
   try {
     const manifest = JSON.parse(await readFile(MANIFEST_FILE, 'utf8'));
     return {
-      etag: manifest.sourceEtag || '',
-      lastModified: manifest.sourceLastModified || ''
+      validators: manifest.sourceValidators || {
+        [manifest.sourceDownloadUrl || TRANSLATION_DATABASE_URL]: {
+          etag: manifest.sourceEtag || '',
+          lastModified: manifest.sourceLastModified || ''
+        }
+      }
     };
   } catch {
-    return { etag: '', lastModified: '' };
+    return { validators: {} };
   }
 }
+
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+const describeNetworkError = error => {
+  const code = error?.cause?.code || error?.code;
+  if (code === 'ECONNRESET') return '连接被远端中断（ECONNRESET）';
+  if (code === 'ETIMEDOUT' || error?.name === 'TimeoutError') return '连接超时';
+  if (code === 'ENOTFOUND') return '无法解析下载服务器地址';
+  if (code === 'ECONNREFUSED') return '下载服务器拒绝连接';
+  if (error?.message === 'fetch failed') return '无法连接下载服务器';
+  return error instanceof Error ? error.message : String(error);
+};
 
 async function downloadTranslationDatabase(targetPath) {
   console.log('TAG_UPDATE_PHASE=checking');
   console.log('Downloading the latest bilingual Danbooru tag database...');
   const currentSource = await readCurrentSourceMetadata();
-  const headers = { 'User-Agent': USER_AGENT };
-  if (currentSource.etag) headers['If-None-Match'] = currentSource.etag;
-  if (!currentSource.etag && currentSource.lastModified) headers['If-Modified-Since'] = currentSource.lastModified;
-  const response = await fetch(TRANSLATION_DATABASE_URL, {
-    cache: 'no-store',
-    headers
-  });
-  if (response.status === 304) {
-    console.log('TAG_UPDATE_RESULT=unchanged');
-    return null;
+  const sources = [...new Set([TRANSLATION_DATABASE_URL, TRANSLATION_DATABASE_FALLBACK_URL])];
+  let lastError;
+
+  for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex++) {
+    const sourceUrl = sources[sourceIndex];
+    const validator = currentSource.validators[sourceUrl] || {};
+
+    if (sourceIndex > 0) {
+      console.log(`TAG_UPDATE_MESSAGE=${encodeURIComponent('GitHub 连接失败，正在切换备用下载线路…')}`);
+      console.log('Switching to the jsDelivr fallback...');
+    }
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const headers = { 'User-Agent': USER_AGENT };
+      if (validator.etag) headers['If-None-Match'] = validator.etag;
+      if (!validator.etag && validator.lastModified) headers['If-Modified-Since'] = validator.lastModified;
+
+      try {
+        const response = await fetch(sourceUrl, {
+          cache: 'no-store',
+          headers,
+          signal: AbortSignal.timeout(45000)
+        });
+        if (response.status === 304) {
+          console.log('TAG_UPDATE_RESULT=unchanged');
+          return null;
+        }
+        if (!response.ok) throw new Error(`下载服务器返回 ${response.status} ${response.statusText}`);
+
+        console.log('TAG_UPDATE_PHASE=downloading');
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        await writeFile(targetPath, bytes);
+        console.log(`Downloaded ${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB`);
+        return {
+          downloadUrl: sourceUrl,
+          validators: {
+            ...currentSource.validators,
+            [sourceUrl]: {
+              etag: response.headers.get('etag') || '',
+              lastModified: response.headers.get('last-modified') || ''
+            }
+          }
+        };
+      } catch (error) {
+        lastError = error;
+        const reason = describeNetworkError(error);
+        if (attempt < 3) {
+          const delayMs = attempt * 1500;
+          console.warn(`${reason}; retrying in ${delayMs}ms (${attempt}/3)`);
+          console.log(`TAG_UPDATE_MESSAGE=${encodeURIComponent(`${reason}，${delayMs / 1000} 秒后重试（${attempt}/3）…`)}`);
+          await wait(delayMs);
+        }
+      }
+    }
   }
-  if (!response.ok) throw new Error(`Translation database download failed: ${response.status} ${response.statusText}`);
-  console.log('TAG_UPDATE_PHASE=downloading');
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  await writeFile(targetPath, bytes);
-  console.log(`Downloaded ${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB`);
-  return {
-    etag: response.headers.get('etag') || '',
-    lastModified: response.headers.get('last-modified') || ''
-  };
+
+  throw new Error(`${describeNetworkError(lastError)}。主线路和备用线路均不可用，请检查网络或代理后重试`);
 }
 
 async function writeShards(shards, directoryName) {
@@ -168,8 +224,8 @@ async function main() {
     const manifest = {
       version: 2,
       generatedAt: new Date().toISOString(),
-      sourceEtag: sourceMetadata.etag,
-      sourceLastModified: sourceMetadata.lastModified,
+      sourceDownloadUrl: sourceMetadata.downloadUrl,
+      sourceValidators: sourceMetadata.validators,
       sources: {
         translations: TRANSLATION_PROJECT_URL,
         translationDatabase: TRANSLATION_DATABASE_URL,
@@ -193,6 +249,7 @@ async function main() {
 }
 
 main().catch(error => {
+  console.error(`TAG_UPDATE_ERROR=${encodeURIComponent(error instanceof Error ? error.message : String(error))}`);
   console.error(error);
   process.exitCode = 1;
 });
