@@ -12,6 +12,7 @@ interface TagDictionaryManifest {
   popularArtists: TagDictionaryEntry[];
   artistPageSize: number;
   artistPages: string[];
+  artistNamePages: string[];
 }
 
 export interface TagSuggestion {
@@ -151,16 +152,23 @@ export interface ArtistDictionaryPage {
   total: number;
 }
 
-export const getArtistDictionaryPage = async (page: number): Promise<ArtistDictionaryPage> => {
+export type ArtistDictionarySort = 'popular' | 'least' | 'name-asc' | 'name-desc';
+
+export const getArtistDictionaryPage = async (page: number, sort: ArtistDictionarySort = 'popular'): Promise<ArtistDictionaryPage> => {
   const manifest = await loadManifest();
   const normalizedPage = Math.max(0, Math.trunc(page));
-  const filename = manifest.artistPages?.[normalizedPage];
+  const isNameSort = sort === 'name-asc' || sort === 'name-desc';
+  const isReverse = sort === 'least' || sort === 'name-desc';
+  const pages = (isNameSort ? manifest.artistNamePages : manifest.artistPages) || [];
+  const physicalPage = isReverse ? pages.length - 1 - normalizedPage : normalizedPage;
+  const filename = pages?.[physicalPage];
   let entries: TagDictionaryEntry[] = [];
 
   if (filename) {
-    const cacheKey = `artist-page:${normalizedPage}`;
+    const directory = isNameSort ? 'artist-name-pages' : 'artist-pages';
+    const cacheKey = `${directory}:${physicalPage}`;
     if (!shardPromises.has(cacheKey)) {
-      shardPromises.set(cacheKey, fetch(`/tag-data/artist-pages/${filename}?v=${encodeURIComponent(manifest.generatedAt)}`)
+      shardPromises.set(cacheKey, fetch(`/tag-data/${directory}/${filename}?v=${encodeURIComponent(manifest.generatedAt)}`)
         .then(response => {
           if (!response.ok) throw new Error(`Artist dictionary page failed: ${response.status}`);
           return response.json() as Promise<TagDictionaryEntry[]>;
@@ -171,18 +179,19 @@ export const getArtistDictionaryPage = async (page: number): Promise<ArtistDicti
         }));
     }
     entries = await shardPromises.get(cacheKey)!;
+    if (isReverse) entries = [...entries].reverse();
   }
 
   return {
     entries: entries.map(mapArtistEntry),
     page: normalizedPage,
-    pageCount: manifest.artistPages?.length || 0,
+    pageCount: pages?.length || 0,
     pageSize: manifest.artistPageSize || 500,
     total: manifest.categoryCounts?.artist || 0
   };
 };
 
-export const searchArtistDictionary = async (rawQuery: string, limit = 200): Promise<ArtistDictionaryEntry[]> => {
+export const searchArtistDictionary = async (rawQuery: string, limit = 200, sort: ArtistDictionarySort = 'popular'): Promise<ArtistDictionaryEntry[]> => {
   const query = normalizeTagQuery(rawQuery);
   if (!query) return getPopularArtistDictionary(limit);
 
@@ -192,9 +201,16 @@ export const searchArtistDictionary = async (rawQuery: string, limit = 200): Pro
     ? (manifest.popularArtists || [])
     : queryEntries;
 
-  return entries
-    .filter(entry => entry[2] === 1 && (isChineseQuery ? entry[1] : entry[0]).toLowerCase().startsWith(query))
-    .sort((a, b) => b[3] - a[3] || a[0].localeCompare(b[0]))
+  const matchingEntries = entries
+    .filter(entry => entry[2] === 1 && (isChineseQuery ? entry[1] : entry[0]).toLowerCase().startsWith(query));
+  matchingEntries.sort((a, b) => {
+    if (sort === 'least') return a[3] - b[3] || a[0].localeCompare(b[0]);
+    if (sort === 'name-asc') return a[0].localeCompare(b[0]);
+    if (sort === 'name-desc') return b[0].localeCompare(a[0]);
+    return b[3] - a[3] || a[0].localeCompare(b[0]);
+  });
+
+  return matchingEntries
     .slice(0, limit)
     .map(mapArtistEntry);
 };

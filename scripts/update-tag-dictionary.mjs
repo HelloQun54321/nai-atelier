@@ -40,7 +40,7 @@ async function readCurrentSourceMetadata() {
   try {
     const manifest = JSON.parse(await readFile(MANIFEST_FILE, 'utf8'));
     return {
-      canSkipRegeneration: Number(manifest.version) >= 4 && Array.isArray(manifest.artistPages),
+      canSkipRegeneration: Number(manifest.version) >= 5 && Array.isArray(manifest.artistPages) && Array.isArray(manifest.artistNamePages),
       validators: manifest.sourceValidators || {
         [manifest.sourceDownloadUrl || TRANSLATION_DATABASE_URL]: {
           etag: manifest.sourceEtag || '',
@@ -144,8 +144,8 @@ async function writeShards(shards, directoryName) {
   return shardMap;
 }
 
-async function writeArtistPages(entries, pageSize = 500) {
-  const directory = path.join(OUTPUT_DIR, 'artist-pages');
+async function writeArtistPages(entries, directoryName, pageSize = 500) {
+  const directory = path.join(OUTPUT_DIR, directoryName);
   await mkdir(directory, { recursive: true });
   const pages = [];
 
@@ -240,10 +240,12 @@ async function main() {
       .filter(entry => entry[2] === 1)
       .sort(rankEntries);
     const popularArtists = rankedArtists.slice(0, 1000);
-    const artistPagination = await writeArtistPages(rankedArtists);
+    const artistPagination = await writeArtistPages(rankedArtists, 'artist-pages');
+    const artistsByName = [...rankedArtists].sort((a, b) => a[0].localeCompare(b[0], 'en'));
+    const artistNamePagination = await writeArtistPages(artistsByName, 'artist-name-pages');
 
     const manifest = {
-      version: 4,
+      version: 5,
       generatedAt: new Date().toISOString(),
       sourceDownloadUrl: sourceMetadata.downloadUrl,
       sourceValidators: sourceMetadata.validators,
@@ -260,7 +262,8 @@ async function main() {
       popular,
       popularArtists,
       artistPageSize: artistPagination.pageSize,
-      artistPages: artistPagination.pages
+      artistPages: artistPagination.pages,
+      artistNamePages: artistNamePagination.pages
     };
 
     await writeFile(path.join(OUTPUT_DIR, 'manifest.json'), JSON.stringify(manifest));

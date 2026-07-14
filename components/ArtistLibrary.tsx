@@ -6,7 +6,7 @@ import { api } from '../services/api'; // Import api for updating
 import { db } from '../services/dbService'; // Import DB to fetch config
 import { ArtistLibraryConfig } from './ArtistLibraryConfig';
 import { ArtistLibraryCart } from './ArtistLibraryCart';
-import { ArtistDictionaryEntry, getArtistDictionaryPage, searchArtistDictionary } from '../services/tagDictionary';
+import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryPage, searchArtistDictionary } from '../services/tagDictionary';
 
 interface CartItem {
     name: string;
@@ -154,11 +154,17 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     const [isCatalogLoading, setIsCatalogLoading] = useState(true);
     const [isLoadingMoreCatalog, setIsLoadingMoreCatalog] = useState(false);
     const [hasMoreCatalog, setHasMoreCatalog] = useState(false);
+    const [artistSort, setArtistSort] = useState<ArtistDictionarySort>(() => {
+        const saved = localStorage.getItem('nai_artist_sort');
+        return saved === 'least' || saved === 'name-asc' || saved === 'name-desc' ? saved : 'popular';
+    });
     const catalogSearchRequestRef = useRef(0);
     const catalogSentinelRef = useRef<HTMLDivElement>(null);
     const nextCatalogPageRef = useRef(0);
     const catalogPageCountRef = useRef(0);
     const catalogPageLoadingRef = useRef(false);
+    const catalogLoadGenerationRef = useRef(0);
+    const artistSortRef = useRef<ArtistDictionarySort>(artistSort);
 
     // New State for features
     const [history, setHistory] = useState<{ text: string, time: string }[]>([]);
@@ -245,26 +251,41 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
     const loadNextCatalogPage = useCallback(async () => {
         if (catalogPageLoadingRef.current || nextCatalogPageRef.current >= catalogPageCountRef.current) return;
+        const generation = catalogLoadGenerationRef.current;
         catalogPageLoadingRef.current = true;
         setIsLoadingMoreCatalog(true);
         try {
-            const result = await getArtistDictionaryPage(nextCatalogPageRef.current);
+            const result = await getArtistDictionaryPage(nextCatalogPageRef.current, artistSortRef.current);
+            if (generation !== catalogLoadGenerationRef.current) return;
             setLoadedCatalogArtists(previous => [...previous, ...result.entries]);
             nextCatalogPageRef.current = result.page + 1;
             setHasMoreCatalog(nextCatalogPageRef.current < result.pageCount);
         } catch (error) {
             console.warn('Unable to load more artist tags:', error);
         } finally {
-            catalogPageLoadingRef.current = false;
-            setIsLoadingMoreCatalog(false);
+            if (generation === catalogLoadGenerationRef.current) {
+                catalogPageLoadingRef.current = false;
+                setIsLoadingMoreCatalog(false);
+            }
         }
     }, []);
 
     useEffect(() => {
+        artistSortRef.current = artistSort;
+        localStorage.setItem('nai_artist_sort', artistSort);
+        const generation = ++catalogLoadGenerationRef.current;
+        catalogPageLoadingRef.current = true;
+        nextCatalogPageRef.current = 0;
+        catalogPageCountRef.current = 0;
+        setLoadedCatalogArtists([]);
+        setHasMoreCatalog(false);
+        setIsCatalogLoading(true);
+        setIsLoadingMoreCatalog(false);
+        scrollContainerRef.current?.scrollTo({ top: 0 });
         let cancelled = false;
-        getArtistDictionaryPage(0)
+        getArtistDictionaryPage(0, artistSort)
             .then(result => {
-                if (cancelled) return;
+                if (cancelled || generation !== catalogLoadGenerationRef.current) return;
                 setLoadedCatalogArtists(result.entries);
                 setArtistCatalogCount(result.total);
                 nextCatalogPageRef.current = 1;
@@ -273,10 +294,13 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
             })
             .catch(error => console.warn('Artist tag catalog is unavailable:', error))
             .finally(() => {
-                if (!cancelled) setIsCatalogLoading(false);
+                if (!cancelled && generation === catalogLoadGenerationRef.current) {
+                    catalogPageLoadingRef.current = false;
+                    setIsCatalogLoading(false);
+                }
             });
         return () => { cancelled = true; };
-    }, []);
+    }, [artistSort]);
 
     useEffect(() => {
         const query = searchTerm.trim();
@@ -288,7 +312,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
         setIsCatalogLoading(true);
         const timer = window.setTimeout(() => {
-            searchArtistDictionary(query, 200)
+            searchArtistDictionary(query, 200, artistSort)
                 .then(results => {
                     if (requestId === catalogSearchRequestRef.current) setCatalogSearchResults(results);
                 })
@@ -301,7 +325,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                 });
         }, 180);
         return () => window.clearTimeout(timer);
-    }, [searchTerm]);
+    }, [artistSort, searchTerm]);
 
     useEffect(() => {
         if (searchTerm.trim() || !hasMoreCatalog) return;
@@ -409,33 +433,32 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
     const availableArtists = useMemo(() => {
         const catalogEntries = searchTerm.trim() ? catalogSearchResults : loadedCatalogArtists;
-        const catalogByName = new Map(catalogEntries.map(entry => [entry.name.toLowerCase(), entry]));
+        const persistedByName = new Map((artistsData || []).map(artist => [artist.name.toLowerCase(), artist]));
         const included = new Set<string>();
         const result: Artist[] = [];
 
-        for (const artist of [...(artistsData || [])].sort((a, b) => a.name.localeCompare(b.name))) {
-            const key = artist.name.toLowerCase();
-            const catalogEntry = catalogByName.get(key);
+        for (const entry of catalogEntries) {
+            const key = entry.name.toLowerCase();
+            const persisted = persistedByName.get(key);
             included.add(key);
             result.push({
-                ...artist,
-                chineseName: catalogEntry?.chinese,
-                postCount: catalogEntry?.postCount,
-                catalogOnly: false
+                id: persisted?.id || catalogArtistId(entry.name),
+                name: entry.name,
+                imageUrl: persisted?.imageUrl || '',
+                previewUrl: persisted?.previewUrl,
+                benchmarks: persisted?.benchmarks || [],
+                chineseName: entry.chinese,
+                postCount: entry.postCount,
+                catalogOnly: !persisted
             });
         }
 
-        for (const entry of catalogEntries) {
-            const key = entry.name.toLowerCase();
+        for (const artist of [...(artistsData || [])].sort((a, b) => a.name.localeCompare(b.name))) {
+            const key = artist.name.toLowerCase();
             if (included.has(key)) continue;
             result.push({
-                id: catalogArtistId(entry.name),
-                name: entry.name,
-                imageUrl: '',
-                benchmarks: [],
-                chineseName: entry.chinese,
-                postCount: entry.postCount,
-                catalogOnly: true
+                ...artist,
+                catalogOnly: false
             });
         }
 
@@ -927,6 +950,17 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                         {' · '}完整目录 {artistCatalogCount.toLocaleString('zh-CN')}
                         {' · '}本地预览 {artistsData?.length || 0}
                     </div>
+                    <select
+                        value={artistSort}
+                        onChange={event => setArtistSort(event.target.value as ArtistDictionarySort)}
+                        className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 outline-none hover:border-indigo-400 focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
+                        title="画师目录排序"
+                    >
+                        <option value="popular">热度：高到低</option>
+                        <option value="least">热度：低到高</option>
+                        <option value="name-asc">名称：A → Z</option>
+                        <option value="name-desc">名称：Z → A</option>
+                    </select>
                     {/* View Toggle (Only show in Grid mode, or keep for general settings) */}
                     {layoutMode === 'grid' && (
                         <div className="flex bg-gray-100 dark:bg-gray-900 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
@@ -1168,6 +1202,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                                     <div className="p-2 md:p-3 bg-white dark:bg-gray-800 text-center border-t border-gray-100 dark:border-gray-700">
                                         <div className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-red-500' : 'text-gray-700 dark:text-gray-300'}`}>{artist.name}</div>
                                         {artist.chineseName && <div className="mt-0.5 truncate text-[10px] text-gray-400" title={artist.chineseName}>{artist.chineseName}</div>}
+                                        {typeof artist.postCount === 'number' && <div className="mt-0.5 text-[10px] font-mono text-orange-500/80" title="Danbooru 关联作品数">作品 {artist.postCount.toLocaleString('zh-CN')}</div>}
                                     </div>
                                 </div>
                             )
@@ -1198,6 +1233,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                                                 {artist.name}
                                             </h3>
                                             {artist.chineseName && <span className="text-sm text-gray-400">{artist.chineseName}</span>}
+                                            {typeof artist.postCount === 'number' && <span className="rounded-full bg-orange-50 px-2 py-0.5 text-xs font-mono text-orange-600 dark:bg-orange-900/20 dark:text-orange-400">作品 {artist.postCount.toLocaleString('zh-CN')}</span>}
                                             <button onClick={(e) => toggleFav(artist.name, e)} className={`${isFav ? 'text-yellow-500' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}>
                                                 <svg className="w-5 h-5" fill={isFav ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.563.044.8.77.38 1.178l-4.244 4.134a.563.563 0 00-.153.476l1.24 5.376c.13.565-.487 1.01-.967.756L12 18.232l-4.894 3.08c-.48.254-1.097-.19-.967-.756l1.24-5.376a.563.563 0 00-.153-.476L2.985 10.575c-.42-.408-.183-1.134.38-1.178l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" /></svg>
                                             </button>
