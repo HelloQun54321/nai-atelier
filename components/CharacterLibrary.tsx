@@ -14,6 +14,8 @@ import {
 import { useConfirmDialog } from './ConfirmDialog';
 
 const CATALOG_MARKER = '__character_catalog__';
+const getDanbooruPostsUrl = (tagName: string) =>
+  `https://danbooru.donmai.us/posts?tags=${encodeURIComponent(tagName.trim().replace(/\s+/g, '_'))}`;
 const DEFAULT_PARAMS = {
   width: 832,
   height: 1216,
@@ -437,7 +439,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                     {card.kind === 'custom' ? <>
                       <button onClick={() => onSelect(card.chain!.id)} className="rounded bg-purple-50 px-2 py-1.5 text-purple-600 hover:bg-purple-100 dark:bg-purple-950/50 dark:text-purple-300">编辑还原</button>
                       <button onClick={() => void deleteCustom(card)} className="rounded bg-red-50 px-2 py-1.5 text-red-600 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400">删除</button>
-                    </> : <a href={`https://danbooru.donmai.us/posts?tags=${encodeURIComponent(card.tagName || '')}`} target="_blank" rel="noreferrer" className="col-span-2 rounded bg-blue-50 px-2 py-1.5 text-center text-blue-600 hover:bg-blue-100 dark:bg-blue-950/50 dark:text-blue-300">Danbooru</a>}
+                    </> : <a href={getDanbooruPostsUrl(card.tagName || '')} target="_blank" rel="noreferrer" className="col-span-2 rounded bg-blue-50 px-2 py-1.5 text-center text-blue-600 hover:bg-blue-100 dark:bg-blue-950/50 dark:text-blue-300">Danbooru</a>}
                   </div>
                 </div>
               </article>
