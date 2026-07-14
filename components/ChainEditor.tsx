@@ -48,6 +48,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const [hasChanges, setHasChanges] = useState(false);
     const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+    const [showResetConfirm, setShowResetConfirm] = useState(false);
 
     // --- Import Preset Modal State ---
     // New state for import modal search and tags
@@ -765,8 +766,18 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setShowForkModal(true);
     };
 
-    const handleReset = () => {
-        if (!confirm('确定要重置实验室吗？所有当前输入都将丢失。')) return;
+    useEffect(() => {
+        if (!showResetConfirm) return;
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setShowResetConfirm(false);
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [showResetConfirm]);
+
+    const confirmReset = () => {
         setChainName('生图实验室');
         setChainDesc('临时生图实验，点击 Fork 可保存到库');
         setBasePrompt('');
@@ -778,6 +789,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setModules([]);
         setActiveModules({});
         setGeneratedImage(null);
+        setShowResetConfirm(false);
         notify('实验室已重置');
     };
 
@@ -1070,7 +1082,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     {chain.id === 'playground' && (
                         <button
                             type="button"
-                            onClick={handleReset}
+                            onClick={() => setShowResetConfirm(true)}
                             className="flex h-8 w-8 items-center justify-center rounded bg-red-50 text-red-600 transition-colors hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-950/70"
                             title="重置实验室"
                             aria-label="重置实验室"
@@ -1388,6 +1400,54 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     onCopyFinalPrompt={() => copyPromptToClipboard(false)}
                 />
             </div>
+
+            {/* Playground Reset Confirmation */}
+            {showResetConfirm && (
+                <div
+                    className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+                    onClick={() => setShowResetConfirm(false)}
+                >
+                    <div
+                        role="alertdialog"
+                        aria-modal="true"
+                        aria-labelledby="reset-dialog-title"
+                        aria-describedby="reset-dialog-description"
+                        className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-850"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="flex items-start gap-4">
+                            <div className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-950/60 dark:text-red-400">
+                                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <h2 id="reset-dialog-title" className="text-lg font-bold text-gray-900 dark:text-white">重置生图实验室？</h2>
+                                <p id="reset-dialog-description" className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                                    基础画风、模块、角色、正负面提示词和参数将恢复默认值，此操作无法撤销。
+                                </p>
+                            </div>
+                        </div>
+                        <div className="mt-6 flex justify-end gap-3">
+                            <button
+                                type="button"
+                                autoFocus
+                                onClick={() => setShowResetConfirm(false)}
+                                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 dark:focus:ring-offset-gray-850"
+                            >
+                                取消
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmReset}
+                                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-red-600/20 transition-colors hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-850"
+                            >
+                                确认重置
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Lightbox Modal */}
             {lightboxImg && (
