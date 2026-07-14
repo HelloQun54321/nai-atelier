@@ -35,6 +35,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [chainDesc, setChainDesc] = useState(chain.description);
     const [chainTags, setChainTags] = useState<string[]>(chain.tags || []);
     const [isEditingInfo, setIsEditingInfo] = useState(false);
+    const [showHeaderMenu, setShowHeaderMenu] = useState(false);
 
     // --- Prompt State ---
     const [basePrompt, setBasePrompt] = useState(chain.basePrompt || '');
@@ -1077,24 +1078,37 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
                     {/* Destructive or secondary actions stay in the overflow menu. */}
                     {chain.id === 'playground' && (
-                        <details className="relative">
-                            <summary className="flex h-8 w-9 cursor-pointer list-none items-center justify-center rounded text-xl text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800" aria-label="更多操作" title="更多操作">⋯</summary>
-                            <div className="absolute right-0 top-10 z-50 w-40 rounded-lg border border-gray-200 bg-white p-1.5 shadow-xl dark:border-gray-700 dark:bg-gray-900">
-                                <button
-                                    type="button"
-                                    onClick={event => {
-                                        event.currentTarget.closest('details')?.removeAttribute('open');
-                                        handleReset();
-                                    }}
-                                    className="w-full rounded-md px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-                                >
-                                    重置实验室
-                                </button>
-                            </div>
-                        </details>
+                        <button
+                            type="button"
+                            onClick={() => setShowHeaderMenu(open => !open)}
+                            className="flex h-8 w-9 items-center justify-center rounded text-xl text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                            aria-label="更多操作"
+                            aria-expanded={showHeaderMenu}
+                            title="更多操作"
+                        >
+                            ⋯
+                        </button>
                     )}
                 </div>
             </header>
+
+            {chain.id === 'playground' && showHeaderMenu && (
+                <>
+                    <button type="button" className="fixed inset-0 z-[90] cursor-default" onClick={() => setShowHeaderMenu(false)} aria-label="关闭更多操作菜单" />
+                    <div className="fixed right-3 top-28 z-[100] w-40 rounded-lg border border-gray-200 bg-white p-1.5 shadow-xl md:top-16 dark:border-gray-700 dark:bg-gray-900">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowHeaderMenu(false);
+                                handleReset();
+                            }}
+                            className="w-full rounded-md px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                        >
+                            重置实验室
+                        </button>
+                    </div>
+                </>
+            )}
 
             {/* Editor Content */}
             <div className={`flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden ${isOwner ? 'pb-20 lg:pb-0' : ''}`}>
