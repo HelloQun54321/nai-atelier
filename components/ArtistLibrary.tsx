@@ -368,7 +368,24 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
         } else {
             localStorage.removeItem('nai_api_key');
         }
+        window.dispatchEvent(new CustomEvent<string>('nai-api-key-changed', { detail: val }));
     };
+
+    useEffect(() => {
+        const syncApiKey = (event: Event) => {
+            const nextValue = event instanceof CustomEvent
+                ? String(event.detail || '')
+                : (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
+            setApiKey(nextValue);
+            setRememberApiKey(localStorage.getItem('nai_api_key') !== null);
+        };
+        window.addEventListener('nai-api-key-changed', syncApiKey);
+        window.addEventListener('storage', syncApiKey);
+        return () => {
+            window.removeEventListener('nai-api-key-changed', syncApiKey);
+            window.removeEventListener('storage', syncApiKey);
+        };
+    }, []);
 
     const handleRememberKeyChange = (remember: boolean) => {
         setRememberApiKey(remember);

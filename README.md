@@ -114,7 +114,7 @@ npm run dev:local:watch
 
 项目已包含 317,337 条中英对照 Tag 的本地快照，日常使用无需联网。需要从 ffdkj 每日更新的 Danbooru 中英对照数据库重新生成最新快照时运行：
 
-在本地启动的实验室中，也可以点击右上角的“Tag 词库”按钮查看当前数量和生成时间，再点击“检查并更新”。程序会先检查上游版本，只有发现变化时才下载、生成分片并自动应用；GitHub 下载失败时会自动重试并切换到同仓库的 jsDelivr 备用线路，更新完成后当前页面会立即使用新词库。
+在本地应用中，也可以打开左侧底部的“全局设置”，进入“Tag 补全词库”查看当前数量和生成时间，再点击“检查并更新”。程序会先检查上游版本，只有发现变化时才下载、生成分片并自动应用；GitHub 下载失败时会自动重试并切换到同仓库的 jsDelivr 备用线路，更新完成后当前页面会立即使用新词库。
 
 ```bash
 npm run update:tags
@@ -194,8 +194,8 @@ npx wrangler pages project create nai-prompt-manager --production-branch main ||
 ## 📖 使用指南
 
 ### 配置 API Key
-首次生成图片时，在编辑器右上角输入你的 NovelAI API Key。
-> 🔑 Key 存储在浏览器 LocalStorage 中，并通过 HTTPS Header 发送给 Worker 代理，Worker 不会保存你的 Key。
+打开左侧底部的“全局设置”，在“NovelAI 连接”中输入 API Key。实验室和画师预览生成会立即共用该设置，无需刷新页面。
+> 🔑 Key 默认只保存在当前浏览器会话；勾选“在本机记住”后才会写入 LocalStorage。生成时 Key 通过请求 Header 发送给本地 Worker 代理，Worker 不会保存你的 Key。
 
 ### 个人模式
 

@@ -10,7 +10,6 @@ import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY } from '../se
 import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
-import { TagDictionaryUpdater } from './TagDictionaryUpdater';
 
 interface ChainEditorProps {
     chain: PromptChain;
@@ -95,7 +94,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [finalPrompt, setFinalPrompt] = useState('');
 
     // --- Generation State ---
-    const [apiKey, setApiKey] = useState('');
+    const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
     const [isGenerating, setIsGenerating] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [generatedImage, setGeneratedImage] = useState<string | null>(null);
@@ -241,9 +240,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setActiveModules(initialModules);
         setHasChanges(false);
 
-        // Load API Key
-        const savedKey = localStorage.getItem('nai_api_key');
-        if (savedKey) setApiKey(savedKey);
         void reloadPreviewHistory(sourceChainId);
 
     }, [chain.id, chain.basePrompt, chain.negativePrompt, chain.modules, chain.params, chain.name, chain.description, chain.variableValues]);
@@ -265,6 +261,21 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             sessionStorage.removeItem(IMPORT_SESSION_KEY);
         }
     }, [chain.id, externalImportToken]); // Also consume when a kept-alive playground receives a fresh external import.
+
+    useEffect(() => {
+        const syncApiKey = (event: Event) => {
+            const nextValue = event instanceof CustomEvent
+                ? String(event.detail || '')
+                : (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
+            setApiKey(nextValue);
+        };
+        window.addEventListener('nai-api-key-changed', syncApiKey);
+        window.addEventListener('storage', syncApiKey);
+        return () => {
+            window.removeEventListener('nai-api-key-changed', syncApiKey);
+            window.removeEventListener('storage', syncApiKey);
+        };
+    }, []);
 
     useEffect(() => {
         if (!lightboxImg || previewHistory.length <= 1) return;
@@ -298,11 +309,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const compiled = compilePrompt(tempChain, subjectPrompt);
         setFinalPrompt(compiled);
     }, [basePrompt, modules, activeModules, subjectPrompt]);
-
-    const handleApiKeyChange = (val: string) => {
-        setApiKey(val);
-        localStorage.setItem('nai_api_key', val);
-    };
 
     const getDownloadFilename = () => {
         const now = new Date();
@@ -823,7 +829,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const handleGenerate = async () => {
         if (!apiKey) {
-            setErrorMsg('请在右上角设置 NovelAI API Key');
+            setErrorMsg('请在左侧“全局设置”中配置 NovelAI API Key');
             return;
         }
         setIsGenerating(true);
@@ -1058,33 +1064,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
 
                 <div className="flex items-center gap-1 md:gap-4 flex-shrink-0 ml-auto">
-                    <div className="flex gap-1">
-                        <button
-                            onClick={() => copyPromptToClipboard(false)}
-                            className="p-1.5 rounded text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30"
-                            title="复制完整正面提示词"
-                        >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-                        </button>
-                        <button
-                            onClick={() => copyPromptToClipboard(true)}
-                            className="p-1.5 rounded text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
-                            title="复制负面提示词"
-                        >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
-                        </button>
-                    </div>
-
-                    <div className="relative group">
-                        <input
-                            type="password"
-                            placeholder="API Key"
-                            className="w-16 md:w-32 focus:w-40 md:focus:w-64 transition-all bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm text-gray-800 dark:text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
-                            value={apiKey}
-                            onChange={(e) => handleApiKeyChange(e.target.value)}
-                        />
-                    </div>
-
                     {/* Fork / Save to Library Button */}
                     {((!isOwner && !isGuest) || chain.id === 'playground') && (
                         <button
@@ -1096,18 +1075,23 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         </button>
                     )}
 
-                    {/* Tag Dictionary & Reset Controls (Playground Only) */}
+                    {/* Destructive or secondary actions stay in the overflow menu. */}
                     {chain.id === 'playground' && (
-                        <TagDictionaryUpdater notify={notify} />
-                    )}
-                    {chain.id === 'playground' && (
-                        <button
-                            onClick={handleReset}
-                            className="px-2 md:px-4 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 rounded text-sm font-medium transition-colors"
-                            title="重置"
-                        >
-                            <svg className="w-5 h-5 bg-transparent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                        </button>
+                        <details className="relative">
+                            <summary className="flex h-8 w-9 cursor-pointer list-none items-center justify-center rounded text-xl text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800" aria-label="更多操作" title="更多操作">⋯</summary>
+                            <div className="absolute right-0 top-10 z-50 w-40 rounded-lg border border-gray-200 bg-white p-1.5 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+                                <button
+                                    type="button"
+                                    onClick={event => {
+                                        event.currentTarget.closest('details')?.removeAttribute('open');
+                                        handleReset();
+                                    }}
+                                    className="w-full rounded-md px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                                >
+                                    重置实验室
+                                </button>
+                            </div>
+                        </details>
                     )}
                 </div>
             </header>
@@ -1346,7 +1330,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
                         {/* Negative Prompt */}
                         <section className="mb-8">
-                            <label className="block text-sm font-semibold text-red-500 dark:text-red-400 mb-2">全局负面提示词</label>
+                            <div className="mb-2 flex items-center justify-between gap-3">
+                                <label className="block text-sm font-semibold text-red-500 dark:text-red-400">全局负面提示词</label>
+                                <button type="button" onClick={() => copyPromptToClipboard(true)} className="flex items-center gap-1 rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30" title="复制负面提示词">
+                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                                    复制
+                                </button>
+                            </div>
                             <TagAutocompleteTextarea
                                 disabled={!canEdit}
                                 className={`w-full border rounded-lg p-3 outline-none font-mono text-sm leading-relaxed min-h-[80px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-red-900 dark:text-red-100/80 focus:ring-1 focus:ring-red-500/50'}`}
@@ -1409,6 +1399,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     canManageHistoryGroup={Boolean(selectedPreviewItem)}
                     onRemoveCurrentHistory={handleRemoveCurrentHistory}
                     onClearHistoryGroup={handleClearHistoryGroup}
+                    onCopyFinalPrompt={() => copyPromptToClipboard(false)}
                 />
             </div>
 

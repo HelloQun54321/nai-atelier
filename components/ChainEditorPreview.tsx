@@ -24,6 +24,7 @@ interface ChainEditorPreviewProps {
     canManageHistoryGroup?: boolean;
     onRemoveCurrentHistory?: () => void;
     onClearHistoryGroup?: () => void;
+    onCopyFinalPrompt: () => void;
 }
 
 export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
@@ -47,7 +48,8 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     onNextHistory,
     canManageHistoryGroup = false,
     onRemoveCurrentHistory,
-    onClearHistoryGroup
+    onClearHistoryGroup,
+    onCopyFinalPrompt
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDownloading, setIsDownloading] = useState(false);
@@ -85,7 +87,13 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
             <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden min-h-[400px]">
                 {/* Subject / Variable Input */}
                 <div className="mb-4 bg-white dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-800">
-                    <h3 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-2">3. 主体 / 变量提示词</h3>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                        <h3 className="text-xs font-bold text-indigo-500 uppercase tracking-wider">3. 主体 / 变量提示词</h3>
+                        <button type="button" onClick={onCopyFinalPrompt} className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30" title="复制基础画风、模块和主体合成后的完整提示词">
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                            复制完整提示词
+                        </button>
+                    </div>
                     <p className="text-[10px] text-gray-400 mb-2">放置画师串固定提示词以外的内容，比如人物、场景。</p>
                     <TagAutocompleteTextarea
                         className="w-full h-24 md:h-32 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg p-3 text-sm outline-none focus:border-indigo-500 font-mono resize-none"

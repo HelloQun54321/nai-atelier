@@ -436,6 +436,7 @@ const App = () => {
         toggleSafeMode={toggleSafeMode}
         toast={toast}
         hideNav={view === 'edit' || view === 'playground'}
+        notify={notify}
       >
         {renderContent()}
       </Layout>
