@@ -6,6 +6,7 @@ import { LocalGenItem, User } from '../types';
 import { PAGINATION_CONFIG } from '../config/pagination';
 import { extractMetadata, IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../services/metadataService';
 import { ParamsViewer } from './ParamsViewer';
+import { useConfirmDialog } from './ConfirmDialog';
 
 interface GenHistoryProps {
     currentUser: User;
@@ -15,6 +16,7 @@ interface GenHistoryProps {
 }
 
 export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onNavigateToPlayground, onRefreshInspiration }) => {
+    const confirmAction = useConfirmDialog();
     const [items, setItems] = useState<LocalGenItem[]>([]);
     const [lightbox, setLightbox] = useState<LocalGenItem | null>(null);
     const [isPublishing, setIsPublishing] = useState(false);
@@ -287,7 +289,12 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
 
     const handleDelete = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (confirm('确定删除这张图片记录吗？(无法恢复)')) {
+        if (await confirmAction({
+            title: '删除这张历史图片？',
+            message: '图片记录和本地图片文件将被永久删除，此操作无法撤销。',
+            confirmLabel: '确认删除',
+            tone: 'danger',
+        })) {
             try {
                 await localHistory.delete(id);
                 if (lightbox?.id === id) setLightbox(null);
@@ -309,7 +316,12 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
     };
 
     const handleClearAll = async () => {
-        if (confirm('确定清空所有本地生图历史吗？')) {
+        if (await confirmAction({
+            title: '清空全部生成历史？',
+            message: '所有历史记录和本地历史图片都将被永久删除，此操作无法撤销。',
+            confirmLabel: '确认清空',
+            tone: 'danger',
+        })) {
             try {
                 const countBefore = await localHistory.getCount();
                 await localHistory.clear();

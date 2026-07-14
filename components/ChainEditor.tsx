@@ -10,6 +10,7 @@ import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY } from '../se
 import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
+import { useConfirmDialog } from './ConfirmDialog';
 
 interface ChainEditorProps {
     chain: PromptChain;
@@ -23,6 +24,7 @@ interface ChainEditorProps {
 }
 
 export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken }) => {
+    const confirmAction = useConfirmDialog();
     const isOwner = true;
     const isGuest = false;
     const canEdit = true;
@@ -48,7 +50,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const [hasChanges, setHasChanges] = useState(false);
     const [lightboxImg, setLightboxImg] = useState<string | null>(null);
-    const [showResetConfirm, setShowResetConfirm] = useState(false);
 
     // --- Import Preset Modal State ---
     // New state for import modal search and tags
@@ -186,7 +187,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const handleClearHistoryGroup = async () => {
         if (previewHistory.length === 0) return;
-        if (!confirm(`确定清除当前画师串历史组里的 ${previewHistory.length} 张图片吗？\n\n这些图片不会从本地历史中删除，历史页仍然可以看到。`)) return;
+        if (!await confirmAction({
+            title: '清除当前画师串的历史组？',
+            message: `将从当前画师串移除 ${previewHistory.length} 张图片，但不会删除本地历史中的原图。`,
+            confirmLabel: '确认清除',
+            tone: 'danger',
+        })) return;
 
         try {
             const count = await localHistory.unlinkAllFromSourceChain(sourceChainId);
@@ -552,13 +558,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         return extractRawMetadataFromJsonText(await file.text());
     };
 
-    const applyRawMetadata = (rawMeta: string, sourceLabel: string) => {
+    const applyRawMetadata = async (rawMeta: string, sourceLabel: string) => {
         if (!rawMeta) {
             notify(`无法读取${sourceLabel}元数据`, 'error');
             return;
         }
 
-        if (!confirm(`是否用该${sourceLabel}的参数覆盖当前 Base Prompt、Negative Prompt 和参数设置？\n(Subject 和 模块不会被修改)`)) return;
+        if (!await confirmAction({
+            title: '覆盖当前提示词和参数？',
+            message: `将使用该${sourceLabel}的 Base Prompt、Negative Prompt 和参数设置覆盖当前内容。\nSubject 和模块不会修改。`,
+            confirmLabel: '确认覆盖',
+        })) return;
 
         try {
             // 调用公共解析服务
@@ -605,7 +615,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (isJsonMetadataFile(normalizedFile)) {
             try {
                 const rawMeta = await extractRawMetadataFromJson(normalizedFile);
-                applyRawMetadata(rawMeta, 'JSON');
+                await applyRawMetadata(rawMeta, 'JSON');
             } catch (e: any) {
                 notify('读取 JSON 失败: ' + e.message, 'error');
             }
@@ -618,7 +628,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
 
         const rawMeta = await extractMetadata(normalizedFile);
-        applyRawMetadata(rawMeta || '', '图片');
+        await applyRawMetadata(rawMeta || '', '图片');
     };
 
     const handleImportImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -627,7 +637,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (importInputRef.current) importInputRef.current.value = '';
     };
 
-    const handlePasteJsonImport = () => {
+    const handlePasteJsonImport = async () => {
         const text = jsonPasteText.trim();
         if (!text) {
             notify('请先粘贴 JSON 元数据', 'error');
@@ -635,7 +645,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
 
         const rawMeta = extractRawMetadataFromJsonText(text);
-        applyRawMetadata(rawMeta, 'JSON');
+        await applyRawMetadata(rawMeta, 'JSON');
         setShowJsonPasteModal(false);
         setJsonPasteText('');
     };
@@ -766,18 +776,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setShowForkModal(true);
     };
 
-    useEffect(() => {
-        if (!showResetConfirm) return;
+    const handleReset = async () => {
+        if (!await confirmAction({
+            title: '重置生图实验室？',
+            message: '基础画风、模块、角色、正负面提示词和参数将恢复默认值，此操作无法撤销。',
+            confirmLabel: '确认重置',
+            tone: 'danger',
+        })) return;
 
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') setShowResetConfirm(false);
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [showResetConfirm]);
-
-    const confirmReset = () => {
         setChainName('生图实验室');
         setChainDesc('临时生图实验，点击 Fork 可保存到库');
         setBasePrompt('');
@@ -789,7 +795,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setModules([]);
         setActiveModules({});
         setGeneratedImage(null);
-        setShowResetConfirm(false);
         notify('实验室已重置');
     };
 
@@ -902,7 +907,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const handleSavePreview = async () => {
         if (!generatedImage || !isOwner || chain.id === 'playground') return;
-        if (confirm('将当前生成的图片设为该串的封面图？\n\n警告：此操作将永久删除旧的封面图（如果是上传的图片）。')) {
+        if (await confirmAction({
+            title: '将当前图片设为封面？',
+            message: '当前生成图片将成为该串的新封面；原有上传封面将被永久删除。',
+            confirmLabel: '更换封面',
+            tone: 'danger',
+        })) {
             setIsUploading(true);
             try {
                 const res = await fetch(generatedImage);
@@ -931,7 +941,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (!isOwner) return;
         const file = e.target.files?.[0];
         if (!file) return;
-        if (confirm('您确定要上传新封面吗？\n\n警告：此操作将永久删除旧的封面图文件。')) {
+        if (await confirmAction({
+            title: '上传并更换封面？',
+            message: `将使用“${file.name}”作为新封面，原有上传封面文件将被永久删除。`,
+            confirmLabel: '上传并更换',
+            tone: 'danger',
+        })) {
             setIsUploading(true);
             try {
                 const res = await api.uploadFile(file, 'covers');
@@ -1082,7 +1097,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     {chain.id === 'playground' && (
                         <button
                             type="button"
-                            onClick={() => setShowResetConfirm(true)}
+                            onClick={handleReset}
                             className="flex h-8 w-8 items-center justify-center rounded bg-red-50 text-red-600 transition-colors hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-950/70"
                             title="重置实验室"
                             aria-label="重置实验室"
@@ -1400,54 +1415,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     onCopyFinalPrompt={() => copyPromptToClipboard(false)}
                 />
             </div>
-
-            {/* Playground Reset Confirmation */}
-            {showResetConfirm && (
-                <div
-                    className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-                    onClick={() => setShowResetConfirm(false)}
-                >
-                    <div
-                        role="alertdialog"
-                        aria-modal="true"
-                        aria-labelledby="reset-dialog-title"
-                        aria-describedby="reset-dialog-description"
-                        className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-850"
-                        onClick={(event) => event.stopPropagation()}
-                    >
-                        <div className="flex items-start gap-4">
-                            <div className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-950/60 dark:text-red-400">
-                                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                            </div>
-                            <div className="min-w-0 flex-1">
-                                <h2 id="reset-dialog-title" className="text-lg font-bold text-gray-900 dark:text-white">重置生图实验室？</h2>
-                                <p id="reset-dialog-description" className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                                    基础画风、模块、角色、正负面提示词和参数将恢复默认值，此操作无法撤销。
-                                </p>
-                            </div>
-                        </div>
-                        <div className="mt-6 flex justify-end gap-3">
-                            <button
-                                type="button"
-                                autoFocus
-                                onClick={() => setShowResetConfirm(false)}
-                                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 dark:focus:ring-offset-gray-850"
-                            >
-                                取消
-                            </button>
-                            <button
-                                type="button"
-                                onClick={confirmReset}
-                                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-red-600/20 transition-colors hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-850"
-                            >
-                                确认重置
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Lightbox Modal */}
             {lightboxImg && (

@@ -4,6 +4,7 @@ import { db } from '../services/dbService';
 import { Inspiration, User, NAIParams } from '../types';
 import { extractMetadata, parseNovelAIMetadata, ParsedNAIData, IMPORT_SESSION_KEY } from '../services/metadataService';
 import { ParamsViewer } from './ParamsViewer';
+import { useConfirmDialog } from './ConfirmDialog';
 
 interface InspirationGalleryProps {
     currentUser: User;
@@ -214,6 +215,7 @@ const InspirationLightbox: React.FC<InspirationLightboxProps> = ({
 };
 
 export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentUser, inspirationsData, onRefresh, notify, onNavigateToPlayground }) => {
+  const confirmAction = useConfirmDialog();
   const [searchTerm, setSearchTerm] = useState('');
   const [lightboxImg, setLightboxImg] = useState<{item: Inspiration, isEditing: boolean} | null>(null);
   const [uploadMode, setUploadMode] = useState(false);
@@ -309,7 +311,12 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
   const handleBulkDelete = async () => {
       if (selectedIds.size === 0) return;
-      if (!confirm(`确认删除选中的 ${selectedIds.size} 张图片吗？`)) return;
+      if (!await confirmAction({
+          title: `删除选中的 ${selectedIds.size} 张图片？`,
+          message: '这些灵感图片及其提示词数据将被永久删除，此操作无法撤销。',
+          confirmLabel: '确认删除',
+          tone: 'danger',
+      })) return;
       await db.bulkDeleteInspirations(Array.from(selectedIds));
       setSelectedIds(new Set());
       setSelectionMode(false);

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { PromptChain, ChainType } from '../types';
+import { useConfirmDialog } from './ConfirmDialog';
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -144,6 +145,7 @@ const CopyModal: React.FC<{
 };
 
 export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onRefresh, isLoading, notify, isGuest = false }) => {
+  const confirmAction = useConfirmDialog();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
@@ -429,7 +431,15 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                      </div>
                      {!isGuest && (
                         <button
-                        onClick={(e) => { e.stopPropagation(); if(confirm('确认删除?')) onDelete(chain.id); }}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (await confirmAction({
+                            title: `删除“${chain.name}”？`,
+                            message: `该${chain.type === 'character' ? '角色串' : '画师串'}及其配置将被永久删除，此操作无法撤销。`,
+                            confirmLabel: '确认删除',
+                            tone: 'danger',
+                          })) onDelete(chain.id);
+                        }}
                         className="p-1 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 transition-colors rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0"
                         title="删除"
                         >

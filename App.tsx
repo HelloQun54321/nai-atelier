@@ -7,6 +7,7 @@ import { ArtistLibrary } from './components/ArtistLibrary';
 import { InspirationGallery } from './components/InspirationGallery';
 import { GenHistory } from './components/GenHistory';
 import { AitagGallery } from './components/AitagGallery';
+import { useConfirmDialog } from './components/ConfirmDialog';
 import { db } from './services/dbService';
 import { PromptChain, User, Artist, Inspiration, ChainType } from './types';
 
@@ -18,6 +19,7 @@ const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
 const isKeepAliveView = (targetView: ViewState): targetView is KeepAliveView => targetView !== 'edit';
 
 const App = () => {
+  const confirmAction = useConfirmDialog();
   const [view, setView] = useState<ViewState>('list');
   const [mountedViews, setMountedViews] = useState<KeepAliveView[]>(['list']);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
@@ -201,9 +203,14 @@ const App = () => {
     setMountedViews(prev => prev.includes(targetView) ? prev : [...prev, targetView]);
   };
 
-  const handleNavigate = (newView: ViewState, id?: string, options: { externalImport?: boolean } = {}) => {
+  const handleNavigate = async (newView: ViewState, id?: string, options: { externalImport?: boolean } = {}) => {
     if (isEditorDirty) {
-      if (!confirm('您有未保存的更改，确定要离开吗？')) {
+      if (!await confirmAction({
+        title: '放弃未保存的更改？',
+        message: '当前修改尚未保存，离开后将会丢失。',
+        confirmLabel: '放弃并离开',
+        tone: 'danger',
+      })) {
         return;
       }
       // User confirmed, reset dirty state
