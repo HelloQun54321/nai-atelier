@@ -62,6 +62,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const requestIdRef = useRef(0);
   const composingRef = useRef(false);
   const blurTimerRef = useRef<number | null>(null);
+  const listboxRef = useRef<HTMLDivElement>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [target, setTarget] = useState<CompletionTarget | null>(null);
@@ -113,6 +115,21 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   };
 
   const isOpen = Boolean(target && (suggestions.length > 0 || isLoading));
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const listbox = listboxRef.current;
+    const option = optionRefs.current[activeIndex];
+    if (!listbox || !option) return;
+
+    const optionTop = option.offsetTop;
+    const optionBottom = optionTop + option.offsetHeight;
+    if (optionTop < listbox.scrollTop) {
+      listbox.scrollTop = optionTop;
+    } else if (optionBottom > listbox.scrollTop + listbox.clientHeight) {
+      listbox.scrollTop = optionBottom - listbox.clientHeight;
+    }
+  }, [activeIndex, isOpen, suggestions]);
 
   return (
     <div className={`relative ${containerClassName}`}>
@@ -194,6 +211,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
 
       {isOpen && (
         <div
+          ref={listboxRef}
           id={listboxId}
           role="listbox"
           className="absolute left-0 right-0 top-full z-[150] mt-1 max-h-72 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl"
@@ -202,6 +220,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             <div className="px-3 py-2 text-xs text-gray-400">正在加载 Tag…</div>
           ) : suggestions.map((suggestion, index) => (
             <button
+              ref={(element) => { optionRefs.current[index] = element; }}
               key={`${suggestion.category}-${suggestion.name}`}
               id={`${listboxId}-${index}`}
               type="button"
@@ -217,7 +236,10 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               }}
               onPointerMove={() => setActiveIndex(index)}
             >
-              <span className="min-w-0 flex-1 truncate font-mono">{suggestion.name}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-mono">{suggestion.name}</span>
+                <span className="block truncate text-xs text-gray-500 dark:text-gray-400 mt-0.5">{suggestion.chinese}</span>
+              </span>
               <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${suggestion.isNovelAI
                 ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-200'
                 : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'

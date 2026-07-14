@@ -43,7 +43,7 @@ NovelAI Prompt Manager 是一个专为 NovelAI 用户打造的现代化提示词
 | 功能 | 说明 |
 |------|------|
 | 📝 **Prompt Chain** | 核心数据结构，包含 Base Prompt、Modules（风格模块）、Params（参数）。支持版本迭代。 |
-| 🔎 **Tag 自动补全** | 实验室提示词输入支持 Danbooru 官方 Tag 与 NovelAI V4.5 专属 Tag 联想、键盘选择和权重语法保留。 |
+| 🔎 **Tag 自动补全** | 实验室提示词输入支持 31 万余条中英对照 Danbooru Tag 与 NovelAI V4.5 专属 Tag 联想；可用中英文搜索，选择后插入英文，并保留权重语法。 |
 | 🔢 **变量系统** | 支持 `{subject}` 等动态变量输入，一套风格模板可快速复用于不同角色。 |
 | 🧪 **实时预览** | 集成 NAI API (V4.5)，后端代理转发请求，解决跨域问题。 |
 | 📦 **封面管理** | 生成满意的图片后，可一键上传至 R2 并设为该 Chain 的封面。 |
@@ -70,7 +70,7 @@ NovelAI Prompt Manager 是一个专为 NovelAI 用户打造的现代化提示词
 本项目依赖 Cloudflare 生态（Pages + Workers + D1 + R2）。
 
 ### 前置要求
-- Node.js 18+
+- Node.js 18+（仅重新生成 Tag 词库需要 Node.js 22+）
 - Cloudflare 账号
 - Wrangler CLI (可选，用于本地开发)
 
@@ -109,13 +109,13 @@ npm run dev:local:watch
 
 ### 更新 Tag 自动补全词库
 
-项目已包含本地 Tag 快照，日常使用无需联网。需要从 Danbooru 官方 API 重新生成最新快照时运行：
+项目已包含 317,337 条中英对照 Tag 的本地快照，日常使用无需联网。需要从 ffdkj 每日更新的 Danbooru 中英对照数据库重新生成最新快照时运行：
 
 ```bash
 npm run update:tags
 ```
 
-更新过程会保留所有未废弃且至少关联一张作品的 Tag，并把 NovelAI V4.5 官方专属 Tag 合并到本地分片词库。
+更新过程会收录该数据库中使用量不少于 10 的 Tag，并把 NovelAI V4.5 官方专属 Tag 合并到本地分片词库。候选支持英文和中文前缀搜索，同时显示英文原名与中文解释；选择候选时只插入 NovelAI 可识别的英文 Tag。更新词库需要 Node.js 22+。
 
 ### 平台特定脚本
 

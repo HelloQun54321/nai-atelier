@@ -1,19 +1,19 @@
 {
   "source": "https://docs.novelai.net/en/image/tags/",
   "tags": [
-    "masterpiece",
-    "best quality",
-    "amazing quality",
-    "great quality",
-    "normal quality",
-    "bad quality",
-    "worst quality",
-    "very aesthetic",
-    "aesthetic",
-    "displeasing",
-    "very displeasing",
-    "fur dataset",
-    "background dataset"
+    { "name": "masterpiece", "zh": "杰作" },
+    { "name": "best quality", "zh": "最佳质量" },
+    { "name": "amazing quality", "zh": "惊艳质量" },
+    { "name": "great quality", "zh": "极佳质量" },
+    { "name": "normal quality", "zh": "普通质量" },
+    { "name": "bad quality", "zh": "较差质量" },
+    { "name": "worst quality", "zh": "最差质量" },
+    { "name": "very aesthetic", "zh": "非常美观" },
+    { "name": "aesthetic", "zh": "美观" },
+    { "name": "displeasing", "zh": "不美观" },
+    { "name": "very displeasing", "zh": "非常不美观" },
+    { "name": "fur dataset", "zh": "兽人数据集" },
+    { "name": "background dataset", "zh": "背景数据集" }
   ],
   "yearTagRange": {
     "start": 1900,

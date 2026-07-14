@@ -1,4 +1,4 @@
-export type TagDictionaryEntry = [name: string, category: number, postCount: number, source: number];
+export type TagDictionaryEntry = [name: string, chinese: string, category: number, postCount: number, source: number];
 
 interface TagDictionaryManifest {
   version: number;
@@ -6,11 +6,13 @@ interface TagDictionaryManifest {
   count: number;
   categories: Record<string, string>;
   shards: Record<string, string>;
+  chineseShards: Record<string, string>;
   popular: Record<string, TagDictionaryEntry[]>;
 }
 
 export interface TagSuggestion {
   name: string;
+  chinese: string;
   category: number;
   categoryLabel: string;
   postCount: number;
@@ -50,21 +52,23 @@ const loadManifest = () => {
   return manifestPromise;
 };
 
-const loadShard = async (manifest: TagDictionaryManifest, key: string) => {
-  const filename = manifest.shards[key];
+const loadShard = async (manifest: TagDictionaryManifest, key: string, language: 'english' | 'chinese') => {
+  const filename = language === 'chinese' ? manifest.chineseShards[key] : manifest.shards[key];
   if (!filename) return [];
-  if (!shardPromises.has(key)) {
-    shardPromises.set(key, fetch(`/tag-data/shards/${filename}`)
+  const cacheKey = `${language}:${key}`;
+  const directory = language === 'chinese' ? 'zh-shards' : 'shards';
+  if (!shardPromises.has(cacheKey)) {
+    shardPromises.set(cacheKey, fetch(`/tag-data/${directory}/${filename}`)
       .then(response => {
         if (!response.ok) throw new Error(`Tag dictionary shard failed: ${response.status}`);
         return response.json() as Promise<TagDictionaryEntry[]>;
       })
       .catch(error => {
-        shardPromises.delete(key);
+        shardPromises.delete(cacheKey);
         throw error;
       }));
   }
-  return shardPromises.get(key)!;
+  return shardPromises.get(cacheKey)!;
 };
 
 export const searchTagDictionary = async (rawQuery: string, limit = 10): Promise<TagSuggestion[]> => {
@@ -72,23 +76,33 @@ export const searchTagDictionary = async (rawQuery: string, limit = 10): Promise
   if (!query) return [];
 
   const manifest = await loadManifest();
-  const entries = query.length === 1
-    ? (manifest.popular[query[0]] || [])
-    : await loadShard(manifest, query.slice(0, 2).padEnd(2, ' '));
+  const isChineseQuery = /[\u3400-\u9fff]/.test(query[0]);
+  const chineseFirstCharacter = Array.from(query)[0];
+  const chineseShardKey = chineseFirstCharacter
+    ? (chineseFirstCharacter.codePointAt(0)! % 256).toString(16).padStart(2, '0')
+    : '';
+  const entries = isChineseQuery
+    ? await loadShard(manifest, chineseShardKey, 'chinese')
+    : query.length === 1
+      ? (manifest.popular[query[0]] || [])
+      : await loadShard(manifest, query.slice(0, 2).padEnd(2, ' '), 'english');
 
   return entries
-    .filter(entry => entry[0].startsWith(query))
+    .filter(entry => (isChineseQuery ? entry[1] : entry[0]).toLowerCase().startsWith(query))
     .sort((a, b) => {
-      const exactDifference = Number(b[0] === query) - Number(a[0] === query);
-      return exactDifference || b[3] - a[3] || b[2] - a[2] || a[0].localeCompare(b[0]);
+      const aSearchValue = isChineseQuery ? a[1] : a[0];
+      const bSearchValue = isChineseQuery ? b[1] : b[0];
+      const exactDifference = Number(bSearchValue.toLowerCase() === query) - Number(aSearchValue.toLowerCase() === query);
+      return exactDifference || b[4] - a[4] || b[3] - a[3] || a[0].localeCompare(b[0]);
     })
     .slice(0, limit)
     .map(entry => ({
       name: entry[0],
-      category: entry[1],
-      categoryLabel: CATEGORY_LABELS[entry[1]] || 'Tag',
-      postCount: entry[2],
-      isNovelAI: entry[3] === 1
+      chinese: entry[1],
+      category: entry[2],
+      categoryLabel: CATEGORY_LABELS[entry[2]] || 'Tag',
+      postCount: entry[3],
+      isNovelAI: entry[4] === 1
     }));
 };
 
