@@ -765,6 +765,22 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setShowForkModal(true);
     };
 
+    const handleReset = () => {
+        if (!confirm('确定要重置实验室吗？所有当前输入都将丢失。')) return;
+        setChainName('生图实验室');
+        setChainDesc('临时生图实验，点击 Fork 可保存到库');
+        setBasePrompt('');
+        setNegativePrompt('');
+        setParams({
+            width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: undefined, qualityToggle: true, ucPreset: 4, characters: []
+        });
+        setSubjectPrompt('');
+        setModules([]);
+        setActiveModules({});
+        setGeneratedImage(null);
+        notify('实验室已重置');
+    };
+
     const confirmFork = (targetType: 'style' | 'character') => {
         const updatedModules = modules.map(m => ({
             ...m,
@@ -1039,7 +1055,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     )}
                 </div>
 
-                <div className="ml-auto flex flex-shrink-0 items-center">
+                <div className="ml-auto flex flex-shrink-0 items-center gap-2">
                     {/* Fork / Save to Library Button */}
                     {((!isOwner && !isGuest) || chain.id === 'playground') && (
                         <button
@@ -1048,6 +1064,18 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         >
                             <svg className="w-4 h-4 md:mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
                             <span className="hidden md:inline">{chain.id === 'playground' ? '保存到库' : 'Fork'}</span>
+                        </button>
+                    )}
+
+                    {chain.id === 'playground' && (
+                        <button
+                            type="button"
+                            onClick={handleReset}
+                            className="flex h-8 w-8 items-center justify-center rounded bg-red-50 text-red-600 transition-colors hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-950/70"
+                            title="重置实验室"
+                            aria-label="重置实验室"
+                        >
+                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                         </button>
                     )}
 
