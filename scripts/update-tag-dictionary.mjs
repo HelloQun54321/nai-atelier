@@ -14,6 +14,7 @@ const TRANSLATION_DATABASE_FALLBACK_URL = process.env.NAI_TAG_DATABASE_FALLBACK_
   || 'https://cdn.jsdelivr.net/gh/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table@main/tag.sqlite';
 const TRANSLATION_PROJECT_URL = 'https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table';
 const USER_AGENT = 'NaiPromptManager/0.5.0 (private local tag dictionary updater)';
+const CHARACTER_SEARCH_SHARD_COUNT = 128;
 
 const categoryNames = {
   0: 'general',
@@ -36,15 +37,49 @@ const normalizeChinese = (name) => String(name)
 
 const rankEntries = (a, b) => b[4] - a[4] || b[3] - a[3] || a[0].localeCompare(b[0]);
 
+const splitSearchSegments = (value) => String(value)
+  .normalize('NFKC')
+  .toLowerCase()
+  .match(/[\p{Script=Han}]+|[\p{L}\p{N}]+/gu) || [];
+
+const buildCharacterSearchTokens = (value) => {
+  const tokens = new Set();
+  for (const segment of splitSearchSegments(value)) {
+    const characters = Array.from(segment);
+    if (/^\p{Script=Han}+$/u.test(segment)) {
+      for (let index = 0; index < characters.length - 1; index++) {
+        tokens.add(characters.slice(index, index + 2).join(''));
+      }
+      continue;
+    }
+    if (characters.length === 1) continue;
+    for (let length = 2; length <= Math.min(characters.length, 40); length++) {
+      tokens.add(characters.slice(0, length).join(''));
+    }
+  }
+  return tokens;
+};
+
+const hashSearchToken = (token) => {
+  let hash = 2166136261;
+  for (let index = 0; index < token.length; index++) {
+    hash ^= token.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % CHARACTER_SEARCH_SHARD_COUNT;
+};
+
 async function readCurrentSourceMetadata() {
   try {
     const manifest = JSON.parse(await readFile(MANIFEST_FILE, 'utf8'));
     return {
-      canSkipRegeneration: Number(manifest.version) >= 6
+      canSkipRegeneration: Number(manifest.version) >= 7
         && Array.isArray(manifest.artistPages)
         && Array.isArray(manifest.artistNamePages)
         && Array.isArray(manifest.characterPages)
-        && Array.isArray(manifest.characterNamePages),
+        && Array.isArray(manifest.characterNamePages)
+        && Array.isArray(manifest.characterSearchShards)
+        && typeof manifest.characterSearchRecords === 'string',
       validators: manifest.sourceValidators || {
         [manifest.sourceDownloadUrl || TRANSLATION_DATABASE_URL]: {
           etag: manifest.sourceEtag || '',
@@ -162,6 +197,34 @@ async function writeArtistPages(entries, directoryName, pageSize = 500) {
   return { pages, pageSize };
 }
 
+async function writeCharacterSearchShards(entries) {
+  const directory = path.join(OUTPUT_DIR, 'character-search-shards');
+  await mkdir(directory, { recursive: true });
+  const shards = Array.from({ length: CHARACTER_SEARCH_SHARD_COUNT }, () => new Map());
+
+  entries.forEach((entry, entryIndex) => {
+    const tokens = new Set([
+      ...buildCharacterSearchTokens(entry[0]),
+      ...buildCharacterSearchTokens(entry[1])
+    ]);
+    for (const token of tokens) {
+      const shard = shards[hashSearchToken(token)];
+      const indices = shard.get(token) || [];
+      indices.push(entryIndex);
+      shard.set(token, indices);
+    }
+  });
+
+  const filenames = [];
+  for (let index = 0; index < shards.length; index++) {
+    const filename = `${String(index).padStart(4, '0')}.json`;
+    const payload = Object.fromEntries([...shards[index].entries()].sort(([a], [b]) => a.localeCompare(b)));
+    await writeFile(path.join(directory, filename), JSON.stringify(payload));
+    filenames.push(filename);
+  }
+  return filenames;
+}
+
 async function main() {
   const temporaryDatabase = path.join(tmpdir(), `nai-tag-translation-${process.pid}.sqlite`);
   let database;
@@ -255,9 +318,15 @@ async function main() {
     const characterPagination = await writeArtistPages(rankedCharacters, 'character-pages');
     const charactersByName = [...rankedCharacters].sort((a, b) => a[0].localeCompare(b[0], 'en'));
     const characterNamePagination = await writeArtistPages(charactersByName, 'character-name-pages');
+    const characterSearchShards = await writeCharacterSearchShards(rankedCharacters);
+    const characterSearchRecords = 'character-search-records.json';
+    await writeFile(
+      path.join(OUTPUT_DIR, characterSearchRecords),
+      JSON.stringify(rankedCharacters.map(entry => [entry[0], entry[1], entry[3]]))
+    );
 
     const manifest = {
-      version: 6,
+      version: 7,
       generatedAt: new Date().toISOString(),
       sourceDownloadUrl: sourceMetadata.downloadUrl,
       sourceValidators: sourceMetadata.validators,
@@ -279,7 +348,10 @@ async function main() {
       popularCharacters,
       characterPageSize: characterPagination.pageSize,
       characterPages: characterPagination.pages,
-      characterNamePages: characterNamePagination.pages
+      characterNamePages: characterNamePagination.pages,
+      characterSearchShardCount: CHARACTER_SEARCH_SHARD_COUNT,
+      characterSearchShards,
+      characterSearchRecords
     };
 
     await writeFile(path.join(OUTPUT_DIR, 'manifest.json'), JSON.stringify(manifest));

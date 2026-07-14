@@ -38,6 +38,7 @@ interface CharacterCard {
   tagName?: string;
   chinese?: string;
   postCount?: number;
+  matchReason?: string;
   previewImage?: string;
   chain?: PromptChain;
 }
@@ -212,6 +213,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       tagName: entry.name,
       chinese: entry.chinese,
       postCount: entry.postCount,
+      matchReason: entry.matchReason,
       previewImage: chain?.previewImage,
       chain,
     };
@@ -394,10 +396,10 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
         <div className="flex flex-wrap gap-2">
           <div className="relative min-w-[260px] flex-1">
             <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" /></svg>
-            <input value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索中文角色名或英文 Tag…" className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+            <input value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品、变体或英文 Tag…" className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
           </div>
           <select value={sort} disabled={Boolean(gachaCards)} onChange={event => setSort(event.target.value as CharacterDictionarySort)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-            <option value="popular">热度从高到低</option><option value="least">热度从低到高</option><option value="name-asc">名称 A → Z</option><option value="name-desc">名称 Z → A</option>
+            <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">{searchTerm.trim() ? '相关性优先 · 名称 A → Z' : '名称 A → Z'}</option><option value="name-desc">{searchTerm.trim() ? '相关性优先 · 名称 Z → A' : '名称 Z → A'}</option>
           </select>
           <div className="flex items-center rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-300">
             显示 {visibleCards.length.toLocaleString('zh-CN')} · 目录 {catalogTotal.toLocaleString('zh-CN')} · 自定义 {customChains.length}
@@ -431,7 +433,10 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                   <h2 className="truncate text-sm font-bold text-gray-900 dark:text-white" title={card.name}>{card.name}</h2>
                   {card.kind === 'catalog' ? <>
                     <div className="mt-0.5 truncate font-mono text-[10px] text-gray-400" title={card.tagName}>{card.tagName}</div>
-                    <div className="mt-1 text-[10px] text-orange-500">作品 {(card.postCount || 0).toLocaleString('zh-CN')}</div>
+                    <div className="mt-1 flex items-center justify-between gap-1 text-[10px]">
+                      <span className="text-orange-500">作品 {(card.postCount || 0).toLocaleString('zh-CN')}</span>
+                      {card.matchReason && <span className="truncate rounded bg-purple-50 px-1.5 py-0.5 text-purple-600 dark:bg-purple-950/50 dark:text-purple-300" title={`匹配：${card.matchReason}`}>匹配：{card.matchReason}</span>}
+                    </div>
                   </> : <div className="mt-1 truncate text-[10px] text-gray-400">{card.chain?.description || '手工组合外貌与服装提示词'}</div>}
                   <div className="mt-3 grid grid-cols-2 gap-1.5 text-[11px]">
                     <button onClick={() => void copyCharacter(card)} className="rounded bg-gray-100 px-2 py-1.5 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">复制</button>
