@@ -1091,9 +1091,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     {((!isOwner && !isGuest) || chain.id === 'playground') && (
                         <button
                             onClick={handleFork}
-                            className="mobile-touch px-2 md:px-4 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded text-sm font-medium shadow-lg shadow-green-500/20 flex items-center"
+                            className="mobile-touch flex h-12 w-14 items-center justify-center rounded-xl bg-green-600 p-0 text-sm font-medium text-white shadow-lg shadow-green-500/20 hover:bg-green-500 md:h-auto md:w-auto md:px-4 md:py-2"
                         >
-                            <svg className="w-4 h-4 md:mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 10h16v8.25A1.75 1.75 0 0118.25 20H5.75A1.75 1.75 0 014 18.25V10Z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v10m-4-4 4 4 4-4M8.5 17h7" /></svg>
+                            <svg className="block h-5 w-5 md:mr-1 md:h-4 md:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 10h16v8.25A1.75 1.75 0 0118.25 20H5.75A1.75 1.75 0 014 18.25V10Z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v10m-4-4 4 4 4-4M8.5 17h7" /></svg>
                             <span className="hidden md:inline">{chain.id === 'playground' ? '保存到库' : 'Fork'}</span>
                         </button>
                     )}

@@ -157,7 +157,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">查看版本、数量并检查中英 Tag 数据更新。</p>
               </div><span className="md:hidden">{mobileSection === 'tags' ? '⌃' : '⌄'}</span>
             </button>
-            {(!isMobile || mobileSection === 'tags') && <div className="mt-3 flex justify-end"><TagDictionaryUpdater notify={notify} /></div>}
+            {(!isMobile || mobileSection === 'tags') && <div className="mt-3 flex justify-start"><TagDictionaryUpdater notify={notify} /></div>}
           </section>
 
           <section className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">

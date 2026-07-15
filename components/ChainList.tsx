@@ -408,21 +408,21 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                     )}
                 </div>
 
-                <div className="p-2 md:p-3 flex flex-col flex-1">
-                  <div className="flex justify-between items-start mb-1">
-                    <h3 className="text-base font-bold text-gray-900 dark:text-gray-100 truncate pr-2 w-full" title={chain.name}>{chain.name}</h3>
+                <div className="flex h-12 flex-col justify-center px-3 md:h-auto md:flex-1 md:p-3">
+                  <div className="flex items-center justify-between md:mb-1 md:items-start">
+                    <h3 className="w-full truncate pr-1 text-base font-bold text-gray-900 dark:text-gray-100 md:pr-2" title={chain.name}>{chain.name}</h3>
                     <button
                       type="button"
                       onClick={(e) => toggleFav(chain.id, e)}
-                      className={`mobile-touch ml-1 p-1 rounded-full flex-shrink-0 ${
+                      className={`mobile-touch ml-1 flex flex-shrink-0 items-center justify-center rounded-full p-0 ${
                         favorites.has(chain.id)
-                          ? 'text-yellow-500'
-                          : 'text-gray-300 hover:text-yellow-400 dark:text-gray-500 dark:hover:text-yellow-400'
+                          ? 'text-rose-500'
+                          : 'text-gray-300 hover:text-rose-400 dark:text-gray-500 dark:hover:text-rose-400'
                       }`}
                       title={favorites.has(chain.id) ? '取消收藏' : '收藏该串'}
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill={favorites.has(chain.id) ? 'currentColor' : 'none'} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.563.044.8.77.38 1.178l-4.244 4.134a.563.563 0 00-.153.476l1.24 5.376c.13.565-.487 1.01-.967.756L12 18.232l-4.894 3.08c-.48.254-1.097-.19-.967-.756l1.24-5.376a.563.563 0 00-.153-.476L2.985 10.575c-.42-.408-.183-1.134.38-1.178l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                      <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill={favorites.has(chain.id) ? 'currentColor' : 'none'} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78Z" />
                       </svg>
                     </button>
                   </div>

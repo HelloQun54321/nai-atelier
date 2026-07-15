@@ -548,7 +548,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                             </p>
                         )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="ml-auto flex items-center gap-2">
                         <button onClick={() => setShowDateFilter(true)} className="mobile-touch rounded-lg bg-gray-100 px-3 text-xs font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-300 md:hidden">筛选</button>
                         <button onClick={() => setShowCleanMenu(true)} className="mobile-touch rounded-lg bg-gray-100 px-3 text-xs font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-300 md:hidden">管理</button>
                         <div className="relative hidden md:block">
@@ -731,9 +731,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                     <div className="grid grid-cols-[auto_1fr_auto] gap-2">
                         <button onClick={() => { void goToPage(1); setShowPageMenu(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">首页</button>
                         <input type="number" min="1" max={totalPages} value={jumpPage} onChange={event => setJumpPage(event.target.value)} placeholder={`${currentPage} / ${totalPages}`} className="min-w-0 rounded-xl border border-gray-300 bg-white px-3 text-center dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
-                        <button onClick={() => { const page = Number(jumpPage); if (page >= 1 && page <= totalPages) void goToPage(page); setJumpPage(''); setShowPageMenu(false); }} className="mobile-touch rounded-xl bg-indigo-600 px-4 font-bold text-white">跳转</button>
+                        <button onClick={() => { void goToPage(totalPages); setShowPageMenu(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">尾页</button>
                     </div>
-                    <button onClick={() => { void goToPage(totalPages); setShowPageMenu(false); }} className="mobile-touch w-full rounded-xl border border-gray-300 text-sm dark:border-gray-600">前往末页</button>
+                    <button onClick={() => { const page = Number(jumpPage); if (page >= 1 && page <= totalPages) void goToPage(page); setJumpPage(''); setShowPageMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-600 font-bold text-white">跳转</button>
                 </div>
             </MobileBottomSheet>
 
