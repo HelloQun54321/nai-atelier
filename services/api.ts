@@ -1,28 +1,5 @@
 // Base API URL
 const API_BASE = '/api';
-const NAI_API_URL = 'https://image.novelai.net/ai/generate-image';
-
-// 本地模式下 /generate 端点需绕过 Worker 代理直接调用 NAI API
-// 原因：Wrangler pages dev 本地开发时 Worker 代理会产生报错
-// 生产环境部署时仍通过 Worker 代理，保持安全层（日志、速率限制等）
-// 注意：仅 postBinary 方法需要绕过，因为其他 POST 方法调用本地 Worker API（数据库操作）
-//      不涉及外部 NAI API 调用
-const LOCAL_BYPASS_ENDPOINTS = ['/generate'];
-
-// 私有 IP 地址检测（覆盖 RFC 1918 定义的所有私有地址段 + IPv6 loopback）
-const PRIVATE_IP_PATTERNS = [
-  /^127\.\d+\.\d+\.\d+$/,           // 127.0.0.0/8 (IPv4 loopback)
-  /^10\.\d+\.\d+\.\d+$/,            // 10.0.0.0/8
-  /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/, // 172.16.0.0/12
-  /^192\.168\.\d+\.\d+$/,           // 192.168.0.0/16
-  /^0\.0\.0\.0$/,                   // 0.0.0.0
-];
-
-const isLocalMode = () => {
-  if (typeof window === 'undefined') return false;
-  const hostname = window.location.hostname;
-  return hostname === 'localhost' || hostname === '::1' || PRIVATE_IP_PATTERNS.some(p => p.test(hostname));
-};
 
 const getHeaders = (extraHeaders?: Record<string, string>) => {
   const headers: Record<string, string> = {
@@ -88,17 +65,17 @@ export const api = {
   
   // Binary response for images
   postBinary: async (endpoint: string, data: any, headers?: Record<string, string>) => {
-    let url = `${API_BASE}${endpoint}`;
-    
-    if (LOCAL_BYPASS_ENDPOINTS.includes(endpoint) && isLocalMode()) {
-      url = NAI_API_URL;
-    }
-    
-    const res = await fetch(url, {
+    const res = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
       headers: getHeaders(headers),
       body: JSON.stringify(data),
     });
+    if (res.status === 401) {
+      const payload = await res.clone().json().catch(() => null);
+      if (payload?.code === 'LAN_ACCESS_REQUIRED' && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('nai-lan-access-required'));
+      }
+    }
     if (!res.ok) throw new Error(await res.text());
     return res.blob();
   },

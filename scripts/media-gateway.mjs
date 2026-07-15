@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/pro
 import { createServer, request as httpRequest } from 'node:http';
 import { connect as connectSocket } from 'node:net';
 import { join, resolve } from 'node:path';
+import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
 const CACHE_VERSION = 'v1';
@@ -12,6 +13,8 @@ const CACHE_LIMIT = 1024 * 1024 * 1024;
 const CACHE_PRUNE_TARGET = 900 * 1024 * 1024;
 const SOURCE_LIMIT = 2048;
 const INPUT_LIMIT = 30 * 1024 * 1024;
+const GENERATION_REQUEST_LIMIT = 5 * 1024 * 1024;
+const NAI_GENERATE_URL = 'https://image.novelai.net/ai/generate-image';
 const ALLOWED_REMOTE_HOSTS = new Set(['ai-img.10118899.xyz', 'aitag.win']);
 const THUMB_WIDTHS = new Map([['thumb-320', 320], ['thumb-640', 640]]);
 
@@ -61,6 +64,67 @@ const sendJson = (res, status, payload) => {
     'Cache-Control': 'no-store',
   });
   res.end(body);
+};
+
+const readRequestBody = (req, limit) => new Promise((resolve, reject) => {
+  const chunks = [];
+  let size = 0;
+  req.setTimeout(30_000, () => req.destroy(new Error('Request body timed out')));
+  req.on('data', chunk => {
+    size += chunk.length;
+    if (size > limit) {
+      req.destroy();
+      const error = new Error('Request body is too large');
+      error.status = 413;
+      reject(error);
+      return;
+    }
+    chunks.push(chunk);
+  });
+  req.on('end', () => resolve(Buffer.concat(chunks, size)));
+  req.on('error', reject);
+});
+
+const handleGenerateRequest = async (req, res, lanSecret) => {
+  if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+  if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+  const authorization = String(req.headers.authorization || '');
+  if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
+
+  try {
+    const body = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
+    const response = await fetch(NAI_GENERATE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': authorization,
+      },
+      body,
+      signal: AbortSignal.timeout(300_000),
+    });
+    const headers = {
+      'Content-Type': response.headers.get('content-type') || 'application/octet-stream',
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+    };
+    const contentLength = response.headers.get('content-length');
+    const contentDisposition = response.headers.get('content-disposition');
+    if (contentLength) headers['Content-Length'] = contentLength;
+    if (contentDisposition) headers['Content-Disposition'] = contentDisposition;
+    res.writeHead(response.status, headers);
+    if (!response.body) return res.end();
+    Readable.fromWeb(response.body).on('error', error => res.destroy(error)).pipe(res);
+  } catch (error) {
+    if (res.headersSent) return res.destroy(error);
+    if (Number(error.status)) return sendJson(res, Number(error.status), { error: error.message });
+    const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+    return sendJson(res, timedOut ? 504 : 502, {
+      error: timedOut
+        ? '电脑连接 NovelAI 超时，请检查电脑 VPN 后重试'
+        : '电脑无法连接 NovelAI，请检查电脑 VPN 是否正常连接',
+      code: timedOut ? 'NAI_PROXY_TIMEOUT' : 'NAI_PROXY_UNREACHABLE',
+    });
+  }
 };
 
 const getValidatedSource = value => {
@@ -269,6 +333,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
   const server = createServer(async (req, res) => {
     let url;
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
+    if (url.pathname === '/api/generate') return handleGenerateRequest(req, res, lanSecret);
     if (url.pathname !== '/api/media') return proxyRequest(req, res, workerPort);
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
     if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
