@@ -1,6 +1,7 @@
 
 import React, { useRef, useState } from 'react';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
+import { OriginalImage } from './SmartImage';
 
 interface ChainEditorPreviewProps {
     subjectPrompt: string;
@@ -179,7 +180,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
 
                     {generatedImage ? (
                         <>
-                            <img src={generatedImage} alt="已生成" className="max-w-full max-h-full object-contain shadow-2xl" />
+                            <OriginalImage src={generatedImage} alt="已生成" className="max-w-full max-h-full object-contain shadow-2xl" />
                             {historyLabel && (
                                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1 text-xs text-white pointer-events-none">
                                     {historyLabel}
@@ -193,7 +194,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                     ) : (
                         previewImage ? (
                             <>
-                                <img src={previewImage} alt="封面" className="max-w-full max-h-full object-contain shadow-2xl opacity-50 grayscale hover:grayscale-0 transition-all duration-500" />
+                                <OriginalImage src={previewImage} alt="封面" className="max-w-full max-h-full object-contain shadow-2xl opacity-50 grayscale hover:grayscale-0 transition-all duration-500" />
                                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                     <span className="bg-black/50 text-white px-3 py-1 rounded text-xs">当前封面</span>
                                 </div>

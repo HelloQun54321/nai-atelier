@@ -7,6 +7,7 @@ import { db } from '../services/dbService'; // Import DB to fetch config
 import { ArtistLibraryConfig } from './ArtistLibraryConfig';
 import { ArtistLibraryCart } from './ArtistLibraryCart';
 import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryEntriesAt, getArtistDictionaryPage, searchArtistDictionary } from '../services/tagDictionary';
+import { OriginalImage, SmartImage } from './SmartImage';
 
 interface CartItem {
     name: string;
@@ -50,43 +51,7 @@ const compressImage = (base64: string, quality: number = 0.8): Promise<string> =
     });
 };
 
-// Lazy Loading Component
-const LazyImage: React.FC<{ src: string; alt: string; className?: string }> = ({ src, alt, className }) => {
-    const [isLoaded, setIsLoaded] = useState(false);
-    const [isInView, setIsInView] = useState(false);
-    const imgRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        setIsLoaded(false); // Reset load state when src changes
-        const observer = new IntersectionObserver((entries) => {
-            if (entries[0].isIntersecting) {
-                setIsInView(true);
-                observer.disconnect();
-            }
-        }, { threshold: 0.1 });
-
-        if (imgRef.current) observer.observe(imgRef.current);
-        return () => observer.disconnect();
-    }, [src]);
-
-    return (
-        <div ref={imgRef} className={`relative bg-gray-200 dark:bg-gray-900 overflow-hidden ${className || 'w-full h-full'}`}>
-            {isInView && (
-                <img
-                    src={src}
-                    alt={alt}
-                    className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`}
-                    onLoad={() => setIsLoaded(true)}
-                />
-            )}
-            {!isLoaded && isInView && (
-                <div className="absolute inset-0 flex items-center justify-center text-gray-400">
-                    <span className="animate-pulse">...</span>
-                </div>
-            )}
-        </div>
-    );
-};
+const LazyImage = SmartImage;
 
 // --- Benchmark Config Interface ---
 interface BenchmarkSlot {
@@ -1484,7 +1449,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                     </div>
 
                     <div className="relative max-w-full max-h-full p-4 flex flex-col items-center pointer-events-auto" onClick={(e) => e.stopPropagation()}>
-                        <img
+                        <OriginalImage
                             src={currentLightboxImage.src}
                             alt={currentLightboxImage.name}
                             className="max-w-full max-h-[85vh] rounded shadow-2xl object-contain cursor-pointer"

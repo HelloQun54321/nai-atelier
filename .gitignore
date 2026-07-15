@@ -32,6 +32,7 @@ docs/plans/
 
 # 本地部署数据
 local-data/
+local-cache/
 
 # Wrangler 本地缓存
 .wrangler/

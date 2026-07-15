@@ -11,6 +11,7 @@ import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { useConfirmDialog } from './ConfirmDialog';
+import { OriginalImage, SmartImage } from './SmartImage';
 
 interface ChainEditorProps {
     chain: PromptChain;
@@ -1434,7 +1435,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             </svg>
                         </button>
                     )}
-                    <img src={lightboxImg} className="max-w-full max-h-full object-contain rounded shadow-2xl" onClick={e => e.stopPropagation()} />
+                    <OriginalImage src={lightboxImg} className="max-w-full max-h-full object-contain rounded shadow-2xl" onClick={e => e.stopPropagation()} />
                     {previewHistory.length > 1 && (
                         <button
                             className="absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"
@@ -1631,7 +1632,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                       >
                                         <div className="aspect-square w-full bg-black/5 dark:bg-black/20 flex-shrink-0 relative">
                                           {c.previewImage ? (
-                                            <img src={c.previewImage} alt="" className="absolute inset-0 w-full h-full object-contain" />
+                                            <SmartImage src={c.previewImage} alt="" className="absolute inset-0 w-full h-full object-contain" />
                                           ) : (
                                             <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-xs">无图</div>
                                           )}

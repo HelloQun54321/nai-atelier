@@ -1,4 +1,5 @@
 import React, { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
+import { abortMobileThumbnailRequests } from '../services/mobileImageCache';
 
 interface LanAccessGateProps {
   children: ReactNode;
@@ -28,6 +29,7 @@ export const LanAccessGate: React.FC<LanAccessGateProps> = ({ children }) => {
   useEffect(() => {
     void checkAccess();
     const requireAccess = () => {
+      abortMobileThumbnailRequests();
       setPin('');
       setMessage('访问已失效，请重新输入密码');
       setState('locked');

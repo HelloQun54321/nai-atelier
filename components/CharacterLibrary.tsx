@@ -12,6 +12,7 @@ import {
   searchCharacterDictionary,
 } from '../services/tagDictionary';
 import { useConfirmDialog } from './ConfirmDialog';
+import { OriginalImage, SmartImage } from './SmartImage';
 
 const CATALOG_MARKER = '__character_catalog__';
 const getDanbooruPostsUrl = (tagName: string) =>
@@ -53,30 +54,7 @@ interface CharacterLibraryProps {
   notify: (message: string, type?: 'success' | 'error') => void;
 }
 
-const LazyImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
-  const [visible, setVisible] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-    const observer = new IntersectionObserver(entries => {
-      if (entries[0]?.isIntersecting) {
-        setVisible(true);
-        observer.disconnect();
-      }
-    }, { rootMargin: '500px' });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-
-  return (
-    <div ref={ref} className="h-full w-full bg-gray-200 dark:bg-gray-900">
-      {visible && <img src={src} alt={alt} onLoad={() => setLoaded(true)} className={`h-full w-full object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`} />}
-    </div>
-  );
-};
+const LazyImage = SmartImage;
 
 export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   chains,
@@ -471,7 +449,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
       {lightbox?.previewImage && (
         <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm" onClick={() => setLightbox(null)}>
-          <img src={lightbox.previewImage} alt={lightbox.name} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" onClick={event => event.stopPropagation()} />
+          <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" onClick={event => event.stopPropagation()} />
           <div className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded bg-black/65 px-4 py-2 text-center text-sm text-white">{lightbox.name}{lightbox.tagName ? ` · ${lightbox.tagName}` : ''}</div>
           <button onClick={() => setLightbox(null)} className="absolute right-5 top-5 text-3xl text-white">×</button>
         </div>

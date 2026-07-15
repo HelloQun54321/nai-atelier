@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { randomBytes, randomInt } from 'crypto';
 import { networkInterfaces, platform } from 'os';
 import { startTagUpdateServer } from './tag-update-server.mjs';
+import { createMediaGateway } from './media-gateway.mjs';
 
 const IS_WINDOWS = platform() === 'win32';
 const IS_TERMUX = process.env.TERMUX_VERSION || existsSync('/data/data/com.termux');
@@ -149,7 +150,20 @@ async function openWhenReady() {
   console.log(`Please open manually: ${DISPLAY_URL}`);
 }
 
-function startServer() {
+async function waitForWorker(port) {
+  for (let i = 0; i < 60; i++) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/`, { cache: 'no-store' });
+      if (response.status < 500) return;
+    } catch {
+      // Worker is still starting.
+    }
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  throw new Error('内部服务启动超时');
+}
+
+async function startServer() {
   const lanAccess = loadLanAccessConfig();
   const lanUrls = getLanUrls();
   console.log('\x1b[32m启动本地服务 (端口 3000)...\x1b[0m');
@@ -171,8 +185,8 @@ function startServer() {
     '--binding', 'PERSONAL_MODE_ENABLED=true',
     '--binding', `LAN_ACCESS_PIN=${lanAccess.pin}`,
     '--binding', `LAN_ACCESS_SECRET=${lanAccess.secret}`,
-    '--ip', '0.0.0.0',
-    '--port', '3000',
+    '--ip', '127.0.0.1',
+    '--port', '3001',
     '--compatibility-date', '2024-04-01',
     '--show-interactive-dev-session=false'
   ];
@@ -183,7 +197,7 @@ function startServer() {
   
   const tagUpdateServer = startTagUpdateServer();
   const child = spawn(cmd, cmdArgs, spawnOpts);
-  openWhenReady();
+  let mediaGateway = null;
   
   child.on('error', (err) => {
     console.error('\x1b[31m启动失败:\x1b[0m', err.message);
@@ -191,16 +205,30 @@ function startServer() {
   });
   
   child.on('exit', (code) => {
+    mediaGateway?.close();
     tagUpdateServer.close();
     if (code !== 0 && code !== null) {
       console.error(`\x1b[31m服务异常退出，退出码: ${code}\x1b[0m`);
     }
     process.exit(code || 0);
   });
+
+  try {
+    await waitForWorker(3001);
+    mediaGateway = await createMediaGateway({ port: 3000, workerPort: 3001, lanSecret: lanAccess.secret });
+    console.log('\x1b[32m图片网关已就绪，手机列表将按需使用缩略图。\x1b[0m');
+    openWhenReady();
+  } catch (error) {
+    console.error(`\x1b[31m本地服务启动失败: ${error.message}\x1b[0m`);
+    mediaGateway?.close();
+    tagUpdateServer.close();
+    child.kill();
+    process.exit(1);
+  }
 }
 
 console.log('\x1b[36m=== NaiPromptManager 本地部署 ===\x1b[0m');
 
 ensureDependencies();
 buildLatest();
-startServer();
+await startServer();

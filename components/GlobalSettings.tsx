@@ -1,5 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
+import {
+  clearMobileThumbnailCache,
+  getMobileCacheLimitMb,
+  getMobileCacheStats,
+  refreshMobileCacheMetadata,
+  setMobileCacheLimitMb,
+} from '../services/mobileImageCache';
 
 interface GlobalSettingsProps {
   open: boolean;
@@ -13,6 +20,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
   const [apiKey, setApiKey] = useState(readApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(() => localStorage.getItem('nai_api_key') !== null);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [mobileCacheStats, setMobileCacheStats] = useState(getMobileCacheStats);
 
   useEffect(() => {
     if (!open) return;
@@ -28,6 +36,14 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const refresh = () => setMobileCacheStats(getMobileCacheStats());
+    void refreshMobileCacheMetadata().then(setMobileCacheStats);
+    window.addEventListener('nai-mobile-cache-changed', refresh);
+    return () => window.removeEventListener('nai-mobile-cache-changed', refresh);
+  }, [open]);
 
   const broadcastApiKey = (value: string) => {
     window.dispatchEvent(new CustomEvent<string>('nai-api-key-changed', { detail: value }));
@@ -96,6 +112,42 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">查看版本、数量并检查中英 Tag 数据更新。</p>
             </div>
             <TagDictionaryUpdater notify={notify} />
+          </section>
+
+          <section className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+            <div>
+              <h3 className="font-semibold text-gray-900 dark:text-white">手机图片缓存</h3>
+              <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">仅保存列表小图，原图和历史数据仍只保存在电脑。缓存被清除后可以重新生成。</p>
+            </div>
+            <div className="mt-4 grid grid-cols-4 gap-2">
+              {[0, 25, 50, 100].map(value => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => {
+                    setMobileCacheLimitMb(value);
+                    setMobileCacheStats(getMobileCacheStats());
+                  }}
+                  className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${getMobileCacheLimitMb() === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'}`}
+                >
+                  {value === 0 ? '关闭' : `${value} MB`}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs dark:bg-gray-800/70">
+              <span className="text-gray-500 dark:text-gray-400">已缓存 {mobileCacheStats.count} 张 · {(mobileCacheStats.bytes / 1024 / 1024).toFixed(1)} MB / {mobileCacheStats.limitMb} MB</span>
+              <button
+                type="button"
+                onClick={async () => {
+                  await clearMobileThumbnailCache();
+                  setMobileCacheStats(getMobileCacheStats());
+                  notify('手机小图缓存已清空');
+                }}
+                className="flex-shrink-0 font-medium text-red-500 hover:text-red-600"
+              >
+                清空缓存
+              </button>
+            </div>
           </section>
         </div>
       </div>

@@ -5,6 +5,7 @@ import { Inspiration, User, NAIParams } from '../types';
 import { extractMetadata, parseNovelAIMetadata, ParsedNAIData, IMPORT_SESSION_KEY } from '../services/metadataService';
 import { ParamsViewer } from './ParamsViewer';
 import { useConfirmDialog } from './ConfirmDialog';
+import { OriginalImage, SmartImage } from './SmartImage';
 
 interface InspirationGalleryProps {
     currentUser: User;
@@ -26,42 +27,7 @@ interface InspirationLightboxProps {
     onNavigateToPlayground?: () => void;
 }
 
-// Lazy Loading Component (Reused logic, kept separate per component for modularity if needed)
-const LazyImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
-    const [isLoaded, setIsLoaded] = useState(false);
-    const [isInView, setIsInView] = useState(false);
-    const imgRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const observer = new IntersectionObserver((entries) => {
-            if (entries[0].isIntersecting) {
-                setIsInView(true);
-                observer.disconnect();
-            }
-        }, { threshold: 0.1 });
-
-        if (imgRef.current) observer.observe(imgRef.current);
-        return () => observer.disconnect();
-    }, []);
-
-    return (
-        <div ref={imgRef} className="w-full h-full relative bg-gray-200 dark:bg-gray-900 overflow-hidden">
-            {isInView && (
-                <img 
-                    src={src} 
-                    alt={alt} 
-                    className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`}
-                    onLoad={() => setIsLoaded(true)}
-                />
-            )}
-            {!isLoaded && isInView && (
-                <div className="absolute inset-0 flex items-center justify-center text-gray-400">
-                    <span className="animate-pulse">Loading...</span>
-                </div>
-            )}
-        </div>
-    );
-};
+const LazyImage = SmartImage;
 
 const InspirationLightbox: React.FC<InspirationLightboxProps> = ({
     lightboxImg,
@@ -119,7 +85,7 @@ const InspirationLightbox: React.FC<InspirationLightboxProps> = ({
         <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 md:p-8" onClick={() => setLightboxImg(null)}>
             <div className="bg-white dark:bg-gray-900 w-full max-w-[90vw] h-[80vh] md:h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col lg:flex-row border border-gray-700" onClick={e => e.stopPropagation()}>
                 <div className="flex-1 bg-gray-100 dark:bg-black/50 flex items-center justify-center p-4 relative overflow-hidden h-1/2 lg:h-auto">
-                    <img src={lightboxImg.item.imageUrl} className="max-w-full max-h-full object-contain" />
+                    <OriginalImage src={lightboxImg.item.imageUrl} className="max-w-full max-h-full object-contain" />
                 </div>
                 <div className="w-full lg:w-[480px] bg-white dark:bg-gray-900 flex flex-col border-l border-gray-200 dark:border-gray-800 p-4 md:p-6 h-1/2 lg:h-auto">
                     <div className="flex justify-between items-start mb-4">

@@ -7,6 +7,7 @@ import { PAGINATION_CONFIG } from '../config/pagination';
 import { extractMetadata, IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../services/metadataService';
 import { ParamsViewer } from './ParamsViewer';
 import { useConfirmDialog } from './ConfirmDialog';
+import { OriginalImage, SmartImage } from './SmartImage';
 
 interface GenHistoryProps {
     currentUser: User;
@@ -672,12 +673,10 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                     className="group relative aspect-square bg-gray-200 dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border border-gray-200 dark:border-gray-700 hover:border-indigo-500 transition-colors"
                                     onClick={() => setLightbox(item)}
                                 >
-                                    <img
+                                    <SmartImage
                                         src={item.imageUrl}
                                         alt={`生成于 ${new Date(item.createdAt).toLocaleString()} 的图片`}
                                         className="w-full h-full object-cover"
-                                        loading="lazy"
-                                        decoding="async"
                                     />
                                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                                     <div className="absolute top-2 right-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
@@ -713,7 +712,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                     <div className="bg-white dark:bg-gray-900 w-full max-w-6xl h-[85vh] md:h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row" onClick={e => e.stopPropagation()}>
                         {/* Image Area */}
                         <div className="flex-1 bg-gray-100 dark:bg-black/50 flex items-center justify-center p-4 relative h-[45%] md:h-auto border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800">
-                            <img src={lightbox.imageUrl} alt="历史生成图片预览" className="max-w-full max-h-full object-contain shadow-lg" decoding="async" />
+                            <OriginalImage src={lightbox.imageUrl} alt="历史生成图片预览" className="max-w-full max-h-full object-contain shadow-lg" decoding="async" />
                         </div>
 
                         {/* Details Area */}

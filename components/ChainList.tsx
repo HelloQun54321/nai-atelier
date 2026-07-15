@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { PromptChain, ChainType } from '../types';
 import { useConfirmDialog } from './ConfirmDialog';
+import { SmartImage } from './SmartImage';
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -366,10 +367,10 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                 >
                     {chain.previewImage ? (
                         <div className="w-full h-full relative group/img">
-                            <img 
-                                src={chain.previewImage} 
-                                alt={chain.name} 
-                                className="w-full h-full object-contain" 
+                            <SmartImage
+                                src={chain.previewImage}
+                                alt={chain.name}
+                                className="w-full h-full object-contain"
                             />
                         </div>
                     ) : (

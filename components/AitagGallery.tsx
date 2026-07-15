@@ -16,6 +16,7 @@ import {
 import { db } from '../services/dbService';
 import { IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../services/metadataService';
 import { NAIParams, PromptChain, User } from '../types';
+import { OriginalImage, SmartImage } from './SmartImage';
 
 interface AitagGalleryProps {
   currentUser: User;
@@ -142,11 +143,10 @@ const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDe
   }
 
   return (
-    <img
+    <SmartImage
       src={src}
       alt=""
       className="w-full h-full object-cover"
-      loading="lazy"
       onError={() => {
         setIndex(current => Math.min(current + 1, candidates.length));
       }}
@@ -1191,7 +1191,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
 
                     return (
                       <div key={image.id || `${image.work_id}-${image.file_name}`} className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-hidden">
-                        <img src={buildAitagImageUrl(image)} alt="" className="w-full max-h-[520px] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
+                        <OriginalImage src={buildAitagImageUrl(image)} alt="" className="w-full max-h-[520px] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
                         <div className="p-3 space-y-3">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0 space-y-1.5">
