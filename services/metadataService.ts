@@ -11,6 +11,7 @@
 
 import { NAIParams, CharacterParams } from '../types';
 import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
+import { createUuid } from './id';
 
 // ========== 类型定义 ==========
 
@@ -18,7 +19,7 @@ import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
 export const IMPORT_SESSION_KEY = 'nai_pending_import';
 
 /** 安全的 ID 生成器回退 */
-const safeUUID = () => typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+const safeUUID = createUuid;
 
 /** parseNovelAIMetadata 返回的结构化解析结果 */
 export interface ParsedNAIData {

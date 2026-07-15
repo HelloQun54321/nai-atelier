@@ -6,6 +6,7 @@ import { extractMetadata, parseNovelAIMetadata, ParsedNAIData, IMPORT_SESSION_KE
 import { ParamsViewer } from './ParamsViewer';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
+import { createUuid } from '../services/id';
 
 interface InspirationGalleryProps {
     currentUser: User;
@@ -242,7 +243,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
           } catch { /* 解析失败时 params 为 undefined */ }
       }
       await db.saveInspiration({
-          id: crypto.randomUUID(),
+          id: createUuid(),
           title: upTitle,
           imageUrl: upImg,
           prompt: upPrompt,

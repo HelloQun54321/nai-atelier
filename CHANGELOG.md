@@ -4,6 +4,12 @@
 
 ## 2026-07-15
 
+### 18:10 — 修复手机局域网环境不支持 randomUUID
+
+- 修复手机通过局域网 HTTP 访问时，生图成功后自动保存历史因 `crypto.randomUUID is not a function` 中断并显示红色错误的问题。
+- 新增统一兼容 ID 生成器：安全上下文优先使用原生 `randomUUID`，普通局域网 HTTP 自动改用 `crypto.getRandomValues` 生成 UUID v4，并保留旧浏览器最终回退。
+- 历史记录、画师串模块与角色、画师预览任务、灵感收藏、AITag 收藏和元数据导入全部改用同一生成器，避免其他手机操作再次触发相同错误。
+
 ### 17:56 — 防止重复启动本地服务
 
 - 修复已有 NaiPromptManager 服务运行时再次双击桌面 BAT 会重复占用 `3000/3002`、显示 `EADDRINUSE` 并误报启动失败的问题。

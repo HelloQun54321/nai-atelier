@@ -8,6 +8,7 @@ import { ArtistLibraryConfig } from './ArtistLibraryConfig';
 import { ArtistLibraryCart } from './ArtistLibraryCart';
 import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryEntriesAt, getArtistDictionaryPage, searchArtistDictionary } from '../services/tagDictionary';
 import { OriginalImage, SmartImage } from './SmartImage';
+import { createUuid } from '../services/id';
 
 interface CartItem {
     name: string;
@@ -760,7 +761,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
         }
 
         const newTasks = slots.map(s => ({
-            uniqueId: crypto.randomUUID(),
+            uniqueId: createUuid(),
             artistId: artist.id,
             artistName: artist.name,
             slot: s
@@ -816,7 +817,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
                     if (!isQueued) {
                         newTasks.push({
-                            uniqueId: crypto.randomUUID(),
+                            uniqueId: createUuid(),
                             artistId: artist.id,
                             artistName: artist.name,
                             slot: slotIndex

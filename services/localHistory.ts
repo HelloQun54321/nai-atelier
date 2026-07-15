@@ -1,6 +1,7 @@
 
 import { LocalGenItem, NAIParams } from '../types';
 import { api } from './api';
+import { createUuid } from './id';
 
 const DB_NAME = 'NAI_History_DB';
 const STORE_NAME = 'generations';
@@ -141,7 +142,7 @@ class LocalHistoryService {
     ): Promise<LocalGenItem> {
         const db = await this.open();
         const item: LocalGenItem = {
-            id: crypto.randomUUID(),
+            id: createUuid(),
             imageUrl,
             prompt,
             negativePrompt,

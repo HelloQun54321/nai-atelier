@@ -17,6 +17,7 @@ import { db } from '../services/dbService';
 import { IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../services/metadataService';
 import { NAIParams, PromptChain, User } from '../types';
 import { OriginalImage, SmartImage } from './SmartImage';
+import { createUuid } from '../services/id';
 
 interface AitagGalleryProps {
   currentUser: User;
@@ -837,7 +838,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
     try {
       const importData = parseImageImportData(image);
       await db.saveInspiration({
-        id: crypto.randomUUID(),
+        id: createUuid(),
         userId: currentUser.id,
         username: currentUser.username,
         title: getImageTitle(image, index),

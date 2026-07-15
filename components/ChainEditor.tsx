@@ -12,6 +12,7 @@ import { ChainEditorPreview } from './ChainEditorPreview';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
+import { createUuid } from '../services/id';
 
 interface ChainEditorProps {
     chain: PromptChain;
@@ -342,7 +343,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const addModule = () => {
         if (!canEdit) return;
         const newModule: PromptModule = {
-            id: crypto.randomUUID(),
+            id: createUuid(),
             name: '新模块',
             content: '',
             isActive: true,
@@ -364,7 +365,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // --- Character Handlers ---
     const addCharacter = () => {
         if (!canEdit) return;
-        const newChar: CharacterParams = { id: crypto.randomUUID(), prompt: '', x: 0.5, y: 0.5 };
+        const newChar: CharacterParams = { id: createUuid(), prompt: '', x: 0.5, y: 0.5 };
         setParams({ ...params, characters: [...(params.characters || []), newChar] });
         markChange();
     };
@@ -445,7 +446,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         // 3. Modules
         if (options.importModules && target.modules && target.modules.length > 0) {
             const modulesToImport = target.modules.filter(m => moduleIds.has(m.id));
-            const newModules = modulesToImport.map(m => ({ ...m, id: crypto.randomUUID() }));
+            const newModules = modulesToImport.map(m => ({ ...m, id: createUuid() }));
 
             if (options.appendModules) {
                 setModules(prev => [...prev, ...newModules]); // Append
@@ -465,7 +466,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (options.importCharacters && target.params?.characters) {
             const newChars = target.params.characters.map(c => ({
                 ...c,
-                id: crypto.randomUUID() // Regen IDs
+                id: createUuid() // Regen IDs
             }));
 
             if (options.appendCharacters) {

@@ -8,6 +8,7 @@ import { extractMetadata, IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../se
 import { ParamsViewer } from './ParamsViewer';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
+import { createUuid } from '../services/id';
 
 interface GenHistoryProps {
     currentUser: User;
@@ -419,7 +420,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
         try {
             const importData = await getImportDataFromHistoryItem(lightbox);
             await db.saveInspiration({
-                id: crypto.randomUUID(),
+                id: createUuid(),
                 title: publishTitle,
                 imageUrl: lightbox.imageUrl,
                 prompt: importData.prompt,
