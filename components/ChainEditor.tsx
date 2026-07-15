@@ -26,6 +26,7 @@ interface ChainEditorProps {
 }
 
 export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken }) => {
+    const [keyboardOpen, setKeyboardOpen] = useState(false);
     const confirmAction = useConfirmDialog();
     const isOwner = true;
     const isGuest = false;
@@ -113,6 +114,25 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [showJsonPasteModal, setShowJsonPasteModal] = useState(false);
     const [jsonPasteText, setJsonPasteText] = useState('');
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
+
+    useEffect(() => {
+        const viewport = window.visualViewport;
+        if (!viewport) return;
+        const updateKeyboardState = () => {
+            const active = document.activeElement;
+            const editingPrompt = active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement;
+            setKeyboardOpen(editingPrompt && window.innerHeight - viewport.height > 120);
+        };
+        updateKeyboardState();
+        viewport.addEventListener('resize', updateKeyboardState);
+        window.addEventListener('focusin', updateKeyboardState);
+        window.addEventListener('focusout', updateKeyboardState);
+        return () => {
+            viewport.removeEventListener('resize', updateKeyboardState);
+            window.removeEventListener('focusin', updateKeyboardState);
+            window.removeEventListener('focusout', updateKeyboardState);
+        };
+    }, []);
 
     // --- Initialization ---
 
@@ -1438,7 +1458,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
             </div>
 
-            {!lightboxImg && <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] flex items-center gap-2 lg:hidden">
+            {!lightboxImg && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
                 {(displayedPreviewImage || chain.previewImage) && <button type="button" onClick={() => setLightboxImg(displayedPreviewImage || chain.previewImage || null)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-700" aria-label="查看最近生成结果"><SmartImage src={displayedPreviewImage || chain.previewImage || ''} alt="最近生成结果" /></button>}
                 <button onClick={handleGenerate} disabled={isGenerating} className="mobile-touch rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 px-6 text-sm font-bold text-white shadow-xl shadow-indigo-500/30 disabled:opacity-60">{isGenerating ? '生成中…' : '生成'}</button>
             </div>}

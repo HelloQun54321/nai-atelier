@@ -369,7 +369,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             {filteredChains.map((chain) => (
               <div key={chain.id} onClick={() => onSelect(chain.id)} className="mobile-gallery-item group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative">
                 {/* Copy Button Overlay - Trigger Modal */}
-                <div className="absolute top-2 right-2 z-10 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute top-2 right-2 z-10 hidden opacity-0 transition-opacity md:block md:group-hover:opacity-100">
                     <button 
                         onClick={(e) => { e.stopPropagation(); setCopyModalChain(chain); }} 
                     className="mobile-touch flex h-11 w-11 items-center justify-center rounded-full bg-white/90 p-0 text-indigo-600 shadow-sm backdrop-blur hover:bg-indigo-50 dark:bg-black/70 dark:text-indigo-400 dark:hover:bg-indigo-900/50"
@@ -414,7 +414,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                     <button
                       type="button"
                       onClick={(e) => toggleFav(chain.id, e)}
-                      className={`mobile-touch ml-1 flex flex-shrink-0 items-center justify-center rounded-full p-0 ${
+                      className={`mobile-touch ml-1 flex translate-x-1 flex-shrink-0 items-center justify-center rounded-full p-0 ${
                         favorites.has(chain.id)
                           ? 'text-rose-500'
                           : 'text-gray-300 hover:text-rose-400 dark:text-gray-500 dark:hover:text-rose-400'

@@ -44,10 +44,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { id: 'history', label: '历史', icon: icons.history },
   ];
   const resourceItems = [
-    { id: 'inspiration', label: '灵感库', icon: icons.inspiration },
     { id: 'library', label: '画师 Tag', icon: icons.artist },
     { id: 'characters', label: '角色库', icon: icons.character },
     { id: 'aitag', label: 'AITag', icon: icons.tag },
+    { id: 'inspiration', label: '灵感库', icon: icons.inspiration },
   ];
   const resourceActive = resourceItems.some(item => item.id === activeView);
   const navigateMobile = (id: string) => {

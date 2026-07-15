@@ -792,6 +792,11 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                         {selectionMode && <div className="mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 flex items-center gap-2 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><button onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }} className="mobile-touch flex-1 rounded-xl bg-gray-100 dark:bg-gray-800">取消</button><div className="px-2 text-sm font-bold dark:text-white">已选 {selectedIds.size}</div><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch flex-1 rounded-xl bg-red-600 font-bold text-white disabled:opacity-40">删除</button></div>}
                         
                         {/* 底部分页信息 */}
+                        {totalCount > 0 && <div className="mx-auto mb-4 grid max-w-sm grid-cols-[2.75rem_1fr_2.75rem] items-center gap-2">
+                            <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1 || isLoading} aria-label="上一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">‹</button>
+                            <button onClick={() => setShowPageMenu(true)} className="mobile-touch rounded-lg text-sm font-bold text-indigo-600 dark:text-indigo-300">{currentPage} / {totalPages}</button>
+                            <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || isLoading} aria-label="下一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">›</button>
+                        </div>}
                         <div className="flex flex-col items-center justify-center py-6">
                             {isLoading ? (
                                 <div className="text-gray-500 dark:text-gray-400">⏳ 加载中...</div>
@@ -802,11 +807,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                 </div>
                             )}
                         </div>
-                        {totalCount > 0 && <div className="mx-auto mb-4 grid max-w-sm grid-cols-[2.75rem_1fr_2.75rem] items-center gap-2">
-                            <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1 || isLoading} aria-label="上一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">‹</button>
-                            <button onClick={() => setShowPageMenu(true)} className="mobile-touch rounded-lg text-sm font-bold text-indigo-600 dark:text-indigo-300">{currentPage} / {totalPages}</button>
-                            <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || isLoading} aria-label="下一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">›</button>
-                        </div>}
                     </>
                 )}
             </div>
