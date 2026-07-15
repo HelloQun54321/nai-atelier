@@ -156,8 +156,15 @@ export const acquireMobileThumbnail = (url: string) => {
   let active = activeRequests.get(url);
   if (!active) {
     const controller = new AbortController();
-    const promise = loadThumbnail(url, controller.signal).finally(() => activeRequests.delete(url));
-    active = { promise, controller, references: 0 };
+    const entry = {
+      promise: Promise.resolve(new Blob()),
+      controller,
+      references: 0,
+    };
+    entry.promise = loadThumbnail(url, controller.signal).finally(() => {
+      if (activeRequests.get(url) === entry) activeRequests.delete(url);
+    });
+    active = entry;
     activeRequests.set(url, active);
   }
   active.references++;
@@ -170,7 +177,10 @@ export const acquireMobileThumbnail = (url: string) => {
       const current = activeRequests.get(url);
       if (!current) return;
       current.references--;
-      if (current.references <= 0) current.controller.abort();
+      if (current.references <= 0) {
+        activeRequests.delete(url);
+        current.controller.abort();
+      }
     },
   };
 };

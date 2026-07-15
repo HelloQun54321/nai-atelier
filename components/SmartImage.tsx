@@ -24,6 +24,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const onErrorRef = useRef(onError);
+  const objectUrlRef = useRef('');
   const [visible, setVisible] = useState(false);
   const [displaySrc, setDisplaySrc] = useState('');
   const [loaded, setLoaded] = useState(false);
@@ -32,7 +33,15 @@ export const SmartImage: React.FC<SmartImageProps> = ({
 
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
 
+  const replaceObjectUrl = (nextUrl = '') => {
+    if (objectUrlRef.current && objectUrlRef.current !== nextUrl) URL.revokeObjectURL(objectUrlRef.current);
+    objectUrlRef.current = nextUrl;
+  };
+
+  useEffect(() => () => replaceObjectUrl(), []);
+
   useEffect(() => {
+    replaceObjectUrl();
     setVisible(false);
     setDisplaySrc('');
     setLoaded(false);
@@ -58,11 +67,11 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     const width = (containerRef.current?.clientWidth || 160) * Math.max(1, window.devicePixelRatio || 1);
     const variant = width > 320 ? 'thumb-640' : 'thumb-320';
     const request = acquireMobileThumbnail(buildMediaUrl(src, variant));
-    let objectUrl = '';
     let active = true;
     request.promise.then(blob => {
       if (!active) return;
-      objectUrl = URL.createObjectURL(blob);
+      const objectUrl = URL.createObjectURL(blob);
+      replaceObjectUrl(objectUrl);
       setDisplaySrc(objectUrl);
     }).catch(error => {
       if (!active || error?.name === 'AbortError') return;
@@ -77,7 +86,6 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     return () => {
       active = false;
       request.release();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [retryToken, src, visible]);
 
