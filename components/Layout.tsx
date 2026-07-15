@@ -26,6 +26,7 @@ const icons = {
   tag: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />,
   resources: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5.5A1.5 1.5 0 015.5 4h4l2 2h7A1.5 1.5 0 0120 7.5v10a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 014 17.5v-12z" />,
   lab: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />,
+  inspiration: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.957a1 1 0 00.95.69h4.16c.969 0 1.371 1.24.588 1.81l-3.365 2.444a1 1 0 00-.364 1.118l1.285 3.956c.3.922-.755 1.688-1.539 1.118l-3.365-2.444a1 1 0 00-1.176 0L8.046 18.02c-.784.57-1.838-.196-1.539-1.118l1.285-3.956a1 1 0 00-.364-1.118L4.063 9.384c-.783-.57-.38-1.81.588-1.81h4.16a1 1 0 00.95-.69l1.286-3.957z" />,
   history: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />,
   settings: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.6 3.7a1 1 0 01.8-.7h3.2a1 1 0 01.8.7l.5 1.5a7.7 7.7 0 011.2.7l1.5-.3a1 1 0 011 .4l1.6 2.8a1 1 0 01-.2 1.1l-1 1.1v1.4l1 1.1a1 1 0 01.2 1.1l-1.6 2.8a1 1 0 01-1 .4l-1.5-.3a7.7 7.7 0 01-1.2.7l-.5 1.5a1 1 0 01-.8.7h-3.2a1 1 0 01-.8-.7l-.5-1.5a7.7 7.7 0 01-1.2-.7l-1.5.3a1 1 0 01-1-.4l-1.6-2.8a1 1 0 01.2-1.1l1-1.1V11l-1-1.1a1 1 0 01-.2-1.1L5.4 6a1 1 0 011-.4l1.5.3a7.7 7.7 0 011.2-.7l.5-1.5z" /><circle cx="12" cy="12" r="3" strokeWidth={2} /></>,
 };
@@ -38,10 +39,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { id: 'characters', label: '角色库', icon: icons.character },
     { id: 'library', label: '画师 Tag', icon: icons.artist },
     { id: 'aitag', label: 'AITag', icon: icons.tag },
+    { id: 'inspiration', label: '灵感', icon: icons.inspiration },
     { id: 'playground', label: '实验室', icon: icons.lab },
     { id: 'history', label: '历史', icon: icons.history },
   ];
   const resourceItems = [
+    { id: 'inspiration', label: '灵感库', icon: icons.inspiration },
     { id: 'library', label: '画师 Tag', icon: icons.artist },
     { id: 'characters', label: '角色库', icon: icons.character },
     { id: 'aitag', label: 'AITag', icon: icons.tag },
@@ -77,7 +80,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       <main className={`relative flex flex-1 flex-col overflow-hidden bg-white transition-colors duration-300 dark:bg-gray-900 ${hideNav ? 'pb-0' : 'pb-[calc(4.25rem+env(safe-area-inset-bottom))]'} md:pb-0`}>{children}</main>
 
       {!hideNav && <>
-        {showResources && <div className="fixed inset-0 z-[60] bg-black/35 backdrop-blur-[2px] md:hidden" onClick={() => setShowResources(false)}><div className="absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-900" onClick={event => event.stopPropagation()}><div className="mb-2 flex items-center justify-between px-2"><span className="text-sm font-bold">资源库</span><button onClick={() => setShowResources(false)} className="mobile-touch rounded-full bg-gray-100 text-xl dark:bg-gray-800" aria-label="关闭资源库菜单">×</button></div><div className="grid grid-cols-3 gap-2">{resourceItems.map(item => <button key={item.id} onClick={() => navigateMobile(item.id)} className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-2xl ${activeView === item.id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">{item.icon}</svg><span className="text-xs font-medium">{item.label}</span></button>)}</div></div></div>}
+        {showResources && <div className="fixed inset-0 z-[60] bg-black/35 backdrop-blur-[2px] md:hidden" onClick={() => setShowResources(false)}><div className="absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-900" onClick={event => event.stopPropagation()}><div className="mb-2 flex items-center justify-between px-2"><span className="text-sm font-bold">资源库</span><button onClick={() => setShowResources(false)} className="mobile-touch rounded-full bg-gray-100 text-xl dark:bg-gray-800" aria-label="关闭资源库菜单">×</button></div><div className="grid grid-cols-2 gap-2">{resourceItems.map(item => <button key={item.id} onClick={() => navigateMobile(item.id)} className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-2xl ${activeView === item.id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">{item.icon}</svg><span className="text-xs font-medium">{item.label}</span></button>)}</div></div></div>}
         <div className="fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] items-start border-t border-gray-200 bg-white/95 px-1 pt-1.5 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 md:hidden">
           <MobileNavButton label="画师串" active={activeView === 'list'} icon={icons.list} onClick={() => navigateMobile('list')} />
           <MobileNavButton label="资源库" active={resourceActive || showResources} icon={icons.resources} onClick={() => setShowResources(value => !value)} />

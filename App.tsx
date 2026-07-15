@@ -240,7 +240,6 @@ const App = () => {
     if (newView === 'list' || newView === 'characters') refreshData();
     if (newView === 'library') loadArtists();
     if (newView === 'inspiration') loadInspirations();
-    if (newView === 'playground') loadInspirations();
 
     if (newView === 'playground' && !playgroundChain) {
       // Initialize Playground Chain
@@ -402,13 +401,6 @@ const App = () => {
           setIsDirty={() => { }}
           notify={notify}
           externalImportToken={playgroundImportToken}
-          inspirationPanel={<InspirationGallery
-            currentUser={currentUser}
-            inspirationsData={inspirationsCache}
-            onRefresh={() => loadInspirations(true)}
-            notify={notify}
-            onNavigateToPlayground={() => undefined}
-          />}
         />;
       default:
         return <div>Unknown View</div>;
