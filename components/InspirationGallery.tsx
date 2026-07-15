@@ -8,6 +8,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { useMobileHistoryLayer } from './MobileUI';
 import { createUuid } from '../services/id';
+import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 
 interface InspirationGalleryProps {
     currentUser: User;
@@ -185,6 +186,7 @@ const InspirationLightbox: React.FC<InspirationLightboxProps> = ({
 
 export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentUser, inspirationsData, onRefresh, notify, onNavigateToPlayground }) => {
   const confirmAction = useConfirmDialog();
+  const imageDisplay = useMobileImageDisplayPreferences();
   const [searchTerm, setSearchTerm] = useState('');
   const [lightboxImg, setLightboxImg] = useState<{item: Inspiration, isEditing: boolean} | null>(null);
   const [uploadMode, setUploadMode] = useState(false);
@@ -304,7 +306,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
       {/* Header */}
       <header className="p-2 md:p-6 bg-white dark:bg-gray-800 shadow-md flex flex-col gap-2 md:gap-4 items-stretch border-b border-gray-200 dark:border-gray-700 z-10 flex-shrink-0">
-          <div className="flex justify-between items-center">
+          <div className="hidden justify-between items-center md:flex">
              <div className="hidden md:block">
                  <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">灵感图库</h1>
                  <p className="text-xs text-gray-500 dark:text-gray-400">收藏优秀的生成结果与 Prompt</p>
@@ -319,7 +321,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
             </button>
           </div>
           
-          <div className="flex gap-2 items-center w-full flex-wrap">
+          <div className="flex gap-2 items-center w-full">
               {selectionMode ? (
                   <>
                     <span className="text-sm text-gray-500 flex-1">已选 {selectedIds.size}</span>
@@ -335,6 +337,9 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                     />
+                    <button onClick={handleRefresh} className="mobile-touch flex-shrink-0 rounded-lg border border-gray-300 bg-gray-100 p-2 text-gray-600 transition-colors hover:text-indigo-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:text-indigo-400 md:hidden" title="刷新灵感库" aria-label="刷新灵感库">
+                      <svg className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    </button>
                     <button onClick={() => setSelectionMode(true)} className="mobile-touch bg-gray-200 dark:bg-gray-700 px-3 py-2 rounded text-sm hover:bg-gray-300 whitespace-nowrap">管理</button>
                     <button onClick={() => setUploadMode(true)} className="mobile-touch bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded text-sm flex items-center whitespace-nowrap">
                         <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -354,15 +359,16 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
              )}
             
              {/* Updated Grid for Mobile: 2 cols */}
-             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-6">
+             <div className={`${mobileGalleryClassName(imageDisplay)} md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6`} style={mobileGalleryStyle(imageDisplay)}>
                  {filtered.map(item => (
                      <div 
                         key={item.id} 
-                        className={`group bg-white dark:bg-gray-800 rounded-xl overflow-hidden border transition-all flex flex-col relative ${selectionMode && selectedIds.has(item.id) ? 'ring-2 ring-indigo-600 border-indigo-600' : 'border-gray-200 dark:border-gray-700'}`}
+                        className={`mobile-gallery-item group bg-white dark:bg-gray-800 rounded-xl overflow-hidden border transition-all flex flex-col relative ${selectionMode && selectedIds.has(item.id) ? 'ring-2 ring-indigo-600 border-indigo-600' : 'border-gray-200 dark:border-gray-700'}`}
                         onClick={() => selectionMode ? toggleSelection(item.id) : null}
                      >
                          <div 
-                            className="aspect-[2/3] md:aspect-square relative overflow-hidden cursor-zoom-in"
+                            className="mobile-gallery-frame md:aspect-square relative overflow-hidden cursor-zoom-in"
+                            style={{ '--mobile-image-ratio': `${item.params?.width || 832} / ${item.params?.height || 1216}` } as React.CSSProperties}
                             onClick={() => !selectionMode && setLightboxImg({item, isEditing: false})}
                           >
                              {/* Lazy Image */}

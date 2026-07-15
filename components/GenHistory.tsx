@@ -10,6 +10,7 @@ import { ParamsViewer } from './ParamsViewer';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
+import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 
 interface GenHistoryProps {
     currentUser: User;
@@ -20,6 +21,7 @@ interface GenHistoryProps {
 
 export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onNavigateToPlayground, onRefreshInspiration }) => {
     const confirmAction = useConfirmDialog();
+    const imageDisplay = useMobileImageDisplayPreferences();
     const [items, setItems] = useState<LocalGenItem[]>([]);
     const [lightbox, setLightbox] = useState<LocalGenItem | null>(null);
     const closeLightbox = useMobileHistoryLayer(Boolean(lightbox), () => setLightbox(null), 'history-detail');
@@ -513,7 +515,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
     return (
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
             <header className="p-2 md:p-6 bg-white dark:bg-gray-800 shadow-md border-b border-gray-200 dark:border-gray-700 z-10 flex-shrink-0">
-                <div className="flex justify-between items-center mb-4">
+                <div className="flex justify-between items-center mb-2 md:mb-4">
                     <div className="hidden md:block">
                         <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">本地生图历史</h1>
                         <p className="text-xs text-gray-500 dark:text-gray-400">保存在本机 local-data，不上传云端</p>
@@ -526,7 +528,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                         )}
                     </div>
                     <div className="flex gap-2 md:gap-3 items-center">
-                        <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center">共 {totalCount} 张</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center md:text-sm">共 {totalCount} 张</div>
                         <div className="relative hidden md:block">
                             <button 
                                 onClick={() => setShowCleanMenu(!showCleanMenu)} 
@@ -564,9 +566,10 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                         <button
                             onClick={handleRefresh}
                             disabled={isLoading || migrationProgress !== null}
-                            className="mobile-touch px-3 py-1 md:px-4 md:py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded text-xs md:text-sm hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-wait"
+                            className="mobile-touch flex items-center justify-center rounded-lg bg-gray-100 px-3 text-gray-600 hover:bg-gray-200 disabled:cursor-wait disabled:opacity-50 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 md:px-4 md:py-2 md:text-sm"
+                            aria-label="刷新历史"
                         >
-                            {isLoading ? '刷新中…' : '刷新'}
+                            <svg className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg><span className="hidden md:ml-1 md:inline">{isLoading ? '刷新中…' : '刷新'}</span>
                         </button>
                     </div>
                 </div>
@@ -669,10 +672,10 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                         </div>
                     </div>
                 )}
-                {totalCount > 0 && <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 md:hidden">
-                    <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1 || isLoading} className="mobile-touch rounded-xl border border-gray-300 bg-white px-3 text-sm disabled:opacity-40 dark:border-gray-600 dark:bg-gray-700">上一页</button>
-                    <button onClick={() => setShowCleanMenu(true)} className="mobile-touch min-w-24 rounded-xl bg-indigo-50 px-3 text-sm font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">{currentPage} / {totalPages}</button>
-                    <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || isLoading} className="mobile-touch rounded-xl border border-gray-300 bg-white px-3 text-sm disabled:opacity-40 dark:border-gray-600 dark:bg-gray-700">下一页</button>
+                {totalCount > 0 && <div className="grid grid-cols-[2.75rem_1fr_2.75rem] items-center gap-2 md:hidden">
+                    <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1 || isLoading} aria-label="上一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">‹</button>
+                    <button onClick={() => setShowCleanMenu(true)} className="mobile-touch rounded-lg text-sm font-bold text-indigo-600 dark:text-indigo-300">{currentPage} / {totalPages}</button>
+                    <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || isLoading} aria-label="下一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">›</button>
                 </div>}
             </header>
 
@@ -712,11 +715,11 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                     </div>
                 ) : (
                     <>
-                        <div className="grid grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2 md:gap-4">
+                        <div className={`${mobileGalleryClassName(imageDisplay)} md:grid md:grid-cols-4 xl:grid-cols-5 md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
                             {items.map(item => (
                                 <div
                                     key={item.id}
-                                    className={`group relative aspect-square bg-gray-200 dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border hover:border-indigo-500 transition-colors ${selectedIds.has(item.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
+                                    className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border hover:border-indigo-500 transition-colors ${selectedIds.has(item.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
                                     onPointerDown={() => {
                                         longPressTriggeredRef.current = false;
                                         longPressTimerRef.current = window.setTimeout(() => {
@@ -733,21 +736,20 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                         else setLightbox(item);
                                     }}
                                 >
-                                    <SmartImage
-                                        src={item.imageUrl}
-                                        alt={`生成于 ${new Date(item.createdAt).toLocaleString()} 的图片`}
-                                        className="w-full h-full object-cover"
-                                    />
-                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-                                    {selectionMode && <div className="absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white shadow">{selectedIds.has(item.id) ? '✓' : ''}</div>}
-                                    <div className="absolute top-2 right-2 hidden md:block opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="mobile-gallery-frame md:aspect-square relative w-full overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': `${item.params.width || 832} / ${item.params.height || 1216}` } as React.CSSProperties}>
+                                      <SmartImage src={item.imageUrl} alt={`生成于 ${new Date(item.createdAt).toLocaleString()} 的图片`} className="w-full h-full object-cover" />
+                                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                                      {selectionMode && <div className="absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white shadow">{selectedIds.has(item.id) ? '✓' : ''}</div>}
+                                      <div className="absolute top-2 right-2 hidden md:block opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button onClick={(e) => handleDelete(item.id, e)} className="p-1.5 bg-red-500 text-white rounded-full shadow hover:bg-red-600">
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                         </button>
-                                    </div>
-                                    <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 to-transparent text-white text-[10px] opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity truncate">
+                                      </div>
+                                      <div className="absolute bottom-0 left-0 right-0 hidden p-2 bg-gradient-to-t from-black/80 to-transparent text-white text-[10px] md:block md:opacity-0 group-hover:opacity-100 transition-opacity truncate">
                                         {new Date(item.createdAt).toLocaleString()}
+                                      </div>
                                     </div>
+                                    <div className="truncate px-2 py-2 text-[11px] text-gray-600 dark:text-gray-300 md:hidden">{new Date(item.createdAt).toLocaleString()}</div>
                                 </div>
                             ))}
                         </div>

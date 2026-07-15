@@ -84,6 +84,17 @@ body,
   .dark .mobile-detail-header { border-color: rgb(55 65 81); background: rgb(3 7 18 / .97); }
   .mobile-detail-footer { position: absolute; inset-inline: 0; bottom: 0; z-index: 2; display: flex; gap: .5rem; border-top: 1px solid rgb(229 231 235); background: rgb(255 255 255 / .97); padding: .625rem .75rem max(.625rem, env(safe-area-inset-bottom)); backdrop-filter: blur(12px); }
   .dark .mobile-detail-footer { border-color: rgb(55 65 81); background: rgb(3 7 18 / .96); }
+
+  .mobile-gallery { display: grid; grid-template-columns: repeat(var(--mobile-gallery-columns, 2), minmax(0, 1fr)); gap: .75rem; }
+  .mobile-gallery--masonry { display: block; column-count: var(--mobile-gallery-columns, 2); column-gap: .75rem; }
+  .mobile-gallery--masonry > .mobile-gallery-item { display: inline-flex; width: 100%; margin: 0 0 .75rem; break-inside: avoid; }
+  .mobile-gallery--masonry .mobile-gallery-frame { aspect-ratio: var(--mobile-image-ratio, 2 / 3); }
+  .mobile-gallery--portrait .mobile-gallery-frame { aspect-ratio: 2 / 3; }
+  .mobile-gallery--square .mobile-gallery-frame { aspect-ratio: 1; }
+
+  @media (min-width: 600px) and (orientation: landscape) {
+    .mobile-gallery--auto { --mobile-gallery-columns: 3 !important; }
+  }
 }
 
 /* VIP 用户样式 */

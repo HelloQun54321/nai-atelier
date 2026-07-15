@@ -19,6 +19,7 @@ import { NAIParams, PromptChain, User } from '../types';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './MobileUI';
 import { createUuid } from '../services/id';
+import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 
 interface AitagGalleryProps {
   currentUser: User;
@@ -214,6 +215,7 @@ const defaultParams: NAIParams = {
 };
 
 export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify, onNavigateToPlayground, onCreateArtistChain, onRefreshInspiration }) => {
+  const imageDisplay = useMobileImageDisplayPreferences();
   const mainScrollRef = useRef<HTMLElement | null>(null);
   const detailScrollRef = useRef<HTMLDivElement | null>(null);
   const hasLoadedRef = useRef(aitagPageCache.hasLoaded);
@@ -1011,7 +1013,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
               <div className="text-sm">{cacheNeedsMoreData ? '本地没有这一页，且当前无法联网获取' : '没有匹配结果'}</div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 3xl:grid-cols-6 gap-3 md:gap-4">
+            <div className={`${mobileGalleryClassName(imageDisplay)} md:grid md:grid-cols-4 xl:grid-cols-5 3xl:grid-cols-6 md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
               {visibleItems.map(work => {
                 const type = getAitagType(work);
                 const isSelected = selectedId === work.id;
@@ -1051,11 +1053,11 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
                         loadDetail(work);
                       }
                     }}
-                    className={`group relative text-left rounded-lg overflow-hidden border transition-colors flex flex-col h-full ${cardTone.card} ${
+                    className={`mobile-gallery-item group relative text-left rounded-lg overflow-hidden border transition-colors flex flex-col h-full ${cardTone.card} ${
                       isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/30' : cardTone.border
                     }`}
                   >
-                    <div className={`aspect-square relative overflow-hidden ${cardTone.image}`}>
+                    <div className={`mobile-gallery-frame md:aspect-square relative overflow-hidden ${cardTone.image}`} style={{ '--mobile-image-ratio': '1' } as React.CSSProperties}>
                       <AitagPreviewImage work={work} detail={details[work.id]} />
                       <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 text-white text-[10px] font-bold">
                         {type || 'AI'}

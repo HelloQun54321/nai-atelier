@@ -9,6 +9,7 @@ import {
 } from '../services/mobileImageCache';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
+import { getMobileImageDisplayPreferences, MobileImageColumns, MobileImageLayout, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 
 interface GlobalSettingsProps {
   open: boolean;
@@ -29,6 +30,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
   const [rememberApiKey, setRememberApiKey] = useState(() => localStorage.getItem('nai_api_key') !== null);
   const [showApiKey, setShowApiKey] = useState(false);
   const [mobileCacheStats, setMobileCacheStats] = useState(getMobileCacheStats);
+  const [imageDisplay, setImageDisplay] = useState(getMobileImageDisplayPreferences);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
   const [mobileSection, setMobileSection] = useState<'appearance' | 'novelai' | 'tags' | 'cache'>('appearance');
   const requestClose = useMobileHistoryLayer(open, onClose, 'settings');
@@ -106,6 +108,16 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
             {(!isMobile || mobileSection === 'appearance') && <div className="mt-3 space-y-3">
               <div><div className="mb-2 text-xs font-bold text-gray-500 dark:text-gray-400">主题</div><div className="grid grid-cols-3 gap-2">{([['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setThemeMode(value)} className={`mobile-touch rounded-xl border px-2 text-xs font-bold ${themeMode === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}</div></div>
               <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span>🛡️ 安全模式</span><span>{safeMode ? '已开启' : '已关闭'}</span></button>
+              <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
+                <div className="mb-2 text-xs font-bold text-gray-500 dark:text-gray-400">手机图片列表</div>
+                <div className="grid grid-cols-3 gap-2">
+                  {([['masonry', '瀑布流'], ['portrait', '竖向卡片'], ['square', '方形']] as const).map(([layout, label]) => <button key={layout} type="button" onClick={() => { const next = { ...imageDisplay, layout: layout as MobileImageLayout }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch rounded-xl border px-2 text-xs font-bold ${imageDisplay.layout === layout ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}
+                </div>
+                <div className="mt-2 grid grid-cols-4 gap-2">
+                  {([['auto', '自动'], [1, '1 张'], [2, '2 张'], [3, '3 张']] as const).map(([columns, label]) => <button key={columns} type="button" onClick={() => { const next = { ...imageDisplay, columns: columns as MobileImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch rounded-xl border px-1 text-xs font-bold ${imageDisplay.columns === columns ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}
+                </div>
+                <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">只影响手机图片列表；详情、下载和导入始终使用完整原图。</p>
+              </div>
             </div>}
           </section>
           <section className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">

@@ -84,7 +84,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         <div className="fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] items-start border-t border-gray-200 bg-white/95 px-1 pt-1.5 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 md:hidden">
           <MobileNavButton label="画师串" active={activeView === 'list'} icon={icons.list} onClick={() => navigateMobile('list')} />
           <MobileNavButton label="资源库" active={resourceActive || showResources} icon={icons.resources} onClick={() => setShowResources(value => !value)} />
-          <MobileNavButton label="实验室" active={activeView === 'playground' || activeView === 'inspiration'} icon={icons.lab} onClick={() => navigateMobile('playground')} />
+          <MobileNavButton label="实验室" active={activeView === 'playground'} icon={icons.lab} onClick={() => navigateMobile('playground')} />
           <MobileNavButton label="历史" active={activeView === 'history'} icon={icons.history} onClick={() => navigateMobile('history')} />
           <MobileNavButton label="设置" active={showSettings} icon={icons.settings} onClick={() => setShowSettings(true)} />
         </div>

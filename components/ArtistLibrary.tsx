@@ -10,6 +10,7 @@ import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryEntries
 import { OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
+import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 
 interface CartItem {
     name: string;
@@ -107,6 +108,7 @@ interface LogEntry {
 type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
 
 export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRefresh, notify, currentUser }) => {
+    const imageDisplay = useMobileImageDisplayPreferences();
     const [searchTerm, setSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
     const [favorites, setFavorites] = useState<Set<string>>(new Set());
@@ -1210,8 +1212,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                 {layoutMode === 'grid' ? (
                     /* --- GRID LAYOUT (Dynamic Columns using gridCols) --- */
                     <div
-                        className="grid gap-2 md:gap-4 md:pr-6 transition-all"
-                        style={{ gridTemplateColumns: `repeat(${isMobileViewport ? 2 : gridCols}, minmax(0, 1fr))` }}
+                        className={`${mobileGalleryClassName(imageDisplay)} md:grid md:gap-4 md:pr-6 transition-all`}
+                        style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }) }}
                     >
                         {filteredArtists.map((artist, idx) => {
                             const isSelected = !!cart.find(c => c.name === artist.name);
@@ -1236,10 +1238,10 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                             return (
                                 <div
                                     key={artist.id}
-                                    className={`group relative bg-white dark:bg-gray-800 rounded-xl overflow-hidden border transition-all cursor-pointer shadow-sm hover:shadow-lg ${isSelected ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500'}`}
+                                    className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-xl overflow-hidden border transition-all cursor-pointer shadow-sm hover:shadow-lg ${isSelected ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500'}`}
                                     onClick={() => toggleCart(artist.name)}
                                 >
-                                    <div className="aspect-[2/3] relative overflow-hidden bg-gray-200 dark:bg-gray-900">
+                                    <div className="mobile-gallery-frame md:aspect-[2/3] relative overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': '2 / 3' } as React.CSSProperties}>
                                         {displayImg && !isBenchmarkMissing ? (
                                             <LazyImage src={displayImg} alt={artist.name} />
                                         ) : (
