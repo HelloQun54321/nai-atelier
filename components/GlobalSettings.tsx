@@ -14,18 +14,23 @@ interface GlobalSettingsProps {
   open: boolean;
   onClose: () => void;
   notify: (message: string, type?: 'success' | 'error') => void;
+  isDark: boolean;
+  themeMode: 'light' | 'dark' | 'system';
+  setThemeMode: (mode: 'light' | 'dark' | 'system') => void;
+  safeMode: boolean;
+  toggleSafeMode: () => void;
 }
 
 const readApiKey = () => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '';
 
-export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, notify }) => {
+export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, notify, isDark, themeMode, setThemeMode, safeMode, toggleSafeMode }) => {
   const confirmAction = useConfirmDialog();
   const [apiKey, setApiKey] = useState(readApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(() => localStorage.getItem('nai_api_key') !== null);
   const [showApiKey, setShowApiKey] = useState(false);
   const [mobileCacheStats, setMobileCacheStats] = useState(getMobileCacheStats);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
-  const [mobileSection, setMobileSection] = useState<'novelai' | 'tags' | 'cache'>('novelai');
+  const [mobileSection, setMobileSection] = useState<'appearance' | 'novelai' | 'tags' | 'cache'>('appearance');
   const requestClose = useMobileHistoryLayer(open, onClose, 'settings');
 
   useEffect(() => {
@@ -93,6 +98,16 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
         </div>
 
         <div className="space-y-3 overflow-y-auto p-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:space-y-5 md:p-5">
+          <section className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+            <button type="button" onClick={() => isMobile && setMobileSection('appearance')} className="flex min-h-11 w-full items-center justify-between text-left">
+              <div><h3 className="font-semibold text-gray-900 dark:text-white">外观与隐私</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">主题与图片安全显示状态：{safeMode ? '安全模式已开启' : isDark ? '深色' : '浅色'}</p></div>
+              <span className="md:hidden">{mobileSection === 'appearance' ? '⌃' : '⌄'}</span>
+            </button>
+            {(!isMobile || mobileSection === 'appearance') && <div className="mt-3 space-y-3">
+              <div><div className="mb-2 text-xs font-bold text-gray-500 dark:text-gray-400">主题</div><div className="grid grid-cols-3 gap-2">{([['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setThemeMode(value)} className={`mobile-touch rounded-xl border px-2 text-xs font-bold ${themeMode === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}</div></div>
+              <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span>🛡️ 安全模式</span><span>{safeMode ? '已开启' : '已关闭'}</span></button>
+            </div>}
+          </section>
           <section className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
             <button type="button" onClick={() => isMobile && setMobileSection('novelai')} className="flex min-h-11 w-full items-center justify-between text-left">
               <div>

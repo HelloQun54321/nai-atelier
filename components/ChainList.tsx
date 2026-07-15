@@ -379,7 +379,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
                 {/* Preview Image */}
                 <div 
-                    className="aspect-square bg-gray-200 dark:bg-gray-900 relative border-b border-gray-200 dark:border-gray-700 overflow-hidden flex items-center justify-center"
+                    className="aspect-[4/3] md:aspect-square bg-gray-200 dark:bg-gray-900 relative border-b border-gray-200 dark:border-gray-700 overflow-hidden flex items-center justify-center"
                 >
                     {chain.previewImage ? (
                         <div className="w-full h-full relative group/img">

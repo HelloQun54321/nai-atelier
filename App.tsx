@@ -48,7 +48,12 @@ const App = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // Theme State
-  const [isDark, setIsDark] = useState(() => localStorage.getItem('nai_theme') === 'dark');
+  const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'system'>(() => {
+    const saved = localStorage.getItem('nai_theme');
+    return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system';
+  });
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const isDark = themeMode === 'dark' || (themeMode === 'system' && systemDark);
   const [safeMode, setSafeMode] = useState(() => localStorage.getItem('nai_safe_mode') === 'true');
 
   // Toast State
@@ -104,16 +109,22 @@ const App = () => {
   };
 
   useEffect(() => {
+    const query = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = () => setSystemDark(query.matches);
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
+  useEffect(() => {
     if (isDark) {
       document.documentElement.classList.add('dark');
-      localStorage.setItem('nai_theme', 'dark');
     } else {
       document.documentElement.classList.remove('dark');
-      localStorage.setItem('nai_theme', 'light');
     }
-  }, [isDark]);
+    localStorage.setItem('nai_theme', themeMode);
+  }, [isDark, themeMode]);
 
-  const toggleTheme = () => setIsDark(!isDark);
+  const toggleTheme = () => setThemeMode(isDark ? 'light' : 'dark');
 
   const resetRevealedImages = () => {
     document.querySelectorAll<HTMLImageElement>('img[data-safe-revealed="true"]').forEach(image => {
@@ -229,6 +240,7 @@ const App = () => {
     if (newView === 'list' || newView === 'characters') refreshData();
     if (newView === 'library') loadArtists();
     if (newView === 'inspiration') loadInspirations();
+    if (newView === 'playground') loadInspirations();
 
     if (newView === 'playground' && !playgroundChain) {
       // Initialize Playground Chain
@@ -356,8 +368,6 @@ const App = () => {
         />;
       case 'library':
         return <ArtistLibrary
-          isDark={isDark}
-          toggleTheme={toggleTheme}
           artistsData={artistsCache}
           onRefresh={() => loadArtists(true)}
           notify={notify}
@@ -392,6 +402,13 @@ const App = () => {
           setIsDirty={() => { }}
           notify={notify}
           externalImportToken={playgroundImportToken}
+          inspirationPanel={<InspirationGallery
+            currentUser={currentUser}
+            inspirationsData={inspirationsCache}
+            onRefresh={() => loadInspirations(true)}
+            notify={notify}
+            onNavigateToPlayground={() => undefined}
+          />}
         />;
       default:
         return <div>Unknown View</div>;
@@ -437,7 +454,8 @@ const App = () => {
         currentView={view}
         activeView={getActiveView()}
         isDark={isDark}
-        toggleTheme={toggleTheme}
+        themeMode={themeMode}
+        setThemeMode={setThemeMode}
         safeMode={safeMode}
         toggleSafeMode={toggleSafeMode}
         toast={toast}

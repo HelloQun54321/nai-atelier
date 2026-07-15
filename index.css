@@ -40,6 +40,22 @@ body,
     height: 6px;
   }
 
+  *::-webkit-scrollbar-track,
+  .dark *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb,
+  .dark *::-webkit-scrollbar-thumb {
+    background: rgb(107 114 128 / .55);
+    border: 1px solid transparent;
+    border-radius: 999px;
+  }
+
+  .dark * {
+    scrollbar-color: rgb(107 114 128 / .55) transparent;
+  }
+
   .mobile-touch {
     min-width: var(--mobile-touch);
     min-height: var(--mobile-touch);

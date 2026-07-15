@@ -17,8 +17,6 @@ interface CartItem {
 }
 
 interface ArtistLibraryProps {
-    isDark: boolean;
-    toggleTheme: () => void;
     // New props for caching
     artistsData: Artist[] | null;
     onRefresh: () => Promise<void>;
@@ -108,7 +106,7 @@ interface LogEntry {
 
 type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
 
-export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleTheme, artistsData, onRefresh, notify, currentUser }) => {
+export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRefresh, notify, currentUser }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
     const [favorites, setFavorites] = useState<Set<string>>(new Set());

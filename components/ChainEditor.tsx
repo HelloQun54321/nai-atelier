@@ -23,9 +23,10 @@ interface ChainEditorProps {
     setIsDirty: (isDirty: boolean) => void;
     notify: (msg: string, type?: 'success' | 'error') => void;
     externalImportToken?: number;
+    inspirationPanel?: React.ReactNode;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken, inspirationPanel }) => {
     const confirmAction = useConfirmDialog();
     const isOwner = true;
     const isGuest = false;
@@ -112,7 +113,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [isImportDragActive, setIsImportDragActive] = useState(false);
     const [showJsonPasteModal, setShowJsonPasteModal] = useState(false);
     const [jsonPasteText, setJsonPasteText] = useState('');
-    const [mobileEditorTab, setMobileEditorTab] = useState<'prompt' | 'params' | 'preview'>('prompt');
+    const [mobileEditorTab, setMobileEditorTab] = useState<'prompt' | 'params' | 'preview' | 'inspiration'>('prompt');
     const paramsSectionRef = useRef<HTMLDivElement>(null);
 
     // --- Initialization ---
@@ -1109,11 +1110,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                         </button>
                     )}
+                    {inspirationPanel && <button type="button" onClick={() => setMobileEditorTab(value => value === 'inspiration' ? 'prompt' : 'inspiration')} className={`hidden h-11 items-center gap-1 rounded-xl px-3 text-sm font-bold lg:flex ${mobileEditorTab === 'inspiration' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><span>✦</span>{mobileEditorTab === 'inspiration' ? '返回编辑' : '灵感'}</button>}
 
                 </div>
             </header>
-            <nav className="grid grid-cols-3 border-b border-gray-200 bg-white p-1.5 dark:border-gray-800 dark:bg-gray-950 lg:hidden">
-                {([['prompt', '提示词'], ['params', '参数'], ['preview', '预览']] as const).map(([value, label]) => <button key={value} onClick={() => {
+            <nav className={`grid ${inspirationPanel ? 'grid-cols-4' : 'grid-cols-3'} border-b border-gray-200 bg-white p-1.5 dark:border-gray-800 dark:bg-gray-950 lg:hidden`}>
+                {([['prompt', '提示词'], ['params', '参数'], ['preview', '预览'], ...(inspirationPanel ? [['inspiration', '灵感'] as const] : [])] as const).map(([value, label]) => <button key={value} onClick={() => {
                     setMobileEditorTab(value);
                     if (value === 'params') requestAnimationFrame(() => paramsSectionRef.current?.scrollIntoView({ block: 'start' }));
                 }} className={`mobile-touch rounded-xl text-sm font-bold ${mobileEditorTab === value ? 'bg-indigo-600 text-white' : 'text-gray-500 dark:text-gray-400'}`}>{label}</button>)}
@@ -1122,7 +1124,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             {/* Editor Content */}
             <div className={`flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden ${isOwner ? 'pb-20 lg:pb-0' : ''}`}>
                 {/* Left Panel - Editor */}
-                <div className={`${mobileEditorTab === 'preview' ? 'hidden' : 'flex'} w-full lg:w-1/2 lg:flex flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0`}>
+                <div className={`${mobileEditorTab === 'preview' || mobileEditorTab === 'inspiration' ? 'hidden' : 'flex'} w-full lg:w-1/2 lg:flex flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0`}>
                     <div className="p-4 md:p-6 space-y-6 max-w-3xl mx-auto w-full pb-32 md:pb-24">
                         {!isOwner && (
                             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded mb-4 text-sm text-yellow-700 dark:text-yellow-400">
@@ -1405,7 +1407,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
 
                 {/* Right Panel - Preview (Testing) - Extracted Component */}
-                <div className={`${mobileEditorTab === 'preview' ? 'flex' : 'hidden'} min-h-0 flex-1 lg:contents`}>
+                <div className={`${mobileEditorTab === 'inspiration' ? 'hidden' : mobileEditorTab === 'preview' ? 'flex' : 'hidden'} min-h-0 flex-1 lg:contents`}>
                 <ChainEditorPreview
                     subjectPrompt={subjectPrompt}
                     setSubjectPrompt={(s) => { setSubjectPrompt(s); markChange(); }}
@@ -1431,6 +1433,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     onCopyFinalPrompt={() => copyPromptToClipboard(false)}
                 />
                 </div>
+                {inspirationPanel && <div className={`${mobileEditorTab === 'inspiration' ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col lg:flex`}>{inspirationPanel}</div>}
             </div>
 
             {/* Lightbox Modal */}
