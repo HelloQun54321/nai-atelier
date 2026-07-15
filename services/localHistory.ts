@@ -13,6 +13,11 @@ export type LocalHistoryChange = {
     external?: boolean;
 };
 
+export interface LocalHistoryDateRange {
+    from?: number;
+    to?: number;
+}
+
 export type LocalHistoryMigrationProgress = {
     current: number;
     total: number;
@@ -351,15 +356,18 @@ class LocalHistoryService {
      * @param pageSize 每页数量
      * @returns 当前页的记录数组
      */
-    async getPage(page: number, pageSize: number): Promise<LocalGenItem[]> {
+    async getPage(page: number, pageSize: number, range?: LocalHistoryDateRange): Promise<LocalGenItem[]> {
         if (await this.isRemoteEnabled()) {
-            const result = await api.get(`/local-history?page=${Math.max(0, page)}&pageSize=${Math.max(1, pageSize)}`);
+            const params = new URLSearchParams({ page: String(Math.max(0, page)), pageSize: String(Math.max(1, pageSize)) });
+            if (range?.from) params.set('from', String(range.from));
+            if (range?.to) params.set('to', String(range.to));
+            const result = await api.get(`/local-history?${params.toString()}`);
             return result.items || [];
         }
-        return this.getBrowserPage(page, pageSize);
+        return this.getBrowserPage(page, pageSize, range);
     }
 
-    private async getBrowserPage(page: number, pageSize: number): Promise<LocalGenItem[]> {
+    private async getBrowserPage(page: number, pageSize: number, range?: LocalHistoryDateRange): Promise<LocalGenItem[]> {
         const db = await this.open();
         const safePage = Math.max(0, Math.floor(page));
         const safePageSize = Math.max(0, Math.floor(pageSize));
@@ -370,7 +378,10 @@ class LocalHistoryService {
             const transaction = db.transaction([STORE_NAME], 'readonly');
             const store = transaction.objectStore(STORE_NAME);
             const index = store.index('createdAt');
-            const request = index.openCursor(null, 'prev');
+            const keyRange = range?.from || range?.to
+                ? IDBKeyRange.bound(range.from ?? 0, range.to ?? Number.MAX_SAFE_INTEGER)
+                : null;
+            const request = index.openCursor(keyRange, 'prev');
             const results: LocalGenItem[] = [];
             const offset = safePage * safePageSize;
             let positioned = offset === 0;
@@ -405,20 +416,26 @@ class LocalHistoryService {
      * 获取历史记录总数
      * @returns 记录总数
      */
-    async getCount(): Promise<number> {
+    async getCount(range?: LocalHistoryDateRange): Promise<number> {
         if (await this.isRemoteEnabled()) {
-            const result = await api.get('/local-history/count');
+            const params = new URLSearchParams();
+            if (range?.from) params.set('from', String(range.from));
+            if (range?.to) params.set('to', String(range.to));
+            const result = await api.get(`/local-history/count${params.toString() ? `?${params.toString()}` : ''}`);
             return Number(result.count || 0);
         }
-        return this.getBrowserCount();
+        return this.getBrowserCount(range);
     }
 
-    private async getBrowserCount(): Promise<number> {
+    private async getBrowserCount(range?: LocalHistoryDateRange): Promise<number> {
         const db = await this.open();
         return new Promise((resolve, reject) => {
             const transaction = db.transaction([STORE_NAME], 'readonly');
             const store = transaction.objectStore(STORE_NAME);
-            const request = store.count();
+            const keyRange = range?.from || range?.to
+                ? IDBKeyRange.bound(range.from ?? 0, range.to ?? Number.MAX_SAFE_INTEGER)
+                : undefined;
+            const request = store.index('createdAt').count(keyRange);
             
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);

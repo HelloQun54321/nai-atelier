@@ -149,6 +149,7 @@ const CopyModal: React.FC<{
 
 export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onRefresh, isLoading, notify, isGuest = false }) => {
   const imageDisplay = useMobileImageDisplayPreferences();
+  const [previewRatios, setPreviewRatios] = useState<Record<string, number>>({});
   const confirmAction = useConfirmDialog();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -371,18 +372,17 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                 <div className="absolute top-2 right-2 z-10 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
                     <button 
                         onClick={(e) => { e.stopPropagation(); setCopyModalChain(chain); }} 
-                    className="mobile-touch bg-white/90 dark:bg-black/70 backdrop-blur px-3 py-1.5 rounded-full shadow-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/50 text-xs font-bold flex items-center gap-1"
+                    className="mobile-touch flex h-11 w-11 items-center justify-center rounded-full bg-white/90 p-0 text-indigo-600 shadow-sm backdrop-blur hover:bg-indigo-50 dark:bg-black/70 dark:text-indigo-400 dark:hover:bg-indigo-900/50"
                         title="复制/查看详情"
                     >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-                        复制
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
                     </button>
                 </div>
 
                 {/* Preview Image */}
                 <div 
                     className="mobile-gallery-frame md:aspect-square bg-gray-200 dark:bg-gray-900 relative border-b border-gray-200 dark:border-gray-700 overflow-hidden flex items-center justify-center"
-                    style={{ '--mobile-image-ratio': '4 / 3' } as React.CSSProperties}
+                    style={{ '--mobile-image-ratio': String(previewRatios[chain.id] || 4 / 3) } as React.CSSProperties}
                 >
                     {chain.previewImage ? (
                         <div className="w-full h-full relative group/img">
@@ -390,6 +390,11 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                                 src={chain.previewImage}
                                 alt={chain.name}
                                 className="w-full h-full object-contain"
+                                onLoad={event => {
+                                  const image = event.currentTarget;
+                                  const ratio = image.naturalWidth / Math.max(1, image.naturalHeight);
+                                  if (Number.isFinite(ratio) && ratio > 0 && previewRatios[chain.id] !== ratio) setPreviewRatios(previous => ({ ...previous, [chain.id]: ratio }));
+                                }}
                             />
                         </div>
                     ) : (
@@ -421,7 +426,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                       </svg>
                     </button>
                   </div>
-                  <p className="text-gray-500 dark:text-gray-400 text-xs mb-2 line-clamp-1 h-4 md:line-clamp-2 md:h-8 leading-tight">{chain.description || '暂无描述'}</p>
+                  <p className="hidden text-gray-500 dark:text-gray-400 text-xs mb-2 md:line-clamp-2 md:block md:h-8 leading-tight">{chain.description || '暂无描述'}</p>
 
                   {/* Tags 显示 */}
                   {chain.tags && chain.tags.length > 0 && (
@@ -443,7 +448,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                     </div>
                   )}
 
-                  <div className="mt-auto flex justify-between items-center pt-2 border-t border-gray-100 dark:border-gray-700/50">
+                  <div className="hidden mt-auto justify-between items-center pt-2 border-t border-gray-100 dark:border-gray-700/50 md:flex">
                      <div className="flex flex-col min-w-0 mr-2">
                         <span className="text-[10px] text-gray-400 dark:text-gray-500 truncate">
                             {new Date(chain.updatedAt).toLocaleString('zh-CN', { hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}

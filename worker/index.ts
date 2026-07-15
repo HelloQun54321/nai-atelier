@@ -2253,18 +2253,26 @@ export default {
 
           const page = clampInt(url.searchParams.get('page'), 0, 0, 1000000);
           const pageSize = clampInt(url.searchParams.get('pageSize'), 20, 1, 100);
-          const count = await db.prepare('SELECT COUNT(*) AS count FROM local_generation_history WHERE user_id = ?')
-            .bind(currentUser.id).first<{count: number}>();
+          const from = Number(url.searchParams.get('from') || 0);
+          const to = Number(url.searchParams.get('to') || 0);
+          const dateWhere = from || to ? ` AND created_at >= ? AND created_at <= ?` : '';
+          const dateValues = from || to ? [from || 0, to || Number.MAX_SAFE_INTEGER] : [];
+          const count = await db.prepare(`SELECT COUNT(*) AS count FROM local_generation_history WHERE user_id = ?${dateWhere}`)
+            .bind(currentUser.id, ...dateValues).first<{count: number}>();
           const result = await db.prepare(`
             SELECT * FROM local_generation_history
-            WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?
-          `).bind(currentUser.id, pageSize, page * pageSize).all<any>();
+            WHERE user_id = ?${dateWhere} ORDER BY created_at DESC LIMIT ? OFFSET ?
+          `).bind(currentUser.id, ...dateValues, pageSize, page * pageSize).all<any>();
           return json({ items: result.results.map(mapLocalHistoryRow), count: Number(count?.count || 0) });
         }
 
         if (path === '/api/local-history/count' && method === 'GET') {
-          const result = await db.prepare('SELECT COUNT(*) AS count FROM local_generation_history WHERE user_id = ?')
-            .bind(currentUser.id).first<{count: number}>();
+          const from = Number(url.searchParams.get('from') || 0);
+          const to = Number(url.searchParams.get('to') || 0);
+          const dateWhere = from || to ? ' AND created_at >= ? AND created_at <= ?' : '';
+          const dateValues = from || to ? [from || 0, to || Number.MAX_SAFE_INTEGER] : [];
+          const result = await db.prepare(`SELECT COUNT(*) AS count FROM local_generation_history WHERE user_id = ?${dateWhere}`)
+            .bind(currentUser.id, ...dateValues).first<{count: number}>();
           return json({ count: Number(result?.count || 0) });
         }
 

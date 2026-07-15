@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { localHistory } from '../services/localHistory';
+import { LocalHistoryDateRange, localHistory } from '../services/localHistory';
 import { db } from '../services/dbService';
 import { LocalGenItem, User } from '../types';
 import { PAGINATION_CONFIG } from '../config/pagination';
@@ -18,6 +18,11 @@ interface GenHistoryProps {
     onNavigateToPlayground?: () => void;
     onRefreshInspiration?: () => void;
 }
+
+const toDateInputValue = (date: Date) => {
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
 
 export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onNavigateToPlayground, onRefreshInspiration }) => {
     const confirmAction = useConfirmDialog();
@@ -39,6 +44,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
     const [totalCount, setTotalCount] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
     const [jumpPage, setJumpPage] = useState('');
+    const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
+    const dateRangeRef = useRef<LocalHistoryDateRange>({});
     const [migrationProgress, setMigrationProgress] = useState<{ current: number; total: number } | null>(null);
     
     // 缓存管理
@@ -51,6 +58,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
 
     // 清理相关状态
     const [showCleanMenu, setShowCleanMenu] = useState(false);
+    const [showPageMenu, setShowPageMenu] = useState(false);
+    const [showDateFilter, setShowDateFilter] = useState(false);
     const [showCleanModal, setShowCleanModal] = useState(false);
     const [cleanMode, setCleanMode] = useState<'days' | 'count'>('days');
     const [cleanDays, setCleanDays] = useState<number>(PAGINATION_CONFIG.CLEANUP.DEFAULT_DAYS);
@@ -123,7 +132,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
         }
 
         let request: Promise<LocalGenItem[]>;
-        request = localHistory.getPage(page - 1, PAGE_SIZE)
+        request = localHistory.getPage(page - 1, PAGE_SIZE, dateRangeRef.current)
             .then(data => {
                 if (inflightPagesRef.current[page] === request) {
                     delete inflightPagesRef.current[page];
@@ -172,7 +181,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
         setIsLoading(true);
 
         try {
-            const count = await localHistory.getCount();
+            const count = await localHistory.getCount(dateRangeRef.current);
             const calculatedTotalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
             const targetPage = Math.max(1, Math.min(page, calculatedTotalPages));
 
@@ -217,6 +226,18 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
     };
 
     refreshPageRef.current = goToPage;
+
+    const applyDateFilter = (next: { from: string; to: string }) => {
+        const from = next.from ? new Date(`${next.from}T00:00:00`).getTime() : undefined;
+        const to = next.to ? new Date(`${next.to}T23:59:59.999`).getTime() : undefined;
+        dateRangeRef.current = { from, to };
+        setDateFilter(next);
+        setCacheState({});
+        inflightPagesRef.current = {};
+        currentPageRef.current = 1;
+        setShowDateFilter(false);
+        void goToPage(1, true);
+    };
 
     useEffect(() => {
         const unsubscribe = localHistory.subscribe(change => {
@@ -527,8 +548,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                             </p>
                         )}
                     </div>
-                    <div className="flex gap-2 md:gap-3 items-center">
-                        <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center md:text-sm">共 {totalCount} 张</div>
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setShowDateFilter(true)} className="mobile-touch rounded-lg bg-gray-100 px-3 text-xs font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-300 md:hidden">筛选</button>
+                        <button onClick={() => setShowCleanMenu(true)} className="mobile-touch rounded-lg bg-gray-100 px-3 text-xs font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-300 md:hidden">管理</button>
                         <div className="relative hidden md:block">
                             <button 
                                 onClick={() => setShowCleanMenu(!showCleanMenu)} 
@@ -571,6 +593,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                         >
                             <svg className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg><span className="hidden md:ml-1 md:inline">{isLoading ? '刷新中…' : '刷新'}</span>
                         </button>
+                        <div className="hidden text-sm text-gray-500 dark:text-gray-400 md:flex">共 {totalCount} 张</div>
                     </div>
                 </div>
 
@@ -672,12 +695,27 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                         </div>
                     </div>
                 )}
-                {totalCount > 0 && <div className="grid grid-cols-[2.75rem_1fr_2.75rem] items-center gap-2 md:hidden">
+                {totalCount > 0 && <div className="hidden grid-cols-[2.75rem_1fr_2.75rem] items-center gap-2 md:hidden">
                     <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1 || isLoading} aria-label="上一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">‹</button>
                     <button onClick={() => setShowCleanMenu(true)} className="mobile-touch rounded-lg text-sm font-bold text-indigo-600 dark:text-indigo-300">{currentPage} / {totalPages}</button>
                     <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || isLoading} aria-label="下一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">›</button>
                 </div>}
             </header>
+
+            <MobileBottomSheet open={showDateFilter} title="筛选历史日期" onClose={() => setShowDateFilter(false)}>
+                <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                        <label className="text-sm font-bold dark:text-white">开始日期<input type="date" value={dateFilter.from} onChange={event => setDateFilter(previous => ({ ...previous, from: event.target.value }))} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-600 dark:bg-gray-800" /></label>
+                        <label className="text-sm font-bold dark:text-white">结束日期<input type="date" value={dateFilter.to} onChange={event => setDateFilter(previous => ({ ...previous, to: event.target.value }))} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-600 dark:bg-gray-800" /></label>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                        <button onClick={() => { const today = toDateInputValue(new Date()); setDateFilter({ from: today, to: today }); }} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">今天</button>
+                        <button onClick={() => { const end = new Date(); const start = new Date(Date.now() - 6 * 86400000); setDateFilter({ from: toDateInputValue(start), to: toDateInputValue(end) }); }} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">近 7 天</button>
+                        <button onClick={() => setDateFilter({ from: '', to: '' })} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">清除</button>
+                    </div>
+                    <button onClick={() => applyDateFilter(dateFilter)} className="mobile-touch w-full rounded-xl bg-indigo-600 font-bold text-white">应用筛选</button>
+                </div>
+            </MobileBottomSheet>
 
             <MobileBottomSheet open={showCleanMenu} title="跳页与历史管理" onClose={() => setShowCleanMenu(false)}>
                 <div className="space-y-5">
@@ -698,6 +736,17 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                             <button onClick={handleClearAll} className="mobile-touch w-full rounded-xl bg-red-50 px-4 text-left text-sm font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">清空全部历史</button>
                         </div>
                     </div>
+                </div>
+            </MobileBottomSheet>
+
+            <MobileBottomSheet open={showPageMenu} title="跳转页码" onClose={() => setShowPageMenu(false)}>
+                <div className="space-y-3">
+                    <div className="grid grid-cols-[auto_1fr_auto] gap-2">
+                        <button onClick={() => { void goToPage(1); setShowPageMenu(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">首页</button>
+                        <input type="number" min="1" max={totalPages} value={jumpPage} onChange={event => setJumpPage(event.target.value)} placeholder={`${currentPage} / ${totalPages}`} className="min-w-0 rounded-xl border border-gray-300 bg-white px-3 text-center dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
+                        <button onClick={() => { const page = Number(jumpPage); if (page >= 1 && page <= totalPages) void goToPage(page); setJumpPage(''); setShowPageMenu(false); }} className="mobile-touch rounded-xl bg-indigo-600 px-4 font-bold text-white">跳转</button>
+                    </div>
+                    <button onClick={() => { void goToPage(totalPages); setShowPageMenu(false); }} className="mobile-touch w-full rounded-xl border border-gray-300 text-sm dark:border-gray-600">前往末页</button>
                 </div>
             </MobileBottomSheet>
 
@@ -766,6 +815,11 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                 </div>
                             )}
                         </div>
+                        {totalCount > 0 && <div className="mx-auto mb-4 grid max-w-sm grid-cols-[2.75rem_1fr_2.75rem] items-center gap-2">
+                            <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1 || isLoading} aria-label="上一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">‹</button>
+                            <button onClick={() => setShowPageMenu(true)} className="mobile-touch rounded-lg text-sm font-bold text-indigo-600 dark:text-indigo-300">{currentPage} / {totalPages}</button>
+                            <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || isLoading} aria-label="下一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">›</button>
+                        </div>}
                     </>
                 )}
             </div>

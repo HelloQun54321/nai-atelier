@@ -13,6 +13,7 @@ interface SmartImageProps {
   className?: string;
   containerClassName?: string;
   onError?: () => void;
+  onLoad?: React.ReactEventHandler<HTMLImageElement>;
 }
 
 export const SmartImage: React.FC<SmartImageProps> = ({
@@ -21,6 +22,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   className = 'h-full w-full object-cover',
   containerClassName = 'relative h-full w-full overflow-hidden bg-gray-200 dark:bg-gray-900',
   onError,
+  onLoad,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const onErrorRef = useRef(onError);
@@ -96,7 +98,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
           src={displaySrc}
           alt={alt}
           className={`${className} transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
-          onLoad={() => setLoaded(true)}
+          onLoad={event => { setLoaded(true); onLoad?.(event); }}
           onError={() => { setFailed(true); onErrorRef.current?.(); }}
           decoding="async"
         />
