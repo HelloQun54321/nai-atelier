@@ -153,8 +153,9 @@ async function openWhenReady() {
 async function waitForWorker(port) {
   for (let i = 0; i < 60; i++) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/`, { cache: 'no-store' });
-      if (response.status < 500) return;
+      const response = await fetch(`http://127.0.0.1:${port}/api/lan/status`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => null);
+      if (response.ok && typeof payload?.authorized === 'boolean') return;
     } catch {
       // Worker is still starting.
     }

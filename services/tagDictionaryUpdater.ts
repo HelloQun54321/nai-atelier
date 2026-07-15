@@ -14,7 +14,7 @@ export interface TagUpdateStatus {
   };
 }
 
-const CONTROL_URL = 'http://127.0.0.1:3001/tag-dictionary';
+const CONTROL_URL = 'http://127.0.0.1:3002/tag-dictionary';
 
 const request = async (method: 'GET' | 'POST'): Promise<TagUpdateStatus> => {
   const response = await fetch(CONTROL_URL, {

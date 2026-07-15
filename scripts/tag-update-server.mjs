@@ -9,7 +9,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MANIFEST_FILE = path.join(ROOT, 'public', 'tag-data', 'manifest.json');
 const UPDATE_SCRIPT = path.join(ROOT, 'scripts', 'update-tag-dictionary.mjs');
 const HOST = '127.0.0.1';
-const PORT = 3001;
+const PORT = 3002;
 const ALLOWED_ORIGINS = new Set([
   'http://localhost:3000',
   'http://127.0.0.1:3000'
