@@ -717,25 +717,12 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                 </div>
             </MobileBottomSheet>
 
-            <MobileBottomSheet open={showCleanMenu} title="跳页与历史管理" onClose={() => setShowCleanMenu(false)}>
-                <div className="space-y-5">
-                    <div>
-                        <label className="mb-2 block text-sm font-bold text-gray-800 dark:text-gray-200">跳转页码</label>
-                        <div className="grid grid-cols-[auto_1fr_auto] gap-2">
-                            <button onClick={() => { void goToPage(1); setShowCleanMenu(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">首页</button>
-                            <input type="number" min="1" max={totalPages} value={jumpPage} onChange={event => setJumpPage(event.target.value)} placeholder={`${currentPage} / ${totalPages}`} className="min-w-0 rounded-xl border border-gray-300 bg-white px-3 text-center dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
-                            <button onClick={() => { const page = Number(jumpPage); if (page >= 1 && page <= totalPages) void goToPage(page); setShowCleanMenu(false); }} className="mobile-touch rounded-xl bg-indigo-600 px-4 font-bold text-white">跳转</button>
-                        </div>
-                        <button onClick={() => { void goToPage(totalPages); setShowCleanMenu(false); }} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 text-sm dark:border-gray-600">前往末页</button>
-                    </div>
-                    <div className="border-t border-gray-200 pt-4 dark:border-gray-700">
-                        <div className="mb-2 text-sm font-bold text-gray-800 dark:text-gray-200">历史管理</div>
-                        <div className="space-y-2">
+            <MobileBottomSheet open={showCleanMenu} title="历史管理" onClose={() => setShowCleanMenu(false)}>
+                <div className="space-y-2">
+                            <button onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-50 px-4 text-left text-sm font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">批量选择图片</button>
                             <button onClick={() => handleCleanMenuClick('days')} className="mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">删除指定天数以前的历史</button>
                             <button onClick={() => handleCleanMenuClick('count')} className="mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">只保留最近指定数量</button>
                             <button onClick={handleClearAll} className="mobile-touch w-full rounded-xl bg-red-50 px-4 text-left text-sm font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">清空全部历史</button>
-                        </div>
-                    </div>
                 </div>
             </MobileBottomSheet>
 
