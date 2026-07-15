@@ -1458,7 +1458,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
             </div>
 
-            {!lightboxImg && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
+            {!lightboxImg && !showImportPreset && !importCandidate && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
                 {(displayedPreviewImage || chain.previewImage) && <button type="button" onClick={() => setLightboxImg(displayedPreviewImage || chain.previewImage || null)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-700" aria-label="查看最近生成结果"><SmartImage src={displayedPreviewImage || chain.previewImage || ''} alt="最近生成结果" /></button>}
                 <button onClick={handleGenerate} disabled={isGenerating} className="mobile-touch rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 px-6 text-sm font-bold text-white shadow-xl shadow-indigo-500/30 disabled:opacity-60">{isGenerating ? '生成中…' : '生成'}</button>
             </div>}
@@ -1558,13 +1558,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
             {/* Import Preset List Modal */}
             {showImportPreset && !importCandidate && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-4xl md:max-w-5xl lg:max-w-6xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col max-h-[85vh]">
-                        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center flex-shrink-0 gap-4 flex-wrap">
-                            <h3 className="font-bold dark:text-white flex-shrink-0">引用预设</h3>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 backdrop-blur-sm md:p-4">
+                    <div className="flex max-h-[90dvh] w-full max-w-4xl flex-col rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-800 md:max-h-[85vh] md:max-w-5xl lg:max-w-6xl">
+                        <div className="relative flex flex-shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 p-3 dark:border-gray-700 md:justify-between md:gap-4 md:p-4">
+                            <h3 className="pr-10 font-bold dark:text-white md:pr-0">引用预设</h3>
 
                             {/* 快速导入开关 */}
-                            <label className="flex items-center gap-2 cursor-pointer select-none flex-shrink-0 group">
+                            <label className="order-2 flex w-full flex-shrink-0 cursor-pointer select-none items-center gap-2 group md:order-none md:w-auto">
                                 <span className="text-xs text-gray-500 dark:text-gray-400">快速导入</span>
                                 <button
                                     type="button"
@@ -1586,7 +1586,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 </span>
                             </label>
 
-                            <div className="flex bg-gray-100 dark:bg-gray-700/50 p-1 rounded-lg flex-1 max-w-xs">
+                            <div className="order-3 flex w-full max-w-none rounded-lg bg-gray-100 p-1 dark:bg-gray-700/50 md:order-none md:max-w-xs md:flex-1">
                                 <button
                                     onClick={() => setImportTab('style')}
                                     className={`flex-1 py-1 text-xs font-medium rounded-md transition-all ${importTab === 'style' ? 'bg-white dark:bg-gray-600 shadow text-indigo-600 dark:text-white' : 'text-gray-500'}`}
@@ -1601,9 +1601,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 </button>
                             </div>
 
-                            <button onClick={() => setShowImportPreset(false)} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">✕</button>
+                            <button onClick={() => setShowImportPreset(false)} className="mobile-touch absolute right-3 top-3 rounded-lg px-2 text-xl text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 md:static md:px-0" aria-label="关闭引用预设">✕</button>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-4 min-h-0">
+                        <div className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4">
                             {/* Extract all unique tags from the filtered list for this modal */}
                             {(() => {
                               const filteredForTags = allChains.filter(c => (importTab === 'character' ? c.type === 'character' : (c.type === 'style' || !c.type)));
@@ -1668,7 +1668,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                       ))}
                                     </div>
                                   )}
-                                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                                  <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
                                     {filteredChains.map(c => (
                                       <button
                                         key={c.id}
