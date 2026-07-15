@@ -150,6 +150,19 @@ async function openWhenReady() {
   console.log(`Please open manually: ${DISPLAY_URL}`);
 }
 
+async function reuseExistingServer() {
+  try {
+    const response = await fetch(`${LOCAL_URL}/api/lan/status`, { cache: 'no-store', signal: AbortSignal.timeout(2000) });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || typeof payload?.authorized !== 'boolean') return false;
+    console.log('\x1b[33mNaiPromptManager 已经在运行，直接打开现有页面。\x1b[0m');
+    if (process.env.NAI_NO_BROWSER !== '1') openBrowser(DISPLAY_URL);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function waitForWorker(port) {
   for (let i = 0; i < 60; i++) {
     try {
@@ -230,6 +243,7 @@ async function startServer() {
 
 console.log('\x1b[36m=== NaiPromptManager 本地部署 ===\x1b[0m');
 
+if (await reuseExistingServer()) process.exit(0);
 ensureDependencies();
 buildLatest();
 await startServer();
