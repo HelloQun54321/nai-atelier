@@ -4,6 +4,7 @@ import { localHistory } from '../services/localHistory';
 import { db } from '../services/dbService';
 import { LocalGenItem, User } from '../types';
 import { PAGINATION_CONFIG } from '../config/pagination';
+import { MobileBottomSheet, useMobileHistoryLayer } from './MobileUI';
 import { extractMetadata, IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../services/metadataService';
 import { ParamsViewer } from './ParamsViewer';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -21,9 +22,14 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
     const confirmAction = useConfirmDialog();
     const [items, setItems] = useState<LocalGenItem[]>([]);
     const [lightbox, setLightbox] = useState<LocalGenItem | null>(null);
+    const closeLightbox = useMobileHistoryLayer(Boolean(lightbox), () => setLightbox(null), 'history-detail');
     const [isPublishing, setIsPublishing] = useState(false);
     const [publishTitle, setPublishTitle] = useState('');
     const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const [selectionMode, setSelectionMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const longPressTimerRef = useRef<number | null>(null);
+    const longPressTriggeredRef = useRef(false);
 
     // 分页相关状态
     const [currentPage, setCurrentPage] = useState(1);
@@ -289,8 +295,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
         };
     };
 
-    const handleDelete = async (id: string, e: React.MouseEvent) => {
-        e.stopPropagation();
+    const handleDelete = async (id: string, e?: React.MouseEvent) => {
+        e?.stopPropagation();
         if (await confirmAction({
             title: '删除这张历史图片？',
             message: '图片记录和本地图片文件将被永久删除，此操作无法撤销。',
@@ -315,6 +321,18 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                 notify('删除失败: ' + (e?.message || '未知错误'), 'error');
             }
         }
+    };
+
+    const handleBulkDelete = async () => {
+        if (!selectedIds.size) return;
+        if (!await confirmAction({ title: `删除选中的 ${selectedIds.size} 张图片？`, message: '这些历史记录和本地图片文件将被永久删除。', confirmLabel: '批量删除', tone: 'danger' })) return;
+        for (const id of selectedIds) await localHistory.delete(id);
+        setSelectionMode(false);
+        setSelectedIds(new Set());
+        setCacheState({});
+        inflightPagesRef.current = {};
+        await goToPage(currentPageRef.current, true);
+        notify('选中的历史图片已删除');
     };
 
     const handleClearAll = async () => {
@@ -494,9 +512,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
 
     return (
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
-            <header className="p-4 md:p-6 bg-white dark:bg-gray-800 shadow-md border-b border-gray-200 dark:border-gray-700 z-10 flex-shrink-0">
+            <header className="p-2 md:p-6 bg-white dark:bg-gray-800 shadow-md border-b border-gray-200 dark:border-gray-700 z-10 flex-shrink-0">
                 <div className="flex justify-between items-center mb-4">
-                    <div>
+                    <div className="hidden md:block">
                         <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">本地生图历史</h1>
                         <p className="text-xs text-gray-500 dark:text-gray-400">保存在本机 local-data，不上传云端</p>
                         {migrationProgress && (
@@ -509,7 +527,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                     </div>
                     <div className="flex gap-2 md:gap-3 items-center">
                         <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center">共 {totalCount} 张</div>
-                        <div className="relative">
+                        <div className="relative hidden md:block">
                             <button 
                                 onClick={() => setShowCleanMenu(!showCleanMenu)} 
                                 disabled={migrationProgress !== null}
@@ -546,7 +564,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                         <button
                             onClick={handleRefresh}
                             disabled={isLoading || migrationProgress !== null}
-                            className="px-3 py-1 md:px-4 md:py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded text-xs md:text-sm hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-wait"
+                            className="mobile-touch px-3 py-1 md:px-4 md:py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded text-xs md:text-sm hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-wait"
                         >
                             {isLoading ? '刷新中…' : '刷新'}
                         </button>
@@ -555,7 +573,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
 
                 {/* 分页控件 */}
                 {totalCount > 0 && (
-                    <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <div className="hidden md:flex flex-col sm:flex-row gap-3 items-center justify-between bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
                         {/* 分页按钮 */}
                         <div className="flex items-center gap-2">
                             {/* 首页 */}
@@ -651,7 +669,34 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                         </div>
                     </div>
                 )}
+                {totalCount > 0 && <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 md:hidden">
+                    <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1 || isLoading} className="mobile-touch rounded-xl border border-gray-300 bg-white px-3 text-sm disabled:opacity-40 dark:border-gray-600 dark:bg-gray-700">上一页</button>
+                    <button onClick={() => setShowCleanMenu(true)} className="mobile-touch min-w-24 rounded-xl bg-indigo-50 px-3 text-sm font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">{currentPage} / {totalPages}</button>
+                    <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || isLoading} className="mobile-touch rounded-xl border border-gray-300 bg-white px-3 text-sm disabled:opacity-40 dark:border-gray-600 dark:bg-gray-700">下一页</button>
+                </div>}
             </header>
+
+            <MobileBottomSheet open={showCleanMenu} title="跳页与历史管理" onClose={() => setShowCleanMenu(false)}>
+                <div className="space-y-5">
+                    <div>
+                        <label className="mb-2 block text-sm font-bold text-gray-800 dark:text-gray-200">跳转页码</label>
+                        <div className="grid grid-cols-[auto_1fr_auto] gap-2">
+                            <button onClick={() => { void goToPage(1); setShowCleanMenu(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">首页</button>
+                            <input type="number" min="1" max={totalPages} value={jumpPage} onChange={event => setJumpPage(event.target.value)} placeholder={`${currentPage} / ${totalPages}`} className="min-w-0 rounded-xl border border-gray-300 bg-white px-3 text-center dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
+                            <button onClick={() => { const page = Number(jumpPage); if (page >= 1 && page <= totalPages) void goToPage(page); setShowCleanMenu(false); }} className="mobile-touch rounded-xl bg-indigo-600 px-4 font-bold text-white">跳转</button>
+                        </div>
+                        <button onClick={() => { void goToPage(totalPages); setShowCleanMenu(false); }} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 text-sm dark:border-gray-600">前往末页</button>
+                    </div>
+                    <div className="border-t border-gray-200 pt-4 dark:border-gray-700">
+                        <div className="mb-2 text-sm font-bold text-gray-800 dark:text-gray-200">历史管理</div>
+                        <div className="space-y-2">
+                            <button onClick={() => handleCleanMenuClick('days')} className="mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">删除指定天数以前的历史</button>
+                            <button onClick={() => handleCleanMenuClick('count')} className="mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">只保留最近指定数量</button>
+                            <button onClick={handleClearAll} className="mobile-touch w-full rounded-xl bg-red-50 px-4 text-left text-sm font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">清空全部历史</button>
+                        </div>
+                    </div>
+                </div>
+            </MobileBottomSheet>
 
             <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-20">
                 {isLoading ? (
@@ -667,12 +712,26 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                     </div>
                 ) : (
                     <>
-                        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
+                        <div className="grid grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2 md:gap-4">
                             {items.map(item => (
                                 <div
                                     key={item.id}
-                                    className="group relative aspect-square bg-gray-200 dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border border-gray-200 dark:border-gray-700 hover:border-indigo-500 transition-colors"
-                                    onClick={() => setLightbox(item)}
+                                    className={`group relative aspect-square bg-gray-200 dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border hover:border-indigo-500 transition-colors ${selectedIds.has(item.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
+                                    onPointerDown={() => {
+                                        longPressTriggeredRef.current = false;
+                                        longPressTimerRef.current = window.setTimeout(() => {
+                                            longPressTriggeredRef.current = true;
+                                            setSelectionMode(true);
+                                            setSelectedIds(previous => new Set(previous).add(item.id));
+                                        }, 550);
+                                    }}
+                                    onPointerUp={() => { if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current); }}
+                                    onPointerCancel={() => { if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current); }}
+                                    onClick={() => {
+                                        if (longPressTriggeredRef.current) return;
+                                        if (selectionMode) setSelectedIds(previous => { const next = new Set(previous); next.has(item.id) ? next.delete(item.id) : next.add(item.id); return next; });
+                                        else setLightbox(item);
+                                    }}
                                 >
                                     <SmartImage
                                         src={item.imageUrl}
@@ -680,7 +739,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                         className="w-full h-full object-cover"
                                     />
                                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-                                    <div className="absolute top-2 right-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {selectionMode && <div className="absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white shadow">{selectedIds.has(item.id) ? '✓' : ''}</div>}
+                                    <div className="absolute top-2 right-2 hidden md:block opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button onClick={(e) => handleDelete(item.id, e)} className="p-1.5 bg-red-500 text-white rounded-full shadow hover:bg-red-600">
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                         </button>
@@ -691,6 +751,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                 </div>
                             ))}
                         </div>
+                        {selectionMode && <div className="mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 flex items-center gap-2 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><button onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }} className="mobile-touch flex-1 rounded-xl bg-gray-100 dark:bg-gray-800">取消</button><div className="px-2 text-sm font-bold dark:text-white">已选 {selectedIds.size}</div><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch flex-1 rounded-xl bg-red-600 font-bold text-white disabled:opacity-40">删除</button></div>}
                         
                         {/* 底部分页信息 */}
                         <div className="flex flex-col items-center justify-center py-6">
@@ -709,8 +770,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
 
             {/* Lightbox */}
             {lightbox && (
-                <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 md:p-8" onClick={() => setLightbox(null)}>
-                    <div className="bg-white dark:bg-gray-900 w-full max-w-6xl h-[85vh] md:h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 z-[1050] bg-black/90 backdrop-blur-sm flex items-center justify-center p-0 md:p-8" onClick={closeLightbox}>
+                    <div className="bg-white dark:bg-gray-900 w-full max-w-6xl h-[100dvh] md:h-[90vh] rounded-none md:rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row" onClick={e => e.stopPropagation()}>
                         {/* Image Area */}
                         <div className="flex-1 bg-gray-100 dark:bg-black/50 flex items-center justify-center p-4 relative h-[45%] md:h-auto border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800">
                             <OriginalImage src={lightbox.imageUrl} alt="历史生成图片预览" className="max-w-full max-h-full object-contain shadow-lg" decoding="async" />
@@ -720,7 +781,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                         <div className="w-full md:w-[400px] bg-white dark:bg-gray-900 flex flex-col p-4 md:p-6 h-[55%] md:h-auto overflow-hidden">
                             <div className="flex justify-between items-center mb-4 flex-shrink-0">
                                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">图片详情</h2>
-                                <button onClick={() => setLightbox(null)} className="text-gray-500 hover:text-gray-900 dark:hover:text-white p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                <button onClick={closeLightbox} className="mobile-touch text-gray-500 hover:text-gray-900 dark:hover:text-white p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                 </button>
                             </div>
@@ -774,6 +835,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                                     下载原图
                                 </a>
+                                <button onClick={event => void handleDelete(lightbox.id, event)} className="mobile-touch w-full rounded-lg bg-red-50 text-sm font-bold text-red-600 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400 md:hidden">删除这张历史图片</button>
                             </div>
                         </div>
                     </div>

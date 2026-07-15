@@ -112,6 +112,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [isImportDragActive, setIsImportDragActive] = useState(false);
     const [showJsonPasteModal, setShowJsonPasteModal] = useState(false);
     const [jsonPasteText, setJsonPasteText] = useState('');
+    const [mobileEditorTab, setMobileEditorTab] = useState<'prompt' | 'params' | 'preview'>('prompt');
+    const paramsSectionRef = useRef<HTMLDivElement>(null);
 
     // --- Initialization ---
 
@@ -1002,9 +1004,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
             )}
             {/* Top Bar */}
-            <header className="flex-shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-4 md:px-6 py-3 flex items-center justify-between gap-2 md:gap-4 overflow-x-hidden">
+            <header className="flex-shrink-0 min-h-[calc(3.5rem+env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-2 md:px-6 pt-[env(safe-area-inset-top)] md:pt-3 pb-2 md:pb-3 flex items-center justify-between gap-1 md:gap-4 overflow-x-hidden">
                 <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
-                    <button onClick={onBack} className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors flex-shrink-0">
+                    <button onClick={onBack} className="mobile-touch flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors flex-shrink-0">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7 7-7m-7 7h18" /></svg>
                     </button>
 
@@ -1089,7 +1091,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     {((!isOwner && !isGuest) || chain.id === 'playground') && (
                         <button
                             onClick={handleFork}
-                            className="px-2 md:px-4 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded text-sm font-medium shadow-lg shadow-green-500/20 flex items-center"
+                            className="mobile-touch px-2 md:px-4 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded text-sm font-medium shadow-lg shadow-green-500/20 flex items-center"
                         >
                             <svg className="w-4 h-4 md:mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
                             <span className="hidden md:inline">{chain.id === 'playground' ? '保存到库' : 'Fork'}</span>
@@ -1100,7 +1102,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <button
                             type="button"
                             onClick={handleReset}
-                            className="flex h-8 w-8 items-center justify-center rounded bg-red-50 text-red-600 transition-colors hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-950/70"
+                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl bg-red-50 text-red-600 transition-colors hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-950/70"
                             title="重置实验室"
                             aria-label="重置实验室"
                         >
@@ -1110,11 +1112,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
                 </div>
             </header>
+            <nav className="grid grid-cols-3 border-b border-gray-200 bg-white p-1.5 dark:border-gray-800 dark:bg-gray-950 lg:hidden">
+                {([['prompt', '提示词'], ['params', '参数'], ['preview', '预览']] as const).map(([value, label]) => <button key={value} onClick={() => {
+                    setMobileEditorTab(value);
+                    if (value === 'params') requestAnimationFrame(() => paramsSectionRef.current?.scrollIntoView({ block: 'start' }));
+                }} className={`mobile-touch rounded-xl text-sm font-bold ${mobileEditorTab === value ? 'bg-indigo-600 text-white' : 'text-gray-500 dark:text-gray-400'}`}>{label}</button>)}
+            </nav>
 
             {/* Editor Content */}
             <div className={`flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden ${isOwner ? 'pb-20 lg:pb-0' : ''}`}>
                 {/* Left Panel - Editor */}
-                <div className="w-full lg:w-1/2 flex flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
+                <div className={`${mobileEditorTab === 'preview' ? 'hidden' : 'flex'} w-full lg:w-1/2 lg:flex flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0`}>
                     <div className="p-4 md:p-6 space-y-6 max-w-3xl mx-auto w-full pb-32 md:pb-24">
                         {!isOwner && (
                             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded mb-4 text-sm text-yellow-700 dark:text-yellow-400">
@@ -1361,37 +1369,43 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         </section>
 
                         {/* Params Component */}
+                        <div ref={paramsSectionRef} className={mobileEditorTab === 'params' ? 'scroll-mt-2' : ''}>
                         <ChainEditorParams
                             params={params}
                             setParams={setParams}
                             canEdit={canEdit}
                             markChange={markChange}
                         />
+                        </div>
                     </div>
 
                     {/* Save Footer: fixed on mobile so always visible, sticky in left panel on lg */}
-                    {isOwner && chain.id !== 'playground' && !lightboxImg && (
+                    {!lightboxImg && (
                         <div className="fixed bottom-0 left-0 right-0 lg:sticky lg:left-auto lg:right-auto lg:bottom-0 z-[999] w-full p-2 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-800 flex justify-between items-center shadow-lg transition-transform duration-300">
                             <div className="text-xs text-gray-500 ml-2">
-                                {hasChanges ? <span className="text-yellow-600 dark:text-yellow-500 font-medium">⚠️ 未保存</span> : <span className="text-green-600 dark:text-green-500">✅ 已保存</span>}
+                                {chain.id === 'playground' ? <span className="text-indigo-600 dark:text-indigo-400">生图实验室</span> : hasChanges ? <span className="text-yellow-600 dark:text-yellow-500 font-medium">⚠️ 未保存</span> : <span className="text-green-600 dark:text-green-500">✅ 已保存</span>}
                             </div>
                             <div className="flex items-center gap-2 md:gap-3">
+                                {isOwner && chain.id !== 'playground' &&
                                 <button
                                     onClick={handleSaveAll}
                                     disabled={!hasChanges}
-                                    className={`px-6 py-1.5 rounded-md font-bold text-sm shadow-md transition-all transform active:scale-95 ${hasChanges
+                                    className={`mobile-touch px-5 py-1.5 rounded-xl font-bold text-sm shadow-md transition-all transform active:scale-95 ${hasChanges
                                         ? 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white shadow-indigo-500/30'
                                         : 'bg-gray-200 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
                                         }`}
                                 >
                                     保存
                                 </button>
+                                }
+                                <button onClick={handleGenerate} disabled={isGenerating} className="mobile-touch rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 text-sm font-bold text-white shadow-lg disabled:opacity-60 lg:hidden">{isGenerating ? '生成中…' : '生成'}</button>
                             </div>
                         </div>
                     )}
                 </div>
 
                 {/* Right Panel - Preview (Testing) - Extracted Component */}
+                <div className={`${mobileEditorTab === 'preview' ? 'flex' : 'hidden'} min-h-0 flex-1 lg:contents`}>
                 <ChainEditorPreview
                     subjectPrompt={subjectPrompt}
                     setSubjectPrompt={(s) => { setSubjectPrompt(s); markChange(); }}
@@ -1416,6 +1430,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     onClearHistoryGroup={handleClearHistoryGroup}
                     onCopyFinalPrompt={() => copyPromptToClipboard(false)}
                 />
+                </div>
             </div>
 
             {/* Lightbox Modal */}

@@ -17,6 +17,7 @@ import { db } from '../services/dbService';
 import { IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../services/metadataService';
 import { NAIParams, PromptChain, User } from '../types';
 import { OriginalImage, SmartImage } from './SmartImage';
+import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './MobileUI';
 import { createUuid } from '../services/id';
 
 interface AitagGalleryProps {
@@ -238,9 +239,11 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
   const [isOfflineCache, setIsOfflineCache] = useState(() => aitagPageCache.isOfflineCache);
   const [isPageInputOpen, setIsPageInputOpen] = useState(false);
   const [pageInputValue, setPageInputValue] = useState(String(aitagPageCache.page));
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
 
   const selectedDetail = selectedId ? details[selectedId] : null;
   const selectedWork = selectedDetail?.work || items.find(item => item.id === selectedId) || null;
+  const closeMobileDetail = useMobileHistoryLayer(Boolean(selectedWork), () => setSelectedId(null), 'aitag-detail');
   const visibleItems = items;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasNextPage = page < totalPages;
@@ -857,8 +860,14 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
 
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-gray-50 dark:bg-gray-900">
-      <header className="flex-shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 py-4">
-        <div className="px-4 md:px-6">
+      <header className="flex-shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 py-2 md:py-4">
+        <div className="flex gap-2 px-2 md:hidden">
+          <span title={isAitagConnected ? '连接正常' : '当前使用本地缓存'} className={`mt-4 h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
+          <input value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') handleSearch(); }} placeholder="搜索 AITag 作品" className="h-11 min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
+          <MobileIconButton label="AITag 筛选" onClick={() => setShowMobileFilters(true)} className="border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-900">☰</MobileIconButton>
+          <MobileIconButton label="刷新" onClick={() => loadWorks(page, { resetScroll: true })} disabled={isLoading} className="border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-900">↻</MobileIconButton>
+        </div>
+        <div className="hidden px-4 md:block md:px-6">
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
@@ -884,8 +893,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_460px] gap-2">
-          <div className="px-4 md:px-6 2xl:pr-0 grid grid-cols-1 xl:grid-cols-2 gap-2 min-w-0">
+        <div className="mt-4 hidden grid-cols-1 gap-2 md:grid xl:grid-cols-[minmax(0,1fr)_460px]">
+          <div className="px-4 md:px-6 xl:pr-0 grid grid-cols-1 xl:grid-cols-2 gap-2 min-w-0">
             <input
               value={q}
               onChange={e => setQ(e.target.value)}
@@ -964,8 +973,20 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
           </div>
         </div>
       </header>
+      <MobileBottomSheet open={showMobileFilters} title="AITag 筛选" onClose={() => setShowMobileFilters(false)} footer={<button onClick={() => { handleSearch(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl bg-indigo-600 font-bold text-white">应用筛选</button>}>
+        <div className="space-y-4">
+          <label className="block text-sm font-bold dark:text-white">Prompt 搜索<input value={prompt} onChange={event => setPrompt(event.target.value)} placeholder="搜索 NAI/SD 元数据 Prompt" className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-700 dark:bg-gray-800" /></label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-sm font-bold dark:text-white">类型<select value={aiType} onChange={event => handleAiTypeChange(event.target.value as AitagAiType)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-700 dark:bg-gray-800"><option value="all">全部</option><option value="nai">NAI</option><option value="sd">SD</option><option value="comfyui">ComfyUI</option></select></label>
+            <label className="text-sm font-bold dark:text-white">缓存<select value={cacheFilter} onChange={event => handleCacheFilterChange(event.target.value as AitagCacheFilter)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-700 dark:bg-gray-800"><option value="all">全部</option><option value="favorite">收藏</option><option value="full">已缓存全部</option><option value="first-image">已缓存首图</option></select></label>
+            <label className="text-sm font-bold dark:text-white">排序<select value={sort} onChange={event => handleSortChange(event.target.value as AitagSort)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-700 dark:bg-gray-800"><option value="new">最新</option><option value="monthly">月榜</option></select></label>
+            <label className="text-sm font-bold dark:text-white">月份<select value={sort === 'monthly' ? rankMonth : ''} disabled={sort !== 'monthly'} onChange={event => handleRankMonthChange(event.target.value)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800"><option value="current">当前月份</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">更早</option></select></label>
+          </div>
+          <div className="rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">第 {page} / {totalPages} 页 · 共 {formatCount(total)} 条</div>
+        </div>
+      </MobileBottomSheet>
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_460px]">
+      <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_460px]">
         <main
           ref={mainScrollRef}
           onScroll={cacheScrollPositions}
@@ -1087,7 +1108,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
             <button
               onClick={() => loadWorks(Math.max(1, page - 1), { resetScroll: true })}
               disabled={isLoading || page <= 1}
-              className="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm disabled:opacity-50"
+              className="mobile-touch px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm disabled:opacity-50"
             >
               上一页
             </button>
@@ -1125,7 +1146,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
                 }}
                 disabled={isLoading}
                 title="点击输入页码跳转"
-                className="min-w-24 px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-500 dark:text-gray-400 hover:border-indigo-400 hover:text-indigo-500 disabled:opacity-50"
+                className="mobile-touch min-w-24 px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-500 dark:text-gray-400 hover:border-indigo-400 hover:text-indigo-500 disabled:opacity-50"
               >
                 {page} / {totalPages}
               </button>
@@ -1133,7 +1154,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
             <button
               onClick={() => loadWorks(page + 1, { resetScroll: true })}
               disabled={isLoading || !hasNextPage}
-              className="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm disabled:opacity-50"
+              className="mobile-touch px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm disabled:opacity-50"
             >
               下一页
             </button>
@@ -1147,15 +1168,18 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
           </div>
         </main>
 
-        <aside className="min-h-0 border-t 2xl:border-t-0 2xl:border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 flex flex-col">
+        <aside className={`${selectedWork ? 'flex' : 'hidden'} fixed inset-0 z-[1050] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:static md:z-auto md:flex md:border-t xl:border-l xl:border-t-0`}>
           <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-            <div>
+            <div className="flex min-w-0 items-center gap-1">
+              <MobileIconButton label="返回作品列表" onClick={closeMobileDetail} className="md:hidden">←</MobileIconButton>
+              <div className="min-w-0">
               <div className="font-bold text-gray-900 dark:text-white truncate max-w-[300px]">
                 {selectedWork?.title || '作品详情'}
               </div>
               {selectedWork && (
                 <div className="text-xs text-gray-500 mt-0.5">#{selectedWork.id} · {getAitagType(selectedWork)}</div>
               )}
+              </div>
             </div>
             {selectedWork && (
               <div className="flex gap-2">

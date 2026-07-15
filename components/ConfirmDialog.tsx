@@ -53,7 +53,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
             {children}
             {options && (
                 <div
-                    className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+                    className="fixed inset-0 z-[2000] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm md:items-center md:p-4"
                     onClick={() => closeDialog(false)}
                 >
                     <div
@@ -61,7 +61,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                         aria-modal="true"
                         aria-labelledby="confirm-dialog-title"
                         aria-describedby="confirm-dialog-description"
-                        className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-850"
+                        className="mobile-safe-bottom w-full max-w-md rounded-t-3xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-850 md:rounded-2xl md:p-6"
                         onClick={event => event.stopPropagation()}
                     >
                         <div className="flex items-start gap-4">
@@ -88,19 +88,19 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                                 </p>
                             </div>
                         </div>
-                        <div className="mt-6 flex justify-end gap-3">
+                        <div className="mt-6 grid grid-cols-2 gap-3 md:flex md:justify-end">
                             <button
                                 type="button"
                                 autoFocus
                                 onClick={() => closeDialog(false)}
-                                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 dark:focus:ring-offset-gray-850"
+                                className="mobile-touch rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 dark:focus:ring-offset-gray-850"
                             >
                                 {options.cancelLabel || '取消'}
                             </button>
                             <button
                                 type="button"
                                 onClick={() => closeDialog(true)}
-                                className={`rounded-lg px-4 py-2 text-sm font-bold text-white shadow-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-850 ${isDanger
+                                className={`mobile-touch rounded-xl px-4 py-2 text-sm font-bold text-white shadow-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-850 ${isDanger
                                     ? 'bg-red-600 shadow-red-600/20 hover:bg-red-500 focus:ring-red-500'
                                     : 'bg-indigo-600 shadow-indigo-600/20 hover:bg-indigo-500 focus:ring-indigo-500'
                                     }`}

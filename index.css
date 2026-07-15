@@ -16,16 +16,58 @@ body,
 }
 
 @media (max-width: 767px) {
+  :root {
+    --mobile-topbar: 3.5rem;
+    --mobile-bottombar: 4.25rem;
+    --mobile-page-gap: 0.75rem;
+    --mobile-touch: 2.75rem;
+  }
+
   button,
   select,
   input[type="range"] {
     touch-action: manipulation;
   }
 
+  button,
+  select,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]) {
+    min-height: 44px;
+  }
+
   *::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
+
+  .mobile-touch {
+    min-width: var(--mobile-touch);
+    min-height: var(--mobile-touch);
+    touch-action: manipulation;
+  }
+
+  .mobile-page-header {
+    display: flex;
+    min-height: 3.5rem;
+    align-items: center;
+    gap: .75rem;
+    border-bottom: 1px solid rgb(229 231 235);
+    background: rgb(255 255 255 / .96);
+    padding: .5rem .75rem;
+  }
+
+  .dark .mobile-page-header { border-color: rgb(55 65 81); background: rgb(31 41 55 / .96); }
+  .mobile-toolbar { display: flex; align-items: center; gap: .5rem; padding: .625rem .75rem; }
+  .mobile-safe-bottom { padding-bottom: max(.75rem, env(safe-area-inset-bottom)); }
+  .mobile-layer { position: fixed; inset: 0; z-index: 1100; background: rgb(0 0 0 / .5); backdrop-filter: blur(2px); }
+  .mobile-sheet { position: absolute; inset-inline: 0; bottom: 0; display: flex; max-height: min(82dvh, 44rem); flex-direction: column; overflow: hidden; border-radius: 1.5rem 1.5rem 0 0; background: white; box-shadow: 0 -16px 40px rgb(0 0 0 / .25); }
+  .dark .mobile-sheet { background: rgb(17 24 39); }
+  .mobile-detail { position: fixed; inset: 0; z-index: 1050; display: flex; height: 100dvh; flex-direction: column; overflow: hidden; background: rgb(249 250 251); }
+  .dark .mobile-detail { background: rgb(17 24 39); }
+  .mobile-detail-header { display: flex; min-height: calc(3.5rem + env(safe-area-inset-top)); align-items: center; gap: .375rem; border-bottom: 1px solid rgb(229 231 235); background: rgb(255 255 255 / .97); padding: env(safe-area-inset-top) .5rem 0; }
+  .dark .mobile-detail-header { border-color: rgb(55 65 81); background: rgb(3 7 18 / .97); }
+  .mobile-detail-footer { position: absolute; inset-inline: 0; bottom: 0; z-index: 2; display: flex; gap: .5rem; border-top: 1px solid rgb(229 231 235); background: rgb(255 255 255 / .97); padding: .625rem .75rem max(.625rem, env(safe-area-inset-bottom)); backdrop-filter: blur(12px); }
+  .dark .mobile-detail-footer { border-color: rgb(55 65 81); background: rgb(3 7 18 / .96); }
 }
 
 /* VIP 用户样式 */

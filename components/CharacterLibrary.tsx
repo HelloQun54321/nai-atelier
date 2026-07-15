@@ -13,6 +13,7 @@ import {
 } from '../services/tagDictionary';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
+import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileUI';
 
 const CATALOG_MARKER = '__character_catalog__';
 const getDanbooruPostsUrl = (tagName: string) =>
@@ -98,6 +99,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
   const [lightbox, setLightbox] = useState<CharacterCard | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
@@ -350,8 +352,21 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
-      <header className="flex flex-none flex-col gap-4 border-b border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 md:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+       <header className="flex flex-none flex-col gap-2 border-b border-gray-200 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 md:gap-4 md:p-6">
+         <div className="flex gap-2 md:hidden">
+           <div className="relative min-w-0 flex-1">
+             <svg className="absolute left-3 top-3 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" /></svg>
+             <input value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品或 Tag" className="h-11 w-full rounded-xl border border-gray-300 bg-white pl-10 pr-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+           </div>
+           <MobileIconButton label="筛选和抽卡设置" onClick={() => setShowMobileFilters(true)} className="border border-gray-300 bg-white text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300">☰</MobileIconButton>
+           <MobileIconButton label="新建自定义角色" onClick={() => setShowCreate(true)} className="bg-indigo-600 text-xl text-white">＋</MobileIconButton>
+         </div>
+         <div className="flex gap-2 overflow-x-auto pb-0.5 md:hidden">
+           {([['all', '全部'], ['catalog', '角色 Tag'], ['custom', `自定义 ${customChains.length}`], ['favorites', '收藏']] as [CharacterTab, string][]).map(([value, label]) => <button key={value} onClick={() => { setTab(value); setGachaCards(null); }} className={`mobile-touch flex-none rounded-full px-4 text-sm font-bold ${tab === value ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>{label}</button>)}
+           <button onClick={() => void drawGacha()} className="mobile-touch flex-none rounded-full bg-purple-600 px-4 text-sm font-bold text-white">🎲 {gachaCards ? '再抽一批' : '随机抽卡'}</button>
+           {gachaCards && <button onClick={() => setGachaCards(null)} className="mobile-touch flex-none rounded-full border border-gray-300 px-4 text-sm dark:border-gray-600">返回目录</button>}
+         </div>
+         <div className="hidden flex-wrap items-start justify-between gap-3 md:flex">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">角色库</h1>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">角色 Tag 完整目录与我的自定义角色还原</p>
@@ -369,7 +384,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+         <div className="hidden flex-wrap items-center gap-2 md:flex">
           {([
             ['all', `全部`], ['catalog', `角色 Tag`], ['custom', `我的自定义 ${customChains.length}`], ['favorites', '收藏'],
           ] as [CharacterTab, string][]).map(([value, label]) => (
@@ -380,7 +395,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
           <input type="range" min="3" max="10" value={gridColumns} onChange={event => { const value = Number(event.target.value); setGridColumns(value); localStorage.setItem('nai_character_grid_columns', String(value)); }} className="hidden w-24 md:block" />
         </div>
 
-        <div className="flex flex-wrap gap-2">
+         <div className="hidden flex-wrap gap-2 md:flex">
           <div className="relative min-w-[260px] flex-1">
             <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" /></svg>
             <input value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品、变体或英文 Tag…" className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
@@ -392,7 +407,18 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             显示 {visibleCards.length.toLocaleString('zh-CN')} · 目录 {catalogTotal.toLocaleString('zh-CN')} · 自定义 {customChains.length}
           </div>
         </div>
-      </header>
+       </header>
+
+       <MobileBottomSheet open={showMobileFilters} title="角色筛选与抽卡" onClose={() => setShowMobileFilters(false)}>
+         <div className="space-y-5">
+           <label className="block text-sm font-bold dark:text-white">排序方式<select value={sort} disabled={Boolean(gachaCards)} onChange={event => setSort(event.target.value as CharacterDictionarySort)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="popular">热度从高到低</option><option value="least">热度从低到高</option><option value="name-asc">名称 A → Z</option><option value="name-desc">名称 Z → A</option></select></label>
+           <div className="grid grid-cols-2 gap-3">
+             <label className="text-sm font-bold dark:text-white">抽卡范围<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option></select></label>
+             <label className="text-sm font-bold dark:text-white">抽卡数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-600 dark:bg-gray-800"><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label>
+           </div>
+           <div className="rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">目录 {catalogTotal.toLocaleString('zh-CN')} · 自定义 {customChains.length} · 当前显示 {visibleCards.length}</div>
+         </div>
+       </MobileBottomSheet>
 
       <div ref={scrollRef} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6">
         {isLoading && <div className="absolute inset-x-0 top-3 z-20 flex justify-center"><span className="rounded-full bg-gray-900/80 px-4 py-2 text-xs text-white">正在加载角色目录…</span></div>}
@@ -411,7 +437,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                     </div>
                   )}
                   <span className={`absolute left-2 top-2 rounded-full px-2 py-1 text-[10px] font-bold text-white shadow ${card.kind === 'catalog' ? 'bg-blue-600' : 'bg-purple-600'}`}>{card.kind === 'catalog' ? '角色 Tag' : '自定义还原'}</span>
-                  <button onClick={() => toggleFavorite(card)} className={`absolute right-2 top-2 rounded-full bg-black/55 p-1.5 ${favorite ? 'text-yellow-400' : 'text-white'}`} aria-label="收藏">
+                   <button onClick={() => toggleFavorite(card)} className={`mobile-touch absolute right-1 top-1 rounded-full bg-black/55 p-1.5 ${favorite ? 'text-yellow-400' : 'text-white'}`} aria-label="收藏">
                     <svg className="h-4 w-4" fill={favorite ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z" /></svg>
                   </button>
                   {card.previewImage && <button disabled={generating} onClick={() => void generatePreview(card)} className="absolute bottom-2 right-2 rounded bg-black/60 px-2 py-1 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:opacity-40">{generating ? '生成中…' : '重新生成'}</button>}
@@ -429,8 +455,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                     <button onClick={() => void copyCharacter(card)} className="rounded bg-gray-100 px-2 py-1.5 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">复制</button>
                     <button onClick={() => sendToPlayground(card)} className="rounded bg-indigo-50 px-2 py-1.5 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300">实验室</button>
                     {card.kind === 'custom' ? <>
-                      <button onClick={() => onSelect(card.chain!.id)} className="rounded bg-purple-50 px-2 py-1.5 text-purple-600 hover:bg-purple-100 dark:bg-purple-950/50 dark:text-purple-300">编辑还原</button>
-                      <button onClick={() => void deleteCustom(card)} className="rounded bg-red-50 px-2 py-1.5 text-red-600 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400">删除</button>
+                      <button onClick={() => onSelect(card.chain!.id)} className="hidden rounded bg-purple-50 px-2 py-1.5 text-purple-600 hover:bg-purple-100 dark:bg-purple-950/50 dark:text-purple-300 md:block">编辑还原</button>
+                      <button onClick={() => void deleteCustom(card)} className="hidden rounded bg-red-50 px-2 py-1.5 text-red-600 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400 md:block">删除</button>
                     </> : <a href={getDanbooruPostsUrl(card.tagName || '')} target="_blank" rel="noreferrer" className="col-span-2 rounded bg-blue-50 px-2 py-1.5 text-center text-blue-600 hover:bg-blue-100 dark:bg-blue-950/50 dark:text-blue-300">Danbooru</a>}
                   </div>
                 </div>
@@ -447,13 +473,30 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
         {!isLoading && visibleCards.length === 0 && <div className="py-20 text-center text-gray-400">没有找到符合条件的角色</div>}
       </div>
 
-      {lightbox?.previewImage && (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm" onClick={() => setLightbox(null)}>
+       {lightbox?.previewImage && (
+         <div className="fixed inset-0 z-[1200] hidden items-center justify-center bg-black/90 p-4 backdrop-blur-sm md:flex" onClick={() => setLightbox(null)}>
           <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" onClick={event => event.stopPropagation()} />
           <div className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded bg-black/65 px-4 py-2 text-center text-sm text-white">{lightbox.name}{lightbox.tagName ? ` · ${lightbox.tagName}` : ''}</div>
           <button onClick={() => setLightbox(null)} className="absolute right-5 top-5 text-3xl text-white">×</button>
         </div>
-      )}
+       )}
+       <MobileDetailView open={Boolean(lightbox)} title={lightbox?.name || '角色详情'} subtitle={lightbox?.tagName} onClose={() => setLightbox(null)} footer={lightbox ? <>
+         <button onClick={() => void copyCharacter(lightbox)} className="mobile-touch flex-1 rounded-xl bg-gray-200 font-bold text-gray-700 dark:bg-gray-700 dark:text-white">复制</button>
+         <button onClick={() => sendToPlayground(lightbox)} className="mobile-touch flex-1 rounded-xl bg-indigo-600 font-bold text-white">导入实验室</button>
+       </> : null}>
+         {lightbox && <div className="space-y-4 p-3">
+           <div className="overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{lightbox.previewImage ? <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="w-full object-contain" /> : <div className="flex aspect-[2/3] items-center justify-center text-gray-400">尚未生成预览</div>}</div>
+           <div className="rounded-2xl bg-white p-4 text-sm shadow-sm dark:bg-gray-800">
+             <div className="font-bold dark:text-white">{lightbox.name}</div>
+             {lightbox.tagName && <div className="mt-1 break-all font-mono text-xs text-gray-500">{lightbox.tagName}</div>}
+             <div className="mt-3 grid grid-cols-2 gap-2">
+               <button disabled={generatingKey === lightbox.key} onClick={() => void generatePreview(lightbox)} className="mobile-touch rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-300">{generatingKey === lightbox.key ? '生成中…' : '生成预览'}</button>
+               {lightbox.kind === 'custom' ? <button onClick={() => onSelect(lightbox.chain!.id)} className="mobile-touch rounded-xl bg-gray-100 dark:bg-gray-700">编辑还原</button> : <a href={getDanbooruPostsUrl(lightbox.tagName || '')} target="_blank" rel="noreferrer" className="mobile-touch flex items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40">Danbooru</a>}
+             </div>
+             {lightbox.kind === 'custom' && <button onClick={() => void deleteCustom(lightbox)} className="mobile-touch mt-2 w-full rounded-xl bg-red-50 font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">删除这个自定义角色</button>}
+           </div>
+         </div>}
+       </MobileDetailView>
 
       {showCreate && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setShowCreate(false)}>

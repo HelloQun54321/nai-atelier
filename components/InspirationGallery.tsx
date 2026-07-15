@@ -6,6 +6,7 @@ import { extractMetadata, parseNovelAIMetadata, ParsedNAIData, IMPORT_SESSION_KE
 import { ParamsViewer } from './ParamsViewer';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
+import { useMobileHistoryLayer } from './MobileUI';
 import { createUuid } from '../services/id';
 
 interface InspirationGalleryProps {
@@ -40,6 +41,7 @@ const InspirationLightbox: React.FC<InspirationLightboxProps> = ({
     notify,
     onNavigateToPlayground
 }) => {
+    const closeLightbox = useMobileHistoryLayer(true, () => setLightboxImg(null), 'inspiration-detail');
     // 尝试解析灵感图的 prompt 字符串，提取结构化参数，使用 useMemo 避免重复重排
     const parsedData: ParsedNAIData | null = useMemo(() => {
         try {
@@ -83,8 +85,8 @@ const InspirationLightbox: React.FC<InspirationLightboxProps> = ({
     }, [lightboxImg.item.prompt, lightboxImg.item.negativePrompt, lightboxImg.item.params]);
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 md:p-8" onClick={() => setLightboxImg(null)}>
-            <div className="bg-white dark:bg-gray-900 w-full max-w-[90vw] h-[80vh] md:h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col lg:flex-row border border-gray-700" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[1050] bg-black/90 backdrop-blur-sm flex items-center justify-center p-0 md:p-8" onClick={closeLightbox}>
+            <div className="bg-white dark:bg-gray-900 w-full max-w-none md:max-w-[90vw] h-[100dvh] md:h-[90vh] rounded-none md:rounded-2xl shadow-2xl overflow-hidden flex flex-col lg:flex-row border-gray-700 md:border" onClick={e => e.stopPropagation()}>
                 <div className="flex-1 bg-gray-100 dark:bg-black/50 flex items-center justify-center p-4 relative overflow-hidden h-1/2 lg:h-auto">
                     <OriginalImage src={lightboxImg.item.imageUrl} className="max-w-full max-h-full object-contain" />
                 </div>
@@ -97,7 +99,7 @@ const InspirationLightbox: React.FC<InspirationLightboxProps> = ({
                                 <h2 className="text-lg md:text-2xl font-bold text-gray-900 dark:text-white line-clamp-1">{lightboxImg.item.title}</h2>
                             </div>
                         )}
-                        <button onClick={() => setLightboxImg(null)} className="text-gray-400 hover:text-white">✕</button>
+                        <button onClick={closeLightbox} className="mobile-touch text-gray-400 hover:text-white">✕</button>
                     </div>
 
                     <div className="flex-1 overflow-y-auto mb-4 custom-scrollbar">
@@ -301,16 +303,16 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
       {/* Header */}
-      <header className="p-4 md:p-6 bg-white dark:bg-gray-800 shadow-md flex flex-col gap-4 items-stretch border-b border-gray-200 dark:border-gray-700 z-10 flex-shrink-0">
+      <header className="p-2 md:p-6 bg-white dark:bg-gray-800 shadow-md flex flex-col gap-2 md:gap-4 items-stretch border-b border-gray-200 dark:border-gray-700 z-10 flex-shrink-0">
           <div className="flex justify-between items-center">
-             <div>
+             <div className="hidden md:block">
                  <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">灵感图库</h1>
                  <p className="text-xs text-gray-500 dark:text-gray-400">收藏优秀的生成结果与 Prompt</p>
              </div>
              {/* Refresh Button (Added) */}
             <button 
                 onClick={handleRefresh} 
-                className={`p-2 rounded-lg bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors`}
+                className={`mobile-touch p-2 rounded-lg bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors`}
                 title="刷新灵感库"
             >
                 <svg className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
@@ -333,8 +335,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                     />
-                    <button onClick={() => setSelectionMode(true)} className="bg-gray-200 dark:bg-gray-700 px-3 py-2 rounded text-sm hover:bg-gray-300 whitespace-nowrap">管理</button>
-                    <button onClick={() => setUploadMode(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded text-sm flex items-center whitespace-nowrap">
+                    <button onClick={() => setSelectionMode(true)} className="mobile-touch bg-gray-200 dark:bg-gray-700 px-3 py-2 rounded text-sm hover:bg-gray-300 whitespace-nowrap">管理</button>
+                    <button onClick={() => setUploadMode(true)} className="mobile-touch bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded text-sm flex items-center whitespace-nowrap">
                         <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                         上传
                     </button>
@@ -385,8 +387,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
       {/* Upload Modal */}
       {uploadMode && (
-          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-gray-800 w-full max-w-lg rounded-xl p-6 shadow-2xl">
+          <div className="fixed inset-0 z-[1050] bg-black/50 backdrop-blur-sm flex items-center justify-center p-0 md:p-4">
+              <div className="h-[100dvh] overflow-y-auto bg-white dark:bg-gray-800 w-full max-w-lg rounded-none p-4 pt-[max(1rem,env(safe-area-inset-top))] shadow-2xl md:h-auto md:rounded-xl md:p-6">
                   <h2 className="text-xl font-bold mb-4 dark:text-white">上传灵感图</h2>
                   <div className="space-y-4">
                       <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4 text-center cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition">

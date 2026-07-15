@@ -9,6 +9,7 @@ import { ArtistLibraryCart } from './ArtistLibraryCart';
 import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryEntriesAt, getArtistDictionaryPage, searchArtistDictionary } from '../services/tagDictionary';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
+import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 
 interface CartItem {
     name: string;
@@ -159,6 +160,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     // Grid: Columns (3-15)
     const [gridCols, setGridCols] = useState(6);
     const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
+    const [showMobileTools, setShowMobileTools] = useState(false);
 
     useEffect(() => {
         const media = window.matchMedia('(max-width: 767px)');
@@ -912,9 +914,19 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
 
             {/* --- Controls Header --- */}
-            <div className="p-4 bg-white dark:bg-gray-800 shadow-md flex flex-col items-stretch gap-4 z-10 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+            <div className="p-2 md:p-4 bg-white dark:bg-gray-800 shadow-md flex flex-col items-stretch gap-2 md:gap-4 z-10 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
 
-                <div className="flex gap-2 w-full">
+                <div className="flex gap-2 md:hidden">
+                    <div className="relative min-w-0 flex-1">
+                        <input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="搜索全部画师 Tag（支持中文）" className="h-11 w-full rounded-xl border border-gray-300 bg-gray-50 px-4 pr-9 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+                        {isCatalogLoading && <span className="absolute right-3 top-3.5 h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
+                    </div>
+                    <MobileIconButton label="筛选和工具" onClick={() => setShowMobileTools(true)} className="border border-gray-300 bg-white text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300">☰</MobileIconButton>
+                    <MobileIconButton label={gachaArtists ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} disabled={isGachaLoading} className="bg-fuchsia-600 text-xl text-white">🎲</MobileIconButton>
+                </div>
+                {(isProcessing || taskQueue.length > 0) && <button onClick={() => setShowLogs(true)} className="mobile-touch flex items-center justify-between rounded-xl bg-indigo-50 px-3 text-xs font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 md:hidden"><span>画师预览任务</span><span>等待 {taskQueue.length}{failedTasks.length ? ` · 失败 ${failedTasks.length}` : ''}</span></button>}
+
+                <div className="hidden gap-2 w-full md:flex">
                     {/* Refresh locally persisted artists */}
                     {canManageArtists && (
                         <button
@@ -985,7 +997,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                     </div>
                 </div>
 
-                <div className="flex justify-between items-center flex-wrap gap-2">
+                <div className="hidden justify-between items-center flex-wrap gap-2 md:flex">
                     <div className="text-xs text-gray-500 dark:text-gray-400" title="画师名称来自每日更新的中英对照 Tag 词库；预览图保存在本地">
                         {searchTerm.trim() ? '搜索结果' : gachaArtists ? '抽卡结果' : '当前显示'} {filteredArtists.length.toLocaleString('zh-CN')}
                         {' · '}完整目录 {artistCatalogCount.toLocaleString('zh-CN')}
@@ -1168,6 +1180,26 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
             {/* ... rest of the component (sidebar, main content, lightbox, logs, modals) remains mostly the same, 
           only ensure variable names match and the file is complete ... */}
+
+            <MobileBottomSheet open={showMobileTools} title="画师 Tag 工具" onClose={() => setShowMobileTools(false)}>
+                <div className="space-y-5">
+                    <label className="block text-sm font-bold dark:text-white">排序<select value={artistSort} onChange={event => setArtistSort(event.target.value as ArtistDictionarySort)} disabled={Boolean(gachaArtists)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="popular">热度从高到低</option><option value="least">热度从低到高</option><option value="name-asc">名称 A → Z</option><option value="name-desc">名称 Z → A</option></select></label>
+                    <div className="grid grid-cols-2 gap-3">
+                        <label className="text-sm font-bold dark:text-white">抽卡方式<select value={gachaMode} onChange={event => setGachaMode(event.target.value as ArtistGachaMode)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="mixed">冷热混合</option><option value="popular">热门画师</option><option value="uniform">完全随机</option></select></label>
+                        <label className="text-sm font-bold dark:text-white">抽卡数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-600 dark:bg-gray-800"><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <button onClick={() => setViewMode(value => value === 'original' ? 'benchmark' : 'original')} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">{viewMode === 'original' ? '原始预览' : '基准图模式'}</button>
+                        <button onClick={() => setShowFavOnly(value => !value)} className={`mobile-touch rounded-xl text-sm ${showFavOnly ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40' : 'bg-gray-100 dark:bg-gray-800'}`}>★ 只看收藏</button>
+                        <button onClick={() => { setShowMobileTools(false); setShowConfig(true); }} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">画师配置</button>
+                        <button onClick={() => { setShowMobileTools(false); setShowHistory(true); }} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">复制历史</button>
+                        <button onClick={() => { setShowMobileTools(false); setShowImport(true); }} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">批量导入</button>
+                        <button onClick={() => { setShowMobileTools(false); setShowLogs(true); }} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">任务队列</button>
+                    </div>
+                    {gachaArtists && <button onClick={() => { returnToCatalog(); setShowMobileTools(false); }} className="mobile-touch w-full rounded-xl border border-gray-300 text-sm dark:border-gray-600">返回完整目录</button>}
+                    <div className="rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">当前显示 {filteredArtists.length.toLocaleString('zh-CN')} · 手机固定双列</div>
+                </div>
+            </MobileBottomSheet>
 
             {/* --- Main Content Area --- */}
             <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">

@@ -55,7 +55,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       )}
 
       {/* Mobile Top Header */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4 z-40">
+      {!hideNav && <div className="md:hidden fixed top-0 left-0 right-0 h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] bg-white/95 dark:bg-gray-950/95 backdrop-blur border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-3 z-40">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-white text-sm shadow-md">N</div>
           <div className="min-w-0">
@@ -65,24 +65,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowSettings(true)}
-            aria-label="打开全局设置"
-            className="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-            title="全局设置"
-          >
-            ⚙️
-          </button>
-          <button
             onClick={toggleSafeMode}
             aria-label="切换安全模式"
             aria-pressed={safeMode}
-            className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}
+            className={`mobile-touch h-11 rounded-xl px-3 flex items-center justify-center gap-1.5 text-xs font-bold transition-colors ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}
             title={safeMode ? '安全模式已开启' : '安全模式已关闭'}
           >
-            🛡️
+            <span>🛡️</span>{safeMode && <span>已开启</span>}
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* Desktop Sidebar (Hidden on Mobile) */}
       <aside className="hidden md:flex w-20 md:w-64 flex-shrink-0 bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 flex-col transition-colors duration-300">
@@ -145,7 +137,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       </aside>
 
       {/* Main Content (Added pt-14 for mobile header) */}
-      <main className={`flex-1 overflow-hidden flex flex-col relative bg-white dark:bg-gray-900 transition-colors duration-300 ${hideNav ? 'pb-0' : 'pb-[calc(4.25rem+env(safe-area-inset-bottom))]'} md:pb-0 pt-14 md:pt-0`}>
+      <main className={`flex-1 overflow-hidden flex flex-col relative bg-white dark:bg-gray-900 transition-colors duration-300 ${hideNav ? 'pb-0 pt-0' : 'pb-[calc(4.25rem+env(safe-area-inset-bottom))] pt-[calc(3.5rem+env(safe-area-inset-top))]'} md:pb-0 md:pt-0`}>
         {children}
       </main>
 
@@ -167,9 +159,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
                     </button>
                   ))}
                 </div>
-                <div className="mt-3 grid grid-cols-3 gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
+                <div className="mt-3 grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
                   <button onClick={() => { setShowMobileMore(false); setShowSettings(true); }} className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-2xl bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"><span className="text-xl">⚙️</span><span className="text-[11px]">设置</span></button>
-                  <button onClick={toggleSafeMode} className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-2xl ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="text-xl">🛡️</span><span className="text-[11px]">安全模式</span></button>
                   <button onClick={toggleTheme} className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-2xl bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"><span className="text-xl">{isDark ? '🌙' : '☀️'}</span><span className="text-[11px]">切换主题</span></button>
                 </div>
               </div>

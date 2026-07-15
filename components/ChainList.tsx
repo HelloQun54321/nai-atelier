@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { PromptChain, ChainType } from '../types';
 import { useConfirmDialog } from './ConfirmDialog';
+import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { SmartImage } from './SmartImage';
 
 interface ChainListProps {
@@ -156,6 +157,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [sortOption, setSortOption] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
   const [favOnly, setFavOnly] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
 
   // Load favorites from localStorage (client-side only)
   useEffect(() => {
@@ -247,14 +249,14 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const createLabel = type === 'character' ? '新建角色串' : '新建画师串';
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 p-4 md:p-8">
+    <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 p-2 md:p-8">
       <div className="max-w-[1920px] mx-auto">
-        <header className="flex flex-col md:flex-row md:items-center justify-between mb-6 md:mb-10 gap-4">
-          <div>
+        <header className="mb-3 flex flex-col justify-between gap-2 md:mb-10 md:flex-row md:items-center md:gap-4">
+          <div className="hidden md:block">
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-2">{title}</h1>
             <p className="text-sm md:text-base text-gray-500 dark:text-gray-400">{subtitle}</p>
           </div>
-          <div className="flex flex-col md:flex-row gap-2 md:gap-4 w-full md:w-auto">
+          <div className="hidden flex-col gap-2 md:flex md:w-auto md:flex-row md:gap-4">
              <div className="flex gap-2 w-full md:w-auto">
                 <button 
                     onClick={onRefresh} 
@@ -337,7 +339,21 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                 </button>
             )}
           </div>
+          <div className="flex gap-2 md:hidden">
+            <input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={`搜索${title}`} className="h-11 min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-4 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+            <MobileIconButton label="筛选与排序" onClick={() => setShowMobileFilters(true)} className="border border-gray-300 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">☰</MobileIconButton>
+            {!isGuest && <MobileIconButton label={createLabel} onClick={() => setIsModalOpen(true)} className="bg-indigo-600 text-xl text-white">＋</MobileIconButton>}
+          </div>
         </header>
+
+        <MobileBottomSheet open={showMobileFilters} title="筛选与排序" onClose={() => setShowMobileFilters(false)}>
+          <div className="space-y-5">
+            <label className="block text-sm font-bold dark:text-white">排序<select value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option></select></label>
+            <button onClick={() => setFavOnly(value => !value)} className={`mobile-touch w-full rounded-xl px-4 text-left font-bold ${favOnly ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-300' : 'bg-gray-100 dark:bg-gray-800'}`}>★ 只看收藏</button>
+            {allTags.length > 0 && <div><div className="mb-2 text-sm font-bold dark:text-white">Tag</div><div className="flex flex-wrap gap-2">{allTags.map(tag => <button key={tag} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`mobile-touch rounded-full px-3 text-xs ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}>{tag}</button>)}</div></div>}
+            <button onClick={() => { void onRefresh(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl border border-gray-300 dark:border-gray-600">刷新列表</button>
+          </div>
+        </MobileBottomSheet>
 
         {filteredChains.length === 0 ? (
           <div className="text-center py-20 bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700">
@@ -346,14 +362,14 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           </div>
         ) : (
           /* Grid Layout */
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 md:gap-4">
             {filteredChains.map((chain) => (
               <div key={chain.id} onClick={() => onSelect(chain.id)} className="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative">
                 {/* Copy Button Overlay - Trigger Modal */}
                 <div className="absolute top-2 right-2 z-10 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
                     <button 
                         onClick={(e) => { e.stopPropagation(); setCopyModalChain(chain); }} 
-                        className="bg-white/90 dark:bg-black/70 backdrop-blur px-3 py-1.5 rounded-full shadow-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/50 text-xs font-bold flex items-center gap-1"
+                    className="mobile-touch bg-white/90 dark:bg-black/70 backdrop-blur px-3 py-1.5 rounded-full shadow-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/50 text-xs font-bold flex items-center gap-1"
                         title="复制/查看详情"
                     >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
@@ -384,13 +400,13 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                     )}
                 </div>
 
-                <div className="p-3 flex flex-col flex-1">
+                <div className="p-2 md:p-3 flex flex-col flex-1">
                   <div className="flex justify-between items-start mb-1">
                     <h3 className="text-base font-bold text-gray-900 dark:text-gray-100 truncate pr-2 w-full" title={chain.name}>{chain.name}</h3>
                     <button
                       type="button"
                       onClick={(e) => toggleFav(chain.id, e)}
-                      className={`ml-2 p-1 rounded-full flex-shrink-0 ${
+                      className={`mobile-touch ml-1 p-1 rounded-full flex-shrink-0 ${
                         favorites.has(chain.id)
                           ? 'text-yellow-500'
                           : 'text-gray-300 hover:text-yellow-400 dark:text-gray-500 dark:hover:text-yellow-400'
@@ -402,11 +418,11 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                       </svg>
                     </button>
                   </div>
-                  <p className="text-gray-500 dark:text-gray-400 text-xs mb-2 line-clamp-2 h-8 leading-tight">{chain.description || '暂无描述'}</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs mb-2 line-clamp-1 h-4 md:line-clamp-2 md:h-8 leading-tight">{chain.description || '暂无描述'}</p>
 
                   {/* Tags 显示 */}
                   {chain.tags && chain.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mb-2">
+                    <div className="hidden flex-wrap gap-1 mb-2 md:flex">
                       {chain.tags.slice(0, 3).map(tag => (
                         <span
                           key={tag}
@@ -441,7 +457,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                             tone: 'danger',
                           })) onDelete(chain.id);
                         }}
-                        className="p-1 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 transition-colors rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0"
+                        className="hidden md:block p-1 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 transition-colors rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0"
                         title="删除"
                         >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>

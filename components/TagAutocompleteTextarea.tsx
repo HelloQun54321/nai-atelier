@@ -68,6 +68,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const [activeIndex, setActiveIndex] = useState(0);
   const [target, setTarget] = useState<CompletionTarget | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
   const listboxId = useId();
 
   useEffect(() => () => {
@@ -130,6 +131,24 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       listbox.scrollTop = optionBottom - listbox.clientHeight;
     }
   }, [activeIndex, isOpen, suggestions]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const updateDirection = () => {
+      const rect = textareaRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const viewportHeight = window.visualViewport?.height || window.innerHeight;
+      const below = viewportHeight - rect.bottom;
+      setDropUp(below < 240 && rect.top > below);
+    };
+    updateDirection();
+    window.visualViewport?.addEventListener('resize', updateDirection);
+    window.addEventListener('resize', updateDirection);
+    return () => {
+      window.visualViewport?.removeEventListener('resize', updateDirection);
+      window.removeEventListener('resize', updateDirection);
+    };
+  }, [isOpen]);
 
   return (
     <div className={`relative ${containerClassName}`}>
@@ -214,7 +233,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
           ref={listboxRef}
           id={listboxId}
           role="listbox"
-          className="absolute left-0 right-0 top-full z-[150] mt-1 max-h-72 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl"
+          className={`absolute left-0 right-0 z-[150] max-h-[min(18rem,42dvh)] overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl ${dropUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}
         >
           {isLoading && suggestions.length === 0 ? (
             <div className="px-3 py-2 text-xs text-gray-400">正在加载 Tag…</div>
