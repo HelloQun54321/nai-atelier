@@ -46,6 +46,10 @@ export interface NAIParams {
   useCoords?: boolean; // true = Manual Coords, false = AI's Choice
   variety?: boolean; // Variety+ (controlled via skip_cfg_above_sigma)
   cfgRescale?: number; // Prompt Guidance Rescale (0.0 - 1.0)
+  model?: 'nai-diffusion-4-5-full' | 'nai-diffusion-4-5-curated';
+  nSamples?: number;
+  smea?: 'off' | 'smea' | 'smea_dyn' | 'auto';
+  decrisper?: boolean;
 }
 
 export type ChainType = 'style' | 'character';

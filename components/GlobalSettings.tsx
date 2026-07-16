@@ -10,6 +10,7 @@ import {
 import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
 import { getMobileImageDisplayPreferences, MobileImageColumns, MobileImageLayout, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { DEFAULT_SHARED_OPUS_BUDGET, getAnlasBudget, getAnlasRemaining, getAnlasSpent, setAnlasBudget, setAnlasSpent } from '../services/anlasService';
 
 interface GlobalSettingsProps {
   open: boolean;
@@ -29,6 +30,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
   const [apiKey, setApiKey] = useState(readApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(() => localStorage.getItem('nai_api_key') !== null);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [anlasBudget, setAnlasBudgetState] = useState(getAnlasBudget);
+  const [anlasSpent, setAnlasSpentState] = useState(getAnlasSpent);
   const [mobileCacheStats, setMobileCacheStats] = useState(getMobileCacheStats);
   const [imageDisplay, setImageDisplay] = useState(getMobileImageDisplayPreferences);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
@@ -47,6 +50,15 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
     setApiKey(readApiKey());
     setRememberApiKey(localStorage.getItem('nai_api_key') !== null);
   }, [open]);
+
+  useEffect(() => {
+    const refresh = () => {
+      setAnlasBudgetState(getAnlasBudget());
+      setAnlasSpentState(getAnlasSpent());
+    };
+    window.addEventListener('nai-anlas-changed', refresh);
+    return () => window.removeEventListener('nai-anlas-changed', refresh);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -147,6 +159,21 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
               在本机记住 API Key
             </label>
             <p className="mt-2 text-xs leading-relaxed text-amber-600 dark:text-amber-400">不勾选时仅保留到当前浏览器会话结束；浏览器前端无法对密钥提供真正的加密保护。</p>
+            <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">可支配 Anlas</div>
+                  <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">Opus 每月 10,000 点，6 人均分并去掉小数后默认 {DEFAULT_SHARED_OPUS_BUDGET} 点。</p>
+                </div>
+                <input type="number" min={0} value={anlasBudget} onChange={event => { const value = Math.max(0, Math.floor(Number(event.target.value) || 0)); setAnlasBudgetState(value); setAnlasBudget(value); }} className="w-28 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-right font-mono text-sm dark:border-gray-600 dark:bg-gray-800" aria-label="可支配 Anlas" />
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-800"><span className="text-gray-500">已记录</span><strong className="ml-2 text-gray-900 dark:text-white">{anlasSpent}</strong></div>
+                <div className="rounded-lg bg-emerald-50 px-3 py-2 dark:bg-emerald-950/30"><span className="text-emerald-600">预计剩余</span><strong className="ml-2 text-emerald-700 dark:text-emerald-300">{getAnlasRemaining()}</strong></div>
+              </div>
+              <button type="button" onClick={() => { setAnlasSpent(0); setAnlasSpentState(0); notify('Anlas 使用记录已归零'); }} className="mt-2 min-h-11 text-xs font-medium text-indigo-600 dark:text-indigo-300">新周期：将已用点数归零</button>
+              <p className="text-[11px] leading-5 text-gray-500 dark:text-gray-400">这里只记录本项目成功生成后的预计消耗，不会读取或修改 NovelAI 账户余额。</p>
+            </div>
             </div>}
           </section>
 

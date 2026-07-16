@@ -6,6 +6,8 @@ export interface ConfirmDialogOptions {
     confirmLabel?: string;
     cancelLabel?: string;
     tone?: 'primary' | 'danger';
+    dontShowTodayKey?: string;
+    dontShowTodayLabel?: string;
 }
 
 interface ConfirmDialogContextValue {
@@ -16,17 +18,26 @@ const ConfirmDialogContext = createContext<ConfirmDialogContextValue | null>(nul
 
 export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [options, setOptions] = useState<ConfirmDialogOptions | null>(null);
+    const [dontShowToday, setDontShowToday] = useState(false);
     const resolverRef = useRef<((confirmed: boolean) => void) | null>(null);
 
     const closeDialog = useCallback((confirmed: boolean) => {
+        if (confirmed && dontShowToday && options?.dontShowTodayKey) {
+            localStorage.setItem(options.dontShowTodayKey, '1');
+        }
         const resolve = resolverRef.current;
         resolverRef.current = null;
         setOptions(null);
         resolve?.(confirmed);
-    }, []);
+        setDontShowToday(false);
+    }, [dontShowToday, options]);
 
     const confirmAction = useCallback((nextOptions: ConfirmDialogOptions) => {
+        if (nextOptions.dontShowTodayKey && localStorage.getItem(nextOptions.dontShowTodayKey) === '1') {
+            return Promise.resolve(true);
+        }
         resolverRef.current?.(false);
+        setDontShowToday(false);
         setOptions(nextOptions);
         return new Promise<boolean>(resolve => {
             resolverRef.current = resolve;
@@ -88,6 +99,12 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                                 </p>
                             </div>
                         </div>
+                        {options.dontShowTodayKey && (
+                            <label className="mt-5 flex min-h-11 cursor-pointer items-center gap-3 rounded-xl bg-gray-50 px-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                                <input type="checkbox" checked={dontShowToday} onChange={event => setDontShowToday(event.target.checked)} className="h-4 w-4 rounded border-gray-300 text-indigo-600" />
+                                <span>{options.dontShowTodayLabel || '今日不再显示'}</span>
+                            </label>
+                        )}
                         <div className="mt-6 grid grid-cols-2 gap-3 md:flex md:justify-end">
                             <button
                                 type="button"

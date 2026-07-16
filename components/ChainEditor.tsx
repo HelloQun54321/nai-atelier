@@ -13,6 +13,7 @@ import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
+import { estimateAnlas, getAnlasRemaining, getTodayAnlasDismissKey, recordAnlasSpend } from '../services/anlasService';
 
 interface ChainEditorProps {
     chain: PromptChain;
@@ -118,6 +119,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // --- Testing State ---
     const [activeModules, setActiveModules] = useState<Record<string, boolean>>({});
     const [finalPrompt, setFinalPrompt] = useState('');
+    const estimatedPromptTokens = Math.ceil((finalPrompt.length + (params.characters || []).reduce((sum, character) => sum + character.prompt.length + (character.negativePrompt?.length || 0), 0)) / 3.5);
 
     // --- Generation State ---
     const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
@@ -410,7 +412,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (!canEdit) return;
         const newModule: PromptModule = {
             id: createUuid(),
-            name: '新模块',
+            name: '新片段',
             content: '',
             isActive: true,
             position: 'post'
@@ -462,6 +464,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             delete next[removedId];
             return next;
         });
+        markChange();
+    };
+
+    const moveCharacter = (idx: number, direction: -1 | 1) => {
+        if (!params.characters) return;
+        const target = idx + direction;
+        if (target < 0 || target >= params.characters.length) return;
+        const next = [...params.characters];
+        [next[idx], next[target]] = [next[target], next[idx]];
+        setParams({ ...params, characters: next });
         markChange();
     };
 
@@ -941,23 +953,40 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setErrorMsg('请在左侧“全局设置”中配置 NovelAI API Key');
             return;
         }
+        const estimate = estimateAnlas(params);
+        if (!estimate.free) {
+            const remaining = getAnlasRemaining();
+            const confirmed = await confirmAction({
+                title: `本次预计消耗 ${estimate.cost} Anlas`,
+                message: `${estimate.reasons.join('；')}。\n当前记录的可支配余额：${remaining} Anlas，生成后预计剩余：${Math.max(0, remaining - estimate.cost)} Anlas。\n\n这是生成前估算，NovelAI 最终扣点以官网为准。`,
+                confirmLabel: '继续生成',
+                cancelLabel: '返回调整',
+                dontShowTodayKey: getTodayAnlasDismissKey(),
+                dontShowTodayLabel: '今日不再显示付费生成提醒',
+            });
+            if (!confirmed) return;
+        }
         setIsGenerating(true);
         setErrorMsg(null);
         try {
             const activeParams = { ...params };
             const result = await generateImage(apiKey, finalPrompt, negativePrompt, activeParams);
-            setGeneratedImage(result.image);
-            // Use actual seed returned from generation
-            const finalParams = { ...activeParams, seed: result.seed };
-            const historyItem = await localHistory.add(result.image, finalPrompt, finalParams, negativePrompt, {
-                sourceChainId,
-                sourceChainName: chainName,
-                sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
-            });
-            setPreviewHistory(prev => [historyItem, ...prev.filter(item => item.id !== historyItem.id)]);
+            const generatedImages = result.images?.length ? result.images : [result.image];
+            setGeneratedImage(generatedImages[0]);
+            const historyItems: LocalGenItem[] = [];
+            for (let index = 0; index < generatedImages.length; index += 1) {
+                const finalParams = { ...activeParams, seed: result.seed ? result.seed + index : result.seed };
+                historyItems.push(await localHistory.add(generatedImages[index], result.actualPrompt || finalPrompt, finalParams, result.actualNegative || negativePrompt, {
+                    sourceChainId,
+                    sourceChainName: chainName,
+                    sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
+                }));
+            }
+            setPreviewHistory(prev => [...historyItems, ...prev.filter(item => !historyItems.some(next => next.id === item.id))]);
             setPreviewIndex(0);
             setPreviewMode('history');
-            if (window.matchMedia('(max-width: 767px)').matches) setLightboxImg(result.image);
+            if (!estimate.free) recordAnlasSpend(estimate.cost);
+            if (window.matchMedia('(max-width: 767px)').matches) setLightboxImg(generatedImages[0]);
             void db.logClientEvent({
                 category: 'generation',
                 action: 'generate_image',
@@ -976,6 +1005,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     promptLength: finalPrompt.length,
                     negativeLength: negativePrompt.length,
                     characters: activeParams.characters?.length || 0,
+                    samples: generatedImages.length,
+                    estimatedAnlas: estimate.cost,
                 },
             }).catch(console.error);
         } catch (e: any) {
@@ -1294,7 +1325,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <section className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
                             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                    <label className="block text-sm font-semibold text-indigo-500 dark:text-indigo-400">2. 模块</label>
+                                    <label className="block text-sm font-semibold text-indigo-500 dark:text-indigo-400">2. 提示词片段</label>
                                     <PresetSourceBadges sources={modulePresetSources} />
                                 </div>
                                 {canEdit && (
@@ -1360,9 +1391,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             </div>
                         </section>
 
-                        <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden'} rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/40 lg:hidden`}>
+                        <section className={`${mobileEditorTab === 'global' ? 'block' : 'hidden'} rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/40 lg:hidden`}>
                             <div className="mb-2 flex items-center justify-between gap-3">
-                                <div className="flex min-w-0 flex-wrap items-center gap-2"><label className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">主体／变量提示词</label><PresetSourceBadge source={presetSources.subject} /></div>
+                                <div className="flex min-w-0 flex-wrap items-center gap-2"><label className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">全局场景／主体</label><PresetSourceBadge source={presetSources.subject} /></div>
                                 <button type="button" onClick={() => copyPromptToClipboard(false)} className="text-xs font-medium text-indigo-600 dark:text-indigo-300">复制完整提示词</button>
                             </div>
                             <TagAutocompleteTextarea className="min-h-28 w-full resize-none rounded-lg border border-gray-300 bg-white p-3 font-mono text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" placeholder="输入人物、场景和动作等动态内容…" value={subjectPrompt} onValueChange={(value) => { setSubjectPrompt(value); markPresetSectionModified('subject'); markChange(); }} />
@@ -1373,6 +1404,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <label className="block text-sm font-semibold text-indigo-600 dark:text-indigo-300">3. 多角色管理</label>
+                                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${estimatedPromptTokens > 512 ? 'bg-red-100 text-red-600' : estimatedPromptTokens > 430 ? 'bg-amber-100 text-amber-600' : 'bg-white/80 text-gray-500 dark:bg-gray-800'}`}>约 {estimatedPromptTokens}/512 T5 Token</span>
                                     <PresetSourceBadges sources={characterPresetSources} />
                                 </div>
                                 <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
@@ -1381,7 +1413,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                         <input
                                             type="checkbox"
                                             disabled={!canEdit}
-                                            checked={!(params.useCoords ?? true)}
+                                            checked={!(params.useCoords ?? false)}
                                             onChange={(e) => {
                                                 setParams({ ...params, useCoords: !e.target.checked });
                                                 markPresetSectionModified('settings');
@@ -1429,26 +1461,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                                     />
                                                 </div>
                                             </div>
-                                            <div className="w-24 flex flex-col gap-2">
-                                                <div className={!(params.useCoords ?? true) ? "opacity-40 pointer-events-none grayscale" : ""}>
-                                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Center X</label>
-                                                    <input
-                                                        type="number" step="0.1" min="0" max="1"
-                                                        disabled={!canEdit}
-                                                        value={char.x}
-                                                        onChange={(e) => updateCharacter(idx, { x: parseFloat(e.target.value) })}
-                                                        className="w-full text-xs p-1 border rounded bg-gray-50 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
-                                                    />
+                                            <div className={`w-24 flex-shrink-0 ${!(params.useCoords ?? false) ? 'pointer-events-none opacity-40 grayscale' : ''}`}>
+                                                <label className="mb-1 block text-[10px] font-bold uppercase text-gray-500">位置</label>
+                                                <div className="grid grid-cols-5 gap-1 rounded bg-gray-100 p-1 dark:bg-gray-900">
+                                                    {Array.from({ length: 25 }, (_, position) => {
+                                                        const x = (position % 5) / 4;
+                                                        const y = Math.floor(position / 5) / 4;
+                                                        const selected = Math.abs(char.x - x) < 0.11 && Math.abs(char.y - y) < 0.11;
+                                                        return <button key={position} type="button" onClick={() => updateCharacter(idx, { x, y })} className={`aspect-square rounded-sm ${selected ? 'bg-indigo-600 ring-1 ring-indigo-300' : 'bg-gray-300 hover:bg-indigo-300 dark:bg-gray-700'}`} aria-label={`位置 ${position + 1}`} />;
+                                                    })}
                                                 </div>
-                                                <div className={!(params.useCoords ?? true) ? "opacity-40 pointer-events-none grayscale" : ""}>
-                                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Center Y</label>
-                                                    <input
-                                                        type="number" step="0.1" min="0" max="1"
-                                                        disabled={!canEdit}
-                                                        value={char.y}
-                                                        onChange={(e) => updateCharacter(idx, { y: parseFloat(e.target.value) })}
-                                                        className="w-full text-xs p-1 border rounded bg-gray-50 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
-                                                    />
+                                                <div className="mt-2 flex justify-center gap-1">
+                                                    <button type="button" disabled={idx === 0} onClick={() => moveCharacter(idx, -1)} className="min-h-8 flex-1 rounded bg-gray-100 text-xs disabled:opacity-30 dark:bg-gray-700" aria-label="上移角色">↑</button>
+                                                    <button type="button" disabled={idx === (params.characters?.length || 0) - 1} onClick={() => moveCharacter(idx, 1)} className="min-h-8 flex-1 rounded bg-gray-100 text-xs disabled:opacity-30 dark:bg-gray-700" aria-label="下移角色">↓</button>
                                                 </div>
                                             </div>
                                             {canEdit && (
@@ -1823,7 +1848,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             <div className="space-y-2">
                                 <label className="flex items-center gap-3 cursor-pointer select-none">
                                     <input type="checkbox" checked={importOptions.importModules} onChange={e => setImportOptions({ ...importOptions, importModules: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                    <span className="text-sm font-medium dark:text-gray-200">增强模块</span>
+                                    <span className="text-sm font-medium dark:text-gray-200">提示词片段</span>
                                 </label>
                                 {importOptions.importModules && (
                                     <label className="flex items-center gap-3 cursor-pointer select-none pl-8">
@@ -1846,7 +1871,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                                     }}
                                                     className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-0 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
                                                 />
-                                                <span className="text-xs text-gray-700 dark:text-gray-300 truncate flex-1" title={m.content}>{m.name || '未命名模块'}</span>
+                                                <span className="text-xs text-gray-700 dark:text-gray-300 truncate flex-1" title={m.content}>{m.name || '未命名片段'}</span>
                                                 {m.group && <span className="text-[9px] bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-gray-500 uppercase">{m.group}</span>}
                                             </label>
                                         ))}
