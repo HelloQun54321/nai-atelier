@@ -25,6 +25,15 @@ interface ChainEditorProps {
     externalImportToken?: number;
 }
 
+type PresetSource = { name: string; modified: boolean };
+type PresetSection = 'base' | 'subject' | 'negative' | 'settings';
+
+const PresetSourceBadge: React.FC<{ source?: PresetSource }> = ({ source }) => source ? (
+    <span className="max-w-40 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300" title={`来自：${source.name}${source.modified ? ' · 已修改' : ''}`}>
+        来自：{source.name}{source.modified ? ' · 已修改' : ''}
+    </span>
+) : null;
+
 export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
     const confirmAction = useConfirmDialog();
@@ -138,7 +147,30 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     // --- Initialization ---
     const prevChainIdRef = useRef<string | null>(null);
-    const [loadedPreset, setLoadedPreset] = useState<string | null>(null);
+    const [presetSources, setPresetSources] = useState<Partial<Record<PresetSection, PresetSource>>>({});
+    const [modulePresetSources, setModulePresetSources] = useState<Record<string, PresetSource>>({});
+    const [characterPresetSources, setCharacterPresetSources] = useState<Record<string, PresetSource>>({});
+
+    const markPresetSectionModified = (section: PresetSection) => {
+        setPresetSources(previous => previous[section]
+            ? { ...previous, [section]: { ...previous[section]!, modified: true } }
+            : previous);
+    };
+    const markModuleSourceModified = (id: string) => {
+        setModulePresetSources(previous => previous[id]
+            ? { ...previous, [id]: { ...previous[id], modified: true } }
+            : previous);
+    };
+    const markCharacterSourceModified = (id: string) => {
+        setCharacterPresetSources(previous => previous[id]
+            ? { ...previous, [id]: { ...previous[id], modified: true } }
+            : previous);
+    };
+    const clearPresetSources = () => {
+        setPresetSources({});
+        setModulePresetSources({});
+        setCharacterPresetSources({});
+    };
 
     const sourceChainId = chain.id === 'playground' ? 'playground' : chain.id;
     const selectedPreviewItem = previewMode === 'history' ? previewHistory[previewIndex] || null : null;
@@ -237,7 +269,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (prevChainIdRef.current === chain.id) return;
 
         prevChainIdRef.current = chain.id;
-        setLoadedPreset(null); // Reset loaded preset on chain switch
+        clearPresetSources();
 
         setBasePrompt(chain.basePrompt || '');
         setNegativePrompt(chain.negativePrompt || '');
@@ -358,6 +390,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const newModules = [...modules];
         newModules[index] = { ...newModules[index], [key]: value };
         setModules(newModules);
+        markModuleSourceModified(newModules[index].id);
         markChange();
     };
 
@@ -378,8 +411,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const removeModule = (index: number) => {
         if (!canEdit) return;
         const newModules = [...modules];
+        const removedId = newModules[index]?.id;
         newModules.splice(index, 1);
         setModules(newModules);
+        if (removedId) setModulePresetSources(previous => {
+            const next = { ...previous };
+            delete next[removedId];
+            return next;
+        });
         markChange();
     };
 
@@ -396,14 +435,21 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const newChars = [...params.characters];
         newChars[idx] = { ...newChars[idx], ...updates };
         setParams({ ...params, characters: newChars });
+        markCharacterSourceModified(newChars[idx].id);
         markChange();
     };
 
     const removeCharacter = (idx: number) => {
         if (!canEdit || !params.characters) return;
         const newChars = [...params.characters];
+        const removedId = newChars[idx]?.id;
         newChars.splice(idx, 1);
         setParams({ ...params, characters: newChars });
+        if (removedId) setCharacterPresetSources(previous => {
+            const next = { ...previous };
+            delete next[removedId];
+            return next;
+        });
         markChange();
     };
 
@@ -449,19 +495,23 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         moduleIds: Set<string>
     ) => {
         if (!canEdit) return;
+        const source: PresetSource = { name: target.name, modified: false };
 
         // 1. Prompt (Base + Subject)
         if (options.importBasePrompt) {
             setBasePrompt(target.basePrompt || '');
+            setPresetSources(previous => ({ ...previous, base: source }));
         }
         if (options.importSubject) {
             const targetSubject = target.variableValues?.['subject'] || '';
             setSubjectPrompt(targetSubject);
+            setPresetSources(previous => ({ ...previous, subject: source }));
         }
 
         // 2. Negative
         if (options.importNegative) {
             setNegativePrompt(target.negativePrompt || '');
+            setPresetSources(previous => ({ ...previous, negative: source }));
         }
 
         // 3. Modules
@@ -471,8 +521,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
             if (options.appendModules) {
                 setModules(prev => [...prev, ...newModules]); // Append
+                setModulePresetSources(previous => ({
+                    ...previous,
+                    ...Object.fromEntries(newModules.map(module => [module.id, source]))
+                }));
             } else {
                 setModules(newModules); // Replace
+                setModulePresetSources(Object.fromEntries(newModules.map(module => [module.id, source])));
             }
 
             // Update active state
@@ -492,8 +547,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
             if (options.appendCharacters) {
                 setParams(prev => ({ ...prev, characters: [...(prev.characters || []), ...newChars] }));
+                setCharacterPresetSources(previous => ({
+                    ...previous,
+                    ...Object.fromEntries(newChars.map(character => [character.id, source]))
+                }));
             } else {
                 setParams(prev => ({ ...prev, characters: newChars }));
+                setCharacterPresetSources(Object.fromEntries(newChars.map(character => [character.id, source])));
             }
         }
 
@@ -512,16 +572,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 variety: target.params?.variety ?? prev.variety,
                 useCoords: target.params?.useCoords ?? prev.useCoords
             }));
+            setPresetSources(previous => ({ ...previous, settings: source }));
         }
 
         // 6. Seed
         if (options.importSeed && target.params?.seed !== undefined) {
             setParams(prev => ({ ...prev, seed: target.params.seed }));
+            setPresetSources(previous => ({ ...previous, settings: source }));
         }
 
         notify(`已从 "${target.name}" 导入配置`);
         markChange();
-        setLoadedPreset(target.name);
         setImportCandidate(null);
         setShowImportPreset(false);
     };
@@ -599,6 +660,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setBasePrompt(parsed.prompt);
             setNegativePrompt(parsed.negativePrompt);
             setParams(parsed.params);
+            clearPresetSources();
             markChange();
             notify('参数已导入。Quality/UC/Variety 设置已根据 Prompt 内容自动匹配。');
             void db.logClientEvent({
@@ -768,6 +830,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setBasePrompt(data.prompt);
         setNegativePrompt(data.negativePrompt);
         setParams(data.params);
+        clearPresetSources();
         markChange();
         notify('已从外部图片导入完整配置。');
     };
@@ -817,6 +880,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setSubjectPrompt('');
         setModules([]);
         setActiveModules({});
+        clearPresetSources();
         setGeneratedImage(null);
         notify('实验室已重置');
     };
@@ -839,6 +903,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const toggleModuleActive = (id: string) => {
+        markModuleSourceModified(id);
         setActiveModules(prev => {
             const newState = { ...prev, [id]: !prev[id] };
 
@@ -1167,19 +1232,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
                         {/* Base Prompt */}
                         <section className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
-                            <div className="flex justify-between items-end mb-2">
-                                <label className="flex flex-col items-center text-sm font-semibold text-indigo-500 dark:text-indigo-400 md:block md:text-left">
-                                    <span>基础画风</span><span className="text-[10px] font-normal opacity-70 md:inline md:text-sm md:font-semibold md:opacity-100">（画师串）</span>
-                                </label>
+                            <div className="mb-2 flex items-end justify-between gap-2">
+                                <div className="flex min-w-0 items-center gap-2">
+                                    <label className="flex flex-col items-center text-sm font-semibold text-indigo-500 dark:text-indigo-400 md:block md:text-left">
+                                        <span>基础画风</span><span className="text-[10px] font-normal opacity-70 md:inline md:text-sm md:font-semibold md:opacity-100">（画师串）</span>
+                                    </label>
+                                    <PresetSourceBadge source={presetSources.base} />
+                                </div>
 
                                 {/* Direct import buttons */}
                                 <div className="flex items-center gap-2">
-                                    {loadedPreset && (
-                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700 border border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800/50 flex items-center gap-1 font-mono">
-                                            <span className="opacity-50">PRESET:</span> {loadedPreset}
-                                        </span>
-                                    )}
-
                                     {canEdit && (
                                         <div className="flex gap-2">
                                             <input
@@ -1212,16 +1274,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 className={`w-full border rounded-lg p-3 outline-none font-mono text-sm leading-relaxed min-h-[100px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500'}`}
                                 value={basePrompt}
                                 placeholder="画风标签，如 masterpiece、best quality、画师tag等，英文逗号分隔"
-                                onValueChange={(nextValue) => { setBasePrompt(nextValue); markChange() }}
+                                onValueChange={(nextValue) => { setBasePrompt(nextValue); markPresetSectionModified('base'); markChange() }}
                             />
                         </section>
 
                         {/* Modules */}
                         <section className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
                             <div className="flex justify-between items-center mb-3">
-                                <label className="block text-sm font-semibold text-indigo-500 dark:text-indigo-400">
-                                    2. 模块
-                                </label>
+                                <label className="block text-sm font-semibold text-indigo-500 dark:text-indigo-400">2. 模块</label>
                                 {canEdit && (
                                     <button onClick={addModule} className="text-xs flex items-center bg-gray-200 dark:bg-gray-800 px-2 py-1 rounded hover:bg-gray-300 dark:hover:bg-gray-700">
                                         添加
@@ -1240,6 +1300,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                                 value={mod.name}
                                                 onChange={(e) => handleModuleChange(idx, 'name', e.target.value)}
                                             />
+                                            <PresetSourceBadge source={modulePresetSources[mod.id]} />
                                             {/* Mobile optimized: Group Input and Position Toggles together on right */}
                                             <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
                                                 <input
@@ -1287,10 +1348,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
                         <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden'} rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/40 lg:hidden`}>
                             <div className="mb-2 flex items-center justify-between gap-3">
-                                <label className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">主体／变量提示词</label>
+                                <div className="flex min-w-0 items-center gap-2"><label className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">主体／变量提示词</label><PresetSourceBadge source={presetSources.subject} /></div>
                                 <button type="button" onClick={() => copyPromptToClipboard(false)} className="text-xs font-medium text-indigo-600 dark:text-indigo-300">复制完整提示词</button>
                             </div>
-                            <TagAutocompleteTextarea className="min-h-28 w-full resize-none rounded-lg border border-gray-300 bg-white p-3 font-mono text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" placeholder="输入人物、场景和动作等动态内容…" value={subjectPrompt} onValueChange={(value) => { setSubjectPrompt(value); markChange(); }} />
+                            <TagAutocompleteTextarea className="min-h-28 w-full resize-none rounded-lg border border-gray-300 bg-white p-3 font-mono text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" placeholder="输入人物、场景和动作等动态内容…" value={subjectPrompt} onValueChange={(value) => { setSubjectPrompt(value); markPresetSectionModified('subject'); markChange(); }} />
                         </section>
 
                         {/* Character Management (New V4.5) */}
@@ -1306,6 +1367,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                             checked={!(params.useCoords ?? true)}
                                             onChange={(e) => {
                                                 setParams({ ...params, useCoords: !e.target.checked });
+                                                markPresetSectionModified('settings');
                                                 markChange();
                                             }}
                                             className="w-3.5 h-3.5 text-indigo-600 rounded focus:ring-0"
@@ -1327,6 +1389,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 )}
                                 {(params.characters || []).map((char, idx) => (
                                     <div key={char.id} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700 shadow-sm relative">
+                                        {characterPresetSources[char.id] && <div className="mb-2 flex justify-end"><PresetSourceBadge source={characterPresetSources[char.id]} /></div>}
                                         <div className="flex gap-3 items-start">
                                             <div className="flex-1 space-y-2">
                                                 <div>
@@ -1386,7 +1449,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         {/* Negative Prompt */}
                         <section className={`${mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'} mb-8`}>
                             <div className="mb-2 flex items-center justify-between gap-3">
-                                <label className="block text-sm font-semibold text-red-500 dark:text-red-400">全局负面提示词</label>
+                                <div className="flex min-w-0 items-center gap-2"><label className="block text-sm font-semibold text-red-500 dark:text-red-400">全局负面提示词</label><PresetSourceBadge source={presetSources.negative} /></div>
                                 <button type="button" onClick={() => copyPromptToClipboard(true)} className="flex items-center gap-1 rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30" title="复制负面提示词">
                                     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
                                     复制
@@ -1396,7 +1459,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 disabled={!canEdit}
                                 className={`w-full border rounded-lg p-3 outline-none font-mono text-sm leading-relaxed min-h-[80px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-red-900 dark:text-red-100/80 focus:ring-1 focus:ring-red-500/50'}`}
                                 value={negativePrompt}
-                                onValueChange={(nextValue) => { setNegativePrompt(nextValue); markChange() }}
+                                onValueChange={(nextValue) => { setNegativePrompt(nextValue); markPresetSectionModified('negative'); markChange() }}
                             />
                         </section>
 
@@ -1404,9 +1467,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <div className={mobileEditorTab === 'params' ? 'block' : 'hidden lg:block'}>
                         <ChainEditorParams
                             params={params}
-                            setParams={setParams}
+                            setParams={(nextParams) => { setParams(nextParams); markPresetSectionModified('settings'); }}
                             canEdit={canEdit}
                             markChange={markChange}
+                            presetSource={presetSources.settings}
                         />
                         </div>
                     </div>
@@ -1440,7 +1504,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 <div className="hidden min-h-0 flex-1 lg:contents">
                 <ChainEditorPreview
                     subjectPrompt={subjectPrompt}
-                    setSubjectPrompt={(s) => { setSubjectPrompt(s); markChange(); }}
+                    setSubjectPrompt={(s) => { setSubjectPrompt(s); markPresetSectionModified('subject'); markChange(); }}
                     isGenerating={isGenerating}
                     handleGenerate={handleGenerate}
                     errorMsg={errorMsg}
@@ -1461,6 +1525,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     onRemoveCurrentHistory={handleRemoveCurrentHistory}
                     onClearHistoryGroup={handleClearHistoryGroup}
                     onCopyFinalPrompt={() => copyPromptToClipboard(false)}
+                    subjectPresetSource={presetSources.subject}
                 />
                 </div>
             </div>

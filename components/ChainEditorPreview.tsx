@@ -26,6 +26,7 @@ interface ChainEditorPreviewProps {
     onRemoveCurrentHistory?: () => void;
     onClearHistoryGroup?: () => void;
     onCopyFinalPrompt: () => void;
+    subjectPresetSource?: { name: string; modified: boolean };
 }
 
 export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
@@ -50,7 +51,8 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     canManageHistoryGroup = false,
     onRemoveCurrentHistory,
     onClearHistoryGroup,
-    onCopyFinalPrompt
+    onCopyFinalPrompt,
+    subjectPresetSource
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDownloading, setIsDownloading] = useState(false);
@@ -89,7 +91,10 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                 {/* Subject / Variable Input */}
                 <div className="mb-4 bg-white dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-800">
                     <div className="mb-2 flex items-center justify-between gap-3">
-                        <h3 className="text-xs font-bold text-indigo-500 uppercase tracking-wider">3. 主体 / 变量提示词</h3>
+                        <div className="flex min-w-0 items-center gap-2">
+                            <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-500">3. 主体 / 变量提示词</h3>
+                            {subjectPresetSource && <span className="max-w-40 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300" title={`来自：${subjectPresetSource.name}${subjectPresetSource.modified ? ' · 已修改' : ''}`}>来自：{subjectPresetSource.name}{subjectPresetSource.modified ? ' · 已修改' : ''}</span>}
+                        </div>
                         <button type="button" onClick={onCopyFinalPrompt} className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30" title="复制基础画风、模块和主体合成后的完整提示词">
                             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
                             复制完整提示词
