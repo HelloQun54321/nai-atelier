@@ -1660,7 +1660,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                     aria-checked={quickImportMode}
                                     onClick={() => setQuickImportMode(!quickImportMode)}
                                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setQuickImportMode(!quickImportMode); } }}
-                                    className="mobile-touch flex h-11 w-11 items-center justify-center rounded-full bg-transparent p-0 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+                                    className="mobile-touch flex h-11 w-11 items-center justify-center border-0 bg-transparent p-0 outline-none shadow-none"
                                 >
                                     <span className={`relative block h-5 w-10 rounded-full transition-colors ${quickImportMode ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'}`}>
                                         <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${quickImportMode ? 'left-5' : 'left-0.5'}`} />
