@@ -2,12 +2,7 @@
 import JSZip from 'jszip';
 import { NAIParams } from '../types';
 import { api } from './api';
-import { NAI_CURATED_QUALITY_TAGS, NAI_CURATED_UC_PRESETS, NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
-
-const resolvePromptRandomizers = (value: string) => value.replace(/\|\|([\s\S]*?)\|\|/g, (_match, choices: string) => {
-  const options = choices.split('|').map(option => option.trim()).filter(Boolean);
-  return options.length ? options[Math.floor(Math.random() * options.length)] : '';
-});
+import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
 
 export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams) => {
   // Logic update: NAI API treats missing seed as random. 0 is a specific seed.
@@ -21,20 +16,17 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
 
   // 1. Quality Tags (Append to positive prompt if enabled)
   // Note: NAI Appends strictly at the end.
-  const actualPrompt = resolvePromptRandomizers(prompt);
-  const actualNegative = resolvePromptRandomizers(negative);
-  let finalPrompt = actualPrompt;
+  let finalPrompt = prompt;
   if (params.qualityToggle ?? true) {
-    finalPrompt = finalPrompt + (params.model === 'nai-diffusion-4-5-curated' ? NAI_CURATED_QUALITY_TAGS : NAI_QUALITY_TAGS);
+    finalPrompt = finalPrompt + NAI_QUALITY_TAGS;
   }
 
   // 2. UC Preset (Prepend to negative prompt)
-  let finalNegative = actualNegative;
+  let finalNegative = negative;
   const presetId = params.ucPreset ?? 0;
   if (presetId !== 4) { // 4 is 'None'
     // @ts-ignore - Index access is safe here as UI restricts values
-    const presetMap = params.model === 'nai-diffusion-4-5-curated' ? NAI_CURATED_UC_PRESETS : NAI_UC_PRESETS;
-    const presetString = presetMap[presetId as keyof typeof presetMap];
+    const presetString = NAI_UC_PRESETS[presetId];
     if (presetString) {
       finalNegative = presetString + finalNegative;
     }
@@ -56,11 +48,11 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   })) : [];
 
   // 3. AI's Choice Logic
-  const useCoords = params.useCoords ?? false;
+  const useCoords = params.useCoords ?? hasCharacters;
 
   const payload: any = {
     input: finalPrompt, // Use processed prompt
-    model: params.model ?? "nai-diffusion-4-5-full",
+    model: "nai-diffusion-4-5-full",
     action: "generate",
     parameters: {
       params_version: 3,
@@ -69,7 +61,7 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
       scale: params.scale,
       sampler: params.sampler,
       steps: params.steps,
-      n_samples: Math.max(1, Math.min(4, params.nSamples ?? 1)),
+      n_samples: 1,
 
       // New Features
       // Variety+ is controlled by skip_cfg_above_sigma.
@@ -83,9 +75,9 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
       ucPreset: params.ucPreset ?? 0,
 
       // Legacy / Standard params
-      sm: params.smea === 'smea' || params.smea === 'smea_dyn' || (params.smea === 'auto' && params.width * params.height > 1024 * 1024),
-      sm_dyn: params.smea === 'smea_dyn',
-      dynamic_thresholding: params.decrisper ?? false,
+      sm: false,
+      sm_dyn: false,
+      dynamic_thresholding: false,
       controlnet_strength: 1,
       legacy: false,
       add_original_image: true,
@@ -129,13 +121,7 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   const filename = Object.keys(zip.files)[0];
   if (!filename) throw new Error("No image found in response");
 
-  const imageFiles = Object.keys(zip.files).filter(file => /\.(png|webp|jpe?g)$/i.test(file));
-  if (!imageFiles.length) throw new Error("No image found in response");
-  const images = await Promise.all(imageFiles.map(async file => {
-    const ext = file.split('.').pop()?.toLowerCase();
-    const mime = ext === 'webp' ? 'image/webp' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
-    return `data:${mime};base64,${await zip.files[file].async('base64')}`;
-  }));
+  const fileData = await zip.files[filename].async('base64');
 
   // Extract seed from payload if available, or finding it in metadata would be ideal but for now we rely on what we sent
   // Actually, NAI returns the seed in the response JSON if we used the proper endpoint or read the png info.
@@ -162,5 +148,5 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
     // But typically NAI returns a JSON alongside the image in the zip.
   }
 
-  return { image: images[0], images, seed: actualSeed, actualPrompt: finalPrompt, actualNegative: finalNegative };
+  return { image: `data:image/png;base64,${fileData}`, seed: actualSeed };
 };
