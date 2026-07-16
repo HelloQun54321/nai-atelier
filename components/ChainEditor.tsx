@@ -1107,14 +1107,29 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
 
                 <div className="ml-auto flex flex-shrink-0 items-center gap-2">
+                    {canEdit && (
+                        <button
+                            type="button"
+                            onClick={() => setShowImportPreset(true)}
+                            className="mobile-touch flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 p-0 text-indigo-600 transition-colors hover:bg-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950/70"
+                            title="引用预设"
+                            aria-label="引用预设"
+                        >
+                            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path d="M7.25 6.25C5.3 7.55 4.25 9.34 4.25 11.5V16h6v-6H7.02c.28-.94.9-1.72 1.87-2.36L7.25 6.25Zm9 0c-1.95 1.3-3 3.09-3 5.25V16h6v-6h-3.23c.28-.94.9-1.72 1.87-2.36l-1.64-1.39Z" />
+                            </svg>
+                        </button>
+                    )}
                     {/* Fork / Save to Library Button */}
                     {((!isOwner && !isGuest) || chain.id === 'playground') && (
                         <button
                             onClick={handleFork}
-                            className="mobile-touch flex h-12 w-14 items-center justify-center rounded-xl bg-green-600 p-0 text-sm font-medium text-white shadow-lg shadow-green-500/20 hover:bg-green-500 md:h-auto md:w-auto md:px-4 md:py-2"
+                            className={`mobile-touch flex h-12 items-center justify-center rounded-xl bg-green-600 p-0 text-sm font-medium text-white shadow-lg shadow-green-500/20 hover:bg-green-500 ${chain.id === 'playground' ? 'w-12' : 'w-auto px-4'}`}
+                            title={chain.id === 'playground' ? '保存到库' : 'Fork'}
+                            aria-label={chain.id === 'playground' ? '保存到库' : 'Fork'}
                         >
-                            <svg className="block h-5 w-5 md:mr-1 md:h-4 md:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 10h16v8.25A1.75 1.75 0 0118.25 20H5.75A1.75 1.75 0 014 18.25V10Z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v10m-4-4 4 4 4-4M8.5 17h7" /></svg>
-                            <span className="hidden md:inline">{chain.id === 'playground' ? '保存到库' : 'Fork'}</span>
+                            <svg className={`block h-5 w-5 ${chain.id === 'playground' ? '' : 'mr-1'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 10h16v8.25A1.75 1.75 0 0118.25 20H5.75A1.75 1.75 0 014 18.25V10Z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v10m-4-4 4 4 4-4M8.5 17h7" /></svg>
+                            {chain.id !== 'playground' && <span>Fork</span>}
                         </button>
                     )}
 
@@ -1122,7 +1137,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <button
                             type="button"
                             onClick={handleReset}
-                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl bg-red-50 text-red-600 transition-colors hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-950/70"
+                            className="mobile-touch flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 p-0 text-red-600 transition-colors hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-950/70"
                             title="重置实验室"
                             aria-label="重置实验室"
                         >
@@ -1157,7 +1172,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                     <span>基础画风</span><span className="text-[10px] font-normal opacity-70 md:inline md:text-sm md:font-semibold md:opacity-100">（画师串）</span>
                                 </label>
 
-                                {/* Import & Load Preset Buttons */}
+                                {/* Direct import buttons */}
                                 <div className="flex items-center gap-2">
                                     {loadedPreset && (
                                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700 border border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800/50 flex items-center gap-1 font-mono">
@@ -1167,14 +1182,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
                                     {canEdit && (
                                         <div className="flex gap-2">
-                                            <button
-                                                onClick={() => setShowImportPreset(true)}
-                                                className="text-xs bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2 py-1 rounded hover:bg-indigo-100 dark:hover:bg-indigo-900/50 flex items-center gap-1"
-                                            >
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
-                                                引用
-                                            </button>
-
                                             <input
                                                 type="file"
                                                 ref={importInputRef}
