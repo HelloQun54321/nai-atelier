@@ -29,10 +29,22 @@ type PresetSource = { name: string; modified: boolean };
 type PresetSection = 'base' | 'subject' | 'negative' | 'settings';
 
 const PresetSourceBadge: React.FC<{ source?: PresetSource }> = ({ source }) => source ? (
-    <span className="max-w-40 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300" title={`来自：${source.name}${source.modified ? ' · 已修改' : ''}`}>
+    <span className="max-w-28 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-40" title={`来自：${source.name}${source.modified ? ' · 已修改' : ''}`}>
         来自：{source.name}{source.modified ? ' · 已修改' : ''}
     </span>
 ) : null;
+
+const PresetSourceBadges: React.FC<{ sources: Record<string, PresetSource> }> = ({ sources }) => {
+    const merged = Object.values(sources).reduce<Record<string, PresetSource>>((result, source) => {
+        result[source.name] = {
+            name: source.name,
+            modified: Boolean(result[source.name]?.modified || source.modified),
+        };
+        return result;
+    }, {});
+    const values = Object.values(merged);
+    return values.length > 0 ? <div className="flex min-w-0 flex-wrap items-center gap-1">{values.map(source => <PresetSourceBadge key={source.name} source={source} />)}</div> : null;
+};
 
 export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -1233,7 +1245,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         {/* Base Prompt */}
                         <section className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
                             <div className="mb-2 flex items-end justify-between gap-2">
-                                <div className="flex min-w-0 items-center gap-2">
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <label className="flex flex-col items-center text-sm font-semibold text-indigo-500 dark:text-indigo-400 md:block md:text-left">
                                         <span>基础画风</span><span className="text-[10px] font-normal opacity-70 md:inline md:text-sm md:font-semibold md:opacity-100">（画师串）</span>
                                     </label>
@@ -1280,8 +1292,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
                         {/* Modules */}
                         <section className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
-                            <div className="flex justify-between items-center mb-3">
-                                <label className="block text-sm font-semibold text-indigo-500 dark:text-indigo-400">2. 模块</label>
+                            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                    <label className="block text-sm font-semibold text-indigo-500 dark:text-indigo-400">2. 模块</label>
+                                    <PresetSourceBadges sources={modulePresetSources} />
+                                </div>
                                 {canEdit && (
                                     <button onClick={addModule} className="text-xs flex items-center bg-gray-200 dark:bg-gray-800 px-2 py-1 rounded hover:bg-gray-300 dark:hover:bg-gray-700">
                                         添加
@@ -1300,7 +1315,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                                 value={mod.name}
                                                 onChange={(e) => handleModuleChange(idx, 'name', e.target.value)}
                                             />
-                                            <PresetSourceBadge source={modulePresetSources[mod.id]} />
                                             {/* Mobile optimized: Group Input and Position Toggles together on right */}
                                             <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
                                                 <input
@@ -1348,7 +1362,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
                         <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden'} rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/40 lg:hidden`}>
                             <div className="mb-2 flex items-center justify-between gap-3">
-                                <div className="flex min-w-0 items-center gap-2"><label className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">主体／变量提示词</label><PresetSourceBadge source={presetSources.subject} /></div>
+                                <div className="flex min-w-0 flex-wrap items-center gap-2"><label className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">主体／变量提示词</label><PresetSourceBadge source={presetSources.subject} /></div>
                                 <button type="button" onClick={() => copyPromptToClipboard(false)} className="text-xs font-medium text-indigo-600 dark:text-indigo-300">复制完整提示词</button>
                             </div>
                             <TagAutocompleteTextarea className="min-h-28 w-full resize-none rounded-lg border border-gray-300 bg-white p-3 font-mono text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" placeholder="输入人物、场景和动作等动态内容…" value={subjectPrompt} onValueChange={(value) => { setSubjectPrompt(value); markPresetSectionModified('subject'); markChange(); }} />
@@ -1356,9 +1370,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
                         {/* Character Management (New V4.5) */}
                         <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'} bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 border border-indigo-100 dark:border-indigo-800/50`}>
-                            <div className="flex justify-between items-center mb-3">
-                                <label className="block text-sm font-semibold text-indigo-600 dark:text-indigo-300">3. 多角色管理</label>
-                                <div className="flex gap-2 items-center">
+                            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                    <label className="block text-sm font-semibold text-indigo-600 dark:text-indigo-300">3. 多角色管理</label>
+                                    <PresetSourceBadges sources={characterPresetSources} />
+                                </div>
+                                <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                                     {/* AI Choice Toggle */}
                                     <label className="flex items-center gap-1.5 cursor-pointer bg-white dark:bg-gray-700 px-2 py-1 rounded shadow-sm hover:bg-gray-100 dark:hover:bg-gray-600 border border-transparent dark:border-gray-600">
                                         <input
@@ -1389,7 +1406,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 )}
                                 {(params.characters || []).map((char, idx) => (
                                     <div key={char.id} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700 shadow-sm relative">
-                                        {characterPresetSources[char.id] && <div className="mb-2 flex justify-end"><PresetSourceBadge source={characterPresetSources[char.id]} /></div>}
                                         <div className="flex gap-3 items-start">
                                             <div className="flex-1 space-y-2">
                                                 <div>
@@ -1449,7 +1465,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         {/* Negative Prompt */}
                         <section className={`${mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'} mb-8`}>
                             <div className="mb-2 flex items-center justify-between gap-3">
-                                <div className="flex min-w-0 items-center gap-2"><label className="block text-sm font-semibold text-red-500 dark:text-red-400">全局负面提示词</label><PresetSourceBadge source={presetSources.negative} /></div>
+                                <div className="flex min-w-0 flex-wrap items-center gap-2"><label className="block text-sm font-semibold text-red-500 dark:text-red-400">全局负面提示词</label><PresetSourceBadge source={presetSources.negative} /></div>
                                 <button type="button" onClick={() => copyPromptToClipboard(true)} className="flex items-center gap-1 rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30" title="复制负面提示词">
                                     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
                                     复制
