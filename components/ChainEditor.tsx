@@ -13,6 +13,8 @@ import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
+import { VibeManager } from './VibeManager';
+import { normalizeVibeSelections } from '../services/vibeUtils';
 
 interface ChainEditorProps {
     chain: PromptChain;
@@ -944,7 +946,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setIsGenerating(true);
         setErrorMsg(null);
         try {
-            const activeParams = { ...params };
+            const activeParams: NAIParams = {
+                ...params,
+                vibes: params.vibes ? {
+                    ...params.vibes,
+                    slots: normalizeVibeSelections(params.vibes.slots, params.vibes.normalizeStrengths),
+                } : undefined,
+            };
             const result = await generateImage(apiKey, finalPrompt, negativePrompt, activeParams);
             setGeneratedImage(result.image);
             // Use actual seed returned from generation
@@ -1461,6 +1469,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 ))}
                             </div>
                         </section>
+
+                        <div className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
+                            <VibeManager
+                                params={params}
+                                setParams={setParams}
+                                markChange={markChange}
+                                apiKey={apiKey}
+                                notify={notify}
+                            />
+                        </div>
 
                         {/* Negative Prompt */}
                         <section className={`${mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'} mb-8`}>

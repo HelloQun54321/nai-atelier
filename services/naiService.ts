@@ -102,6 +102,12 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
         legacy_uc: false
       },
 
+      // Resolved by the computer gateway. The phone/browser never downloads
+      // the permanent Vibe encoding or original reference image.
+      _local_vibes: params.vibes?.enabled && params.vibes.slots.length > 0
+        ? params.vibes
+        : undefined,
+
       deliberate_euler_ancestral_bug: false,
       prefer_brownian: true
     }

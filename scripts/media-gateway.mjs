@@ -9,14 +9,18 @@ import { pathToFileURL } from 'node:url';
 const CACHE_VERSION = 'v1';
 const CACHE_DIR = join(process.cwd(), 'local-cache', 'thumbnails');
 const CACHE_INDEX = join(CACHE_DIR, 'index.json');
+const VIBE_RECOVERY_DIR = join(process.cwd(), 'local-data', 'vibe-recovery');
 const CACHE_LIMIT = 1024 * 1024 * 1024;
 const CACHE_PRUNE_TARGET = 900 * 1024 * 1024;
 const SOURCE_LIMIT = 2048;
 const INPUT_LIMIT = 30 * 1024 * 1024;
-const GENERATION_REQUEST_LIMIT = 5 * 1024 * 1024;
+const GENERATION_REQUEST_LIMIT = 20 * 1024 * 1024;
 const NAI_GENERATE_URL = 'https://image.novelai.net/ai/generate-image';
+const NAI_ENCODE_VIBE_URL = 'https://image.novelai.net/ai/encode-vibe';
 const ALLOWED_REMOTE_HOSTS = new Set(['ai-img.10118899.xyz', 'aitag.win']);
 const THUMB_WIDTHS = new Map([['thumb-320', 320], ['thumb-640', 640]]);
+const vibeEncodingJobs = new Map();
+const pendingVibeRecoveries = new Map();
 
 const normalizeIp = value => String(value || '').replace(/^::ffff:/, '');
 const isLoopbackIp = value => {
@@ -85,14 +89,109 @@ const readRequestBody = (req, limit) => new Promise((resolve, reject) => {
   req.on('error', reject);
 });
 
-const handleGenerateRequest = async (req, res, lanSecret) => {
+const requestWorkerJson = (path, req, workerPort, { method = 'GET', body } = {}) => new Promise((resolve, reject) => {
+  const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
+  const upstream = httpRequest({
+    hostname: '127.0.0.1', port: workerPort, path, method,
+    headers: {
+      accept: 'application/json', 'content-type': 'application/json', cookie: req.headers.cookie || '',
+      host: getForwardHost(req), 'user-agent': req.headers['user-agent'] || 'NaiPromptManager-MediaGateway',
+      'x-forwarded-for': normalizeIp(req.socket.remoteAddress),
+      ...(payload ? { 'content-length': payload.length } : {}),
+    },
+  }, async upstreamRes => {
+    const chunks = [];
+    for await (const chunk of upstreamRes) chunks.push(chunk);
+    const text = Buffer.concat(chunks).toString('utf8');
+    let parsed;
+    try { parsed = JSON.parse(text || '{}'); } catch { parsed = { error: text || '电脑数据服务返回异常' }; }
+    if ((upstreamRes.statusCode || 500) >= 400) {
+      const error = new Error(parsed.error || '电脑数据服务请求失败');
+      error.status = upstreamRes.statusCode || 500;
+      reject(error);
+    } else resolve(parsed);
+  });
+  upstream.setTimeout(30_000, () => upstream.destroy(new Error('电脑数据服务超时')));
+  upstream.on('error', reject);
+  if (payload) upstream.write(payload);
+  upstream.end();
+});
+
+export const normalizeVibeStrengths = slots => {
+  const values = slots.map(slot => Math.max(0, Math.min(1, Number(slot.strength) || 0)));
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return total > 1 ? values.map(value => value / total) : values;
+};
+
+const internalWorkerRequest = {
+  headers: {},
+  socket: { remoteAddress: '127.0.0.1', localAddress: '127.0.0.1' },
+};
+
+const saveVibeRecovery = async recovery => {
+  await mkdir(VIBE_RECOVERY_DIR, { recursive: true });
+  const key = `${recovery.vibeId}:nai-diffusion-4-5-full:${Number(recovery.informationExtracted).toFixed(2)}`;
+  const file = join(VIBE_RECOVERY_DIR, `${createHash('sha256').update(key).digest('hex')}.json`);
+  const temporary = `${file}.tmp`;
+  await writeFile(temporary, JSON.stringify(recovery), { encoding: 'utf8', mode: 0o600 });
+  await rename(temporary, file);
+  pendingVibeRecoveries.set(key, { ...recovery, file });
+};
+
+const commitVibeRecovery = async (recovery, req, workerPort) => {
+  const stored = await requestWorkerJson(`/api/vibes/${encodeURIComponent(recovery.vibeId)}/encoding-result`, req, workerPort, {
+    method: 'POST',
+    body: { informationExtracted: recovery.informationExtracted, encodingBase64: recovery.encodingBase64 },
+  });
+  if (recovery.file) await unlink(recovery.file).catch(() => {});
+  const key = `${recovery.vibeId}:nai-diffusion-4-5-full:${Number(recovery.informationExtracted).toFixed(2)}`;
+  pendingVibeRecoveries.delete(key);
+  return stored;
+};
+
+const recoverPendingVibeEncodings = async workerPort => {
+  await mkdir(VIBE_RECOVERY_DIR, { recursive: true });
+  for (const name of await readdir(VIBE_RECOVERY_DIR).catch(() => [])) {
+    if (!name.endsWith('.json')) continue;
+    const file = join(VIBE_RECOVERY_DIR, name);
+    try {
+      const recovery = { ...JSON.parse(await readFile(file, 'utf8')), file };
+      const key = `${recovery.vibeId}:nai-diffusion-4-5-full:${Number(recovery.informationExtracted).toFixed(2)}`;
+      pendingVibeRecoveries.set(key, recovery);
+      await commitVibeRecovery(recovery, internalWorkerRequest, workerPort);
+    } catch {
+      // Keep the paid encoding for the next startup or retry. Never log its contents.
+    }
+  }
+};
+
+const handleGenerateRequest = async (req, res, lanSecret, workerPort) => {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
   const authorization = String(req.headers.authorization || '');
   if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
 
   try {
-    const body = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
+    const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
+    let payload;
+    try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
+    const localVibes = payload?.parameters?._local_vibes;
+    if (localVibes?.enabled && Array.isArray(localVibes.slots) && localVibes.slots.length) {
+      const slots = localVibes.slots.slice(0, 4);
+      if (localVibes.slots.length > 4) return sendJson(res, 400, { error: '一次最多使用 4 个 Vibe' });
+      const resolved = await Promise.all(slots.map(slot => requestWorkerJson(
+        `/api/vibes/${encodeURIComponent(slot.vibeId)}/encodings/${encodeURIComponent(slot.encodingId)}/data`, req, workerPort
+      )));
+      for (const item of resolved) {
+        if (item.variant?.model !== 'nai-diffusion-4-5-full') return sendJson(res, 400, { error: 'Vibe 缺少 V4.5 Full 编码' });
+      }
+      payload.parameters.reference_image_multiple = resolved.map(item => item.encoding);
+      payload.parameters.reference_strength_multiple = localVibes.normalizeStrengths === false
+        ? slots.map(slot => Math.max(0, Math.min(1, Number(slot.strength) || 0)))
+        : normalizeVibeStrengths(slots);
+    }
+    if (payload?.parameters) delete payload.parameters._local_vibes;
+    const body = Buffer.from(JSON.stringify(payload));
     const response = await fetch(NAI_GENERATE_URL, {
       method: 'POST',
       headers: {
@@ -127,11 +226,81 @@ const handleGenerateRequest = async (req, res, lanSecret) => {
   }
 };
 
+const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, vibeId) => {
+  if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+  if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+  const authorization = String(req.headers.authorization || '');
+  if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
+  try {
+    const body = JSON.parse((await readRequestBody(req, 64 * 1024)).toString('utf8'));
+    const informationExtracted = Math.round(Number(body.informationExtracted) * 100) / 100;
+    if (!Number.isFinite(informationExtracted) || informationExtracted < 0 || informationExtracted > 1) {
+      return sendJson(res, 400, { error: '信息提取量必须在 0 到 1 之间' });
+    }
+    const asset = await requestWorkerJson(`/api/vibes/${encodeURIComponent(vibeId)}`, req, workerPort);
+    const existing = asset.item?.encodings?.find(item => Math.abs(Number(item.informationExtracted) - informationExtracted) < 0.001 && item.model === 'nai-diffusion-4-5-full');
+    if (existing) return sendJson(res, 200, { item: asset.item, duplicate: true });
+
+    const taskKey = `${vibeId}:nai-diffusion-4-5-full:${informationExtracted.toFixed(2)}`;
+    const pendingRecovery = pendingVibeRecoveries.get(taskKey);
+    if (pendingRecovery) {
+      const stored = await commitVibeRecovery(pendingRecovery, req, workerPort);
+      return sendJson(res, 200, { ...stored, recovered: true });
+    }
+    let task = vibeEncodingJobs.get(taskKey);
+    if (!task) {
+      task = (async () => {
+        const original = await requestWorkerBuffer(`/api/vibes/${encodeURIComponent(vibeId)}/image`, req, workerPort);
+        if (original.status >= 400 || !original.buffer.length) {
+          const error = new Error('Vibe 原图不存在');
+          error.status = original.status || 404;
+          throw error;
+        }
+        const response = await fetch(NAI_ENCODE_VIBE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': authorization },
+          body: JSON.stringify({ image: original.buffer.toString('base64'), information_extracted: informationExtracted, model: 'nai-diffusion-4-5-full' }),
+          signal: AbortSignal.timeout(300_000),
+        });
+        if (!response.ok) {
+          const detail = await response.text();
+          const error = new Error(response.status === 401 ? 'NovelAI API Key 无效' : response.status === 402 ? 'NovelAI Anlas 不足' : (detail || `NovelAI 编码失败 (${response.status})`));
+          error.status = response.status;
+          throw error;
+        }
+        const encoding = Buffer.from(await response.arrayBuffer());
+        if (encoding.length < 64 || encoding.length > 12 * 1024 * 1024) {
+          const error = new Error('NovelAI 返回的 Vibe 编码大小异常');
+          error.status = 502;
+          throw error;
+        }
+        const recovery = { vibeId, informationExtracted, encodingBase64: encoding.toString('base64'), createdAt: Date.now() };
+        try {
+          return await commitVibeRecovery(recovery, req, workerPort);
+        } catch (storageError) {
+          await saveVibeRecovery(recovery);
+          const error = new Error('付费编码已由电脑安全保留，但暂时无法写入资料库；请勿重新编码，重启项目后会自动恢复');
+          error.status = 503;
+          throw error;
+        }
+      })().finally(() => vibeEncodingJobs.delete(taskKey));
+      vibeEncodingJobs.set(taskKey, task);
+    }
+    const stored = await task;
+    return sendJson(res, 200, stored);
+  } catch (error) {
+    const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+    return sendJson(res, Number(error.status) || (timedOut ? 504 : 502), {
+      error: timedOut ? '电脑连接 NovelAI 编码服务超时，请检查电脑 VPN' : (error.message || 'Vibe 编码失败'),
+    });
+  }
+};
+
 const getValidatedSource = value => {
   const source = String(value || '');
   if (!source || source.length > SOURCE_LIMIT || /[\r\n]/.test(source)) throw new Error('Invalid image source');
   if (source.startsWith('/api/assets/')) return { type: 'local', source };
-  if (/^\/api\/local-history\/[^/]+\/image(?:\?.*)?$/.test(source)) return { type: 'local', source };
+  if (/^\/api\/(?:local-history\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail))(?:\?.*)?$/.test(source)) return { type: 'local', source };
   let url;
   try { url = new URL(source); } catch { throw new Error('Unsupported image source'); }
   if (url.protocol !== 'https:' || !ALLOWED_REMOTE_HOSTS.has(url.hostname.toLowerCase())) throw new Error('Remote image host is not allowed');
@@ -330,10 +499,13 @@ const proxyRequest = (req, res, workerPort) => {
 export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSecret = '' } = {}) {
   const cache = new ThumbnailCache();
   await cache.init();
+  await recoverPendingVibeEncodings(workerPort);
   const server = createServer(async (req, res) => {
     let url;
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
-    if (url.pathname === '/api/generate') return handleGenerateRequest(req, res, lanSecret);
+    if (url.pathname === '/api/generate') return handleGenerateRequest(req, res, lanSecret, workerPort);
+    const vibeEncodeMatch = url.pathname.match(/^\/api\/vibes\/([^/]+)\/encodings$/);
+    if (vibeEncodeMatch) return handleVibeEncodeRequest(req, res, lanSecret, workerPort, decodeURIComponent(vibeEncodeMatch[1]));
     if (url.pathname !== '/api/media') return proxyRequest(req, res, workerPort);
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
     if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });

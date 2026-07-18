@@ -30,6 +30,48 @@ export interface CharacterParams {
   y: number; // 0.0 to 1.0
 }
 
+export interface VibeEncodingVariant {
+  id: string;
+  /** Unknown imported model identifiers are retained for future compatibility. */
+  model: 'nai-diffusion-4-5-full' | (string & {});
+  modelKey: 'v4-5full' | (string & {});
+  informationExtracted: number;
+  encodingHash: string;
+  createdAt: number;
+}
+
+export interface VibeSelection {
+  vibeId: string;
+  vibeName?: string;
+  encodingId: string;
+  informationExtracted: number;
+  strength: number;
+  effectiveStrength?: number;
+}
+
+export interface VibeAsset {
+  id: string;
+  name: string;
+  sourceHash: string;
+  originalImageUrl?: string;
+  thumbnailUrl?: string;
+  hasOriginal: boolean;
+  defaultStrength: number;
+  encodings: VibeEncodingVariant[];
+  archived: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface VibeGroup {
+  id: string;
+  name: string;
+  slots: VibeSelection[];
+  normalizeStrengths: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface NAIParams {
   width: number;
   height: number;
@@ -46,6 +88,13 @@ export interface NAIParams {
   useCoords?: boolean; // true = Manual Coords, false = AI's Choice
   variety?: boolean; // Variety+ (controlled via skip_cfg_above_sigma)
   cfgRescale?: number; // Prompt Guidance Rescale (0.0 - 1.0)
+  vibes?: {
+    enabled: boolean;
+    sourceGroupId?: string;
+    sourceGroupName?: string;
+    normalizeStrengths: boolean;
+    slots: VibeSelection[];
+  };
 }
 
 export type ChainType = 'style' | 'character';
