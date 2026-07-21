@@ -5,6 +5,7 @@ import { connect as connectSocket } from 'node:net';
 import { join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
+import { ProxyAgent, fetch as undiciFetch } from 'undici';
 
 const CACHE_VERSION = 'v1';
 const CACHE_DIR = join(process.cwd(), 'local-cache', 'thumbnails');
@@ -19,11 +20,27 @@ const VIBE_ENCODING_CACHE_LIMIT = 128 * 1024 * 1024;
 const NAI_GENERATE_URL = 'https://image.novelai.net/ai/generate-image';
 const NAI_ENCODE_VIBE_URL = 'https://image.novelai.net/ai/encode-vibe';
 const ALLOWED_REMOTE_HOSTS = new Set(['ai-img.10118899.xyz', 'aitag.win']);
+const ALLOWED_AITAG_API_PATHS = [
+  /^\/api\/config$/,
+  /^\/api\/ai_works_search$/,
+  /^\/api\/rank\/monthly\/(?:real|fixed)$/,
+  /^\/api\/work\/\d+$/,
+];
 const THUMB_WIDTHS = new Map([['thumb-320', 320], ['thumb-640', 640]]);
 const vibeEncodingJobs = new Map();
 const pendingVibeRecoveries = new Map();
 const vibeCacheHmacSecret = randomBytes(32);
 const confirmedNovelAiVibeCacheKeys = new Set();
+
+export const classifyAitagRemoteTarget = value => {
+  let target;
+  try { target = new URL(value); } catch { return null; }
+  if (target.protocol !== 'https:' || target.username || target.password) return null;
+  const hostname = target.hostname.toLowerCase();
+  if (hostname === 'aitag.win' && ALLOWED_AITAG_API_PATHS.some(pattern => pattern.test(target.pathname))) return 'json';
+  if (hostname === 'ai-img.10118899.xyz' && target.pathname.startsWith('/')) return 'image';
+  return null;
+};
 
 const normalizeIp = value => String(value || '').replace(/^::ffff:/, '');
 const isLoopbackIp = value => {
@@ -534,12 +551,12 @@ const requestWorkerBuffer = (source, req, workerPort) => new Promise((resolve, r
   upstream.end();
 });
 
-const requestRemoteBuffer = async source => {
+const requestRemoteBuffer = async (source, remoteFetch = fetch) => {
   let current = source;
   for (let redirects = 0; redirects < 4; redirects++) {
     const url = new URL(current);
     if (url.protocol !== 'https:' || !ALLOWED_REMOTE_HOSTS.has(url.hostname.toLowerCase())) throw new Error('Remote image redirect is not allowed');
-    const response = await fetch(url, {
+    const response = await remoteFetch(url, {
       redirect: 'manual',
       signal: AbortSignal.timeout(20_000),
       headers: { accept: 'image/*', 'user-agent': 'NaiPromptManager-MediaGateway/1.0' },
@@ -556,6 +573,48 @@ const requestRemoteBuffer = async source => {
     return { status: response.status, headers: { 'content-type': contentType }, buffer: await readLimitedResponse(response) };
   }
   throw new Error('Too many image redirects');
+};
+
+const handleAitagRemoteRequest = async (req, res, url, lanSecret, remoteFetch) => {
+  const suppliedSecret = String(req.headers['x-nai-internal-secret'] || '');
+  const expected = Buffer.from(lanSecret);
+  const supplied = Buffer.from(suppliedSecret);
+  if (!isLoopbackIp(req.socket.remoteAddress) || !lanSecret || expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) {
+    return sendJson(res, 404, { error: 'Not found' });
+  }
+  if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+
+  try {
+    const target = new URL(url.searchParams.get('url') || '');
+    const targetType = classifyAitagRemoteTarget(target.toString());
+    if (!targetType) return sendJson(res, 400, { error: 'Invalid AITag target' });
+    const isJsonApi = targetType === 'json';
+    const isImage = targetType === 'image';
+    const response = await remoteFetch(target, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(30_000),
+      headers: {
+        accept: isJsonApi ? 'application/json' : 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        'user-agent': 'NaiPromptManager-Qun/0.5 (+local personal use)',
+      },
+    });
+    const contentType = response.headers.get('content-type') || '';
+    const body = await readLimitedResponse(response);
+    if (isJsonApi && body.length > 16 * 1024 * 1024) return sendJson(res, 502, { error: 'AITag response is too large' });
+    if (isJsonApi && !contentType.toLowerCase().includes('json')) return sendJson(res, 502, { error: 'AITag returned a non-JSON response' });
+    if (isImage && !contentType.toLowerCase().startsWith('image/')) return sendJson(res, 502, { error: 'AITag returned a non-image response' });
+    res.writeHead(response.status, {
+      'Content-Type': contentType,
+      'Content-Length': body.length,
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    return res.end(body);
+  } catch (error) {
+    return sendJson(res, error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 504 : 502, {
+      error: `电脑无法连接 AITag：${error?.cause?.message || error?.message || '未知错误'}`,
+    });
+  }
 };
 
 class ThumbnailCache {
@@ -665,13 +724,16 @@ const proxyRequest = (req, res, workerPort) => {
   req.pipe(upstream);
 };
 
-export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSecret = '' } = {}) {
+export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSecret = '', outboundProxyUrl = '' } = {}) {
+  const proxyAgent = outboundProxyUrl ? new ProxyAgent(outboundProxyUrl) : null;
+  const remoteFetch = (url, options = {}) => undiciFetch(url, { ...options, ...(proxyAgent ? { dispatcher: proxyAgent } : {}) });
   const cache = new ThumbnailCache();
   await cache.init();
   await recoverPendingVibeEncodings(workerPort);
   const server = createServer(async (req, res) => {
     let url;
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
+    if (url.pathname === '/__internal/aitag-fetch') return handleAitagRemoteRequest(req, res, url, lanSecret, remoteFetch);
     if (url.pathname === '/api/generate') return handleGenerateRequest(req, res, lanSecret, workerPort);
     const vibeEncodeMatch = url.pathname.match(/^\/api\/vibes\/([^/]+)\/encodings$/);
     if (vibeEncodeMatch) return handleVibeEncodeRequest(req, res, lanSecret, workerPort, decodeURIComponent(vibeEncodeMatch[1]));
@@ -685,7 +747,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
       const validated = getValidatedSource(url.searchParams.get('source'));
       const loadOriginal = () => validated.type === 'local'
         ? requestWorkerBuffer(validated.source, req, workerPort)
-        : requestRemoteBuffer(validated.source);
+        : requestRemoteBuffer(validated.source, remoteFetch);
 
       if (variant === 'original') {
         const original = await loadOriginal();
@@ -712,6 +774,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
       sendJson(res, Number(error.status) || 502, { error: error.message || 'Image processing failed' });
     }
   });
+  server.on('close', () => { proxyAgent?.close().catch(() => {}); });
 
   server.on('upgrade', (req, socket, head) => {
     const upstream = connectSocket(workerPort, '127.0.0.1', () => {

@@ -23,7 +23,8 @@
     "jszip": "^3.10.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "undici": "^7.28.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250214.0",

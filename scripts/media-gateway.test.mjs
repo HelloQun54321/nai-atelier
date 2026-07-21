@@ -5,10 +5,20 @@ import {
   buildCachedVibeReferences,
   generateWithVibeCacheRetry,
   getVibeCacheSecretKey,
+  classifyAitagRemoteTarget,
   estimateNovelAiGenerationCost,
   normalizeVibeStrengths,
   parseInvalidVibeCacheKeys,
 } from './media-gateway.mjs';
+
+test('AITag computer proxy only accepts known API and image targets', () => {
+  assert.equal(classifyAitagRemoteTarget('https://aitag.win/api/ai_works_search?page=1'), 'json');
+  assert.equal(classifyAitagRemoteTarget('https://aitag.win/api/work/147453358'), 'json');
+  assert.equal(classifyAitagRemoteTarget('https://ai-img.10118899.xyz/NAI/1/example.webp'), 'image');
+  assert.equal(classifyAitagRemoteTarget('https://aitag.win/admin'), null);
+  assert.equal(classifyAitagRemoteTarget('https://example.com/api/work/1'), null);
+  assert.equal(classifyAitagRemoteTarget('file:///etc/passwd'), null);
+});
 
 test('Vibe strengths are only scaled when their sum exceeds one', () => {
   assert.deepEqual(normalizeVibeStrengths([{ strength: 0.2 }, { strength: 0.3 }]), [0.2, 0.3]);

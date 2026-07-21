@@ -50,6 +50,35 @@ function checkCommand(cmd) {
   }
 }
 
+function normalizeProxyUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const entries = Object.fromEntries(raw.split(';').map(part => {
+    const separator = part.indexOf('=');
+    return separator > 0
+      ? [part.slice(0, separator).trim().toLowerCase(), part.slice(separator + 1).trim()]
+      : ['default', part.trim()];
+  }).filter(([, target]) => target));
+  const target = entries.https || entries.http || entries.default || '';
+  if (!target) return '';
+  return /^[a-z][a-z\d+.-]*:\/\//i.test(target) ? target : `http://${target}`;
+}
+
+function getOutboundProxyUrl() {
+  const environmentProxy = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+  if (environmentProxy) return normalizeProxyUrl(environmentProxy);
+  if (!IS_WINDOWS) return '';
+  try {
+    const key = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings';
+    const enabled = execSync(`reg query "${key}" /v ProxyEnable`, { encoding: 'utf8', windowsHide: true });
+    if (!/ProxyEnable\s+REG_DWORD\s+0x1/i.test(enabled)) return '';
+    const result = execSync(`reg query "${key}" /v ProxyServer`, { encoding: 'utf8', windowsHide: true });
+    return normalizeProxyUrl(result.match(/ProxyServer\s+REG_SZ\s+(.+)/i)?.[1]);
+  } catch {
+    return '';
+  }
+}
+
 function ensureDependencies() {
   if (IS_TERMUX && !process.env.SKIP_TERMUX_SETUP) {
     console.log('\x1b[36m[Termux]\x1b[0m 检测到 Termux 环境');
@@ -179,6 +208,7 @@ async function waitForWorker(port) {
 
 async function startServer() {
   const lanAccess = loadLanAccessConfig();
+  const outboundProxyUrl = getOutboundProxyUrl();
   const lanUrls = getLanUrls();
   console.log('\x1b[32m启动本地服务 (端口 3000)...\x1b[0m');
   console.log('\x1b[90m数据存储位置: ./local-data/\x1b[0m');
@@ -199,6 +229,7 @@ async function startServer() {
     '--binding', 'PERSONAL_MODE_ENABLED=true',
     '--binding', `LAN_ACCESS_PIN=${lanAccess.pin}`,
     '--binding', `LAN_ACCESS_SECRET=${lanAccess.secret}`,
+    '--binding', 'AITAG_LOCAL_PROXY_URL=http://127.0.0.1:3000/__internal/aitag-fetch',
     '--ip', '127.0.0.1',
     '--port', '3001',
     '--compatibility-date', '2024-04-01',
@@ -229,7 +260,7 @@ async function startServer() {
 
   try {
     await waitForWorker(3001);
-    mediaGateway = await createMediaGateway({ port: 3000, workerPort: 3001, lanSecret: lanAccess.secret });
+    mediaGateway = await createMediaGateway({ port: 3000, workerPort: 3001, lanSecret: lanAccess.secret, outboundProxyUrl });
     console.log('\x1b[32m图片网关已就绪，手机列表将按需使用缩略图。\x1b[0m');
     openWhenReady();
   } catch (error) {

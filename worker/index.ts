@@ -47,6 +47,7 @@ interface Env {
   PERSONAL_MODE_ENABLED?: string;
   LAN_ACCESS_PIN?: string;
   LAN_ACCESS_SECRET?: string;
+  AITAG_LOCAL_PROXY_URL?: string;
   // GUEST_PASSCODE removed, now stored in DB
 }
 
@@ -234,11 +235,13 @@ type AitagCacheFilter = 'all' | 'full' | 'first-image' | 'favorite';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function fetchAitagJson(targetUrl: URL): Promise<any> {
-  const response = await fetch(targetUrl.toString(), {
+async function fetchAitagJson(targetUrl: URL, env?: Env): Promise<any> {
+  const localFetch = buildLocalAitagFetch(targetUrl.toString(), env);
+  const response = await fetch(localFetch.url, {
     headers: {
       'Accept': 'application/json',
       'User-Agent': 'NaiPromptManager-Qun/0.5 (+local personal use)',
+      ...localFetch.headers,
     },
   });
 
@@ -252,6 +255,16 @@ async function fetchAitagJson(targetUrl: URL): Promise<any> {
   } catch {
     throw new Error('aitag returned invalid JSON');
   }
+}
+
+function buildLocalAitagFetch(targetUrl: string, env?: Env) {
+  if (!env?.AITAG_LOCAL_PROXY_URL) return { url: targetUrl, headers: {} as Record<string, string> };
+  const proxyUrl = new URL(env.AITAG_LOCAL_PROXY_URL);
+  proxyUrl.searchParams.set('url', targetUrl);
+  return {
+    url: proxyUrl.toString(),
+    headers: env.LAN_ACCESS_SECRET ? { 'X-Nai-Internal-Secret': env.LAN_ACCESS_SECRET } : {},
+  };
 }
 
 function normalizeAitagSearchPayload(payload: any, fallbackPage: number, fallbackPageSize: number) {
@@ -314,10 +327,10 @@ function normalizeAitagSourceSort(value: string | null) {
   return normalizeAitagSort(raw);
 }
 
-async function fetchAitagConfig() {
+async function fetchAitagConfig(env?: Env) {
   const configUrl = new URL('/api/config', AITAG_BASE_URL);
   configUrl.searchParams.set('v', AITAG_CONFIG_VERSION);
-  return fetchAitagJson(configUrl);
+  return fetchAitagJson(configUrl, env);
 }
 
 function normalizeAitagAiTypeFilter(value: string | null): AitagAiTypeFilter {
@@ -493,10 +506,12 @@ async function fetchAitagImageToBucket(env: Env, image: any, options: { workId: 
   }
 
   try {
-    const response = await fetch(remoteUrl, {
+    const localFetch = buildLocalAitagFetch(remoteUrl, env);
+    const response = await fetch(localFetch.url, {
       headers: {
         'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
         'User-Agent': 'NaiPromptManager-Qun/0.5 (+local personal use)',
+        ...localFetch.headers,
       },
     });
     if (!response.ok) throw new Error(`image HTTP ${response.status}`);
@@ -743,7 +758,7 @@ async function cacheAitagFirstImage(env: Env, db: D1Database, work: any) {
 
   try {
     const cachedDetail = await getCachedAitagDetail(db, workId);
-    const detail = cachedDetail || await fetchAitagJson(new URL(`/api/work/${workId}`, AITAG_BASE_URL));
+    const detail = cachedDetail || await fetchAitagJson(new URL(`/api/work/${workId}`, AITAG_BASE_URL), env);
     const firstImage = pickFirstAitagImage(detail);
     if (!firstImage) throw new Error('first image metadata missing');
 
@@ -1274,6 +1289,7 @@ async function upsertAitagIndexState(
 }
 
 async function runAitagIndexBatch(
+  env: Env,
   db: D1Database,
   options: { sort: string; timeRange: string; aiType?: AitagAiTypeFilter; maxPages?: number }
 ) {
@@ -1306,7 +1322,7 @@ async function runAitagIndexBatch(
       sourceUrl.searchParams.set('time_range', timeRange);
       const aiTypeQuery = getAitagRemoteQueryForAiType(aiType);
       if (aiTypeQuery) sourceUrl.searchParams.set('q', aiTypeQuery);
-      const data = await fetchAitagJson(buildAitagSearchUrl(sourceUrl));
+      const data = await fetchAitagJson(buildAitagSearchUrl(sourceUrl), env);
       const normalized = await cacheAitagWorks(db, data, { sort, page: nextPage, pageSize: AITAG_MAX_PAGE_SIZE, timeRange });
       const remotePage = Number(normalized.page || nextPage);
       const remoteTotal = Number(normalized.total || state.total || 0);
@@ -2825,7 +2841,7 @@ export default {
 
       if (path === '/api/aitag/months' && method === 'GET') {
         try {
-          const config = await fetchAitagConfig();
+          const config = await fetchAitagConfig(env);
           const months = Array.isArray(config?.available_months)
             ? config.available_months
                 .map((month: any) => String(month || '').trim())
@@ -2941,7 +2957,7 @@ export default {
           status: 'running',
           paused: false,
         });
-        const status = await runAitagIndexBatch(db, { sort, timeRange, aiType, maxPages: AITAG_CACHE_BATCH_PAGES });
+        const status = await runAitagIndexBatch(env, db, { sort, timeRange, aiType, maxPages: AITAG_CACHE_BATCH_PAGES });
         await writeSystemLog(db, {
           user: currentUser,
           request,
@@ -2984,7 +3000,7 @@ export default {
           status: 'running',
           paused: false,
         });
-        return json(await runAitagIndexBatch(db, { sort, timeRange, aiType, maxPages: AITAG_CACHE_BATCH_PAGES }));
+        return json(await runAitagIndexBatch(env, db, { sort, timeRange, aiType, maxPages: AITAG_CACHE_BATCH_PAGES }));
       }
 
       if (path === '/api/aitag/search' && method === 'GET') {
@@ -3001,7 +3017,7 @@ export default {
           const mergedQuery = mergeAitagQueryWithAiType(sourceUrl.searchParams.get('q') || '', aiType);
           if (mergedQuery) sourceUrl.searchParams.set('q', mergedQuery);
           else sourceUrl.searchParams.delete('q');
-          const data = await fetchAitagJson(buildAitagSearchUrl(sourceUrl));
+          const data = await fetchAitagJson(buildAitagSearchUrl(sourceUrl), env);
           const normalized = await cacheAitagWorks(db, data, {
             sort,
             page,
@@ -3106,7 +3122,7 @@ export default {
             return json(cached, 200, { 'Cache-Control': 'no-store' });
           }
 
-          const detail = await fetchAitagJson(target);
+          const detail = await fetchAitagJson(target, env);
           const cachedDetail = await cacheAitagDetailFirstImageOnly(env, db, detail);
           const backgroundCacheTask = cacheAitagDetail(env, db, cachedDetail)
             .then(() => writeSystemLog(db, {
