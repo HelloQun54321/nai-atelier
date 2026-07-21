@@ -400,7 +400,7 @@ export const parseInvalidVibeCacheKeys = async response => {
   return { invalidKeys: null, text };
 };
 
-const fetchNovelAiGeneration = (payload, authorization, signal = AbortSignal.timeout(300_000)) => fetch(NAI_GENERATE_URL, {
+export const fetchNovelAiGeneration = (payload, authorization, signal = AbortSignal.timeout(300_000), requestRemote = fetch) => requestRemote(NAI_GENERATE_URL, {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -486,7 +486,7 @@ const recoverPendingVibeEncodings = async workerPort => {
   }
 };
 
-const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences) => {
+const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote) => {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
   const authorization = String(req.headers.authorization || '');
@@ -560,9 +560,9 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
         authorization,
         resolvedVibeEncodings,
         vibeCacheKeysSentWithData,
-        (nextPayload, nextAuthorization) => fetchNovelAiGeneration(nextPayload, nextAuthorization, generationSignal),
+        (nextPayload, nextAuthorization) => fetchNovelAiGeneration(nextPayload, nextAuthorization, generationSignal, requestRemote),
       )
-      : await fetchNovelAiGeneration(payload, authorization, generationSignal);
+      : await fetchNovelAiGeneration(payload, authorization, generationSignal, requestRemote);
     const estimatedCost = response.ok ? estimateNovelAiGenerationCost(payload) : 0;
     const anlasBudget = estimatedCost > 0
       ? await spendAnlasBudget(req, workerPort, estimatedCost, 'generation')
@@ -606,7 +606,7 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
   }
 };
 
-const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, vibeId) => {
+const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, vibeId, requestRemote) => {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
   const authorization = String(req.headers.authorization || '');
@@ -636,7 +636,7 @@ const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, vibeId) 
           error.status = original.status || 404;
           throw error;
         }
-        const response = await fetch(NAI_ENCODE_VIBE_URL, {
+        const response = await requestRemote(NAI_ENCODE_VIBE_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': authorization },
           body: JSON.stringify({ image: original.buffer.toString('base64'), information_extracted: informationExtracted, model: 'nai-diffusion-4-5-full' }),
@@ -932,7 +932,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
     let url;
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
     if (url.pathname === '/__internal/aitag-fetch') return handleAitagRemoteRequest(req, res, url, lanSecret, remoteFetch);
-    if (url.pathname === '/api/generate') return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, cloudQueuePreferences);
+    if (url.pathname === '/api/generate') return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, cloudQueuePreferences, remoteFetch);
     if (url.pathname === '/api/generation-queue/preferences') {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       if (req.method === 'GET') return sendJson(res, 200, cloudQueuePreferences);
@@ -963,7 +963,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
       return sendJson(res, 200, { status: 'ok' });
     }
     const vibeEncodeMatch = url.pathname.match(/^\/api\/vibes\/([^/]+)\/encodings$/);
-    if (vibeEncodeMatch) return handleVibeEncodeRequest(req, res, lanSecret, workerPort, decodeURIComponent(vibeEncodeMatch[1]));
+    if (vibeEncodeMatch) return handleVibeEncodeRequest(req, res, lanSecret, workerPort, decodeURIComponent(vibeEncodeMatch[1]), remoteFetch);
     if (url.pathname !== '/api/media') return proxyRequest(req, res, workerPort);
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
     if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });

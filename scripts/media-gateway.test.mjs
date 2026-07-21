@@ -10,7 +10,20 @@ import {
   normalizeVibeStrengths,
   parseInvalidVibeCacheKeys,
   CloudQueueCoordinator,
+  fetchNovelAiGeneration,
 } from './media-gateway.mjs';
+
+test('NovelAI generation uses the computer outbound proxy transport', async () => {
+  let captured;
+  const requestRemote = async (url, options) => {
+    captured = { url, options };
+    return new Response('ok', { status: 200 });
+  };
+  const response = await fetchNovelAiGeneration({ action: 'generate' }, 'Bearer hidden', AbortSignal.timeout(1000), requestRemote);
+  assert.equal(response.status, 200);
+  assert.equal(captured.url, 'https://image.novelai.net/ai/generate-image');
+  assert.equal(captured.options.headers.Authorization, 'Bearer hidden');
+});
 
 test('cloud queue uses st-chatu8 key hashing without sending the raw NovelAI key', async () => {
   const calls = [];
