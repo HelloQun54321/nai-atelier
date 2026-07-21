@@ -1,5 +1,6 @@
 import { VibeAsset, VibeGroup, VibeSelection } from '../types';
 import { api } from './api';
+import { ANLAS_BUDGET_CHANGED_EVENT } from './anlasBudget';
 
 const fileToDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader();
@@ -57,7 +58,11 @@ export const vibeService = {
       body: JSON.stringify({ informationExtracted }),
     });
     if (!response.ok) return responseError(response) as never;
-    return response.json();
+    const result = await response.json();
+    if (result.anlasBudget) {
+      window.dispatchEvent(new CustomEvent(ANLAS_BUDGET_CHANGED_EVENT, { detail: result.anlasBudget }));
+    }
+    return result;
   },
 
   archive: (id: string) => api.post(`/vibes/${encodeURIComponent(id)}/archive`, {}),

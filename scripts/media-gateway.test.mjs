@@ -5,6 +5,7 @@ import {
   buildCachedVibeReferences,
   generateWithVibeCacheRetry,
   getVibeCacheSecretKey,
+  estimateNovelAiGenerationCost,
   normalizeVibeStrengths,
   parseInvalidVibeCacheKeys,
 } from './media-gateway.mjs';
@@ -12,6 +13,20 @@ import {
 test('Vibe strengths are only scaled when their sum exceeds one', () => {
   assert.deepEqual(normalizeVibeStrengths([{ strength: 0.2 }, { strength: 0.3 }]), [0.2, 0.3]);
   assert.deepEqual(normalizeVibeStrengths([{ strength: 0.8 }, { strength: 0.8 }]), [0.5, 0.5]);
+});
+
+test('NovelAI V4.5 costs follow Opus free limits and current web formula', () => {
+  const payload = { action: 'generate', parameters: { width: 832, height: 1216, steps: 23, n_samples: 1 } };
+  assert.equal(estimateNovelAiGenerationCost(payload), 0);
+  assert.equal(estimateNovelAiGenerationCost({ ...payload, parameters: { ...payload.parameters, steps: 29 } }), 20);
+  assert.equal(estimateNovelAiGenerationCost({ ...payload, parameters: {
+    ...payload.parameters,
+    reference_image_multiple_cached: Array.from({ length: 5 }, (_, index) => ({ cache_secret_key: String(index) })),
+  } }), 2);
+  assert.equal(estimateNovelAiGenerationCost({ ...payload, parameters: {
+    ...payload.parameters,
+    director_reference_images_cached: [{ cache_secret_key: 'character' }],
+  } }), 5);
 });
 
 test('cached Vibe references use stable private keys and optionally include data', () => {

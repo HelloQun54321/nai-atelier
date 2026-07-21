@@ -10,6 +10,7 @@ import {
 import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
 import { getMobileImageDisplayPreferences, MobileImageColumns, MobileImageLayout, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { anlasBudgetService, DEFAULT_ANLAS_BUDGET, useAnlasBudget } from '../services/anlasBudget';
 
 interface GlobalSettingsProps {
   open: boolean;
@@ -32,7 +33,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
   const [mobileCacheStats, setMobileCacheStats] = useState(getMobileCacheStats);
   const [imageDisplay, setImageDisplay] = useState(getMobileImageDisplayPreferences);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
-  const [mobileSection, setMobileSection] = useState<'appearance' | 'novelai' | 'tags' | 'cache'>('appearance');
+  const [mobileSection, setMobileSection] = useState<'appearance' | 'novelai' | 'anlas' | 'tags' | 'cache'>('appearance');
+  const anlasBudget = useAnlasBudget();
+  const [anlasInput, setAnlasInput] = useState(String(DEFAULT_ANLAS_BUDGET));
   const requestClose = useMobileHistoryLayer(open, onClose, 'settings');
 
   useEffect(() => {
@@ -47,6 +50,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
     setApiKey(readApiKey());
     setRememberApiKey(localStorage.getItem('nai_api_key') !== null);
   }, [open]);
+
+  useEffect(() => { setAnlasInput(String(anlasBudget.remaining)); }, [anlasBudget.remaining]);
 
   useEffect(() => {
     if (!open) return;
@@ -147,6 +152,20 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
               在本机记住 API Key
             </label>
             <p className="mt-2 text-xs leading-relaxed text-amber-600 dark:text-amber-400">不勾选时仅保留到当前浏览器会话结束；浏览器前端无法对密钥提供真正的加密保护。</p>
+            </div>}
+          </section>
+
+          <section className="rounded-xl border border-violet-200 bg-violet-50/40 p-4 dark:border-violet-900/70 dark:bg-violet-950/20">
+            <button type="button" onClick={() => isMobile && setMobileSection('anlas')} className="flex min-h-11 w-full items-center justify-between text-left">
+              <div><h3 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">当前剩余 <b className="text-violet-600 dark:text-violet-300">{anlasBudget.remaining}</b> 点，电脑与手机共用。</p></div>
+              <span className="md:hidden">{mobileSection === 'anlas' ? '⌃' : '⌄'}</span>
+            </button>
+            {(!isMobile || mobileSection === 'anlas') && <div className="mt-3">
+              <div className="flex gap-2">
+                <input type="number" min="0" step="1" value={anlasInput} onChange={event => setAnlasInput(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-xl border border-violet-200 bg-white px-3 text-lg font-black tabular-nums outline-none focus:border-violet-500 dark:border-violet-900 dark:bg-gray-900" aria-label="可支配 Anlas 点数" />
+                <button type="button" onClick={async () => { const next = await anlasBudgetService.set(Number(anlasInput)); setAnlasInput(String(next.remaining)); notify('Anlas 预算已更新'); }} className="mobile-touch rounded-xl bg-violet-600 px-4 text-sm font-bold text-white">保存</button>
+              </div>
+              <div className="mt-2 flex items-start justify-between gap-3 text-[11px] leading-5 text-gray-500 dark:text-gray-400"><p>这是本地预算，不是 NovelAI 官网实时余额。默认按 Opus 每月 10000 点由 6 人均分后取整为 1666；生图和永久 Vibe 成功后按官方规则扣减，失败、导入或重复编码不扣。</p><button type="button" onClick={async () => { const next = await anlasBudgetService.set(DEFAULT_ANLAS_BUDGET); setAnlasInput(String(next.remaining)); }} className="flex-shrink-0 font-bold text-violet-600 dark:text-violet-300">恢复 1666</button></div>
             </div>}
           </section>
 

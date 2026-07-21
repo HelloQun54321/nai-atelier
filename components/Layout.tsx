@@ -1,5 +1,6 @@
 import React, { ReactNode, useState } from 'react';
 import { GlobalSettings } from './GlobalSettings';
+import { useAnlasBudget } from '../services/anlasBudget';
 
 type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'inspiration' | 'history' | 'playground';
 type ThemeMode = 'light' | 'dark' | 'system';
@@ -32,6 +33,7 @@ const icons = {
 };
 
 export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentView, activeView = currentView, isDark, themeMode, setThemeMode, safeMode, toggleSafeMode, toast, hideNav, notify }) => {
+  const anlasBudget = useAnlasBudget();
   const [showSettings, setShowSettings] = useState(false);
   const [showResources, setShowResources] = useState(false);
   const desktopItems = [
@@ -71,6 +73,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         <div className="flex items-center space-x-3 border-b border-gray-200 p-6 dark:border-gray-800"><img src="/artist-palette-3d.png" alt="" className="h-8 w-8 object-contain" data-safe-mode-ignore="true" aria-hidden="true" /><span className="font-bold tracking-wide text-gray-800 dark:text-gray-200">咒语构建终端</span></div>
         <nav className="flex-1 space-y-2 p-4">{desktopItems.map(item => <button key={item.id} onClick={() => onNavigate(item.id as AppView)} className={`flex w-full items-center rounded-lg p-3 transition-colors ${activeView === item.id ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-600/20 dark:text-indigo-400' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200'}`}><svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">{item.icon}</svg><span className="ml-3">{item.label}</span></button>)}</nav>
         <div className="flex flex-col gap-3 border-t border-gray-200 p-4 dark:border-gray-800">
+          <button type="button" onClick={() => setShowSettings(true)} className="flex items-center justify-between rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-left text-violet-700 transition hover:bg-violet-100 dark:border-violet-900/70 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-950/70">
+            <span><span className="block text-[10px] font-bold uppercase tracking-wider opacity-70">Anlas 预算</span><span className="text-lg font-black tabular-nums">{anlasBudget.loading ? '…' : anlasBudget.remaining}</span></span>
+            <span className="text-lg" aria-hidden="true">◈</span>
+          </button>
           <button onClick={() => setShowSettings(true)} className="flex w-full items-center justify-start rounded-lg bg-gray-100 p-2 text-gray-600 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"><span className="mr-2 text-xl">⚙️</span><span className="text-sm font-medium">全局设置</span></button>
           <button onClick={toggleSafeMode} aria-pressed={safeMode} className={`flex w-full items-center justify-start rounded-lg p-2 transition-colors ${safeMode ? 'bg-emerald-600 text-white hover:bg-emerald-500' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}><span className="mr-2 text-xl">🛡️</span><span className="text-sm font-medium">安全模式：{safeMode ? '开' : '关'}</span></button>
           <div className="text-left text-xs text-gray-500 dark:text-gray-600">v0.5.0</div>

@@ -2332,6 +2332,36 @@ export default {
         return error('Account management is disabled in personal mode', 410);
       }
 
+      // --- Local Anlas budget tracker ---
+      if (path === '/api/anlas-budget') {
+        const key = 'anlas_budget_remaining_v1';
+        const defaultBudget = 1666;
+        await db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').bind(key, String(defaultBudget)).run();
+
+        if (method === 'GET') {
+          const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{value: string}>();
+          return json({ remaining: Math.max(0, Number.parseInt(row?.value || String(defaultBudget), 10) || 0) });
+        }
+        if (method === 'PUT') {
+          const body = await request.json() as any;
+          const remaining = Math.max(0, Math.min(1_000_000_000, Math.floor(Number(body.remaining))));
+          if (!Number.isFinite(remaining)) return error('点数必须是有效整数', 400);
+          await db.prepare('UPDATE settings SET value = ? WHERE key = ?').bind(String(remaining), key).run();
+          return json({ remaining, updatedAt: Date.now() });
+        }
+        if (method === 'POST') {
+          const body = await request.json() as any;
+          const amount = Math.max(0, Math.min(1_000_000, Math.floor(Number(body.amount))));
+          if (!Number.isFinite(amount)) return error('扣除点数必须是有效整数', 400);
+          await db.prepare(`UPDATE settings
+            SET value = CAST(MAX(0, CAST(value AS INTEGER) - ?) AS TEXT)
+            WHERE key = ?`).bind(amount, key).run();
+          const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{value: string}>();
+          return json({ remaining: Math.max(0, Number.parseInt(row?.value || '0', 10) || 0), spent: amount, updatedAt: Date.now() });
+        }
+        return error('Method not allowed', 405);
+      }
+
       // --- Permanent Vibe Transfer library ---
       if (path.startsWith('/api/vibes') || path.startsWith('/api/vibe-groups')) {
         if (!env.BUCKET) return error('Vibe 本地存储不可用', 503);

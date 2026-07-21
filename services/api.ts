@@ -77,6 +77,12 @@ export const api = {
       }
     }
     if (!res.ok) throw new Error(await res.text());
+    const remaining = res.headers.get('x-nai-anlas-remaining');
+    if (remaining !== null && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('nai-anlas-budget-changed', {
+        detail: { remaining: Number(remaining), updatedAt: Date.now() },
+      }));
+    }
     return res.blob();
   },
 

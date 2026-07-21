@@ -27,6 +27,7 @@ interface ChainEditorPreviewProps {
     onClearHistoryGroup?: () => void;
     onCopyFinalPrompt: () => void;
     subjectPresetSource?: { name: string; modified: boolean };
+    estimatedAnlasCost: number;
 }
 
 export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
@@ -52,7 +53,8 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     onRemoveCurrentHistory,
     onClearHistoryGroup,
     onCopyFinalPrompt,
-    subjectPresetSource
+    subjectPresetSource,
+    estimatedAnlasCost
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDownloading, setIsDownloading] = useState(false);
@@ -116,7 +118,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                     className={`w-full py-3 rounded-lg font-bold text-white shadow-lg transition-all mb-4 flex-shrink-0 ${isGenerating ? 'bg-gray-400 cursor-wait' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500'
                         }`}
                 >
-                    {isGenerating ? '生成中...' : '生成预览 (自动保存历史)'}
+                    {isGenerating ? '生成中...' : `生成预览 · ${estimatedAnlasCost ? `${estimatedAnlasCost} 点` : '免费'}`}
                 </button>
                 {errorMsg && <div className="text-red-500 text-xs mb-2 text-center">{errorMsg}</div>}
 

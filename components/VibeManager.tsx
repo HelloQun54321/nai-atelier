@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { NAIParams, VibeAsset, VibeGroup, VibeSelection } from '../types';
 import { vibeService } from '../services/vibeService';
 import { normalizeVibeSelections } from '../services/vibeUtils';
+import { useAnlasBudget } from '../services/anlasBudget';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 
@@ -23,6 +24,7 @@ const BackIcon = () => <svg className="h-5 w-5" fill="none" stroke="currentColor
 
 export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, markChange, apiKey, notify }) => {
   const confirmAction = useConfirmDialog();
+  const anlasBudget = useAnlasBudget();
   const imageInputRef = useRef<HTMLInputElement>(null);
   const vibeInputRef = useRef<HTMLInputElement>(null);
   const historyActiveRef = useRef(false);
@@ -125,7 +127,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
     }
     const accepted = await confirmAction({
       title: '生成永久 Vibe',
-      message: `模型：NovelAI V4.5 Full\n信息提取量：${fixed.toFixed(2)}\n本次消耗：2 Anlas\n\n编码完成后可以无限重复使用，日常生图不会再次产生 Vibe 编码费用。`,
+      message: `模型：NovelAI V4.5 Full\n信息提取量：${fixed.toFixed(2)}\n本次消耗：2 Anlas\n本地预算：${anlasBudget.remaining} → ${Math.max(0, anlasBudget.remaining - 2)}\n\n编码完成后可以无限重复使用，日常生图不会再次产生 Vibe 编码费用。`,
       confirmLabel: '支付 2 Anlas 并生成',
     });
     if (!accepted) return null;

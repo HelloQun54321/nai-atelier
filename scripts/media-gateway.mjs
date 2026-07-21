@@ -126,6 +126,46 @@ export const normalizeVibeStrengths = slots => {
   return total > 1 ? values.map(value => value / total) : values;
 };
 
+/** NovelAI's current V4/V4.5 cost formula for the generation features supported here. */
+export const estimateNovelAiGenerationCost = payload => {
+  const parameters = payload?.parameters || {};
+  const width = Math.max(1, Number(parameters.width) || 1);
+  const height = Math.max(1, Number(parameters.height) || 1);
+  const area = Math.max(65_536, width * height);
+  const steps = Math.max(1, Number(parameters.steps) || 1);
+  const samples = Math.max(1, Math.floor(Number(parameters.n_samples) || 1));
+  const raw = Math.ceil(2.951823174884865e-6 * area + 5.753298233447344e-7 * area * steps);
+  const smeaMultiplier = parameters.sm_dyn ? 1.4 : parameters.sm ? 1.2 : 1;
+  const strength = parameters.mask
+    ? Number(parameters.inpaintImg2ImgStrength ?? 1)
+    : parameters.image ? Number(parameters.strength ?? 1) : 1;
+  const baseCost = Math.max(Math.ceil(raw * smeaMultiplier * Math.max(0, strength)), 2);
+  const preciseReferences = Array.isArray(parameters.director_reference_images_cached)
+    ? parameters.director_reference_images_cached.length
+    : Array.isArray(parameters.director_reference_images) ? parameters.director_reference_images.length : 0;
+  // Precise Reference is a per-reference surcharge, not an img2img base image.
+  const isPlainGeneration = payload?.action === 'generate' && !parameters.image && !parameters.mask;
+  const freeSamples = isPlainGeneration && area <= 1_048_576 && steps <= 28 ? 1 : 0;
+  const base = baseCost * Math.max(0, samples - freeSamples);
+  const vibeCount = Array.isArray(parameters.reference_image_multiple_cached)
+    ? parameters.reference_image_multiple_cached.length
+    : Array.isArray(parameters.reference_image_multiple) ? parameters.reference_image_multiple.length : 0;
+  return base + Math.max(0, vibeCount - 4) * 2 * samples + preciseReferences * 5 * samples;
+};
+
+const spendAnlasBudget = async (req, workerPort, amount, reason) => {
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  try {
+    return await requestWorkerJson('/api/anlas-budget', req, workerPort, {
+      method: 'POST',
+      body: { amount: Math.floor(amount), reason },
+    });
+  } catch {
+    // Budget tracking must never discard an image or paid Vibe encoding.
+    return null;
+  }
+};
+
 export class VibeEncodingMemoryCache {
   constructor(limit = VIBE_ENCODING_CACHE_LIMIT) {
     this.limit = limit;
@@ -323,10 +363,15 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort) => {
     const response = resolvedVibeEncodings
       ? await generateWithVibeCacheRetry(payload, authorization, resolvedVibeEncodings, vibeCacheKeysSentWithData)
       : await fetchNovelAiGeneration(payload, authorization);
+    const estimatedCost = response.ok ? estimateNovelAiGenerationCost(payload) : 0;
+    const anlasBudget = estimatedCost > 0
+      ? await spendAnlasBudget(req, workerPort, estimatedCost, 'generation')
+      : null;
     const headers = {
       'Content-Type': response.headers.get('content-type') || 'application/octet-stream',
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
+      ...(anlasBudget ? { 'X-Nai-Anlas-Remaining': String(anlasBudget.remaining), 'X-Nai-Anlas-Spent': String(estimatedCost) } : {}),
     };
     const contentLength = response.headers.get('content-length');
     const contentDisposition = response.headers.get('content-disposition');
@@ -396,9 +441,11 @@ const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, vibeId) 
           error.status = 502;
           throw error;
         }
+        const anlasBudget = await spendAnlasBudget(req, workerPort, 2, 'vibe-encoding');
         const recovery = { vibeId, informationExtracted, encodingBase64: encoding.toString('base64'), createdAt: Date.now() };
         try {
-          return await commitVibeRecovery(recovery, req, workerPort);
+          const stored = await commitVibeRecovery(recovery, req, workerPort);
+          return { ...stored, anlasBudget };
         } catch (storageError) {
           await saveVibeRecovery(recovery);
           const error = new Error('付费编码已由电脑安全保留，但暂时无法写入资料库；请勿重新编码，重启项目后会自动恢复');
