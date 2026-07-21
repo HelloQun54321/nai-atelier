@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import { NAIParams } from '../types';
 import { api } from './api';
 import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
+import { emitCloudQueueStatus, getCloudQueuePreferences, watchCloudQueueTask } from './cloudQueue';
 
 export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams) => {
   // Logic update: NAI API treats missing seed as random. 0 is a specific seed.
@@ -118,9 +119,37 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   }
 
   // 调用 Worker Proxy, 传递 API Key Header
-  const blob = await api.postBinary('/generate', payload, {
-    'Authorization': `Bearer ${apiKey}`
-  });
+  const queue = await getCloudQueuePreferences();
+  const queueTaskId = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  let requestFinished = false;
+  if (queue.enabled) emitCloudQueueStatus({ taskId: queueTaskId, phase: 'preparing', cancelable: true });
+  const statusWatcher = queue.enabled ? watchCloudQueueTask(queueTaskId, () => requestFinished) : Promise.resolve();
+  let blob: Blob;
+  try {
+    blob = await api.postBinary('/generate', payload, {
+      'Authorization': `Bearer ${apiKey}`,
+      ...(queue.enabled ? {
+        'X-Nai-Queue-Task-Id': queueTaskId,
+      } : {}),
+    });
+  } catch (error) {
+    if (queue.enabled) {
+      const message = error instanceof Error ? error.message : '公共队列连接失败';
+      emitCloudQueueStatus({
+        taskId: queueTaskId,
+        phase: message.includes('已取消排队') ? 'cancelled' : 'error',
+        error: message,
+        cancelable: false,
+      });
+    }
+    throw error;
+  } finally {
+    requestFinished = true;
+    await statusWatcher;
+    if (queue.enabled) window.setTimeout(() => emitCloudQueueStatus(null), 1800);
+  }
 
   // 解析 Zip (逻辑保持不变)
   const zip = await JSZip.loadAsync(blob);

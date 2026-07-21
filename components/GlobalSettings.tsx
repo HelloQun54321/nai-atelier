@@ -11,6 +11,7 @@ import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
 import { getMobileImageDisplayPreferences, MobileImageColumns, MobileImageLayout, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { anlasBudgetService, DEFAULT_ANLAS_BUDGET, useAnlasBudget } from '../services/anlasBudget';
+import { CLOUD_QUEUE_SERVICE_URL, getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 
 interface GlobalSettingsProps {
   open: boolean;
@@ -30,6 +31,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
   const [apiKey, setApiKey] = useState(readApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(() => localStorage.getItem('nai_api_key') !== null);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [cloudQueue, setCloudQueue] = useState(getCachedCloudQueuePreferences);
   const [mobileCacheStats, setMobileCacheStats] = useState(getMobileCacheStats);
   const [imageDisplay, setImageDisplay] = useState(getMobileImageDisplayPreferences);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
@@ -49,6 +51,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
     if (!open) return;
     setApiKey(readApiKey());
     setRememberApiKey(localStorage.getItem('nai_api_key') !== null);
+    void getCloudQueuePreferences().then(setCloudQueue).catch(() => notify('读取公共队列设置失败', 'error'));
   }, [open]);
 
   useEffect(() => { setAnlasInput(String(anlasBudget.remaining)); }, [anlasBudget.remaining]);
@@ -87,6 +90,12 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
     setRememberApiKey(remember);
     if (remember && apiKey) localStorage.setItem('nai_api_key', apiKey);
     else localStorage.removeItem('nai_api_key');
+  };
+
+  const updateCloudQueue = (patch: Partial<typeof cloudQueue>) => {
+    const next = { ...cloudQueue, ...patch };
+    setCloudQueue(next);
+    void setCloudQueuePreferences(next).then(setCloudQueue).catch(() => notify('保存公共队列设置失败', 'error'));
   };
 
   if (!open) return null;
@@ -152,7 +161,18 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
               在本机记住 API Key
             </label>
             <p className="mt-2 text-xs leading-relaxed text-amber-600 dark:text-amber-400">不勾选时仅保留到当前浏览器会话结束；浏览器前端无法对密钥提供真正的加密保护。</p>
-            </div>}
+            <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
+              <label className="flex min-h-11 items-center justify-between gap-3">
+                <span><b className="block text-sm text-gray-800 dark:text-gray-100">多人拼车公共队列</b><span className="mt-0.5 block text-[11px] leading-5 text-gray-500 dark:text-gray-400">兼容 st-chatu8；相同 NovelAI Key 的接入者依次生图。</span></span>
+                <input type="checkbox" checked={cloudQueue.enabled} onChange={event => updateCloudQueue({ enabled: event.target.checked })} className="h-5 w-5 shrink-0 rounded border-gray-300 text-indigo-600" />
+              </label>
+              {cloudQueue.enabled && <div className="mt-3 space-y-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/70">
+                <div><label className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">排队个性语（最多15字）</label><input value={cloudQueue.greeting} maxLength={15} onChange={event => setCloudQueue(value => ({ ...value, greeting: event.target.value.slice(0, 15) }))} onBlur={() => updateCloudQueue({ greeting: cloudQueue.greeting })} className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" /></div>
+                <label className="flex min-h-11 items-center justify-between gap-3 text-sm text-gray-700 dark:text-gray-200"><span>显示当前使用者的个性语</span><input type="checkbox" checked={cloudQueue.showGreeting} onChange={event => updateCloudQueue({ showGreeting: event.target.checked })} className="h-5 w-5 rounded border-gray-300 text-indigo-600" /></label>
+                <div className="break-all text-[10px] leading-4 text-gray-400">公共服务：{CLOUD_QUEUE_SERVICE_URL}</div>
+                <p className="text-[11px] leading-5 text-amber-600 dark:text-amber-400">仅发送 Key 的 SHA-256 指纹、任务标识和个性语；Prompt、图片、原始 Key 不会发送给队列服务。队列不可用时本次生成会停止，不会静默绕过。</p>
+              </div>}
+            </div></div>}
           </section>
 
           <section className="rounded-xl border border-violet-200 bg-violet-50/40 p-4 dark:border-violet-900/70 dark:bg-violet-950/20">

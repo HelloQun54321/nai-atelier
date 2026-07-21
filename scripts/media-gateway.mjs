@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { createServer, request as httpRequest } from 'node:http';
 import { connect as connectSocket } from 'node:net';
@@ -11,6 +11,7 @@ const CACHE_VERSION = 'v1';
 const CACHE_DIR = join(process.cwd(), 'local-cache', 'thumbnails');
 const CACHE_INDEX = join(CACHE_DIR, 'index.json');
 const VIBE_RECOVERY_DIR = join(process.cwd(), 'local-data', 'vibe-recovery');
+const CLOUD_QUEUE_CONFIG_FILE = join(process.cwd(), 'local-data', 'cloud-queue.json');
 const CACHE_LIMIT = 1024 * 1024 * 1024;
 const CACHE_PRUNE_TARGET = 900 * 1024 * 1024;
 const SOURCE_LIMIT = 2048;
@@ -19,6 +20,10 @@ const GENERATION_REQUEST_LIMIT = 20 * 1024 * 1024;
 const VIBE_ENCODING_CACHE_LIMIT = 128 * 1024 * 1024;
 const NAI_GENERATE_URL = 'https://image.novelai.net/ai/generate-image';
 const NAI_ENCODE_VIBE_URL = 'https://image.novelai.net/ai/encode-vibe';
+const CLOUD_QUEUE_URL = 'https://st-chatu-novelai-queue.hf.space';
+const CLOUD_QUEUE_POLL_INTERVAL = 1000;
+const CLOUD_QUEUE_MAX_FAILURES = 3;
+const CLOUD_QUEUE_STATUS_TTL = 5 * 60 * 1000;
 const ALLOWED_REMOTE_HOSTS = new Set(['ai-img.10118899.xyz', 'aitag.win']);
 const ALLOWED_AITAG_API_PATHS = [
   /^\/api\/config$/,
@@ -31,6 +36,151 @@ const vibeEncodingJobs = new Map();
 const pendingVibeRecoveries = new Map();
 const vibeCacheHmacSecret = randomBytes(32);
 const confirmedNovelAiVibeCacheKeys = new Set();
+
+const loadCloudQueuePreferences = async () => {
+  try {
+    const saved = JSON.parse(await readFile(CLOUD_QUEUE_CONFIG_FILE, 'utf8'));
+    return {
+      enabled: saved.enabled === true,
+      greeting: String(saved.greeting || '正在生成中～').trim().slice(0, 15),
+      showGreeting: saved.showGreeting !== false,
+    };
+  } catch {
+    return { enabled: false, greeting: '正在生成中～', showGreeting: true };
+  }
+};
+
+let cloudQueueConfigWrite = Promise.resolve();
+const saveCloudQueuePreferences = preferences => {
+  const snapshot = { ...preferences };
+  cloudQueueConfigWrite = cloudQueueConfigWrite.catch(() => {}).then(async () => {
+    await mkdir(join(process.cwd(), 'local-data'), { recursive: true });
+    const temporary = `${CLOUD_QUEUE_CONFIG_FILE}.tmp`;
+    await writeFile(temporary, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8');
+    await rename(temporary, CLOUD_QUEUE_CONFIG_FILE);
+  });
+  return cloudQueueConfigWrite;
+};
+
+const delay = (milliseconds, signal) => new Promise((resolve, reject) => {
+  if (signal?.aborted) return reject(signal.reason || new DOMException('Aborted', 'AbortError'));
+  const finish = () => {
+    signal?.removeEventListener('abort', abort);
+    resolve();
+  };
+  const timer = setTimeout(finish, milliseconds);
+  const abort = () => {
+    clearTimeout(timer);
+    reject(signal.reason || new DOMException('Aborted', 'AbortError'));
+  };
+  signal?.addEventListener('abort', abort, { once: true });
+});
+
+const readQueueJson = async response => {
+  const text = await response.text();
+  let payload;
+  try { payload = JSON.parse(text || '{}'); } catch { payload = null; }
+  if (!response.ok) {
+    const error = new Error(payload?.detail || text || `队列服务返回 ${response.status}`);
+    error.status = 503;
+    error.code = 'CLOUD_QUEUE_UNAVAILABLE';
+    throw error;
+  }
+  return payload || {};
+};
+
+export class CloudQueueCoordinator {
+  constructor(requestRemote, baseUrl = CLOUD_QUEUE_URL) {
+    this.requestRemote = requestRemote;
+    this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.clientId = randomUUID();
+    this.tasks = new Map();
+  }
+
+  update(taskId, patch) {
+    const previous = this.tasks.get(taskId) || { taskId };
+    const next = { ...previous, ...patch, updatedAt: Date.now() };
+    this.tasks.set(taskId, next);
+    for (const [id, status] of this.tasks) {
+      if (Date.now() - status.updatedAt > CLOUD_QUEUE_STATUS_TTL) this.tasks.delete(id);
+    }
+    return next;
+  }
+
+  get(taskId) {
+    return this.tasks.get(taskId) || null;
+  }
+
+  async post(path, body) {
+    return readQueueJson(await this.requestRemote(`${this.baseUrl}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    }));
+  }
+
+  async join({ apiKey, taskId, greeting = '', showGreeting = true, signal }) {
+    const keyHash = createHash('sha256').update(apiKey).digest('hex');
+    const userId = this.clientId;
+    const common = { key_hash: keyHash, user_id: userId, task_id: taskId };
+    this.update(taskId, { phase: 'joining', position: null, queueSize: null, greeting: null, cancelable: true });
+    const joined = await this.post('/join-queue', { ...common, greeting: String(greeting).trim().slice(0, 15) || null });
+    if (signal?.aborted) {
+      await this.post('/leave-queue', { ...common, lock_token: joined.lock_token || null }).catch(() => {});
+      throw signal.reason || new DOMException('Aborted', 'AbortError');
+    }
+    this.update(taskId, {
+      phase: joined.position === 0 && joined.lock_token ? 'ready' : 'waiting',
+      position: Number(joined.position) || 0,
+      queueSize: Number(joined.queue_size) || 1,
+      cancelable: true,
+    });
+    if (joined.position === 0 && joined.lock_token) return { ...common, lockToken: joined.lock_token };
+
+    let failures = 0;
+    try {
+      while (true) {
+        await delay(CLOUD_QUEUE_POLL_INTERVAL, signal);
+        try {
+        const query = new URLSearchParams(common).toString();
+        const status = await readQueueJson(await this.requestRemote(`${this.baseUrl}/my-turn?${query}`, {
+          signal: AbortSignal.timeout(15_000),
+        }));
+        failures = 0;
+        if (status.is_my_turn && status.lock_token) {
+          this.update(taskId, { phase: 'ready', position: 0, queueSize: Number(status.queue_size) || 1, cancelable: true });
+          return { ...common, lockToken: status.lock_token };
+        }
+        this.update(taskId, {
+          phase: 'waiting',
+          position: Number(status.position) || 0,
+          queueSize: Number(status.queue_size) || 1,
+          greeting: showGreeting ? String(status.current_greeting || '').slice(0, 15) : null,
+          cancelable: true,
+        });
+        } catch (error) {
+          failures++;
+          if (failures >= CLOUD_QUEUE_MAX_FAILURES) throw error;
+        }
+      }
+    } catch (error) {
+      await this.post('/leave-queue', { ...common, lock_token: null }).catch(() => {});
+      throw error;
+    }
+  }
+
+  async release(lock, leave = false) {
+    if (!lock) return;
+    const path = leave ? '/leave-queue' : '/complete';
+    await this.post(path, {
+      key_hash: lock.key_hash,
+      user_id: lock.user_id,
+      task_id: lock.task_id,
+      lock_token: lock.lockToken || null,
+    }).catch(() => {});
+  }
+}
 
 export const classifyAitagRemoteTarget = value => {
   let target;
@@ -250,14 +400,14 @@ export const parseInvalidVibeCacheKeys = async response => {
   return { invalidKeys: null, text };
 };
 
-const fetchNovelAiGeneration = (payload, authorization) => fetch(NAI_GENERATE_URL, {
+const fetchNovelAiGeneration = (payload, authorization, signal = AbortSignal.timeout(300_000)) => fetch(NAI_GENERATE_URL, {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
     'Authorization': authorization,
   },
   body: JSON.stringify(payload),
-  signal: AbortSignal.timeout(300_000),
+  signal,
 });
 
 export const generateWithVibeCacheRetry = async (
@@ -336,11 +486,27 @@ const recoverPendingVibeEncodings = async workerPort => {
   }
 };
 
-const handleGenerateRequest = async (req, res, lanSecret, workerPort) => {
+const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences) => {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
   const authorization = String(req.headers.authorization || '');
   if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
+
+  const queueEnabled = queuePreferences.enabled === true;
+  const requestedTaskId = String(req.headers['x-nai-queue-task-id'] || '');
+  const queueTaskId = /^[a-zA-Z0-9-]{8,80}$/.test(requestedTaskId) ? requestedTaskId : randomUUID();
+  const queueGreeting = String(queuePreferences.greeting || '').slice(0, 15);
+  const showQueueGreeting = queuePreferences.showGreeting !== false;
+  const requestController = new AbortController();
+  const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(300_000)]);
+  let queueLock = null;
+  let requestAborted = false;
+  const abortRequest = () => {
+    requestAborted = true;
+    requestController.abort(new DOMException('用户已取消排队', 'AbortError'));
+  };
+  req.once('aborted', abortRequest);
+  if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'preparing', cancelable: true, controller: requestController });
 
   try {
     const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
@@ -377,9 +543,26 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort) => {
         .map(item => item.cache_secret_key));
     }
     if (payload?.parameters) delete payload.parameters._local_vibes;
+    if (queueEnabled) {
+      queueLock = await cloudQueue.join({
+        apiKey: authorization.slice(7).trim(),
+        taskId: queueTaskId,
+        greeting: queueGreeting,
+        showGreeting: showQueueGreeting,
+        signal: requestController.signal,
+      });
+      cloudQueue.update(queueTaskId, { phase: 'generating', position: 0, cancelable: false, controller: requestController });
+      await delay(1000, requestController.signal);
+    }
     const response = resolvedVibeEncodings
-      ? await generateWithVibeCacheRetry(payload, authorization, resolvedVibeEncodings, vibeCacheKeysSentWithData)
-      : await fetchNovelAiGeneration(payload, authorization);
+      ? await generateWithVibeCacheRetry(
+        payload,
+        authorization,
+        resolvedVibeEncodings,
+        vibeCacheKeysSentWithData,
+        (nextPayload, nextAuthorization) => fetchNovelAiGeneration(nextPayload, nextAuthorization, generationSignal),
+      )
+      : await fetchNovelAiGeneration(payload, authorization, generationSignal);
     const estimatedCost = response.ok ? estimateNovelAiGenerationCost(payload) : 0;
     const anlasBudget = estimatedCost > 0
       ? await spendAnlasBudget(req, workerPort, estimatedCost, 'generation')
@@ -394,11 +577,21 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort) => {
     const contentDisposition = response.headers.get('content-disposition');
     if (contentLength) headers['Content-Length'] = contentLength;
     if (contentDisposition) headers['Content-Disposition'] = contentDisposition;
+    if (queueEnabled) headers['X-Nai-Queue-Task-Id'] = queueTaskId;
+    if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'completed', cancelable: false, controller: null });
     res.writeHead(response.status, headers);
     if (!response.body) return res.end();
     Readable.fromWeb(response.body).on('error', error => res.destroy(error)).pipe(res);
   } catch (error) {
+    if (queueEnabled) cloudQueue.update(queueTaskId, {
+      phase: requestAborted || error?.name === 'AbortError' ? 'cancelled' : 'error',
+      error: requestAborted ? '已取消排队' : (error.message || '队列服务不可用'),
+      cancelable: false,
+      controller: null,
+    });
     if (res.headersSent) return res.destroy(error);
+    if (error?.code === 'CLOUD_QUEUE_UNAVAILABLE') return sendJson(res, 503, { error: `公共队列服务不可用：${error.message}`, code: error.code });
+    if (requestAborted || error?.name === 'AbortError') return sendJson(res, 499, { error: '已取消排队', code: 'QUEUE_CANCELLED' });
     if (Number(error.status)) return sendJson(res, Number(error.status), { error: error.message });
     const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
     return sendJson(res, timedOut ? 504 : 502, {
@@ -407,6 +600,9 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort) => {
         : '电脑无法连接 NovelAI，请检查电脑 VPN 是否正常连接',
       code: timedOut ? 'NAI_PROXY_TIMEOUT' : 'NAI_PROXY_UNREACHABLE',
     });
+  } finally {
+    req.off('aborted', abortRequest);
+    if (queueLock) await cloudQueue.release(queueLock, requestAborted);
   }
 };
 
@@ -727,6 +923,8 @@ const proxyRequest = (req, res, workerPort) => {
 export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSecret = '', outboundProxyUrl = '' } = {}) {
   const proxyAgent = outboundProxyUrl ? new ProxyAgent(outboundProxyUrl) : null;
   const remoteFetch = (url, options = {}) => undiciFetch(url, { ...options, ...(proxyAgent ? { dispatcher: proxyAgent } : {}) });
+  const cloudQueue = new CloudQueueCoordinator(remoteFetch);
+  const cloudQueuePreferences = await loadCloudQueuePreferences();
   const cache = new ThumbnailCache();
   await cache.init();
   await recoverPendingVibeEncodings(workerPort);
@@ -734,7 +932,36 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
     let url;
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
     if (url.pathname === '/__internal/aitag-fetch') return handleAitagRemoteRequest(req, res, url, lanSecret, remoteFetch);
-    if (url.pathname === '/api/generate') return handleGenerateRequest(req, res, lanSecret, workerPort);
+    if (url.pathname === '/api/generate') return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, cloudQueuePreferences);
+    if (url.pathname === '/api/generation-queue/preferences') {
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      if (req.method === 'GET') return sendJson(res, 200, cloudQueuePreferences);
+      if (req.method !== 'PUT') return sendJson(res, 405, { error: 'Method not allowed' });
+      const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
+      cloudQueuePreferences.enabled = body.enabled === true;
+      cloudQueuePreferences.greeting = String(body.greeting || '正在生成中～').trim().slice(0, 15);
+      cloudQueuePreferences.showGreeting = body.showGreeting !== false;
+      await saveCloudQueuePreferences(cloudQueuePreferences);
+      return sendJson(res, 200, cloudQueuePreferences);
+    }
+    if (url.pathname === '/api/generation-queue/status') {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      const status = cloudQueue.get(url.searchParams.get('taskId') || '');
+      if (!status) return sendJson(res, 404, { error: '排队任务不存在' });
+      const { controller, ...safeStatus } = status;
+      return sendJson(res, 200, safeStatus);
+    }
+    if (url.pathname === '/api/generation-queue/cancel') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
+      const status = cloudQueue.get(String(body.taskId || ''));
+      if (!status?.cancelable || !status.controller) return sendJson(res, 409, { error: '当前任务已不能取消' });
+      status.controller.abort(new DOMException('用户已取消排队', 'AbortError'));
+      cloudQueue.update(status.taskId, { phase: 'cancelled', cancelable: false, controller: null });
+      return sendJson(res, 200, { status: 'ok' });
+    }
     const vibeEncodeMatch = url.pathname.match(/^\/api\/vibes\/([^/]+)\/encodings$/);
     if (vibeEncodeMatch) return handleVibeEncodeRequest(req, res, lanSecret, workerPort, decodeURIComponent(vibeEncodeMatch[1]));
     if (url.pathname !== '/api/media') return proxyRequest(req, res, workerPort);

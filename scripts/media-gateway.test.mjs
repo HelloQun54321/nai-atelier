@@ -9,7 +9,40 @@ import {
   estimateNovelAiGenerationCost,
   normalizeVibeStrengths,
   parseInvalidVibeCacheKeys,
+  CloudQueueCoordinator,
 } from './media-gateway.mjs';
+
+test('cloud queue uses st-chatu8 key hashing without sending the raw NovelAI key', async () => {
+  const calls = [];
+  const remote = async (url, options = {}) => {
+    calls.push({ url, options });
+    if (url.endsWith('/join-queue')) return new Response(JSON.stringify({ position: 1, queue_size: 2 }), { status: 200 });
+    if (url.includes('/my-turn?')) return new Response(JSON.stringify({ is_my_turn: true, position: 0, queue_size: 2, lock_token: 'lock' }), { status: 200 });
+    return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
+  };
+  const coordinator = new CloudQueueCoordinator(remote, 'https://queue.example');
+  const lock = await coordinator.join({ apiKey: 'secret-key', taskId: 'task-12345678', greeting: '你好', signal: new AbortController().signal });
+  await coordinator.release(lock);
+  const joined = JSON.parse(calls[0].options.body);
+  assert.equal(joined.key_hash, '85dbe15d75ef9308c7ae0f33c7a324cc6f4bf519a2ed2f3027bd33c140a4f9aa');
+  assert.equal(calls.some(call => JSON.stringify(call).includes('secret-key')), false);
+  assert.equal(calls.at(-1).url.endsWith('/complete'), true);
+});
+
+test('cancelling while waiting removes the task from the cloud queue', async () => {
+  const calls = [];
+  const remote = async (url, options = {}) => {
+    calls.push({ url, options });
+    if (url.endsWith('/join-queue')) return new Response(JSON.stringify({ position: 2, queue_size: 3 }), { status: 200 });
+    return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
+  };
+  const coordinator = new CloudQueueCoordinator(remote, 'https://queue.example');
+  const controller = new AbortController();
+  const pending = coordinator.join({ apiKey: 'secret-key', taskId: 'task-cancel-123', signal: controller.signal });
+  setTimeout(() => controller.abort(new DOMException('cancelled', 'AbortError')), 10);
+  await assert.rejects(pending, error => error.name === 'AbortError');
+  assert.equal(calls.at(-1).url.endsWith('/leave-queue'), true);
+});
 
 test('AITag computer proxy only accepts known API and image targets', () => {
   assert.equal(classifyAitagRemoteTarget('https://aitag.win/api/ai_works_search?page=1'), 'json');
