@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { createServer, request as httpRequest } from 'node:http';
 import { connect as connectSocket } from 'node:net';
@@ -15,12 +15,15 @@ const CACHE_PRUNE_TARGET = 900 * 1024 * 1024;
 const SOURCE_LIMIT = 2048;
 const INPUT_LIMIT = 30 * 1024 * 1024;
 const GENERATION_REQUEST_LIMIT = 20 * 1024 * 1024;
+const VIBE_ENCODING_CACHE_LIMIT = 128 * 1024 * 1024;
 const NAI_GENERATE_URL = 'https://image.novelai.net/ai/generate-image';
 const NAI_ENCODE_VIBE_URL = 'https://image.novelai.net/ai/encode-vibe';
 const ALLOWED_REMOTE_HOSTS = new Set(['ai-img.10118899.xyz', 'aitag.win']);
 const THUMB_WIDTHS = new Map([['thumb-320', 320], ['thumb-640', 640]]);
 const vibeEncodingJobs = new Map();
 const pendingVibeRecoveries = new Map();
+const vibeCacheHmacSecret = randomBytes(32);
+const confirmedNovelAiVibeCacheKeys = new Set();
 
 const normalizeIp = value => String(value || '').replace(/^::ffff:/, '');
 const isLoopbackIp = value => {
@@ -123,6 +126,117 @@ export const normalizeVibeStrengths = slots => {
   return total > 1 ? values.map(value => value / total) : values;
 };
 
+export class VibeEncodingMemoryCache {
+  constructor(limit = VIBE_ENCODING_CACHE_LIMIT) {
+    this.limit = limit;
+    this.total = 0;
+    this.entries = new Map();
+    this.inFlight = new Map();
+  }
+
+  async get(key, loader) {
+    const cached = this.entries.get(key);
+    if (cached) {
+      this.entries.delete(key);
+      this.entries.set(key, cached);
+      return cached.value;
+    }
+    if (this.inFlight.has(key)) return this.inFlight.get(key);
+    const promise = Promise.resolve().then(loader).then(value => {
+      const encoding = String(value?.encoding || '');
+      const size = Buffer.byteLength(encoding, 'base64');
+      if (encoding && size > 0 && size <= this.limit) {
+        while (this.total + size > this.limit && this.entries.size) {
+          const oldestKey = this.entries.keys().next().value;
+          const oldest = this.entries.get(oldestKey);
+          this.entries.delete(oldestKey);
+          this.total -= oldest.size;
+        }
+        this.entries.set(key, { value, size });
+        this.total += size;
+      }
+      return value;
+    }).finally(() => this.inFlight.delete(key));
+    this.inFlight.set(key, promise);
+    return promise;
+  }
+}
+
+const vibeEncodingMemoryCache = new VibeEncodingMemoryCache();
+
+export const getVibeCacheSecretKey = encoding => createHmac('sha256', vibeCacheHmacSecret)
+  .update(String(encoding || ''))
+  .digest('hex');
+
+export const buildCachedVibeReferences = (encodings, includeDataFor = null) => encodings.map(encoding => {
+  const cacheSecretKey = getVibeCacheSecretKey(encoding);
+  const includeData = includeDataFor
+    ? includeDataFor.has(cacheSecretKey)
+    : !confirmedNovelAiVibeCacheKeys.has(cacheSecretKey);
+  return {
+    cache_secret_key: cacheSecretKey,
+    ...(includeData ? { data: encoding } : {}),
+  };
+});
+
+export const parseInvalidVibeCacheKeys = async response => {
+  if (response.status !== 400) return null;
+  const text = await response.text();
+  try {
+    const payload = JSON.parse(text);
+    if (payload?.message === 'INVALID_CACHE_KEYS' && Array.isArray(payload?.details?.invalidKeys)) {
+      return { invalidKeys: new Set(payload.details.invalidKeys.map(String)), text };
+    }
+  } catch {
+    // The caller will return the original non-JSON error body.
+  }
+  return { invalidKeys: null, text };
+};
+
+const fetchNovelAiGeneration = (payload, authorization) => fetch(NAI_GENERATE_URL, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': authorization,
+  },
+  body: JSON.stringify(payload),
+  signal: AbortSignal.timeout(300_000),
+});
+
+export const generateWithVibeCacheRetry = async (
+  payload,
+  authorization,
+  encodings,
+  cacheKeysSentWithData,
+  requestGeneration = fetchNovelAiGeneration,
+) => {
+  let response = await requestGeneration(payload, authorization);
+  if (response.status === 400) {
+    const parsed = await parseInvalidVibeCacheKeys(response);
+    if (parsed?.invalidKeys?.size) {
+      const knownKeys = new Set(encodings.map(getVibeCacheSecretKey));
+      const invalidKeys = new Set([...parsed.invalidKeys].filter(key => knownKeys.has(key)));
+      if (invalidKeys.size) {
+        for (const key of invalidKeys) confirmedNovelAiVibeCacheKeys.delete(key);
+        const retryWithData = new Set([...cacheKeysSentWithData, ...invalidKeys]);
+        payload.parameters.reference_image_multiple_cached = buildCachedVibeReferences(encodings, retryWithData);
+        response = await requestGeneration(payload, authorization);
+      } else {
+        return new Response(parsed.text, { status: 400, headers: response.headers });
+      }
+    } else if (parsed) {
+      return new Response(parsed.text, { status: 400, headers: response.headers });
+    }
+  }
+  if (response.ok) {
+    for (const key of cacheKeysSentWithData) confirmedNovelAiVibeCacheKeys.add(key);
+    for (const item of payload.parameters.reference_image_multiple_cached || []) {
+      if (item.data) confirmedNovelAiVibeCacheKeys.add(item.cache_secret_key);
+    }
+  }
+  return response;
+};
+
 const internalWorkerRequest = {
   headers: {},
   socket: { remoteAddress: '127.0.0.1', localAddress: '127.0.0.1' },
@@ -176,31 +290,39 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort) => {
     let payload;
     try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
     const localVibes = payload?.parameters?._local_vibes;
+    let resolvedVibeEncodings = null;
+    let vibeCacheKeysSentWithData = new Set();
     if (localVibes?.enabled && Array.isArray(localVibes.slots) && localVibes.slots.length) {
       const slots = localVibes.slots.slice(0, 4);
       if (localVibes.slots.length > 4) return sendJson(res, 400, { error: '一次最多使用 4 个 Vibe' });
-      const resolved = await Promise.all(slots.map(slot => requestWorkerJson(
-        `/api/vibes/${encodeURIComponent(slot.vibeId)}/encodings/${encodeURIComponent(slot.encodingId)}/data`, req, workerPort
+      const resolved = await Promise.all(slots.map(slot => vibeEncodingMemoryCache.get(
+        `${slot.vibeId}:${slot.encodingId}`,
+        () => requestWorkerJson(`/api/vibes/${encodeURIComponent(slot.vibeId)}/encodings/${encodeURIComponent(slot.encodingId)}/data`, req, workerPort)
       )));
       for (const item of resolved) {
         if (item.variant?.model !== 'nai-diffusion-4-5-full') return sendJson(res, 400, { error: 'Vibe 缺少 V4.5 Full 编码' });
+        if (typeof item.encoding !== 'string' || item.encoding.length < 100) return sendJson(res, 400, { error: 'Vibe 永久编码缺失或已损坏' });
       }
-      payload.parameters.reference_image_multiple = resolved.map(item => item.encoding);
+      resolvedVibeEncodings = resolved.map(item => item.encoding);
+      delete payload.parameters.reference_image_multiple;
+      delete payload.parameters.reference_information_extracted_multiple;
+      delete payload.parameters.reference_image_multiple_cached;
+      payload.parameters.reference_image_multiple_cached = buildCachedVibeReferences(resolvedVibeEncodings);
       payload.parameters.reference_strength_multiple = localVibes.normalizeStrengths === false
         ? slots.map(slot => Math.max(0, Math.min(1, Number(slot.strength) || 0)))
         : normalizeVibeStrengths(slots);
+      payload.parameters.normalize_reference_strength_multiple = false;
+      if (payload.parameters.reference_image_multiple_cached.length !== payload.parameters.reference_strength_multiple.length) {
+        return sendJson(res, 400, { error: 'Vibe 编码与强度数量不一致' });
+      }
+      vibeCacheKeysSentWithData = new Set(payload.parameters.reference_image_multiple_cached
+        .filter(item => item.data)
+        .map(item => item.cache_secret_key));
     }
     if (payload?.parameters) delete payload.parameters._local_vibes;
-    const body = Buffer.from(JSON.stringify(payload));
-    const response = await fetch(NAI_GENERATE_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': authorization,
-      },
-      body,
-      signal: AbortSignal.timeout(300_000),
-    });
+    const response = resolvedVibeEncodings
+      ? await generateWithVibeCacheRetry(payload, authorization, resolvedVibeEncodings, vibeCacheKeysSentWithData)
+      : await fetchNovelAiGeneration(payload, authorization);
     const headers = {
       'Content-Type': response.headers.get('content-type') || 'application/octet-stream',
       'Cache-Control': 'private, no-store',
