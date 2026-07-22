@@ -69,7 +69,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   return (
     <div className="relative flex h-[100dvh] bg-gray-50 font-sans text-gray-900 transition-colors duration-300 dark:bg-gray-900 dark:text-gray-100">
       {toast && <div className="fixed left-1/2 top-4 z-[2200] w-[90%] -translate-x-1/2 text-center md:top-6 md:w-auto"><div className={`flex items-center justify-center gap-2 rounded-xl px-5 py-3 shadow-xl ${toast.type === 'error' ? 'bg-red-500 text-white' : 'bg-gray-800 text-white dark:bg-white dark:text-gray-900'}`}><span>{toast.type === 'error' ? '❌' : '✅'}</span><span className="text-sm font-medium">{toast.message}</span></div></div>}
-      <CloudQueueStatus />
+      <CloudQueueStatus hidden={Boolean(hideNav)} />
 
       <aside className="hidden w-64 flex-shrink-0 flex-col border-r border-gray-200 bg-white transition-colors dark:border-gray-800 dark:bg-gray-950 md:flex">
         <div className="flex items-center space-x-3 border-b border-gray-200 p-6 dark:border-gray-800"><img src="/artist-palette-3d.png" alt="" className="h-8 w-8 object-contain" data-safe-mode-ignore="true" aria-hidden="true" /><span className="font-bold tracking-wide text-gray-800 dark:text-gray-200">咒语构建终端</span></div>

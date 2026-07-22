@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem } from '../types';
 import { compilePrompt } from '../services/promptUtils';
 import { generateImage } from '../services/naiService';
+import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
 import { db } from '../services/dbService';
@@ -51,6 +52,7 @@ const PresetSourceBadges: React.FC<{ sources: Record<string, PresetSource> }> = 
 
 export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
+    const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
     const isOwner = true;
     const isGuest = false;
@@ -1569,7 +1571,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
             {!lightboxImg && !showImportPreset && !importCandidate && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
                 {(displayedPreviewImage || chain.previewImage) && <button type="button" onClick={() => setLightboxImg(displayedPreviewImage || chain.previewImage || null)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-700" aria-label="查看最近生成结果"><SmartImage src={displayedPreviewImage || chain.previewImage || ''} alt="最近生成结果" /></button>}
-                <button onClick={handleGenerate} disabled={isGenerating} className="mobile-touch rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 px-6 text-sm font-bold text-white shadow-xl shadow-indigo-500/30 disabled:opacity-60">{isGenerating ? '生成中…' : `生成 · ${estimatedAnlasCost ? `${estimatedAnlasCost} 点` : '免费'}`}</button>
+                {isGenerating && queueStatus
+                    ? <InlineCloudQueueStatus compact className="min-w-64 max-w-[calc(100vw-5rem)] shadow-xl shadow-indigo-500/30" />
+                    : <button onClick={handleGenerate} disabled={isGenerating} className="mobile-touch rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 px-6 text-sm font-bold text-white shadow-xl shadow-indigo-500/30 disabled:opacity-60">{isGenerating ? '生成中…' : `生成 · ${estimatedAnlasCost ? `${estimatedAnlasCost} 点` : '免费'}`}</button>}
             </div>}
 
             {/* Lightbox Modal */}

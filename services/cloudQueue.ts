@@ -18,6 +18,8 @@ export interface CloudQueueStatus {
 
 const defaults: CloudQueuePreferences = { enabled: false, greeting: '正在生成中～', showGreeting: true };
 let cachedPreferences: CloudQueuePreferences = defaults;
+let currentQueueStatus: CloudQueueStatus | null = null;
+const statusListeners = new Set<() => void>();
 
 export const getCachedCloudQueuePreferences = (): CloudQueuePreferences => cachedPreferences;
 
@@ -39,7 +41,16 @@ export const setCloudQueuePreferences = async (preferences: CloudQueuePreference
 };
 
 export const emitCloudQueueStatus = (status: CloudQueueStatus | null) => {
+  currentQueueStatus = status;
+  statusListeners.forEach(listener => listener());
   window.dispatchEvent(new CustomEvent('nai-cloud-queue-status', { detail: status }));
+};
+
+export const getCurrentCloudQueueStatus = () => currentQueueStatus;
+
+export const subscribeCloudQueueStatus = (listener: () => void) => {
+  statusListeners.add(listener);
+  return () => statusListeners.delete(listener);
 };
 
 export const cancelCloudQueueTask = async (taskId: string) => {

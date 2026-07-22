@@ -2,6 +2,7 @@
 import React, { useRef, useState } from 'react';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { OriginalImage } from './SmartImage';
+import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 
 interface ChainEditorPreviewProps {
     subjectPrompt: string;
@@ -58,6 +59,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+    const queueStatus = useCloudQueueStatus();
 
     // 跨域图片下载：先 fetch 转 blob，再创建本地 URL 下载
     const handleDownload = async (imageUrl: string, filename: string) => {
@@ -112,14 +114,14 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                 </div>
 
                 {/* Generated Image */}
-                <button
+                {isGenerating && queueStatus ? <InlineCloudQueueStatus className="mb-4 flex-shrink-0" /> : <button
                     onClick={handleGenerate}
                     disabled={isGenerating}
                     className={`w-full py-3 rounded-lg font-bold text-white shadow-lg transition-all mb-4 flex-shrink-0 ${isGenerating ? 'bg-gray-400 cursor-wait' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500'
                         }`}
                 >
                     {isGenerating ? '生成中...' : `生成预览 · ${estimatedAnlasCost ? `${estimatedAnlasCost} 点` : '免费'}`}
-                </button>
+                </button>}
                 {errorMsg && <div className="text-red-500 text-xs mb-2 text-center">{errorMsg}</div>}
 
                 <div
