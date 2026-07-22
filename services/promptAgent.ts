@@ -40,10 +40,49 @@ export interface PromptAgentModel {
   current?: boolean;
 }
 
+export type PromptAgentThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+export interface PromptAgentSession {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  provider: string;
+  model: string;
+  thinkingLevel: PromptAgentThinkingLevel;
+  messageCount?: number;
+  running?: boolean;
+}
+
+export interface PromptAgentUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+  reasoning?: number;
+  cost: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+}
+
+export interface PromptAgentHistoryMessage {
+  id: string;
+  role: 'user' | 'agent';
+  text: string;
+  model?: string;
+  provider?: string;
+  usage?: PromptAgentUsage;
+  stopReason?: string;
+  timestamp?: number;
+}
+
 export type PromptAgentEvent =
+  | { type: 'response_start'; id: string }
   | { type: 'text_delta'; delta: string }
-  | { type: 'tool_start'; toolName: string }
-  | { type: 'tool_end'; toolName: string; isError: boolean }
+  | { type: 'thinking_delta'; delta: string }
+  | { type: 'response_end'; model: string; provider: string; usage: PromptAgentUsage; stopReason: string; timestamp: number }
+  | { type: 'tool_start'; toolCallId: string; toolName: string; args: unknown }
+  | { type: 'tool_end'; toolCallId: string; toolName: string; isError: boolean; result?: unknown }
+  | { type: 'queue'; action: 'steer' | 'followUp'; message: string }
   | { type: 'action'; action: PromptAgentAction }
   | { type: 'project_changed'; resource: string }
   | { type: 'done'; draft: PromptAgentDraft; message: string; provider: string; model: string }
@@ -95,22 +134,50 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return (await response.json()).items || [];
   },
+  listSessions: async (legacySessionId = ''): Promise<PromptAgentSession[]> => {
+    const response = await fetch(`/api/prompt-agent/sessions?legacySessionId=${encodeURIComponent(legacySessionId)}`, { cache: 'no-store' });
+    if (!response.ok) return readError(response) as never;
+    return (await response.json()).items || [];
+  },
+  createSession: async (input: { title?: string } = {}): Promise<PromptAgentSession> => {
+    const response = await fetch('/api/prompt-agent/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  updateSession: async (sessionId: string, patch: Partial<Pick<PromptAgentSession, 'title' | 'provider' | 'model' | 'thinkingLevel'>>): Promise<PromptAgentSession> => {
+    const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  deleteSession: async (sessionId: string) => {
+    const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+    if (!response.ok) return readError(response);
+  },
+  control: async (sessionId: string, action: 'steer' | 'followUp' | 'abort' | 'clear', message?: string) => {
+    const response = await fetch('/api/prompt-agent/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId, action, message }) });
+    if (!response.ok) return readError(response);
+  },
   resetSession: async (sessionId: string) => {
     const response = await fetch('/api/prompt-agent/session/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId }) });
     if (!response.ok) return readError(response);
+  },
+  reviseMessage: async (sessionId: string, messageId: string, content: string): Promise<PromptAgentHistoryMessage[]> => {
+    const response = await fetch('/api/prompt-agent/session/revise', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId, messageId, content }) });
+    if (!response.ok) return readError(response) as never;
+    return (await response.json()).items || [];
   },
   executeProjectAction: async (action: { action: string; resourceId?: string; payload?: Record<string, unknown> }) => {
     const response = await fetch('/api/prompt-agent/project-action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action) });
     if (!response.ok) return readError(response) as never;
     return response.json() as Promise<{ ok: boolean; action: string; resourceId?: string }>;
   },
-  getSession: async (sessionId: string): Promise<Array<{ id: string; role: 'user' | 'agent'; text: string }>> => {
+  getSession: async (sessionId: string): Promise<PromptAgentHistoryMessage[]> => {
     const response = await fetch(`/api/prompt-agent/session?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' });
     if (!response.ok) return readError(response) as never;
     return (await response.json()).items || [];
   },
   run: async (
-    input: { sessionId: string; message: string; draft: PromptAgentDraft; context: { presets: unknown[]; vibes: unknown[]; clientSettings?: Record<string, unknown> } },
+    input: { sessionId: string; message: string; mode?: 'prompt' | 'retry'; draft: PromptAgentDraft; context: { presets: unknown[]; vibes: unknown[]; clientSettings?: Record<string, unknown> } },
     onEvent: (event: PromptAgentEvent) => void,
     signal?: AbortSignal,
   ) => {

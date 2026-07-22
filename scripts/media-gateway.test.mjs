@@ -35,6 +35,30 @@ test('prompt agent keeps API keys encrypted and out of its public config', async
   assert.equal(loginStep.prompt.type, 'secret');
 });
 
+test('prompt agent exposes pi steering, follow-up, queue clearing and abort controls', () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const calls = [];
+  const events = [];
+  service.activeAgents.set('session', {
+    emit: event => events.push(event),
+    agent: {
+      steer: message => calls.push(['steer', message]),
+      followUp: message => calls.push(['followUp', message]),
+      clearAllQueues: () => calls.push(['clear']),
+      abort: () => calls.push(['abort']),
+    },
+  });
+  service.controlSession('session', 'steer', 'change direction');
+  service.controlSession('session', 'followUp', 'then summarize');
+  service.controlSession('session', 'clear');
+  service.controlSession('session', 'abort');
+  assert.equal(calls[0][0], 'steer');
+  assert.equal(calls[0][1].content, 'change direction');
+  assert.equal(calls[1][0], 'followUp');
+  assert.deepEqual(calls.slice(2), [['clear'], ['abort']]);
+  assert.deepEqual(events.map(event => event.action), ['steer', 'followUp']);
+});
+
 test('prompt agent Vibe tool accepts only known encodings and at most four slots', async () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
   const draft = { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' } };

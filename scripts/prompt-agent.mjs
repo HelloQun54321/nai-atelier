@@ -1,8 +1,8 @@
 import { Agent } from '@earendil-works/pi-agent-core';
 import { InMemoryCredentialStore, Type } from '@earendil-works/pi-ai';
 import { builtinModels, builtinProviders, getBuiltinModels } from '@earendil-works/pi-ai/providers/all';
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
-import { mkdir, readFile, rename, unlink, writeFile } from 'fs/promises';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'crypto';
+import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { getGlobalDispatcher, ProxyAgent, setGlobalDispatcher } from 'undici';
 
@@ -18,6 +18,7 @@ const CATEGORY_LABELS = { 0: '普通', 1: '画师', 3: '作品', 4: '角色', 5:
 const MAX_SESSION_MESSAGES = 48;
 const MAX_PROJECT_LIST_ITEMS = 100;
 const MAX_AGENT_IMAGE_BYTES = 30 * 1024 * 1024;
+const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 let proxyRunCount = 0;
 let previousDispatcher = null;
 let sharedProxyDispatcher = null;
@@ -139,7 +140,7 @@ export class PromptAgentService {
     this.encryptionKey = createHash('sha256').update(`nai-prompt-agent|${lanSecret}`).digest();
     this.outboundProxyUrl = outboundProxyUrl;
     this.config = { version: 2, provider: 'google', model: defaultModelFor('google'), encryptedKeys: {} };
-    this.runningSessions = new Set();
+    this.activeAgents = new Map();
     this.tagManifest = null;
   }
 
@@ -324,11 +325,80 @@ export class PromptAgentService {
     return join(SESSION_DIR, `${hash}.json`);
   }
 
-  async loadMessages(sessionId) {
+  normalizeThinkingLevel(value, reasoning = true) {
+    if (!reasoning) return 'off';
+    return THINKING_LEVELS.has(value) && value !== 'off' ? value : 'low';
+  }
+
+  async readSession(sessionId) {
     try {
       const value = JSON.parse(await readFile(this.sessionFile(sessionId), 'utf8'));
-      return Array.isArray(value.messages) ? value.messages.slice(-MAX_SESSION_MESSAGES) : [];
-    } catch { return []; }
+      return value && typeof value === 'object' ? value : {};
+    } catch { return {}; }
+  }
+
+  async writeSession(sessionId, value) {
+    await atomicJsonWrite(this.sessionFile(sessionId), value);
+  }
+
+  async createSession(input = {}) {
+    const now = Date.now();
+    const id = `agent-${randomUUID()}`;
+    const title = text(input.title || '新对话').trim().slice(0, 60) || '新对话';
+    const config = this.publicConfig();
+    const modelInfo = listModels(config.provider).find(item => item.id === config.model);
+    const legacyMessages = input.legacySessionId ? await this.loadMessages(text(input.legacySessionId).slice(0, 200)) : [];
+    const meta = {
+      id, title: legacyMessages.length ? '之前的对话' : title, createdAt: now, updatedAt: now,
+      provider: config.provider, model: config.model,
+      thinkingLevel: this.normalizeThinkingLevel(input.thinkingLevel, modelInfo?.reasoning),
+    };
+    await this.writeSession(id, { version: 2, meta, messages: legacyMessages });
+    return meta;
+  }
+
+  async listSessions(legacySessionId = '') {
+    const files = await readdir(SESSION_DIR).catch(() => []);
+    const items = [];
+    for (const file of files) {
+      if (!file.endsWith('.json')) continue;
+      try {
+        const value = JSON.parse(await readFile(join(SESSION_DIR, file), 'utf8'));
+        if (value?.meta?.id) items.push({ ...value.meta, messageCount: Array.isArray(value.messages) ? value.messages.filter(message => message?.role === 'user').length : 0, running: this.activeAgents.has(value.meta.id) });
+      } catch { /* Ignore broken legacy files. */ }
+    }
+    if (!items.length) items.push(await this.createSession({ legacySessionId }));
+    return items.sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt));
+  }
+
+  async updateSession(sessionId, patch = {}) {
+    if (this.activeAgents.has(sessionId)) throw Object.assign(new Error('Agent 工作时不能修改当前会话'), { status: 409 });
+    const value = await this.readSession(sessionId);
+    if (!value?.meta?.id) throw Object.assign(new Error('对话不存在'), { status: 404 });
+    const provider = patch.provider ? normalizeProvider(patch.provider) : value.meta.provider;
+    const model = patch.model || value.meta.model;
+    const modelInfo = listModels(provider).find(item => item.id === model);
+    const changesRuntime = patch.provider !== undefined || patch.model !== undefined || patch.thinkingLevel !== undefined;
+    if (changesRuntime && (!modelInfo || !this.configuredProviderIds().includes(provider))) throw Object.assign(new Error('所选模型不可用或尚未登录'), { status: 400 });
+    value.meta = {
+      ...value.meta,
+      ...(typeof patch.title === 'string' ? { title: text(patch.title).trim().slice(0, 60) || '未命名对话' } : {}),
+      provider, model,
+      thinkingLevel: changesRuntime ? this.normalizeThinkingLevel(patch.thinkingLevel ?? value.meta.thinkingLevel, modelInfo?.reasoning) : value.meta.thinkingLevel,
+      updatedAt: Date.now(),
+    };
+    await this.writeSession(sessionId, value);
+    return value.meta;
+  }
+
+  async deleteSession(sessionId) {
+    if (this.activeAgents.has(sessionId)) throw Object.assign(new Error('请先停止这个会话'), { status: 409 });
+    await unlink(this.sessionFile(sessionId)).catch(() => {});
+  }
+
+  async loadMessages(sessionId) {
+    const value = await this.readSession(sessionId);
+    return Array.isArray(value.messages) ? value.messages.slice(-MAX_SESSION_MESSAGES) : [];
   }
 
   async saveMessages(sessionId, messages) {
@@ -342,11 +412,20 @@ export class PromptAgentService {
           : item)
         : message.content,
     }));
-    await atomicJsonWrite(this.sessionFile(sessionId), { version: 1, updatedAt: Date.now(), messages: safeMessages });
+    const existing = await this.readSession(sessionId);
+    const meta = existing.meta?.id ? { ...existing.meta, updatedAt: Date.now() } : undefined;
+    if (meta && (!meta.title || meta.title === '新对话')) {
+      const firstUser = safeMessages.find(message => message?.role === 'user');
+      const firstText = typeof firstUser?.content === 'string' ? firstUser.content : Array.isArray(firstUser?.content) ? firstUser.content.find(item => item?.type === 'text')?.text : '';
+      if (firstText?.trim()) meta.title = firstText.trim().replace(/\s+/g, ' ').slice(0, 28);
+    }
+    await this.writeSession(sessionId, { version: meta ? 2 : 1, ...(meta ? { meta } : { updatedAt: Date.now() }), messages: safeMessages });
   }
 
   async resetSession(sessionId) {
-    await unlink(this.sessionFile(sessionId)).catch(() => {});
+    const existing = await this.readSession(sessionId);
+    if (existing.meta?.id) await this.writeSession(sessionId, { version: 2, meta: { ...existing.meta, updatedAt: Date.now() }, messages: [] });
+    else await unlink(this.sessionFile(sessionId)).catch(() => {});
   }
 
   async getSessionHistory(sessionId) {
@@ -358,8 +437,41 @@ export class PromptAgentService {
         : Array.isArray(message.content)
           ? message.content.filter(item => item?.type === 'text').map(item => item.text).join('')
           : '';
-      return content.trim() ? [{ id: `saved-${index}`, role: message.role === 'user' ? 'user' : 'agent', text: content.trim() }] : [];
-    }).slice(-24);
+      return content.trim() ? [{
+        id: `saved-${index}`, role: message.role === 'user' ? 'user' : 'agent', text: content.trim(),
+        ...(message.role === 'assistant' ? { model: message.model, provider: message.provider, usage: message.usage, stopReason: message.stopReason, timestamp: message.timestamp } : { timestamp: message.timestamp }),
+      }] : [];
+    });
+  }
+
+  async reviseSessionMessage(sessionId, messageId, content) {
+    if (this.activeAgents.has(sessionId)) throw Object.assign(new Error('请先停止当前任务'), { status: 409 });
+    const index = Number(String(messageId || '').replace(/^saved-/, ''));
+    const value = await this.readSession(sessionId);
+    if (!Number.isInteger(index) || value.messages?.[index]?.role !== 'user') throw Object.assign(new Error('找不到要编辑的用户消息'), { status: 404 });
+    const nextContent = text(content).trim().slice(0, 8_000);
+    if (!nextContent) throw Object.assign(new Error('消息不能为空'), { status: 400 });
+    const original = value.messages[index];
+    value.messages = value.messages.slice(0, index + 1);
+    value.messages[index] = { ...original, content: nextContent, timestamp: Date.now() };
+    value.meta = value.meta?.id ? { ...value.meta, updatedAt: Date.now() } : value.meta;
+    await this.writeSession(sessionId, value);
+    return this.getSessionHistory(sessionId);
+  }
+
+  controlSession(sessionId, action, message = '') {
+    const active = this.activeAgents.get(sessionId);
+    if (!active) throw Object.assign(new Error('这个会话当前没有正在运行的任务'), { status: 409 });
+    if (action === 'abort') active.agent.abort();
+    else if (action === 'steer' || action === 'followUp') {
+      const content = text(message).trim().slice(0, 8_000);
+      if (!content) throw Object.assign(new Error('消息不能为空'), { status: 400 });
+      const queued = { role: 'user', content, timestamp: Date.now() };
+      if (action === 'steer') active.agent.steer(queued); else active.agent.followUp(queued);
+      active.emit({ type: 'queue', action, message: content });
+    } else if (action === 'clear') active.agent.clearAllQueues();
+    else throw Object.assign(new Error('未知的 Agent 控制操作'), { status: 400 });
+    return { ok: true, action };
   }
 
   async searchTags(rawQuery, limit = 16) {
@@ -808,57 +920,76 @@ export class PromptAgentService {
 
   async run(input, emit, signal, project = {}) {
     const sessionId = text(input?.sessionId || 'playground').slice(0, 200);
-    if (this.runningSessions.has(sessionId)) throw Object.assign(new Error('这个实验室的 Agent 正在工作'), { status: 409 });
-    const config = this.publicConfig();
-    const storedCredential = this.getCredential(config.provider);
-    if (!storedCredential) throw Object.assign(new Error(`请先使用“登录模型服务”配置 ${PROVIDER_CATALOG.get(config.provider)?.name || config.provider}`), { status: 400 });
-    const models = listModels(config.provider);
-    const modelInfo = models.find(item => item.id === config.model);
+    if (this.activeAgents.has(sessionId)) throw Object.assign(new Error('这个会话的 Agent 正在工作'), { status: 409 });
+    const storedSession = await this.readSession(sessionId);
+    const globalConfig = this.publicConfig();
+    const provider = normalizeProvider(storedSession.meta?.provider || globalConfig.provider);
+    const modelId = storedSession.meta?.model || globalConfig.model;
+    const storedCredential = this.getCredential(provider);
+    if (!storedCredential) throw Object.assign(new Error(`请先使用“登录模型服务”配置 ${PROVIDER_CATALOG.get(provider)?.name || provider}`), { status: 400 });
+    const models = listModels(provider);
+    const modelInfo = models.find(item => item.id === modelId);
     if (!modelInfo) throw Object.assign(new Error('选择的模型已不可用，请在设置中重新选择'), { status: 400 });
+    const thinkingLevel = this.normalizeThinkingLevel(storedSession.meta?.thinkingLevel, modelInfo.reasoning);
     const draft = sanitizeDraft(input?.draft);
     const contextData = {
       presets: Array.isArray(input?.context?.presets) ? input.context.presets.slice(0, 200) : [],
       vibes: Array.isArray(input?.context?.vibes) ? input.context.vibes.slice(0, 200) : [],
       clientSettings: input?.context?.clientSettings && typeof input.context.clientSettings === 'object' ? input.context.clientSettings : {},
     };
-    this.runningSessions.add(sessionId);
     const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
     try {
       const credentials = new InMemoryCredentialStore();
-      await credentials.modify(config.provider, async () => ({
+      await credentials.modify(provider, async () => ({
         ...storedCredential,
         ...(this.outboundProxyUrl ? { env: { ...(storedCredential.env || {}), HTTPS_PROXY: this.outboundProxyUrl, HTTP_PROXY: this.outboundProxyUrl } } : {}),
       }));
       const modelRuntime = builtinModels({ credentials });
-      const model = modelRuntime.getModel(config.provider, config.model);
+      const model = modelRuntime.getModel(provider, modelId);
       if (!model) throw new Error('无法加载所选模型');
       const agent = new Agent({
         initialState: {
           systemPrompt,
           model,
-          thinkingLevel: model.reasoning ? 'low' : 'off',
+          thinkingLevel,
           tools: this.createTools(draft, contextData, emit, project, modelInfo),
           messages: await this.loadMessages(sessionId),
         },
         streamFn: modelRuntime.streamSimple.bind(modelRuntime),
         sessionId: `nai-prompt-agent-${createHash('sha256').update(sessionId).digest('hex').slice(0, 20)}`,
         toolExecution: 'sequential',
+        steeringMode: 'one-at-a-time',
+        followUpMode: 'one-at-a-time',
       });
       const unsubscribe = agent.subscribe(event => {
+        if (event.type === 'message_start' && event.message?.role === 'assistant') emit({ type: 'response_start', id: `response-${event.message.timestamp || Date.now()}` });
         if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta') emit({ type: 'text_delta', delta: event.assistantMessageEvent.delta });
-        if (event.type === 'tool_execution_start') emit({ type: 'tool_start', toolName: event.toolName });
-        if (event.type === 'tool_execution_end') emit({ type: 'tool_end', toolName: event.toolName, isError: event.isError });
+        if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'thinking_delta') emit({ type: 'thinking_delta', delta: event.assistantMessageEvent.delta });
+        if (event.type === 'message_end' && event.message?.role === 'assistant') emit({ type: 'response_end', model: event.message.model, provider: event.message.provider, usage: event.message.usage, stopReason: event.message.stopReason, timestamp: event.message.timestamp });
+        if (event.type === 'tool_execution_start') emit({ type: 'tool_start', toolCallId: event.toolCallId, toolName: event.toolName, args: event.args });
+        if (event.type === 'tool_execution_end') emit({ type: 'tool_end', toolCallId: event.toolCallId, toolName: event.toolName, isError: event.isError, result: event.result });
       });
+      this.activeAgents.set(sessionId, { agent, emit });
       const abort = () => agent.abort();
       signal?.addEventListener('abort', abort, { once: true });
-      try { await agent.prompt(text(input?.message).slice(0, 8_000)); }
+      try {
+        if (input?.mode === 'retry') {
+          const messages = agent.state.messages;
+          let lastUser = -1;
+          for (let index = messages.length - 1; index >= 0; index -= 1) if (messages[index]?.role === 'user') { lastUser = index; break; }
+          if (lastUser < 0) throw Object.assign(new Error('没有可以重试的用户消息'), { status: 400 });
+          agent.state.messages = messages.slice(0, lastUser + 1);
+          await agent.continue();
+        } else await agent.prompt(text(input?.message).slice(0, 8_000));
+      }
       finally { signal?.removeEventListener('abort', abort); unsubscribe(); }
-      if (agent.state.errorMessage) throw new Error(agent.state.errorMessage);
       await this.saveMessages(sessionId, agent.state.messages);
-      return { draft, message: extractAssistantText(agent.state.messages), provider: config.provider, model: config.model };
+      const lastAssistant = [...agent.state.messages].reverse().find(message => message?.role === 'assistant');
+      if (agent.state.errorMessage && lastAssistant?.stopReason !== 'aborted') throw new Error(agent.state.errorMessage);
+      return { draft, message: extractAssistantText(agent.state.messages), provider, model: modelId };
     } finally {
       leaveOutboundProxy();
-      this.runningSessions.delete(sessionId);
+      this.activeAgents.delete(sessionId);
     }
   }
 }

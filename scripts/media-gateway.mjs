@@ -988,11 +988,39 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
           return sendJson(res, 200, { items: promptAgent.getModels(url.searchParams.get('provider') || '') });
         }
+        if (url.pathname === '/api/prompt-agent/sessions') {
+          if (req.method === 'GET') return sendJson(res, 200, { items: await promptAgent.listSessions(url.searchParams.get('legacySessionId') || '') });
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 8 * 1024)).toString('utf8') || '{}');
+          return sendJson(res, 201, await promptAgent.createSession(body));
+        }
+        if (url.pathname.startsWith('/api/prompt-agent/sessions/')) {
+          const sessionId = decodeURIComponent(url.pathname.slice('/api/prompt-agent/sessions/'.length));
+          if (req.method === 'PATCH') {
+            const body = JSON.parse((await readRequestBody(req, 8 * 1024)).toString('utf8') || '{}');
+            return sendJson(res, 200, await promptAgent.updateSession(sessionId, body));
+          }
+          if (req.method === 'DELETE') {
+            await promptAgent.deleteSession(sessionId);
+            return sendJson(res, 200, { ok: true });
+          }
+          return sendJson(res, 405, { error: 'Method not allowed' });
+        }
+        if (url.pathname === '/api/prompt-agent/control') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 16 * 1024)).toString('utf8') || '{}');
+          return sendJson(res, 200, promptAgent.controlSession(String(body.sessionId || ''), String(body.action || ''), String(body.message || '')));
+        }
         if (url.pathname === '/api/prompt-agent/session/reset') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
           const body = JSON.parse((await readRequestBody(req, 8 * 1024)).toString('utf8') || '{}');
           await promptAgent.resetSession(body.sessionId);
           return sendJson(res, 200, { ok: true });
+        }
+        if (url.pathname === '/api/prompt-agent/session/revise') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 16 * 1024)).toString('utf8') || '{}');
+          return sendJson(res, 200, { items: await promptAgent.reviseSessionMessage(String(body.sessionId || ''), String(body.messageId || ''), String(body.content || '')) });
         }
         if (url.pathname === '/api/prompt-agent/session') {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -1008,7 +1036,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         if (url.pathname === '/api/prompt-agent/run') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
           const body = JSON.parse((await readRequestBody(req, 2 * 1024 * 1024)).toString('utf8') || '{}');
-          if (!String(body.message || '').trim()) return sendJson(res, 400, { error: '请先告诉 Agent 你想做什么' });
+          if (body.mode !== 'retry' && !String(body.message || '').trim()) return sendJson(res, 400, { error: '请先告诉 Agent 你想做什么' });
           const controller = new AbortController();
           const abort = () => { if (!res.writableEnded) controller.abort(); };
           req.once('aborted', abort);
