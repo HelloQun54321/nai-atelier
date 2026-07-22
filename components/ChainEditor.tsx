@@ -135,7 +135,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [generatedImage, setGeneratedImage] = useState<string | null>(null);
     const [previewHistory, setPreviewHistory] = useState<LocalGenItem[]>([]);
     const [previewIndex, setPreviewIndex] = useState(0);
-    const [previewMode, setPreviewMode] = useState<'history' | 'cover'>('cover');
+    const [previewMode, setPreviewMode] = useState<'history' | 'cover' | 'result' | 'unsaved'>('cover');
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const importInputRef = useRef<HTMLInputElement>(null);
     const importDragDepthRef = useRef(0);
@@ -207,6 +207,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const lightboxItem = lightboxImg ? previewHistory.find(item => item.imageUrl === lightboxImg) || null : null;
     const currentPreviewPosition = selectedPreviewItem
         ? `${previewIndex + 1} / ${previewHistory.length}`
+        : previewMode === 'result'
+            ? '刚刚生成 · 正在保存历史'
+        : previewMode === 'unsaved'
+            ? '刚刚生成 · 历史保存失败'
         : previewHistory.length > 0
             ? `封面 · 历史 ${previewHistory.length} 张`
             : '当前封面';
@@ -973,18 +977,46 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 } : undefined,
             };
             const result = await generateImage(apiKey, generationPrompt, generationNegativePrompt, activeParams);
+
+            // Show the completed image before uploading its several-megabyte
+            // base64 payload to local history. Keeping previewMode='history'
+            // here made the previous history item mask the new result until
+            // that upload finished, which was especially visible on phones.
             setGeneratedImage(result.image);
+            setPreviewMode('result');
+            if (window.matchMedia('(max-width: 767px)').matches) setLightboxImg(result.image);
+
+            // Leave the current task so React can commit and the browser can
+            // paint the result before JSON serialization/history persistence.
+            await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+
             // Use actual seed returned from generation
             const finalParams = { ...activeParams, seed: result.seed };
-            const historyItem = await localHistory.add(result.image, generationPrompt, finalParams, generationNegativePrompt, {
-                sourceChainId,
-                sourceChainName: chainName,
-                sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
-            });
-            setPreviewHistory(prev => [historyItem, ...prev.filter(item => item.id !== historyItem.id)]);
-            setPreviewIndex(0);
-            setPreviewMode('history');
-            if (window.matchMedia('(max-width: 767px)').matches) setLightboxImg(result.image);
+            try {
+                const historyItem = await localHistory.add(result.image, generationPrompt, finalParams, generationNegativePrompt, {
+                    sourceChainId,
+                    sourceChainName: chainName,
+                    sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
+                });
+                setPreviewHistory(prev => [historyItem, ...prev.filter(item => item.id !== historyItem.id)]);
+                setPreviewIndex(0);
+                setPreviewMode('history');
+                setLightboxImg(current => current === result.image ? historyItem.imageUrl : current);
+            } catch (historyError: any) {
+                // Generation has already succeeded. Keep the in-memory image
+                // visible and report only the persistence failure.
+                setPreviewMode('unsaved');
+                notify(`图片已生成，但保存到本地历史失败：${historyError?.message || '未知错误'}`, 'error');
+                void db.logClientEvent({
+                    category: 'generation',
+                    action: 'save_generation_history',
+                    status: 'error',
+                    resourceType: chain.id === 'playground' ? 'playground' : 'chain',
+                    resourceId: chain.id,
+                    message: '图片生成成功，但本地历史保存失败',
+                    metadata: { error: historyError?.message || String(historyError) },
+                }).catch(console.error);
+            }
             void db.logClientEvent({
                 category: 'generation',
                 action: 'generate_image',
