@@ -193,7 +193,10 @@ async function reuseExistingServer() {
 }
 
 async function waitForWorker(port) {
-  for (let i = 0; i < 60; i++) {
+  const startedAt = Date.now();
+  const notices = [8_000, 20_000, 35_000];
+  let noticeIndex = 0;
+  while (Date.now() - startedAt < 45_000) {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/lan/status`, { cache: 'no-store', signal: AbortSignal.timeout(1500) });
       const payload = await response.json().catch(() => null);
@@ -201,9 +204,14 @@ async function waitForWorker(port) {
     } catch {
       // Worker is still starting.
     }
+    const elapsed = Date.now() - startedAt;
+    if (noticeIndex < notices.length && elapsed >= notices[noticeIndex]) {
+      console.log(`\x1b[33m核心页面服务仍在启动（已等待 ${Math.round(elapsed / 1000)} 秒）...\x1b[0m`);
+      noticeIndex += 1;
+    }
     await new Promise(resolve => setTimeout(resolve, 500));
   }
-  throw new Error('内部服务启动超时');
+  throw new Error('核心页面服务启动超过 45 秒，请关闭此窗口后重新启动；若再次出现，请保留本窗口中的红色错误信息');
 }
 
 function terminateProcessTree(pid) {
@@ -249,6 +257,7 @@ async function startServer() {
   // Launch Wrangler's actual CLI process directly. The old cmd -> .cmd wrapper
   // chain left Miniflare descendants behind when startup failed on Windows.
   const wranglerCli = 'node_modules/wrangler/wrangler-dist/cli.js';
+  console.log('\x1b[36m核心页面服务正在启动，请稍候...\x1b[0m');
   const child = spawn(process.execPath, ['--no-warnings', '--experimental-vm-modules', wranglerCli, ...args], { stdio: 'inherit', shell: false });
   let mediaGateway = null;
   let shuttingDown = false;
@@ -282,6 +291,7 @@ async function startServer() {
 
   try {
     await waitForWorker(3001);
+    console.log('\x1b[32m核心页面服务已就绪。\x1b[0m');
     mediaGateway = await createMediaGateway({ port: 3000, workerPort: 3001, lanSecret: lanAccess.secret, outboundProxyUrl });
     console.log('\x1b[32m图片网关已就绪，手机列表将按需使用缩略图。\x1b[0m');
     openWhenReady();
