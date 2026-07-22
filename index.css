@@ -194,14 +194,29 @@ body,
               linear-gradient(105deg, transparent 35%, rgb(255 255 255 / .10) 50%, transparent 65%);
 }
 
+.queue-status-surface--waiting::after {
+  content: '';
+  position: absolute;
+  top: -45%;
+  bottom: -45%;
+  left: -55%;
+  z-index: 0;
+  width: 55%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(167 139 250 / .46), rgb(52 211 153 / .34), transparent);
+  filter: blur(10px);
+  transform: skewX(-18deg);
+  animation: queue-status-sheen 2.2s linear infinite;
+}
+
 .queue-status-surface--normal {
   background-image: linear-gradient(120deg, #4f46e5 0%, #7c3aed 55%, #5b21b6 100%);
 }
 
 .queue-status-surface--waiting {
-  background-image: linear-gradient(110deg, #047857 0%, #10b981 22%, #7c3aed 48%, #5b21b6 68%, #059669 86%, #047857 100%);
-  background-size: 300% 100%;
-  animation: queue-status-flow 3.8s ease-in-out infinite;
+  background-image: linear-gradient(110deg, #047857 0%, #10b981 16%, #10b981 28%, #7c3aed 45%, #6d28d9 60%, #059669 78%, #10b981 90%, #047857 100%);
+  background-size: 260% 100%;
+  animation: queue-status-flow 2.8s linear infinite;
   box-shadow: 0 10px 30px rgb(16 185 129 / .22), 0 5px 22px rgb(124 58 237 / .22), inset 0 1px 0 rgb(255 255 255 / .24);
 }
 
@@ -216,12 +231,18 @@ body,
 }
 
 @keyframes queue-status-flow {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+  from { background-position: 0% 50%; }
+  to { background-position: 100% 50%; }
+}
+
+@keyframes queue-status-sheen {
+  from { left: -55%; }
+  to { left: 115%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .queue-status-surface--waiting { animation: none; }
+  .queue-status-surface--waiting,
+  .queue-status-surface--waiting::after { animation: none; }
 }
 
 /* VIP 角标 */

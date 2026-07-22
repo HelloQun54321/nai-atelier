@@ -3,7 +3,7 @@ import JSZip from 'jszip';
 import { NAIParams } from '../types';
 import { api } from './api';
 import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
-import { emitCloudQueueStatus, getCloudQueuePreferences, watchCloudQueueTask } from './cloudQueue';
+import { emitCloudQueueStatus, getCloudQueuePreferences, scheduleCloudQueueStatusClear, watchCloudQueueTask } from './cloudQueue';
 
 export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams) => {
   // Logic update: NAI API treats missing seed as random. 0 is a specific seed.
@@ -127,6 +127,8 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   if (queue.enabled) emitCloudQueueStatus({ taskId: queueTaskId, phase: 'preparing', cancelable: true });
   const statusWatcher = queue.enabled ? watchCloudQueueTask(queueTaskId, () => requestFinished) : Promise.resolve();
   let blob: Blob;
+  let terminalPhase: 'completed' | 'cancelled' | 'error' = 'completed';
+  let terminalError: string | undefined;
   try {
     blob = await api.postBinary('/generate', payload, {
       'Authorization': `Bearer ${apiKey}`,
@@ -137,9 +139,11 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   } catch (error) {
     if (queue.enabled) {
       const message = error instanceof Error ? error.message : '公共队列连接失败';
+      terminalPhase = message.includes('已取消排队') ? 'cancelled' : 'error';
+      terminalError = message;
       emitCloudQueueStatus({
         taskId: queueTaskId,
-        phase: message.includes('已取消排队') ? 'cancelled' : 'error',
+        phase: terminalPhase,
         error: message,
         cancelable: false,
       });
@@ -148,7 +152,15 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   } finally {
     requestFinished = true;
     await statusWatcher;
-    if (queue.enabled) window.setTimeout(() => emitCloudQueueStatus(null), 1800);
+    if (queue.enabled) {
+      emitCloudQueueStatus({
+        taskId: queueTaskId,
+        phase: terminalPhase,
+        error: terminalError,
+        cancelable: false,
+      });
+      scheduleCloudQueueStatusClear(queueTaskId, terminalPhase === 'error' ? 8000 : 5000);
+    }
   }
 
   // 解析 Zip (逻辑保持不变)

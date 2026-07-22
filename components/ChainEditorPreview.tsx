@@ -114,7 +114,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                 </div>
 
                 {/* Generated Image */}
-                {isGenerating && queueStatus ? <InlineCloudQueueStatus className="mb-4 flex-shrink-0" /> : <button
+                {queueStatus ? <InlineCloudQueueStatus className="mb-4 flex-shrink-0" /> : <button
                     onClick={handleGenerate}
                     disabled={isGenerating}
                     className={`w-full py-3 rounded-lg font-bold text-white shadow-lg transition-all mb-4 flex-shrink-0 ${isGenerating ? 'bg-gray-400 cursor-wait' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500'
