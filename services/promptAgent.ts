@@ -26,7 +26,8 @@ export interface PromptAgentLoginResult {
   complete: boolean;
   prompt?: PromptAgentAuthPrompt;
   promptIndex?: number;
-  events?: Array<{ type: string; message?: string; links?: Array<{ url: string; label?: string }> }>;
+  flowId?: string;
+  events?: Array<{ type: string; message?: string; instructions?: string; url?: string; verificationUri?: string; userCode?: string; links?: Array<{ url: string; label?: string }> }>;
 }
 
 export interface PromptAgentModel {
@@ -108,8 +109,8 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return (await response.json()).items || [];
   },
-  login: async (provider: string, answers: string[], authType?: 'api_key' | 'oauth'): Promise<PromptAgentLoginResult> => {
-    const response = await fetch('/api/prompt-agent/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, answers, authType }) });
+  login: async (provider: string, answers: string[], authType?: 'api_key' | 'oauth', flowId?: string): Promise<PromptAgentLoginResult> => {
+    const response = await fetch('/api/prompt-agent/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, answers, authType, flowId }) });
     if (!response.ok) return readError(response) as never;
     return response.json();
   },

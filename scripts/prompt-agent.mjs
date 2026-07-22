@@ -147,6 +147,7 @@ export class PromptAgentService {
     this.startingAgents = new Set();
     this.pendingConfirmations = new Map();
     this.taskEventWrites = new Map();
+    this.loginFlows = new Map();
     this.runHistory = [];
     this.tagManifest = null;
   }
@@ -244,6 +245,43 @@ export class PromptAgentService {
   async loginProvider(providerId, input) {
     const provider = PROVIDER_CATALOG.get(providerId);
     if (!provider?.auth?.apiKey && !provider?.auth?.oauth) throw Object.assign(new Error('这个模型服务不支持登录'), { status: 400 });
+    if (input?.authType === 'oauth' && provider.auth.oauth) {
+      const flowId = text(input.flowId || randomUUID()).slice(0, 120);
+      let flow = this.loginFlows.get(flowId);
+      if (!flow) {
+        flow = { id: flowId, providerId, answers: [], events: [], prompt: null, waiter: null, changed: [], complete: false, error: null };
+        this.loginFlows.set(flowId, flow);
+        const touch = () => { const waiters = flow.changed.splice(0); waiters.forEach(resolve => resolve()); };
+        flow.promise = provider.auth.oauth.login({
+          prompt: async prompt => {
+            flow.prompt = prompt;
+            touch();
+            while (!flow.answers.length) await new Promise(resolve => { flow.waiter = resolve; });
+            const answer = flow.answers.shift();
+            flow.prompt = null;
+            return answer;
+          },
+          notify: event => { flow.events.push(event); touch(); },
+        }).then(async credential => {
+          flow.complete = true;
+          flow.credential = credential;
+          this.setCredential(providerId, credential);
+          if (!this.configuredProviderIds().includes(this.config.provider)) { this.config.provider = providerId; this.config.model = defaultModelFor(providerId); }
+          await atomicJsonWrite(CONFIG_FILE, this.config);
+          touch();
+        }).catch(error => { flow.error = error; touch(); });
+      }
+      if (Array.isArray(input.answers) && input.answers.length) {
+        flow.answers.push(...input.answers.map(value => String(value)));
+        flow.waiter?.();
+        flow.waiter = null;
+        if (!flow.complete && !flow.error) await Promise.race([new Promise(resolve => flow.changed.push(resolve)), new Promise(resolve => setTimeout(resolve, 300))]);
+      }
+      if (!flow.complete && !flow.error && !flow.prompt) await Promise.race([new Promise(resolve => flow.changed.push(resolve)), new Promise(resolve => setTimeout(resolve, 300))]);
+      if (flow.error) { this.loginFlows.delete(flowId); throw flow.error; }
+      if (flow.complete) { this.loginFlows.delete(flowId); return { complete: true, flowId, provider: this.listProviders().find(item => item.id === providerId), selection: this.publicConfig(), events: flow.events }; }
+      return { complete: false, flowId, prompt: flow.prompt || undefined, promptIndex: 0, events: flow.events };
+    }
     const answers = Array.isArray(input?.answers) ? input.answers.map(value => String(value)) : [];
     if (typeof input?.apiKey === 'string' && input.apiKey.trim()) answers.push(input.apiKey.trim());
     let promptIndex = 0;
@@ -385,16 +423,17 @@ export class PromptAgentService {
     const previous = this.taskEventWrites.get(sessionId) || Promise.resolve();
     const next = previous.catch(() => {}).then(async () => {
       const safe = JSON.parse(JSON.stringify(event, (key, value) => {
-        if (typeof value === 'string' && value.length > 12_000) return value.slice(0, 12_000) + '…';
+        if (key === 'requestId') return '[redacted]';
+        if (typeof value === 'string' && value.length > 100_000) return value.slice(0, 100_000) + '…';
         if (key === 'data' && typeof value === 'string' && value.length > 1024) return '[omitted]';
         return value;
       }));
       let events = [];
       try { events = JSON.parse(await readFile(this.taskEventsFile(sessionId), 'utf8')); } catch { /* first event */ }
-      events = Array.isArray(events) ? events.slice(-199) : [];
+      events = Array.isArray(events) ? events.slice(-499) : [];
       const last = events[events.length - 1];
       if ((safe.type === 'text_delta' || safe.type === 'thinking_delta') && last?.type === safe.type) {
-        last.delta = `${last.delta || ''}${safe.delta || ''}`.slice(-12_000);
+        last.delta = `${last.delta || ''}${safe.delta || ''}`.slice(-100_000);
         last.timestamp = Date.now();
       } else events.push({ ...safe, timestamp: Date.now() });
       await atomicJsonWrite(this.taskEventsFile(sessionId), events);
@@ -408,7 +447,7 @@ export class PromptAgentService {
     let events = [];
     try { status = JSON.parse(await readFile(this.taskFile(sessionId), 'utf8')); } catch { /* no task */ }
     try { events = JSON.parse(await readFile(this.taskEventsFile(sessionId), 'utf8')); } catch { /* no events */ }
-    return { ...status, events: Array.isArray(events) ? events.slice(-200) : [] };
+    return { ...status, events: Array.isArray(events) ? events.slice(-500) : [] };
   }
 
   cancelSessionConfirmations(sessionId) {
@@ -458,7 +497,8 @@ export class PromptAgentService {
         if (value?.meta?.id) {
           let task = {};
           try { task = JSON.parse(await readFile(this.taskFile(value.meta.id), 'utf8')); } catch { /* No task yet. */ }
-          items.push({ ...value.meta, messageCount: Array.isArray(value.messages) ? value.messages.filter(message => message?.role === 'user').length : 0, running: this.activeAgents.has(value.meta.id), taskStatus: this.activeAgents.has(value.meta.id) ? 'running' : task.status });
+          const running = this.activeAgents.has(value.meta.id) || this.startingAgents.has(value.meta.id);
+          items.push({ ...value.meta, messageCount: Array.isArray(value.messages) ? value.messages.filter(message => message?.role === 'user').length : 0, running, taskStatus: running ? 'running' : task.status });
         }
       } catch { /* Ignore broken legacy files. */ }
     }
@@ -524,6 +564,7 @@ export class PromptAgentService {
   }
 
   async resetSession(sessionId) {
+    if (this.activeAgents.has(sessionId) || this.startingAgents.has(sessionId)) throw Object.assign(new Error('Agent 工作时不能清空当前对话'), { status: 409 });
     const existing = await this.readSession(sessionId);
     if (existing.meta?.id) await this.writeSession(sessionId, { version: 2, meta: { ...existing.meta, updatedAt: Date.now() }, messages: [] });
     else await unlink(this.sessionFile(sessionId)).catch(() => {});
@@ -542,7 +583,7 @@ export class PromptAgentService {
           : '';
       const thinking = Array.isArray(message.content) ? message.content.filter(item => item?.type === 'thinking').map(item => item.thinking).join('') : '';
       const tools = Array.isArray(message.content) ? message.content.filter(item => item?.type === 'toolCall').map(item => ({ id: item.id, name: item.name, args: item.arguments, state: 'done' })) : [];
-      return content.trim() ? [{
+      return (content.trim() || tools.length || thinking) ? [{
         id: `saved-${index}`, role: message.role === 'user' ? 'user' : 'agent', text: content.trim(),
         ...(thinking ? { thinking } : {}), ...(tools.length ? { tools } : {}),
         ...(message.role === 'assistant' ? { model: message.model, provider: message.provider, usage: message.usage, stopReason: message.stopReason, timestamp: message.timestamp } : { timestamp: message.timestamp }),
@@ -679,7 +720,7 @@ export class PromptAgentService {
         parameters: Type.Object({ query: Type.String() }),
         execute: async (_id, args) => {
           const query = text(args.query).trim().toLowerCase();
-          const source = listItems(await readProject('/api/chains'));
+          const source = listItems((await readProject('/api/agent/library?kind=chains')).chains);
           const results = source.map(compactChain).filter(item => JSON.stringify([item.name, item.description, item.tags, item.basePrompt, item.negativePrompt, item.variableValues]).toLowerCase().includes(query)).slice(0, 20);
           return { content: jsonText(results), details: results };
         },
@@ -711,16 +752,16 @@ export class PromptAgentService {
           const limit = clamp(args.limit, 1, MAX_PROJECT_LIST_ITEMS, 30);
           const output = {};
           if (kind === 'all' || kind === 'chains') {
-            const items = listItems(await readProject('/api/chains'));
+            const items = listItems((await readProject('/api/agent/library?kind=chains')).chains);
             output.chains = items.map(compactChain).filter(item => !query || JSON.stringify([item.name, item.description, item.tags, item.basePrompt, item.variableValues]).toLowerCase().includes(query)).slice(0, limit);
           }
           if (kind === 'all' || kind === 'inspirations') {
-            const items = listItems(await readProject('/api/inspirations'));
+            const items = listItems((await readProject('/api/agent/library?kind=inspirations')).inspirations);
             output.inspirations = items.map(compactInspiration).filter(item => !query || JSON.stringify([item.title, item.prompt, item.negativePrompt, item.tags]).toLowerCase().includes(query)).slice(0, limit);
           }
           if (kind === 'all' || kind === 'artists') {
-            const items = listItems(await readProject('/api/artists'));
-            output.artists = items.map(item => ({ id: item.id, name: item.name, tags: item.tags, description: item.description, benchmarks: Array.isArray(item.benchmarks) ? item.benchmarks.length : 0 })).filter(item => !query || JSON.stringify([item.name, item.tags, item.description]).toLowerCase().includes(query)).slice(0, limit);
+            const items = listItems((await readProject('/api/agent/library?kind=artists')).artists);
+            output.artists = items.filter(item => !query || JSON.stringify([item.name, item.benchmarks]).toLowerCase().includes(query)).slice(0, limit);
           }
           return { content: jsonText(output), details: output };
         },
@@ -1093,7 +1134,6 @@ export class PromptAgentService {
     this.runHistory = this.runHistory.filter(timestamp => now - timestamp < 60_000);
     if (this.activeAgents.size + this.startingAgents.size >= 3) throw Object.assign(new Error('电脑当前最多同时运行 3 个 Agent 任务，请稍后再试'), { status: 429 });
     if (this.runHistory.length >= 12) throw Object.assign(new Error('Agent 请求过于频繁，请一分钟后再试'), { status: 429 });
-    this.runHistory.push(now);
     this.startingAgents.add(sessionId);
     const storedSession = await this.readSession(sessionId);
     const globalConfig = this.publicConfig();
@@ -1104,6 +1144,7 @@ export class PromptAgentService {
     const models = listModels(provider);
     const modelInfo = models.find(item => item.id === modelId);
     if (!modelInfo) { this.startingAgents.delete(sessionId); throw Object.assign(new Error('选择的模型已不可用，请在设置中重新选择'), { status: 400 }); }
+    this.runHistory.push(now);
     const thinkingLevel = this.normalizeThinkingLevel(storedSession.meta?.thinkingLevel, modelInfo.reasoning);
     const draft = sanitizeDraft(input?.draft);
     const contextData = {

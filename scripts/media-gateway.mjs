@@ -1049,6 +1049,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
           // cancel only that pending confirmation so the task can fail cleanly.
           const disconnect = () => promptAgent.cancelSessionConfirmations(String(body.sessionId || ''));
           req.once('aborted', disconnect);
+          res.once('close', () => { if (!res.writableEnded) disconnect(); });
           res.writeHead(200, {
             'Content-Type': 'application/x-ndjson; charset=utf-8',
             'Cache-Control': 'private, no-store',

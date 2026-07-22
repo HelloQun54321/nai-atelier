@@ -2254,6 +2254,24 @@ export default {
           });
       }
 
+      if (path === '/api/agent/library' && method === 'GET') {
+          const kind = new URL(request.url).searchParams.get('kind') || 'all';
+          const output: any = {};
+          if (kind === 'all' || kind === 'chains') {
+              const rows = await db.prepare(`SELECT id, type, name, description, tags, base_prompt, negative_prompt, variable_values, created_at, updated_at FROM chains ORDER BY updated_at DESC`).all<any>();
+              output.chains = rows.results.map((item: any) => ({ ...item, tags: parseStoredJson(item.tags, []), variableValues: parseStoredJson(item.variable_values, {}), basePrompt: item.base_prompt, negativePrompt: item.negative_prompt, createdAt: item.created_at, updatedAt: item.updated_at }));
+          }
+          if (kind === 'all' || kind === 'inspirations') {
+              const rows = await db.prepare(`SELECT id, title, prompt, negative_prompt, created_at FROM inspirations ORDER BY created_at DESC`).all<any>();
+              output.inspirations = rows.results.map((item: any) => ({ id: item.id, title: item.title, prompt: item.prompt, negativePrompt: item.negative_prompt, createdAt: item.created_at }));
+          }
+          if (kind === 'all' || kind === 'artists') {
+              const rows = await db.prepare(`SELECT id, name, benchmarks FROM artists ORDER BY name ASC`).all<any>();
+              output.artists = rows.results.map((item: any) => ({ id: item.id, name: item.name, benchmarks: parseStoredJson(item.benchmarks, []).length }));
+          }
+          return json(output);
+      }
+
       // Guest Login & Normal Login Logic
       if (path === '/api/auth/guest-login' && method === 'POST') {
           const { passcode } = await request.json() as any;

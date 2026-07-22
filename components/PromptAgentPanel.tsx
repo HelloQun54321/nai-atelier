@@ -130,6 +130,30 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     }).catch(() => {});
   }, [props.open, activeSessionId]);
 
+  // Re-attach to a computer-side task after a refresh or phone reconnect.
+  // The stream itself is not resumable, so poll durable task state and reload
+  // the saved conversation when the task reaches a terminal state.
+  useEffect(() => {
+    if (!props.open || !activeSessionId) return;
+    let disposed = false;
+    const poll = async () => {
+      try {
+        const task = await promptAgentService.getTask(activeSessionId);
+        if (disposed) return;
+        if (task.status === 'running') setRunning(true);
+        else if (running && ['completed', 'failed', 'aborted', 'interrupted'].includes(String(task.status))) {
+          setRunning(false);
+          const history = await promptAgentService.getSession(activeSessionId).catch(() => []);
+          if (!disposed) setMessages(history.map(item => ({ ...item })));
+          void refreshSessions(activeSessionId);
+        }
+      } catch { /* task polling is best effort */ }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 2000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [props.open, activeSessionId, running]);
+
   const activeSession = sessions.find(item => item.id === activeSessionId);
   const activeModel = models.find(item => item.provider === activeSession?.provider && item.id === activeSession?.model);
 
