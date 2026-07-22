@@ -1044,9 +1044,11 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
           // room for JSON and metadata while keeping a hard upper bound.
           const body = JSON.parse((await readRequestBody(req, 48 * 1024 * 1024)).toString('utf8') || '{}');
           if (body.mode !== 'retry' && !String(body.message || '').trim() && (!Array.isArray(body.images) || body.images.length === 0)) return sendJson(res, 400, { error: '请先告诉 Agent 你想做什么' });
-          const controller = new AbortController();
-          const abort = () => { if (!res.writableEnded) controller.abort(); };
-          req.once('aborted', abort);
+          // A phone changing network or a browser refresh must not kill the
+          // computer-side Agent. If the lost client owned a confirmation,
+          // cancel only that pending confirmation so the task can fail cleanly.
+          const disconnect = () => promptAgent.cancelSessionConfirmations(String(body.sessionId || ''));
+          req.once('aborted', disconnect);
           res.writeHead(200, {
             'Content-Type': 'application/x-ndjson; charset=utf-8',
             'Cache-Control': 'private, no-store',
@@ -1054,7 +1056,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
           });
           const emit = event => { if (!res.destroyed) res.write(`${JSON.stringify(event)}\n`); };
           try {
-            const result = await promptAgent.run(body, emit, controller.signal, {
+            const result = await promptAgent.run(body, emit, undefined, {
               requestJson: (path, options) => requestWorkerJson(path, req, workerPort, options),
               getQueuePreferences: () => ({ ...cloudQueuePreferences }),
               setQueuePreferences: async next => {
@@ -1079,7 +1081,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
           } catch (error) {
             emit({ type: 'error', error: error.message || 'Agent 执行失败' });
           } finally {
-            req.removeListener('aborted', abort);
+            req.removeListener('aborted', disconnect);
             if (!res.writableEnded) res.end();
           }
           return;

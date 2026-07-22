@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { PromptAgentAction, PromptAgentDraft, PromptChain } from '../types';
+import { PromptAgentDraft, PromptChain } from '../types';
 import { PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, promptAgentService } from '../services/promptAgent';
 import { vibeService } from '../services/vibeService';
 import { useMobileHistoryLayer } from './MobileUI';
@@ -15,7 +15,6 @@ interface PromptAgentPanelProps {
   presets: PromptChain[];
   apiKey: string;
   onRunStart: (snapshot: PromptAgentDraft) => void;
-  onAction: (action: PromptAgentAction) => void;
   onFinalDraft: (draft: PromptAgentDraft) => void;
   onRequestGeneration: (draft: PromptAgentDraft, reason?: string) => Promise<boolean> | void;
   onUndo: () => void;
@@ -185,6 +184,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     setAttachments([]);
     setRunning(true);
     const runSnapshot = structuredClone(props.draft);
+    props.onRunStart(runSnapshot);
     let labChanged = false;
     let navigationTarget: { view: 'list' | 'characters' | 'library' | 'aitag' | 'inspiration' | 'history' | 'playground'; id?: string } | null = null;
     const controller = new AbortController();
@@ -263,9 +263,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           } else if (event.action.kind === 'navigate_view') {
             navigationTarget = event.action.patch;
           } else {
-            if (!labChanged) props.onRunStart(runSnapshot);
             labChanged = true;
-            props.onAction(event.action);
+            // The service mutates its isolated draft. Do not apply individual
+            // actions to React state while the user may still be editing; the
+            // complete draft is committed atomically in the done event.
           }
         }
         if (event.type === 'error') throw new Error(event.error);

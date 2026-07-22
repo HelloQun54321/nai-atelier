@@ -225,6 +225,7 @@ export class PromptAgentService {
         id: provider.id,
         name: provider.name || provider.id,
         authType: provider.auth?.oauth && !provider.auth?.apiKey ? 'oauth' : 'api_key',
+        authTypes: [provider.auth?.apiKey ? 'api_key' : null, provider.auth?.oauth ? 'oauth' : null].filter(Boolean),
         configured: configured.has(provider.id),
         current: this.publicConfig().provider === provider.id && configured.has(provider.id),
         modelCount: listModels(provider.id).length,
@@ -250,9 +251,9 @@ export class PromptAgentService {
     class PromptNeeded extends Error { constructor(prompt, index) { super('LOGIN_PROMPT_NEEDED'); this.prompt = prompt; this.index = index; } }
     let credential;
     try {
-      // Prefer API Key when a provider offers both methods; OAuth-only providers
-      // (such as OpenAI Codex) still use pi's browser/device-code flow.
-      const auth = provider.auth.apiKey || provider.auth.oauth;
+      const requestedAuth = input?.authType === 'oauth' ? 'oauth' : 'api_key';
+      const auth = requestedAuth === 'oauth' ? provider.auth.oauth : provider.auth.apiKey;
+      if (!auth) throw Object.assign(new Error(`这个模型服务不支持 ${requestedAuth === 'oauth' ? 'OAuth' : 'API Key'} 登录`), { status: 400 });
       if (auth.login) {
         credential = await auth.login({
           prompt: async prompt => {
@@ -391,7 +392,11 @@ export class PromptAgentService {
       let events = [];
       try { events = JSON.parse(await readFile(this.taskEventsFile(sessionId), 'utf8')); } catch { /* first event */ }
       events = Array.isArray(events) ? events.slice(-199) : [];
-      events.push({ ...safe, timestamp: Date.now() });
+      const last = events[events.length - 1];
+      if ((safe.type === 'text_delta' || safe.type === 'thinking_delta') && last?.type === safe.type) {
+        last.delta = `${last.delta || ''}${safe.delta || ''}`.slice(-12_000);
+        last.timestamp = Date.now();
+      } else events.push({ ...safe, timestamp: Date.now() });
       await atomicJsonWrite(this.taskEventsFile(sessionId), events);
     });
     this.taskEventWrites.set(sessionId, next);
@@ -404,6 +409,10 @@ export class PromptAgentService {
     try { status = JSON.parse(await readFile(this.taskFile(sessionId), 'utf8')); } catch { /* no task */ }
     try { events = JSON.parse(await readFile(this.taskEventsFile(sessionId), 'utf8')); } catch { /* no events */ }
     return { ...status, events: Array.isArray(events) ? events.slice(-200) : [] };
+  }
+
+  cancelSessionConfirmations(sessionId) {
+    this.cancelPendingConfirmations(text(sessionId).slice(0, 200));
   }
 
   normalizeThinkingLevel(value, reasoning = true) {
@@ -462,7 +471,7 @@ export class PromptAgentService {
   }
 
   async updateSession(sessionId, patch = {}) {
-    if (this.activeAgents.has(sessionId)) throw Object.assign(new Error('Agent 工作时不能修改当前会话'), { status: 409 });
+    if (this.activeAgents.has(sessionId) || this.startingAgents.has(sessionId)) throw Object.assign(new Error('Agent 启动或工作时不能修改当前会话'), { status: 409 });
     const value = await this.readSession(sessionId);
     if (!value?.meta?.id) throw Object.assign(new Error('对话不存在'), { status: 404 });
     const provider = patch.provider ? normalizeProvider(patch.provider) : value.meta.provider;
@@ -482,7 +491,7 @@ export class PromptAgentService {
   }
 
   async deleteSession(sessionId) {
-    if (this.activeAgents.has(sessionId)) throw Object.assign(new Error('请先停止这个会话'), { status: 409 });
+    if (this.activeAgents.has(sessionId) || this.startingAgents.has(sessionId)) throw Object.assign(new Error('请先停止这个会话'), { status: 409 });
     await unlink(this.sessionFile(sessionId)).catch(() => {});
     await unlink(this.taskFile(sessionId)).catch(() => {});
     await unlink(this.taskEventsFile(sessionId)).catch(() => {});
@@ -670,7 +679,8 @@ export class PromptAgentService {
         parameters: Type.Object({ query: Type.String() }),
         execute: async (_id, args) => {
           const query = text(args.query).trim().toLowerCase();
-          const results = (contextData.presets || []).filter(item => JSON.stringify(item).toLowerCase().includes(query)).slice(0, 20);
+          const source = listItems(await readProject('/api/chains'));
+          const results = source.map(compactChain).filter(item => JSON.stringify([item.name, item.description, item.tags, item.basePrompt, item.negativePrompt, item.variableValues]).toLowerCase().includes(query)).slice(0, 20);
           return { content: jsonText(results), details: results };
         },
       },
@@ -679,7 +689,8 @@ export class PromptAgentService {
         parameters: Type.Object({ query: Type.String() }),
         execute: async (_id, args) => {
           const query = text(args.query).trim().toLowerCase();
-          const results = (contextData.vibes || []).filter(item => !query || String(item.name).toLowerCase().includes(query)).slice(0, 20);
+          const [active, archived] = await Promise.all([readProject('/api/vibes?archived=false'), readProject('/api/vibes?archived=true')]);
+          const results = [...listItems(active), ...listItems(archived)].filter(item => !query || String(item.name).toLowerCase().includes(query)).slice(0, 20);
           return { content: jsonText(results), details: results };
         },
       },
@@ -687,20 +698,7 @@ export class PromptAgentService {
         name: 'get_project_overview', label: '读取项目概况', description: '读取画师串、角色、灵感、历史、画师资料、Vibe及组合的数量与最近项目。',
         parameters: Type.Object({}),
         execute: async () => {
-          const [chains, inspirations, artists, history, vibes, groups] = await Promise.all([
-            readProject('/api/chains'), readProject('/api/inspirations'), readProject('/api/artists'),
-            readProject('/api/local-history?page=0&pageSize=5'), Promise.all([readProject('/api/vibes?archived=false'), readProject('/api/vibes?archived=true')]).then(values => ({ items: values.flatMap(listItems) })), readProject('/api/vibe-groups'),
-          ]);
-          const chainItems = listItems(chains);
-          const result = {
-            styleChains: chainItems.filter(item => item.type !== 'character').length,
-            characterChains: chainItems.filter(item => item.type === 'character').length,
-            inspirations: listItems(inspirations).length,
-            artists: listItems(artists).length,
-            vibes: listItems(vibes).length,
-            vibeGroups: listItems(groups).length,
-            recentHistory: listItems(history).map(item => ({ ...item, imageUrl: undefined })),
-          };
+          const result = await readProject('/api/agent/project-overview');
           return { content: jsonText(result), details: result };
         },
       },
@@ -714,15 +712,15 @@ export class PromptAgentService {
           const output = {};
           if (kind === 'all' || kind === 'chains') {
             const items = listItems(await readProject('/api/chains'));
-            output.chains = items.filter(item => !query || JSON.stringify([item.name, item.description, item.tags, item.basePrompt, item.variableValues]).toLowerCase().includes(query)).slice(0, limit).map(compactChain);
+            output.chains = items.map(compactChain).filter(item => !query || JSON.stringify([item.name, item.description, item.tags, item.basePrompt, item.variableValues]).toLowerCase().includes(query)).slice(0, limit);
           }
           if (kind === 'all' || kind === 'inspirations') {
             const items = listItems(await readProject('/api/inspirations'));
-            output.inspirations = items.filter(item => !query || JSON.stringify(item).toLowerCase().includes(query)).slice(0, limit).map(compactInspiration);
+            output.inspirations = items.map(compactInspiration).filter(item => !query || JSON.stringify([item.title, item.prompt, item.negativePrompt, item.tags]).toLowerCase().includes(query)).slice(0, limit);
           }
           if (kind === 'all' || kind === 'artists') {
             const items = listItems(await readProject('/api/artists'));
-            output.artists = items.filter(item => !query || JSON.stringify(item).toLowerCase().includes(query)).slice(0, limit);
+            output.artists = items.map(item => ({ id: item.id, name: item.name, tags: item.tags, description: item.description, benchmarks: Array.isArray(item.benchmarks) ? item.benchmarks.length : 0 })).filter(item => !query || JSON.stringify([item.name, item.tags, item.description]).toLowerCase().includes(query)).slice(0, limit);
           }
           return { content: jsonText(output), details: output };
         },
@@ -917,7 +915,10 @@ export class PromptAgentService {
         name: 'request_cleanup_history', label: '准备清理历史', description: '按天数删除旧历史，或只保留最近指定数量。只会打开危险确认框。days和keepCount二选一。',
         parameters: Type.Object({ days: Type.Optional(Type.Number()), keepCount: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => {
-          const payload = Number.isFinite(args.days) ? { days: Math.max(1, Math.floor(args.days)) } : { keepCount: Math.max(0, Math.floor(args.keepCount || 0)) };
+          const hasDays = Number.isFinite(args.days);
+          const hasKeepCount = Number.isFinite(args.keepCount);
+          if (hasDays === hasKeepCount) throw new Error('days 和 keepCount 必须且只能填写一个，不能省略');
+          const payload = hasDays ? { days: Math.max(1, Math.floor(args.days)) } : { keepCount: Math.max(0, Math.floor(args.keepCount)) };
           const consequence = payload.days ? `将永久删除 ${payload.days} 天以前的历史原图和元数据。` : `将只保留最近 ${payload.keepCount} 条历史，其余原图和元数据永久删除。`;
           return pending('cleanup_history', '', '清理生成历史？', consequence, payload);
         },
@@ -1054,12 +1055,15 @@ export class PromptAgentService {
         name: 'set_vibes', label: '设置 Vibe', description: '选择最多4个已编码 Vibe及强度。Vibe和编码ID必须来自 search_vibes。',
         parameters: Type.Object({ normalizeStrengths: Type.Optional(Type.Boolean()), slots: Type.Array(Type.Object({ vibeId: Type.String(), vibeName: Type.Optional(Type.String()), encodingId: Type.String(), informationExtracted: Type.Number(), strength: Type.Number() }), { maxItems: 4 }) }),
         execute: async (_id, args) => {
-          const available = new Map((contextData.vibes || []).map(item => [item.id, item]));
-          const slots = args.slots.slice(0, 4).flatMap(slot => {
-            const asset = available.get(slot.vibeId);
+          const slots = [];
+          for (const slot of args.slots.slice(0, 4)) {
+            let asset = (contextData.vibes || []).find(item => item.id === slot.vibeId);
+            if (!asset) {
+              try { const value = await readProject(`/api/vibes/${encodeURIComponent(slot.vibeId)}`); asset = value.item || value; } catch { /* invalid id */ }
+            }
             const encoding = asset?.encodings?.find(item => item.id === slot.encodingId);
-            return asset && encoding ? [{ vibeId: asset.id, vibeName: asset.name, encodingId: encoding.id, informationExtracted: encoding.informationExtracted, strength: clamp(slot.strength, 0, 1, asset.defaultStrength || 0.6) }] : [];
-          });
+            if (asset && encoding) slots.push({ vibeId: asset.id, vibeName: asset.name, encodingId: encoding.id, informationExtracted: encoding.informationExtracted, strength: clamp(slot.strength, 0, 1, asset.defaultStrength || 0.6) });
+          }
           draft.params.vibes = { enabled: slots.length > 0, normalizeStrengths: args.normalizeStrengths !== false, slots };
           return apply('set_vibes', { vibes: draft.params.vibes });
         },
@@ -1162,7 +1166,7 @@ export class PromptAgentService {
         if (event.type === 'tool_execution_start') taskEmit({ type: 'tool_start', toolCallId: event.toolCallId, toolName: event.toolName, args: event.args });
         if (event.type === 'tool_execution_end') taskEmit({ type: 'tool_end', toolCallId: event.toolCallId, toolName: event.toolName, isError: event.isError, result: event.result });
       });
-      this.activeAgents.set(sessionId, { agent, emit });
+      this.activeAgents.set(sessionId, { agent, emit: taskEmit });
       this.startingAgents.delete(sessionId);
       taskStatus = 'running';
       await atomicJsonWrite(this.taskFile(sessionId), { sessionId, status: 'running', startedAt: taskStartedAt, updatedAt: Date.now() });

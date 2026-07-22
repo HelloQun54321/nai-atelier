@@ -12,6 +12,7 @@ export interface PromptAgentProvider {
   id: string;
   name: string;
   authType: 'api_key' | 'oauth';
+  authTypes: Array<'api_key' | 'oauth'>;
   configured: boolean;
   current: boolean;
   modelCount: number;
@@ -107,8 +108,8 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return (await response.json()).items || [];
   },
-  login: async (provider: string, answers: string[]): Promise<PromptAgentLoginResult> => {
-    const response = await fetch('/api/prompt-agent/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, answers }) });
+  login: async (provider: string, answers: string[], authType?: 'api_key' | 'oauth'): Promise<PromptAgentLoginResult> => {
+    const response = await fetch('/api/prompt-agent/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, answers, authType }) });
     if (!response.ok) return readError(response) as never;
     return response.json();
   },

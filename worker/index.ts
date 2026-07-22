@@ -2222,6 +2222,38 @@ export default {
           return json({ config: res ? JSON.parse(res.value) : null });
       }
 
+      // Lightweight project summary for the local Agent. Keep image/base64
+      // fields out of the response and let SQLite perform all counts.
+      if (path === '/api/agent/project-overview' && method === 'GET') {
+          const [chains, inspirations, artists, vibes, groups, history] = await Promise.all([
+              db.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN type = 'character' THEN 1 ELSE 0 END) AS characters FROM chains`).first<any>(),
+              db.prepare('SELECT COUNT(*) AS total FROM inspirations').first<any>(),
+              db.prepare('SELECT COUNT(*) AS total FROM artists').first<any>(),
+              db.prepare('SELECT COUNT(*) AS total FROM vibe_assets').first<any>(),
+              db.prepare('SELECT COUNT(*) AS total FROM vibe_groups').first<any>(),
+              db.prepare(`SELECT id, prompt, negative_prompt, params, source_chain_id, source_chain_name, source_chain_type, created_at FROM local_generation_history ORDER BY created_at DESC LIMIT 5`).all<any>(),
+          ]);
+          const characterCount = Number(chains?.characters || 0);
+          return json({
+              styleChains: Math.max(0, Number(chains?.total || 0) - characterCount),
+              characterChains: characterCount,
+              inspirations: Number(inspirations?.total || 0),
+              artists: Number(artists?.total || 0),
+              vibes: Number(vibes?.total || 0),
+              vibeGroups: Number(groups?.total || 0),
+              recentHistory: (history.results || []).map((item: any) => ({
+                  id: item.id,
+                  prompt: item.prompt,
+                  negativePrompt: item.negative_prompt,
+                  params: parseStoredJson(item.params, {}),
+                  sourceChainId: item.source_chain_id,
+                  sourceChainName: item.source_chain_name,
+                  sourceChainType: item.source_chain_type,
+                  createdAt: item.created_at,
+              })),
+          });
+      }
+
       // Guest Login & Normal Login Logic
       if (path === '/api/auth/guest-login' && method === 'POST') {
           const { passcode } = await request.json() as any;

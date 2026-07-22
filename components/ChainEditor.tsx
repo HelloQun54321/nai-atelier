@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentAction, PromptAgentDraft } from '../types';
+import { PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft } from '../types';
 import { compilePrompt } from '../services/promptUtils';
 import { generateImage } from '../services/naiService';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
@@ -145,7 +145,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
     const [showPromptAgent, setShowPromptAgent] = useState(false);
     const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<PromptAgentDraft | null>(null);
-    const agentRunBaseRef = useRef<string | null>(null);
+    const editorRevisionRef = useRef(0);
+    const agentRunRevisionRef = useRef(0);
 
     useEffect(() => {
         if (agentOpenToken) setShowPromptAgent(true);
@@ -408,6 +409,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     // Helper to mark changes only if owner
     const markChange = () => {
+        editorRevisionRef.current += 1;
         if (isOwner) setHasChanges(true);
     };
 
@@ -1051,24 +1053,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setHasChanges(true);
     };
 
-    const applyAgentAction = (action: PromptAgentAction) => {
-        if (action.kind === 'update_prompts') {
-            if (action.patch.basePrompt !== undefined) setBasePrompt(action.patch.basePrompt);
-            if (action.patch.subjectPrompt !== undefined) setSubjectPrompt(action.patch.subjectPrompt);
-            if (action.patch.negativePrompt !== undefined) setNegativePrompt(action.patch.negativePrompt);
-        } else if (action.kind === 'set_modules') {
-            setModules(action.patch.modules);
-            setActiveModules(Object.fromEntries(action.patch.modules.map(module => [module.id, module.isActive])));
-        } else if (action.kind === 'set_characters') {
-            setParams(previous => ({ ...previous, characters: action.patch.characters }));
-        } else if (action.kind === 'set_params') {
-            setParams(action.patch.params);
-        } else if (action.kind === 'set_vibes') {
-            setParams(previous => ({ ...previous, vibes: action.patch.vibes }));
-        }
-        if (action.kind !== 'request_generation') setHasChanges(true);
-    };
-
     const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string): Promise<boolean> => {
         const cost = estimateV45GenerationCost(draft.params);
         if (cost > 0 && !await confirmAction({
@@ -1316,11 +1300,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 draft={currentAgentDraft()}
                 presets={allChains}
                 apiKey={apiKey}
-                onRunStart={snapshot => { agentRunBaseRef.current = JSON.stringify(currentAgentDraft()); setAgentUndoSnapshot(snapshot); }}
-                onAction={applyAgentAction}
+                onRunStart={snapshot => { agentRunRevisionRef.current = editorRevisionRef.current; setAgentUndoSnapshot(snapshot); }}
                 onFinalDraft={draft => {
-                    const current = JSON.stringify(currentAgentDraft());
-                    if (agentRunBaseRef.current && current !== agentRunBaseRef.current) {
+                    if (editorRevisionRef.current !== agentRunRevisionRef.current) {
                         notify('检测到 Agent 运行期间实验室已有变化，已保留当前内容，未覆盖你的修改。');
                         return;
                     }
