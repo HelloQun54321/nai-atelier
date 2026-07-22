@@ -11,6 +11,13 @@ const statusLabel = (status: QueueStatus) => {
   return '生成完成';
 };
 
+const statusTone = (status: QueueStatus) => {
+  if (status.phase === 'waiting') return 'queue-status-surface--waiting';
+  if (status.phase === 'completed') return 'queue-status-surface--success';
+  if (status.phase === 'error') return 'queue-status-surface--failure';
+  return 'queue-status-surface--normal';
+};
+
 export const useCloudQueueStatus = () => useSyncExternalStore(
   subscribeCloudQueueStatus,
   getCurrentCloudQueueStatus,
@@ -19,23 +26,25 @@ export const useCloudQueueStatus = () => useSyncExternalStore(
 
 const QueueStatusBody: React.FC<{ status: QueueStatus; compact?: boolean }> = ({ status, compact = false }) => {
   const [cancelling, setCancelling] = useState(false);
-  return <div className={`flex items-center ${compact ? 'gap-2' : 'gap-3'}`}>
-      {!['completed', 'cancelled', 'error'].includes(status.phase) && <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white/90 border-t-transparent" />}
-      <div className="min-w-0 flex-1"><p className="text-sm font-bold">{statusLabel(status)}</p>{status.greeting && <p className="mt-0.5 truncate text-xs text-white/70">当前使用者：{status.greeting}</p>}</div>
-      {status.cancelable && <button type="button" disabled={cancelling} onClick={async () => { setCancelling(true); try { await cancelCloudQueueTask(status.taskId); } finally { setCancelling(false); } }} className="mobile-touch shrink-0 rounded-xl bg-white/15 px-3 text-xs font-bold text-white hover:bg-white/25">取消</button>}
+  const active = !['completed', 'cancelled', 'error'].includes(status.phase);
+  return <div className={`relative z-[1] flex w-full items-center justify-center ${compact ? 'min-h-8' : 'min-h-7'}`}>
+      {active && <span aria-hidden="true" className="absolute left-0 h-4 w-4 animate-spin rounded-full border-2 border-white/90 border-t-transparent" />}
+      <div className={`min-w-0 w-full text-center ${status.cancelable ? 'px-14' : 'px-6'}`}>
+        <p className="truncate text-sm font-bold leading-5">{statusLabel(status)}</p>
+        {status.greeting && <p className="mt-0.5 truncate text-center text-xs leading-4 text-white/75">当前使用者：{status.greeting}</p>}
+      </div>
+      {status.cancelable && <button type="button" disabled={cancelling} onClick={async () => { setCancelling(true); try { await cancelCloudQueueTask(status.taskId); } finally { setCancelling(false); } }} className="mobile-touch absolute right-0 inline-flex items-center justify-center rounded-xl bg-white/15 px-3 text-xs font-bold text-white ring-1 ring-white/15 transition-colors hover:bg-white/25 disabled:opacity-60">取消</button>}
   </div>;
 };
 
 export const InlineCloudQueueStatus: React.FC<{ compact?: boolean; className?: string }> = ({ compact = false, className = '' }) => {
   const status = useCloudQueueStatus();
   if (!status) return null;
-  const failed = status.phase === 'error';
-  return <div role="status" className={`${compact ? 'min-h-12 rounded-full px-4 py-2' : 'min-h-12 rounded-lg px-4 py-3'} text-white shadow-lg ${failed ? 'bg-red-600' : 'bg-gradient-to-r from-indigo-600 to-violet-600'} ${className}`}><QueueStatusBody status={status} compact={compact} /></div>;
+  return <div role="status" className={`queue-status-surface ${statusTone(status)} ${compact ? 'min-h-12 rounded-full px-4 py-2' : 'min-h-12 rounded-lg px-4 py-3'} text-white shadow-lg ${className}`}><QueueStatusBody status={status} compact={compact} /></div>;
 };
 
 export const CloudQueueStatus: React.FC<{ hidden?: boolean }> = ({ hidden = false }) => {
   const status = useCloudQueueStatus();
   if (!status || hidden) return null;
-  const failed = status.phase === 'error';
-  return <div className={`fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-1/2 z-[1180] w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 rounded-2xl px-4 py-3 text-white shadow-xl md:bottom-5 md:left-auto md:right-5 md:w-80 md:translate-x-0 ${failed ? 'bg-red-600' : 'bg-gradient-to-r from-indigo-600 to-violet-600'}`}><QueueStatusBody status={status} /></div>;
+  return <div role="status" className={`queue-status-surface ${statusTone(status)} fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-1/2 z-[1180] w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 rounded-2xl px-4 py-3 text-white shadow-xl md:bottom-5 md:left-auto md:right-5 md:w-80 md:translate-x-0`}><QueueStatusBody status={status} /></div>;
 };

@@ -175,6 +175,55 @@ body,
   100% { box-shadow: 0 0 15px rgba(255, 215, 0, 0.8), 0 0 30px rgba(255, 215, 0, 0.5); }
 }
 
+/* 公共队列状态：只保留正常、排队、成功和失败四种视觉语言。 */
+.queue-status-surface {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background-size: 100% 100%;
+  box-shadow: 0 10px 28px rgb(30 41 59 / .22), inset 0 1px 0 rgb(255 255 255 / .2);
+}
+
+.queue-status-surface::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 18% 0%, rgb(255 255 255 / .24), transparent 38%),
+              linear-gradient(105deg, transparent 35%, rgb(255 255 255 / .10) 50%, transparent 65%);
+}
+
+.queue-status-surface--normal {
+  background-image: linear-gradient(120deg, #4f46e5 0%, #7c3aed 55%, #5b21b6 100%);
+}
+
+.queue-status-surface--waiting {
+  background-image: linear-gradient(110deg, #047857 0%, #10b981 22%, #7c3aed 48%, #5b21b6 68%, #059669 86%, #047857 100%);
+  background-size: 300% 100%;
+  animation: queue-status-flow 3.8s ease-in-out infinite;
+  box-shadow: 0 10px 30px rgb(16 185 129 / .22), 0 5px 22px rgb(124 58 237 / .22), inset 0 1px 0 rgb(255 255 255 / .24);
+}
+
+.queue-status-surface--success {
+  background-image: linear-gradient(120deg, #047857 0%, #10b981 52%, #0f766e 100%);
+  box-shadow: 0 10px 28px rgb(5 150 105 / .26), inset 0 1px 0 rgb(255 255 255 / .22);
+}
+
+.queue-status-surface--failure {
+  background-image: linear-gradient(120deg, #e11d48 0%, #be123c 48%, #7f1d1d 100%);
+  box-shadow: 0 10px 28px rgb(190 18 60 / .25), inset 0 1px 0 rgb(255 255 255 / .2);
+}
+
+@keyframes queue-status-flow {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .queue-status-surface--waiting { animation: none; }
+}
+
 /* VIP 角标 */
 .vip-crown {
   display: inline-flex;
