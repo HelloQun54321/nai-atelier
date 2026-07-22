@@ -12,9 +12,9 @@ const statusLabel = (status: QueueStatus) => {
 };
 
 const statusTone = (status: QueueStatus) => {
-  if (status.phase === 'waiting') return 'queue-status-surface--waiting';
   if (status.phase === 'completed') return 'queue-status-surface--success';
   if (status.phase === 'error') return 'queue-status-surface--failure';
+  if (status.phase !== 'cancelled') return 'queue-status-surface--active';
   return 'queue-status-surface--normal';
 };
 
@@ -28,10 +28,15 @@ const QueueStatusBody: React.FC<{ status: QueueStatus; compact?: boolean }> = ({
   const [cancelling, setCancelling] = useState(false);
   const active = !['completed', 'cancelled', 'error'].includes(status.phase);
   return <div className={`relative z-[1] flex w-full items-center justify-center ${compact ? 'min-h-8' : 'min-h-7'}`}>
-      {active && <span aria-hidden="true" className="absolute left-0 h-4 w-4 animate-spin rounded-full border-2 border-white/90 border-t-transparent" />}
-      <div className={`min-w-0 w-full text-center ${status.cancelable ? 'px-14' : 'px-6'}`}>
-        <p className="truncate text-sm font-bold leading-5">{statusLabel(status)}</p>
-        {status.greeting && <p className="mt-0.5 truncate text-center text-xs leading-4 text-white/75">当前使用者：{status.greeting}</p>}
+      <div className={`flex w-full min-w-0 justify-center ${status.cancelable ? 'px-12' : 'px-2'}`}>
+        <div className="flex min-w-0 max-w-full items-center justify-center gap-2">
+          {active && <span aria-hidden="true" className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white/90 border-t-transparent" />}
+          <div className="min-w-0 text-center">
+            <p className="truncate text-sm font-bold leading-5">{statusLabel(status)}</p>
+            {status.greeting && <p className="mt-0.5 truncate text-center text-xs leading-4 text-white/75">当前使用者：{status.greeting}</p>}
+          </div>
+          {active && <span aria-hidden="true" className="h-4 w-4 shrink-0" />}
+        </div>
       </div>
       {status.cancelable && <button type="button" disabled={cancelling} onClick={async () => { setCancelling(true); try { await cancelCloudQueueTask(status.taskId); } finally { setCancelling(false); } }} className="mobile-touch absolute right-0 inline-flex items-center justify-center rounded-xl bg-white/15 px-3 text-xs font-bold text-white ring-1 ring-white/15 transition-colors hover:bg-white/25 disabled:opacity-60">取消</button>}
   </div>;
