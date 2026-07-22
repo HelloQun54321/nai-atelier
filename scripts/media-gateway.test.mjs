@@ -12,6 +12,28 @@ import {
   CloudQueueCoordinator,
   fetchNovelAiGeneration,
 } from './media-gateway.mjs';
+import { PromptAgentService } from './prompt-agent.mjs';
+
+test('prompt agent keeps API keys encrypted and out of its public config', () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const encrypted = service.encrypt('private-llm-key');
+  service.config.encryptedKeys.google = encrypted;
+  assert.equal(service.decrypt(encrypted), 'private-llm-key');
+  assert.equal(JSON.stringify(encrypted).includes('private-llm-key'), false);
+  assert.equal(JSON.stringify(service.publicConfig()).includes('private-llm-key'), false);
+  assert.deepEqual(service.publicConfig().configuredProviders, ['google']);
+});
+
+test('prompt agent Vibe tool accepts only known encodings and at most four slots', async () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const draft = { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' } };
+  const vibes = Array.from({ length: 5 }, (_, index) => ({ id: `v${index}`, name: `Vibe ${index}`, defaultStrength: 0.6, encodings: [{ id: `e${index}`, informationExtracted: 1 }] }));
+  const actions = [];
+  const tool = service.createTools(draft, { presets: [], vibes }, event => actions.push(event)).find(item => item.name === 'set_vibes');
+  await tool.execute('call', { normalizeStrengths: true, slots: vibes.map((vibe, index) => ({ vibeId: vibe.id, encodingId: `e${index}`, informationExtracted: 1, strength: 0.6 })) });
+  assert.equal(draft.params.vibes.slots.length, 4);
+  assert.equal(actions.at(-1).action.kind, 'set_vibes');
+});
 
 test('NovelAI generation uses the computer outbound proxy transport', async () => {
   let captured;

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem } from '../types';
+import { PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentAction, PromptAgentDraft } from '../types';
 import { compilePrompt } from '../services/promptUtils';
 import { generateImage } from '../services/naiService';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
@@ -17,6 +17,7 @@ import { createUuid } from '../services/id';
 import { VibeManager } from './VibeManager';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { estimateV45GenerationCost } from '../services/anlasBudget';
+import { PromptAgentPanel } from './PromptAgentPanel';
 
 interface ChainEditorProps {
     chain: PromptChain;
@@ -141,6 +142,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [showJsonPasteModal, setShowJsonPasteModal] = useState(false);
     const [jsonPasteText, setJsonPasteText] = useState('');
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
+    const [showPromptAgent, setShowPromptAgent] = useState(false);
+    const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<PromptAgentDraft | null>(null);
 
     useEffect(() => {
         const viewport = window.visualViewport;
@@ -942,26 +945,29 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         });
     };
 
-    const handleGenerate = async () => {
+    const handleGenerateDraft = async (override?: PromptAgentDraft) => {
         if (!apiKey) {
             setErrorMsg('请在左侧“全局设置”中配置 NovelAI API Key');
             return;
         }
+        const generationPrompt = override ? compilePrompt({ basePrompt: override.basePrompt, modules: override.modules }, override.subjectPrompt) : finalPrompt;
+        const generationNegativePrompt = override?.negativePrompt ?? negativePrompt;
+        const generationParams = override?.params ?? params;
         setIsGenerating(true);
         setErrorMsg(null);
         try {
             const activeParams: NAIParams = {
-                ...params,
-                vibes: params.vibes ? {
-                    ...params.vibes,
-                    slots: normalizeVibeSelections(params.vibes.slots, params.vibes.normalizeStrengths),
+                ...generationParams,
+                vibes: generationParams.vibes ? {
+                    ...generationParams.vibes,
+                    slots: normalizeVibeSelections(generationParams.vibes.slots, generationParams.vibes.normalizeStrengths),
                 } : undefined,
             };
-            const result = await generateImage(apiKey, finalPrompt, negativePrompt, activeParams);
+            const result = await generateImage(apiKey, generationPrompt, generationNegativePrompt, activeParams);
             setGeneratedImage(result.image);
             // Use actual seed returned from generation
             const finalParams = { ...activeParams, seed: result.seed };
-            const historyItem = await localHistory.add(result.image, finalPrompt, finalParams, negativePrompt, {
+            const historyItem = await localHistory.add(result.image, generationPrompt, finalParams, generationNegativePrompt, {
                 sourceChainId,
                 sourceChainName: chainName,
                 sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
@@ -985,8 +991,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     sampler: activeParams.sampler,
                     requestedSeed: activeParams.seed ?? 'random',
                     seed: result.seed,
-                    promptLength: finalPrompt.length,
-                    negativeLength: negativePrompt.length,
+                    promptLength: generationPrompt.length,
+                    negativeLength: generationNegativePrompt.length,
                     characters: activeParams.characters?.length || 0,
                 },
             }).catch(console.error);
@@ -1003,19 +1009,67 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 metadata: {
                     chainName,
                     error: e.message,
-                    width: params.width,
-                    height: params.height,
-                    steps: params.steps,
-                    scale: params.scale,
-                    sampler: params.sampler,
-                    seed: params.seed ?? 'random',
-                    promptLength: finalPrompt.length,
-                    negativeLength: negativePrompt.length,
+                    width: generationParams.width,
+                    height: generationParams.height,
+                    steps: generationParams.steps,
+                    scale: generationParams.scale,
+                    sampler: generationParams.sampler,
+                    seed: generationParams.seed ?? 'random',
+                    promptLength: generationPrompt.length,
+                    negativeLength: generationNegativePrompt.length,
                 },
             }).catch(console.error);
         } finally {
             setIsGenerating(false);
         }
+    };
+    const handleGenerate = () => handleGenerateDraft();
+
+    const currentAgentDraft = (): PromptAgentDraft => ({
+        basePrompt,
+        subjectPrompt,
+        negativePrompt,
+        modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })),
+        params,
+    });
+
+    const applyAgentDraft = (draft: PromptAgentDraft) => {
+        setBasePrompt(draft.basePrompt);
+        setSubjectPrompt(draft.subjectPrompt);
+        setNegativePrompt(draft.negativePrompt);
+        setModules(draft.modules);
+        setActiveModules(Object.fromEntries(draft.modules.map(module => [module.id, module.isActive])));
+        setParams(draft.params);
+        setHasChanges(true);
+    };
+
+    const applyAgentAction = (action: PromptAgentAction) => {
+        if (action.kind === 'update_prompts') {
+            if (action.patch.basePrompt !== undefined) setBasePrompt(action.patch.basePrompt);
+            if (action.patch.subjectPrompt !== undefined) setSubjectPrompt(action.patch.subjectPrompt);
+            if (action.patch.negativePrompt !== undefined) setNegativePrompt(action.patch.negativePrompt);
+        } else if (action.kind === 'set_modules') {
+            setModules(action.patch.modules);
+            setActiveModules(Object.fromEntries(action.patch.modules.map(module => [module.id, module.isActive])));
+        } else if (action.kind === 'set_characters') {
+            setParams(previous => ({ ...previous, characters: action.patch.characters }));
+        } else if (action.kind === 'set_params') {
+            setParams(action.patch.params);
+        } else if (action.kind === 'set_vibes') {
+            setParams(previous => ({ ...previous, vibes: action.patch.vibes }));
+        }
+        if (action.kind !== 'request_generation') setHasChanges(true);
+    };
+
+    const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string) => {
+        const cost = estimateV45GenerationCost(draft.params);
+        if (cost > 0 && !await confirmAction({
+            title: 'Agent 已准备好生图',
+            message: `${reason ? `${reason}\n\n` : ''}预计本次消耗 ${cost} Anlas。确认后才会提交给 NovelAI。`,
+            confirmLabel: `消耗 ${cost} 点并生成`,
+        })) return;
+        setShowPromptAgent(false);
+        await handleGenerateDraft(draft);
     };
 
     const handleSavePreview = async () => {
@@ -1199,6 +1253,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     {canEdit && (
                         <button
                             type="button"
+                            onClick={() => setShowPromptAgent(true)}
+                            className="mobile-touch flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-fuchsia-500 to-indigo-600 p-0 text-white shadow-lg shadow-fuchsia-500/20 transition-transform hover:scale-[1.03]"
+                            title="AI 生图 Agent"
+                            aria-label="打开 AI 生图 Agent"
+                        >
+                            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.75c.42 4.6 2.65 6.83 7.25 7.25-4.6.42-6.83 2.65-7.25 7.25C11.58 12.65 9.35 10.42 4.75 10 9.35 9.58 11.58 7.35 12 2.75ZM5.2 15.2c.2 2.2 1.35 3.35 3.55 3.55-2.2.2-3.35 1.35-3.55 3.55-.2-2.2-1.35-3.35-3.55-3.55 2.2-.2 3.35-1.35 3.55-3.55Zm13.6 1.1c.13 1.45.9 2.22 2.35 2.35-1.45.13-2.22.9-2.35 2.35-.13-1.45-.9-2.22-2.35-2.35 1.45-.13 2.22-.9 2.35-2.35Z" /></svg>
+                        </button>
+                    )}
+                    {canEdit && (
+                        <button
+                            type="button"
                             onClick={() => setShowImportPreset(true)}
                             className="mobile-touch flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 p-0 text-indigo-600 transition-colors hover:bg-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950/70"
                             title="引用预设"
@@ -1236,6 +1301,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     {isOwner && chain.id !== 'playground' && <button onClick={handleSaveAll} disabled={!hasChanges} className={`mobile-touch rounded-xl px-3 text-sm font-bold lg:hidden ${hasChanges ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}>{hasChanges ? '保存' : '已保存'}</button>}
                 </div>
             </header>
+            <PromptAgentPanel
+                open={showPromptAgent}
+                onClose={() => setShowPromptAgent(false)}
+                sessionId={chain.id}
+                draft={currentAgentDraft()}
+                presets={allChains}
+                onRunStart={snapshot => setAgentUndoSnapshot(snapshot)}
+                onAction={applyAgentAction}
+                onFinalDraft={applyAgentDraft}
+                onRequestGeneration={(draft, reason) => void requestAgentGeneration(draft, reason)}
+                canUndo={Boolean(agentUndoSnapshot)}
+                onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次 Agent 修改'); } }}
+            />
             <nav className="grid grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
                 {([['global', '全局'], ['character', '角色'], ['params', '参数']] as const).map(([value, label]) => <button key={value} onClick={() => setMobileEditorTab(value)} className={`relative min-h-11 text-sm font-bold ${mobileEditorTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>{label}{mobileEditorTab === value && <span className="absolute inset-x-5 bottom-0 h-0.5 rounded-full bg-indigo-500" />}</button>)}
             </nav>

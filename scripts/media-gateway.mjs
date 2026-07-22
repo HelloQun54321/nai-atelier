@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { PromptAgentService } from './prompt-agent.mjs';
 
 const CACHE_VERSION = 'v1';
 const CACHE_DIR = join(process.cwd(), 'local-cache', 'thumbnails');
@@ -926,11 +927,67 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
   const cloudQueue = new CloudQueueCoordinator(remoteFetch);
   const cloudQueuePreferences = await loadCloudQueuePreferences();
   const cache = new ThumbnailCache();
+  const promptAgent = new PromptAgentService({ lanSecret, outboundProxyUrl });
   await cache.init();
+  await promptAgent.init();
   await recoverPendingVibeEncodings(workerPort);
   const server = createServer(async (req, res) => {
     let url;
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
+    if (url.pathname.startsWith('/api/prompt-agent/')) {
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      try {
+        if (url.pathname === '/api/prompt-agent/config') {
+          if (req.method === 'GET') return sendJson(res, 200, promptAgent.publicConfig());
+          if (req.method !== 'PUT') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 32 * 1024)).toString('utf8') || '{}');
+          return sendJson(res, 200, await promptAgent.saveConfig(body));
+        }
+        if (url.pathname === '/api/prompt-agent/models') {
+          if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+          return sendJson(res, 200, { items: promptAgent.getModels(url.searchParams.get('provider') || '') });
+        }
+        if (url.pathname === '/api/prompt-agent/session/reset') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 8 * 1024)).toString('utf8') || '{}');
+          await promptAgent.resetSession(body.sessionId);
+          return sendJson(res, 200, { ok: true });
+        }
+        if (url.pathname === '/api/prompt-agent/session') {
+          if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+          return sendJson(res, 200, { items: await promptAgent.getSessionHistory(url.searchParams.get('sessionId') || '') });
+        }
+        if (url.pathname === '/api/prompt-agent/run') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 2 * 1024 * 1024)).toString('utf8') || '{}');
+          if (!String(body.message || '').trim()) return sendJson(res, 400, { error: '请先告诉 Agent 你想做什么' });
+          const controller = new AbortController();
+          const abort = () => { if (!res.writableEnded) controller.abort(); };
+          req.once('aborted', abort);
+          res.once('close', abort);
+          res.writeHead(200, {
+            'Content-Type': 'application/x-ndjson; charset=utf-8',
+            'Cache-Control': 'private, no-store',
+            'X-Content-Type-Options': 'nosniff',
+          });
+          const emit = event => { if (!res.destroyed) res.write(`${JSON.stringify(event)}\n`); };
+          try {
+            const result = await promptAgent.run(body, emit, controller.signal);
+            emit({ type: 'done', ...result });
+          } catch (error) {
+            emit({ type: 'error', error: error.message || 'Agent 执行失败' });
+          } finally {
+            req.removeListener('aborted', abort);
+            res.removeListener('close', abort);
+            if (!res.writableEnded) res.end();
+          }
+          return;
+        }
+        return sendJson(res, 404, { error: 'Agent interface not found' });
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 400, { error: error.message || 'Agent 请求失败' });
+      }
+    }
     if (url.pathname === '/__internal/aitag-fetch') return handleAitagRemoteRequest(req, res, url, lanSecret, remoteFetch);
     if (url.pathname === '/api/generate') return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, cloudQueuePreferences, remoteFetch);
     if (url.pathname === '/api/generation-queue/preferences') {

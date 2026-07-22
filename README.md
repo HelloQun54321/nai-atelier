@@ -91,6 +91,7 @@ flowchart LR
 | 🗃️ **AITag** | 检索外部 AI 作品，缓存图片与元数据 | 实验室、画师串、灵感 |
 | 💡 **灵感** | 保存值得复用的图片、Prompt 和参数 | 实验室 |
 | 🧪 **实验室** | 组合提示词、引用预设、生成与预览 | 历史、画师串、下载 |
+| ✦ **AI 生图 Agent** | 用 DeepSeek、Gemini、Grok 等模型直接修改提示词、角色、参数与 Vibe | 实验室、NovelAI 生图 |
 | 🌌 **Vibe Transfer** | 永久保存 NovelAI 画风编码并组合强度 | 实验室、画师串、历史 |
 | 🚦 **拼车公共队列** | 与 st-chatu8 按相同 Key 指纹协调生图顺序，减少共享账号并发错误 | 全部生图入口、电脑与手机 |
 | 🕘 **历史** | 管理电脑保存的生成原图和完整参数 | 实验室、灵感、下载 |
@@ -140,6 +141,19 @@ flowchart LR
 - NovelAI V4.5 正面质量标签与负面预设
 - 生成结果预览、本地历史切换、下载和封面设置
 - 从 NovelAI PNG / JSON 元数据恢复 Prompt 与参数
+
+### AI 生图 Agent：不止生成一段文字
+
+实验室右上角的星光按钮接入 [pi.dev](https://pi.dev/) 的轻量 Agent 核心。它不是一个需要你手动复制 Prompt 的旁路聊天框，而是能读取当前实验室并直接操作创作配置。
+
+- 支持 DeepSeek、Google Gemini、xAI / Grok 和 OpenRouter；模型服务与模型可在“全局设置 → AI 生图 Agent”中切换。
+- 可以搜索本地中英 Tag、画师串、角色串与永久 Vibe，再修改基础画风、主体、负面 Prompt、提示词模块、多角色、生成参数和 Vibe 组合。
+- 每轮修改前保存完整快照，面板内可以“撤销本次”；对话记录保存在电脑，重启或从手机访问后仍能继续。
+- Agent 只有 NaiPromptManager 提供的结构化生图工具，没有电脑文件、命令行或浏览器权限。
+- 普通编辑会直接应用；只有用户明确要求出图时才发起生成请求。预计消耗 Anlas 的生成仍使用项目确认面板，确认前不会提交 NovelAI。
+- LLM API Key 使用 AES-256-GCM 加密保存在电脑 `local-data`，不会写入浏览器存储，也不会回传给手机。模型服务自身可能按其官方规则收取文本模型费用，这与 NovelAI Anlas 相互独立。
+
+项目只使用 `@earendil-works/pi-agent-core` 与 `@earendil-works/pi-ai`，没有接入可操作文件和终端的完整 Coding Agent，也没有复制 pi.dev 的界面或代码逻辑。
 
 ### 永久 Vibe Transfer：编码一次，长期复用
 

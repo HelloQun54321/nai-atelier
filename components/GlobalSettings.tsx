@@ -12,6 +12,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { getMobileImageDisplayPreferences, MobileImageColumns, MobileImageLayout, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { anlasBudgetService, DEFAULT_ANLAS_BUDGET, useAnlasBudget } from '../services/anlasBudget';
 import { CLOUD_QUEUE_SERVICE_URL, getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
+import { PromptAgentConfig, PromptAgentModel, promptAgentService } from '../services/promptAgent';
 
 interface GlobalSettingsProps {
   open: boolean;
@@ -35,7 +36,12 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
   const [mobileCacheStats, setMobileCacheStats] = useState(getMobileCacheStats);
   const [imageDisplay, setImageDisplay] = useState(getMobileImageDisplayPreferences);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
-  const [mobileSection, setMobileSection] = useState<'appearance' | 'novelai' | 'anlas' | 'tags' | 'cache'>('appearance');
+  const [mobileSection, setMobileSection] = useState<'appearance' | 'novelai' | 'agent' | 'anlas' | 'tags' | 'cache'>('appearance');
+  const [agentConfig, setAgentConfig] = useState<PromptAgentConfig | null>(null);
+  const [agentModels, setAgentModels] = useState<PromptAgentModel[]>([]);
+  const [agentApiKey, setAgentApiKey] = useState('');
+  const [showAgentApiKey, setShowAgentApiKey] = useState(false);
+  const [savingAgent, setSavingAgent] = useState(false);
   const anlasBudget = useAnlasBudget();
   const [anlasInput, setAnlasInput] = useState(String(DEFAULT_ANLAS_BUDGET));
   const requestClose = useMobileHistoryLayer(open, onClose, 'settings');
@@ -52,6 +58,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
     setApiKey(readApiKey());
     setRememberApiKey(localStorage.getItem('nai_api_key') !== null);
     void getCloudQueuePreferences().then(setCloudQueue).catch(() => notify('读取公共队列设置失败', 'error'));
+    void promptAgentService.getConfig().then(async config => {
+      setAgentConfig(config);
+      setAgentModels(await promptAgentService.getModels(config.provider));
+    }).catch(() => notify('读取 AI Agent 设置失败', 'error'));
   }, [open]);
 
   useEffect(() => { setAnlasInput(String(anlasBudget.remaining)); }, [anlasBudget.remaining]);
@@ -96,6 +106,32 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
     const next = { ...cloudQueue, ...patch };
     setCloudQueue(next);
     void setCloudQueuePreferences(next).then(setCloudQueue).catch(() => notify('保存公共队列设置失败', 'error'));
+  };
+
+  const changeAgentProvider = async (provider: string) => {
+    if (!agentConfig) return;
+    const models = await promptAgentService.getModels(provider);
+    setAgentModels(models);
+    setAgentConfig({ ...agentConfig, provider, model: models[0]?.id || '' });
+    setAgentApiKey('');
+  };
+
+  const saveAgentConfig = async (clearApiKey = false) => {
+    if (!agentConfig) return;
+    setSavingAgent(true);
+    try {
+      const saved = await promptAgentService.saveConfig({
+        provider: agentConfig.provider,
+        model: agentConfig.model,
+        ...(agentApiKey.trim() ? { apiKey: agentApiKey.trim() } : {}),
+        ...(clearApiKey ? { clearApiKey: true } : {}),
+      });
+      setAgentConfig(saved);
+      setAgentApiKey('');
+      notify(clearApiKey ? '已清除当前模型服务的密钥' : 'AI Agent 设置已保存在电脑');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '保存 AI Agent 设置失败', 'error');
+    } finally { setSavingAgent(false); }
   };
 
   if (!open) return null;
@@ -173,6 +209,24 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
                 <p className="text-[11px] leading-5 text-amber-600 dark:text-amber-400">仅发送 Key 的 SHA-256 指纹、任务标识和个性语；Prompt、图片、原始 Key 不会发送给队列服务。队列不可用时本次生成会停止，不会静默绕过。</p>
               </div>}
             </div></div>}
+          </section>
+
+          <section className="rounded-xl border border-fuchsia-200 bg-fuchsia-50/30 p-4 dark:border-fuchsia-900/70 dark:bg-fuchsia-950/15">
+            <button type="button" onClick={() => isMobile && setMobileSection('agent')} className="flex min-h-11 w-full items-center justify-between gap-4 text-left">
+              <div><h3 className="font-semibold text-gray-900 dark:text-white">AI 生图 Agent</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">让 DeepSeek、Gemini 或 Grok 直接修改实验室并按需请求生图。</p></div>
+              <span className="md:hidden">{mobileSection === 'agent' ? '⌃' : '⌄'}</span>
+            </button>
+            {(!isMobile || mobileSection === 'agent') && <div className="mt-3 space-y-3">
+              {!agentConfig ? <p className="text-sm text-gray-500">正在读取电脑端配置…</p> : <>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <label><span className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">模型服务</span><select value={agentConfig.provider} onChange={event => void changeAgentProvider(event.target.value)} className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-900">{agentConfig.providers.map(provider => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
+                  <label><span className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">模型</span><select value={agentConfig.model} onChange={event => setAgentConfig({ ...agentConfig, model: event.target.value })} className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-900">{agentModels.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}</select></label>
+                </div>
+                <div className="flex gap-2"><input type={showAgentApiKey ? 'text' : 'password'} value={agentApiKey} onChange={event => setAgentApiKey(event.target.value)} placeholder={agentConfig.configuredProviders.includes(agentConfig.provider) ? '已保存在电脑；留空则不更换' : '输入该服务的 API Key'} autoComplete="new-password" className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 font-mono text-sm dark:border-gray-600 dark:bg-gray-900" /><button type="button" onClick={() => setShowAgentApiKey(value => !value)} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">{showAgentApiKey ? '隐藏' : '显示'}</button></div>
+                <div className="flex items-center justify-between gap-2"><span className={`text-xs font-bold ${agentConfig.configuredProviders.includes(agentConfig.provider) ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>{agentConfig.configuredProviders.includes(agentConfig.provider) ? '● 密钥已加密保存在电脑' : '○ 尚未配置此服务'}</span><div className="flex gap-2">{agentConfig.configuredProviders.includes(agentConfig.provider) && <button type="button" onClick={() => void saveAgentConfig(true)} className="mobile-touch px-2 text-xs font-bold text-red-500">清除</button>}<button type="button" disabled={savingAgent || !agentConfig.model} onClick={() => void saveAgentConfig()} className="mobile-touch rounded-xl bg-fuchsia-600 px-4 text-sm font-bold text-white disabled:opacity-50">{savingAgent ? '保存中…' : '保存'}</button></div></div>
+                <p className="text-[11px] leading-5 text-gray-500 dark:text-gray-400">Agent 只拥有提示词、角色、参数、预设与 Vibe 工具，没有电脑文件、命令行或浏览器权限。手机调用时也由电脑连接模型服务。</p>
+              </>}
+            </div>}
           </section>
 
           <section className="rounded-xl border border-violet-200 bg-violet-50/40 p-4 dark:border-violet-900/70 dark:bg-violet-950/20">

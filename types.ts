@@ -97,6 +97,22 @@ export interface NAIParams {
   };
 }
 
+export interface PromptAgentDraft {
+  basePrompt: string;
+  subjectPrompt: string;
+  negativePrompt: string;
+  modules: PromptModule[];
+  params: NAIParams;
+}
+
+export type PromptAgentAction =
+  | { kind: 'update_prompts'; patch: Partial<Pick<PromptAgentDraft, 'basePrompt' | 'subjectPrompt' | 'negativePrompt'>> }
+  | { kind: 'set_modules'; patch: { modules: PromptModule[] } }
+  | { kind: 'set_characters'; patch: { characters: CharacterParams[] } }
+  | { kind: 'set_params'; patch: { params: NAIParams } }
+  | { kind: 'set_vibes'; patch: { vibes: NAIParams['vibes'] } }
+  | { kind: 'request_generation'; patch: { reason?: string } };
+
 export type ChainType = 'style' | 'character';
 
 // Flattened Chain Structure (No more separate versions table)
