@@ -1,4 +1,4 @@
-import { spawn, execSync } from 'child_process';
+import { spawn, execSync, spawnSync } from 'child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'fs';
 import { randomBytes, randomInt } from 'crypto';
 import { networkInterfaces, platform } from 'os';
@@ -195,7 +195,7 @@ async function reuseExistingServer() {
 async function waitForWorker(port) {
   for (let i = 0; i < 60; i++) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/lan/status`, { cache: 'no-store' });
+      const response = await fetch(`http://127.0.0.1:${port}/api/lan/status`, { cache: 'no-store', signal: AbortSignal.timeout(1500) });
       const payload = await response.json().catch(() => null);
       if (response.ok && typeof payload?.authorized === 'boolean') return;
     } catch {
@@ -204,6 +204,15 @@ async function waitForWorker(port) {
     await new Promise(resolve => setTimeout(resolve, 500));
   }
   throw new Error('内部服务启动超时');
+}
+
+function terminateProcessTree(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return;
+  if (IS_WINDOWS) {
+    spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+    return;
+  }
+  try { process.kill(pid, 'SIGTERM'); } catch { /* Already stopped. */ }
 }
 
 async function startServer() {
@@ -236,22 +245,35 @@ async function startServer() {
     '--show-interactive-dev-session=false'
   ];
   
-  const spawnOpts = IS_WINDOWS ? { stdio: 'inherit' } : { stdio: 'inherit', shell: false };
-  const cmd = IS_WINDOWS ? process.env.comspec || 'cmd.exe' : './node_modules/.bin/wrangler';
-  const cmdArgs = IS_WINDOWS ? ['/c', 'node_modules\\.bin\\wrangler.cmd', ...args] : args;
-  
   const tagUpdateServer = startTagUpdateServer();
-  const child = spawn(cmd, cmdArgs, spawnOpts);
+  // Launch Wrangler's actual CLI process directly. The old cmd -> .cmd wrapper
+  // chain left Miniflare descendants behind when startup failed on Windows.
+  const wranglerCli = 'node_modules/wrangler/wrangler-dist/cli.js';
+  const child = spawn(process.execPath, ['--no-warnings', '--experimental-vm-modules', wranglerCli, ...args], { stdio: 'inherit', shell: false });
   let mediaGateway = null;
+  let shuttingDown = false;
+
+  const cleanup = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    mediaGateway?.close();
+    tagUpdateServer.close();
+    terminateProcessTree(child.pid);
+  };
+
+  process.once('SIGINT', () => { cleanup(); process.exit(0); });
+  process.once('SIGTERM', () => { cleanup(); process.exit(0); });
   
   child.on('error', (err) => {
     console.error('\x1b[31m启动失败:\x1b[0m', err.message);
+    cleanup();
     process.exit(1);
   });
   
   child.on('exit', (code) => {
     mediaGateway?.close();
     tagUpdateServer.close();
+    if (shuttingDown) return;
     if (code !== 0 && code !== null) {
       console.error(`\x1b[31m服务异常退出，退出码: ${code}\x1b[0m`);
     }
@@ -265,9 +287,7 @@ async function startServer() {
     openWhenReady();
   } catch (error) {
     console.error(`\x1b[31m本地服务启动失败: ${error.message}\x1b[0m`);
-    mediaGateway?.close();
-    tagUpdateServer.close();
-    child.kill();
+    cleanup();
     process.exit(1);
   }
 }
