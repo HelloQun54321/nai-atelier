@@ -145,6 +145,7 @@ export class PromptAgentService {
     this.config = { version: 2, provider: 'google', model: defaultModelFor('google'), encryptedKeys: {} };
     this.activeAgents = new Map();
     this.pendingConfirmations = new Map();
+    this.runHistory = [];
     this.tagManifest = null;
   }
 
@@ -217,11 +218,11 @@ export class PromptAgentService {
   listProviders() {
     const configured = new Set(this.configuredProviderIds());
     return [...PROVIDER_CATALOG.values()]
-      .filter(provider => provider.auth?.apiKey)
+      .filter(provider => provider.auth?.apiKey || provider.auth?.oauth)
       .map(provider => ({
         id: provider.id,
         name: provider.name || provider.id,
-        authType: 'api_key',
+        authType: provider.auth?.oauth && !provider.auth?.apiKey ? 'oauth' : 'api_key',
         configured: configured.has(provider.id),
         current: this.publicConfig().provider === provider.id && configured.has(provider.id),
         modelCount: listModels(provider.id).length,
@@ -239,7 +240,7 @@ export class PromptAgentService {
 
   async loginProvider(providerId, input) {
     const provider = PROVIDER_CATALOG.get(providerId);
-    if (!provider?.auth?.apiKey) throw Object.assign(new Error('这个模型服务不支持 API Key 登录'), { status: 400 });
+    if (!provider?.auth?.apiKey && !provider?.auth?.oauth) throw Object.assign(new Error('这个模型服务不支持登录'), { status: 400 });
     const answers = Array.isArray(input?.answers) ? input.answers.map(value => String(value)) : [];
     if (typeof input?.apiKey === 'string' && input.apiKey.trim()) answers.push(input.apiKey.trim());
     let promptIndex = 0;
@@ -247,8 +248,11 @@ export class PromptAgentService {
     class PromptNeeded extends Error { constructor(prompt, index) { super('LOGIN_PROMPT_NEEDED'); this.prompt = prompt; this.index = index; } }
     let credential;
     try {
-      if (provider.auth.apiKey.login) {
-        credential = await provider.auth.apiKey.login({
+      // Prefer API Key when a provider offers both methods; OAuth-only providers
+      // (such as OpenAI Codex) still use pi's browser/device-code flow.
+      const auth = provider.auth.apiKey || provider.auth.oauth;
+      if (auth.login) {
+        credential = await auth.login({
           prompt: async prompt => {
             const index = promptIndex++;
             if (index < answers.length) return answers[index];
@@ -257,7 +261,7 @@ export class PromptAgentService {
           notify: event => events.push(event),
         });
       } else {
-        if (!answers[0]?.trim()) throw new PromptNeeded({ type: 'secret', message: provider.auth.apiKey.name || 'API Key' }, 0);
+        if (!answers[0]?.trim()) throw new PromptNeeded({ type: 'secret', message: provider.auth.apiKey?.name || 'API Key' }, 0);
         credential = { type: 'api_key', key: answers[0].trim() };
       }
     } catch (error) {
@@ -311,25 +315,37 @@ export class PromptAgentService {
 
   async executeConfirmedProjectAction(input, project) {
     if (!project?.requestJson) throw new Error('电脑项目数据服务不可用');
+    const requestId = text(input?.confirmationRequestId).slice(0, 100);
+    const confirmation = this.pendingConfirmations.get(requestId);
+    if (!confirmation || confirmation.sessionId !== text(input?.sessionId) || confirmation.approved !== true) throw Object.assign(new Error('危险操作缺少有效的 Agent 确认令牌'), { status: 403 });
     const action = text(input?.action).slice(0, 80);
     const resourceId = text(input?.resourceId).slice(0, 200);
     const encodedId = encodeURIComponent(resourceId);
-    if (action === 'delete_chain' && resourceId) await project.requestJson(`/api/chains/${encodedId}`, { method: 'DELETE' });
-    else if (action === 'delete_inspiration' && resourceId) await project.requestJson(`/api/inspirations/${encodedId}`, { method: 'DELETE' });
-    else if (action === 'delete_history' && resourceId) await project.requestJson(`/api/local-history/${encodedId}`, { method: 'DELETE' });
-    else if (action === 'delete_vibe' && resourceId) await project.requestJson(`/api/vibes/${encodedId}/archive`, { method: 'POST', body: {} });
-    else if (action === 'delete_vibe_group' && resourceId) await project.requestJson(`/api/vibe-groups/${encodedId}`, { method: 'DELETE' });
-    else if (action === 'delete_artist' && resourceId) await project.requestJson(`/api/artists/${encodedId}`, { method: 'DELETE' });
-    else if (action === 'clear_history') await project.requestJson('/api/local-history', { method: 'DELETE' });
-    else if (action === 'cleanup_history') {
-      const days = Number(input?.payload?.days);
-      const keepCount = Number(input?.payload?.keepCount);
-      const body = Number.isFinite(days) ? { days: Math.max(1, Math.floor(days)) } : Number.isFinite(keepCount) ? { keepCount: Math.max(0, Math.floor(keepCount)) } : null;
-      if (!body) throw Object.assign(new Error('缺少有效的历史清理条件'), { status: 400 });
-      await project.requestJson('/api/local-history/cleanup', { method: 'POST', body });
+    try {
+      if (action === 'delete_chain' && resourceId) await project.requestJson(`/api/chains/${encodedId}`, { method: 'DELETE' });
+      else if (action === 'delete_inspiration' && resourceId) await project.requestJson(`/api/inspirations/${encodedId}`, { method: 'DELETE' });
+      else if (action === 'delete_history' && resourceId) await project.requestJson(`/api/local-history/${encodedId}`, { method: 'DELETE' });
+      else if (action === 'delete_vibe' && resourceId) await project.requestJson(`/api/vibes/${encodedId}/archive`, { method: 'POST', body: {} });
+      else if (action === 'delete_vibe_group' && resourceId) await project.requestJson(`/api/vibe-groups/${encodedId}`, { method: 'DELETE' });
+      else if (action === 'delete_artist' && resourceId) await project.requestJson(`/api/artists/${encodedId}`, { method: 'DELETE' });
+      else if (action === 'clear_history') await project.requestJson('/api/local-history', { method: 'DELETE' });
+      else if (action === 'cleanup_history') {
+        const days = Number(input?.payload?.days);
+        const keepCount = Number(input?.payload?.keepCount);
+        const body = Number.isFinite(days) ? { days: Math.max(1, Math.floor(days)) } : Number.isFinite(keepCount) ? { keepCount: Math.max(0, Math.floor(keepCount)) } : null;
+        if (!body) throw Object.assign(new Error('缺少有效的历史清理条件'), { status: 400 });
+        await project.requestJson('/api/local-history/cleanup', { method: 'POST', body });
+      } else throw Object.assign(new Error('不允许执行这个项目操作'), { status: 400 });
+      clearTimeout(confirmation.timer);
+      this.pendingConfirmations.delete(requestId);
+      confirmation.resolve({ accepted: true, result: { action, resourceId } });
+      return { ok: true, action, resourceId };
+    } catch (error) {
+      clearTimeout(confirmation.timer);
+      this.pendingConfirmations.delete(requestId);
+      confirmation.resolve({ accepted: false, result: {} });
+      throw error;
     }
-    else throw Object.assign(new Error('不允许执行这个项目操作'), { status: 400 });
-    return { ok: true, action, resourceId };
   }
 
   sessionFile(sessionId) {
@@ -340,6 +356,32 @@ export class PromptAgentService {
   taskFile(sessionId) {
     const hash = createHash('sha256').update(String(sessionId || 'playground')).digest('hex');
     return join(TASK_DIR, `${hash}.json`);
+  }
+
+  taskEventsFile(sessionId) {
+    const hash = createHash('sha256').update(String(sessionId || 'playground')).digest('hex');
+    return join(TASK_DIR, `${hash}.events.json`);
+  }
+
+  async appendTaskEvent(sessionId, event) {
+    const safe = JSON.parse(JSON.stringify(event, (key, value) => {
+      if (typeof value === 'string' && value.length > 12_000) return value.slice(0, 12_000) + '…';
+      if (key === 'data' && typeof value === 'string' && value.length > 1024) return '[omitted]';
+      return value;
+    }));
+    let events = [];
+    try { events = JSON.parse(await readFile(this.taskEventsFile(sessionId), 'utf8')); } catch { /* first event */ }
+    events = Array.isArray(events) ? events.slice(-199) : [];
+    events.push({ ...safe, timestamp: Date.now() });
+    await atomicJsonWrite(this.taskEventsFile(sessionId), events);
+  }
+
+  async getTask(sessionId) {
+    let status = {};
+    let events = [];
+    try { status = JSON.parse(await readFile(this.taskFile(sessionId), 'utf8')); } catch { /* no task */ }
+    try { events = JSON.parse(await readFile(this.taskEventsFile(sessionId), 'utf8')); } catch { /* no events */ }
+    return { ...status, events: Array.isArray(events) ? events.slice(-200) : [] };
   }
 
   normalizeThinkingLevel(value, reasoning = true) {
@@ -503,9 +545,19 @@ export class PromptAgentService {
       const requestId = text(payload.requestId || message).slice(0, 100);
       const pending = this.pendingConfirmations.get(requestId);
       if (!pending || pending.sessionId !== sessionId) throw Object.assign(new Error('确认请求已过期'), { status: 409 });
+      if (payload.accepted === true) pending.approved = true;
+      else {
+        clearTimeout(pending.timer);
+        this.pendingConfirmations.delete(requestId);
+        pending.resolve({ accepted: false, result: {} });
+      }
+    } else if (action === 'finalize') {
+      const requestId = text(payload.requestId || message).slice(0, 100);
+      const pending = this.pendingConfirmations.get(requestId);
+      if (!pending || pending.sessionId !== sessionId || pending.approved !== true) throw Object.assign(new Error('确认请求已过期'), { status: 409 });
       clearTimeout(pending.timer);
       this.pendingConfirmations.delete(requestId);
-      pending.resolve({ accepted: payload.accepted === true, result: payload.result && typeof payload.result === 'object' ? payload.result : {} });
+      pending.resolve({ accepted: payload.success === true, result: payload.result || {} });
     }
     else throw Object.assign(new Error('未知的 Agent 控制操作'), { status: 400 });
     return { ok: true, action };
@@ -659,8 +711,11 @@ export class PromptAgentService {
         parameters: Type.Object({ id: Type.String() }),
         execute: async (_id, args) => {
           if (!modelInfo?.imageInput) throw new Error('当前模型不支持图片输入，请在 Agent 设置中切换到带“识图”标记的模型');
-          const history = listItems(await readProject('/api/local-history?page=0&pageSize=100'));
-          const item = history.find(entry => String(entry.id) === String(args.id));
+          let item;
+          try { const direct = await readProject(`/api/local-history/${encodeURIComponent(args.id)}`); item = direct.item || direct; } catch {
+            const history = listItems(await readProject('/api/local-history?page=0&pageSize=100'));
+            item = history.find(entry => String(entry.id) === String(args.id));
+          }
           if (!item) throw new Error('找不到这条历史记录，请重新读取生成历史');
           if (!project?.requestBuffer) throw new Error('电脑历史图片服务不可用');
           const image = await project.requestBuffer(`/api/local-history/${encodeURIComponent(item.id)}/image`, MAX_AGENT_IMAGE_BYTES);
@@ -972,7 +1027,17 @@ export class PromptAgentService {
       {
         name: 'request_generation', label: '请求生成', description: '用户明确要求出图时调用。前端将显示费用与二次确认，工具本身不会直接扣费。',
         parameters: Type.Object({ reason: Type.Optional(Type.String()) }),
-        execute: async (_id, args) => apply('request_generation', { reason: text(args.reason).slice(0, 300) }),
+        execute: async (_id, args) => {
+          const requestId = randomUUID();
+          const confirmation = new Promise(resolve => {
+            const timer = setTimeout(() => { this.pendingConfirmations.delete(requestId); resolve({ accepted: false, result: {} }); }, 10 * 60 * 1000);
+            this.pendingConfirmations.set(requestId, { sessionId: project?.agentSessionId, resolve, timer });
+          });
+          emit({ type: 'action', action: { kind: 'request_generation', patch: { reason: text(args.reason).slice(0, 300), requestId } }, draft: structuredClone(draft) });
+          const result = await confirmation;
+          if (!result.accepted) throw new Error('用户取消了生图请求');
+          return { content: jsonText({ ok: true, confirmed: true, result: result.result }), details: result.result };
+        },
       },
     ];
   }
@@ -980,6 +1045,11 @@ export class PromptAgentService {
   async run(input, emit, signal, project = {}) {
     const sessionId = text(input?.sessionId || 'playground').slice(0, 200);
     if (this.activeAgents.has(sessionId)) throw Object.assign(new Error('这个会话的 Agent 正在工作'), { status: 409 });
+    const now = Date.now();
+    this.runHistory = this.runHistory.filter(timestamp => now - timestamp < 60_000);
+    if (this.activeAgents.size >= 3) throw Object.assign(new Error('电脑当前最多同时运行 3 个 Agent 任务，请稍后再试'), { status: 429 });
+    if (this.runHistory.length >= 12) throw Object.assign(new Error('Agent 请求过于频繁，请一分钟后再试'), { status: 429 });
+    this.runHistory.push(now);
     const storedSession = await this.readSession(sessionId);
     const globalConfig = this.publicConfig();
     const provider = normalizeProvider(storedSession.meta?.provider || globalConfig.provider);
@@ -1000,6 +1070,7 @@ export class PromptAgentService {
     let taskStatus = 'failed';
     const taskStartedAt = Date.now();
     try {
+      const taskEmit = event => { emit(event); void this.appendTaskEvent(sessionId, event).catch(() => {}); };
       const credentials = new InMemoryCredentialStore();
       await credentials.modify(provider, async () => ({
         ...storedCredential,
@@ -1013,7 +1084,7 @@ export class PromptAgentService {
           systemPrompt,
           model,
           thinkingLevel,
-          tools: this.createTools(draft, contextData, emit, { ...project, agentSessionId: sessionId }, modelInfo),
+          tools: this.createTools(draft, contextData, taskEmit, { ...project, agentSessionId: sessionId }, modelInfo),
           messages: await this.loadMessages(sessionId),
         },
         streamFn: modelRuntime.streamSimple.bind(modelRuntime),
@@ -1040,12 +1111,12 @@ export class PromptAgentService {
         },
       });
       const unsubscribe = agent.subscribe(event => {
-        if (event.type === 'message_start' && event.message?.role === 'assistant') emit({ type: 'response_start', id: `response-${event.message.timestamp || Date.now()}` });
-        if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta') emit({ type: 'text_delta', delta: event.assistantMessageEvent.delta });
-        if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'thinking_delta') emit({ type: 'thinking_delta', delta: event.assistantMessageEvent.delta });
-        if (event.type === 'message_end' && event.message?.role === 'assistant') emit({ type: 'response_end', model: event.message.model, provider: event.message.provider, usage: event.message.usage, stopReason: event.message.stopReason, timestamp: event.message.timestamp });
-        if (event.type === 'tool_execution_start') emit({ type: 'tool_start', toolCallId: event.toolCallId, toolName: event.toolName, args: event.args });
-        if (event.type === 'tool_execution_end') emit({ type: 'tool_end', toolCallId: event.toolCallId, toolName: event.toolName, isError: event.isError, result: event.result });
+        if (event.type === 'message_start' && event.message?.role === 'assistant') taskEmit({ type: 'response_start', id: `response-${event.message.timestamp || Date.now()}` });
+        if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta') taskEmit({ type: 'text_delta', delta: event.assistantMessageEvent.delta });
+        if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'thinking_delta') taskEmit({ type: 'thinking_delta', delta: event.assistantMessageEvent.delta });
+        if (event.type === 'message_end' && event.message?.role === 'assistant') taskEmit({ type: 'response_end', model: event.message.model, provider: event.message.provider, usage: event.message.usage, stopReason: event.message.stopReason, timestamp: event.message.timestamp });
+        if (event.type === 'tool_execution_start') taskEmit({ type: 'tool_start', toolCallId: event.toolCallId, toolName: event.toolName, args: event.args });
+        if (event.type === 'tool_execution_end') taskEmit({ type: 'tool_end', toolCallId: event.toolCallId, toolName: event.toolName, isError: event.isError, result: event.result });
       });
       this.activeAgents.set(sessionId, { agent, emit });
       taskStatus = 'running';
@@ -1066,6 +1137,7 @@ export class PromptAgentService {
             const mimeType = String(image?.mimeType || 'image/png').split(';')[0];
             return /^[A-Za-z0-9+/=]+$/.test(data) && /^image\/(?:png|jpeg|webp|gif)$/i.test(mimeType) && data.length <= 40 * 1024 * 1024 ? [{ type: 'image', data, mimeType }] : [];
           }) : [];
+          if (images.length && !modelInfo.imageInput) throw Object.assign(new Error('当前模型不支持图片输入，请先切换到带“识图”标记的模型'), { status: 400 });
           await agent.prompt(text(input?.message).slice(0, 8_000), images);
         }
       } catch (error) {

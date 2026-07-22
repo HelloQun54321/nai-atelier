@@ -145,6 +145,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
     const [showPromptAgent, setShowPromptAgent] = useState(false);
     const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<PromptAgentDraft | null>(null);
+    const agentRunBaseRef = useRef<string | null>(null);
 
     useEffect(() => {
         if (agentOpenToken) setShowPromptAgent(true);
@@ -953,7 +954,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const handleGenerateDraft = async (override?: PromptAgentDraft) => {
         if (!apiKey) {
             setErrorMsg('请在左侧“全局设置”中配置 NovelAI API Key');
-            return;
+            return false;
         }
         const generationPrompt = override ? compilePrompt({ basePrompt: override.basePrompt, modules: override.modules }, override.subjectPrompt) : finalPrompt;
         const generationNegativePrompt = override?.negativePrompt ?? negativePrompt;
@@ -1001,6 +1002,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     characters: activeParams.characters?.length || 0,
                 },
             }).catch(console.error);
+            return true;
         } catch (e: any) {
             setErrorMsg(e.message);
             notify(e.message, 'error');
@@ -1024,6 +1026,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     negativeLength: generationNegativePrompt.length,
                 },
             }).catch(console.error);
+            return false;
         } finally {
             setIsGenerating(false);
         }
@@ -1066,15 +1069,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (action.kind !== 'request_generation') setHasChanges(true);
     };
 
-    const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string) => {
+    const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string): Promise<boolean> => {
         const cost = estimateV45GenerationCost(draft.params);
         if (cost > 0 && !await confirmAction({
             title: 'Agent 已准备好生图',
             message: `${reason ? `${reason}\n\n` : ''}预计本次消耗 ${cost} Anlas。确认后才会提交给 NovelAI。`,
             confirmLabel: `消耗 ${cost} 点并生成`,
-        })) return;
+        })) return false;
         setShowPromptAgent(false);
-        await handleGenerateDraft(draft);
+        return handleGenerateDraft(draft);
     };
 
     const handleSavePreview = async () => {
@@ -1313,10 +1316,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 draft={currentAgentDraft()}
                 presets={allChains}
                 apiKey={apiKey}
-                onRunStart={snapshot => setAgentUndoSnapshot(snapshot)}
+                onRunStart={snapshot => { agentRunBaseRef.current = JSON.stringify(currentAgentDraft()); setAgentUndoSnapshot(snapshot); }}
                 onAction={applyAgentAction}
-                onFinalDraft={applyAgentDraft}
-                onRequestGeneration={(draft, reason) => void requestAgentGeneration(draft, reason)}
+                onFinalDraft={draft => {
+                    const current = JSON.stringify(currentAgentDraft());
+                    if (agentRunBaseRef.current && current !== agentRunBaseRef.current) {
+                        notify('检测到 Agent 运行期间实验室已有变化，已保留当前内容，未覆盖你的修改。');
+                        return;
+                    }
+                    applyAgentDraft(draft);
+                }}
+                onRequestGeneration={(draft, reason) => requestAgentGeneration(draft, reason)}
                 canUndo={Boolean(agentUndoSnapshot)}
                 onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次 Agent 修改'); } }}
             />

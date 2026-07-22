@@ -17,7 +17,7 @@ interface PromptAgentPanelProps {
   onRunStart: (snapshot: PromptAgentDraft) => void;
   onAction: (action: PromptAgentAction) => void;
   onFinalDraft: (draft: PromptAgentDraft) => void;
-  onRequestGeneration: (draft: PromptAgentDraft, reason?: string) => void;
+  onRequestGeneration: (draft: PromptAgentDraft, reason?: string) => Promise<boolean> | void;
   onUndo: () => void;
   canUndo: boolean;
 }
@@ -114,7 +114,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     if (!props.open || !activeSessionId || running) return;
     localStorage.setItem('nai_prompt_agent_session', activeSessionId);
     setMessages([]);
-    void promptAgentService.getSession(activeSessionId).then(items => setMessages(items.map(item => ({ ...item })))).catch(() => {});
+    void Promise.all([promptAgentService.getSession(activeSessionId), promptAgentService.getTask(activeSessionId)]).then(([items, task]) => {
+      const restored = items.map(item => ({ ...item }));
+      if ((task.status === 'interrupted' || task.status === 'running') && task.events?.length) {
+        restored.push({ id: `task-replay-${activeSessionId}`, role: 'agent', text: `已恢复任务记录：上次 Agent ${task.status === 'running' ? '异常中断' : '中断'}，保留了 ${task.events.length} 条执行事件。你可以继续发送要求。` });
+      }
+      setMessages(restored);
+    }).catch(() => {});
   }, [props.open, activeSessionId]);
 
   const activeSession = sessions.find(item => item.id === activeSessionId);
@@ -137,6 +143,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const run = async (suggestion?: string, mode: 'prompt' | 'retry' = 'prompt') => {
     const prompt = (suggestion ?? input).trim() || (attachments.length ? '请分析我附带的图片，并结合项目内容给出建议。' : '');
     if (!activeSessionId || (mode === 'prompt' && !prompt)) return;
+    if (attachments.length && !activeModel?.imageInput) {
+      setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: '当前模型不支持图片输入，请先切换到带“识图”标记的模型。' }]);
+      return;
+    }
     if (running) {
       try {
         await promptAgentService.control(activeSessionId, queueMode, prompt);
@@ -168,8 +178,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     setRunning(true);
     const runSnapshot = structuredClone(props.draft);
     let labChanged = false;
-    let requestedGeneration = false;
-    let generationReason = '';
     let navigationTarget: { view: 'list' | 'characters' | 'library' | 'aitag' | 'inspiration' | 'history' | 'playground'; id?: string } | null = null;
     const controller = new AbortController();
     try {
@@ -209,20 +217,25 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 return;
               }
               try {
+                await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: true });
                 if (patch.action === 'encode_vibe') {
                   if (!props.apiKey) throw new Error('请先在全局设置中填写 NovelAI API Key');
                   await vibeService.encode(patch.resourceId || '', Number(patch.payload?.informationExtracted ?? 1), props.apiKey);
+                  await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: true, result: { action: patch.action, resourceId: patch.resourceId } });
                 } else if (patch.action === 'clear_mobile_cache') {
                   await clearMobileThumbnailCache();
-                } else await promptAgentService.executeProjectAction({ action: patch.action, resourceId: patch.resourceId, payload: patch.payload });
-                await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: true, result: { action: patch.action, resourceId: patch.resourceId } });
+                  await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: true, result: { action: patch.action } });
+                } else await promptAgentService.executeProjectAction({ action: patch.action, resourceId: patch.resourceId, payload: patch.payload, sessionId: activeSessionId, confirmationRequestId: patch.requestId });
                 window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: patch }));
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: '已在你确认后完成该项目操作。' }]);
               } catch (error) {
-                await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false }).catch(() => {});
+                await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: false }).catch(() => {});
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '项目操作失败' }]);
               }
             })();
+          } else if (event.action.kind === 'request_generation') {
+            const generationAction = event.action;
+            void Promise.resolve(props.onRequestGeneration(event.draft || props.draft, generationAction.patch.reason)).then(success => promptAgentService.control(activeSessionId, 'finalize', generationAction.patch.requestId, { requestId: generationAction.patch.requestId, success: success === true }).catch(() => {}));
           } else if (event.action.kind === 'set_client_preferences') {
             const patch = event.action.patch;
             if (patch.imageLayout || patch.imageColumns !== undefined) {
@@ -234,20 +247,15 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           } else if (event.action.kind === 'navigate_view') {
             navigationTarget = event.action.patch;
           } else {
-            if (event.action.kind !== 'request_generation' && !labChanged) props.onRunStart(runSnapshot);
-            if (event.action.kind !== 'request_generation') labChanged = true;
+            if (!labChanged) props.onRunStart(runSnapshot);
+            labChanged = true;
             props.onAction(event.action);
-          }
-          if (event.action.kind === 'request_generation') {
-            requestedGeneration = true;
-            generationReason = event.action.patch.reason || '';
           }
         }
         if (event.type === 'error') throw new Error(event.error);
         if (event.type === 'done') {
           if (labChanged) props.onFinalDraft(event.draft);
-          if (requestedGeneration) props.onRequestGeneration(event.draft, generationReason);
-          else if (navigationTarget) {
+          if (navigationTarget) {
             window.dispatchEvent(new CustomEvent('nai-agent-navigate', { detail: navigationTarget }));
             props.onClose();
           }
@@ -268,6 +276,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   const reset = async () => {
     if (running) return;
+    if (!await confirmAction({ title: '清空当前 Agent 对话？', message: '只会删除这条对话的聊天记录，不影响项目资料、图片或设置。', confirmLabel: '清空对话', tone: 'danger' })) return;
     await promptAgentService.resetSession(activeSessionId);
     setMessages([]);
   };
@@ -411,7 +420,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           {editingMessageId && !running && <div className="mb-2 flex items-center rounded-xl bg-amber-50 px-3 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"><b>正在编辑旧消息</b><span className="ml-1">发送后会从这里重新执行，后面的旧回答将被替换。</span><span className="flex-1" /><button type="button" onClick={() => { setEditingMessageId(''); setInput(''); }} className="font-bold">取消</button></div>}
           {running && <div className="mb-2 flex items-center gap-2 text-[11px]"><span className="font-bold text-fuchsia-600">Agent 正在工作</span><button type="button" onClick={() => setQueueMode('steer')} className={`rounded-full px-2 py-1 font-bold ${queueMode === 'steer' ? 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-950' : 'text-gray-400'}`}>转向当前任务</button><button type="button" onClick={() => setQueueMode('followUp')} className={`rounded-full px-2 py-1 font-bold ${queueMode === 'followUp' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950' : 'text-gray-400'}`}>排到任务之后</button><span className="flex-1" /><button type="button" onClick={() => void promptAgentService.control(activeSessionId, 'clear')} className="font-bold text-gray-400">清空排队</button><button type="button" onClick={() => void promptAgentService.control(activeSessionId, 'abort')} className="font-bold text-red-500">停止</button></div>}
           {!!attachments.length && <div className="mb-2 flex flex-wrap gap-1.5">{attachments.map((attachment, index) => <span key={`${attachment.name}-${index}`} className="flex max-w-48 items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-[10px] text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200"><span className="truncate">{attachment.name}</span><button type="button" onClick={() => setAttachments(previous => previous.filter((_, itemIndex) => itemIndex !== index))} className="font-black">×</button></span>)}</div>}
-          <div className="flex items-end gap-2"><label className="mobile-touch flex h-14 w-12 cursor-pointer items-center justify-center rounded-2xl border border-gray-200 text-xl text-gray-500 hover:border-fuchsia-400 dark:border-gray-700"><span aria-hidden="true">＋</span><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden onChange={event => { addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={running || attachments.length >= 4} /></label><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void run(); } }} rows={2} placeholder={running ? (queueMode === 'steer' ? '补充或纠正当前任务…' : '添加完成后继续处理的任务…') : '告诉 Agent 你想让它查看、修改或生成什么…'} className="min-h-14 flex-1 resize-none rounded-2xl border border-gray-300 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-fuchsia-500 dark:border-gray-700 dark:bg-gray-950" /><button type="button" onClick={() => void run()} disabled={!input.trim() && !attachments.length} className={`mobile-touch rounded-2xl px-5 text-sm font-bold text-white shadow-lg disabled:opacity-40 ${running ? queueMode === 'steer' ? 'bg-gradient-to-r from-fuchsia-600 to-violet-600' : 'bg-gradient-to-r from-indigo-600 to-blue-600' : 'bg-gradient-to-r from-fuchsia-600 to-indigo-600'}`}>{running ? '追加' : editingMessageId ? '重发' : '执行'}</button></div>
+          <div className="flex items-end gap-2"><label title={activeModel?.imageInput ? '添加图片' : '当前模型不支持识图'} className={`mobile-touch flex h-14 w-12 items-center justify-center rounded-2xl border border-gray-200 text-xl text-gray-500 dark:border-gray-700 ${activeModel?.imageInput ? 'cursor-pointer hover:border-fuchsia-400' : 'cursor-not-allowed opacity-35'}`}><span aria-hidden="true">＋</span><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden onChange={event => { addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={running || attachments.length >= 4 || !activeModel?.imageInput} /></label><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void run(); } }} rows={2} placeholder={running ? (queueMode === 'steer' ? '补充或纠正当前任务…' : '添加完成后继续处理的任务…') : '告诉 Agent 你想让它查看、修改或生成什么…'} className="min-h-14 flex-1 resize-none rounded-2xl border border-gray-300 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-fuchsia-500 dark:border-gray-700 dark:bg-gray-950" /><button type="button" onClick={() => void run()} disabled={!input.trim() && !attachments.length} className={`mobile-touch rounded-2xl px-5 text-sm font-bold text-white shadow-lg disabled:opacity-40 ${running ? queueMode === 'steer' ? 'bg-gradient-to-r from-fuchsia-600 to-violet-600' : 'bg-gradient-to-r from-indigo-600 to-blue-600' : 'bg-gradient-to-r from-fuchsia-600 to-indigo-600'}`}>{running ? '追加' : editingMessageId ? '重发' : '执行'}</button></div>
         </div>
       </main>
     </section>

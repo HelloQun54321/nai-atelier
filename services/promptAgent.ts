@@ -11,7 +11,7 @@ export interface PromptAgentConfig {
 export interface PromptAgentProvider {
   id: string;
   name: string;
-  authType: 'api_key';
+  authType: 'api_key' | 'oauth';
   configured: boolean;
   current: boolean;
   modelCount: number;
@@ -86,7 +86,7 @@ export type PromptAgentEvent =
   | { type: 'tool_start'; toolCallId: string; toolName: string; args: unknown }
   | { type: 'tool_end'; toolCallId: string; toolName: string; isError: boolean; result?: unknown }
   | { type: 'queue'; action: 'steer' | 'followUp'; message: string }
-  | { type: 'action'; action: PromptAgentAction }
+  | { type: 'action'; action: PromptAgentAction; draft?: PromptAgentDraft }
   | { type: 'project_changed'; resource: string }
   | { type: 'done'; draft: PromptAgentDraft; message: string; provider: string; model: string }
   | { type: 'error'; error: string };
@@ -156,7 +156,7 @@ export const promptAgentService = {
     const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
     if (!response.ok) return readError(response);
   },
-  control: async (sessionId: string, action: 'steer' | 'followUp' | 'abort' | 'clear' | 'confirm', message?: string, payload?: Record<string, unknown>) => {
+  control: async (sessionId: string, action: 'steer' | 'followUp' | 'abort' | 'clear' | 'confirm' | 'finalize', message?: string, payload?: Record<string, unknown>) => {
     const response = await fetch('/api/prompt-agent/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId, action, message, ...(payload || {}) }) });
     if (!response.ok) return readError(response);
   },
@@ -169,7 +169,7 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return (await response.json()).items || [];
   },
-  executeProjectAction: async (action: { action: string; resourceId?: string; payload?: Record<string, unknown> }) => {
+  executeProjectAction: async (action: { action: string; resourceId?: string; payload?: Record<string, unknown>; sessionId?: string; confirmationRequestId?: string }) => {
     const response = await fetch('/api/prompt-agent/project-action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action) });
     if (!response.ok) return readError(response) as never;
     return response.json() as Promise<{ ok: boolean; action: string; resourceId?: string }>;
@@ -178,6 +178,11 @@ export const promptAgentService = {
     const response = await fetch(`/api/prompt-agent/session?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' });
     if (!response.ok) return readError(response) as never;
     return (await response.json()).items || [];
+  },
+  getTask: async (sessionId: string): Promise<{ status?: string; events?: PromptAgentEvent[] }> => {
+    const response = await fetch(`/api/prompt-agent/task?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
   },
   run: async (
     input: { sessionId: string; message: string; mode?: 'prompt' | 'retry'; images?: Array<{ data: string; mimeType: string }>; draft: PromptAgentDraft; context: { presets: unknown[]; vibes: unknown[]; clientSettings?: Record<string, unknown> } },

@@ -1026,6 +1026,10 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
           return sendJson(res, 200, { items: await promptAgent.getSessionHistory(url.searchParams.get('sessionId') || '') });
         }
+        if (url.pathname === '/api/prompt-agent/task') {
+          if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+          return sendJson(res, 200, await promptAgent.getTask(url.searchParams.get('sessionId') || ''));
+        }
         if (url.pathname === '/api/prompt-agent/project-action') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
           const body = JSON.parse((await readRequestBody(req, 32 * 1024)).toString('utf8') || '{}');
