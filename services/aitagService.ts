@@ -452,6 +452,7 @@ export const aitagService = {
     aiType?: 'all' | 'nai' | 'sd' | 'comfyui';
     timeoutMs?: number;
     intervalMs?: number;
+    signal?: AbortSignal;
   }): Promise<AitagFirstImageCacheResponse> => {
     const query = new URLSearchParams({
       ids: params.ids.join(','),
@@ -461,7 +462,15 @@ export const aitagService = {
       timeout_ms: String(params.timeoutMs ?? 4500),
       interval_ms: String(params.intervalMs ?? 700),
     });
-    return api.get(`/aitag/cache/first-images?${query.toString()}`);
+    return fetch(`/api/aitag/cache/first-images?${query.toString()}`, {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      signal: params.signal,
+    }).then(async response => {
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `AITag 首图缓存检查失败 (${response.status})`);
+      return payload as AitagFirstImageCacheResponse;
+    });
   },
 
   setFavorite: (

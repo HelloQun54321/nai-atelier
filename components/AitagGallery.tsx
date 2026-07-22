@@ -22,6 +22,7 @@ import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 
 interface AitagGalleryProps {
+  active: boolean;
   currentUser: User;
   notify: (msg: string, type?: 'success' | 'error') => void;
   onNavigateToPlayground: () => void;
@@ -31,6 +32,7 @@ interface AitagGalleryProps {
 
 const PAGE_SIZE = 60;
 const FIRST_IMAGE_CACHE_SYNC_DELAY_MS = 7000;
+const FIRST_IMAGE_IDLE_DELAYS_MS = [1000, 2000, 4000, 8000, 12000, 12000];
 
 const formatCount = (value?: number) => {
   const count = Number(value || 0);
@@ -214,7 +216,7 @@ const defaultParams: NAIParams = {
   cfgRescale: 0,
 };
 
-export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify, onNavigateToPlayground, onCreateArtistChain, onRefreshInspiration }) => {
+export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser, notify, onNavigateToPlayground, onCreateArtistChain, onRefreshInspiration }) => {
   const imageDisplay = useMobileImageDisplayPreferences();
   const mainScrollRef = useRef<HTMLElement | null>(null);
   const detailScrollRef = useRef<HTMLDivElement | null>(null);
@@ -242,6 +244,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
   const [isPageInputOpen, setIsPageInputOpen] = useState(false);
   const [pageInputValue, setPageInputValue] = useState(String(aitagPageCache.page));
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState === 'visible');
 
   const selectedDetail = selectedId ? details[selectedId] : null;
   const selectedWork = selectedDetail?.work || items.find(item => item.id === selectedId) || null;
@@ -252,6 +255,13 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
   const cacheNeedsMoreData = isOfflineCache && visibleItems.length === 0;
   const isAitagConnected = !isOfflineCache && !error;
   const hasPendingFirstImageCache = visibleItems.some(needsFirstImageCacheRefresh);
+  const allowBackgroundChecks = active && documentVisible;
+
+  useEffect(() => {
+    const updateVisibility = () => setDocumentVisible(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', updateVisibility);
+    return () => document.removeEventListener('visibilitychange', updateVisibility);
+  }, []);
 
   useEffect(() => {
     if (!isPageInputOpen) {
@@ -373,7 +383,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
   useEffect(() => {
     const refreshAgentChanges = (event: Event) => {
       const resource = (event as CustomEvent).detail?.resource;
-      if (resource === 'aitag') void loadWorks(page, { silent: true });
+      if (resource === 'aitag' && allowBackgroundChecks) void loadWorks(page, { silent: true });
     };
     window.addEventListener('nai-project-data-changed', refreshAgentChanges);
     return () => window.removeEventListener('nai-project-data-changed', refreshAgentChanges);
@@ -471,9 +481,12 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
   }, []);
 
   useEffect(() => {
-    if (isLoading || isOfflineCache || visibleItems.length === 0 || !hasPendingFirstImageCache) return;
+    if (!allowBackgroundChecks || isLoading || isOfflineCache || visibleItems.length === 0 || !hasPendingFirstImageCache) return;
 
     let cancelled = false;
+    let idleRounds = 0;
+    let cancelIdleDelay = () => {};
+    const controller = new AbortController();
     const pendingIds = new Set(
       visibleItems
         .filter(needsFirstImageCacheRefresh)
@@ -491,10 +504,12 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
             aiType,
             timeoutMs: 4500,
             intervalMs: 700,
+            signal: controller.signal,
           });
           if (cancelled) return;
           const nextItems = Array.isArray(data.items) ? data.items : [];
           if (nextItems.length > 0) {
+            idleRounds = 0;
             nextItems.forEach(item => pendingIds.delete(Number(item.id)));
             mergeCachedFirstImageItems(nextItems);
             if (data.status) {
@@ -503,6 +518,25 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
             } else {
               scheduleCacheStatusRefresh();
             }
+          } else {
+            if (idleRounds >= FIRST_IMAGE_IDLE_DELAYS_MS.length) {
+              await refreshCurrentPageFromCache().catch(console.error);
+              return;
+            }
+            const delay = FIRST_IMAGE_IDLE_DELAYS_MS[idleRounds++];
+            await new Promise<void>(resolve => {
+              let settled = false;
+              const finish = () => {
+                if (settled) return;
+                settled = true;
+                window.clearTimeout(timer);
+                resolve();
+              };
+              const timer = window.setTimeout(finish, delay);
+              cancelIdleDelay = finish;
+              if (cancelled) finish();
+            });
+            cancelIdleDelay = () => {};
           }
         } catch (e) {
           if (cancelled) return;
@@ -515,22 +549,24 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
     waitForFirstImages().catch(console.error);
     return () => {
       cancelled = true;
+      controller.abort();
+      cancelIdleDelay();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, q, prompt, sort, rankMonth, aiType, cacheFilter, isLoading, isOfflineCache, hasPendingFirstImageCache]);
+  }, [page, q, prompt, sort, rankMonth, aiType, cacheFilter, isLoading, isOfflineCache, hasPendingFirstImageCache, allowBackgroundChecks]);
 
   useEffect(() => {
-    if (isLoading || isOfflineCache || visibleItems.length === 0 || !hasPendingFirstImageCache) return;
+    if (!allowBackgroundChecks || isLoading || isOfflineCache || visibleItems.length === 0 || !hasPendingFirstImageCache) return;
 
     const timer = window.setTimeout(() => {
       refreshCurrentPageFromCache().catch(console.error);
     }, FIRST_IMAGE_CACHE_SYNC_DELAY_MS);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, q, prompt, sort, rankMonth, aiType, cacheFilter, isLoading, isOfflineCache, hasPendingFirstImageCache]);
+  }, [page, q, prompt, sort, rankMonth, aiType, cacheFilter, isLoading, isOfflineCache, hasPendingFirstImageCache, allowBackgroundChecks]);
 
   useEffect(() => {
-    if (!selectedId || !selectedDetail || selectedDetail.isPreviewOnly || detailHasFullyCachedImages(selectedDetail)) return;
+    if (!allowBackgroundChecks || !selectedId || !selectedDetail || selectedDetail.isPreviewOnly || detailHasFullyCachedImages(selectedDetail)) return;
 
     let isRefreshing = false;
     const timer = window.setInterval(async () => {
@@ -568,7 +604,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
       window.clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, selectedDetail?.images.length, selectedDetail?.isPreviewOnly]);
+  }, [selectedId, selectedDetail?.images.length, selectedDetail?.isPreviewOnly, allowBackgroundChecks]);
 
   useEffect(() => {
     aitagPageCache = {

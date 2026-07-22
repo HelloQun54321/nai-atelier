@@ -403,6 +403,7 @@ const App = () => {
         />;
       case 'aitag':
         return <AitagGallery
+          active={view === 'aitag'}
           currentUser={currentUser}
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
