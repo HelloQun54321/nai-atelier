@@ -1,6 +1,6 @@
 import { Agent } from '@earendil-works/pi-agent-core';
 import { InMemoryCredentialStore, Type } from '@earendil-works/pi-ai';
-import { builtinModels, getBuiltinModels } from '@earendil-works/pi-ai/providers/all';
+import { builtinModels, builtinProviders, getBuiltinModels } from '@earendil-works/pi-ai/providers/all';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
 import { mkdir, readFile, rename, unlink, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
@@ -9,11 +9,10 @@ import { getGlobalDispatcher, ProxyAgent, setGlobalDispatcher } from 'undici';
 const CONFIG_FILE = 'local-data/prompt-agent.json';
 const SESSION_DIR = 'local-data/prompt-agent-sessions';
 const TAG_ROOT = 'public/tag-data';
-const PROVIDERS = {
-  deepseek: { label: 'DeepSeek', defaultModel: 'deepseek-v4-flash' },
-  google: { label: 'Google Gemini', defaultModel: 'gemini-2.5-flash' },
-  xai: { label: 'xAI / Grok', defaultModel: 'grok-4.3' },
-  openrouter: { label: 'OpenRouter', defaultModel: 'google/gemini-2.5-flash' },
+const PROVIDER_CATALOG = new Map(builtinProviders().map(provider => [provider.id, provider]));
+const PREFERRED_MODELS = {
+  deepseek: 'deepseek-v4-flash', google: 'gemini-2.5-flash', xai: 'grok-4.3',
+  openrouter: 'google/gemini-2.5-flash', openai: 'gpt-5-mini', anthropic: 'claude-sonnet-4-6',
 };
 const CATEGORY_LABELS = { 0: '普通', 1: '画师', 3: '作品', 4: '角色', 5: '元数据', 6: 'NovelAI' };
 const MAX_SESSION_MESSAGES = 48;
@@ -53,15 +52,23 @@ const atomicJsonWrite = async (file, value) => {
   await rename(temporary, file);
 };
 
-const normalizeProvider = value => Object.hasOwn(PROVIDERS, value) ? value : 'google';
+const normalizeProvider = value => PROVIDER_CATALOG.has(value) ? value : 'google';
 const listModels = provider => {
   const normalized = normalizeProvider(provider);
   return getBuiltinModels(normalized).map(model => ({
     id: model.id,
     name: model.name || model.id,
+    provider: normalized,
     reasoning: Boolean(model.reasoning),
     imageInput: Array.isArray(model.input) && model.input.includes('image'),
+    contextWindow: Number(model.contextWindow) || 0,
+    maxTokens: Number(model.maxTokens) || 0,
+    cost: model.cost || null,
   }));
+};
+const defaultModelFor = provider => {
+  const models = listModels(provider);
+  return models.some(model => model.id === PREFERRED_MODELS[provider]) ? PREFERRED_MODELS[provider] : models[0]?.id || '';
 };
 
 const sanitizeParams = raw => {
@@ -126,7 +133,7 @@ export class PromptAgentService {
   constructor({ lanSecret, outboundProxyUrl = '' }) {
     this.encryptionKey = createHash('sha256').update(`nai-prompt-agent|${lanSecret}`).digest();
     this.outboundProxyUrl = outboundProxyUrl;
-    this.config = { version: 1, provider: 'google', model: PROVIDERS.google.defaultModel, encryptedKeys: {} };
+    this.config = { version: 2, provider: 'google', model: defaultModelFor('google'), encryptedKeys: {} };
     this.runningSessions = new Set();
     this.tagManifest = null;
   }
@@ -154,24 +161,129 @@ export class PromptAgentService {
     } catch { return ''; }
   }
 
+  getCredential(providerId) {
+    const encrypted = this.config.encryptedKeys?.[providerId];
+    if (!encrypted) return undefined;
+    const raw = this.decrypt(encrypted);
+    if (!raw) return undefined;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed?.type === 'api_key' || parsed?.type === 'oauth') return parsed;
+    } catch { /* Legacy entries stored the literal key. */ }
+    return { type: 'api_key', key: raw };
+  }
+
+  setCredential(providerId, credential) {
+    this.config.encryptedKeys[providerId] = this.encrypt(JSON.stringify(credential));
+  }
+
   publicConfig() {
-    const provider = normalizeProvider(this.config.provider);
+    const configuredProviders = this.configuredProviderIds();
+    const requestedProvider = normalizeProvider(this.config.provider);
+    const provider = configuredProviders.includes(requestedProvider) ? requestedProvider : configuredProviders[0] || requestedProvider;
+    const models = listModels(provider);
+    const model = models.some(item => item.id === this.config.model) ? this.config.model : defaultModelFor(provider);
     return {
       provider,
-      model: listModels(provider).some(item => item.id === this.config.model) ? this.config.model : PROVIDERS[provider].defaultModel,
-      configuredProviders: Object.keys(this.config.encryptedKeys).filter(key => Boolean(this.decrypt(this.config.encryptedKeys[key]))),
-      providers: Object.entries(PROVIDERS).map(([id, value]) => ({ id, label: value.label })),
+      model,
+      configured: configuredProviders.includes(provider),
+      configuredProviders,
     };
+  }
+
+  configuredProviderIds() {
+    return Object.keys(this.config.encryptedKeys).filter(key => PROVIDER_CATALOG.has(key) && Boolean(this.getCredential(key)));
+  }
+
+  listProviders() {
+    const configured = new Set(this.configuredProviderIds());
+    return [...PROVIDER_CATALOG.values()]
+      .filter(provider => provider.auth?.apiKey)
+      .map(provider => ({
+        id: provider.id,
+        name: provider.name || provider.id,
+        authType: 'api_key',
+        configured: configured.has(provider.id),
+        current: this.publicConfig().provider === provider.id && configured.has(provider.id),
+        modelCount: listModels(provider.id).length,
+      }))
+      .sort((a, b) => Number(b.configured) - Number(a.configured) || a.name.localeCompare(b.name));
+  }
+
+  listAvailableModels() {
+    const current = this.publicConfig();
+    return this.configuredProviderIds().flatMap(provider => listModels(provider).map(model => ({
+      ...model,
+      current: provider === current.provider && model.id === current.model,
+    })));
+  }
+
+  async loginProvider(providerId, input) {
+    const provider = PROVIDER_CATALOG.get(providerId);
+    if (!provider?.auth?.apiKey) throw Object.assign(new Error('这个模型服务不支持 API Key 登录'), { status: 400 });
+    const answers = Array.isArray(input?.answers) ? input.answers.map(value => String(value)) : [];
+    if (typeof input?.apiKey === 'string' && input.apiKey.trim()) answers.push(input.apiKey.trim());
+    let promptIndex = 0;
+    const events = [];
+    class PromptNeeded extends Error { constructor(prompt, index) { super('LOGIN_PROMPT_NEEDED'); this.prompt = prompt; this.index = index; } }
+    let credential;
+    try {
+      if (provider.auth.apiKey.login) {
+        credential = await provider.auth.apiKey.login({
+          prompt: async prompt => {
+            const index = promptIndex++;
+            if (index < answers.length) return answers[index];
+            throw new PromptNeeded(prompt, index);
+          },
+          notify: event => events.push(event),
+        });
+      } else {
+        if (!answers[0]?.trim()) throw new PromptNeeded({ type: 'secret', message: provider.auth.apiKey.name || 'API Key' }, 0);
+        credential = { type: 'api_key', key: answers[0].trim() };
+      }
+    } catch (error) {
+      if (error instanceof PromptNeeded) return { complete: false, prompt: error.prompt, promptIndex: error.index, events };
+      throw error;
+    }
+    if (!credential) throw Object.assign(new Error('模型服务没有返回有效凭据'), { status: 400 });
+    this.setCredential(providerId, credential);
+    if (!this.configuredProviderIds().includes(this.config.provider)) {
+      this.config.provider = providerId;
+      this.config.model = defaultModelFor(providerId);
+    }
+    this.config.version = 2;
+    await atomicJsonWrite(CONFIG_FILE, this.config);
+    return { complete: true, provider: this.listProviders().find(item => item.id === providerId), selection: this.publicConfig(), events };
+  }
+
+  async logoutProvider(providerId) {
+    delete this.config.encryptedKeys[providerId];
+    if (this.config.provider === providerId) {
+      const next = this.configuredProviderIds()[0] || 'google';
+      this.config.provider = next;
+      this.config.model = defaultModelFor(next);
+    }
+    await atomicJsonWrite(CONFIG_FILE, this.config);
+    return this.publicConfig();
+  }
+
+  async selectModel(providerId, modelId) {
+    if (!this.configuredProviderIds().includes(providerId)) throw Object.assign(new Error('请先登录这个模型服务'), { status: 400 });
+    if (!listModels(providerId).some(model => model.id === modelId)) throw Object.assign(new Error('选择的模型不存在'), { status: 400 });
+    this.config.provider = providerId;
+    this.config.model = modelId;
+    await atomicJsonWrite(CONFIG_FILE, this.config);
+    return this.publicConfig();
   }
 
   async saveConfig(input) {
     const provider = normalizeProvider(input?.provider);
     const models = listModels(provider);
-    const model = models.some(item => item.id === input?.model) ? input.model : PROVIDERS[provider].defaultModel;
+    const model = models.some(item => item.id === input?.model) ? input.model : defaultModelFor(provider);
     this.config.provider = provider;
     this.config.model = model;
     if (input?.clearApiKey === true) delete this.config.encryptedKeys[provider];
-    if (typeof input?.apiKey === 'string' && input.apiKey.trim()) this.config.encryptedKeys[provider] = this.encrypt(input.apiKey.trim());
+    if (typeof input?.apiKey === 'string' && input.apiKey.trim()) this.setCredential(provider, { type: 'api_key', key: input.apiKey.trim() });
     await atomicJsonWrite(CONFIG_FILE, this.config);
     return this.publicConfig();
   }
@@ -329,8 +441,8 @@ export class PromptAgentService {
     const sessionId = text(input?.sessionId || 'playground').slice(0, 200);
     if (this.runningSessions.has(sessionId)) throw Object.assign(new Error('这个实验室的 Agent 正在工作'), { status: 409 });
     const config = this.publicConfig();
-    const apiKey = this.decrypt(this.config.encryptedKeys[config.provider]);
-    if (!apiKey) throw Object.assign(new Error(`请先在全局设置中填写 ${PROVIDERS[config.provider].label} API Key`), { status: 400 });
+    const storedCredential = this.getCredential(config.provider);
+    if (!storedCredential) throw Object.assign(new Error(`请先使用“登录模型服务”配置 ${PROVIDER_CATALOG.get(config.provider)?.name || config.provider}`), { status: 400 });
     const models = listModels(config.provider);
     if (!models.some(item => item.id === config.model)) throw Object.assign(new Error('选择的模型已不可用，请在设置中重新选择'), { status: 400 });
     const draft = sanitizeDraft(input?.draft);
@@ -343,8 +455,8 @@ export class PromptAgentService {
     try {
       const credentials = new InMemoryCredentialStore();
       await credentials.modify(config.provider, async () => ({
-        type: 'api_key', key: apiKey,
-        ...(this.outboundProxyUrl ? { env: { HTTPS_PROXY: this.outboundProxyUrl, HTTP_PROXY: this.outboundProxyUrl } } : {}),
+        ...storedCredential,
+        ...(this.outboundProxyUrl ? { env: { ...(storedCredential.env || {}), HTTPS_PROXY: this.outboundProxyUrl, HTTP_PROXY: this.outboundProxyUrl } } : {}),
       }));
       const modelRuntime = builtinModels({ credentials });
       const model = modelRuntime.getModel(config.provider, config.model);

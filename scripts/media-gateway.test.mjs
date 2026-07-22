@@ -14,7 +14,7 @@ import {
 } from './media-gateway.mjs';
 import { PromptAgentService } from './prompt-agent.mjs';
 
-test('prompt agent keeps API keys encrypted and out of its public config', () => {
+test('prompt agent keeps API keys encrypted and out of its public config', async () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
   const encrypted = service.encrypt('private-llm-key');
   service.config.encryptedKeys.google = encrypted;
@@ -22,6 +22,17 @@ test('prompt agent keeps API keys encrypted and out of its public config', () =>
   assert.equal(JSON.stringify(encrypted).includes('private-llm-key'), false);
   assert.equal(JSON.stringify(service.publicConfig()).includes('private-llm-key'), false);
   assert.deepEqual(service.publicConfig().configuredProviders, ['google']);
+  assert.equal(service.publicConfig().configured, true);
+  assert.equal(service.listProviders().find(provider => provider.id === 'google').configured, true);
+  assert.equal(service.listProviders().some(provider => provider.id === 'deepseek'), true);
+  assert.equal(service.listAvailableModels().every(model => model.provider === 'google'), true);
+  assert.equal(service.listAvailableModels().some(model => model.id === 'gemini-2.5-flash'), true);
+  service.setCredential('deepseek', { type: 'api_key', key: 'deepseek-private' });
+  assert.equal(service.getCredential('deepseek').key, 'deepseek-private');
+  assert.equal(JSON.stringify(service.config.encryptedKeys.deepseek).includes('deepseek-private'), false);
+  const loginStep = await service.loginProvider('deepseek', { answers: [] });
+  assert.equal(loginStep.complete, false);
+  assert.equal(loginStep.prompt.type, 'secret');
 });
 
 test('prompt agent Vibe tool accepts only known encodings and at most four slots', async () => {

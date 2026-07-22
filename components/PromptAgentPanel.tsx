@@ -29,6 +29,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<PanelMessage[]>([]);
   const [running, setRunning] = useState(false);
+  const [modelLabel, setModelLabel] = useState('');
   const controllerRef = useRef<AbortController | null>(null);
   const loadedSessionRef = useRef('');
   const closePanel = () => {
@@ -42,6 +43,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     loadedSessionRef.current = props.sessionId;
     void promptAgentService.getSession(props.sessionId).then(items => setMessages(items)).catch(() => {});
   }, [props.open, props.sessionId]);
+
+  useEffect(() => {
+    if (!props.open) return;
+    void promptAgentService.getConfig().then(config => setModelLabel(config.configured ? `${config.model} [${config.provider}]` : '尚未配置模型服务')).catch(() => setModelLabel('配置读取失败'));
+  }, [props.open]);
 
   useEffect(() => {
     if (!props.open) return;
@@ -105,7 +111,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   return <div className="fixed inset-0 z-[1100] flex flex-col bg-gray-50 dark:bg-gray-950">
     <header className="flex min-h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-3 border-b border-fuchsia-100 bg-white px-3 pt-[env(safe-area-inset-top)] dark:border-fuchsia-950 dark:bg-gray-900 md:px-5">
       <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500" aria-label="返回实验室"><svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7 7-7m-7 7h18" /></svg></button>
-      <div className="min-w-0 flex-1"><h2 className="font-black text-gray-900 dark:text-white">AI 生图 Agent</h2><p className="truncate text-[11px] text-gray-500">直接修改当前实验室 · 生图前仍会确认费用</p></div>
+      <div className="min-w-0 flex-1"><h2 className="font-black text-gray-900 dark:text-white">AI 生图 Agent</h2><p className="truncate text-[11px] text-gray-500">{modelLabel || '正在读取模型…'} · 生图前仍会确认费用</p></div>
       {props.canUndo && <button type="button" onClick={props.onUndo} disabled={running} className="mobile-touch rounded-xl px-3 text-sm font-bold text-fuchsia-600 disabled:opacity-40">撤销本次</button>}
       <button type="button" onClick={() => void reset()} disabled={running} className="mobile-touch rounded-xl px-2 text-xs font-bold text-gray-500 disabled:opacity-40">清空对话</button>
     </header>

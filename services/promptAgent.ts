@@ -3,15 +3,40 @@ import { PromptAgentAction, PromptAgentDraft } from '../types';
 export interface PromptAgentConfig {
   provider: string;
   model: string;
+  configured: boolean;
   configuredProviders: string[];
-  providers: Array<{ id: string; label: string }>;
+}
+
+export interface PromptAgentProvider {
+  id: string;
+  name: string;
+  authType: 'api_key';
+  configured: boolean;
+  current: boolean;
+  modelCount: number;
+}
+
+export type PromptAgentAuthPrompt =
+  | { type: 'text' | 'secret' | 'manual_code'; message: string; placeholder?: string }
+  | { type: 'select'; message: string; options: Array<{ id: string; label: string; description?: string }> };
+
+export interface PromptAgentLoginResult {
+  complete: boolean;
+  prompt?: PromptAgentAuthPrompt;
+  promptIndex?: number;
+  events?: Array<{ type: string; message?: string; links?: Array<{ url: string; label?: string }> }>;
 }
 
 export interface PromptAgentModel {
   id: string;
   name: string;
+  provider: string;
   reasoning: boolean;
   imageInput: boolean;
+  contextWindow: number;
+  maxTokens: number;
+  cost: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } | null;
+  current?: boolean;
 }
 
 export type PromptAgentEvent =
@@ -30,6 +55,31 @@ const readError = async (response: Response) => {
 export const promptAgentService = {
   getConfig: async (): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/config', { cache: 'no-store' });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  getProviders: async (): Promise<PromptAgentProvider[]> => {
+    const response = await fetch('/api/prompt-agent/providers', { cache: 'no-store' });
+    if (!response.ok) return readError(response) as never;
+    return (await response.json()).items || [];
+  },
+  login: async (provider: string, answers: string[]): Promise<PromptAgentLoginResult> => {
+    const response = await fetch('/api/prompt-agent/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, answers }) });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  logout: async (provider: string): Promise<PromptAgentConfig> => {
+    const response = await fetch('/api/prompt-agent/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider }) });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  getAvailableModels: async (): Promise<PromptAgentModel[]> => {
+    const response = await fetch('/api/prompt-agent/available-models', { cache: 'no-store' });
+    if (!response.ok) return readError(response) as never;
+    return (await response.json()).items || [];
+  },
+  selectModel: async (provider: string, model: string): Promise<PromptAgentConfig> => {
+    const response = await fetch('/api/prompt-agent/selection', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, model }) });
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
