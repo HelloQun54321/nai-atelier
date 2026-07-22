@@ -24,6 +24,7 @@ interface PromptAgentPanelProps {
 
 type ToolProgress = { id: string; name: string; state: 'running' | 'done' | 'error'; args?: unknown; result?: unknown };
 type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; stopReason?: string; timestamp?: number; queued?: 'steer' | 'followUp' };
+type AgentAttachment = { data: string; mimeType: string; name: string };
 const toolLabels: Record<string, string> = {
   get_lab_state: '读取实验室', search_tags: '搜索 Tag', search_presets: '搜索预设', search_vibes: '搜索 Vibe',
   update_prompts: '修改提示词', set_prompt_modules: '整理提示词模块', set_characters: '设置角色',
@@ -83,6 +84,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [editingTitle, setEditingTitle] = useState('');
   const [editingMessageId, setEditingMessageId] = useState('');
   const [sessionSearch, setSessionSearch] = useState('');
+  const [copiedMessageId, setCopiedMessageId] = useState('');
+  const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [followingBottom, setFollowingBottom] = useState(true);
   const currentAssistantIdRef = useRef('');
   const responseStartedRef = useRef(false);
@@ -132,7 +135,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   if (!props.open) return null;
 
   const run = async (suggestion?: string, mode: 'prompt' | 'retry' = 'prompt') => {
-    const prompt = (suggestion ?? input).trim();
+    const prompt = (suggestion ?? input).trim() || (attachments.length ? '请分析我附带的图片，并结合项目内容给出建议。' : '');
     if (!activeSessionId || (mode === 'prompt' && !prompt)) return;
     if (running) {
       try {
@@ -161,6 +164,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     currentAssistantIdRef.current = assistantId;
     responseStartedRef.current = false;
     setInput('');
+    setAttachments([]);
     setRunning(true);
     const runSnapshot = structuredClone(props.draft);
     let labChanged = false;
@@ -176,7 +180,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         params: item.params, subjectPrompt: item.variableValues?.subject || '',
       }));
       const imageDisplay = getMobileImageDisplayPreferences();
-      await promptAgentService.run({ sessionId: activeSessionId, message: prompt, mode: effectiveMode, draft: props.draft, context: { presets, vibes, clientSettings: {
+      await promptAgentService.run({ sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], draft: props.draft, context: { presets, vibes, clientSettings: {
         themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true',
         imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey),
       } } }, event => {
@@ -200,6 +204,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               const isEncoding = patch.action === 'encode_vibe';
               const accepted = await confirmAction({ title: patch.title, message: patch.consequence, confirmLabel: patch.action === 'clear_history' ? '永久清空' : isEncoding ? '消耗 2 Anlas 并生成' : '确认执行', ...(isEncoding ? {} : { tone: 'danger' as const }) });
               if (!accepted) {
+                await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false }).catch(() => {});
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: '已取消该项目操作，没有修改数据。' }]);
                 return;
               }
@@ -210,9 +215,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 } else if (patch.action === 'clear_mobile_cache') {
                   await clearMobileThumbnailCache();
                 } else await promptAgentService.executeProjectAction({ action: patch.action, resourceId: patch.resourceId, payload: patch.payload });
+                await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: true, result: { action: patch.action, resourceId: patch.resourceId } });
                 window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: patch }));
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: '已在你确认后完成该项目操作。' }]);
               } catch (error) {
+                await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false }).catch(() => {});
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '项目操作失败' }]);
               }
             })();
@@ -311,6 +318,40 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     ? `${usage.totalTokens.toLocaleString()} tokens${usage.cost?.total ? ` · $${usage.cost.total.toFixed(4)}` : ''}`
     : '';
 
+  const copyMessage = async (messageId: string, value: string) => {
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(value);
+      else throw new Error('clipboard-unavailable');
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = value;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand('copy');
+      textarea.remove();
+      if (!copied) throw new Error('copy-failed');
+    }
+    setCopiedMessageId(messageId);
+    window.setTimeout(() => setCopiedMessageId(current => current === messageId ? '' : current), 1400);
+  };
+
+  const addAttachments = (files: FileList | null) => {
+    if (!files) return;
+    [...files].slice(0, 4 - attachments.length).forEach(file => {
+      if (!/^image\/(?:png|jpeg|webp|gif)$/i.test(file.type) || file.size > 6 * 1024 * 1024) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const value = String(reader.result || '');
+        const data = value.replace(/^data:[^;]+;base64,/, '');
+        setAttachments(previous => previous.length >= 4 ? previous : [...previous, { data, mimeType: file.type, name: file.name }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   return <div className="fixed inset-0 z-[1100] flex bg-gray-50 dark:bg-gray-950">
     {showSessions && <button type="button" aria-label="关闭会话列表" onClick={() => setShowSessions(false)} className="fixed inset-0 z-10 bg-black/35 md:hidden" />}
     <aside className={`${showSessions ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-20 flex w-[min(82vw,19rem)] flex-col border-r border-gray-200 bg-white pt-[env(safe-area-inset-top)] shadow-2xl transition-transform dark:border-gray-800 dark:bg-gray-900 md:relative md:w-72 md:translate-x-0 md:shadow-none`}>
@@ -323,7 +364,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         {sessions.filter(session => session.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())).map(session => <div key={session.id} className={`group rounded-2xl border px-3 py-2 ${session.id === activeSessionId ? 'border-fuchsia-200 bg-fuchsia-50 dark:border-fuchsia-900 dark:bg-fuchsia-950/30' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
           {editingSessionId === session.id ? <form onSubmit={event => { event.preventDefault(); void saveSessionTitle(session); }} className="flex gap-1"><input autoFocus value={editingTitle} onChange={event => setEditingTitle(event.target.value)} onBlur={() => void saveSessionTitle(session)} className="min-w-0 flex-1 rounded-lg border border-fuchsia-300 bg-white px-2 text-sm dark:bg-gray-950" /></form> : <button type="button" disabled={running && session.id !== activeSessionId} onClick={() => { if (!running) { setActiveSessionId(session.id); setShowSessions(false); } }} className="block w-full text-left">
             <span className="block truncate text-sm font-bold text-gray-800 dark:text-gray-100">{session.title}</span>
-            <span className="mt-0.5 block text-[10px] text-gray-400">{session.messageCount || 0} 轮 · {new Date(session.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}{session.running ? ' · 工作中' : ''}</span>
+            <span className="mt-0.5 block text-[10px] text-gray-400">{session.messageCount || 0} 轮 · {new Date(session.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}{session.running ? ' · 工作中' : session.taskStatus === 'interrupted' ? ' · 上次中断' : session.taskStatus === 'failed' ? ' · 上次失败' : ''}</span>
           </button>}
           <div className="mt-1 flex gap-1 opacity-70 md:opacity-0 md:group-hover:opacity-100">
             <button type="button" onClick={() => { setEditingSessionId(session.id); setEditingTitle(session.title); }} disabled={running} className="rounded-lg px-2 py-1 text-[10px] font-bold text-gray-500">重命名</button>
@@ -359,7 +400,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             <div className={`mt-2 flex items-center gap-2 border-t pt-1 text-[10px] ${message.role === 'user' ? 'border-white/20 text-white/70' : 'border-gray-100 text-gray-400 dark:border-gray-800'}`}>
               {message.role === 'agent' && <span className="truncate">{message.model || ''}{message.usage ? ` · ${formatUsage(message.usage)}` : ''}{message.stopReason && message.stopReason !== 'stop' ? ` · ${message.stopReason}` : ''}</span>}
               <span className="flex-1" />
-              <button type="button" onClick={() => void navigator.clipboard.writeText(message.text)} className="rounded-lg px-1.5 font-bold hover:bg-black/5">复制</button>
+              <button type="button" onClick={() => void copyMessage(message.id, message.text)} className="rounded-lg px-1.5 font-bold hover:bg-black/5">{copiedMessageId === message.id ? '已复制' : '复制'}</button>
               {message.role === 'user' && !running && !message.queued && <button type="button" onClick={() => { setEditingMessageId(message.id); setInput(message.text); }} className="rounded-lg px-1.5 font-bold hover:bg-white/10">编辑重发</button>}
               {message.role === 'agent' && index === messages.length - 1 && !running && <button type="button" onClick={() => void run('', 'retry')} className="rounded-lg px-1.5 font-bold text-fuchsia-500 hover:bg-fuchsia-50">重新生成</button>}
             </div>
@@ -369,7 +410,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         <div className="border-t border-gray-200 bg-white p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] dark:border-gray-800 dark:bg-gray-900 md:p-4">
           {editingMessageId && !running && <div className="mb-2 flex items-center rounded-xl bg-amber-50 px-3 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"><b>正在编辑旧消息</b><span className="ml-1">发送后会从这里重新执行，后面的旧回答将被替换。</span><span className="flex-1" /><button type="button" onClick={() => { setEditingMessageId(''); setInput(''); }} className="font-bold">取消</button></div>}
           {running && <div className="mb-2 flex items-center gap-2 text-[11px]"><span className="font-bold text-fuchsia-600">Agent 正在工作</span><button type="button" onClick={() => setQueueMode('steer')} className={`rounded-full px-2 py-1 font-bold ${queueMode === 'steer' ? 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-950' : 'text-gray-400'}`}>转向当前任务</button><button type="button" onClick={() => setQueueMode('followUp')} className={`rounded-full px-2 py-1 font-bold ${queueMode === 'followUp' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950' : 'text-gray-400'}`}>排到任务之后</button><span className="flex-1" /><button type="button" onClick={() => void promptAgentService.control(activeSessionId, 'clear')} className="font-bold text-gray-400">清空排队</button><button type="button" onClick={() => void promptAgentService.control(activeSessionId, 'abort')} className="font-bold text-red-500">停止</button></div>}
-          <div className="flex items-end gap-2"><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void run(); } }} rows={2} placeholder={running ? (queueMode === 'steer' ? '补充或纠正当前任务…' : '添加完成后继续处理的任务…') : '告诉 Agent 你想让它查看、修改或生成什么…'} className="min-h-14 flex-1 resize-none rounded-2xl border border-gray-300 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-fuchsia-500 dark:border-gray-700 dark:bg-gray-950" /><button type="button" onClick={() => void run()} disabled={!input.trim()} className={`mobile-touch rounded-2xl px-5 text-sm font-bold text-white shadow-lg disabled:opacity-40 ${running ? queueMode === 'steer' ? 'bg-gradient-to-r from-fuchsia-600 to-violet-600' : 'bg-gradient-to-r from-indigo-600 to-blue-600' : 'bg-gradient-to-r from-fuchsia-600 to-indigo-600'}`}>{running ? '追加' : editingMessageId ? '重发' : '执行'}</button></div>
+          {!!attachments.length && <div className="mb-2 flex flex-wrap gap-1.5">{attachments.map((attachment, index) => <span key={`${attachment.name}-${index}`} className="flex max-w-48 items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-[10px] text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200"><span className="truncate">{attachment.name}</span><button type="button" onClick={() => setAttachments(previous => previous.filter((_, itemIndex) => itemIndex !== index))} className="font-black">×</button></span>)}</div>}
+          <div className="flex items-end gap-2"><label className="mobile-touch flex h-14 w-12 cursor-pointer items-center justify-center rounded-2xl border border-gray-200 text-xl text-gray-500 hover:border-fuchsia-400 dark:border-gray-700"><span aria-hidden="true">＋</span><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden onChange={event => { addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={running || attachments.length >= 4} /></label><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void run(); } }} rows={2} placeholder={running ? (queueMode === 'steer' ? '补充或纠正当前任务…' : '添加完成后继续处理的任务…') : '告诉 Agent 你想让它查看、修改或生成什么…'} className="min-h-14 flex-1 resize-none rounded-2xl border border-gray-300 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-fuchsia-500 dark:border-gray-700 dark:bg-gray-950" /><button type="button" onClick={() => void run()} disabled={!input.trim() && !attachments.length} className={`mobile-touch rounded-2xl px-5 text-sm font-bold text-white shadow-lg disabled:opacity-40 ${running ? queueMode === 'steer' ? 'bg-gradient-to-r from-fuchsia-600 to-violet-600' : 'bg-gradient-to-r from-indigo-600 to-blue-600' : 'bg-gradient-to-r from-fuchsia-600 to-indigo-600'}`}>{running ? '追加' : editingMessageId ? '重发' : '执行'}</button></div>
         </div>
       </main>
     </section>

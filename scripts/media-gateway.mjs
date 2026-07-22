@@ -1009,7 +1009,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         if (url.pathname === '/api/prompt-agent/control') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
           const body = JSON.parse((await readRequestBody(req, 16 * 1024)).toString('utf8') || '{}');
-          return sendJson(res, 200, promptAgent.controlSession(String(body.sessionId || ''), String(body.action || ''), String(body.message || '')));
+          return sendJson(res, 200, promptAgent.controlSession(String(body.sessionId || ''), String(body.action || ''), String(body.message || ''), body));
         }
         if (url.pathname === '/api/prompt-agent/session/reset') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -1035,12 +1035,11 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         }
         if (url.pathname === '/api/prompt-agent/run') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
-          const body = JSON.parse((await readRequestBody(req, 2 * 1024 * 1024)).toString('utf8') || '{}');
-          if (body.mode !== 'retry' && !String(body.message || '').trim()) return sendJson(res, 400, { error: '请先告诉 Agent 你想做什么' });
+          const body = JSON.parse((await readRequestBody(req, 35 * 1024 * 1024)).toString('utf8') || '{}');
+          if (body.mode !== 'retry' && !String(body.message || '').trim() && (!Array.isArray(body.images) || body.images.length === 0)) return sendJson(res, 400, { error: '请先告诉 Agent 你想做什么' });
           const controller = new AbortController();
           const abort = () => { if (!res.writableEnded) controller.abort(); };
           req.once('aborted', abort);
-          res.once('close', abort);
           res.writeHead(200, {
             'Content-Type': 'application/x-ndjson; charset=utf-8',
             'Cache-Control': 'private, no-store',
@@ -1074,7 +1073,6 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
             emit({ type: 'error', error: error.message || 'Agent 执行失败' });
           } finally {
             req.removeListener('aborted', abort);
-            res.removeListener('close', abort);
             if (!res.writableEnded) res.end();
           }
           return;

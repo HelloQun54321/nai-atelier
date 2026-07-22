@@ -52,6 +52,7 @@ export interface PromptAgentSession {
   thinkingLevel: PromptAgentThinkingLevel;
   messageCount?: number;
   running?: boolean;
+  taskStatus?: 'running' | 'completed' | 'failed' | 'aborted' | 'interrupted';
 }
 
 export interface PromptAgentUsage {
@@ -73,6 +74,8 @@ export interface PromptAgentHistoryMessage {
   usage?: PromptAgentUsage;
   stopReason?: string;
   timestamp?: number;
+  thinking?: string;
+  tools?: Array<{ id: string; name: string; args?: unknown; result?: unknown; state: 'running' | 'done' | 'error' }>;
 }
 
 export type PromptAgentEvent =
@@ -153,8 +156,8 @@ export const promptAgentService = {
     const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
     if (!response.ok) return readError(response);
   },
-  control: async (sessionId: string, action: 'steer' | 'followUp' | 'abort' | 'clear', message?: string) => {
-    const response = await fetch('/api/prompt-agent/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId, action, message }) });
+  control: async (sessionId: string, action: 'steer' | 'followUp' | 'abort' | 'clear' | 'confirm', message?: string, payload?: Record<string, unknown>) => {
+    const response = await fetch('/api/prompt-agent/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId, action, message, ...(payload || {}) }) });
     if (!response.ok) return readError(response);
   },
   resetSession: async (sessionId: string) => {
@@ -177,7 +180,7 @@ export const promptAgentService = {
     return (await response.json()).items || [];
   },
   run: async (
-    input: { sessionId: string; message: string; mode?: 'prompt' | 'retry'; draft: PromptAgentDraft; context: { presets: unknown[]; vibes: unknown[]; clientSettings?: Record<string, unknown> } },
+    input: { sessionId: string; message: string; mode?: 'prompt' | 'retry'; images?: Array<{ data: string; mimeType: string }>; draft: PromptAgentDraft; context: { presets: unknown[]; vibes: unknown[]; clientSettings?: Record<string, unknown> } },
     onEvent: (event: PromptAgentEvent) => void,
     signal?: AbortSignal,
   ) => {

@@ -98,7 +98,14 @@ test('prompt agent destructive tools only emit confirmation requests', async () 
   const events = [];
   let workerCalls = 0;
   const tools = service.createTools({ basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: {} }, { presets: [], vibes: [] }, event => events.push(event), { requestJson: async () => { workerCalls++; } }, { imageInput: true });
-  await tools.find(item => item.name === 'request_clear_history').execute('call', { reason: 'test' });
+  const pending = tools.find(item => item.name === 'request_clear_history').execute('call', { reason: 'test' });
+  await new Promise(resolve => setImmediate(resolve));
+  const request = [...service.pendingConfirmations.values()][0];
+  assert.ok(request);
+  clearTimeout(request.timer);
+  service.pendingConfirmations.clear();
+  request.resolve({ accepted: false, result: {} });
+  await assert.rejects(() => pending, /取消/);
   assert.equal(workerCalls, 0);
   assert.equal(events.at(-1).action.kind, 'request_project_action');
   assert.equal(events.at(-1).action.patch.action, 'clear_history');
