@@ -1466,6 +1466,20 @@ const INIT_SQL = `
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS character_reference_assets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    source_hash TEXT NOT NULL UNIQUE,
+    original_key TEXT NOT NULL,
+    original_type TEXT NOT NULL,
+    thumbnail_key TEXT,
+    thumbnail_type TEXT,
+    default_strength REAL NOT NULL DEFAULT 0.6,
+    default_fidelity REAL NOT NULL DEFAULT 0.6,
+    archived INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 `;
 
 async function ensureLocalHistorySchema(db: D1Database) {
@@ -1511,6 +1525,23 @@ async function ensureVibeSchema(db: D1Database) {
   ]) {
     try { await db.prepare(statement).run(); } catch { /* Column already exists. */ }
   }
+}
+
+async function ensureCharacterReferenceSchema(db: D1Database) {
+  await db.prepare(`CREATE TABLE IF NOT EXISTS character_reference_assets (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, source_hash TEXT NOT NULL UNIQUE,
+    original_key TEXT NOT NULL, original_type TEXT NOT NULL,
+    thumbnail_key TEXT, thumbnail_type TEXT,
+    default_strength REAL NOT NULL DEFAULT 0.6,
+    default_fidelity REAL NOT NULL DEFAULT 0.6,
+    archived INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+  )`).run();
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_character_reference_assets_archived_updated
+    ON character_reference_assets(archived, updated_at DESC)`).run();
+  try {
+    await db.prepare('ALTER TABLE character_reference_assets ADD COLUMN default_fidelity REAL NOT NULL DEFAULT 0.6').run();
+  } catch { /* Column already exists. */ }
 }
 
 const bytesToBase64 = (bytes: Uint8Array) => {
@@ -1579,6 +1610,23 @@ async function mapVibeAsset(db: D1Database, row: any) {
     hasOriginal: Boolean(row.original_key),
     defaultStrength: Number(row.default_strength ?? 0.6),
     encodings: encodings.results.map(mapVibeEncoding),
+    archived: row.archived === 1,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+  };
+}
+
+function mapCharacterReferenceAsset(row: any) {
+  return {
+    id: row.id,
+    name: row.name,
+    sourceHash: row.source_hash,
+    originalImageUrl: `/api/character-references/${encodeURIComponent(row.id)}/image`,
+    thumbnailUrl: row.thumbnail_key
+      ? `/api/character-references/${encodeURIComponent(row.id)}/thumbnail`
+      : `/api/character-references/${encodeURIComponent(row.id)}/image`,
+    defaultStrength: Number(row.default_strength ?? 0.6),
+    defaultFidelity: Number(row.default_fidelity ?? 0.6),
     archived: row.archived === 1,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -2225,12 +2273,13 @@ export default {
       // Lightweight project summary for the local Agent. Keep image/base64
       // fields out of the response and let SQLite perform all counts.
       if (path === '/api/agent/project-overview' && method === 'GET') {
-          const [chains, inspirations, artists, vibes, groups, history] = await Promise.all([
+          const [chains, inspirations, artists, vibes, groups, characterReferences, history] = await Promise.all([
               db.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN type = 'character' THEN 1 ELSE 0 END) AS characters FROM chains`).first<any>(),
               db.prepare('SELECT COUNT(*) AS total FROM inspirations').first<any>(),
               db.prepare('SELECT COUNT(*) AS total FROM artists').first<any>(),
               db.prepare('SELECT COUNT(*) AS total FROM vibe_assets').first<any>(),
               db.prepare('SELECT COUNT(*) AS total FROM vibe_groups').first<any>(),
+              db.prepare('SELECT COUNT(*) AS total FROM character_reference_assets WHERE archived = 0').first<any>(),
               db.prepare(`SELECT id, prompt, negative_prompt, params, source_chain_id, source_chain_name, source_chain_type, created_at FROM local_generation_history ORDER BY created_at DESC LIMIT 5`).all<any>(),
           ]);
           const characterCount = Number(chains?.characters || 0);
@@ -2241,6 +2290,7 @@ export default {
               artists: Number(artists?.total || 0),
               vibes: Number(vibes?.total || 0),
               vibeGroups: Number(groups?.total || 0),
+              characterReferences: Number(characterReferences?.total || 0),
               recentHistory: (history.results || []).map((item: any) => ({
                   id: item.id,
                   prompt: item.prompt,
@@ -2426,6 +2476,151 @@ export default {
           return json({ remaining: Math.max(0, Number.parseInt(row?.value || '0', 10) || 0), spent: amount, updatedAt: Date.now() });
         }
         return error('Method not allowed', 405);
+      }
+
+      // --- Precise/Character Reference image library ---
+      if (path.startsWith('/api/character-references')) {
+        if (!env.BUCKET) return error('角色参考图本地存储不可用', 503);
+        await ensureCharacterReferenceSchema(db);
+
+        if (path === '/api/character-references' && method === 'GET') {
+          const includeArchived = url.searchParams.get('archived') === 'true';
+          const query = String(url.searchParams.get('q') || '').trim().toLowerCase();
+          const rows = query
+            ? await db.prepare(`SELECT * FROM character_reference_assets
+                WHERE archived = ? AND LOWER(name) LIKE ? ORDER BY updated_at DESC`)
+                .bind(includeArchived ? 1 : 0, `%${query}%`).all<any>()
+            : await db.prepare(`SELECT * FROM character_reference_assets
+                WHERE archived = ? ORDER BY updated_at DESC`)
+                .bind(includeArchived ? 1 : 0).all<any>();
+          return json({ items: rows.results.map(mapCharacterReferenceAsset) });
+        }
+
+        if (path === '/api/character-references' && method === 'POST') {
+          const body = await request.json() as any;
+          let original;
+          try { original = parseImageData(body.imageData); } catch (e: any) { return error(e.message, 400); }
+          const sourceHash = await sha256Hex(original.bytes);
+          const existing = await db.prepare('SELECT * FROM character_reference_assets WHERE source_hash = ?')
+            .bind(sourceHash).first<any>();
+          if (existing) {
+            if (existing.archived === 1) {
+              const now = Date.now();
+              await db.prepare('UPDATE character_reference_assets SET archived = 0, updated_at = ? WHERE id = ?')
+                .bind(now, existing.id).run();
+              existing.archived = 0;
+              existing.updated_at = now;
+            }
+            return json({ item: mapCharacterReferenceAsset(existing), duplicate: true });
+          }
+
+          const id = crypto.randomUUID();
+          const now = Date.now();
+          const originalKey = `character-references/originals/${id}.${original.format}`;
+          await env.BUCKET.put(originalKey, exactArrayBuffer(original.bytes), {
+            httpMetadata: { contentType: original.contentType },
+          });
+
+          let thumbnailKey: string | null = null;
+          let thumbnailType: string | null = null;
+          if (body.thumbnailData) {
+            try {
+              const thumbnail = parseImageData(body.thumbnailData);
+              if (thumbnail.bytes.length <= 2 * 1024 * 1024) {
+                thumbnailKey = `character-references/thumbnails/${id}.${thumbnail.format}`;
+                thumbnailType = thumbnail.contentType;
+                await env.BUCKET.put(thumbnailKey, exactArrayBuffer(thumbnail.bytes), {
+                  httpMetadata: { contentType: thumbnailType },
+                });
+              }
+            } catch { /* A failed optional thumbnail must not discard the original. */ }
+          }
+
+          const name = String(body.name || `角色参考 ${sourceHash.slice(0, 8)}`).trim().slice(0, 100)
+            || `角色参考 ${sourceHash.slice(0, 8)}`;
+          await db.prepare(`INSERT INTO character_reference_assets
+            (id, name, source_hash, original_key, original_type, thumbnail_key, thumbnail_type,
+             default_strength, default_fidelity, archived, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`)
+            .bind(id, name, sourceHash, originalKey, original.contentType, thumbnailKey, thumbnailType, 0.6, 0.6, now, now).run();
+          const created = await db.prepare('SELECT * FROM character_reference_assets WHERE id = ?').bind(id).first<any>();
+          return json({ item: mapCharacterReferenceAsset(created) }, 201);
+        }
+
+        const imageMatch = path.match(/^\/api\/character-references\/([^/]+)\/image$/);
+        if (imageMatch && method === 'GET') {
+          const row = await db.prepare('SELECT original_key, original_type FROM character_reference_assets WHERE id = ?')
+            .bind(decodeURIComponent(imageMatch[1])).first<any>();
+          if (!row) return error('角色参考图不存在', 404);
+          const object = await env.BUCKET.get(row.original_key);
+          if (!object) return error('角色参考图文件不存在', 404);
+          return new Response(object.body, { headers: {
+            'Content-Type': row.original_type || 'image/png',
+            'Cache-Control': 'private, max-age=31536000, immutable',
+            'ETag': object.httpEtag,
+          }});
+        }
+
+        const thumbnailMatch = path.match(/^\/api\/character-references\/([^/]+)\/thumbnail$/);
+        if (thumbnailMatch && method === 'GET') {
+          const row = await db.prepare(`SELECT thumbnail_key, thumbnail_type, original_key, original_type
+            FROM character_reference_assets WHERE id = ?`)
+            .bind(decodeURIComponent(thumbnailMatch[1])).first<any>();
+          if (!row) return error('角色参考图不存在', 404);
+          const key = row.thumbnail_key || row.original_key;
+          const object = await env.BUCKET.get(key);
+          if (!object) return error('角色参考图缩略图文件不存在', 404);
+          return new Response(object.body, { headers: {
+            'Content-Type': row.thumbnail_key ? (row.thumbnail_type || 'image/webp') : (row.original_type || 'image/png'),
+            'Cache-Control': 'private, max-age=31536000, immutable',
+            'ETag': object.httpEtag,
+          }});
+        }
+
+        const archiveMatch = path.match(/^\/api\/character-references\/([^/]+)\/(archive|restore)$/);
+        if (archiveMatch && method === 'POST') {
+          const id = decodeURIComponent(archiveMatch[1]);
+          const existing = await db.prepare('SELECT id FROM character_reference_assets WHERE id = ?').bind(id).first<any>();
+          if (!existing) return error('角色参考图不存在', 404);
+          await db.prepare('UPDATE character_reference_assets SET archived = ?, updated_at = ? WHERE id = ?')
+            .bind(archiveMatch[2] === 'archive' ? 1 : 0, Date.now(), id).run();
+          return json({ success: true });
+        }
+
+        const assetMatch = path.match(/^\/api\/character-references\/([^/]+)$/);
+        if (assetMatch && method === 'GET') {
+          const row = await db.prepare('SELECT * FROM character_reference_assets WHERE id = ?')
+            .bind(decodeURIComponent(assetMatch[1])).first<any>();
+          if (!row) return error('角色参考图不存在', 404);
+          return json({ item: mapCharacterReferenceAsset(row) });
+        }
+        if (assetMatch && method === 'PUT') {
+          const id = decodeURIComponent(assetMatch[1]);
+          const existing = await db.prepare('SELECT * FROM character_reference_assets WHERE id = ?').bind(id).first<any>();
+          if (!existing) return error('角色参考图不存在', 404);
+          const body = await request.json() as any;
+          const name = String(body.name || '').trim().slice(0, 100);
+          if (!name) return error('角色参考图名称不能为空', 400);
+          const requestedStrength = body.defaultStrength === undefined
+            ? Number(existing.default_strength ?? 0.6)
+            : Number(body.defaultStrength);
+          if (!Number.isFinite(requestedStrength) || requestedStrength < -1 || requestedStrength > 2) {
+            return error('默认强度必须在 -1 到 2 之间', 400);
+          }
+          const requestedFidelity = body.defaultFidelity === undefined
+            ? Number(existing.default_fidelity ?? 0.6)
+            : Number(body.defaultFidelity);
+          if (!Number.isFinite(requestedFidelity) || requestedFidelity < -1 || requestedFidelity > 2) {
+            return error('默认保真度必须在 -1 到 2 之间', 400);
+          }
+          await db.prepare(`UPDATE character_reference_assets
+            SET name = ?, default_strength = ?, default_fidelity = ?, updated_at = ? WHERE id = ?`)
+            .bind(name, requestedStrength, requestedFidelity, Date.now(), id).run();
+          const updated = await db.prepare('SELECT * FROM character_reference_assets WHERE id = ?').bind(id).first<any>();
+          return json({ item: mapCharacterReferenceAsset(updated) });
+        }
+
+        return error('角色参考图接口不存在', 404);
       }
 
       // --- Permanent Vibe Transfer library ---

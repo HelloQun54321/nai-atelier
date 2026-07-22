@@ -72,6 +72,29 @@ export interface VibeGroup {
   updatedAt: number;
 }
 
+/** A reusable source image for NovelAI Precise/Character Reference. */
+export interface CharacterReferenceAsset {
+  id: string;
+  name: string;
+  sourceHash: string;
+  originalImageUrl: string;
+  thumbnailUrl: string;
+  defaultStrength: number;
+  defaultFidelity: number;
+  archived: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CharacterReferenceSelection {
+  assetId: string;
+  assetName?: string;
+  type: 'character' | 'style' | 'character_style';
+  strength: number;
+  fidelity: number;
+  informationExtracted?: number;
+}
+
 export interface NAIParams {
   width: number;
   height: number;
@@ -95,6 +118,10 @@ export interface NAIParams {
     normalizeStrengths: boolean;
     slots: VibeSelection[];
   };
+  characterReferences?: {
+    enabled: boolean;
+    slots: CharacterReferenceSelection[];
+  };
 }
 
 export interface PromptAgentDraft {
@@ -109,6 +136,7 @@ export type PromptAgentAction =
   | { kind: 'update_prompts'; patch: Partial<Pick<PromptAgentDraft, 'basePrompt' | 'subjectPrompt' | 'negativePrompt'>> }
   | { kind: 'set_modules'; patch: { modules: PromptModule[] } }
   | { kind: 'set_characters'; patch: { characters: CharacterParams[] } }
+  | { kind: 'set_character_references'; patch: { characterReferences: NAIParams['characterReferences']; vibes?: NAIParams['vibes'] } }
   | { kind: 'set_params'; patch: { params: NAIParams } }
   | { kind: 'set_vibes'; patch: { vibes: NAIParams['vibes'] } }
   | { kind: 'request_generation'; patch: { reason?: string; requestId?: string } }

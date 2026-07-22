@@ -3,12 +3,15 @@ import test from 'node:test';
 import {
   VibeEncodingMemoryCache,
   buildCachedVibeReferences,
+  buildPreciseReferenceParameters,
+  clearPreciseReferenceParameters,
   generateWithVibeCacheRetry,
   getVibeCacheSecretKey,
   classifyAitagRemoteTarget,
   estimateNovelAiGenerationCost,
   normalizeVibeStrengths,
   parseInvalidVibeCacheKeys,
+  selectPreciseReferenceCanvas,
   CloudQueueCoordinator,
   fetchNovelAiGeneration,
 } from './media-gateway.mjs';
@@ -68,6 +71,73 @@ test('prompt agent Vibe tool accepts only known encodings and at most four slots
   await tool.execute('call', { normalizeStrengths: true, slots: vibes.map((vibe, index) => ({ vibeId: vibe.id, encodingId: `e${index}`, informationExtracted: 1, strength: 0.6 })) });
   assert.equal(draft.params.vibes.slots.length, 4);
   assert.equal(actions.at(-1).action.kind, 'set_vibes');
+});
+
+test('prompt agent Character Reference tool accepts only project assets, limits four and disables Vibe', async () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const draft = {
+    basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [],
+    params: { vibes: { enabled: true, normalizeStrengths: true, slots: [{ vibeId: 'v1' }] } },
+  };
+  const known = new Map(Array.from({ length: 5 }, (_, index) => [`ref-${index}`, {
+    id: `ref-${index}`, name: `Reference ${index}`, defaultStrength: 0.6, defaultFidelity: 0.7,
+  }]));
+  const project = {
+    requestJson: async path => {
+      const id = decodeURIComponent(path.split('/').at(-1));
+      const item = known.get(id);
+      if (!item) throw new Error('not found');
+      return { item };
+    },
+  };
+  const actions = [];
+  const tool = service.createTools(draft, { presets: [], vibes: [] }, event => actions.push(event), project)
+    .find(item => item.name === 'set_character_references');
+  await tool.execute('call', { slots: [
+    ...Array.from({ length: 5 }, (_, index) => ({ assetId: `ref-${index}`, type: 'character', strength: index === 0 ? -0.5 : 0.6, fidelity: index === 1 ? 1.5 : 0.7 })),
+    { assetId: 'unknown', type: 'style', strength: 1, fidelity: 1 },
+  ] });
+  assert.equal(draft.params.characterReferences.slots.length, 4);
+  assert.equal(draft.params.characterReferences.slots[0].strength, -0.5);
+  assert.equal(draft.params.characterReferences.slots[1].fidelity, 1.5);
+  assert.equal(draft.params.vibes.enabled, false);
+  assert.equal(actions.at(-1).action.kind, 'set_character_references');
+});
+
+test('prompt agent Vibe selection disables Character Reference', async () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const draft = {
+    basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [],
+    params: { characterReferences: { enabled: true, slots: [{ assetId: 'ref-1' }] } },
+  };
+  const vibe = { id: 'v1', name: 'Vibe', defaultStrength: 0.6, encodings: [{ id: 'e1', informationExtracted: 1 }] };
+  const tool = service.createTools(draft, { presets: [], vibes: [vibe] }, () => {}).find(item => item.name === 'set_vibes');
+  await tool.execute('call', { slots: [{ vibeId: 'v1', encodingId: 'e1', informationExtracted: 1, strength: 0.6 }] });
+  assert.equal(draft.params.vibes.enabled, true);
+  assert.equal(draft.params.characterReferences.enabled, false);
+});
+
+test('prompt agent creates Character Reference only from a project history image', async () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const calls = [];
+  const project = {
+    requestJson: async (path, options) => {
+      calls.push({ path, options });
+      if (path === '/api/local-history/history-1') return { item: { id: 'history-1' } };
+      if (path === '/api/character-references') return { item: { id: 'ref-1', name: options.body.name } };
+      throw new Error(`unexpected ${path}`);
+    },
+    requestBuffer: async path => {
+      assert.equal(path, '/api/local-history/history-1/image');
+      return { buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]), mimeType: 'image/png' };
+    },
+  };
+  const tool = service.createTools({ basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: {} }, { presets: [], vibes: [] }, () => {}, project)
+    .find(item => item.name === 'create_character_reference_from_history');
+  await tool.execute('call', { historyId: 'history-1', name: 'Latest character' });
+  assert.equal(calls.at(-1).path, '/api/character-references');
+  assert.match(calls.at(-1).options.body.imageData, /^data:image\/png;base64,/);
+  assert.equal(calls.some(call => /^https?:/i.test(call.path)), false);
 });
 
 test('prompt agent history inspection returns the real image only to vision models', async () => {
@@ -213,6 +283,62 @@ test('NovelAI V4.5 costs follow Opus free limits and current web formula', () =>
     ...payload.parameters,
     director_reference_images_cached: [{ cache_secret_key: 'character' }],
   } }), 5);
+});
+
+test('Precise Reference uses official V4.5 director fields without local IDs', () => {
+  const slots = [
+    { assetId: 'local-a', type: 'character', strength: 0.65, fidelity: 0.8, informationExtracted: 0.9 },
+    { assetId: 'local-b', type: 'character_style', strength: 0.4, fidelity: 0.25 },
+  ];
+  const resolved = [
+    { mimeType: 'image/png', imageData: Buffer.from('a'.repeat(128)).toString('base64') },
+    { mimeType: 'image/jpeg', data: `data:image/jpeg;base64,${Buffer.from('b'.repeat(128)).toString('base64')}` },
+  ];
+  const parameters = buildPreciseReferenceParameters(slots, resolved);
+  assert.equal(parameters.director_reference_images.length, 2);
+  assert.deepEqual(parameters.director_reference_descriptions.map(item => item.caption.base_caption), ['character', 'character&style']);
+  assert.deepEqual(parameters.director_reference_information_extracted, [0.9, 1]);
+  assert.deepEqual(parameters.director_reference_strength_values, [0.65, 0.4]);
+  assert.ok(Math.abs(parameters.director_reference_secondary_strength_values[0] - 0.2) < Number.EPSILON);
+  assert.equal(parameters.director_reference_secondary_strength_values[1], 0.75);
+  assert.equal(JSON.stringify(parameters).includes('local-a'), false);
+});
+
+test('Precise Reference keeps official extended Strength/Fidelity ranges and clamps extraction only', () => {
+  const slots = [
+    { assetId: 'negative', type: 'style', strength: -0.5, fidelity: -0.25, informationExtracted: -1 },
+    { assetId: 'boosted', type: 'character', strength: 1.75, fidelity: 1.5, informationExtracted: 2 },
+  ];
+  const image = Buffer.from('x'.repeat(128)).toString('base64');
+  const parameters = buildPreciseReferenceParameters(slots, [
+    { mimeType: 'image/png', imageData: image },
+    { mimeType: 'image/png', imageData: image },
+  ]);
+  assert.deepEqual(parameters.director_reference_strength_values, [-0.5, 1.75]);
+  assert.deepEqual(parameters.director_reference_secondary_strength_values, [1.25, -0.5]);
+  assert.deepEqual(parameters.director_reference_information_extracted, [0, 1]);
+});
+
+test('Precise Reference chooses the nearest official portrait, square and landscape canvas', () => {
+  assert.deepEqual(selectPreciseReferenceCanvas(800, 1200), { width: 1024, height: 1536 });
+  assert.deepEqual(selectPreciseReferenceCanvas(1200, 1200), { width: 1472, height: 1472 });
+  assert.deepEqual(selectPreciseReferenceCanvas(1600, 900), { width: 1536, height: 1024 });
+});
+
+test('Precise Reference strips spoofed browser fields and rejects invalid input', () => {
+  const parameters = clearPreciseReferenceParameters({
+    _local_character_references: { slots: [] },
+    director_reference_images: ['untrusted'],
+    director_reference_images_cached: [{ data: 'untrusted' }],
+    director_reference_strength_values: [1],
+    width: 832,
+  });
+  assert.deepEqual(parameters, { width: 832 });
+  assert.throws(() => buildPreciseReferenceParameters(Array.from({ length: 5 }, () => ({})), []), /最多使用 4 个/);
+  assert.throws(() => buildPreciseReferenceParameters(
+    [{ assetId: 'x', type: 'invalid', strength: 1, fidelity: 1 }],
+    [{ mimeType: 'image/png', data: Buffer.from('x'.repeat(128)).toString('base64') }],
+  ), /参考类型无效/);
 });
 
 test('cached Vibe references use stable private keys and optionally include data', () => {

@@ -109,6 +109,12 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
         ? params.vibes
         : undefined,
 
+      // The computer gateway resolves stable IDs into original images. This
+      // keeps Precise Reference originals out of phones and browser storage.
+      _local_character_references: params.characterReferences?.enabled && params.characterReferences.slots.length > 0
+        ? params.characterReferences
+        : undefined,
+
       deliberate_euler_ancestral_bug: false,
       prefer_brownian: true
     }

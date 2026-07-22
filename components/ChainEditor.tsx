@@ -15,6 +15,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { VibeManager } from './VibeManager';
+import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { estimateV45GenerationCost } from '../services/anlasBudget';
 import { PromptAgentPanel } from './PromptAgentPanel';
@@ -1033,7 +1034,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setIsGenerating(false);
         }
     };
-    const handleGenerate = () => handleGenerateDraft();
+    const handleGenerate = async () => {
+        const cost = estimateV45GenerationCost(params);
+        if (cost > 0 && !await confirmAction({
+            title: '确认生成图片',
+            message: `当前参数预计消耗 ${cost} Anlas${params.characterReferences?.enabled && params.characterReferences.slots.length ? `\n其中角色参考：${params.characterReferences.slots.length} × 5 = ${params.characterReferences.slots.length * 5} Anlas` : ''}。`,
+            confirmLabel: `消耗 ${cost} 点并生成`,
+        })) return false;
+        return handleGenerateDraft();
+    };
 
     const currentAgentDraft = (): PromptAgentDraft => ({
         basePrompt,
@@ -1549,6 +1558,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 ))}
                             </div>
                         </section>
+
+                        <div className={mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'}>
+                            <CharacterReferenceManager
+                                params={params}
+                                setParams={setParams}
+                                markChange={markChange}
+                                notify={notify}
+                            />
+                        </div>
 
                         <div className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
                             <VibeManager

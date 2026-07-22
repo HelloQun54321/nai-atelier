@@ -20,12 +20,13 @@ export const estimateV45GenerationCost = (params: NAIParams, opus = true) => {
   const steps = Math.max(1, Number(params.steps) || 1);
   const samples = 1;
   const vibeCount = params.vibes?.enabled ? params.vibes.slots.length : 0;
+  const preciseReferenceCount = params.characterReferences?.enabled ? params.characterReferences.slots.length : 0;
   const baseRaw = Math.ceil(2.951823174884865e-6 * area + 5.753298233447344e-7 * area * steps);
   const baseCost = Math.max(baseRaw, 2);
   const freeSamples = opus && area <= 1_048_576 && steps <= 28 ? 1 : 0;
   const generationCost = baseCost * Math.max(0, samples - freeSamples);
   const extraVibeCost = Math.max(0, vibeCount - 4) * 2 * samples;
-  return generationCost + extraVibeCost;
+  return generationCost + extraVibeCost + preciseReferenceCount * 5 * samples;
 };
 
 const broadcastBudget = (state: AnlasBudgetState) => {

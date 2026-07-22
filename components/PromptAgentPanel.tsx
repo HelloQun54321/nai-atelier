@@ -25,12 +25,12 @@ type ToolProgress = { id: string; name: string; state: 'running' | 'done' | 'err
 type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; stopReason?: string; timestamp?: number; queued?: 'steer' | 'followUp' };
 type AgentAttachment = { data: string; mimeType: string; name: string };
 const toolLabels: Record<string, string> = {
-  get_lab_state: '读取实验室', search_tags: '搜索 Tag', search_presets: '搜索预设', search_vibes: '搜索 Vibe',
+  get_lab_state: '读取实验室', search_tags: '搜索 Tag', search_presets: '搜索预设', search_vibes: '搜索 Vibe', search_character_references: '搜索角色参考',
   update_prompts: '修改提示词', set_prompt_modules: '整理提示词模块', set_characters: '设置角色',
-  set_generation_params: '调整参数', set_vibes: '设置 Vibe', request_generation: '准备生图',
+  set_generation_params: '调整参数', set_vibes: '设置 Vibe', set_character_references: '设置角色参考', request_generation: '准备生图',
   get_project_overview: '读取项目概况', search_project_library: '搜索项目资料', list_generation_history: '读取生成历史',
   inspect_generation_image: '查看历史原图', create_chain: '新建资料', update_chain: '更新资料',
-  create_inspiration: '保存灵感', update_inspiration: '更新灵感', list_vibe_groups: '读取 Vibe 组合',
+  create_inspiration: '保存灵感', update_inspiration: '更新灵感', list_vibe_groups: '读取 Vibe 组合', create_character_reference_from_history: '保存角色参考图',
   request_delete_project_item: '准备删除', request_clear_history: '准备清空历史',
   search_aitag: '搜索 AITag', get_aitag_work: '读取 AITag 作品', save_artist_profile: '保存画师资料',
   update_vibe: '更新 Vibe', save_vibe_group: '保存 Vibe 组合', request_vibe_encoding: '准备 Vibe 编码',

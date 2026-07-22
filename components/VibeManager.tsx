@@ -76,7 +76,13 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
   const closeLayer = () => window.history.back();
 
   const updateVibes = (next: NonNullable<NAIParams['vibes']>) => {
-    setParams({ ...params, vibes: { ...next, slots: next.slots.map(slot => ({ ...slot })) } });
+    setParams({
+      ...params,
+      vibes: { ...next, slots: next.slots.map(slot => ({ ...slot })) },
+      characterReferences: next.enabled && next.slots.length && params.characterReferences
+        ? { ...params.characterReferences, enabled: false }
+        : params.characterReferences,
+    });
     markChange();
   };
 

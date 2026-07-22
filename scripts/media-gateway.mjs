@@ -19,6 +19,7 @@ const SOURCE_LIMIT = 2048;
 const INPUT_LIMIT = 30 * 1024 * 1024;
 const GENERATION_REQUEST_LIMIT = 20 * 1024 * 1024;
 const VIBE_ENCODING_CACHE_LIMIT = 128 * 1024 * 1024;
+const PRECISE_REFERENCE_CACHE_LIMIT = 128 * 1024 * 1024;
 const NAI_GENERATE_URL = 'https://image.novelai.net/ai/generate-image';
 const NAI_ENCODE_VIBE_URL = 'https://image.novelai.net/ai/encode-vibe';
 const CLOUD_QUEUE_URL = 'https://st-chatu-novelai-queue.hf.space';
@@ -37,6 +38,9 @@ const vibeEncodingJobs = new Map();
 const pendingVibeRecoveries = new Map();
 const vibeCacheHmacSecret = randomBytes(32);
 const confirmedNovelAiVibeCacheKeys = new Set();
+const preciseReferenceImageCache = new Map();
+let preciseReferenceImageCacheSize = 0;
+const preciseReferenceImageJobs = new Map();
 
 const loadCloudQueuePreferences = async () => {
   try {
@@ -312,6 +316,118 @@ export const normalizeVibeStrengths = slots => {
   return total > 1 ? values.map(value => value / total) : values;
 };
 
+const PRECISE_REFERENCE_TYPES = new Map([
+  ['character', 'character'],
+  ['style', 'style'],
+  ['character_style', 'character&style'],
+]);
+
+const PRECISE_REFERENCE_CANVASES = [
+  { width: 1024, height: 1536 },
+  { width: 1472, height: 1472 },
+  { width: 1536, height: 1024 },
+];
+
+export const selectPreciseReferenceCanvas = (width, height) => {
+  const ratio = Math.max(1, Number(width) || 1) / Math.max(1, Number(height) || 1);
+  const selected = PRECISE_REFERENCE_CANVASES.reduce((best, candidate) => {
+    const distance = Math.abs(Math.log(ratio / (candidate.width / candidate.height)));
+    return distance < best.distance ? { ...candidate, distance } : best;
+  }, { ...PRECISE_REFERENCE_CANVASES[0], distance: Number.POSITIVE_INFINITY });
+  return { width: selected.width, height: selected.height };
+};
+
+const preparePreciseReferenceImage = async (key, buffer) => {
+  const cached = preciseReferenceImageCache.get(key);
+  if (cached) {
+    preciseReferenceImageCache.delete(key);
+    preciseReferenceImageCache.set(key, cached);
+    return cached.data;
+  }
+  if (preciseReferenceImageJobs.has(key)) return preciseReferenceImageJobs.get(key);
+  const job = (async () => {
+    const { default: sharp } = await import('sharp');
+    const source = sharp(buffer, { failOn: 'warning', limitInputPixels: 100_000_000 }).rotate();
+    const metadata = await source.metadata();
+    if (!metadata.width || !metadata.height) throw new Error('角色参考图片尺寸无效');
+    const canvas = selectPreciseReferenceCanvas(metadata.width, metadata.height);
+    const output = await source
+      .resize({ width: canvas.width, height: canvas.height, fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 1 } })
+      .png({ compressionLevel: 7, adaptiveFiltering: true })
+      .toBuffer();
+    const data = output.toString('base64');
+    const size = output.length;
+    while (preciseReferenceImageCacheSize + size > PRECISE_REFERENCE_CACHE_LIMIT && preciseReferenceImageCache.size) {
+      const oldestKey = preciseReferenceImageCache.keys().next().value;
+      const oldest = preciseReferenceImageCache.get(oldestKey);
+      preciseReferenceImageCache.delete(oldestKey);
+      preciseReferenceImageCacheSize -= oldest.size;
+    }
+    if (size <= PRECISE_REFERENCE_CACHE_LIMIT) {
+      preciseReferenceImageCache.set(key, { data, size });
+      preciseReferenceImageCacheSize += size;
+    }
+    return data;
+  })().finally(() => preciseReferenceImageJobs.delete(key));
+  preciseReferenceImageJobs.set(key, job);
+  return job;
+};
+
+const clampRange = (value, fallback, minimum, maximum) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(minimum, Math.min(maximum, numeric)) : fallback;
+};
+
+const stripImageDataUrl = value => {
+  const input = String(value || '');
+  const match = input.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=\s]+)$/i);
+  return match ? { mimeType: match[1].toLowerCase(), data: match[2].replace(/\s+/g, '') } : { data: input.replace(/\s+/g, '') };
+};
+
+/** Build official NovelAI V4.5 Precise Reference fields from trusted Worker data. */
+export const buildPreciseReferenceParameters = (slots, resolvedAssets) => {
+  if (!Array.isArray(slots) || !slots.length) return {};
+  if (slots.length > 4) throw new Error('一次最多使用 4 个角色参考');
+  if (!Array.isArray(resolvedAssets) || resolvedAssets.length !== slots.length) throw new Error('角色参考图片数量不一致');
+  const images = resolvedAssets.map((item, index) => {
+    const parsed = stripImageDataUrl(item?.imageData ?? item?.data);
+    const mimeType = String(item?.mimeType || parsed.mimeType || '').toLowerCase();
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(mimeType)) throw new Error(`角色参考 ${index + 1} 的图片格式不受支持`);
+    if (!parsed.data || parsed.data.length < 100) throw new Error(`角色参考 ${index + 1} 的图片缺失或已损坏`);
+    return parsed.data;
+  });
+  const descriptions = slots.map((slot, index) => {
+    const baseCaption = PRECISE_REFERENCE_TYPES.get(slot?.type);
+    if (!baseCaption) throw new Error(`角色参考 ${index + 1} 的参考类型无效`);
+    return { caption: { base_caption: baseCaption, char_captions: [] }, legacy_uc: false };
+  });
+  // NovelAI's numeric inputs accept values below zero when entered directly.
+  // Keep the UI's conservative -1..2 guard while leaving information extracted
+  // on its own documented 0..1 scale.
+  const fidelity = slots.map(slot => clampRange(slot?.fidelity, 0.6, -1, 2));
+  return {
+    director_reference_images: images,
+    director_reference_descriptions: descriptions,
+    director_reference_information_extracted: slots.map(slot => clampRange(slot?.informationExtracted, 1, 0, 1)),
+    director_reference_strength_values: slots.map(slot => clampRange(slot?.strength, 0.6, -1, 2)),
+    director_reference_secondary_strength_values: fidelity.map(value => 1 - value),
+  };
+};
+
+/** Remove every browser-controlled Precise Reference field before rebuilding it. */
+export const clearPreciseReferenceParameters = parameters => {
+  for (const key of [
+    '_local_character_references',
+    'director_reference_images',
+    'director_reference_images_cached',
+    'director_reference_descriptions',
+    'director_reference_information_extracted',
+    'director_reference_strength_values',
+    'director_reference_secondary_strength_values',
+  ]) delete parameters[key];
+  return parameters;
+};
+
 /** NovelAI's current V4/V4.5 cost formula for the generation features supported here. */
 export const estimateNovelAiGenerationCost = payload => {
   const parameters = payload?.parameters || {};
@@ -532,6 +648,10 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
     let payload;
     try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
     const localVibes = payload?.parameters?._local_vibes;
+    const localCharacterReferences = payload?.parameters?._local_character_references;
+    if (localVibes?.enabled && localVibes?.slots?.length && localCharacterReferences?.enabled && localCharacterReferences?.slots?.length) {
+      return sendJson(res, 400, { error: 'Vibe Transfer 与角色参考不能同时使用' });
+    }
     let resolvedVibeEncodings = null;
     let vibeCacheKeysSentWithData = new Set();
     if (localVibes?.enabled && Array.isArray(localVibes.slots) && localVibes.slots.length) {
@@ -561,7 +681,38 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
         .filter(item => item.data)
         .map(item => item.cache_secret_key));
     }
-    if (payload?.parameters) delete payload.parameters._local_vibes;
+    if (payload?.parameters) {
+      delete payload.parameters._local_vibes;
+      const characterSlots = localCharacterReferences?.enabled && Array.isArray(localCharacterReferences.slots)
+        ? localCharacterReferences.slots
+        : [];
+      clearPreciseReferenceParameters(payload.parameters);
+      if (characterSlots.length) {
+        if (payload.model !== 'nai-diffusion-4-5-full') return sendJson(res, 400, { error: '角色参考仅支持 NovelAI V4.5 Full' });
+        if (characterSlots.length > 4) return sendJson(res, 400, { error: '一次最多使用 4 个角色参考' });
+        if (characterSlots.some(slot => typeof slot?.assetId !== 'string' || !slot.assetId.trim())) {
+          return sendJson(res, 400, { error: '角色参考缺少有效的本地资产 ID' });
+        }
+        const resolved = await Promise.all(characterSlots.map(async slot => {
+          const image = await requestWorkerBuffer(
+            `/api/character-references/${encodeURIComponent(slot.assetId)}/image`, req, workerPort
+          );
+          if (image.status >= 400 || !image.buffer.length) {
+            throw Object.assign(new Error(`角色参考“${slot.assetName || slot.assetId}”的原图不存在`), { status: image.status || 404 });
+          }
+          const etag = String(image.headers.etag || image.headers['last-modified'] || 'immutable');
+          return {
+            data: await preparePreciseReferenceImage(`${slot.assetId}:${etag}`, image.buffer),
+            mimeType: 'image/png',
+          };
+        }));
+        try {
+          Object.assign(payload.parameters, buildPreciseReferenceParameters(characterSlots, resolved));
+        } catch (error) {
+          return sendJson(res, 400, { error: error?.message || '角色参考参数无效' });
+        }
+      }
+    }
     if (queueEnabled) {
       queueLock = await cloudQueue.join({
         apiKey: authorization.slice(7).trim(),
