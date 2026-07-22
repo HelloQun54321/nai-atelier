@@ -31,6 +31,7 @@ const App = () => {
   // Playground State
   const [playgroundChain, setPlaygroundChain] = useState<PromptChain | null>(null);
   const [playgroundImportToken, setPlaygroundImportToken] = useState(0);
+  const [agentOpenToken, setAgentOpenToken] = useState(0);
 
   // Data Cache State
   const [artistsCache, setArtistsCache] = useState<Artist[] | null>(null);
@@ -75,6 +76,24 @@ const App = () => {
     });
   }, []);
 
+  useEffect(() => {
+    const applyPreferences = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (['light', 'dark', 'system'].includes(detail.themeMode)) setThemeMode(detail.themeMode);
+      if (typeof detail.safeMode === 'boolean') setSafeMode(detail.safeMode);
+    };
+    const navigate = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (['list', 'characters', 'library', 'aitag', 'inspiration', 'history', 'playground'].includes(detail.view)) void handleNavigate(detail.view, detail.id);
+    };
+    window.addEventListener('nai-agent-ui-preferences', applyPreferences);
+    window.addEventListener('nai-agent-navigate', navigate);
+    return () => {
+      window.removeEventListener('nai-agent-ui-preferences', applyPreferences);
+      window.removeEventListener('nai-agent-navigate', navigate);
+    };
+  });
+
   const refreshData = async (force = false) => {
     // Chains (Always load all chains so we can filter client side and do mutual imports)
     if (!force && chains.length > 0 && Date.now() - lastChainFetch < CACHE_TTL) return;
@@ -107,6 +126,16 @@ const App = () => {
     setInspirationsCache(data);
     setLastInspirationFetch(Date.now());
   };
+
+  useEffect(() => {
+    const refreshAgentChanges = () => {
+      void refreshData(true);
+      void loadArtists(true);
+      void loadInspirations(true);
+    };
+    window.addEventListener('nai-project-data-changed', refreshAgentChanges);
+    return () => window.removeEventListener('nai-project-data-changed', refreshAgentChanges);
+  }, []);
 
   useEffect(() => {
     const query = window.matchMedia('(prefers-color-scheme: dark)');
@@ -401,6 +430,7 @@ const App = () => {
           setIsDirty={() => { }}
           notify={notify}
           externalImportToken={playgroundImportToken}
+          agentOpenToken={agentOpenToken}
         />;
       default:
         return <div>Unknown View</div>;
@@ -453,6 +483,7 @@ const App = () => {
         toast={toast}
         hideNav={view === 'edit' || view === 'playground'}
         notify={notify}
+        onOpenAgent={() => { void handleNavigate('playground').then(() => setAgentOpenToken(value => value + 1)); }}
       >
         {renderContent()}
       </Layout>

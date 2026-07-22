@@ -269,8 +269,17 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
             }
         };
 
+        const refreshAgentChanges = () => {
+            setCacheState({});
+            inflightPagesRef.current = {};
+            void refreshPageRef.current(currentPageRef.current, true);
+        };
+        window.addEventListener('nai-project-data-changed', refreshAgentChanges);
         void initialize();
-        return unsubscribe;
+        return () => {
+            unsubscribe();
+            window.removeEventListener('nai-project-data-changed', refreshAgentChanges);
+        };
     }, []);
 
     // 生成页码按钮

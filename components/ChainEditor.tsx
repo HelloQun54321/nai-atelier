@@ -28,6 +28,7 @@ interface ChainEditorProps {
     setIsDirty: (isDirty: boolean) => void;
     notify: (msg: string, type?: 'success' | 'error') => void;
     externalImportToken?: number;
+    agentOpenToken?: number;
 }
 
 type PresetSource = { name: string; modified: boolean };
@@ -51,7 +52,7 @@ const PresetSourceBadges: React.FC<{ sources: Record<string, PresetSource> }> = 
     return values.length > 0 ? <div className="flex min-w-0 flex-wrap items-center gap-1">{values.map(source => <PresetSourceBadge key={source.name} source={source} />)}</div> : null;
 };
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken, agentOpenToken }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
     const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
@@ -144,6 +145,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
     const [showPromptAgent, setShowPromptAgent] = useState(false);
     const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<PromptAgentDraft | null>(null);
+
+    useEffect(() => {
+        if (agentOpenToken) setShowPromptAgent(true);
+    }, [agentOpenToken]);
 
     useEffect(() => {
         const viewport = window.visualViewport;
@@ -1307,6 +1312,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 sessionId={chain.id}
                 draft={currentAgentDraft()}
                 presets={allChains}
+                apiKey={apiKey}
                 onRunStart={snapshot => setAgentUndoSnapshot(snapshot)}
                 onAction={applyAgentAction}
                 onFinalDraft={applyAgentDraft}

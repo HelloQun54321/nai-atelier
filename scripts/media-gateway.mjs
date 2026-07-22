@@ -288,6 +288,24 @@ const requestWorkerJson = (path, req, workerPort, { method = 'GET', body } = {})
   upstream.end();
 });
 
+const requestTagDictionaryControl = method => new Promise((resolve, reject) => {
+  const upstream = httpRequest({
+    hostname: '127.0.0.1', port: 3002, path: '/tag-dictionary', method,
+    headers: { accept: 'application/json', 'x-nai-local-control': 'true' },
+  }, async upstreamRes => {
+    const chunks = [];
+    for await (const chunk of upstreamRes) chunks.push(chunk);
+    const raw = Buffer.concat(chunks).toString('utf8');
+    let parsed;
+    try { parsed = JSON.parse(raw || '{}'); } catch { parsed = { error: raw || 'Tag更新服务返回异常' }; }
+    if ((upstreamRes.statusCode || 500) >= 400) reject(Object.assign(new Error(parsed.error || 'Tag更新服务请求失败'), { status: upstreamRes.statusCode || 500 }));
+    else resolve(parsed);
+  });
+  upstream.setTimeout(10_000, () => upstream.destroy(new Error('Tag更新服务超时')));
+  upstream.on('error', error => reject(Object.assign(new Error(`Tag更新服务不可用：${error.message}`), { status: 503 })));
+  upstream.end();
+});
+
 export const normalizeVibeStrengths = slots => {
   const values = slots.map(slot => Math.max(0, Math.min(1, Number(slot.strength) || 0)));
   const total = values.reduce((sum, value) => sum + value, 0);
@@ -980,6 +998,13 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
           return sendJson(res, 200, { items: await promptAgent.getSessionHistory(url.searchParams.get('sessionId') || '') });
         }
+        if (url.pathname === '/api/prompt-agent/project-action') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 32 * 1024)).toString('utf8') || '{}');
+          return sendJson(res, 200, await promptAgent.executeConfirmedProjectAction(body, {
+            requestJson: (path, options) => requestWorkerJson(path, req, workerPort, options),
+          }));
+        }
         if (url.pathname === '/api/prompt-agent/run') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
           const body = JSON.parse((await readRequestBody(req, 2 * 1024 * 1024)).toString('utf8') || '{}');
@@ -995,7 +1020,27 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
           });
           const emit = event => { if (!res.destroyed) res.write(`${JSON.stringify(event)}\n`); };
           try {
-            const result = await promptAgent.run(body, emit, controller.signal);
+            const result = await promptAgent.run(body, emit, controller.signal, {
+              requestJson: (path, options) => requestWorkerJson(path, req, workerPort, options),
+              getQueuePreferences: () => ({ ...cloudQueuePreferences }),
+              setQueuePreferences: async next => {
+                cloudQueuePreferences.enabled = next.enabled === true;
+                cloudQueuePreferences.greeting = String(next.greeting || '正在生成中～').trim().slice(0, 15);
+                cloudQueuePreferences.showGreeting = next.showGreeting !== false;
+                await saveCloudQueuePreferences(cloudQueuePreferences);
+                return { ...cloudQueuePreferences };
+              },
+              tagDictionary: method => requestTagDictionaryControl(method),
+              requestBuffer: async (path, maxBytes) => {
+                const result = await requestWorkerBuffer(path, req, workerPort);
+                if (result.status >= 400) throw Object.assign(new Error('读取项目图片失败'), { status: result.status });
+                if (result.buffer.length > maxBytes) throw Object.assign(new Error('图片过大，无法交给当前模型识别'), { status: 413 });
+                const header = result.headers['content-type'];
+                const mimeType = (Array.isArray(header) ? header[0] : header || 'image/png').split(';')[0].trim();
+                if (!/^image\/(?:png|jpeg|webp|gif)$/i.test(mimeType)) throw new Error('历史文件不是支持的图片格式');
+                return { buffer: result.buffer, mimeType };
+              },
+            });
             emit({ type: 'done', ...result });
           } catch (error) {
             emit({ type: 'error', error: error.message || 'Agent 执行失败' });

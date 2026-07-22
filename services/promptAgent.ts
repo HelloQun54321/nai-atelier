@@ -3,6 +3,7 @@ import { PromptAgentAction, PromptAgentDraft } from '../types';
 export interface PromptAgentConfig {
   provider: string;
   model: string;
+  imageInput: boolean;
   configured: boolean;
   configuredProviders: string[];
 }
@@ -44,6 +45,7 @@ export type PromptAgentEvent =
   | { type: 'tool_start'; toolName: string }
   | { type: 'tool_end'; toolName: string; isError: boolean }
   | { type: 'action'; action: PromptAgentAction }
+  | { type: 'project_changed'; resource: string }
   | { type: 'done'; draft: PromptAgentDraft; message: string; provider: string; model: string }
   | { type: 'error'; error: string };
 
@@ -97,13 +99,18 @@ export const promptAgentService = {
     const response = await fetch('/api/prompt-agent/session/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId }) });
     if (!response.ok) return readError(response);
   },
+  executeProjectAction: async (action: { action: string; resourceId?: string; payload?: Record<string, unknown> }) => {
+    const response = await fetch('/api/prompt-agent/project-action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action) });
+    if (!response.ok) return readError(response) as never;
+    return response.json() as Promise<{ ok: boolean; action: string; resourceId?: string }>;
+  },
   getSession: async (sessionId: string): Promise<Array<{ id: string; role: 'user' | 'agent'; text: string }>> => {
     const response = await fetch(`/api/prompt-agent/session?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' });
     if (!response.ok) return readError(response) as never;
     return (await response.json()).items || [];
   },
   run: async (
-    input: { sessionId: string; message: string; draft: PromptAgentDraft; context: { presets: unknown[]; vibes: unknown[] } },
+    input: { sessionId: string; message: string; draft: PromptAgentDraft; context: { presets: unknown[]; vibes: unknown[]; clientSettings?: Record<string, unknown> } },
     onEvent: (event: PromptAgentEvent) => void,
     signal?: AbortSignal,
   ) => {

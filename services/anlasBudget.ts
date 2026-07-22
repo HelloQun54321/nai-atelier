@@ -57,8 +57,13 @@ export const useAnlasBudget = () => {
   useEffect(() => {
     void refresh();
     const update = (event: Event) => setState((event as CustomEvent<AnlasBudgetState>).detail);
+    const refreshProjectChange = () => void refresh();
     window.addEventListener(ANLAS_BUDGET_CHANGED_EVENT, update);
-    return () => window.removeEventListener(ANLAS_BUDGET_CHANGED_EVENT, update);
+    window.addEventListener('nai-project-data-changed', refreshProjectChange);
+    return () => {
+      window.removeEventListener(ANLAS_BUDGET_CHANGED_EVENT, update);
+      window.removeEventListener('nai-project-data-changed', refreshProjectChange);
+    };
   }, [refresh]);
 
   return { ...state, loading, refresh };

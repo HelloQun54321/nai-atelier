@@ -178,7 +178,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
 
           <section className="rounded-xl border border-fuchsia-200 bg-fuchsia-50/30 p-4 dark:border-fuchsia-900/70 dark:bg-fuchsia-950/15">
             <button type="button" onClick={() => isMobile && setMobileSection('agent')} className="flex min-h-11 w-full items-center justify-between gap-4 text-left">
-              <div><h3 className="font-semibold text-gray-900 dark:text-white">AI 生图 Agent</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">让 DeepSeek、Gemini 或 Grok 直接修改实验室并按需请求生图。</p></div>
+              <div><h3 className="font-semibold text-gray-900 dark:text-white">项目 Agent</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">让 DeepSeek、Gemini 或 Grok 查看历史图片、操作实验室并管理项目资料。</p></div>
               <span className="md:hidden">{mobileSection === 'agent' ? '⌃' : '⌄'}</span>
             </button>
             {(!isMobile || mobileSection === 'agent') && <PromptAgentSettings notify={notify} />}

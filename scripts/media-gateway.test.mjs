@@ -46,6 +46,72 @@ test('prompt agent Vibe tool accepts only known encodings and at most four slots
   assert.equal(actions.at(-1).action.kind, 'set_vibes');
 });
 
+test('prompt agent history inspection returns the real image only to vision models', async () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const draft = { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: {} };
+  const history = { items: [{ id: 'history-1', prompt: '1girl', params: { seed: 7 }, createdAt: 123 }] };
+  const project = {
+    requestJson: async path => {
+      assert.equal(path, '/api/local-history?page=0&pageSize=100');
+      return history;
+    },
+    requestBuffer: async path => {
+      assert.equal(path, '/api/local-history/history-1/image');
+      return { buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]), mimeType: 'image/png' };
+    },
+  };
+  const visionTool = service.createTools(draft, { presets: [], vibes: [] }, () => {}, project, { imageInput: true }).find(item => item.name === 'inspect_generation_image');
+  const result = await visionTool.execute('call', { id: 'history-1' });
+  assert.equal(result.content[1].type, 'image');
+  assert.equal(result.content[1].mimeType, 'image/png');
+  assert.equal(result.content[1].data, Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64'));
+  const textOnlyTool = service.createTools(draft, { presets: [], vibes: [] }, () => {}, project, { imageInput: false }).find(item => item.name === 'inspect_generation_image');
+  await assert.rejects(() => textOnlyTool.execute('call', { id: 'history-1' }), /不支持图片输入/);
+});
+
+test('prompt agent destructive tools only emit confirmation requests', async () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const events = [];
+  let workerCalls = 0;
+  const tools = service.createTools({ basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: {} }, { presets: [], vibes: [] }, event => events.push(event), { requestJson: async () => { workerCalls++; } }, { imageInput: true });
+  await tools.find(item => item.name === 'request_clear_history').execute('call', { reason: 'test' });
+  assert.equal(workerCalls, 0);
+  assert.equal(events.at(-1).action.kind, 'request_project_action');
+  assert.equal(events.at(-1).action.patch.action, 'clear_history');
+});
+
+test('prompt agent keeps advanced generation fields when changing one parameter', async () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const draft = { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', noiseSchedule: 'karras', sm: true, customAdvancedFlag: 7 } };
+  const tool = service.createTools(draft, { presets: [], vibes: [] }, () => {}).find(item => item.name === 'set_generation_params');
+  await tool.execute('call', { steps: 32 });
+  assert.equal(draft.params.steps, 32);
+  assert.equal(draft.params.noiseSchedule, 'karras');
+  assert.equal(draft.params.sm, true);
+  assert.equal(draft.params.customAdvancedFlag, 7);
+});
+
+test('prompt agent exposes project settings without exposing API keys', async () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const calls = [];
+  const project = {
+    requestJson: async path => {
+      calls.push(path);
+      if (path === '/api/anlas-budget') return { remaining: 1666 };
+      if (path === '/api/config/benchmarks') return { config: { slots: 3 } };
+      throw new Error(`unexpected ${path}`);
+    },
+    getQueuePreferences: () => ({ enabled: true, greeting: 'test', showGreeting: true }),
+  };
+  const tools = service.createTools({ basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: {} }, { presets: [], vibes: [], clientSettings: { themeMode: 'dark', novelAiKeyConfigured: true } }, () => {}, project, { imageInput: true });
+  const result = await tools.find(item => item.name === 'get_project_settings').execute('call', {});
+  const payload = JSON.parse(result.content[0].text);
+  assert.equal(payload.anlasBudget.remaining, 1666);
+  assert.equal(payload.client.novelAiKeyConfigured, true);
+  assert.equal(JSON.stringify(payload).toLowerCase().includes('api_key'), false);
+  assert.deepEqual(calls, ['/api/anlas-budget', '/api/config/benchmarks']);
+});
+
 test('NovelAI generation uses the computer outbound proxy transport', async () => {
   let captured;
   const requestRemote = async (url, options) => {

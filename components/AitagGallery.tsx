@@ -370,6 +370,15 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ currentUser, notify,
     }
   };
 
+  useEffect(() => {
+    const refreshAgentChanges = (event: Event) => {
+      const resource = (event as CustomEvent).detail?.resource;
+      if (resource === 'aitag') void loadWorks(page, { silent: true });
+    };
+    window.addEventListener('nai-project-data-changed', refreshAgentChanges);
+    return () => window.removeEventListener('nai-project-data-changed', refreshAgentChanges);
+  });
+
   const refreshCacheStatus = async (targetSort = sort, targetAiType = aiType, targetRankMonth = rankMonth) => {
     const status = await aitagService.getCacheStatus({
       sort: targetSort,
