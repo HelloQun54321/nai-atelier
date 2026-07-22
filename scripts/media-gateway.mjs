@@ -1035,11 +1035,14 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
           const body = JSON.parse((await readRequestBody(req, 32 * 1024)).toString('utf8') || '{}');
           return sendJson(res, 200, await promptAgent.executeConfirmedProjectAction(body, {
             requestJson: (path, options) => requestWorkerJson(path, req, workerPort, options),
+            tagDictionary: method => requestTagDictionaryControl(method),
           }));
         }
         if (url.pathname === '/api/prompt-agent/run') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
-          const body = JSON.parse((await readRequestBody(req, 35 * 1024 * 1024)).toString('utf8') || '{}');
+          // Four 6 MB images become roughly 32 MB after Base64 encoding; leave
+          // room for JSON and metadata while keeping a hard upper bound.
+          const body = JSON.parse((await readRequestBody(req, 48 * 1024 * 1024)).toString('utf8') || '{}');
           if (body.mode !== 'retry' && !String(body.message || '').trim() && (!Array.isArray(body.images) || body.images.length === 0)) return sendJson(res, 400, { error: '请先告诉 Agent 你想做什么' });
           const controller = new AbortController();
           const abort = () => { if (!res.writableEnded) controller.abort(); };

@@ -117,7 +117,15 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     void Promise.all([promptAgentService.getSession(activeSessionId), promptAgentService.getTask(activeSessionId)]).then(([items, task]) => {
       const restored = items.map(item => ({ ...item }));
       if ((task.status === 'interrupted' || task.status === 'running') && task.events?.length) {
-        restored.push({ id: `task-replay-${activeSessionId}`, role: 'agent', text: `已恢复任务记录：上次 Agent ${task.status === 'running' ? '异常中断' : '中断'}，保留了 ${task.events.length} 条执行事件。你可以继续发送要求。` });
+        const replayText = task.events.map(event => {
+          if (event.type === 'text_delta') return event.delta;
+          if (event.type === 'tool_start') return `\n▸ 开始：${event.toolName}`;
+          if (event.type === 'tool_end') return `\n${event.isError ? '✕' : '✓'} 完成：${event.toolName}`;
+          if (event.type === 'action') return `\n◆ 操作：${event.action.kind}`;
+          if (event.type === 'queue') return `\n↳ 已排队：${event.action}`;
+          return '';
+        }).join('').trim();
+        restored.push({ id: `task-replay-${activeSessionId}`, role: 'agent', text: `任务执行回放（${task.status === 'running' ? '异常中断' : '中断'}）\n\n${replayText || '没有可恢复的文本事件。'}\n\n你可以继续发送要求。` });
       }
       setMessages(restored);
     }).catch(() => {});
@@ -238,6 +246,14 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             void Promise.resolve(props.onRequestGeneration(event.draft || props.draft, generationAction.patch.reason)).then(success => promptAgentService.control(activeSessionId, 'finalize', generationAction.patch.requestId, { requestId: generationAction.patch.requestId, success: success === true }).catch(() => {}));
           } else if (event.action.kind === 'set_client_preferences') {
             const patch = event.action.patch;
+            if (patch.themeMode) {
+              localStorage.setItem('nai_theme', patch.themeMode);
+              window.dispatchEvent(new CustomEvent('nai-agent-theme-change', { detail: patch.themeMode }));
+            }
+            if (patch.safeMode !== undefined) {
+              localStorage.setItem('nai_safe_mode', String(patch.safeMode));
+              window.dispatchEvent(new CustomEvent('nai-agent-safe-mode-change', { detail: patch.safeMode }));
+            }
             if (patch.imageLayout || patch.imageColumns !== undefined) {
               const current = getMobileImageDisplayPreferences();
               setMobileImageDisplayPreferences({ layout: patch.imageLayout || current.layout, columns: patch.imageColumns ?? current.columns });
@@ -349,8 +365,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   const addAttachments = (files: FileList | null) => {
     if (!files) return;
+    let projectedBytes = attachments.reduce((sum, item) => sum + item.data.length, 0);
     [...files].slice(0, 4 - attachments.length).forEach(file => {
       if (!/^image\/(?:png|jpeg|webp|gif)$/i.test(file.type) || file.size > 6 * 1024 * 1024) return;
+      // Keep the encoded request below the gateway limit, not just the raw
+      // per-file limit. Base64 is larger than the original binary data.
+      if (projectedBytes + Math.ceil(file.size * 4 / 3) > 44 * 1024 * 1024) return;
+      projectedBytes += Math.ceil(file.size * 4 / 3);
       const reader = new FileReader();
       reader.onload = () => {
         const value = String(reader.result || '');

@@ -153,6 +153,17 @@ const App = () => {
     localStorage.setItem('nai_theme', themeMode);
   }, [isDark, themeMode]);
 
+  useEffect(() => {
+    const onTheme = (event: Event) => setThemeMode((event as CustomEvent<'light' | 'dark' | 'system'>).detail);
+    const onSafeMode = (event: Event) => setSafeMode(Boolean((event as CustomEvent<boolean>).detail));
+    window.addEventListener('nai-agent-theme-change', onTheme);
+    window.addEventListener('nai-agent-safe-mode-change', onSafeMode);
+    return () => {
+      window.removeEventListener('nai-agent-theme-change', onTheme);
+      window.removeEventListener('nai-agent-safe-mode-change', onSafeMode);
+    };
+  }, []);
+
   const toggleTheme = () => setThemeMode(isDark ? 'light' : 'dark');
 
   const resetRevealedImages = () => {

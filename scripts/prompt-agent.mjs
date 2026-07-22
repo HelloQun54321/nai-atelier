@@ -144,7 +144,9 @@ export class PromptAgentService {
     this.outboundProxyUrl = outboundProxyUrl;
     this.config = { version: 2, provider: 'google', model: defaultModelFor('google'), encryptedKeys: {} };
     this.activeAgents = new Map();
+    this.startingAgents = new Set();
     this.pendingConfirmations = new Map();
+    this.taskEventWrites = new Map();
     this.runHistory = [];
     this.tagManifest = null;
   }
@@ -335,6 +337,21 @@ export class PromptAgentService {
         const body = Number.isFinite(days) ? { days: Math.max(1, Math.floor(days)) } : Number.isFinite(keepCount) ? { keepCount: Math.max(0, Math.floor(keepCount)) } : null;
         if (!body) throw Object.assign(new Error('缺少有效的历史清理条件'), { status: 400 });
         await project.requestJson('/api/local-history/cleanup', { method: 'POST', body });
+      } else if (action === 'update_tag_dictionary') {
+        if (!project.tagDictionary) throw new Error('Tag更新服务不可用');
+        await project.tagDictionary(input?.payload?.checkOnly === true ? 'GET' : 'POST');
+      } else if (action === 'manage_aitag') {
+        const payload = input?.payload || {};
+        const task = text(payload.task).slice(0, 20);
+        const sort = payload.sort === 'monthly' ? 'monthly' : 'new';
+        const timeRange = text(payload.timeRange || 'all').slice(0, 32);
+        const aiType = ['all', 'nai', 'sd', 'comfyui'].includes(payload.aiType) ? payload.aiType : 'all';
+        const workId = Number(payload.workId);
+        if (task === 'favorite' || task === 'unfavorite') {
+          if (!Number.isFinite(workId)) throw new Error('收藏操作缺少AITag作品ID');
+          await project.requestJson(`/api/aitag/work/${Math.floor(workId)}/favorite`, { method: 'POST', body: { favorite: task === 'favorite', sort, timeRange } });
+        } else if (!['index', 'pause', 'resume'].includes(task)) throw new Error('不允许执行这个 AITag 后台操作');
+        else await project.requestJson(`/api/aitag/cache/${task}`, { method: 'POST', body: { sort, timeRange, aiType, targetPages: Math.floor(clamp(payload.targetPages, 1, 10_000, 100)) } });
       } else throw Object.assign(new Error('不允许执行这个项目操作'), { status: 400 });
       clearTimeout(confirmation.timer);
       this.pendingConfirmations.delete(requestId);
@@ -364,16 +381,21 @@ export class PromptAgentService {
   }
 
   async appendTaskEvent(sessionId, event) {
-    const safe = JSON.parse(JSON.stringify(event, (key, value) => {
-      if (typeof value === 'string' && value.length > 12_000) return value.slice(0, 12_000) + '…';
-      if (key === 'data' && typeof value === 'string' && value.length > 1024) return '[omitted]';
-      return value;
-    }));
-    let events = [];
-    try { events = JSON.parse(await readFile(this.taskEventsFile(sessionId), 'utf8')); } catch { /* first event */ }
-    events = Array.isArray(events) ? events.slice(-199) : [];
-    events.push({ ...safe, timestamp: Date.now() });
-    await atomicJsonWrite(this.taskEventsFile(sessionId), events);
+    const previous = this.taskEventWrites.get(sessionId) || Promise.resolve();
+    const next = previous.catch(() => {}).then(async () => {
+      const safe = JSON.parse(JSON.stringify(event, (key, value) => {
+        if (typeof value === 'string' && value.length > 12_000) return value.slice(0, 12_000) + '…';
+        if (key === 'data' && typeof value === 'string' && value.length > 1024) return '[omitted]';
+        return value;
+      }));
+      let events = [];
+      try { events = JSON.parse(await readFile(this.taskEventsFile(sessionId), 'utf8')); } catch { /* first event */ }
+      events = Array.isArray(events) ? events.slice(-199) : [];
+      events.push({ ...safe, timestamp: Date.now() });
+      await atomicJsonWrite(this.taskEventsFile(sessionId), events);
+    });
+    this.taskEventWrites.set(sessionId, next);
+    try { await next; } finally { if (this.taskEventWrites.get(sessionId) === next) this.taskEventWrites.delete(sessionId); }
   }
 
   async getTask(sessionId) {
@@ -462,6 +484,8 @@ export class PromptAgentService {
   async deleteSession(sessionId) {
     if (this.activeAgents.has(sessionId)) throw Object.assign(new Error('请先停止这个会话'), { status: 409 });
     await unlink(this.sessionFile(sessionId)).catch(() => {});
+    await unlink(this.taskFile(sessionId)).catch(() => {});
+    await unlink(this.taskEventsFile(sessionId)).catch(() => {});
   }
 
   async loadMessages(sessionId) {
@@ -494,6 +518,8 @@ export class PromptAgentService {
     const existing = await this.readSession(sessionId);
     if (existing.meta?.id) await this.writeSession(sessionId, { version: 2, meta: { ...existing.meta, updatedAt: Date.now() }, messages: [] });
     else await unlink(this.sessionFile(sessionId)).catch(() => {});
+    await unlink(this.taskFile(sessionId)).catch(() => {});
+    await unlink(this.taskEventsFile(sessionId)).catch(() => {});
   }
 
   async getSessionHistory(sessionId) {
@@ -601,6 +627,16 @@ export class PromptAgentService {
       return project.requestJson(path, options);
     };
     const listItems = value => Array.isArray(value) ? value : Array.isArray(value?.items) ? value.items : [];
+    const findHistory = async id => {
+      const encoded = encodeURIComponent(text(id).slice(0, 200));
+      try {
+        const direct = await readProject(`/api/local-history/${encoded}`);
+        return direct?.item || direct;
+      } catch {
+        const history = listItems(await readProject('/api/local-history?page=0&pageSize=100'));
+        return history.find(entry => String(entry.id) === String(id));
+      }
+    };
     const compactChain = item => ({ id: item.id, type: item.type, name: item.name, description: item.description, tags: item.tags, basePrompt: item.basePrompt, negativePrompt: item.negativePrompt, modules: item.modules, params: item.params, variableValues: item.variableValues, createdAt: item.createdAt, updatedAt: item.updatedAt });
     const compactInspiration = item => ({ id: item.id, title: item.title || item.name, prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params, tags: item.tags, createdAt: item.createdAt, updatedAt: item.updatedAt });
     const pending = async (action, resourceId, title, consequence, payload = {}) => {
@@ -761,8 +797,7 @@ export class PromptAgentService {
         execute: async (_id, args) => {
           const now = Date.now();
           const body = { id: randomBytes(16).toString('hex'), title: text(args.title).slice(0, 160), prompt: text(args.prompt), negativePrompt: text(args.negativePrompt), params: args.params && typeof args.params === 'object' ? args.params : undefined, createdAt: now, updatedAt: now };
-          const history = listItems(await readProject('/api/local-history?page=0&pageSize=100'));
-          const item = history.find(entry => String(entry.id) === String(args.historyId));
+          const item = await findHistory(args.historyId);
           if (!item) throw new Error('找不到用于灵感封面的历史图片');
           const image = await project.requestBuffer(`/api/local-history/${encodeURIComponent(item.id)}/image`, MAX_AGENT_IMAGE_BYTES);
           body.imageUrl = `data:${image.mimeType || 'image/png'};base64,${image.buffer.toString('base64')}`;
@@ -824,8 +859,7 @@ export class PromptAgentService {
           if (!body.name) throw new Error('画师名称不能为空');
           if (!existing && !args.historyId) throw new Error('新建画师资料需要指定一张生成历史作为预览图');
           if (args.historyId) {
-            const history = listItems(await readProject('/api/local-history?page=0&pageSize=100'));
-            const item = history.find(entry => String(entry.id) === String(args.historyId));
+            const item = await findHistory(args.historyId);
             if (!item) throw new Error('找不到用于画师资料的历史图片');
             const image = await project.requestBuffer(`/api/local-history/${encodeURIComponent(item.id)}/image`, MAX_AGENT_IMAGE_BYTES);
             body.imageUrl = `data:${image.mimeType || 'image/png'};base64,${image.buffer.toString('base64')}`;
@@ -912,7 +946,18 @@ export class PromptAgentService {
         execute: async (_id, args) => {
           if (!args.config || typeof args.config !== 'object' || Array.isArray(args.config)) throw new Error('基准图配置格式无效');
           const current = await readProject('/api/config/benchmarks');
-          const config = { ...(current.config || {}), ...args.config };
+          const incoming = args.config;
+          const allowed = ['slots', 'interval', 'steps', 'scale', 'negative', 'sampler', 'width', 'height'];
+          const unknown = Object.keys(incoming).filter(key => !allowed.includes(key));
+          if (unknown.length) throw new Error(`基准图配置包含不支持的字段：${unknown.join('、')}`);
+          const config = { ...(current.config || {}) };
+          if (incoming.slots !== undefined && Number.isFinite(Number(incoming.slots))) config.slots = Math.max(1, Math.min(10, Math.floor(Number(incoming.slots))));
+          if (incoming.interval !== undefined && Number.isFinite(Number(incoming.interval))) config.interval = Math.max(0, Math.min(86_400, Number(incoming.interval)));
+          if (incoming.steps !== undefined && Number.isFinite(Number(incoming.steps))) config.steps = Math.max(1, Math.min(50, Math.floor(Number(incoming.steps))));
+          if (incoming.scale !== undefined) config.scale = clamp(incoming.scale, 0, 10, 5);
+          if (incoming.width !== undefined) config.width = Math.round(clamp(incoming.width, 64, 2048, 832) / 64) * 64;
+          if (incoming.height !== undefined) config.height = Math.round(clamp(incoming.height, 64, 2048, 1216) / 64) * 64;
+          for (const key of ['negative', 'sampler']) if (incoming[key] !== undefined) config[key] = text(incoming[key]).slice(0, 8_000);
           await readProject('/api/config/benchmarks', { method: 'PUT', body: { config } });
           changed('settings');
           return { content: jsonText({ ok: true }), details: config };
@@ -932,12 +977,7 @@ export class PromptAgentService {
       {
         name: 'update_tag_dictionary', label: '更新 Tag 词库', description: '检查并启动电脑端Tag中英词库更新。不会删除当前可用词库，更新在后台继续。',
         parameters: Type.Object({ checkOnly: Type.Optional(Type.Boolean()) }),
-        execute: async (_id, args) => {
-          if (!project.tagDictionary) throw new Error('Tag更新服务不可用');
-          const result = await project.tagDictionary(args.checkOnly === true ? 'GET' : 'POST');
-          if (args.checkOnly !== true) changed('tags');
-          return { content: jsonText(result), details: result };
-        },
+        execute: async (_id, args) => pending('update_tag_dictionary', '', args.checkOnly === true ? '检查 Tag 词库更新？' : '启动 Tag 词库更新？', args.checkOnly === true ? '只读取当前词库状态，不会下载文件。' : '电脑将后台检查并下载新的中英 Tag 词库。', { checkOnly: args.checkOnly === true }),
       },
       {
         name: 'manage_aitag', label: '管理 AITag', description: '收藏/取消收藏AITag作品，查看、启动、暂停或继续本地索引缓存。',
@@ -949,9 +989,9 @@ export class PromptAgentService {
           let result;
           if (args.action === 'favorite' || args.action === 'unfavorite') {
             if (!Number.isFinite(args.workId)) throw new Error('收藏操作缺少AITag作品ID');
-            result = await readProject(`/api/aitag/work/${Math.floor(args.workId)}/favorite`, { method: 'POST', body: { favorite: args.action === 'favorite', sort, timeRange } });
+            return pending('manage_aitag', '', args.action === 'favorite' ? '收藏 AITag 作品？' : '取消收藏 AITag 作品？', '将修改电脑上的 AITag 收藏状态。', { task: args.action, workId: Math.floor(args.workId), sort, timeRange });
           } else if (args.action === 'status') result = await readProject(`/api/aitag/cache/status?sort=${sort}&time_range=${encodeURIComponent(timeRange)}&aiType=${aiType}`);
-          else result = await readProject(`/api/aitag/cache/${args.action}`, { method: 'POST', body: { sort, timeRange, aiType, targetPages: Math.floor(clamp(args.targetPages, 1, 10_000, 100)) } });
+          else return pending('manage_aitag', '', `执行 AITag ${args.action}？`, args.action === 'index' ? '将启动本地索引和缓存任务，可能持续较长时间并产生网络与磁盘负载。' : '将修改当前 AITag 后台任务状态。', { task: args.action, sort, timeRange, aiType, targetPages: Math.floor(clamp(args.targetPages, 1, 10_000, 100)) });
           if (args.action !== 'status') changed('aitag');
           return { content: jsonText(result), details: result };
         },
@@ -1044,21 +1084,22 @@ export class PromptAgentService {
 
   async run(input, emit, signal, project = {}) {
     const sessionId = text(input?.sessionId || 'playground').slice(0, 200);
-    if (this.activeAgents.has(sessionId)) throw Object.assign(new Error('这个会话的 Agent 正在工作'), { status: 409 });
+    if (this.activeAgents.has(sessionId) || this.startingAgents.has(sessionId)) throw Object.assign(new Error('这个会话的 Agent 正在工作'), { status: 409 });
     const now = Date.now();
     this.runHistory = this.runHistory.filter(timestamp => now - timestamp < 60_000);
-    if (this.activeAgents.size >= 3) throw Object.assign(new Error('电脑当前最多同时运行 3 个 Agent 任务，请稍后再试'), { status: 429 });
+    if (this.activeAgents.size + this.startingAgents.size >= 3) throw Object.assign(new Error('电脑当前最多同时运行 3 个 Agent 任务，请稍后再试'), { status: 429 });
     if (this.runHistory.length >= 12) throw Object.assign(new Error('Agent 请求过于频繁，请一分钟后再试'), { status: 429 });
     this.runHistory.push(now);
+    this.startingAgents.add(sessionId);
     const storedSession = await this.readSession(sessionId);
     const globalConfig = this.publicConfig();
     const provider = normalizeProvider(storedSession.meta?.provider || globalConfig.provider);
     const modelId = storedSession.meta?.model || globalConfig.model;
     const storedCredential = this.getCredential(provider);
-    if (!storedCredential) throw Object.assign(new Error(`请先使用“登录模型服务”配置 ${PROVIDER_CATALOG.get(provider)?.name || provider}`), { status: 400 });
+    if (!storedCredential) { this.startingAgents.delete(sessionId); throw Object.assign(new Error(`请先使用“登录模型服务”配置 ${PROVIDER_CATALOG.get(provider)?.name || provider}`), { status: 400 }); }
     const models = listModels(provider);
     const modelInfo = models.find(item => item.id === modelId);
-    if (!modelInfo) throw Object.assign(new Error('选择的模型已不可用，请在设置中重新选择'), { status: 400 });
+    if (!modelInfo) { this.startingAgents.delete(sessionId); throw Object.assign(new Error('选择的模型已不可用，请在设置中重新选择'), { status: 400 }); }
     const thinkingLevel = this.normalizeThinkingLevel(storedSession.meta?.thinkingLevel, modelInfo.reasoning);
     const draft = sanitizeDraft(input?.draft);
     const contextData = {
@@ -1092,7 +1133,10 @@ export class PromptAgentService {
         // Pi can execute independent read tools concurrently. Mutating tools still
         // remain ordered by the model's tool-call plan and all dangerous operations
         // pause at the confirmation handshake below.
-        toolExecution: 'parallel',
+        // Mutating tools share the in-memory draft and project APIs. Run the
+        // whole batch sequentially so two writes cannot race or overwrite each
+        // other; read tools are cheap compared with a corrupted project state.
+        toolExecution: 'sequential',
         steeringMode: 'one-at-a-time',
         followUpMode: 'one-at-a-time',
         transformContext: async messages => {
@@ -1119,6 +1163,7 @@ export class PromptAgentService {
         if (event.type === 'tool_execution_end') taskEmit({ type: 'tool_end', toolCallId: event.toolCallId, toolName: event.toolName, isError: event.isError, result: event.result });
       });
       this.activeAgents.set(sessionId, { agent, emit });
+      this.startingAgents.delete(sessionId);
       taskStatus = 'running';
       await atomicJsonWrite(this.taskFile(sessionId), { sessionId, status: 'running', startedAt: taskStartedAt, updatedAt: Date.now() });
       const abort = () => agent.abort();
@@ -1155,6 +1200,7 @@ export class PromptAgentService {
       await atomicJsonWrite(this.taskFile(sessionId), { sessionId, status: taskStatus, updatedAt: Date.now() });
       this.cancelPendingConfirmations(sessionId);
       this.activeAgents.delete(sessionId);
+      this.startingAgents.delete(sessionId);
     }
   }
 }
