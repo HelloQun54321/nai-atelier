@@ -684,19 +684,20 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
         if (!await confirmAction({
             title: '覆盖当前提示词和参数？',
-            message: `将使用该${sourceLabel}的 Base Prompt、Negative Prompt 和参数设置覆盖当前内容。\nSubject 和模块不会修改。`,
+            message: `将把该${sourceLabel}的整图主提示词放入“主体／变量提示词”，同时清空旧的基础画风，避免与导入内容重复叠加。\n负面提示词、角色专属提示词和参数也会一并恢复，模块不会修改。`,
             confirmLabel: '确认覆盖',
         })) return;
 
         try {
             // 调用公共解析服务
             const parsed = parseNovelAIMetadata(rawMeta, params);
-            setBasePrompt(parsed.prompt);
+            setBasePrompt('');
+            setSubjectPrompt(parsed.prompt);
             setNegativePrompt(parsed.negativePrompt);
             setParams(parsed.params);
             clearPresetSources();
             markChange();
-            notify('参数已导入。Quality/UC/Variety 设置已根据 Prompt 内容自动匹配。');
+            notify('已将整图提示词导入主体／变量区域，并恢复角色与生成参数。');
             void db.logClientEvent({
                 category: 'client',
                 action: 'metadata_import',
@@ -861,12 +862,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
      * 由 useEffect 在检测到 sessionStorage 中的 nai_pending_import 时调用
      */
     const applyImportData = (data: { prompt: string; negativePrompt: string; params: NAIParams }) => {
-        setBasePrompt(data.prompt);
+        // Imported image/history prompts are complete scene prompts, not a
+        // reusable artist/style preset. Keep that semantic distinction clear
+        // and remove stale style text that would otherwise be compiled twice.
+        setBasePrompt('');
+        setSubjectPrompt(data.prompt);
         setNegativePrompt(data.negativePrompt);
         setParams(data.params);
         clearPresetSources();
         markChange();
-        notify('已从外部图片导入完整配置。');
+        notify('已将整图提示词导入主体／变量区域，并恢复完整配置。');
     };
 
 
@@ -1501,7 +1506,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'} bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 border border-indigo-100 dark:border-indigo-800/50`}>
                             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                    <label className="block text-sm font-semibold text-indigo-600 dark:text-indigo-300">3. 多角色管理</label>
+                                    <label className="block text-sm font-semibold text-indigo-600 dark:text-indigo-300">3. 角色专属提示词（单／多角色）</label>
                                     <PresetSourceBadges sources={characterPresetSources} />
                                 </div>
                                 <div className="ml-auto flex flex-wrap items-center justify-end gap-2">

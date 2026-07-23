@@ -192,6 +192,22 @@ test('prompt agent keeps advanced generation fields when changing one parameter'
   assert.equal(draft.params.customAdvancedFlag, 7);
 });
 
+test('prompt agent separates global subject text from single-character prompts', async () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const draft = { basePrompt: 'oil painting', subjectPrompt: 'standing in a garden', negativePrompt: '', modules: [], params: {} };
+  const actions = [];
+  const tools = service.createTools(draft, { presets: [], vibes: [] }, event => actions.push(event));
+  const globalPromptTool = tools.find(item => item.name === 'update_prompts');
+  const characterTool = tools.find(item => item.name === 'set_characters');
+  assert.match(globalPromptTool.description, /不得存放角色专属/);
+  assert.match(characterTool.description, /即使只有一个角色/);
+  await characterTool.execute('call', { characters: [{ prompt: '1girl, blue hair, red dress', negativePrompt: 'extra arms', x: 0.5, y: 0.5 }] });
+  assert.equal(draft.subjectPrompt, 'standing in a garden');
+  assert.equal(draft.params.characters.length, 1);
+  assert.equal(draft.params.characters[0].prompt, '1girl, blue hair, red dress');
+  assert.equal(actions.at(-1).action.kind, 'set_characters');
+});
+
 test('prompt agent exposes project settings without exposing API keys', async () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
   const calls = [];

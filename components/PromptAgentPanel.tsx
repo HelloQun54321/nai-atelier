@@ -26,7 +26,7 @@ type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string
 type AgentAttachment = { data: string; mimeType: string; name: string };
 const toolLabels: Record<string, string> = {
   get_lab_state: '读取实验室', search_tags: '搜索 Tag', search_presets: '搜索预设', search_vibes: '搜索 Vibe', search_character_references: '搜索角色参考',
-  update_prompts: '修改提示词', set_prompt_modules: '整理提示词模块', set_characters: '设置角色',
+  update_prompts: '修改全局提示词', set_prompt_modules: '整理提示词模块', set_characters: '设置角色专属提示词',
   set_generation_params: '调整参数', set_vibes: '设置 Vibe', set_character_references: '设置角色参考', request_generation: '准备生图',
   get_project_overview: '读取项目概况', search_project_library: '搜索项目资料', list_generation_history: '读取生成历史',
   inspect_generation_image: '查看历史原图', create_chain: '新建资料', update_chain: '更新资料',
