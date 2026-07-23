@@ -16,6 +16,28 @@ export interface PromptAgentProvider {
   configured: boolean;
   current: boolean;
   modelCount: number;
+  custom?: boolean;
+  baseUrl?: string;
+  api?: PromptAgentCustomApi;
+}
+
+export type PromptAgentCustomApi = 'openai-completions' | 'openai-responses' | 'anthropic-messages';
+export interface PromptAgentCustomModel {
+  id: string;
+  name?: string;
+  reasoning: boolean;
+  imageInput: boolean;
+  contextWindow: number;
+  maxTokens: number;
+}
+export interface PromptAgentCustomProvider {
+  id?: string;
+  name: string;
+  baseUrl: string;
+  api: PromptAgentCustomApi;
+  apiKey?: string;
+  configured?: boolean;
+  models: PromptAgentCustomModel[];
 }
 
 export type PromptAgentAuthPrompt =
@@ -108,6 +130,26 @@ export const promptAgentService = {
     const response = await fetch('/api/prompt-agent/providers', { cache: 'no-store' });
     if (!response.ok) return readError(response) as never;
     return (await response.json()).items || [];
+  },
+  getCustomProviders: async (): Promise<PromptAgentCustomProvider[]> => {
+    const response = await fetch('/api/prompt-agent/custom-providers', { cache: 'no-store' });
+    if (!response.ok) return readError(response) as never;
+    return (await response.json()).items || [];
+  },
+  saveCustomProvider: async (input: PromptAgentCustomProvider) => {
+    const response = await fetch('/api/prompt-agent/custom-providers', { method: input.id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  testCustomProvider: async (input: PromptAgentCustomProvider): Promise<{ ok: boolean; message: string }> => {
+    const response = await fetch('/api/prompt-agent/custom-providers/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  deleteCustomProvider: async (id: string): Promise<PromptAgentConfig> => {
+    const response = await fetch(`/api/prompt-agent/custom-providers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
   },
   login: async (provider: string, answers: string[], authType?: 'api_key' | 'oauth', flowId?: string): Promise<PromptAgentLoginResult> => {
     const response = await fetch('/api/prompt-agent/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, answers, authType, flowId }) });

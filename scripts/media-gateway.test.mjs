@@ -15,7 +15,22 @@ import {
   CloudQueueCoordinator,
   fetchNovelAiGeneration,
 } from './media-gateway.mjs';
-import { PromptAgentService } from './prompt-agent.mjs';
+import { PromptAgentService, customProviderRuntime, sanitizeCustomProvider } from './prompt-agent.mjs';
+
+test('prompt agent custom providers use Pi runtime models and reject unsafe URLs', () => {
+  const custom = sanitizeCustomProvider({
+    id: 'custom-12345678', name: 'Local model', baseUrl: 'http://127.0.0.1:11434/v1/', api: 'openai-completions',
+    models: [{ id: 'llama-local', reasoning: true, imageInput: true, contextWindow: 131072, maxTokens: 8192 }],
+  });
+  assert.equal(custom.baseUrl, 'http://127.0.0.1:11434/v1');
+  assert.equal(custom.models[0].imageInput, true);
+  const provider = customProviderRuntime(custom);
+  assert.equal(provider.id, custom.id);
+  assert.equal(provider.getModels()[0].api, 'openai-completions');
+  assert.deepEqual(provider.getModels()[0].input, ['text', 'image']);
+  assert.throws(() => sanitizeCustomProvider({ name: 'bad', baseUrl: 'file:///secret', models: [{ id: 'x' }] }), /HTTP\/HTTPS/);
+  assert.throws(() => sanitizeCustomProvider({ name: 'empty', baseUrl: 'https://example.com/v1', models: [] }), /至少添加一个模型/);
+});
 
 test('prompt agent keeps API keys encrypted and out of its public config', async () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });

@@ -1110,6 +1110,24 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
           return sendJson(res, 200, { items: promptAgent.listProviders() });
         }
+        if (url.pathname === '/api/prompt-agent/custom-providers') {
+          if (req.method === 'GET') return sendJson(res, 200, { items: promptAgent.listCustomProviders() });
+          if (req.method === 'POST' || req.method === 'PUT') {
+            const body = JSON.parse((await readRequestBody(req, 128 * 1024)).toString('utf8') || '{}');
+            return sendJson(res, req.method === 'POST' ? 201 : 200, await promptAgent.saveCustomProvider(body));
+          }
+          return sendJson(res, 405, { error: 'Method not allowed' });
+        }
+        if (url.pathname === '/api/prompt-agent/custom-providers/test') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 128 * 1024)).toString('utf8') || '{}');
+          return sendJson(res, 200, await promptAgent.testCustomProvider(body));
+        }
+        if (url.pathname.startsWith('/api/prompt-agent/custom-providers/')) {
+          if (req.method !== 'DELETE') return sendJson(res, 405, { error: 'Method not allowed' });
+          const providerId = decodeURIComponent(url.pathname.slice('/api/prompt-agent/custom-providers/'.length));
+          return sendJson(res, 200, await promptAgent.deleteCustomProvider(providerId));
+        }
         if (url.pathname === '/api/prompt-agent/auth/login') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
           const body = JSON.parse((await readRequestBody(req, 32 * 1024)).toString('utf8') || '{}');

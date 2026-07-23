@@ -1,6 +1,9 @@
 import { Agent } from '@earendil-works/pi-agent-core';
-import { InMemoryCredentialStore, Type } from '@earendil-works/pi-ai';
+import { InMemoryCredentialStore, Type, createProvider } from '@earendil-works/pi-ai';
 import { builtinModels, builtinProviders, getBuiltinModels } from '@earendil-works/pi-ai/providers/all';
+import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
+import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
+import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'crypto';
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
@@ -11,6 +14,7 @@ const SESSION_DIR = 'local-data/prompt-agent-sessions';
 const TASK_DIR = 'local-data/prompt-agent-tasks';
 const TAG_ROOT = 'public/tag-data';
 const PROVIDER_CATALOG = new Map(builtinProviders().map(provider => [provider.id, provider]));
+const CUSTOM_PROVIDERS = new Map();
 const PREFERRED_MODELS = {
   deepseek: 'deepseek-v4-flash', google: 'gemini-2.5-flash', xai: 'grok-4.3',
   openrouter: 'google/gemini-2.5-flash', openai: 'gpt-5-mini', anthropic: 'claude-sonnet-4-6',
@@ -57,9 +61,11 @@ const atomicJsonWrite = async (file, value) => {
   await rename(temporary, file);
 };
 
-const normalizeProvider = value => PROVIDER_CATALOG.has(value) ? value : 'google';
+const normalizeProvider = value => PROVIDER_CATALOG.has(value) || CUSTOM_PROVIDERS.has(value) ? value : 'google';
 const listModels = provider => {
   const normalized = normalizeProvider(provider);
+  const custom = CUSTOM_PROVIDERS.get(normalized);
+  if (custom) return custom.models.map(model => ({ ...model, provider: normalized }));
   return getBuiltinModels(normalized).map(model => ({
     id: model.id,
     name: model.name || model.id,
@@ -70,6 +76,64 @@ const listModels = provider => {
     maxTokens: Number(model.maxTokens) || 0,
     cost: model.cost || null,
   }));
+};
+export const customProviderRuntime = custom => {
+  const apiFactory = custom.api === 'anthropic-messages' ? anthropicMessagesApi
+    : custom.api === 'openai-responses' ? openAIResponsesApi
+      : openAICompletionsApi;
+  const models = custom.models.map(model => ({
+    id: model.id,
+    name: model.name || model.id,
+    api: custom.api,
+    provider: custom.id,
+    baseUrl: custom.baseUrl,
+    reasoning: model.reasoning === true,
+    input: model.imageInput === true ? ['text', 'image'] : ['text'],
+    cost: model.cost || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: model.contextWindow || 128_000,
+    maxTokens: model.maxTokens || 16_384,
+    ...(custom.headers && Object.keys(custom.headers).length ? { headers: custom.headers } : {}),
+  }));
+  return createProvider({
+    id: custom.id,
+    name: custom.name,
+    baseUrl: custom.baseUrl,
+    auth: { apiKey: {
+      name: `${custom.name} API Key`,
+      resolve: async ({ credential }) => ({ auth: credential?.key ? { apiKey: credential.key } : {} }),
+    } },
+    models,
+    api: apiFactory(),
+  });
+};
+
+export const sanitizeCustomProvider = raw => {
+  const name = text(raw?.name).trim().slice(0, 80);
+  if (!name) throw Object.assign(new Error('请填写接口名称'), { status: 400 });
+  let parsed;
+  try { parsed = new URL(text(raw?.baseUrl).trim()); } catch { throw Object.assign(new Error('Base URL 格式无效'), { status: 400 }); }
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw Object.assign(new Error('Base URL 只允许不含账号密码的 HTTP/HTTPS 地址'), { status: 400 });
+  parsed.hash = '';
+  parsed.search = '';
+  const supportedApis = ['openai-completions', 'openai-responses', 'anthropic-messages'];
+  if (raw?.api && !supportedApis.includes(raw.api)) throw Object.assign(new Error('不支持这个接口协议'), { status: 400 });
+  const api = raw?.api || 'openai-completions';
+  const models = (Array.isArray(raw?.models) ? raw.models : []).slice(0, 50).flatMap(item => {
+    const id = text(item?.id).trim().slice(0, 160);
+    if (!id) return [];
+    return [{
+      id,
+      name: text(item?.name || id).trim().slice(0, 160) || id,
+      reasoning: item?.reasoning === true,
+      imageInput: item?.imageInput === true,
+      contextWindow: Math.round(clamp(item?.contextWindow, 1_024, 10_000_000, 128_000)),
+      maxTokens: Math.round(clamp(item?.maxTokens, 256, 1_000_000, 16_384)),
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    }];
+  });
+  if (!models.length) throw Object.assign(new Error('请至少添加一个模型 ID'), { status: 400 });
+  const id = /^custom-[a-z0-9-]{8,80}$/.test(String(raw?.id || '')) ? String(raw.id) : `custom-${randomUUID()}`;
+  return { id, name, baseUrl: parsed.toString().replace(/\/$/, ''), api, models };
 };
 const defaultModelFor = provider => {
   const models = listModels(provider);
@@ -160,7 +224,7 @@ export class PromptAgentService {
   constructor({ lanSecret, outboundProxyUrl = '' }) {
     this.encryptionKey = createHash('sha256').update(`nai-prompt-agent|${lanSecret}`).digest();
     this.outboundProxyUrl = outboundProxyUrl;
-    this.config = { version: 2, provider: 'google', model: defaultModelFor('google'), encryptedKeys: {} };
+    this.config = { version: 3, provider: 'google', model: defaultModelFor('google'), encryptedKeys: {}, customProviders: [] };
     this.activeAgents = new Map();
     this.startingAgents = new Set();
     this.pendingConfirmations = new Map();
@@ -182,8 +246,15 @@ export class PromptAgentService {
     }
     try {
       const stored = JSON.parse(await readFile(CONFIG_FILE, 'utf8'));
-      this.config = { ...this.config, ...stored, encryptedKeys: stored.encryptedKeys || {} };
+      this.config = { ...this.config, ...stored, encryptedKeys: stored.encryptedKeys || {}, customProviders: Array.isArray(stored.customProviders) ? stored.customProviders : [] };
     } catch { /* First use. */ }
+    CUSTOM_PROVIDERS.clear();
+    for (const item of this.config.customProviders) {
+      try {
+        const custom = sanitizeCustomProvider(item);
+        CUSTOM_PROVIDERS.set(custom.id, custom);
+      } catch { /* Ignore invalid legacy custom entries without affecting built-ins. */ }
+    }
   }
 
   encrypt(value) {
@@ -233,12 +304,12 @@ export class PromptAgentService {
   }
 
   configuredProviderIds() {
-    return Object.keys(this.config.encryptedKeys).filter(key => PROVIDER_CATALOG.has(key) && Boolean(this.getCredential(key)));
+    return Object.keys(this.config.encryptedKeys).filter(key => (PROVIDER_CATALOG.has(key) || CUSTOM_PROVIDERS.has(key)) && Boolean(this.getCredential(key)));
   }
 
   listProviders() {
     const configured = new Set(this.configuredProviderIds());
-    return [...PROVIDER_CATALOG.values()]
+    const builtins = [...PROVIDER_CATALOG.values()]
       .filter(provider => provider.auth?.apiKey || provider.auth?.oauth)
       .map(provider => ({
         id: provider.id,
@@ -248,7 +319,21 @@ export class PromptAgentService {
         configured: configured.has(provider.id),
         current: this.publicConfig().provider === provider.id && configured.has(provider.id),
         modelCount: listModels(provider.id).length,
-      }))
+        custom: false,
+      }));
+    const customs = [...CUSTOM_PROVIDERS.values()].map(provider => ({
+      id: provider.id,
+      name: provider.name,
+      authType: 'api_key',
+      authTypes: ['api_key'],
+      configured: configured.has(provider.id),
+      current: this.publicConfig().provider === provider.id && configured.has(provider.id),
+      modelCount: provider.models.length,
+      custom: true,
+      baseUrl: provider.baseUrl,
+      api: provider.api,
+    }));
+    return [...customs, ...builtins]
       .sort((a, b) => Number(b.configured) - Number(a.configured) || a.name.localeCompare(b.name));
   }
 
@@ -333,7 +418,7 @@ export class PromptAgentService {
       this.config.provider = providerId;
       this.config.model = defaultModelFor(providerId);
     }
-    this.config.version = 2;
+    this.config.version = 3;
     await atomicJsonWrite(CONFIG_FILE, this.config);
     return { complete: true, provider: this.listProviders().find(item => item.id === providerId), selection: this.publicConfig(), events };
   }
@@ -347,6 +432,57 @@ export class PromptAgentService {
     }
     await atomicJsonWrite(CONFIG_FILE, this.config);
     return this.publicConfig();
+  }
+
+  listCustomProviders() {
+    return [...CUSTOM_PROVIDERS.values()].map(provider => ({ ...provider, configured: Boolean(this.getCredential(provider.id)) }));
+  }
+
+  async saveCustomProvider(input) {
+    const custom = sanitizeCustomProvider(input);
+    CUSTOM_PROVIDERS.set(custom.id, custom);
+    this.config.customProviders = [...CUSTOM_PROVIDERS.values()];
+    const key = typeof input?.apiKey === 'string' ? input.apiKey.trim() : '';
+    const existing = this.getCredential(custom.id);
+    if (key || !existing) this.setCredential(custom.id, { type: 'api_key', key });
+    if (input?.select !== false) {
+      this.config.provider = custom.id;
+      this.config.model = custom.models[0].id;
+    }
+    this.config.version = 3;
+    await atomicJsonWrite(CONFIG_FILE, this.config);
+    return { provider: this.listCustomProviders().find(item => item.id === custom.id), selection: this.publicConfig() };
+  }
+
+  async deleteCustomProvider(providerId) {
+    if (!CUSTOM_PROVIDERS.has(providerId)) throw Object.assign(new Error('自定义接口不存在'), { status: 404 });
+    CUSTOM_PROVIDERS.delete(providerId);
+    delete this.config.encryptedKeys[providerId];
+    this.config.customProviders = [...CUSTOM_PROVIDERS.values()];
+    if (this.config.provider === providerId) {
+      const next = this.configuredProviderIds()[0] || 'google';
+      this.config.provider = next;
+      this.config.model = defaultModelFor(next);
+    }
+    await atomicJsonWrite(CONFIG_FILE, this.config);
+    return this.publicConfig();
+  }
+
+  async testCustomProvider(input) {
+    const custom = sanitizeCustomProvider(input);
+    const key = typeof input?.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : this.getCredential(custom.id)?.key || '';
+    const headers = custom.api === 'anthropic-messages'
+      ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
+      : key ? { Authorization: `Bearer ${key}` } : {};
+    const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
+    try {
+      const response = await fetch(`${custom.baseUrl}/models`, { headers, redirect: 'error', signal: AbortSignal.timeout(12_000) });
+      if (!response.ok) throw Object.assign(new Error(`接口返回 HTTP ${response.status}`), { status: 400 });
+      return { ok: true, message: '连接成功，模型接口可以访问' };
+    } catch (error) {
+      if (error?.status) throw error;
+      throw Object.assign(new Error(`连接失败：${error instanceof Error ? error.message : '未知网络错误'}`), { status: 400 });
+    } finally { leaveOutboundProxy(); }
   }
 
   async selectModel(providerId, modelId) {
@@ -1240,6 +1376,8 @@ export class PromptAgentService {
         ...(this.outboundProxyUrl ? { env: { ...(storedCredential.env || {}), HTTPS_PROXY: this.outboundProxyUrl, HTTP_PROXY: this.outboundProxyUrl } } : {}),
       }));
       const modelRuntime = builtinModels({ credentials });
+      const customProvider = CUSTOM_PROVIDERS.get(provider);
+      if (customProvider) modelRuntime.setProvider(customProviderRuntime(customProvider));
       const model = modelRuntime.getModel(provider, modelId);
       if (!model) throw new Error('无法加载所选模型');
       const agent = new Agent({
