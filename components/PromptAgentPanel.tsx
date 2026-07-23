@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PromptAgentDraft, PromptChain } from '../types';
 import { PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, promptAgentService } from '../services/promptAgent';
 import { vibeService } from '../services/vibeService';
@@ -429,7 +430,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     });
   };
 
-  return <div className="fixed inset-0 z-[1100] flex bg-gray-50 dark:bg-gray-950">
+  return createPortal(<div className="fixed inset-0 z-[1100] flex bg-gray-50 dark:bg-gray-950">
     {showSessions && <button type="button" aria-label="关闭会话列表" onClick={() => setShowSessions(false)} className="fixed inset-0 z-10 bg-black/35 md:hidden" />}
     <aside className={`${showSessions ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-20 flex w-[min(82vw,19rem)] flex-col border-r border-gray-200 bg-white pt-[env(safe-area-inset-top)] shadow-2xl transition-transform dark:border-gray-800 dark:bg-gray-900 md:relative md:w-72 md:translate-x-0 md:shadow-none`}>
       <div className="flex h-14 items-center gap-2 px-3">
@@ -492,5 +493,5 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         </div>
       </main>
     </section>
-  </div>;
+  </div>, document.body);
 };

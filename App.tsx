@@ -31,7 +31,8 @@ const App = () => {
   // Playground State
   const [playgroundChain, setPlaygroundChain] = useState<PromptChain | null>(null);
   const [playgroundImportToken, setPlaygroundImportToken] = useState(0);
-  const [agentOpenToken, setAgentOpenToken] = useState(0);
+  const [playgroundAgentOpenToken, setPlaygroundAgentOpenToken] = useState(0);
+  const [editorAgentOpenToken, setEditorAgentOpenToken] = useState(0);
 
   // Data Cache State
   const [artistsCache, setArtistsCache] = useState<Artist[] | null>(null);
@@ -255,6 +256,38 @@ const App = () => {
     setMountedViews(prev => prev.includes(targetView) ? prev : [...prev, targetView]);
   };
 
+  const ensurePlayground = () => {
+    setPlaygroundChain(previous => previous || {
+      id: 'playground',
+      name: '生图实验室',
+      description: '临时生图实验，点击 Fork 可保存到库',
+      userId: currentUser?.id || 'local-owner',
+      basePrompt: '',
+      negativePrompt: '',
+      modules: [],
+      params: {
+        width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: undefined, qualityToggle: true, ucPreset: 4, characters: []
+      },
+      variableValues: { subject: '' },
+      type: 'style',
+      tags: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+  };
+
+  const handleOpenAgent = () => {
+    // Agent is a tool overlay, not a destination. Opening it must never trigger
+    // the editor navigation guard or discard the page underneath it.
+    if (view === 'edit') {
+      setEditorAgentOpenToken(value => value + 1);
+      return;
+    }
+    ensurePlayground();
+    keepViewMounted('playground');
+    setPlaygroundAgentOpenToken(value => value + 1);
+  };
+
   const handleNavigate = async (newView: ViewState, id?: string, options: { externalImport?: boolean } = {}) => {
     if (isEditorDirty) {
       if (!await confirmAction({
@@ -281,26 +314,7 @@ const App = () => {
     if (newView === 'library') loadArtists();
     if (newView === 'inspiration') loadInspirations();
 
-    if (newView === 'playground' && !playgroundChain) {
-      // Initialize Playground Chain
-      setPlaygroundChain({
-        id: 'playground',
-        name: '生图实验室',
-        description: '临时生图实验，点击 Fork 可保存到库',
-        userId: currentUser?.id || 'local-owner',
-        basePrompt: '',
-        negativePrompt: '',
-        modules: [],
-        params: {
-          width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: undefined, qualityToggle: true, ucPreset: 4, characters: []
-        },
-        variableValues: { subject: '' },
-        type: 'style',
-        tags: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      });
-    }
+    if (newView === 'playground') ensurePlayground();
   };
 
   const handleUpdatePlaygroundChain = async (id: string, updates: Partial<PromptChain>) => {
@@ -404,6 +418,7 @@ const App = () => {
           onFork={handleForkChain}
           setIsDirty={setIsEditorDirty}
           notify={notify}
+          agentOpenToken={editorAgentOpenToken}
         />;
       case 'library':
         return <ArtistLibrary
@@ -442,7 +457,7 @@ const App = () => {
           setIsDirty={() => { }}
           notify={notify}
           externalImportToken={playgroundImportToken}
-          agentOpenToken={agentOpenToken}
+          agentOpenToken={playgroundAgentOpenToken}
         />;
       default:
         return <div>Unknown View</div>;
@@ -495,7 +510,7 @@ const App = () => {
         toast={toast}
         hideNav={view === 'edit' || view === 'playground'}
         notify={notify}
-        onOpenAgent={() => { void handleNavigate('playground').then(() => setAgentOpenToken(value => value + 1)); }}
+        onOpenAgent={handleOpenAgent}
       >
         {renderContent()}
       </Layout>
