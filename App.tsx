@@ -495,7 +495,7 @@ const App = () => {
 
   return (
     <div
-      className={`flex flex-col h-screen ${safeMode ? 'safe-mode' : ''}`}
+      className={`agent-stage flex flex-col h-screen ${safeMode ? 'safe-mode' : ''}`}
       onClickCapture={handleSafeModeClickCapture}
     >
       <Layout

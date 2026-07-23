@@ -87,6 +87,9 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [copiedMessageId, setCopiedMessageId] = useState('');
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [followingBottom, setFollowingBottom] = useState(true);
+  const [fullscreen, setFullscreen] = useState(() => localStorage.getItem('nai_agent_fullscreen') === 'true');
+  const [panelWidth, setPanelWidth] = useState(() => Math.min(680, Math.max(420, Number(localStorage.getItem('nai_agent_panel_width')) || 520)));
+  const [mobileHeight, setMobileHeight] = useState(() => Math.min(92, Math.max(25, Number(localStorage.getItem('nai_agent_mobile_height')) || 68)));
   const currentAssistantIdRef = useRef('');
   const responseStartedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -97,6 +100,50 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     props.onClose();
   };
   const requestClose = useMobileHistoryLayer(props.open, closePanel, 'prompt-agent');
+
+  useEffect(() => {
+    localStorage.setItem('nai_agent_fullscreen', String(fullscreen));
+    localStorage.setItem('nai_agent_panel_width', String(Math.round(panelWidth)));
+    localStorage.setItem('nai_agent_mobile_height', String(Math.round(mobileHeight)));
+  }, [fullscreen, panelWidth, mobileHeight]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--agent-panel-width', `${panelWidth}px`);
+    root.classList.toggle('agent-panel-docked', props.open && !fullscreen);
+    return () => root.classList.remove('agent-panel-docked');
+  }, [props.open, fullscreen, panelWidth]);
+
+  const startDesktopResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (fullscreen || window.innerWidth < 768) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = panelWidth;
+    const move = (moveEvent: PointerEvent) => setPanelWidth(Math.min(680, Math.max(420, startWidth + startX - moveEvent.clientX)));
+    const stop = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop, { once: true });
+  };
+
+  const startMobileResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (fullscreen || window.innerWidth >= 768) return;
+    event.preventDefault();
+    const startY = event.clientY;
+    const startPixels = window.innerHeight * mobileHeight / 100;
+    const move = (moveEvent: PointerEvent) => {
+      const nextPixels = startPixels + startY - moveEvent.clientY;
+      setMobileHeight(Math.min(92, Math.max(25, nextPixels / window.innerHeight * 100)));
+    };
+    const stop = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop, { once: true });
+  };
 
   const refreshSessions = async (preferredId?: string) => {
     const items = await promptAgentService.listSessions(props.sessionId);
@@ -430,9 +477,15 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     });
   };
 
-  return createPortal(<div className="fixed inset-0 z-[1100] flex bg-gray-50 dark:bg-gray-950">
-    {showSessions && <button type="button" aria-label="关闭会话列表" onClick={() => setShowSessions(false)} className="fixed inset-0 z-10 bg-black/35 md:hidden" />}
-    <aside className={`${showSessions ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-20 flex w-[min(82vw,19rem)] flex-col border-r border-gray-200 bg-white pt-[env(safe-area-inset-top)] shadow-2xl transition-transform dark:border-gray-800 dark:bg-gray-900 md:relative md:w-72 md:translate-x-0 md:shadow-none`}>
+  return createPortal(<div className="pointer-events-none fixed inset-0 z-[1100]">
+    <div
+      className={`agent-panel pointer-events-auto absolute flex overflow-hidden border-gray-200 bg-gray-50 shadow-2xl transition-[width,height,border-radius] dark:border-gray-800 dark:bg-gray-950 ${fullscreen ? 'agent-panel--fullscreen' : ''}`}
+      style={{ '--agent-mobile-height': `${mobileHeight}dvh`, '--agent-width': `${panelWidth}px` } as React.CSSProperties}
+    >
+    {!fullscreen && <button type="button" aria-label="调整 Agent 宽度" onPointerDown={startDesktopResize} className="agent-resize-handle-desktop" />}
+    {!fullscreen && <button type="button" aria-label="调整 Agent 高度" onPointerDown={startMobileResize} className="agent-resize-handle-mobile"><span /></button>}
+    {showSessions && <button type="button" aria-label="关闭会话列表" onClick={() => setShowSessions(false)} className="absolute inset-0 z-10 bg-black/35" />}
+    <aside className={`${showSessions ? 'translate-x-0' : '-translate-x-full'} absolute inset-y-0 left-0 z-20 flex w-[min(82%,19rem)] flex-col border-r border-gray-200 bg-white pt-[env(safe-area-inset-top)] shadow-2xl transition-transform dark:border-gray-800 dark:bg-gray-900`}>
       <div className="flex h-14 items-center gap-2 px-3">
         <b className="flex-1 text-sm dark:text-white">Agent 对话</b>
         <button type="button" onClick={() => void createSession()} disabled={running || busySessionAction} className="mobile-touch flex items-center justify-center rounded-xl bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-xl font-light text-white disabled:opacity-40" aria-label="新建对话">＋</button>
@@ -456,7 +509,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     <section className="relative flex min-w-0 flex-1 flex-col">
       <header className="flex min-h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-2 border-b border-fuchsia-100 bg-white px-2 pt-[env(safe-area-inset-top)] dark:border-fuchsia-950 dark:bg-gray-900 md:px-4">
         <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500" aria-label="返回"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7 7-7m-7 7h18" /></svg></button>
-        <button type="button" onClick={() => setShowSessions(true)} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 md:hidden" aria-label="会话列表">☰</button>
+        <button type="button" onClick={() => setShowSessions(true)} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500" aria-label="会话列表">☰</button>
         <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-black text-gray-900 dark:text-white">{activeSession?.title || '项目 Agent'}</h2><p className="truncate text-[10px] text-gray-500">{running ? '正在执行，可继续追加要求' : `${activeSession?.model || '未选择模型'} · ${activeModel?.imageInput ? '支持识图' : '不支持识图'}`}</p></div>
         <div className="relative">
           <button type="button" disabled={running} onClick={() => setShowModelMenu(value => !value)} className="mobile-touch max-w-36 truncate rounded-xl border border-gray-200 px-2 text-[11px] font-bold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300">模型</button>
@@ -465,6 +518,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         <select aria-label="思考等级" title="思考等级" disabled={running || !activeModel?.reasoning} value={activeSession?.thinkingLevel || 'off'} onChange={event => void updateThinkingLevel(event.target.value as PromptAgentThinkingLevel)} className="h-11 max-w-24 rounded-xl border border-gray-200 bg-white px-1 text-[11px] font-bold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><option value="off">不思考</option><option value="minimal">极少</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option><option value="xhigh">极高</option><option value="max">最大</option></select>
         {props.canUndo && <button type="button" onClick={props.onUndo} disabled={running} className="mobile-touch hidden rounded-xl px-2 text-xs font-bold text-fuchsia-600 disabled:opacity-40 sm:block">撤销本次</button>}
         <button type="button" onClick={() => void reset()} disabled={running || !messages.length} className="mobile-touch rounded-xl px-2 text-xs font-bold text-gray-500 disabled:opacity-30" aria-label="清空当前对话">清空</button>
+        <button type="button" onClick={() => setFullscreen(value => !value)} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500" aria-label={fullscreen ? '退出全屏' : '全屏显示'} title={fullscreen ? '退出全屏' : '全屏显示'}>
+          {fullscreen
+            ? <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /></svg>
+            : <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>}
+        </button>
       </header>
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
@@ -493,5 +551,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         </div>
       </main>
     </section>
+    </div>
   </div>, document.body);
 };
