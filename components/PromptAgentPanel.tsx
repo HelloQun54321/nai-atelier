@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { PromptAgentDraft, PromptChain } from '../types';
 import { PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, promptAgentService } from '../services/promptAgent';
 import { vibeService } from '../services/vibeService';
@@ -90,6 +90,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const responseStartedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const followBottomRef = useRef(true);
+  const forceBottomAfterLoadRef = useRef(false);
   const confirmAction = useConfirmDialog();
   const closePanel = () => {
     props.onClose();
@@ -111,6 +112,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   useEffect(() => {
     if (!props.open || !activeSessionId || running) return;
+    // Opening/switching a conversation always starts at its newest message.
+    // Keep this flag until the asynchronously loaded history has rendered.
+    forceBottomAfterLoadRef.current = true;
+    followBottomRef.current = true;
+    setFollowingBottom(true);
     localStorage.setItem('nai_prompt_agent_session', activeSessionId);
     setMessages([]);
     void Promise.all([promptAgentService.getSession(activeSessionId), promptAgentService.getTask(activeSessionId)]).then(([items, task]) => {
@@ -157,10 +163,26 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const activeSession = sessions.find(item => item.id === activeSessionId);
   const activeModel = models.find(item => item.provider === activeSession?.provider && item.id === activeSession?.model);
 
-  useEffect(() => {
-    if (!props.open || !followBottomRef.current) return;
-    requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: running ? 'auto' : 'smooth' }));
+  useLayoutEffect(() => {
+    if (!props.open) return;
+    const force = forceBottomAfterLoadRef.current;
+    if (!force && !followBottomRef.current) return;
+    const element = scrollRef.current;
+    if (!element) return;
+    element.scrollTo({ top: element.scrollHeight, behavior: force || running ? 'auto' : 'smooth' });
+    // Do not consume the force flag while the old message list is being
+    // cleared. The next render containing loaded history must still jump.
+    if (force && messages.length > 0) forceBottomAfterLoadRef.current = false;
   }, [messages, running, props.open]);
+
+  useLayoutEffect(() => {
+    if (!props.open) return;
+    forceBottomAfterLoadRef.current = true;
+    followBottomRef.current = true;
+    setFollowingBottom(true);
+    const element = scrollRef.current;
+    if (element) element.scrollTop = element.scrollHeight;
+  }, [props.open, activeSessionId]);
 
   useEffect(() => {
     if (!props.open) return;
