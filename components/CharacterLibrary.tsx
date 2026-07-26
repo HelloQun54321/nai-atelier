@@ -102,6 +102,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const [lightbox, setLightbox] = useState<CharacterCard | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [showDesktopGachaSettings, setShowDesktopGachaSettings] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
@@ -354,7 +355,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
-       <header className="flex flex-none flex-col gap-2 border-b border-gray-200 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 md:px-5 md:py-2">
+       <header className="flex flex-none flex-col gap-2 border-b border-gray-200 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 md:px-5 md:py-2.5">
          <div className="flex gap-2 md:hidden">
            <div className="relative min-w-0 flex-1">
              <svg className="absolute left-3 top-3 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" /></svg>
@@ -363,25 +364,25 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
            <MobileIconButton label="筛选和抽卡设置" onClick={() => setShowMobileFilters(true)} className="border border-gray-300 bg-white text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300">☰</MobileIconButton>
            <MobileIconButton label={gachaCards ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} className="bg-purple-600 text-xl text-white">🎲</MobileIconButton>
          </div>
-         <div className="workspace-page-heading hidden min-w-0 items-center gap-2 overflow-x-auto md:flex">
+         <div className="workspace-page-heading hidden min-w-0 items-center gap-2 md:flex">
            <h1 className="mr-1 flex-none text-xl font-bold text-gray-900 dark:text-white">角色库</h1>
-           <div className="flex flex-none items-center gap-1">
+           <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
              {([
                ['all', '全部'], ['catalog', '角色 Tag'], ['custom', `我的自定义 ${customChains.length}`], ['favorites', '收藏'],
              ] as [CharacterTab, string][]).map(([value, label]) => (
                <button key={value} onClick={() => { setTab(value); setGachaCards(null); }} className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium ${tab === value ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'}`}>{label}</button>
              ))}
            </div>
-           <div className="ml-auto flex flex-none items-center justify-end gap-2">
+           <div className="relative ml-auto flex flex-none items-center justify-end gap-2">
              <button onClick={() => setShowCreate(true)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-500">＋ 自定义角色</button>
-            <select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className="rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-              <option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option>
-            </select>
-            <select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-              <option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option>
-            </select>
-            <button onClick={() => void drawGacha()} disabled={isGachaLoading} className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-bold text-white hover:bg-purple-500 disabled:opacity-50">🎲 {gachaCards ? '再抽一批' : '随机抽卡'}</button>
-            {gachaCards && <button onClick={() => setGachaCards(null)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:text-gray-200">返回目录</button>}
+             <button onClick={() => void drawGacha()} disabled={isGachaLoading} className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-bold text-white hover:bg-purple-500 disabled:opacity-50">🎲 {gachaCards ? '再抽一批' : '随机抽卡'}</button>
+             {gachaCards && <button onClick={() => setGachaCards(null)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:text-gray-200">返回目录</button>}
+             <button type="button" aria-label="抽卡设置" title="抽卡设置" onClick={() => setShowDesktopGachaSettings(value => !value)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-500 hover:text-purple-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300">⚙</button>
+             {showDesktopGachaSettings && <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-xl border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-800">
+               <div className="mb-3 text-sm font-bold text-gray-800 dark:text-white">随机抽卡设置</div>
+               <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">抽卡范围<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option></select></label>
+               <label className="block text-xs text-gray-500 dark:text-gray-400">抽卡数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label>
+             </div>}
            </div>
          </div>
 
@@ -393,7 +394,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
           <select value={sort} disabled={Boolean(gachaCards)} onChange={event => setSort(event.target.value as CharacterDictionarySort)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white">
             <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">{searchTerm.trim() ? '相关性优先 · 名称 A → Z' : '名称 A → Z'}</option><option value="name-desc">{searchTerm.trim() ? '相关性优先 · 名称 Z → A' : '名称 Z → A'}</option>
           </select>
-           <div className="flex items-center rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+           <div className="hidden items-center whitespace-nowrap rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-300 2xl:flex">
              显示 {visibleCards.length.toLocaleString('zh-CN')} · 目录 {catalogTotal.toLocaleString('zh-CN')} · 自定义 {customChains.length}
            </div>
            <span className="text-xs text-gray-400">列数</span>

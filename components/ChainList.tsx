@@ -253,12 +253,12 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
       <div className="mx-auto flex min-h-0 w-full max-w-[1920px] flex-1 flex-col">
-        <header className="workspace-page-heading flex flex-none flex-col justify-between gap-2 border-b border-gray-200 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 md:flex-row md:items-center md:px-5 md:py-2">
+        <header className="workspace-page-heading flex flex-none flex-col gap-2 border-b border-gray-200 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 md:px-5 md:py-2.5">
           <div className="hidden md:block">
             <h1 className="whitespace-nowrap text-xl font-bold text-gray-900 dark:text-white">{title}</h1>
           </div>
-          <div className="workspace-toolbar hidden min-w-0 flex-col gap-2 md:flex md:flex-1 md:flex-row md:justify-end">
-             <div className="flex gap-2 w-full md:w-auto">
+          <div className="workspace-toolbar hidden min-w-0 gap-2 md:flex md:w-full md:items-center">
+             <div className="flex min-w-[240px] flex-1 gap-2">
                 <button 
                     onClick={onRefresh} 
                     className={`p-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex-shrink-0`}
@@ -269,14 +269,14 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                 <input
                     type="text"
                     placeholder="搜索..."
-                    className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none md:w-56"
+                    className="w-full min-w-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
              </div>
              {/* Tag Filter Bar */}
              {allTags.length > 0 && (
-               <div className="flex max-w-40 flex-none flex-nowrap gap-1 overflow-x-auto rounded-lg bg-gray-50 p-1 dark:bg-gray-900/50">
+               <div className="flex max-w-48 flex-none flex-nowrap gap-1 overflow-x-auto rounded-lg bg-gray-50 p-1 dark:bg-gray-900/50">
                  {allTags.map(tag => (
                    <button
                      key={tag}

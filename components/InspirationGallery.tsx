@@ -305,12 +305,12 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
       {/* Header */}
-      <header className="z-10 flex flex-shrink-0 flex-col items-stretch gap-2 border-b border-gray-200 bg-white p-2 shadow-md dark:border-gray-700 dark:bg-gray-800 md:flex-row md:items-center md:px-5 md:py-2">
+      <header className="z-10 flex flex-shrink-0 flex-col items-stretch gap-2 border-b border-gray-200 bg-white p-2 shadow-md dark:border-gray-700 dark:bg-gray-800 md:flex-row md:items-center md:px-5 md:py-2.5">
           <div className="hidden flex-none items-center md:flex">
              <h1 className="text-xl font-bold text-gray-900 dark:text-white">灵感图库</h1>
           </div>
           
-          <div className="workspace-toolbar flex w-full min-w-0 items-center gap-2 md:flex-1">
+          <div className="workspace-toolbar flex w-full min-w-0 items-center gap-2 md:w-auto md:flex-1">
               {selectionMode ? (
                   <>
                     <span className="text-sm text-gray-500 flex-1">已选 {selectedIds.size}</span>

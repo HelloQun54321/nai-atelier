@@ -544,7 +544,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
 
     return (
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
-            <header className="z-10 flex-shrink-0 border-b border-gray-200 bg-white p-2 shadow-md dark:border-gray-700 dark:bg-gray-800 md:px-5 md:py-2">
+            <header className="z-10 flex-shrink-0 border-b border-gray-200 bg-white p-2 shadow-md dark:border-gray-700 dark:bg-gray-800 md:px-5 md:py-2.5">
                 <div className="flex items-center justify-between">
                     <div className="hidden min-w-0 items-center gap-2 md:flex">
                         <h1 className="whitespace-nowrap text-xl font-bold text-gray-900 dark:text-white">本地生图历史</h1>

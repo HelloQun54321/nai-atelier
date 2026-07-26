@@ -925,7 +925,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
 
             {/* --- Controls Header --- */}
-            <div className="flex flex-shrink-0 flex-col items-stretch gap-2 border-b border-gray-200 bg-white p-2 shadow-md dark:border-gray-700 dark:bg-gray-800 md:px-5 md:py-2">
+            <div className="flex flex-shrink-0 flex-col items-stretch gap-2 border-b border-gray-200 bg-white p-2 shadow-md dark:border-gray-700 dark:bg-gray-800 md:px-5 md:py-2.5">
 
                 <div className="flex gap-2 md:hidden">
                     <div className="relative min-w-0 flex-1">
@@ -1003,13 +1003,13 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                             onChange={e => setSearchTerm(e.target.value)}
                         />
                         <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">
-                            {isCatalogLoading ? <span className="inline-block h-3 w-3 animate-spin rounded-full border border-gray-400 border-t-transparent" /> : '/'}
+                            {isCatalogLoading ? <span className="inline-block h-3 w-3 animate-spin rounded-full border border-gray-400 border-t-transparent" /> : filteredArtists.length.toLocaleString('zh-CN')}
                         </div>
                     </div>
                 </div>
 
                 <div className="hidden min-w-0 items-center justify-between gap-2 md:flex">
-                    <div className="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400" title="画师名称来自每日更新的中英对照 Tag 词库；预览图保存在本地">
+                    <div className="hidden min-w-0 truncate text-xs text-gray-500 dark:text-gray-400 2xl:block" title="画师名称来自每日更新的中英对照 Tag 词库；预览图保存在本地">
                         {searchTerm.trim() ? '搜索结果' : gachaArtists ? '抽卡结果' : '当前显示'} {filteredArtists.length.toLocaleString('zh-CN')}
                         {' · '}完整目录 {artistCatalogCount.toLocaleString('zh-CN')}
                         {' · '}本地预览 {artistsData?.length || 0}
@@ -1099,7 +1099,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                         </button>
 
                         {layoutMode === 'grid' && viewMode === 'benchmark' && (
-                            <div className="flex bg-gray-100 dark:bg-gray-900 rounded-lg p-1 border border-gray-200 dark:border-gray-700 overflow-x-auto max-w-[200px] md:max-w-none md:flex-wrap md:overflow-visible gap-1 items-center">
+                            <div className="flex max-w-[220px] items-center gap-1 overflow-x-auto rounded-lg border border-gray-200 bg-gray-100 p-1 dark:border-gray-700 dark:bg-gray-900">
                                 {config.slots.map((slot, index) => (
                                     <button
                                         key={index}

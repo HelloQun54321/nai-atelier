@@ -244,6 +244,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const [isPageInputOpen, setIsPageInputOpen] = useState(false);
   const [pageInputValue, setPageInputValue] = useState(String(aitagPageCache.page));
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [showDesktopFilters, setShowDesktopFilters] = useState(false);
   const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState === 'visible');
 
   const selectedDetail = selectedId ? details[selectedId] : null;
@@ -907,7 +908,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
 
   return (
     <div className="aitag-workspace flex-1 min-h-0 flex flex-col bg-gray-50 dark:bg-gray-900">
-      <header className="flex-shrink-0 border-b border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-950 md:px-5 md:py-2">
+      <header className="relative z-20 flex-shrink-0 border-b border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-950 md:px-5 md:py-2.5">
         <div className="flex gap-2 md:hidden">
           <span title={isAitagConnected ? '连接正常' : '当前使用本地缓存'} className={`mt-4 h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
           <input value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') handleSearch(); }} placeholder="搜索 AITag 作品" className="h-11 min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
@@ -937,85 +938,22 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           </div>
         </div>
 
-        <div className="workspace-aitag-filters mt-2 hidden grid-cols-1 gap-2 md:grid xl:grid-cols-[minmax(0,1fr)_460px]">
-          <div className="grid min-w-0 grid-cols-1 gap-2 xl:grid-cols-2">
-            <input
-              value={q}
-              onChange={e => setQ(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
-              placeholder="搜索作品 ID / 作者 ID / 标题 / 标签 / 日期 / 模型"
-              className="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <input
-              value={prompt}
-              onChange={e => setPrompt(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
-              placeholder="搜索 NAI/SD 元数据 Prompt"
-              className="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2">
-            <div className="grid grid-cols-4 gap-2 min-w-0">
-              <select
-                value={aiType}
-                onChange={e => handleAiTypeChange(e.target.value as AitagAiType)}
-                disabled={isLoading}
-                className="w-full min-w-0 pl-1.5 pr-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-xs outline-none disabled:opacity-50"
-              >
-                <option value="all">全部</option>
-                <option value="nai">NAI</option>
-                <option value="sd">SD</option>
-                <option value="comfyui">ComfyUI</option>
-              </select>
-              <select
-                value={cacheFilter}
-                onChange={e => handleCacheFilterChange(e.target.value as AitagCacheFilter)}
-                disabled={isLoading}
-                title="按本地缓存状态筛选"
-                className="w-full min-w-0 pl-1.5 pr-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-xs outline-none disabled:opacity-50"
-              >
-                <option value="all">全部</option>
-                <option value="favorite">收藏</option>
-                <option value="full">已缓存全部</option>
-                <option value="first-image">已缓存首图</option>
-              </select>
-              <select
-                value={sort}
-                onChange={e => handleSortChange(e.target.value as AitagSort)}
-                className="w-full min-w-0 pl-1.5 pr-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-xs outline-none"
-              >
-                <option value="new">最新</option>
-                <option value="monthly">月榜</option>
-              </select>
-              <select
-                value={sort === 'monthly' ? rankMonth : ''}
-                onChange={e => handleRankMonthChange(e.target.value)}
-                disabled={isLoading || sort !== 'monthly'}
-                aria-label="月份筛选"
-                className="w-full min-w-0 pl-1.5 pr-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-xs outline-none disabled:opacity-70"
-              >
-                {sort === 'monthly' ? (
-                  <>
-                  <option value="current">当前月份</option>
-                  {availableMonths.map(month => (
-                    <option key={month} value={`m${month}`}>{month}</option>
-                  ))}
-                  <option value="older">更早</option>
-                  </>
-                ) : (
-                  <option value=""></option>
-                )}
-              </select>
-            </div>
-            <button
-              onClick={handleSearch}
-              disabled={isLoading}
-              className="min-w-[88px] px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold disabled:opacity-50"
-            >
-              搜索
-            </button>
-          </div>
+        <div className="mt-2 hidden min-w-0 items-center gap-2 md:flex">
+          <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }} placeholder="搜索作品、作者、标题、标签、日期或模型" className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900" />
+          <input value={prompt} onChange={e => setPrompt(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }} placeholder="搜索 Prompt" className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900" />
+          <button type="button" onClick={() => setShowDesktopFilters(value => !value)} className={`h-10 flex-none rounded-lg border px-4 text-sm font-medium transition-colors ${showDesktopFilters ? 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-gray-300 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}>筛选</button>
+          <button onClick={handleSearch} disabled={isLoading} className="h-10 flex-none rounded-lg bg-indigo-600 px-5 text-sm font-bold text-white hover:bg-indigo-500 disabled:opacity-50">搜索</button>
         </div>
+        {showDesktopFilters && <div className="absolute right-5 top-full z-50 hidden w-[520px] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-800 md:block">
+          <div className="mb-3 flex items-center justify-between"><h2 className="font-bold text-gray-900 dark:text-white">AITag 筛选</h2><button type="button" onClick={() => setShowDesktopFilters(false)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300">×</button></div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-xs text-gray-500 dark:text-gray-400">类型<select value={aiType} onChange={e => handleAiTypeChange(e.target.value as AitagAiType)} disabled={isLoading} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="all">全部</option><option value="nai">NAI</option><option value="sd">SD</option><option value="comfyui">ComfyUI</option></select></label>
+            <label className="text-xs text-gray-500 dark:text-gray-400">缓存<select value={cacheFilter} onChange={e => handleCacheFilterChange(e.target.value as AitagCacheFilter)} disabled={isLoading} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="all">全部</option><option value="favorite">收藏</option><option value="full">已缓存全部</option><option value="first-image">已缓存首图</option></select></label>
+            <label className="text-xs text-gray-500 dark:text-gray-400">排序<select value={sort} onChange={e => handleSortChange(e.target.value as AitagSort)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="new">最新</option><option value="monthly">月榜</option></select></label>
+            <label className="text-xs text-gray-500 dark:text-gray-400">月份<select value={sort === 'monthly' ? rankMonth : ''} onChange={e => handleRankMonthChange(e.target.value)} disabled={isLoading || sort !== 'monthly'} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="">无需月份</option><option value="current">当前月份</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">更早</option></select></label>
+          </div>
+          <button type="button" onClick={() => { handleSearch(); setShowDesktopFilters(false); }} className="mt-4 h-10 w-full rounded-lg bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-500">应用筛选</button>
+        </div>}
       </header>
       <MobileBottomSheet open={showMobileFilters} title="AITag 筛选" onClose={() => setShowMobileFilters(false)} footer={<button onClick={() => { handleSearch(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl bg-indigo-600 font-bold text-white">应用筛选</button>}>
         <div className="space-y-4">
