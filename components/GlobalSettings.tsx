@@ -36,12 +36,11 @@ interface GlobalSettingsProps {
   setThemeMode: (mode: 'light' | 'dark' | 'system') => void;
   safeMode: boolean;
   toggleSafeMode: () => void;
-  onOpenAgent: () => void;
 }
 
 const readApiKey = () => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '';
 
-export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, notify, isDark, themeMode, setThemeMode, safeMode, toggleSafeMode, onOpenAgent }) => {
+export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, notify, isDark, themeMode, setThemeMode, safeMode, toggleSafeMode }) => {
   const confirmAction = useConfirmDialog();
   const [apiKey, setApiKey] = useState(readApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(() => localStorage.getItem('nai_api_key') !== null);
@@ -206,13 +205,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
               <div><h3 className="font-semibold text-gray-900 dark:text-white">项目 Agent</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">让 DeepSeek、Gemini 或 Grok 查看历史图片、操作实验室并管理项目资料。</p></div>
               <ChevronDown className={`h-4 w-4 flex-none transition md:hidden ${mobileSection === 'agent' ? 'rotate-180' : ''}`} />
             </button>
-            {mobileSection === 'agent' && <div className="mt-3 space-y-4">
-              <button type="button" onClick={() => { onClose(); onOpenAgent(); }} className="mobile-touch flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-500">
-                <Bot className="h-5 w-5" />
-                打开项目 Agent
-              </button>
-              <PromptAgentSettings notify={notify} />
-            </div>}
+            {mobileSection === 'agent' && <div className="mt-3"><PromptAgentSettings notify={notify} /></div>}
           </section>
 
           <section className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${mobileSection === 'anlas' ? '' : 'md:hidden'}`}>
