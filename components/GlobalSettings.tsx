@@ -248,6 +248,13 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
             </div>
             </div>}
           </section>
+
+          <section className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+            <div className="flex items-center justify-between gap-4">
+              <div><h3 className="font-semibold text-gray-900 dark:text-white">关于</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">NaiPromptManager 个人维护版本</p></div>
+              <span className="rounded-lg bg-gray-100 px-3 py-1.5 font-mono text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-300">v0.5.0</span>
+            </div>
+          </section>
         </div>
       </div>
     </div>
