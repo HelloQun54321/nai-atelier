@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { PromptAgentDraft, PromptChain } from '../types';
+import { PromptAgentDraft } from '../types';
 import { PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, promptAgentService } from '../services/promptAgent';
 import { vibeService } from '../services/vibeService';
 import { useMobileHistoryLayer } from './MobileUI';
@@ -11,9 +11,7 @@ import { clearMobileThumbnailCache, getMobileCacheStats, setMobileCacheLimitMb }
 interface PromptAgentPanelProps {
   open: boolean;
   onClose: () => void;
-  sessionId: string;
   draft: PromptAgentDraft;
-  presets: PromptChain[];
   apiKey: string;
   onRunStart: (snapshot: PromptAgentDraft) => void;
   onFinalDraft: (draft: PromptAgentDraft) => void;
@@ -26,17 +24,17 @@ type ToolProgress = { id: string; name: string; state: 'running' | 'done' | 'err
 type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; stopReason?: string; timestamp?: number; queued?: 'steer' | 'followUp' };
 type AgentAttachment = { data: string; mimeType: string; name: string };
 const toolLabels: Record<string, string> = {
-  get_lab_state: '读取实验室', search_tags: '搜索 Tag', search_presets: '搜索预设', search_vibes: '搜索 Vibe', search_character_references: '搜索角色参考',
+  get_lab_state: '读取实验室', search_tags: '搜索 Tag', search_character_catalog: '搜索角色 Tag', search_vibes: '搜索 Vibe', search_character_references: '搜索角色参考',
   update_prompts: '修改全局提示词', set_prompt_modules: '整理提示词模块', set_characters: '设置角色专属提示词',
   set_generation_params: '调整参数', set_vibes: '设置 Vibe', set_character_references: '设置角色参考', request_generation: '准备生图',
-  get_project_overview: '读取项目概况', search_project_library: '搜索项目资料', list_generation_history: '读取生成历史',
+  get_project_overview: '读取项目概况', search_project_library: '搜索项目资料', get_chain: '读取完整资料', list_generation_history: '读取生成历史',
   inspect_generation_image: '查看历史原图', create_chain: '新建资料', update_chain: '更新资料',
-  create_inspiration: '保存灵感', update_inspiration: '更新灵感', list_vibe_groups: '读取 Vibe 组合', create_character_reference_from_history: '保存角色参考图',
+  create_inspiration: '保存灵感', update_inspiration: '更新灵感', list_vibe_groups: '读取 Vibe 组合', create_character_reference_from_history: '保存角色参考图', create_vibe_from_history: '从历史创建 Vibe', import_aitag_image: '导入 AITag 图片',
   request_delete_project_item: '准备删除', request_clear_history: '准备清空历史',
   search_aitag: '搜索 AITag', get_aitag_work: '读取 AITag 作品', save_artist_profile: '保存画师资料',
-  update_vibe: '更新 Vibe', save_vibe_group: '保存 Vibe 组合', request_vibe_encoding: '准备 Vibe 编码',
+  update_vibe: '更新 Vibe', update_character_reference: '更新角色参考', save_vibe_group: '保存 Vibe 组合', request_vibe_encoding: '准备 Vibe 编码',
   get_project_settings: '读取项目设置', set_anlas_budget: '设置 Anlas 预算', set_cloud_queue: '设置拼车队列',
-  set_artist_benchmark_config: '设置画师基准图', update_tag_dictionary: '更新 Tag 词库', manage_aitag: '管理 AITag', set_client_preferences: '调整界面偏好', navigate_view: '切换页面',
+  set_artist_benchmark_config: '设置画师基准图', update_tag_dictionary: '更新 Tag 词库', manage_aitag: '管理 AITag', set_client_preferences: '调整界面偏好', manage_artist_favorite: '管理画师收藏', navigate_view: '切换页面', set_chain_cover_from_history: '设置画师串封面',
 };
 
 const renderInlineMarkdown = (value: string, keyPrefix: string): React.ReactNode[] => {
@@ -146,7 +144,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   };
 
   const refreshSessions = async (preferredId?: string) => {
-    const items = await promptAgentService.listSessions(props.sessionId);
+    let items = await promptAgentService.listSessions();
+    if (!items.length) items = [await promptAgentService.createSession()];
     setSessions(items);
     const stored = localStorage.getItem('nai_prompt_agent_session') || '';
     const next = preferredId || activeSessionId || (items.some(item => item.id === stored) ? stored : items[0]?.id) || '';
@@ -185,28 +184,33 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   }, [props.open, activeSessionId]);
 
   // Re-attach to a computer-side task after a refresh or phone reconnect.
-  // The stream itself is not resumable, so poll durable task state and reload
-  // the saved conversation when the task reaches a terminal state.
+  // Poll quickly only while work is running; idle conversations back off.
   useEffect(() => {
     if (!props.open || !activeSessionId) return;
     let disposed = false;
+    let timer = 0;
+    let wasRunning = running;
     const poll = async () => {
+      let delay = wasRunning ? 2000 : 10000;
       try {
         const task = await promptAgentService.getTask(activeSessionId);
         if (disposed) return;
-        if (task.status === 'running') setRunning(true);
-        else if (running && ['completed', 'failed', 'aborted', 'interrupted'].includes(String(task.status))) {
+        const isRunning = task.status === 'running';
+        delay = isRunning ? 2000 : 10000;
+        if (isRunning) setRunning(true);
+        else if (wasRunning && ['completed', 'failed', 'aborted', 'interrupted'].includes(String(task.status))) {
           setRunning(false);
           const history = await promptAgentService.getSession(activeSessionId).catch(() => []);
           if (!disposed) setMessages(history.map(item => ({ ...item })));
           void refreshSessions(activeSessionId);
         }
+        wasRunning = isRunning;
       } catch { /* task polling is best effort */ }
+      if (!disposed) timer = window.setTimeout(() => void poll(), delay);
     };
     void poll();
-    const timer = window.setInterval(() => void poll(), 2000);
-    return () => { disposed = true; window.clearInterval(timer); };
-  }, [props.open, activeSessionId, running]);
+    return () => { disposed = true; window.clearTimeout(timer); };
+  }, [props.open, activeSessionId]);
 
   const activeSession = sessions.find(item => item.id === activeSessionId);
   const activeModel = models.find(item => item.provider === activeSession?.provider && item.id === activeSession?.model);
@@ -283,16 +287,12 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     let navigationTarget: { view: 'list' | 'characters' | 'library' | 'aitag' | 'inspiration' | 'history' | 'playground'; id?: string } | null = null;
     const controller = new AbortController();
     try {
-      const vibes = await vibeService.list('', false).catch(() => []);
-      const presets = props.presets.slice(0, 200).map(item => ({
-        id: item.id, name: item.name, type: item.type, tags: item.tags,
-        basePrompt: item.basePrompt, negativePrompt: item.negativePrompt, modules: item.modules,
-        params: item.params, subjectPrompt: item.variableValues?.subject || '',
-      }));
       const imageDisplay = getMobileImageDisplayPreferences();
-      await promptAgentService.run({ sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], draft: props.draft, context: { presets, vibes, clientSettings: {
+      let artistFavorites: string[] = [];
+      try { artistFavorites = JSON.parse(localStorage.getItem('nai_fav_artists') || '[]'); } catch { /* ignore damaged browser preference */ }
+      await promptAgentService.run({ sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], draft: props.draft, context: { clientSettings: {
         themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true',
-        imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey),
+        imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey), artistFavorites: Array.isArray(artistFavorites) ? artistFavorites.slice(0, 2000) : [],
       } } }, event => {
         if (event.type === 'response_start') {
           if (responseStartedRef.current) {
@@ -354,6 +354,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             }
             if (patch.mobileCacheLimit !== undefined) setMobileCacheLimitMb(patch.mobileCacheLimit);
             window.dispatchEvent(new CustomEvent('nai-agent-ui-preferences', { detail: patch }));
+          } else if (event.action.kind === 'manage_artist_favorite') {
+            let favorites: string[] = [];
+            try { favorites = JSON.parse(localStorage.getItem('nai_fav_artists') || '[]'); } catch { /* ignore damaged browser preference */ }
+            const next = new Set(Array.isArray(favorites) ? favorites : []);
+            if (event.action.patch.favorite) next.add(event.action.patch.name); else next.delete(event.action.patch.name);
+            localStorage.setItem('nai_fav_artists', JSON.stringify([...next]));
+            window.dispatchEvent(new CustomEvent('nai-agent-artist-favorites-change'));
           } else if (event.action.kind === 'navigate_view') {
             navigationTarget = event.action.patch;
           } else {

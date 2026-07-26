@@ -1342,9 +1342,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             <PromptAgentPanel
                 open={showPromptAgent}
                 onClose={() => setShowPromptAgent(false)}
-                sessionId={chain.id}
                 draft={currentAgentDraft()}
-                presets={allChains}
                 apiKey={apiKey}
                 onRunStart={snapshot => { agentRunRevisionRef.current = editorRevisionRef.current; setAgentUndoSnapshot(snapshot); }}
                 onFinalDraft={draft => {

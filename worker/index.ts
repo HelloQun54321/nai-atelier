@@ -2312,8 +2312,8 @@ export default {
               output.chains = rows.results.map((item: any) => ({ ...item, tags: parseStoredJson(item.tags, []), variableValues: parseStoredJson(item.variable_values, {}), basePrompt: item.base_prompt, negativePrompt: item.negative_prompt, createdAt: item.created_at, updatedAt: item.updated_at }));
           }
           if (kind === 'all' || kind === 'inspirations') {
-              const rows = await db.prepare(`SELECT id, title, prompt, negative_prompt, created_at FROM inspirations ORDER BY created_at DESC`).all<any>();
-              output.inspirations = rows.results.map((item: any) => ({ id: item.id, title: item.title, prompt: item.prompt, negativePrompt: item.negative_prompt, createdAt: item.created_at }));
+              const rows = await db.prepare(`SELECT id, title, prompt, negative_prompt, params, created_at FROM inspirations ORDER BY created_at DESC`).all<any>();
+              output.inspirations = rows.results.map((item: any) => ({ id: item.id, title: item.title, prompt: item.prompt, negativePrompt: item.negative_prompt, params: parseStoredJson(item.params, undefined), createdAt: item.created_at }));
           }
           if (kind === 'all' || kind === 'artists') {
               const rows = await db.prepare(`SELECT id, name, benchmarks FROM artists ORDER BY name ASC`).all<any>();
@@ -4049,6 +4049,30 @@ export default {
         }
       }
       const chainIdMatch = path.match(/^\/api\/chains\/([^\/]+)$/);
+      if (chainIdMatch && method === 'GET') {
+        const id = decodeURIComponent(chainIdMatch[1]);
+        const chain = await db.prepare('SELECT * FROM chains WHERE id = ?').bind(id).first<any>();
+        if (!chain) return error('Not Found', 404);
+        if (currentUser.role === 'guest' && chain.guest_hidden === 1) return error('Not Found', 404);
+        return json({
+          id: chain.id,
+          userId: chain.user_id,
+          username: chain.username,
+          type: chain.type || 'style',
+          name: chain.name,
+          description: chain.description,
+          tags: parseStoredJson(chain.tags, []),
+          previewImage: chain.preview_image,
+          basePrompt: chain.base_prompt || '',
+          negativePrompt: chain.negative_prompt || '',
+          modules: parseStoredJson(chain.modules, []),
+          params: parseStoredJson(chain.params, {}),
+          variableValues: parseStoredJson(chain.variable_values, {}),
+          guestHidden: chain.guest_hidden === 1,
+          createdAt: chain.created_at,
+          updatedAt: chain.updated_at,
+        });
+      }
       if (chainIdMatch && method === 'PUT') {
         if (currentUser.role === 'guest') return error('Forbidden', 403);
         const id = chainIdMatch[1];

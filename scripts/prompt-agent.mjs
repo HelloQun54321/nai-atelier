@@ -10,6 +10,7 @@ import { dirname, join } from 'path';
 import { getGlobalDispatcher, ProxyAgent, setGlobalDispatcher } from 'undici';
 
 const CONFIG_FILE = 'local-data/prompt-agent.json';
+const CREDENTIAL_KEY_FILE = 'local-data/prompt-agent.key';
 const SESSION_DIR = 'local-data/prompt-agent-sessions';
 const TASK_DIR = 'local-data/prompt-agent-tasks';
 const TAG_ROOT = 'public/tag-data';
@@ -20,11 +21,14 @@ const PREFERRED_MODELS = {
   openrouter: 'google/gemini-2.5-flash', openai: 'gpt-5-mini', anthropic: 'claude-sonnet-4-6',
 };
 const CATEGORY_LABELS = { 0: '普通', 1: '画师', 3: '作品', 4: '角色', 5: '元数据', 6: 'NovelAI' };
-const MAX_SESSION_MESSAGES = 48;
+const MAX_SESSION_MESSAGES = 200;
 const MAX_PROJECT_LIST_ITEMS = 100;
 const MAX_AGENT_IMAGE_BYTES = 30 * 1024 * 1024;
 const MAX_SAVED_MESSAGE_CHARS = 24_000;
+const MAX_TASK_EVENTS = 500;
+const TASK_EVENT_FLUSH_DELAY_MS = 500;
 const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+const BLOCKED_CUSTOM_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key']);
 let proxyRunCount = 0;
 let previousDispatcher = null;
 let sharedProxyDispatcher = null;
@@ -59,6 +63,59 @@ const atomicJsonWrite = async (file, value) => {
   const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
   await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
   await rename(temporary, file);
+};
+
+const isConversationUserMessage = message => {
+  if (message?.role !== 'user') return false;
+  if (typeof message.content === 'string') return true;
+  return Array.isArray(message.content) && message.content.some(item => item?.type === 'text' || item?.type === 'image');
+};
+
+export const estimateContextTokens = value => {
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  const cjk = (serialized.match(/[\u3400-\u9fff\uf900-\ufaff]/g) || []).length;
+  return cjk + Math.ceil((serialized.length - cjk) / 4);
+};
+
+export const trimContextMessages = (messages, tokenBudget) => {
+  if (!Array.isArray(messages) || messages.length === 0) return [];
+  const budget = Math.max(1, Number(tokenBudget) || 1);
+  let used = 0;
+  let start = messages.length - 1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const size = estimateContextTokens(messages[index]);
+    if (index < messages.length - 1 && used + size > budget) break;
+    used += size;
+    start = index;
+  }
+  let boundary = messages.findIndex((message, index) => index >= start && isConversationUserMessage(message));
+  if (boundary < 0) {
+    for (let index = start - 1; index >= 0; index -= 1) {
+      if (isConversationUserMessage(messages[index])) { boundary = index; break; }
+    }
+  }
+  return messages.slice(boundary >= 0 ? boundary : start);
+};
+
+const trimStoredMessages = messages => {
+  if (!Array.isArray(messages) || messages.length <= MAX_SESSION_MESSAGES) return Array.isArray(messages) ? messages : [];
+  const provisionalStart = messages.length - MAX_SESSION_MESSAGES;
+  const boundary = messages.findIndex((message, index) => index >= provisionalStart && isConversationUserMessage(message));
+  return messages.slice(boundary >= 0 ? boundary : provisionalStart);
+};
+
+const parseAitagJson = value => {
+  if (value && typeof value === 'object') return value;
+  if (typeof value !== 'string' || !value.trim()) return {};
+  try { return JSON.parse(value); } catch { return {}; }
+};
+
+const extractAitagPromptData = image => {
+  const parsed = parseAitagJson(image?.ai_json);
+  const comment = parsed?.Comment && typeof parsed.Comment === 'object' ? parsed.Comment : parsed?.comment && typeof parsed.comment === 'object' ? parsed.comment : {};
+  const prompt = comment?.v4_prompt?.caption?.base_caption || comment?.prompt || parsed?.v4_prompt?.caption?.base_caption || parsed?.prompt || parsed?.Description || image?.prompt_text || '';
+  const negativePrompt = comment?.v4_negative_prompt?.caption?.base_caption || comment?.uc || parsed?.v4_negative_prompt?.caption?.base_caption || parsed?.uc || '';
+  return { prompt: text(prompt), negativePrompt: text(negativePrompt), params: parsed?.parameters && typeof parsed.parameters === 'object' ? parsed.parameters : undefined };
 };
 
 const normalizeProvider = value => PROVIDER_CATALOG.has(value) || CUSTOM_PROVIDERS.has(value) ? value : 'google';
@@ -132,8 +189,17 @@ export const sanitizeCustomProvider = raw => {
     }];
   });
   if (!models.length) throw Object.assign(new Error('请至少添加一个模型 ID'), { status: 400 });
+  const headers = {};
+  for (const [rawName, rawValue] of Object.entries(raw?.headers && typeof raw.headers === 'object' ? raw.headers : {}).slice(0, 20)) {
+    const headerName = String(rawName || '').trim();
+    const lowerName = headerName.toLowerCase();
+    if (!headerName || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(headerName)) throw Object.assign(new Error(`自定义请求头名称无效：${headerName || '空名称'}`), { status: 400 });
+    if (BLOCKED_CUSTOM_HEADERS.has(lowerName)) throw Object.assign(new Error(`请使用 API Key 输入框配置敏感请求头：${headerName}`), { status: 400 });
+    const headerValue = String(rawValue ?? '').trim().slice(0, 1000);
+    if (headerValue) headers[headerName] = headerValue;
+  }
   const id = /^custom-[a-z0-9-]{8,80}$/.test(String(raw?.id || '')) ? String(raw.id) : `custom-${randomUUID()}`;
-  return { id, name, baseUrl: parsed.toString().replace(/\/$/, ''), api, models };
+  return { id, name, baseUrl: parsed.toString().replace(/\/$/, ''), api, models, headers };
 };
 const defaultModelFor = provider => {
   const models = listModels(provider);
@@ -222,16 +288,23 @@ const extractAssistantText = messages => {
 
 export class PromptAgentService {
   constructor({ lanSecret, outboundProxyUrl = '' }) {
-    this.encryptionKey = createHash('sha256').update(`nai-prompt-agent|${lanSecret}`).digest();
+    this.legacyEncryptionKey = createHash('sha256').update(`nai-prompt-agent|${lanSecret}`).digest();
+    this.encryptionKey = this.legacyEncryptionKey;
+    this.credentialKeyError = '';
+    this.credentialWarning = '';
     this.outboundProxyUrl = outboundProxyUrl;
     this.config = { version: 3, provider: 'google', model: defaultModelFor('google'), encryptedKeys: {}, customProviders: [] };
     this.activeAgents = new Map();
     this.startingAgents = new Set();
     this.pendingConfirmations = new Map();
     this.taskEventWrites = new Map();
+    this.taskEventBuffers = new Map();
+    this.taskEventFlushTimers = new Map();
     this.loginFlows = new Map();
     this.runHistory = [];
     this.tagManifest = null;
+    this.tagShardCache = new Map();
+    this.characterSearchRecords = null;
   }
 
   async init() {
@@ -248,6 +321,7 @@ export class PromptAgentService {
       const stored = JSON.parse(await readFile(CONFIG_FILE, 'utf8'));
       this.config = { ...this.config, ...stored, encryptedKeys: stored.encryptedKeys || {}, customProviders: Array.isArray(stored.customProviders) ? stored.customProviders : [] };
     } catch { /* First use. */ }
+    await this.initializeCredentialKey();
     CUSTOM_PROVIDERS.clear();
     for (const item of this.config.customProviders) {
       try {
@@ -257,6 +331,40 @@ export class PromptAgentService {
     }
   }
 
+  async initializeCredentialKey() {
+    try {
+      const stored = JSON.parse(await readFile(CREDENTIAL_KEY_FILE, 'utf8'));
+      const key = Buffer.from(String(stored?.key || ''), 'base64');
+      if (stored?.version !== 1 || key.length !== 32) throw new Error('invalid credential key');
+      this.encryptionKey = key;
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        this.credentialKeyError = 'Agent 独立凭据密钥损坏；当前暂时使用旧局域网密钥，请备份 local-data 后重新配置模型服务。';
+        this.encryptionKey = this.legacyEncryptionKey;
+        this.refreshCredentialWarning();
+        return;
+      }
+      const recovered = new Map();
+      const failed = [];
+      for (const [providerId, encrypted] of Object.entries(this.config.encryptedKeys || {})) {
+        const raw = this.decryptWithKey(encrypted, this.legacyEncryptionKey);
+        if (raw) recovered.set(providerId, raw); else failed.push(providerId);
+      }
+      this.encryptionKey = randomBytes(32);
+      for (const [providerId, raw] of recovered) this.config.encryptedKeys[providerId] = this.encrypt(raw);
+      await atomicJsonWrite(CREDENTIAL_KEY_FILE, { version: 1, key: this.encryptionKey.toString('base64'), createdAt: Date.now() });
+      if (recovered.size) await atomicJsonWrite(CONFIG_FILE, this.config);
+      if (failed.length) this.credentialWarning = `有 ${failed.length} 个模型服务凭据无法从旧局域网密钥迁移，请重新登录这些服务。`;
+    }
+    this.refreshCredentialWarning();
+  }
+
+  refreshCredentialWarning() {
+    if (this.credentialKeyError) { this.credentialWarning = this.credentialKeyError; return; }
+    const unreadable = Object.values(this.config.encryptedKeys || {}).filter(value => !this.decrypt(value)).length;
+    this.credentialWarning = unreadable ? `有 ${unreadable} 个模型服务凭据无法解密，请重新登录这些服务。` : '';
+  }
+
   encrypt(value) {
     const iv = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', this.encryptionKey, iv);
@@ -264,13 +372,15 @@ export class PromptAgentService {
     return { iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: data.toString('base64') };
   }
 
-  decrypt(value) {
+  decryptWithKey(value, key) {
     try {
-      const decipher = createDecipheriv('aes-256-gcm', this.encryptionKey, Buffer.from(value.iv, 'base64'));
+      const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(value.iv, 'base64'));
       decipher.setAuthTag(Buffer.from(value.tag, 'base64'));
       return Buffer.concat([decipher.update(Buffer.from(value.data, 'base64')), decipher.final()]).toString('utf8');
     } catch { return ''; }
   }
+
+  decrypt(value) { return this.decryptWithKey(value, this.encryptionKey); }
 
   getCredential(providerId) {
     const encrypted = this.config.encryptedKeys?.[providerId];
@@ -286,6 +396,7 @@ export class PromptAgentService {
 
   setCredential(providerId, credential) {
     this.config.encryptedKeys[providerId] = this.encrypt(JSON.stringify(credential));
+    this.refreshCredentialWarning();
   }
 
   publicConfig() {
@@ -300,6 +411,7 @@ export class PromptAgentService {
       imageInput: Boolean(models.find(item => item.id === model)?.imageInput),
       configured: configuredProviders.includes(provider),
       configuredProviders,
+      ...(this.credentialWarning ? { credentialWarning: this.credentialWarning } : {}),
     };
   }
 
@@ -309,6 +421,7 @@ export class PromptAgentService {
 
   listProviders() {
     const configured = new Set(this.configuredProviderIds());
+    const currentProvider = this.publicConfig().provider;
     const builtins = [...PROVIDER_CATALOG.values()]
       .filter(provider => provider.auth?.apiKey || provider.auth?.oauth)
       .map(provider => ({
@@ -317,7 +430,7 @@ export class PromptAgentService {
         authType: provider.auth?.oauth && !provider.auth?.apiKey ? 'oauth' : 'api_key',
         authTypes: [provider.auth?.apiKey ? 'api_key' : null, provider.auth?.oauth ? 'oauth' : null].filter(Boolean),
         configured: configured.has(provider.id),
-        current: this.publicConfig().provider === provider.id && configured.has(provider.id),
+        current: currentProvider === provider.id && configured.has(provider.id),
         modelCount: listModels(provider.id).length,
         custom: false,
       }));
@@ -327,7 +440,7 @@ export class PromptAgentService {
       authType: 'api_key',
       authTypes: ['api_key'],
       configured: configured.has(provider.id),
-      current: this.publicConfig().provider === provider.id && configured.has(provider.id),
+      current: currentProvider === provider.id && configured.has(provider.id),
       modelCount: provider.models.length,
       custom: true,
       baseUrl: provider.baseUrl,
@@ -425,6 +538,7 @@ export class PromptAgentService {
 
   async logoutProvider(providerId) {
     delete this.config.encryptedKeys[providerId];
+    this.refreshCredentialWarning();
     if (this.config.provider === providerId) {
       const next = this.configuredProviderIds()[0] || 'google';
       this.config.provider = next;
@@ -458,6 +572,7 @@ export class PromptAgentService {
     if (!CUSTOM_PROVIDERS.has(providerId)) throw Object.assign(new Error('自定义接口不存在'), { status: 404 });
     CUSTOM_PROVIDERS.delete(providerId);
     delete this.config.encryptedKeys[providerId];
+    this.refreshCredentialWarning();
     this.config.customProviders = [...CUSTOM_PROVIDERS.values()];
     if (this.config.provider === providerId) {
       const next = this.configuredProviderIds()[0] || 'google';
@@ -471,9 +586,10 @@ export class PromptAgentService {
   async testCustomProvider(input) {
     const custom = sanitizeCustomProvider(input);
     const key = typeof input?.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : this.getCredential(custom.id)?.key || '';
-    const headers = custom.api === 'anthropic-messages'
+    const authHeaders = custom.api === 'anthropic-messages'
       ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
       : key ? { Authorization: `Bearer ${key}` } : {};
+    const headers = { ...custom.headers, ...authHeaders };
     const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
     try {
       const response = await fetch(`${custom.baseUrl}/models`, { headers, redirect: 'error', signal: AbortSignal.timeout(12_000) });
@@ -490,18 +606,6 @@ export class PromptAgentService {
     if (!listModels(providerId).some(model => model.id === modelId)) throw Object.assign(new Error('选择的模型不存在'), { status: 400 });
     this.config.provider = providerId;
     this.config.model = modelId;
-    await atomicJsonWrite(CONFIG_FILE, this.config);
-    return this.publicConfig();
-  }
-
-  async saveConfig(input) {
-    const provider = normalizeProvider(input?.provider);
-    const models = listModels(provider);
-    const model = models.some(item => item.id === input?.model) ? input.model : defaultModelFor(provider);
-    this.config.provider = provider;
-    this.config.model = model;
-    if (input?.clearApiKey === true) delete this.config.encryptedKeys[provider];
-    if (typeof input?.apiKey === 'string' && input.apiKey.trim()) this.setCredential(provider, { type: 'api_key', key: input.apiKey.trim() });
     await atomicJsonWrite(CONFIG_FILE, this.config);
     return this.publicConfig();
   }
@@ -523,6 +627,7 @@ export class PromptAgentService {
       else if (action === 'delete_vibe' && resourceId) await project.requestJson(`/api/vibes/${encodedId}/archive`, { method: 'POST', body: {} });
       else if (action === 'delete_vibe_group' && resourceId) await project.requestJson(`/api/vibe-groups/${encodedId}`, { method: 'DELETE' });
       else if (action === 'delete_artist' && resourceId) await project.requestJson(`/api/artists/${encodedId}`, { method: 'DELETE' });
+      else if (action === 'delete_character_reference' && resourceId) await project.requestJson(`/api/character-references/${encodedId}/archive`, { method: 'POST', body: {} });
       else if (action === 'clear_history') await project.requestJson('/api/local-history', { method: 'DELETE' });
       else if (action === 'cleanup_history') {
         const days = Number(input?.payload?.days);
@@ -573,24 +678,68 @@ export class PromptAgentService {
     return join(TASK_DIR, `${hash}.events.json`);
   }
 
+  sanitizeTaskEvent(event) {
+    return JSON.parse(JSON.stringify(event, (key, value) => {
+      if (key === 'requestId') return '[redacted]';
+      if (typeof value === 'string' && value.length > 100_000) return value.slice(0, 100_000) + '…';
+      if (key === 'data' && typeof value === 'string' && value.length > 1024) return '[omitted]';
+      return value;
+    }));
+  }
+
+  async loadTaskEventBuffer(sessionId) {
+    if (this.taskEventBuffers.has(sessionId)) return this.taskEventBuffers.get(sessionId);
+    let events = [];
+    try { events = JSON.parse(await readFile(this.taskEventsFile(sessionId), 'utf8')); } catch { /* first event */ }
+    const state = { events: Array.isArray(events) ? events.slice(-MAX_TASK_EVENTS) : [], dirty: false, version: 0 };
+    this.taskEventBuffers.set(sessionId, state);
+    return state;
+  }
+
+  scheduleTaskEventFlush(sessionId) {
+    if (this.taskEventFlushTimers.has(sessionId)) return;
+    const timer = setTimeout(() => {
+      this.taskEventFlushTimers.delete(sessionId);
+      void this.flushTaskEvents(sessionId).catch(() => {});
+    }, TASK_EVENT_FLUSH_DELAY_MS);
+    timer.unref?.();
+    this.taskEventFlushTimers.set(sessionId, timer);
+  }
+
+  async flushTaskEvents(sessionId) {
+    await (this.taskEventWrites.get(sessionId) || Promise.resolve()).catch(() => {});
+    const state = this.taskEventBuffers.get(sessionId);
+    if (!state?.dirty) return;
+    const version = state.version;
+    const snapshot = structuredClone(state.events);
+    state.dirty = false;
+    await atomicJsonWrite(this.taskEventsFile(sessionId), snapshot);
+    if (state.version !== version || state.dirty) this.scheduleTaskEventFlush(sessionId);
+  }
+
+  clearTaskEventState(sessionId) {
+    const timer = this.taskEventFlushTimers.get(sessionId);
+    if (timer) clearTimeout(timer);
+    this.taskEventFlushTimers.delete(sessionId);
+    this.taskEventBuffers.delete(sessionId);
+    this.taskEventWrites.delete(sessionId);
+  }
+
   async appendTaskEvent(sessionId, event) {
     const previous = this.taskEventWrites.get(sessionId) || Promise.resolve();
     const next = previous.catch(() => {}).then(async () => {
-      const safe = JSON.parse(JSON.stringify(event, (key, value) => {
-        if (key === 'requestId') return '[redacted]';
-        if (typeof value === 'string' && value.length > 100_000) return value.slice(0, 100_000) + '…';
-        if (key === 'data' && typeof value === 'string' && value.length > 1024) return '[omitted]';
-        return value;
-      }));
-      let events = [];
-      try { events = JSON.parse(await readFile(this.taskEventsFile(sessionId), 'utf8')); } catch { /* first event */ }
-      events = Array.isArray(events) ? events.slice(-499) : [];
+      const safe = this.sanitizeTaskEvent(event);
+      const state = await this.loadTaskEventBuffer(sessionId);
+      const events = state.events;
       const last = events[events.length - 1];
       if ((safe.type === 'text_delta' || safe.type === 'thinking_delta') && last?.type === safe.type) {
         last.delta = `${last.delta || ''}${safe.delta || ''}`.slice(-100_000);
         last.timestamp = Date.now();
       } else events.push({ ...safe, timestamp: Date.now() });
-      await atomicJsonWrite(this.taskEventsFile(sessionId), events);
+      if (events.length > MAX_TASK_EVENTS) events.splice(0, events.length - MAX_TASK_EVENTS);
+      state.version += 1;
+      state.dirty = true;
+      this.scheduleTaskEventFlush(sessionId);
     });
     this.taskEventWrites.set(sessionId, next);
     try { await next; } finally { if (this.taskEventWrites.get(sessionId) === next) this.taskEventWrites.delete(sessionId); }
@@ -598,10 +747,10 @@ export class PromptAgentService {
 
   async getTask(sessionId) {
     let status = {};
-    let events = [];
     try { status = JSON.parse(await readFile(this.taskFile(sessionId), 'utf8')); } catch { /* no task */ }
-    try { events = JSON.parse(await readFile(this.taskEventsFile(sessionId), 'utf8')); } catch { /* no events */ }
-    return { ...status, events: Array.isArray(events) ? events.slice(-500) : [] };
+    await (this.taskEventWrites.get(sessionId) || Promise.resolve()).catch(() => {});
+    const state = await this.loadTaskEventBuffer(sessionId);
+    return { ...status, events: state.events.slice(-MAX_TASK_EVENTS) };
   }
 
   cancelSessionConfirmations(sessionId) {
@@ -610,7 +759,7 @@ export class PromptAgentService {
 
   normalizeThinkingLevel(value, reasoning = true) {
     if (!reasoning) return 'off';
-    return THINKING_LEVELS.has(value) && value !== 'off' ? value : 'low';
+    return THINKING_LEVELS.has(value) ? value : 'low';
   }
 
   async readSession(sessionId) {
@@ -630,18 +779,16 @@ export class PromptAgentService {
     const title = text(input.title || '新对话').trim().slice(0, 60) || '新对话';
     const config = this.publicConfig();
     const modelInfo = listModels(config.provider).find(item => item.id === config.model);
-    const legacyMessages = input.legacySessionId ? await this.loadMessages(text(input.legacySessionId).slice(0, 200)) : [];
     const meta = {
-      id, title: legacyMessages.length ? '之前的对话' : title, createdAt: now, updatedAt: now,
+      id, title, createdAt: now, updatedAt: now,
       provider: config.provider, model: config.model,
       thinkingLevel: this.normalizeThinkingLevel(input.thinkingLevel, modelInfo?.reasoning),
-      ...(input.legacySessionId ? { legacySourceId: text(input.legacySessionId).slice(0, 200) } : {}),
     };
-    await this.writeSession(id, { version: 2, meta, messages: legacyMessages });
+    await this.writeSession(id, { version: 2, meta, messages: [] });
     return meta;
   }
 
-  async listSessions(legacySessionId = '') {
+  async listSessions() {
     const files = await readdir(SESSION_DIR).catch(() => []);
     const items = [];
     for (const file of files) {
@@ -656,11 +803,6 @@ export class PromptAgentService {
         }
       } catch { /* Ignore broken legacy files. */ }
     }
-    if (legacySessionId && !items.some(item => item.legacySourceId === legacySessionId)) {
-      const legacyMessages = await this.loadMessages(legacySessionId);
-      if (legacyMessages.length) items.push(await this.createSession({ legacySessionId }));
-    }
-    if (!items.length) items.push(await this.createSession());
     return items.sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt));
   }
 
@@ -689,17 +831,18 @@ export class PromptAgentService {
     await unlink(this.sessionFile(sessionId)).catch(() => {});
     await unlink(this.taskFile(sessionId)).catch(() => {});
     await unlink(this.taskEventsFile(sessionId)).catch(() => {});
+    this.clearTaskEventState(sessionId);
   }
 
   async loadMessages(sessionId) {
     const value = await this.readSession(sessionId);
-    return Array.isArray(value.messages) ? value.messages.slice(-MAX_SESSION_MESSAGES) : [];
+    return trimStoredMessages(value.messages);
   }
 
   async saveMessages(sessionId, messages) {
     // Tool images can be tens of megabytes. They are transient model context and must
     // never be duplicated into the chat session store.
-    const safeMessages = messages.slice(-MAX_SESSION_MESSAGES).map(message => ({
+    const safeMessages = trimStoredMessages(messages).map(message => ({
       ...message,
       content: Array.isArray(message.content)
         ? message.content.filter(item => item?.type !== 'image').map(item => item?.type === 'toolResult'
@@ -724,10 +867,14 @@ export class PromptAgentService {
     else await unlink(this.sessionFile(sessionId)).catch(() => {});
     await unlink(this.taskFile(sessionId)).catch(() => {});
     await unlink(this.taskEventsFile(sessionId)).catch(() => {});
+    this.clearTaskEventState(sessionId);
   }
 
   async getSessionHistory(sessionId) {
-    const messages = await this.loadMessages(sessionId);
+    const value = await this.readSession(sessionId);
+    const allMessages = Array.isArray(value.messages) ? value.messages : [];
+    const messages = trimStoredMessages(allMessages);
+    const sourceOffset = Math.max(0, allMessages.length - messages.length);
     return messages.flatMap((message, index) => {
       if (message?.role !== 'user' && message?.role !== 'assistant') return [];
       const content = typeof message.content === 'string'
@@ -738,7 +885,7 @@ export class PromptAgentService {
       const thinking = Array.isArray(message.content) ? message.content.filter(item => item?.type === 'thinking').map(item => item.thinking).join('') : '';
       const tools = Array.isArray(message.content) ? message.content.filter(item => item?.type === 'toolCall').map(item => ({ id: item.id, name: item.name, args: item.arguments, state: 'done' })) : [];
       return (content.trim() || tools.length || thinking) ? [{
-        id: `saved-${index}`, role: message.role === 'user' ? 'user' : 'agent', text: content.trim(),
+        id: `saved-${sourceOffset + index}`, role: message.role === 'user' ? 'user' : 'agent', text: content.trim(),
         ...(thinking ? { thinking } : {}), ...(tools.length ? { tools } : {}),
         ...(message.role === 'assistant' ? { model: message.model, provider: message.provider, usage: message.usage, stopReason: message.stopReason, timestamp: message.timestamp } : { timestamp: message.timestamp }),
       }] : [];
@@ -811,14 +958,50 @@ export class PromptAgentService {
       ? (query.codePointAt(0) % 256).toString(16).padStart(2, '0')
       : query.slice(0, 2).padEnd(2, ' ');
     const filename = isChinese ? this.tagManifest.chineseShards?.[key] : this.tagManifest.shards?.[key];
-    const entries = filename
-      ? JSON.parse(await readFile(join(TAG_ROOT, isChinese ? 'zh-shards' : 'shards', filename), 'utf8'))
-      : (!isChinese && query.length === 1 ? this.tagManifest.popular?.[query] || [] : []);
+    const cacheKey = filename ? `${isChinese ? 'zh' : 'en'}:${filename}` : '';
+    let entries;
+    if (cacheKey && this.tagShardCache.has(cacheKey)) {
+      entries = this.tagShardCache.get(cacheKey);
+      this.tagShardCache.delete(cacheKey);
+      this.tagShardCache.set(cacheKey, entries);
+    } else {
+      entries = filename
+        ? JSON.parse(await readFile(join(TAG_ROOT, isChinese ? 'zh-shards' : 'shards', filename), 'utf8'))
+        : (!isChinese && query.length === 1 ? this.tagManifest.popular?.[query] || [] : []);
+      if (cacheKey) {
+        this.tagShardCache.set(cacheKey, entries);
+        while (this.tagShardCache.size > 12) this.tagShardCache.delete(this.tagShardCache.keys().next().value);
+      }
+    }
     return entries
       .filter(entry => String(isChinese ? entry[1] : entry[0]).toLowerCase().startsWith(query))
       .sort((a, b) => Number(b[4]) - Number(a[4]) || Number(b[3]) - Number(a[3]))
       .slice(0, clamp(limit, 1, 30, 16))
       .map(entry => ({ tag: entry[0], chinese: entry[1], category: CATEGORY_LABELS[entry[2]] || 'Tag', postCount: entry[3], novelAI: entry[4] === 1 }));
+  }
+
+  async searchCharacterCatalog(rawQuery, limit = 30) {
+    const query = text(rawQuery).replaceAll('_', ' ').normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!query) return [];
+    this.tagManifest ||= JSON.parse(await readFile(join(TAG_ROOT, 'manifest.json'), 'utf8'));
+    if (!this.characterSearchRecords) {
+      const filename = this.tagManifest.characterSearchRecords;
+      if (!filename) return [];
+      this.characterSearchRecords = JSON.parse(await readFile(join(TAG_ROOT, filename), 'utf8'));
+    }
+    const terms = query.split(/\s+/).filter(Boolean);
+    return this.characterSearchRecords.flatMap(entry => {
+      const english = String(entry[0] || '').replaceAll('_', ' ').normalize('NFKC').toLowerCase();
+      const chinese = String(entry[1] || '').normalize('NFKC').toLowerCase();
+      const combined = `${english} ${chinese}`;
+      if (!terms.every(term => combined.includes(term))) return [];
+      const score = english === query || chinese === query ? 1000
+        : english.startsWith(query) || chinese.startsWith(query) ? 850
+          : terms.every(term => english.includes(term)) ? 760 : 680;
+      return [{ name: entry[0], chinese: entry[1], postCount: Number(entry[2]) || 0, score }];
+    }).sort((a, b) => b.score - a.score || b.postCount - a.postCount)
+      .slice(0, clamp(limit, 1, 50, 30))
+      .map(({ score, ...entry }) => entry);
   }
 
   createTools(draft, contextData, emit, project, modelInfo) {
@@ -843,6 +1026,19 @@ export class PromptAgentService {
     };
     const compactChain = item => ({ id: item.id, type: item.type, name: item.name, description: item.description, tags: item.tags, basePrompt: item.basePrompt, negativePrompt: item.negativePrompt, modules: item.modules, params: item.params, variableValues: item.variableValues, createdAt: item.createdAt, updatedAt: item.updatedAt });
     const compactInspiration = item => ({ id: item.id, title: item.title || item.name, prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params, tags: item.tags, createdAt: item.createdAt, updatedAt: item.updatedAt });
+    const getAitagImage = async (workId, imageIndex = 0) => {
+      if (!project?.requestBuffer) throw new Error('电脑项目图片服务不可用');
+      const detail = await readProject(`/api/aitag/work/${Math.floor(clamp(workId, 1, Number.MAX_SAFE_INTEGER, 1))}`);
+      const images = Array.isArray(detail?.images) ? detail.images : [];
+      const index = Math.floor(clamp(imageIndex, 0, Math.max(0, images.length - 1), 0));
+      const image = images[index];
+      if (!image) throw new Error('AITag 作品中找不到这张图片');
+      const localUrl = text(image.local_image_url || image.localImageUrl).slice(0, 1000);
+      if (!/^\/api\/assets\/aitag-(?:covers|images)\//.test(localUrl)) throw new Error('这张 AITag 图片尚未保存到电脑，请先在 AITag 详情中等待缓存完成后重试');
+      const binary = await project.requestBuffer(localUrl, MAX_AGENT_IMAGE_BYTES);
+      const mimeType = ['image/png', 'image/jpeg', 'image/webp'].includes(binary.mimeType) ? binary.mimeType : 'image/png';
+      return { detail, image, index, mimeType, imageData: `data:${mimeType};base64,${binary.buffer.toString('base64')}`, ...extractAitagPromptData(image) };
+    };
     const pending = async (action, resourceId, title, consequence, payload = {}) => {
       const requestId = randomUUID();
       const confirmation = new Promise(resolve => {
@@ -870,14 +1066,9 @@ export class PromptAgentService {
         execute: async (_id, args) => { const results = await this.searchTags(args.query, args.limit); return { content: jsonText(results), details: results }; },
       },
       {
-        name: 'search_presets', label: '搜索预设', description: '搜索项目里的画师串和角色串预设。',
-        parameters: Type.Object({ query: Type.String() }),
-        execute: async (_id, args) => {
-          const query = text(args.query).trim().toLowerCase();
-          const source = listItems((await readProject('/api/agent/library?kind=chains')).chains);
-          const results = source.map(compactChain).filter(item => JSON.stringify([item.name, item.description, item.tags, item.basePrompt, item.negativePrompt, item.variableValues]).toLowerCase().includes(query)).slice(0, 20);
-          return { content: jsonText(results), details: results };
-        },
+        name: 'search_character_catalog', label: '搜索角色 Tag', description: '按中文名、英文名、作品名或多个关键词搜索本地角色 Tag 目录。',
+        parameters: Type.Object({ query: Type.String(), limit: Type.Optional(Type.Number()) }),
+        execute: async (_id, args) => { const results = await this.searchCharacterCatalog(args.query, args.limit); return { content: jsonText(results), details: results }; },
       },
       {
         name: 'search_vibes', label: '搜索 Vibe', description: '搜索电脑中已经永久保存的 Vibe。',
@@ -931,6 +1122,15 @@ export class PromptAgentService {
             output.artists = items.filter(item => !query || JSON.stringify([item.name, item.benchmarks]).toLowerCase().includes(query)).slice(0, limit);
           }
           return { content: jsonText(output), details: output };
+        },
+      },
+      {
+        name: 'get_chain', label: '读取完整画师串或角色', description: '按搜索结果中的id读取一条画师串或角色串的完整提示词、模块、参数、Vibe和角色参考快照。修改或复用预设前必须先读取。',
+        parameters: Type.Object({ id: Type.String() }),
+        execute: async (_id, args) => {
+          const value = await readProject(`/api/chains/${encodeURIComponent(text(args.id).slice(0, 200))}`);
+          const result = compactChain(value.item || value);
+          return { content: jsonText(result), details: result };
         },
       },
       {
@@ -990,6 +1190,65 @@ export class PromptAgentService {
         },
       },
       {
+        name: 'create_vibe_from_history', label: '从历史创建 Vibe', description: '把一张项目生成历史原图保存为待编码Vibe资产。创建资产不扣费；之后需要调用request_vibe_encoding并由用户确认2 Anlas。',
+        parameters: Type.Object({ historyId: Type.String(), name: Type.String() }),
+        execute: async (_id, args) => {
+          if (!project?.requestBuffer) throw new Error('电脑历史图片服务不可用');
+          const item = await findHistory(args.historyId);
+          if (!item) throw new Error('找不到指定的生成历史');
+          const image = await project.requestBuffer(`/api/local-history/${encodeURIComponent(item.id)}/image`, MAX_AGENT_IMAGE_BYTES);
+          const mimeType = ['image/png', 'image/jpeg', 'image/webp'].includes(image.mimeType) ? image.mimeType : 'image/png';
+          const result = await readProject('/api/vibes', { method: 'POST', body: {
+            name: text(args.name).trim().slice(0, 100) || `Vibe ${item.id}`,
+            imageData: `data:${mimeType};base64,${image.buffer.toString('base64')}`,
+          } });
+          changed('vibes');
+          return { content: jsonText({ ok: true, item: result.item, duplicate: result.duplicate === true, encoded: false }), details: result };
+        },
+      },
+      {
+        name: 'set_chain_cover_from_history', label: '设置画师串封面', description: '把一张项目生成历史原图设为指定画师串或角色串封面。historyId必须来自list_generation_history，chainId必须来自项目搜索。',
+        parameters: Type.Object({ historyId: Type.String(), chainId: Type.String() }),
+        execute: async (_id, args) => {
+          if (!project?.requestBuffer) throw new Error('电脑历史图片服务不可用');
+          const item = await findHistory(args.historyId);
+          if (!item) throw new Error('找不到指定的生成历史');
+          const image = await project.requestBuffer(`/api/local-history/${encodeURIComponent(item.id)}/image`, MAX_AGENT_IMAGE_BYTES);
+          const mimeType = ['image/png', 'image/jpeg', 'image/webp'].includes(image.mimeType) ? image.mimeType : 'image/png';
+          const chainId = text(args.chainId).slice(0, 200);
+          await readProject(`/api/chains/${encodeURIComponent(chainId)}`, { method: 'PUT', body: { previewImage: `data:${mimeType};base64,${image.buffer.toString('base64')}` } });
+          changed('chains');
+          return { content: jsonText({ ok: true, chainId, historyId: item.id }), details: { chainId, historyId: item.id } };
+        },
+      },
+      {
+        name: 'import_aitag_image', label: '导入 AITag 图片', description: '把电脑已经缓存的AITag图片导入灵感、角色参考、Vibe，或设为指定画师串封面。不会访问任意网址。',
+        parameters: Type.Object({ workId: Type.Number(), imageIndex: Type.Optional(Type.Number()), target: Type.Union([Type.Literal('inspiration'), Type.Literal('character_reference'), Type.Literal('vibe'), Type.Literal('chain_cover')]), name: Type.Optional(Type.String()), chainId: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          const source = await getAitagImage(args.workId, args.imageIndex);
+          const fallbackName = text(source.detail?.work?.title || `AITag ${Math.floor(args.workId)}`).slice(0, 100);
+          const name = text(args.name || fallbackName).trim().slice(0, 160) || fallbackName;
+          let result;
+          if (args.target === 'inspiration') {
+            const now = Date.now();
+            result = await readProject('/api/inspirations', { method: 'POST', body: { id: randomBytes(16).toString('hex'), title: name, imageUrl: source.imageData, prompt: source.prompt, negativePrompt: source.negativePrompt, params: source.params, createdAt: now, updatedAt: now } });
+            changed('inspirations');
+          } else if (args.target === 'character_reference') {
+            result = await readProject('/api/character-references', { method: 'POST', body: { name, imageData: source.imageData } });
+            changed('character_references');
+          } else if (args.target === 'vibe') {
+            result = await readProject('/api/vibes', { method: 'POST', body: { name, imageData: source.imageData } });
+            changed('vibes');
+          } else {
+            const chainId = text(args.chainId).slice(0, 200);
+            if (!chainId) throw new Error('设为封面时必须提供画师串或角色串id');
+            result = await readProject(`/api/chains/${encodeURIComponent(chainId)}`, { method: 'PUT', body: { previewImage: source.imageData } });
+            changed('chains');
+          }
+          return { content: jsonText({ ok: true, target: args.target, workId: args.workId, imageIndex: source.index, result }), details: result };
+        },
+      },
+      {
         name: 'create_chain', label: '新建画师串或角色', description: '在项目中创建画师串或角色串。type为style或character。',
         parameters: Type.Object({ type: Type.Union([Type.Literal('style'), Type.Literal('character')]), name: Type.String(), description: Type.Optional(Type.String()), basePrompt: Type.Optional(Type.String()), subjectPrompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), modules: Type.Optional(Type.Array(Type.Object({ name: Type.String(), content: Type.String(), isActive: Type.Optional(Type.Boolean()), position: Type.Optional(Type.Union([Type.Literal('pre'), Type.Literal('post')])) }))), params: Type.Optional(Type.Any()) }),
         execute: async (_id, args) => {
@@ -1003,12 +1262,21 @@ export class PromptAgentService {
         name: 'update_chain', label: '更新画师串或角色', description: '更新已有画师串或角色串的业务字段。id必须来自项目搜索。',
         parameters: Type.Object({ id: Type.String(), name: Type.Optional(Type.String()), description: Type.Optional(Type.String()), basePrompt: Type.Optional(Type.String()), subjectPrompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), modules: Type.Optional(Type.Array(Type.Object({ name: Type.String(), content: Type.String(), isActive: Type.Optional(Type.Boolean()), position: Type.Optional(Type.Union([Type.Literal('pre'), Type.Literal('post')])) }))), params: Type.Optional(Type.Any()) }),
         execute: async (_id, args) => {
+          const currentValue = await readProject(`/api/chains/${encodeURIComponent(text(args.id).slice(0, 200))}`);
+          const current = currentValue.item || currentValue;
+          if (!current?.id) throw new Error('找不到要更新的画师串或角色串');
           const body = {};
           for (const key of ['name', 'description', 'basePrompt', 'negativePrompt']) if (typeof args[key] === 'string') body[key] = text(args[key]);
           if (Array.isArray(args.tags)) body.tags = args.tags.slice(0, 40).map(value => text(value).slice(0, 80));
-          if (typeof args.subjectPrompt === 'string') body.variableValues = { subject: text(args.subjectPrompt) };
+          if (typeof args.subjectPrompt === 'string') body.variableValues = { ...(current.variableValues || {}), subject: text(args.subjectPrompt) };
           if (Array.isArray(args.modules)) body.modules = sanitizeDraft({ modules: args.modules, params: {} }).modules;
-          if (args.params && typeof args.params === 'object') body.params = sanitizeParams(args.params);
+          if (args.params && typeof args.params === 'object') {
+            const merged = { ...(current.params || {}), ...args.params };
+            for (const key of ['vibes', 'characterReferences']) {
+              if (args.params[key] && typeof args.params[key] === 'object' && current.params?.[key]) merged[key] = { ...current.params[key], ...args.params[key] };
+            }
+            body.params = sanitizeParams(merged);
+          }
           await readProject(`/api/chains/${encodeURIComponent(args.id)}`, { method: 'PUT', body });
           changed('chains');
           return { content: jsonText({ ok: true, id: args.id, updated: Object.keys(body) }), details: body };
@@ -1032,11 +1300,10 @@ export class PromptAgentService {
       },
       {
         name: 'update_inspiration', label: '更新灵感', description: '更新已有灵感的标题、提示词或负面提示词。',
-        parameters: Type.Object({ id: Type.String(), title: Type.Optional(Type.String()), prompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())) }),
+        parameters: Type.Object({ id: Type.String(), title: Type.Optional(Type.String()), prompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           const body = {};
           for (const key of ['title', 'prompt', 'negativePrompt']) if (typeof args[key] === 'string') body[key] = text(args[key]);
-          if (Array.isArray(args.tags)) body.tags = args.tags.slice(0, 40);
           await readProject(`/api/inspirations/${encodeURIComponent(args.id)}`, { method: 'PUT', body });
           changed('inspirations');
           return { content: jsonText({ ok: true, id: args.id, updated: Object.keys(body) }), details: body };
@@ -1093,7 +1360,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'update_vibe', label: '更新 Vibe', description: '重命名Vibe、修改默认强度，或归档/恢复Vibe。归档可恢复。',
+        name: 'update_vibe', label: '更新 Vibe', description: '重命名Vibe、修改默认强度，或恢复已归档Vibe。归档必须使用需要确认的删除工具。',
         parameters: Type.Object({ id: Type.String(), name: Type.Optional(Type.String()), defaultStrength: Type.Optional(Type.Number()), archived: Type.Optional(Type.Boolean()) }),
         execute: async (_id, args) => {
           const id = encodeURIComponent(text(args.id).slice(0, 200));
@@ -1103,8 +1370,29 @@ export class PromptAgentService {
             const asset = current.item || current;
             result = await readProject(`/api/vibes/${id}`, { method: 'PUT', body: { name: typeof args.name === 'string' ? text(args.name).slice(0, 100) : asset.name, defaultStrength: typeof args.defaultStrength === 'number' ? clamp(args.defaultStrength, 0, 1, 0.6) : asset.defaultStrength } });
           }
-          if (typeof args.archived === 'boolean') result = await readProject(`/api/vibes/${id}/${args.archived ? 'archive' : 'restore'}`, { method: 'POST', body: {} });
+          if (args.archived === true) throw new Error('归档 Vibe 必须调用 request_delete_project_item 并等待用户确认');
+          if (args.archived === false) result = await readProject(`/api/vibes/${id}/restore`, { method: 'POST', body: {} });
           changed('vibes');
+          return { content: jsonText({ ok: true, id: args.id, result }), details: result };
+        },
+      },
+      {
+        name: 'update_character_reference', label: '更新角色参考', description: '重命名角色参考、修改默认Strength/Fidelity，或恢复已归档资产。归档请使用需要确认的删除工具。',
+        parameters: Type.Object({ id: Type.String(), name: Type.Optional(Type.String()), defaultStrength: Type.Optional(Type.Number()), defaultFidelity: Type.Optional(Type.Number()), restore: Type.Optional(Type.Boolean()) }),
+        execute: async (_id, args) => {
+          const id = encodeURIComponent(text(args.id).slice(0, 200));
+          const current = await readProject(`/api/character-references/${id}`);
+          const asset = current.item || current;
+          let result = current;
+          if (typeof args.name === 'string' || typeof args.defaultStrength === 'number' || typeof args.defaultFidelity === 'number') {
+            result = await readProject(`/api/character-references/${id}`, { method: 'PUT', body: {
+              name: typeof args.name === 'string' ? text(args.name).trim().slice(0, 100) : asset.name,
+              defaultStrength: typeof args.defaultStrength === 'number' ? clamp(args.defaultStrength, -1, 2, 0.6) : asset.defaultStrength,
+              defaultFidelity: typeof args.defaultFidelity === 'number' ? clamp(args.defaultFidelity, -1, 2, 0.6) : asset.defaultFidelity,
+            } });
+          }
+          if (args.restore === true) result = await readProject(`/api/character-references/${id}/restore`, { method: 'POST', body: {} });
+          changed('character_references');
           return { content: jsonText({ ok: true, id: args.id, result }), details: result };
         },
       },
@@ -1127,8 +1415,8 @@ export class PromptAgentService {
         execute: async (_id, args) => pending('encode_vibe', text(args.vibeId).slice(0, 200), `为${text(args.vibeName || '这个 Vibe').slice(0, 100)}生成永久编码？`, `信息提取量：${clamp(args.informationExtracted, 0, 1, 1).toFixed(2)}\n本次消耗：2 Anlas。编码完成后可以免费重复用于生图。`, { informationExtracted: clamp(args.informationExtracted, 0, 1, 1) }),
       },
       {
-        name: 'request_delete_project_item', label: '请求删除项目数据', description: '请求删除画师串、角色、灵感、历史项或归档Vibe。只会打开项目确认框，不会直接删除。',
-        parameters: Type.Object({ resourceType: Type.Union([Type.Literal('chain'), Type.Literal('inspiration'), Type.Literal('history'), Type.Literal('vibe'), Type.Literal('vibe_group'), Type.Literal('artist')]), id: Type.String(), name: Type.Optional(Type.String()), reason: Type.Optional(Type.String()) }),
+        name: 'request_delete_project_item', label: '请求删除项目数据', description: '请求删除画师串、角色、灵感、历史项，或归档Vibe/角色参考。只会打开项目确认框，不会直接删除。',
+        parameters: Type.Object({ resourceType: Type.Union([Type.Literal('chain'), Type.Literal('inspiration'), Type.Literal('history'), Type.Literal('vibe'), Type.Literal('vibe_group'), Type.Literal('artist'), Type.Literal('character_reference')]), id: Type.String(), name: Type.Optional(Type.String()), reason: Type.Optional(Type.String()) }),
         execute: async (_id, args) => pending(`delete_${args.resourceType}`, text(args.id).slice(0, 200), `删除${text(args.name || '这个项目').slice(0, 100)}？`, text(args.reason || '确认后将执行删除；历史原图删除后无法恢复。').slice(0, 500)),
       },
       {
@@ -1226,6 +1514,18 @@ export class PromptAgentService {
         name: 'set_client_preferences', label: '调整界面偏好', description: '调整当前设备的主题、安全模式、手机图片布局/列数与小图缓存上限。只传需要修改的字段。',
         parameters: Type.Object({ themeMode: Type.Optional(Type.Union([Type.Literal('light'), Type.Literal('dark'), Type.Literal('system')])), safeMode: Type.Optional(Type.Boolean()), imageLayout: Type.Optional(Type.Union([Type.Literal('masonry'), Type.Literal('portrait'), Type.Literal('square')])), imageColumns: Type.Optional(Type.Union([Type.Literal('auto'), Type.Literal(1), Type.Literal(2), Type.Literal(3)])), mobileCacheLimit: Type.Optional(Type.Union([Type.Literal(0), Type.Literal(25), Type.Literal(50), Type.Literal(100)])) }),
         execute: async (_id, args) => apply('set_client_preferences', args),
+      },
+      {
+        name: 'manage_artist_favorite', label: '管理画师收藏', description: '在当前设备的画师Tag页面收藏或取消收藏指定画师。画师名应来自Tag搜索结果。',
+        parameters: Type.Object({ name: Type.String(), favorite: Type.Boolean() }),
+        execute: async (_id, args) => {
+          const name = text(args.name).trim().slice(0, 160);
+          if (!name) throw new Error('画师名称不能为空');
+          const favorites = new Set(Array.isArray(contextData.clientSettings?.artistFavorites) ? contextData.clientSettings.artistFavorites.map(value => text(value).slice(0, 160)) : []);
+          if (args.favorite) favorites.add(name); else favorites.delete(name);
+          contextData.clientSettings.artistFavorites = [...favorites].slice(0, 2000);
+          return apply('manage_artist_favorite', { name, favorite: args.favorite });
+        },
       },
       {
         name: 'navigate_view', label: '切换项目页面', description: '完成当前任务后切换到指定项目页面。',
@@ -1361,8 +1661,6 @@ export class PromptAgentService {
     const thinkingLevel = this.normalizeThinkingLevel(storedSession.meta?.thinkingLevel, modelInfo.reasoning);
     const draft = sanitizeDraft(input?.draft);
     const contextData = {
-      presets: Array.isArray(input?.context?.presets) ? input.context.presets.slice(0, 200) : [],
-      vibes: Array.isArray(input?.context?.vibes) ? input.context.vibes.slice(0, 200) : [],
       clientSettings: input?.context?.clientSettings && typeof input.context.clientSettings === 'object' ? input.context.clientSettings : {},
     };
     const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
@@ -1400,18 +1698,8 @@ export class PromptAgentService {
         steeringMode: 'one-at-a-time',
         followUpMode: 'one-at-a-time',
         transformContext: async messages => {
-          const maxChars = Math.max(32_000, Math.min(240_000, Math.floor((Number(modelInfo.contextWindow) || 32_000) * 3.2 * 0.72)));
-          let used = 0;
-          const selected = [];
-          for (let index = messages.length - 1; index >= 0; index -= 1) {
-            const message = messages[index];
-            const serialized = JSON.stringify(message);
-            const size = serialized.length;
-            if (selected.length && used + size > maxChars) break;
-            used += size;
-            selected.push(message);
-          }
-          return selected.reverse();
+          const tokenBudget = Math.max(8_000, Math.min(180_000, Math.floor((Number(modelInfo.contextWindow) || 32_000) * 0.68)));
+          return trimContextMessages(messages, tokenBudget);
         },
       });
       const unsubscribe = agent.subscribe(event => {
@@ -1457,6 +1745,7 @@ export class PromptAgentService {
       return { draft, message: extractAssistantText(agent.state.messages), provider, model: modelId };
     } finally {
       leaveOutboundProxy();
+      await this.flushTaskEvents(sessionId).catch(() => {});
       await atomicJsonWrite(this.taskFile(sessionId), { sessionId, status: taskStatus, updatedAt: Date.now() });
       this.cancelPendingConfirmations(sessionId);
       this.activeAgents.delete(sessionId);

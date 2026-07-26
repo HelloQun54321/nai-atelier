@@ -15,11 +15,12 @@ import {
   CloudQueueCoordinator,
   fetchNovelAiGeneration,
 } from './media-gateway.mjs';
-import { PromptAgentService, customProviderRuntime, sanitizeCustomProvider } from './prompt-agent.mjs';
+import { PromptAgentService, customProviderRuntime, estimateContextTokens, sanitizeCustomProvider, trimContextMessages } from './prompt-agent.mjs';
 
 test('prompt agent custom providers use Pi runtime models and reject unsafe URLs', () => {
   const custom = sanitizeCustomProvider({
     id: 'custom-12345678', name: 'Local model', baseUrl: 'http://127.0.0.1:11434/v1/', api: 'openai-completions',
+    headers: { 'HTTP-Referer': 'https://localhost.example' },
     models: [{ id: 'llama-local', reasoning: true, imageInput: true, contextWindow: 131072, maxTokens: 8192 }],
   });
   assert.equal(custom.baseUrl, 'http://127.0.0.1:11434/v1');
@@ -28,8 +29,26 @@ test('prompt agent custom providers use Pi runtime models and reject unsafe URLs
   assert.equal(provider.id, custom.id);
   assert.equal(provider.getModels()[0].api, 'openai-completions');
   assert.deepEqual(provider.getModels()[0].input, ['text', 'image']);
+  assert.equal(provider.getModels()[0].headers['HTTP-Referer'], 'https://localhost.example');
   assert.throws(() => sanitizeCustomProvider({ name: 'bad', baseUrl: 'file:///secret', models: [{ id: 'x' }] }), /HTTP\/HTTPS/);
   assert.throws(() => sanitizeCustomProvider({ name: 'empty', baseUrl: 'https://example.com/v1', models: [] }), /至少添加一个模型/);
+  assert.throws(() => sanitizeCustomProvider({ name: 'secret-header', baseUrl: 'https://example.com/v1', headers: { Authorization: 'secret' }, models: [{ id: 'x' }] }), /API Key/);
+});
+
+test('prompt agent supports no-thinking mode and trims context at a real user boundary', () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  assert.equal(service.normalizeThinkingLevel('off', true), 'off');
+  assert.ok(estimateContextTokens('中文上下文') >= 5);
+  const messages = [
+    { role: 'user', content: 'old request' },
+    { role: 'assistant', content: [{ type: 'toolCall', id: 'old-call', name: 'x', arguments: {} }] },
+    { role: 'user', content: [{ type: 'toolResult', toolCallId: 'old-call', content: [{ type: 'text', text: 'old result' }] }] },
+    { role: 'user', content: 'new request' },
+    { role: 'assistant', content: 'new answer' },
+  ];
+  const trimmed = trimContextMessages(messages, estimateContextTokens(messages.at(-1)) + estimateContextTokens(messages.at(-2)) + 2);
+  assert.equal(trimmed[0].content, 'new request');
+  assert.equal(trimmed.some(message => JSON.stringify(message).includes('old-call')), false);
 });
 
 test('prompt agent keeps API keys encrypted and out of its public config', async () => {
@@ -155,6 +174,36 @@ test('prompt agent creates Character Reference only from a project history image
   assert.equal(calls.some(call => /^https?:/i.test(call.path)), false);
 });
 
+test('prompt agent imports only computer-cached AITag images into project libraries', async () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const calls = [];
+  const detail = {
+    work: { id: 123, title: 'Cached work' },
+    images: [{ local_image_url: '/api/assets/aitag-covers/123.webp', ai_json: { v4_prompt: { caption: { base_caption: '1girl, sunset' } }, uc: 'bad anatomy', parameters: { steps: 28 } } }],
+  };
+  const project = {
+    requestJson: async (path, options) => {
+      calls.push({ path, options });
+      if (path === '/api/aitag/work/123') return detail;
+      if (path === '/api/inspirations' && options?.method === 'POST') return { success: true };
+      throw new Error(`unexpected ${path}`);
+    },
+    requestBuffer: async path => {
+      assert.equal(path, '/api/assets/aitag-covers/123.webp');
+      return { buffer: Buffer.from([1, 2, 3]), mimeType: 'image/webp' };
+    },
+  };
+  const tool = service.createTools({ basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: {} }, { clientSettings: {} }, () => {}, project)
+    .find(item => item.name === 'import_aitag_image');
+  await tool.execute('call', { workId: 123, target: 'inspiration', name: 'Imported' });
+  const body = calls.at(-1).options.body;
+  assert.equal(body.prompt, '1girl, sunset');
+  assert.equal(body.negativePrompt, 'bad anatomy');
+  assert.match(body.imageUrl, /^data:image\/webp;base64,/);
+  detail.images[0] = { remote_image_url: 'https://images.aitag.win/remote.webp' };
+  await assert.rejects(() => tool.execute('call', { workId: 123, target: 'vibe' }), /尚未保存到电脑/);
+});
+
 test('prompt agent history inspection returns the real image only to vision models', async () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
   const draft = { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: {} };
@@ -205,6 +254,41 @@ test('prompt agent keeps advanced generation fields when changing one parameter'
   assert.equal(draft.params.noiseSchedule, 'karras');
   assert.equal(draft.params.sm, true);
   assert.equal(draft.params.customAdvancedFlag, 7);
+});
+
+test('prompt agent reads a complete chain and safely merges partial stored params', async () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const stored = {
+    id: 'chain-1', name: 'Stored chain', type: 'style', basePrompt: 'artist:test', negativePrompt: 'bad anatomy',
+    modules: [{ id: 'module-1', name: 'Lighting', content: 'rim lighting', isActive: true, position: 'post' }],
+    variableValues: { subject: '1girl', retained: 'yes' },
+    params: {
+      width: 1024, height: 1024, steps: 28, sampler: 'k_dpmpp_2m', noiseSchedule: 'karras', customAdvancedFlag: 7,
+      vibes: { enabled: true, normalizeStrengths: true, slots: [{ vibeId: 'v1', encodingId: 'e1', strength: 0.6 }] },
+      characterReferences: { enabled: false, slots: [{ assetId: 'r1', strength: 0.5, fidelity: 0.7 }] },
+    },
+  };
+  const calls = [];
+  const project = { requestJson: async (path, options) => {
+    calls.push({ path, options });
+    if (path === '/api/chains/chain-1' && !options) return stored;
+    if (path === '/api/chains/chain-1' && options?.method === 'PUT') return { success: true };
+    throw new Error(`unexpected ${path}`);
+  } };
+  const tools = service.createTools({ basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: {} }, { clientSettings: {} }, () => {}, project);
+  const full = await tools.find(item => item.name === 'get_chain').execute('call', { id: 'chain-1' });
+  const fullPayload = JSON.parse(full.content[0].text);
+  assert.equal(fullPayload.modules[0].content, 'rim lighting');
+  assert.equal(fullPayload.params.vibes.slots[0].vibeId, 'v1');
+  await tools.find(item => item.name === 'update_chain').execute('call', { id: 'chain-1', subjectPrompt: '2girls', params: { steps: 32 } });
+  const update = calls.at(-1).options.body;
+  assert.equal(update.params.steps, 32);
+  assert.equal(update.params.width, 1024);
+  assert.equal(update.params.noiseSchedule, 'karras');
+  assert.equal(update.params.customAdvancedFlag, 7);
+  assert.equal(update.params.vibes.slots[0].encodingId, 'e1');
+  assert.equal(update.variableValues.retained, 'yes');
+  assert.equal(update.variableValues.subject, '2girls');
 });
 
 test('prompt agent separates global subject text from single-character prompts', async () => {

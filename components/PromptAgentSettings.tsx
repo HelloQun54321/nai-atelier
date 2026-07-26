@@ -10,7 +10,7 @@ interface PromptAgentSettingsProps {
 type View = 'home' | 'login' | 'logout' | 'model' | 'auth' | 'key' | 'custom';
 
 const emptyCustomProvider = (): PromptAgentCustomProvider => ({
-  name: '', baseUrl: '', api: 'openai-completions', apiKey: '',
+  name: '', baseUrl: '', api: 'openai-completions', apiKey: '', headers: {},
   models: [{ id: '', name: '', reasoning: false, imageInput: false, contextWindow: 128000, maxTokens: 16384 }],
 });
 
@@ -35,6 +35,11 @@ const CustomProviderForm: React.FC<{
   onSave: () => void;
 }> = ({ value, onChange, busy, onTest, onSave }) => {
   const patchModel = (index: number, patch: Partial<PromptAgentCustomProvider['models'][number]>) => onChange({ ...value, models: value.models.map((model, modelIndex) => modelIndex === index ? { ...model, ...patch } : model) });
+  const headerEntries = Object.entries(value.headers || {});
+  const patchHeader = (index: number, name: string, headerValue: string) => {
+    const next = Object.fromEntries(headerEntries.map((entry, entryIndex) => entryIndex === index ? [name, headerValue] : entry).filter(([key]) => key.trim()));
+    onChange({ ...value, headers: next });
+  };
   const ready = Boolean(value.name.trim() && value.baseUrl.trim() && value.models.some(model => model.id.trim()));
   return <div className="min-h-0 flex-1 overflow-y-auto py-3">
     <div className="mx-auto max-w-2xl space-y-4 rounded-3xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 md:p-6">
@@ -44,8 +49,20 @@ const CustomProviderForm: React.FC<{
       </div>
       <label className="block text-xs font-bold text-gray-600 dark:text-gray-300">Base URL<input value={value.baseUrl} onChange={event => onChange({ ...value, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" className="mobile-touch mt-1 w-full rounded-xl border border-gray-300 bg-gray-50 px-3 font-mono text-sm font-normal dark:border-gray-700 dark:bg-gray-950" /><span className="mt-1 block font-normal text-gray-400">填写到版本路径，例如 OpenAI兼容接口通常以 /v1 结尾。</span></label>
       <label className="block text-xs font-bold text-gray-600 dark:text-gray-300">API Key<input type="password" value={value.apiKey || ''} onChange={event => onChange({ ...value, apiKey: event.target.value })} placeholder={value.id ? '留空则继续使用原密钥' : '本地无密钥服务可以留空'} autoComplete="new-password" className="mobile-touch mt-1 w-full rounded-xl border border-gray-300 bg-gray-50 px-3 font-mono text-sm font-normal dark:border-gray-700 dark:bg-gray-950" /></label>
+      <div className="rounded-2xl border border-gray-200 p-3 dark:border-gray-700">
+        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <b className="shrink-0 text-sm dark:text-white">附加请求头</b>
+          <span className="min-w-0 flex-1 basis-44 text-[10px] leading-4 text-gray-400">例如 HTTP-Referer；敏感鉴权头请使用 API Key</span>
+          <button type="button" onClick={() => onChange({ ...value, headers: { ...(value.headers || {}), [`X-Custom-${headerEntries.length + 1}`]: '' } })} className="mobile-touch ml-auto shrink-0 rounded-xl px-3 text-xs font-bold text-indigo-600">＋ 添加</button>
+        </div>
+        {headerEntries.length ? <div className="space-y-2">{headerEntries.map(([name, headerValue], index) => <div key={`${name}-${index}`} className="grid grid-cols-[minmax(0,.8fr)_minmax(0,1.2fr)_44px] gap-2"><input value={name} onChange={event => patchHeader(index, event.target.value, headerValue)} placeholder="请求头名称" className="mobile-touch min-w-0 rounded-xl border border-gray-300 bg-gray-50 px-3 font-mono text-xs dark:border-gray-700 dark:bg-gray-950"/><input value={headerValue} onChange={event => patchHeader(index, name, event.target.value)} placeholder="请求头值" className="mobile-touch min-w-0 rounded-xl border border-gray-300 bg-gray-50 px-3 font-mono text-xs dark:border-gray-700 dark:bg-gray-950"/><button type="button" onClick={() => onChange({ ...value, headers: Object.fromEntries(headerEntries.filter((_, entryIndex) => entryIndex !== index)) })} className="mobile-touch text-red-500" aria-label={`删除请求头 ${name}`}>×</button></div>)}</div> : <p className="text-[11px] text-gray-400">没有附加请求头。Authorization、Cookie、X-API-Key 等敏感字段不会保存在这里。</p>}
+      </div>
       <div>
-        <div className="mb-2 flex items-center"><b className="text-sm dark:text-white">模型</b><span className="ml-2 text-[10px] text-gray-400">可以为同一个接口添加多个模型</span><span className="flex-1"/><button type="button" onClick={() => onChange({ ...value, models: [...value.models, { id: '', name: '', reasoning: false, imageInput: false, contextWindow: 128000, maxTokens: 16384 }] })} className="mobile-touch rounded-xl bg-indigo-50 px-3 text-xs font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">＋ 添加模型</button></div>
+        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <b className="shrink-0 text-sm dark:text-white">模型</b>
+          <span className="min-w-0 flex-1 basis-36 text-[10px] leading-4 text-gray-400">可以为同一个接口添加多个模型</span>
+          <button type="button" onClick={() => onChange({ ...value, models: [...value.models, { id: '', name: '', reasoning: false, imageInput: false, contextWindow: 128000, maxTokens: 16384 }] })} className="mobile-touch ml-auto shrink-0 rounded-xl bg-indigo-50 px-3 text-xs font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">＋ 添加模型</button>
+        </div>
         <div className="space-y-3">{value.models.map((model, index) => <div key={index} className="rounded-2xl border border-gray-200 p-3 dark:border-gray-700">
           <div className="flex gap-2"><input value={model.id} onChange={event => patchModel(index, { id: event.target.value })} placeholder="模型 ID，例如 deepseek-chat" className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-300 bg-gray-50 px-3 font-mono text-sm dark:border-gray-700 dark:bg-gray-950" />{value.models.length > 1 && <button type="button" onClick={() => onChange({ ...value, models: value.models.filter((_, modelIndex) => modelIndex !== index) })} className="mobile-touch rounded-xl px-3 text-sm font-bold text-red-500">删除</button>}</div>
           <input value={model.name || ''} onChange={event => patchModel(index, { name: event.target.value })} placeholder="显示名称（可选）" className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-gray-50 px-3 text-sm dark:border-gray-700 dark:bg-gray-950" />
@@ -197,6 +214,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         <div className="mt-1 truncate text-base font-black text-gray-900 dark:text-white">{config?.configured ? currentModel?.name || config.model : '尚未配置模型服务'}</div>
         {config?.configured && <div className="mt-1 text-xs text-gray-500">{currentModel?.provider} · {config.configuredProviders.length} 个服务已配置</div>}
       </div>
+      {config?.credentialWarning && <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{config.credentialWarning}</div>}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <button type="button" onClick={() => openView('login')} className="mobile-touch rounded-xl border border-gray-200 bg-white px-3 text-left text-sm font-bold text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"><span className="mr-2 text-emerald-500">＋</span>登录模型服务</button>
         <button type="button" disabled={configured.length === 0} onClick={() => openView('model')} className="mobile-touch rounded-xl border border-gray-200 bg-white px-3 text-left text-sm font-bold text-gray-800 shadow-sm disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"><span className="mr-2 text-indigo-500">◆</span>选择模型</button>

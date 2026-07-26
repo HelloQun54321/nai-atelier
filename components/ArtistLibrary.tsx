@@ -169,6 +169,17 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         media.addEventListener('change', sync);
         return () => media.removeEventListener('change', sync);
     }, []);
+
+    useEffect(() => {
+        const syncAgentFavorites = () => {
+            try {
+                const saved = JSON.parse(localStorage.getItem('nai_fav_artists') || '[]');
+                setFavorites(new Set(Array.isArray(saved) ? saved : []));
+            } catch { setFavorites(new Set()); }
+        };
+        window.addEventListener('nai-agent-artist-favorites-change', syncAgentFavorites);
+        return () => window.removeEventListener('nai-agent-artist-favorites-change', syncAgentFavorites);
+    }, []);
     // List: Image Width (px)
     const [listImgWidth, setListImgWidth] = useState(128);
 

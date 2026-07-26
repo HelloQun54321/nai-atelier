@@ -141,6 +141,7 @@ export type PromptAgentAction =
   | { kind: 'set_vibes'; patch: { vibes: NAIParams['vibes'] } }
   | { kind: 'request_generation'; patch: { reason?: string; requestId?: string } }
   | { kind: 'set_client_preferences'; patch: { themeMode?: 'light' | 'dark' | 'system'; safeMode?: boolean; imageLayout?: 'masonry' | 'portrait' | 'square'; imageColumns?: 'auto' | 1 | 2 | 3; mobileCacheLimit?: 0 | 25 | 50 | 100 } }
+  | { kind: 'manage_artist_favorite'; patch: { name: string; favorite: boolean } }
   | { kind: 'navigate_view'; patch: { view: 'list' | 'characters' | 'library' | 'aitag' | 'inspiration' | 'history' | 'playground'; id?: string } }
   | { kind: 'request_project_action'; patch: { action: string; resourceId?: string; title: string; consequence: string; payload?: Record<string, unknown>; requestId?: string } };
 

@@ -6,6 +6,7 @@ export interface PromptAgentConfig {
   imageInput: boolean;
   configured: boolean;
   configuredProviders: string[];
+  credentialWarning?: string;
 }
 
 export interface PromptAgentProvider {
@@ -36,6 +37,7 @@ export interface PromptAgentCustomProvider {
   baseUrl: string;
   api: PromptAgentCustomApi;
   apiKey?: string;
+  headers?: Record<string, string>;
   configured?: boolean;
   models: PromptAgentCustomModel[];
 }
@@ -171,18 +173,13 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
-  saveConfig: async (input: { provider: string; model: string; apiKey?: string; clearApiKey?: boolean }): Promise<PromptAgentConfig> => {
-    const response = await fetch('/api/prompt-agent/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
-    if (!response.ok) return readError(response) as never;
-    return response.json();
-  },
   getModels: async (provider: string): Promise<PromptAgentModel[]> => {
     const response = await fetch(`/api/prompt-agent/models?provider=${encodeURIComponent(provider)}`, { cache: 'no-store' });
     if (!response.ok) return readError(response) as never;
     return (await response.json()).items || [];
   },
-  listSessions: async (legacySessionId = ''): Promise<PromptAgentSession[]> => {
-    const response = await fetch(`/api/prompt-agent/sessions?legacySessionId=${encodeURIComponent(legacySessionId)}`, { cache: 'no-store' });
+  listSessions: async (): Promise<PromptAgentSession[]> => {
+    const response = await fetch('/api/prompt-agent/sessions', { cache: 'no-store' });
     if (!response.ok) return readError(response) as never;
     return (await response.json()).items || [];
   },
@@ -229,7 +226,7 @@ export const promptAgentService = {
     return response.json();
   },
   run: async (
-    input: { sessionId: string; message: string; mode?: 'prompt' | 'retry'; images?: Array<{ data: string; mimeType: string }>; draft: PromptAgentDraft; context: { presets: unknown[]; vibes: unknown[]; clientSettings?: Record<string, unknown> } },
+    input: { sessionId: string; message: string; mode?: 'prompt' | 'retry'; images?: Array<{ data: string; mimeType: string }>; draft: PromptAgentDraft; context: { clientSettings?: Record<string, unknown> } },
     onEvent: (event: PromptAgentEvent) => void,
     signal?: AbortSignal,
   ) => {
