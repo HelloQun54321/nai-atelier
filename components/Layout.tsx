@@ -61,17 +61,19 @@ const SIDEBAR_MAX_WIDTH = 320;
 const SIDEBAR_COLLAPSE_SNAP = 112;
 const clampSidebarWidth = (value: number) => Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, value));
 type MobileAgentDock = { side: 'left' | 'right'; y: number };
+type StoredMobileAgentDock = MobileAgentDock & { version?: number };
+const MOBILE_AGENT_DOCK_VERSION = 2;
 const clampMobileAgentY = (value: number, hideNav: boolean) => Math.min(hideNav ? 0.92 : 0.86, Math.max(0.1, value));
 const readMobileAgentDock = (): MobileAgentDock => {
   try {
-    const stored = JSON.parse(localStorage.getItem('nai_mobile_agent_dock') || '{}') as Partial<MobileAgentDock>;
-    if ((stored.side === 'left' || stored.side === 'right') && Number.isFinite(stored.y)) {
+    const stored = JSON.parse(localStorage.getItem('nai_mobile_agent_dock') || '{}') as Partial<StoredMobileAgentDock>;
+    if (stored.version === MOBILE_AGENT_DOCK_VERSION && (stored.side === 'left' || stored.side === 'right') && Number.isFinite(stored.y)) {
       return { side: stored.side, y: Math.min(0.92, Math.max(0.1, Number(stored.y))) };
     }
   } catch {
     // Ignore malformed local preferences and restore the default position.
   }
-  return { side: 'right', y: 0.42 };
+  return { side: 'left', y: 0.82 };
 };
 
 export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentView, activeView = currentView, isDark, themeMode, setThemeMode, safeMode, toggleSafeMode, toast, hideNav, notify, onOpenAgent }) => {
@@ -191,7 +193,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         };
         suppressMobileAgentClickUntilRef.current = Date.now() + 500;
         setMobileAgentDock(next);
-        localStorage.setItem('nai_mobile_agent_dock', JSON.stringify(next));
+        localStorage.setItem('nai_mobile_agent_dock', JSON.stringify({ ...next, version: MOBILE_AGENT_DOCK_VERSION }));
       } else if (cancelled) {
         suppressMobileAgentClickUntilRef.current = Date.now() + 500;
       }
