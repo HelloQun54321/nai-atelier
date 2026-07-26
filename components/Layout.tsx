@@ -2,7 +2,6 @@ import React, { ReactNode, useEffect, useState } from 'react';
 import {
   Archive,
   Beaker,
-  Bot,
   CheckCircle2,
   ChevronLeft,
   CircleUserRound,
@@ -186,7 +185,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       <main className={`workspace-container relative flex min-w-0 flex-1 flex-col overflow-hidden bg-white transition-colors duration-300 dark:bg-gray-900 ${hideNav ? 'pb-0' : 'pb-[calc(4.25rem+env(safe-area-inset-bottom))]'} md:pb-0`}>{children}</main>
 
       {!hideNav && <>
-        {showResources && <div className="fixed inset-0 z-[60] bg-black/35 backdrop-blur-[2px] md:hidden" onClick={() => setShowResources(false)}><div className="absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-900" onClick={event => event.stopPropagation()}><div className="mb-2 flex items-center justify-between px-2"><span className="text-sm font-bold">资源库</span><button onClick={() => setShowResources(false)} className="mobile-touch flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800" aria-label="关闭资源库菜单"><X className="h-5 w-5" /></button></div><div className="grid grid-cols-2 gap-2">{resourceItems.map(item => { const ResourceIcon = item.icon; return <button key={item.id} onClick={() => navigateMobile(item.id)} className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-2xl ${activeView === item.id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><ResourceIcon className="h-6 w-6" strokeWidth={1.8} /><span className="text-xs font-medium">{item.label}</span></button>; })}</div><button type="button" onClick={() => { setShowResources(false); onOpenAgent(); }} className="mobile-touch mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 text-sm font-bold text-white"><Bot className="h-5 w-5" />打开项目 Agent</button></div></div>}
+        {showResources && <div className="fixed inset-0 z-[60] bg-black/35 backdrop-blur-[2px] md:hidden" onClick={() => setShowResources(false)}><div className="absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-900" onClick={event => event.stopPropagation()}><div className="mb-2 flex items-center justify-between px-2"><span className="text-sm font-bold">资源库</span><button onClick={() => setShowResources(false)} className="mobile-touch flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800" aria-label="关闭资源库菜单"><X className="h-5 w-5" /></button></div><div className="grid grid-cols-2 gap-2">{resourceItems.map(item => { const ResourceIcon = item.icon; return <button key={item.id} onClick={() => navigateMobile(item.id)} className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-2xl ${activeView === item.id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><ResourceIcon className="h-6 w-6" strokeWidth={1.8} /><span className="text-xs font-medium">{item.label}</span></button>; })}</div></div></div>}
         <div className="fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] items-start border-t border-gray-200 bg-white/95 px-1 pt-1.5 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 md:hidden">
           <MobileNavButton label="画师串" active={activeView === 'list'} icon={icons.list} onClick={() => navigateMobile('list')} />
           <MobileNavButton label="资源库" active={resourceActive || showResources} icon={icons.resources} onClick={() => setShowResources(value => !value)} />
@@ -196,7 +195,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         </div>
       </>}
 
-      <GlobalSettings open={showSettings} onClose={() => setShowSettings(false)} notify={notify} isDark={isDark} themeMode={themeMode} setThemeMode={setThemeMode} safeMode={safeMode} toggleSafeMode={toggleSafeMode} />
+      <GlobalSettings open={showSettings} onClose={() => setShowSettings(false)} notify={notify} isDark={isDark} themeMode={themeMode} setThemeMode={setThemeMode} safeMode={safeMode} toggleSafeMode={toggleSafeMode} onOpenAgent={onOpenAgent} />
     </div>
   );
 };

@@ -1293,7 +1293,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <button
                             type="button"
                             onClick={() => setShowPromptAgent(true)}
-                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-600 p-0 text-white shadow-md shadow-indigo-500/20 transition hover:bg-indigo-500"
+                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
                             title="AI 生图 Agent"
                             aria-label="打开 AI 生图 Agent"
                         >
@@ -1304,7 +1304,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <button
                             type="button"
                             onClick={() => setShowImportPreset(true)}
-                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white p-0 text-indigo-600 transition-colors hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
                             title="引用预设"
                             aria-label="引用预设"
                         >
@@ -1315,7 +1315,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     {((!isOwner && !isGuest) || chain.id === 'playground') && (
                         <button
                             onClick={handleFork}
-                            className={`mobile-touch flex h-11 items-center justify-center rounded-xl bg-indigo-600 p-0 text-sm font-medium text-white shadow-md shadow-indigo-500/20 hover:bg-indigo-500 ${chain.id === 'playground' ? 'w-11' : 'w-auto px-4'}`}
+                            className={`mobile-touch flex h-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-sm font-medium text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40 ${chain.id === 'playground' ? 'w-11' : 'w-auto px-4'}`}
                             title={chain.id === 'playground' ? '保存到库' : 'Fork'}
                             aria-label={chain.id === 'playground' ? '保存到库' : 'Fork'}
                         >
@@ -1328,7 +1328,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <button
                             type="button"
                             onClick={handleReset}
-                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-red-200 bg-red-50 p-0 text-red-600 transition-colors hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-400"
+                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-red-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:bg-gray-800 dark:text-red-400 dark:hover:border-red-900/60 dark:hover:bg-red-950/30"
                             title="重置实验室"
                             aria-label="重置实验室"
                         >

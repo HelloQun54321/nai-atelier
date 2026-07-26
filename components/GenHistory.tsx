@@ -658,7 +658,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                     <>
                         <div className="space-y-6">
                           {historyGroups.map(group => <section key={group.key}>
-                            <div className="sticky top-0 z-10 mb-2 flex items-center gap-2 bg-gray-50/95 py-1.5 backdrop-blur dark:bg-gray-900/95">
+                            <div className="mb-2 flex items-center gap-2 py-1.5">
                               <CalendarDays className="h-4 w-4 text-indigo-500" />
                               <h2 className="text-sm font-bold text-gray-700 dark:text-gray-200">{group.label}</h2>
                               <span className="text-xs text-gray-400">{group.items.length} 张</span>
