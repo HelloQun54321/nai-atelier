@@ -20,6 +20,8 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './MobileUI';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { ArrowLeft, Filter, Menu, RefreshCw, Search, X } from 'lucide-react';
+import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 
 interface AitagGalleryProps {
   active: boolean;
@@ -908,41 +910,21 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
 
   return (
     <div className="aitag-workspace flex-1 min-h-0 flex flex-col bg-gray-50 dark:bg-gray-900">
-      <header className="relative z-20 flex-shrink-0 border-b border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-950 md:px-5 md:py-2.5">
+      <WorkspaceToolbar className="relative z-20">
         <div className="flex gap-2 md:hidden">
           <span title={isAitagConnected ? '连接正常' : '当前使用本地缓存'} className={`mt-4 h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
-          <input value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') handleSearch(); }} placeholder="搜索 AITag 作品" className="h-11 min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
-          <MobileIconButton label="AITag 筛选" onClick={() => setShowMobileFilters(true)} className="border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-900">☰</MobileIconButton>
-          <MobileIconButton label="刷新" onClick={() => loadWorks(page, { resetScroll: true })} disabled={isLoading} className="border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-900">↻</MobileIconButton>
+          <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') handleSearch(); }} placeholder="搜索 AITag 作品" />
+          <MobileIconButton label="AITag 筛选" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"><Menu className="h-5 w-5" /></MobileIconButton>
+          <MobileIconButton label="刷新" onClick={() => loadWorks(page, { resetScroll: true })} disabled={isLoading} className="border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"><RefreshCw className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} /></MobileIconButton>
         </div>
-        <div className="hidden md:block">
-          <div className="workspace-page-heading flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-                <span
-                  title={isAitagConnected ? 'aitag.win 连接正常' : 'aitag.win 暂时不可用'}
-                  className={`w-2.5 h-2.5 rounded-full ${isAitagConnected ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]' : 'bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.14)]'}`}
-                />
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white">AITag</h1>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-              <span>第 {page} / {totalPages} 页</span>
-              <span>共 {formatCount(total)} 条</span>
-              <button
-                onClick={() => loadWorks(page, { resetScroll: true })}
-                disabled={isLoading}
-                className="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
-              >
-                刷新
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-2 hidden min-w-0 items-center gap-2 md:flex">
-          <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }} placeholder="搜索作品、作者、标题、标签、日期或模型" className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900" />
-          <input value={prompt} onChange={e => setPrompt(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }} placeholder="搜索 Prompt" className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900" />
-          <button type="button" onClick={() => setShowDesktopFilters(value => !value)} className={`h-10 flex-none rounded-lg border px-4 text-sm font-medium transition-colors ${showDesktopFilters ? 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-gray-300 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}>筛选</button>
-          <button onClick={handleSearch} disabled={isLoading} className="h-10 flex-none rounded-lg bg-indigo-600 px-5 text-sm font-bold text-white hover:bg-indigo-500 disabled:opacity-50">搜索</button>
+        <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
+          <span title={isAitagConnected ? 'aitag.win 连接正常' : 'aitag.win 暂时不可用'} className={`h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]' : 'bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.14)]'}`} />
+          <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') handleSearch(); }} placeholder="作品、作者、标题或标签" containerClassName="w-[23rem] flex-none" />
+          <ToolbarSearch value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') handleSearch(); }} placeholder="Prompt" containerClassName="w-[18rem] flex-none" />
+          <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} className={showDesktopFilters ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600' : ''}><Filter className="h-4 w-4" />筛选</ToolbarButton>
+          <ToolbarButton tone="primary" onClick={handleSearch} disabled={isLoading}><Search className="h-4 w-4" />搜索</ToolbarButton>
+          <div className="ml-auto hidden items-center gap-2 text-xs text-gray-500 xl:flex"><span>{page} / {totalPages} 页</span><span>{formatCount(total)} 条</span></div>
+          <IconButton label="刷新" onClick={() => loadWorks(page, { resetScroll: true })} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
         </div>
         {showDesktopFilters && <div className="absolute right-5 top-full z-50 hidden w-[520px] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-800 md:block">
           <div className="mb-3 flex items-center justify-between"><h2 className="font-bold text-gray-900 dark:text-white">AITag 筛选</h2><button type="button" onClick={() => setShowDesktopFilters(false)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300">×</button></div>
@@ -954,7 +936,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           </div>
           <button type="button" onClick={() => { handleSearch(); setShowDesktopFilters(false); }} className="mt-4 h-10 w-full rounded-lg bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-500">应用筛选</button>
         </div>}
-      </header>
+      </WorkspaceToolbar>
       <MobileBottomSheet open={showMobileFilters} title="AITag 筛选" onClose={() => setShowMobileFilters(false)} footer={<button onClick={() => { handleSearch(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl bg-indigo-600 font-bold text-white">应用筛选</button>}>
         <div className="space-y-4">
           <label className="block text-sm font-bold dark:text-white">Prompt 搜索<input value={prompt} onChange={event => setPrompt(event.target.value)} placeholder="搜索 NAI/SD 元数据 Prompt" className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-700 dark:bg-gray-800" /></label>
@@ -968,7 +950,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         </div>
       </MobileBottomSheet>
 
-      <div className="aitag-split relative flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_460px]">
+      <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selectedWork ? 'xl:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main
           ref={mainScrollRef}
           onScroll={cacheScrollPositions}
@@ -993,7 +975,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
               <div className="text-sm">{cacheNeedsMoreData ? '本地没有这一页，且当前无法联网获取' : '没有匹配结果'}</div>
             </div>
           ) : (
-            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-aitag-grid md:grid md:grid-cols-4 xl:grid-cols-5 3xl:grid-cols-6 md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
+            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-aitag-grid md:grid md:grid-cols-4 ${selectedWork ? 'xl:grid-cols-4 3xl:grid-cols-5' : 'xl:grid-cols-6 3xl:grid-cols-7'} md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
               {visibleItems.map(work => {
                 const type = getAitagType(work);
                 const isSelected = selectedId === work.id;
@@ -1150,10 +1132,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           </div>
         </main>
 
-        <aside className={`aitag-detail-panel ${selectedWork ? 'aitag-detail-panel--open flex' : 'aitag-detail-panel--closed hidden'} fixed inset-0 z-[1050] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:static md:z-auto md:flex md:border-t xl:border-l xl:border-t-0`}>
+        <aside className={`aitag-detail-panel ${selectedWork ? 'aitag-detail-panel--open flex md:flex' : 'aitag-detail-panel--closed hidden md:hidden'} fixed inset-0 z-[1050] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:static md:z-auto md:border-t xl:border-l xl:border-t-0`}>
           <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
             <div className="flex min-w-0 items-center gap-1">
-              <MobileIconButton label="返回作品列表" onClick={closeMobileDetail} className="aitag-detail-back md:hidden">←</MobileIconButton>
+              <MobileIconButton label="返回作品列表" onClick={closeMobileDetail} className="aitag-detail-back md:hidden"><ArrowLeft className="h-5 w-5" /></MobileIconButton>
               <div className="min-w-0">
               <div className="font-bold text-gray-900 dark:text-white truncate max-w-[300px]">
                 {selectedWork?.title || '作品详情'}
@@ -1164,13 +1146,14 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
               </div>
             </div>
             {selectedWork && (
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
                 <a href={getAitagUrl(selectedWork)} target="_blank" rel="noreferrer" className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 text-xs hover:bg-gray-200 dark:hover:bg-gray-700">
                   aitag
                 </a>
                 <a href={getPixivUrl(selectedWork)} target="_blank" rel="noreferrer" className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 text-xs hover:bg-gray-200 dark:hover:bg-gray-700">
                   Pixiv
                 </a>
+                <button type="button" onClick={() => setSelectedId(null)} className="hidden h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200 md:flex" aria-label="关闭作品详情" title="关闭作品详情"><X className="h-4 w-4" /></button>
               </div>
             )}
           </div>

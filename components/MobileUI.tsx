@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useRef } from 'react';
+import { ArrowLeft, X } from 'lucide-react';
 
 export const MobileIconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
@@ -95,7 +96,7 @@ export const MobileBottomSheet: React.FC<{
         <div className="mx-auto mt-2 h-1.5 w-12 rounded-full bg-gray-300 dark:bg-gray-600" />
         <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
           <h2 className="font-bold text-gray-900 dark:text-white">{title}</h2>
-          <MobileIconButton label="关闭" onClick={requestClose} className="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">×</MobileIconButton>
+          <MobileIconButton label="关闭" onClick={requestClose} className="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"><X className="h-5 w-5" /></MobileIconButton>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
         {footer && <footer className="mobile-safe-bottom border-t border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">{footer}</footer>}
@@ -120,7 +121,7 @@ export const MobileDetailView: React.FC<{
     <section className="mobile-detail md:hidden" role="dialog" aria-modal="true" aria-label={title}>
       <header className="mobile-detail-header">
         <MobileIconButton label="返回" onClick={requestClose} className="text-gray-600 dark:text-gray-300">
-          <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m15 19-7-7 7-7" /></svg>
+          <ArrowLeft className="h-6 w-6" />
         </MobileIconButton>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-base font-bold text-gray-900 dark:text-white">{title}</h2>

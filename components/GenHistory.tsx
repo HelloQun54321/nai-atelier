@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { LocalHistoryDateRange, localHistory } from '../services/localHistory';
 import { db } from '../services/dbService';
 import { LocalGenItem, User } from '../types';
@@ -11,6 +11,8 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { AlertTriangle, CalendarDays, ChevronDown, Clock3, LoaderCircle, RefreshCw, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { IconButton, ToolbarButton, WorkspaceToolbar } from './DesignSystem';
 
 interface GenHistoryProps {
     currentUser: User;
@@ -22,6 +24,15 @@ interface GenHistoryProps {
 const toDateInputValue = (date: Date) => {
     const pad = (value: number) => String(value).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
+const formatHistoryDay = (key: string) => {
+    const today = toDateInputValue(new Date());
+    const yesterday = toDateInputValue(new Date(Date.now() - 86400000));
+    if (key === today) return '今天';
+    if (key === yesterday) return '昨天';
+    const date = new Date(`${key}T00:00:00`);
+    return date.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' });
 };
 
 export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onNavigateToPlayground, onRefreshInspiration }) => {
@@ -542,33 +553,31 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
         await goToPage(currentPageRef.current, true);
     };
 
+    const historyGroups = useMemo(() => {
+        const groups = new Map<string, LocalGenItem[]>();
+        items.forEach(item => {
+            const key = toDateInputValue(new Date(item.createdAt));
+            const group = groups.get(key) || [];
+            group.push(item);
+            groups.set(key, group);
+        });
+        return Array.from(groups, ([key, groupItems]) => ({ key, label: formatHistoryDay(key), items: groupItems }));
+    }, [items]);
+
     return (
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
-            <header className="z-10 flex-shrink-0 border-b border-gray-200 bg-white p-2 shadow-md dark:border-gray-700 dark:bg-gray-800 md:px-5 md:py-2.5">
-                <div className="flex items-center justify-between">
-                    <div className="hidden min-w-0 items-center gap-2 md:flex">
-                        <h1 className="whitespace-nowrap text-xl font-bold text-gray-900 dark:text-white">本地生图历史</h1>
-                        {migrationProgress && (
-                            <span className="truncate text-xs text-indigo-600 dark:text-indigo-400">
-                                {migrationProgress.total > 0
-                                    ? `正在迁移浏览器历史 ${migrationProgress.current}/${migrationProgress.total}，请勿关闭页面…`
-                                    : '正在检查浏览器历史…'}
-                            </span>
-                        )}
-                    </div>
+            <WorkspaceToolbar>
+                    {migrationProgress && <span className="hidden truncate text-xs text-indigo-600 dark:text-indigo-400 md:block">{migrationProgress.total > 0 ? `正在迁移浏览器历史 ${migrationProgress.current}/${migrationProgress.total}，请勿关闭页面…` : '正在检查浏览器历史…'}</span>}
                     <div className="ml-auto flex items-center gap-2">
-                        <button onClick={() => setShowDateFilter(true)} className="mobile-touch rounded-lg bg-gray-100 px-3 text-xs font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-300 md:hidden">筛选</button>
-                        <button onClick={() => setShowCleanMenu(true)} className="mobile-touch rounded-lg bg-gray-100 px-3 text-xs font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-300 md:hidden">管理</button>
+                        <ToolbarButton onClick={() => setShowDateFilter(true)}><CalendarDays className="h-4 w-4" />筛选日期</ToolbarButton>
+                        <button onClick={() => setShowCleanMenu(true)} className="mobile-touch rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden"><SlidersHorizontal className="h-4 w-4" /></button>
                         <div className="relative hidden md:block">
                             <button 
                                 onClick={() => setShowCleanMenu(!showCleanMenu)} 
                                 disabled={migrationProgress !== null}
-                                className="px-3 py-1 md:px-4 md:py-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded text-xs md:text-sm hover:bg-red-200 dark:hover:bg-red-900/50 flex items-center gap-1"
+                                className="flex h-10 items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-semibold text-red-600 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"
                             >
-                                清理
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                </svg>
+                                <Trash2 className="h-4 w-4" />管理<ChevronDown className="h-3.5 w-3.5" />
                             </button>
                             {showCleanMenu && (
                                 <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50">
@@ -576,36 +585,27 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                         onClick={handleClearAll} 
                                         className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 rounded-t-lg"
                                     >
-                                        🗑️ 清空全部
+                                        <Trash2 className="h-4 w-4" />清空全部
                                     </button>
                                     <button 
                                         onClick={() => handleCleanMenuClick('days')} 
                                         className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
                                     >
-                                        ⏰ 删除 X 天前的...
+                                        <Clock3 className="h-4 w-4" />删除 X 天前的...
                                     </button>
                                     <button 
                                         onClick={() => handleCleanMenuClick('count')} 
                                         className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 rounded-b-lg"
                                     >
-                                        📊 只保留最近 N 张...
+                                        <SlidersHorizontal className="h-4 w-4" />只保留最近 N 张...
                                     </button>
                                 </div>
                             )}
                         </div>
-                        <button
-                            onClick={handleRefresh}
-                            disabled={isLoading || migrationProgress !== null}
-                            className="mobile-touch flex items-center justify-center rounded-lg bg-gray-100 px-3 text-gray-600 hover:bg-gray-200 disabled:cursor-wait disabled:opacity-50 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 md:px-4 md:py-2 md:text-sm"
-                            aria-label="刷新历史"
-                        >
-                            <svg className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg><span className="hidden md:ml-1 md:inline">{isLoading ? '刷新中…' : '刷新'}</span>
-                        </button>
-                        <div className="hidden text-sm text-gray-500 dark:text-gray-400 md:flex">共 {totalCount} 张</div>
+                        <IconButton label="刷新历史" onClick={handleRefresh} disabled={isLoading || migrationProgress !== null}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
+                        <div className="hidden rounded-full bg-gray-100 px-3 py-1.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400 md:flex">{totalCount} 张</div>
                     </div>
-                </div>
-
-            </header>
+            </WorkspaceToolbar>
 
             <MobileBottomSheet open={showDateFilter} title="筛选历史日期" onClose={() => setShowDateFilter(false)}>
                 <div className="space-y-4">
@@ -645,19 +645,26 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
             <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-20">
                 {isLoading ? (
                     <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                        <div className="text-4xl mb-2 animate-spin">⏳</div>
+                        <RefreshCw className="mb-3 h-8 w-8 animate-spin" />
                         <p>加载中...</p>
                     </div>
                 ) : items.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                        <div className="text-4xl mb-2">🕰️</div>
+                        <Clock3 className="mb-3 h-10 w-10" />
                         <p>暂无生成记录</p>
                         <p className="text-sm mt-2">在 Chain 编辑器中生成图片会自动保存到这里</p>
                     </div>
                 ) : (
                     <>
-                        <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-history-grid md:grid md:grid-cols-4 xl:grid-cols-5 md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
-                            {items.map(item => (
+                        <div className="space-y-6">
+                          {historyGroups.map(group => <section key={group.key}>
+                            <div className="sticky top-0 z-10 mb-2 flex items-center gap-2 bg-gray-50/95 py-1.5 backdrop-blur dark:bg-gray-900/95">
+                              <CalendarDays className="h-4 w-4 text-indigo-500" />
+                              <h2 className="text-sm font-bold text-gray-700 dark:text-gray-200">{group.label}</h2>
+                              <span className="text-xs text-gray-400">{group.items.length} 张</span>
+                            </div>
+                            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-history-grid md:grid md:grid-cols-4 xl:grid-cols-5 md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
+                            {group.items.map(item => (
                                 <div
                                     key={item.id}
                                     className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border hover:border-indigo-500 transition-colors ${selectedIds.has(item.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
@@ -683,7 +690,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                       {selectionMode && <div className="absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white shadow">{selectedIds.has(item.id) ? '✓' : ''}</div>}
                                       <div className="absolute top-2 right-2 hidden md:block opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button onClick={(e) => handleDelete(item.id, e)} className="p-1.5 bg-red-500 text-white rounded-full shadow hover:bg-red-600">
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                            <Trash2 className="h-4 w-4" />
                                         </button>
                                       </div>
                                       <div className="absolute bottom-0 left-0 right-0 hidden p-2 bg-gradient-to-t from-black/80 to-transparent text-white text-[10px] md:block md:opacity-0 group-hover:opacity-100 transition-opacity truncate">
@@ -693,6 +700,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                     <div className="truncate px-2 py-2 text-[11px] text-gray-600 dark:text-gray-300 md:hidden">{new Date(item.createdAt).toLocaleString()}</div>
                                 </div>
                             ))}
+                            </div>
+                          </section>)}
                         </div>
                         {selectionMode && <div className="mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 flex items-center gap-2 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><button onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }} className="mobile-touch flex-1 rounded-xl bg-gray-100 dark:bg-gray-800">取消</button><div className="px-2 text-sm font-bold dark:text-white">已选 {selectedIds.size}</div><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch flex-1 rounded-xl bg-red-600 font-bold text-white disabled:opacity-40">删除</button></div>}
                         
@@ -704,7 +713,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                         </div>}
                         <div className="flex flex-col items-center justify-center py-6">
                             {isLoading ? (
-                                <div className="text-gray-500 dark:text-gray-400">⏳ 加载中...</div>
+                                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />加载中...</div>
                             ) : (
                                 <div className="text-sm text-gray-500 dark:text-gray-400 text-center">
                                     <p>当前显示第 {getDisplayedRange().start} - {getDisplayedRange().end} 张</p>
@@ -748,7 +757,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                 <button
                                     onClick={handleImportToEditor}
                                     disabled={isPreparingImport}
-                                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-lg text-sm font-bold transition-all shadow-lg disabled:opacity-60 disabled:cursor-wait"
+                                className="w-full flex items-center justify-center gap-2 rounded-lg bg-indigo-600 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:cursor-wait disabled:opacity-60"
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -795,7 +804,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
             {showCleanModal && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-sm w-full shadow-2xl">
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">⚠️ 确认清理</h3>
+                        <h3 className="mb-4 flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white"><AlertTriangle className="h-5 w-5 text-amber-500" />确认清理</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                             {cleanMode === 'days' 
                                 ? `将删除 ${cleanDays} 天前的 ${cleanPreviewCount} 张图片`

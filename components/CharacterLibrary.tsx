@@ -15,6 +15,8 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { Dice5, Heart, Menu, Plus, Settings2, Tag, UserRound } from 'lucide-react';
+import { ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 
 const CATALOG_MARKER = '__character_catalog__';
 const getDanbooruPostsUrl = (tagName: string) =>
@@ -355,17 +357,13 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
-       <header className="flex flex-none flex-col gap-2 border-b border-gray-200 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 md:px-5 md:py-2.5">
+       <WorkspaceToolbar className="flex-col !items-stretch">
          <div className="flex gap-2 md:hidden">
-           <div className="relative min-w-0 flex-1">
-             <svg className="absolute left-3 top-3 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" /></svg>
-             <input value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品或 Tag" className="h-11 w-full rounded-xl border border-gray-300 bg-white pl-10 pr-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
-           </div>
-           <MobileIconButton label="筛选和抽卡设置" onClick={() => setShowMobileFilters(true)} className="border border-gray-300 bg-white text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300">☰</MobileIconButton>
-           <MobileIconButton label={gachaCards ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} className="bg-purple-600 text-xl text-white">🎲</MobileIconButton>
+           <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品或 Tag" />
+           <MobileIconButton label="筛选和抽卡设置" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><Menu className="h-5 w-5" /></MobileIconButton>
+           <MobileIconButton label={gachaCards ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} className="bg-indigo-600 text-white"><Dice5 className="h-5 w-5" /></MobileIconButton>
          </div>
          <div className="workspace-page-heading hidden min-w-0 items-center gap-2 md:flex">
-           <h1 className="mr-1 flex-none text-xl font-bold text-gray-900 dark:text-white">角色库</h1>
            <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
              {([
                ['all', '全部'], ['catalog', '角色 Tag'], ['custom', `我的自定义 ${customChains.length}`], ['favorites', '收藏'],
@@ -374,10 +372,10 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              ))}
            </div>
            <div className="relative ml-auto flex flex-none items-center justify-end gap-2">
-             <button onClick={() => setShowCreate(true)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-500">＋ 自定义角色</button>
-             <button onClick={() => void drawGacha()} disabled={isGachaLoading} className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-bold text-white hover:bg-purple-500 disabled:opacity-50">🎲 {gachaCards ? '再抽一批' : '随机抽卡'}</button>
+             <ToolbarButton tone="primary" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4" />自定义角色</ToolbarButton>
+             <ToolbarButton onClick={() => void drawGacha()} disabled={isGachaLoading}><Dice5 className="h-4 w-4" />{gachaCards ? '再抽一批' : '随机抽卡'}</ToolbarButton>
              {gachaCards && <button onClick={() => setGachaCards(null)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:text-gray-200">返回目录</button>}
-             <button type="button" aria-label="抽卡设置" title="抽卡设置" onClick={() => setShowDesktopGachaSettings(value => !value)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-500 hover:text-purple-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300">⚙</button>
+             <button type="button" aria-label="抽卡设置" title="抽卡设置" onClick={() => setShowDesktopGachaSettings(value => !value)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><Settings2 className="h-4 w-4" /></button>
              {showDesktopGachaSettings && <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-xl border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-800">
                <div className="mb-3 text-sm font-bold text-gray-800 dark:text-white">随机抽卡设置</div>
                <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">抽卡范围<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option></select></label>
@@ -387,10 +385,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
          </div>
 
          <div className="workspace-toolbar hidden items-center gap-2 md:flex">
-           <div className="relative min-w-[260px] flex-1">
-            <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" /></svg>
-            <input value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品、变体或英文 Tag…" className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
-          </div>
+           <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品、变体或英文 Tag…" containerClassName="w-[26rem] flex-none" />
           <select value={sort} disabled={Boolean(gachaCards)} onChange={event => setSort(event.target.value as CharacterDictionarySort)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white">
             <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">{searchTerm.trim() ? '相关性优先 · 名称 A → Z' : '名称 A → Z'}</option><option value="name-desc">{searchTerm.trim() ? '相关性优先 · 名称 Z → A' : '名称 Z → A'}</option>
           </select>
@@ -400,7 +395,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
            <span className="text-xs text-gray-400">列数</span>
            <input type="range" min="3" max="10" value={gridColumns} onChange={event => { const value = Number(event.target.value); setGridColumns(value); localStorage.setItem('nai_character_grid_columns', String(value)); }} className="w-24 flex-none" />
          </div>
-       </header>
+       </WorkspaceToolbar>
 
        <MobileBottomSheet open={showMobileFilters} title="角色筛选与抽卡" onClose={() => setShowMobileFilters(false)}>
          <div className="space-y-5">
@@ -431,14 +426,14 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                 <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': '2 / 3' } as React.CSSProperties}>
                   {card.previewImage ? <button className="h-full w-full" onClick={() => setLightbox(card)}><LazyImage src={card.previewImage} alt={card.name} /></button> : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
-                      <span className="text-3xl">{card.kind === 'catalog' ? '🏷️' : '🧩'}</span>
+                      {card.kind === 'catalog' ? <Tag className="h-8 w-8" /> : <UserRound className="h-8 w-8" />}
                       <span className="mt-2 text-[11px]">尚未生成本地预览</span>
                       <button disabled={!apiKey || generating} onClick={() => void generatePreview(card)} className="mt-3 rounded bg-indigo-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40">{generating ? '生成中…' : '生成预览'}</button>
                     </div>
                   )}
-                  <span className={`absolute left-2 top-2 rounded-full px-2 py-1 text-[10px] font-bold text-white shadow ${card.kind === 'catalog' ? 'bg-blue-600' : 'bg-purple-600'}`}>{card.kind === 'catalog' ? '角色 Tag' : '自定义还原'}</span>
-                   <button onClick={() => toggleFavorite(card)} className={`mobile-touch absolute right-1 top-1 rounded-full bg-black/55 p-1.5 ${favorite ? 'text-yellow-400' : 'text-white'}`} aria-label="收藏">
-                    <svg className="h-4 w-4" fill={favorite ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z" /></svg>
+                  <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[10px] font-bold text-white shadow backdrop-blur">{card.kind === 'catalog' ? '角色 Tag' : '自定义还原'}</span>
+                   <button onClick={() => toggleFavorite(card)} className={`mobile-touch absolute right-1 top-1 rounded-full bg-black/55 p-1.5 ${favorite ? 'text-rose-400' : 'text-white'}`} aria-label="收藏">
+                    <Heart className={`h-4 w-4 ${favorite ? 'fill-current' : ''}`} />
                   </button>
                   {card.previewImage && <button disabled={generating} onClick={() => void generatePreview(card)} className="absolute bottom-2 right-2 rounded bg-black/60 px-2 py-1 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:opacity-40">{generating ? '生成中…' : '重新生成'}</button>}
                 </div>
@@ -448,16 +443,12 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                     <div className="mt-0.5 truncate font-mono text-[10px] text-gray-400" title={card.tagName}>{card.tagName}</div>
                     <div className="mt-1 flex items-center justify-between gap-1 text-[10px]">
                       <span className="text-orange-500">作品 {(card.postCount || 0).toLocaleString('zh-CN')}</span>
-                      {card.matchReason && <span className="truncate rounded bg-purple-50 px-1.5 py-0.5 text-purple-600 dark:bg-purple-950/50 dark:text-purple-300" title={`匹配：${card.matchReason}`}>匹配：{card.matchReason}</span>}
+                      {card.matchReason && <span className="truncate rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 dark:bg-gray-700 dark:text-gray-300" title={`匹配：${card.matchReason}`}>匹配：{card.matchReason}</span>}
                     </div>
                   </> : <div className="mt-1 truncate text-[10px] text-gray-400">{card.chain?.description || '手工组合外貌与服装提示词'}</div>}
                   <div className="mt-3 grid grid-cols-2 gap-1.5 text-[11px]">
                     <button onClick={() => void copyCharacter(card)} className="rounded bg-gray-100 px-2 py-1.5 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">复制</button>
                     <button onClick={() => sendToPlayground(card)} className="rounded bg-indigo-50 px-2 py-1.5 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300">实验室</button>
-                    {card.kind === 'custom' ? <>
-                      <button onClick={() => onSelect(card.chain!.id)} className="hidden rounded bg-purple-50 px-2 py-1.5 text-purple-600 hover:bg-purple-100 dark:bg-purple-950/50 dark:text-purple-300 md:block">编辑还原</button>
-                      <button onClick={() => void deleteCustom(card)} className="hidden rounded bg-red-50 px-2 py-1.5 text-red-600 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400 md:block">删除</button>
-                    </> : <a href={getDanbooruPostsUrl(card.tagName || '')} target="_blank" rel="noreferrer" className="col-span-2 rounded bg-blue-50 px-2 py-1.5 text-center text-blue-600 hover:bg-blue-100 dark:bg-blue-950/50 dark:text-blue-300">Danbooru</a>}
                   </div>
                 </div>
               </article>

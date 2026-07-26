@@ -11,6 +11,8 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { Bot, ClipboardList, Clock3, Dice5, Download, Grid3X3, Heart, List, LoaderCircle, Menu, RefreshCw, Settings2 } from 'lucide-react';
+import { ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 
 interface CartItem {
     name: string;
@@ -925,15 +927,15 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
 
             {/* --- Controls Header --- */}
-            <div className="flex flex-shrink-0 flex-col items-stretch gap-2 border-b border-gray-200 bg-white p-2 shadow-md dark:border-gray-700 dark:bg-gray-800 md:px-5 md:py-2.5">
+            <WorkspaceToolbar className="flex-col !items-stretch">
 
                 <div className="flex gap-2 md:hidden">
                     <div className="relative min-w-0 flex-1">
-                        <input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="搜索全部画师 Tag（支持中文）" className="h-11 w-full rounded-xl border border-gray-300 bg-gray-50 px-4 pr-9 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+                        <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="搜索画师 Tag" />
                         {isCatalogLoading && <span className="absolute right-3 top-3.5 h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
                     </div>
-                    <MobileIconButton label="筛选和工具" onClick={() => setShowMobileTools(true)} className="border border-gray-300 bg-white text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300">☰</MobileIconButton>
-                    <MobileIconButton label={gachaArtists ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} disabled={isGachaLoading} className="bg-fuchsia-600 text-xl text-white">🎲</MobileIconButton>
+                    <MobileIconButton label="筛选和工具" onClick={() => setShowMobileTools(true)} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><Menu className="h-5 w-5" /></MobileIconButton>
+                    <MobileIconButton label={gachaArtists ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} disabled={isGachaLoading} className="bg-indigo-600 text-white"><Dice5 className="h-5 w-5" /></MobileIconButton>
                 </div>
                 {(isProcessing || taskQueue.length > 0) && <button onClick={() => setShowLogs(true)} className="mobile-touch flex items-center justify-between rounded-xl bg-indigo-50 px-3 text-xs font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 md:hidden"><span>画师预览任务</span><span>等待 {taskQueue.length}{failedTasks.length ? ` · 失败 ${failedTasks.length}` : ''}</span></button>}
 
@@ -945,7 +947,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                             className={`p-2 rounded-lg bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex-shrink-0`}
                             title="刷新画师列表"
                         >
-                            <svg className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                            <RefreshCw className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} />
                         </button>
                     )}
 
@@ -956,14 +958,14 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                             className={`p-1.5 rounded transition-all ${layoutMode === 'grid' ? 'bg-white dark:bg-gray-700 shadow text-indigo-600 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
                             title="网格视图"
                         >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                            <Grid3X3 className="h-5 w-5" />
                         </button>
                         <button
                             onClick={() => setLayoutMode('list')}
                             className={`p-1.5 rounded transition-all ${layoutMode === 'list' ? 'bg-white dark:bg-gray-700 shadow text-indigo-600 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
                             title="展开视图 (实装一览)"
                         >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+                            <List className="h-5 w-5" />
                         </button>
                     </div>
 
@@ -994,11 +996,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     </div>
 
                     {/* Search */}
-                    <div className="flex-1 relative">
-                        <input
+                    <div className="relative w-[26rem] flex-none">
+                        <ToolbarSearch
                             type="text"
                             placeholder="搜索全部画师 Tag（支持中文）..."
-                            className="w-full rounded-full border border-gray-300 bg-gray-100 py-2 pl-4 pr-10 text-sm text-gray-900 transition-colors focus:border-indigo-500 focus:outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                            className="pr-12"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />
@@ -1014,11 +1016,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                         {' · '}完整目录 {artistCatalogCount.toLocaleString('zh-CN')}
                         {' · '}本地预览 {artistsData?.length || 0}
                     </div>
-                    <div className="flex items-center gap-1 rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-1 dark:border-fuchsia-900/60 dark:bg-fuchsia-950/30">
+                    <div className="flex items-center gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-900">
                         <select
                             value={gachaMode}
                             onChange={event => setGachaMode(event.target.value as ArtistGachaMode)}
-                            className="rounded-md bg-transparent px-1.5 py-1 text-xs text-fuchsia-700 outline-none dark:text-fuchsia-300"
+                            className="rounded-md bg-transparent px-1.5 py-1 text-xs text-gray-600 outline-none dark:text-gray-300"
                             aria-label="抽卡模式"
                             title="选择画师抽卡模式"
                         >
@@ -1029,7 +1031,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                         <select
                             value={gachaCount}
                             onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)}
-                            className="rounded-md bg-transparent px-1 py-1 text-xs text-fuchsia-700 outline-none dark:text-fuchsia-300"
+                            className="rounded-md bg-transparent px-1 py-1 text-xs text-gray-600 outline-none dark:text-gray-300"
                             aria-label="抽卡数量"
                             title="选择每批抽取数量"
                         >
@@ -1041,10 +1043,10 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                             type="button"
                             onClick={() => void drawGacha()}
                             disabled={isGachaLoading || artistCatalogCount <= 0}
-                            className="flex items-center gap-1 rounded-md bg-fuchsia-600 px-2.5 py-1 text-xs font-bold text-white shadow-sm transition-colors hover:bg-fuchsia-500 disabled:cursor-wait disabled:opacity-60"
+                            className="flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:cursor-wait disabled:opacity-60"
                             title="从完整画师目录随机抽取，最近五批尽量不重复"
                         >
-                            <span className={isGachaLoading ? 'animate-spin' : ''}>{isGachaLoading ? '◌' : '🎲'}</span>
+                            {isGachaLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Dice5 className="h-3.5 w-3.5" />}
                             {gachaArtists ? '再抽一批' : '随机抽卡'}
                         </button>
                         {gachaArtists && (
@@ -1095,7 +1097,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                             className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex-shrink-0"
                             title="配置分组"
                         >
-                            ⚙️
+                            <Settings2 className="h-4 w-4" />
                         </button>
 
                         {layoutMode === 'grid' && viewMode === 'benchmark' && (
@@ -1124,7 +1126,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                     ? "一键补全当前列表中所有画师的所有缺失槽位"
                                     : `一键补全当前列表中缺失 "Slot ${activeSlot + 1}: ${config.slots[activeSlot]?.label}" 的画师`
                                 }
-                                className="h-8 px-3 rounded-full border border-purple-300 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/50 font-bold flex items-center gap-1 transition-colors text-sm"
+                            className="flex h-8 items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-sm font-bold text-indigo-700 transition-colors hover:bg-indigo-100 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                 补全
@@ -1162,17 +1164,17 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                         <button
                             onClick={() => setShowImport(true)}
                             title="批量导入"
-                            className="h-8 px-3 rounded-full border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 font-bold flex items-center gap-2 transition-colors text-sm"
+                            className="flex h-8 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-sm font-bold text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
                         >
-                            📥
+                            <Download className="h-4 w-4" />
                         </button>
 
                         <button
                             onClick={() => setShowHistory(!showHistory)}
                             title="历史记录"
-                            className="h-8 px-3 rounded-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors text-sm"
+                            className="flex h-8 items-center rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
                         >
-                            🕒
+                            <Clock3 className="h-4 w-4" />
                         </button>
 
                         <button
@@ -1183,11 +1185,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                 : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-400'
                                 }`}
                         >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path></svg>
+                            <Heart className={`h-4 w-4 ${showFavOnly ? 'fill-current' : ''}`} />
                         </button>
                     </div>
                 </div>
-            </div>
+            </WorkspaceToolbar>
 
             {/* ... rest of the component (sidebar, main content, lightbox, logs, modals) remains mostly the same, 
           only ensure variable names match and the file is complete ... */}
@@ -1257,7 +1259,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                             <LazyImage src={displayImg} alt={artist.name} />
                                         ) : (
                                             <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
-                                                <span className="text-2xl mb-1">🤖</span>
+                                                <Bot className="mb-1 h-6 w-6" />
                                                 <span className="text-[10px]">尚未生成本地预览</span>
                                                 {apiKey && (
                                                     <button
@@ -1526,7 +1528,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
             {/* History, Logs, Import Modal rendering kept ... */}
             <div className={`fixed top-0 right-0 w-80 h-full bg-white dark:bg-gray-800 shadow-2xl z-40 transform transition-transform duration-300 border-l border-gray-200 dark:border-gray-700 flex flex-col ${showHistory ? 'translate-x-0' : 'translate-x-full'}`}>
                 <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
-                    <h3 className="font-bold text-gray-800 dark:text-white">📋 复制历史</h3>
+                    <h3 className="flex items-center gap-2 font-bold text-gray-800 dark:text-white"><ClipboardList className="h-4 w-4" />复制历史</h3>
                     <button onClick={() => setShowHistory(false)} className="text-gray-500 hover:text-gray-800 dark:hover:text-white">×</button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-2">
@@ -1581,7 +1583,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
             {showImport && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-700 p-6">
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">📥 批量导入画师</h3>
+                        <h3 className="mb-2 flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white"><Download className="h-5 w-5" />批量导入画师</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">粘贴你的画师串，支持 artist: 前缀和 {'{}'} [] 权重符号</p>
                         <textarea
                             className="w-full h-32 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg p-3 text-sm text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none resize-none"

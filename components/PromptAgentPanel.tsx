@@ -7,6 +7,7 @@ import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
 import { getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { clearMobileThumbnailCache, getMobileCacheStats, setMobileCacheLimitMb } from '../services/mobileImageCache';
+import { ArrowDown, ArrowLeft, Bot, Check, ChevronDown, Clipboard, Copy, Expand, ImagePlus, List, Maximize2, Minimize2, Plus, RotateCcw, Send, Square, Trash2, X } from 'lucide-react';
 
 interface PromptAgentPanelProps {
   open: boolean;
@@ -49,21 +50,51 @@ const renderInlineMarkdown = (value: string, keyPrefix: string): React.ReactNode
   });
 };
 
+const AgentContentCard: React.FC<{ title: string; content: string; code?: boolean }> = ({ title, content, code }) => {
+  const [expanded, setExpanded] = useState(content.length < 360);
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    await navigator.clipboard.writeText(content);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
+  };
+  return <section className="my-2 overflow-hidden rounded-xl border border-gray-200 bg-gray-50/80 dark:border-gray-700 dark:bg-gray-950/70">
+    <header className="flex min-h-10 items-center gap-2 border-b border-gray-200 px-3 dark:border-gray-800">
+      <span className="min-w-0 flex-1 truncate text-[11px] font-bold text-gray-600 dark:text-gray-300">{title}</span>
+      <button type="button" onClick={() => setExpanded(value => !value)} className="flex h-8 items-center gap-1 rounded-lg px-2 text-[10px] font-bold text-gray-500 hover:bg-gray-200/70 dark:hover:bg-gray-800"><ChevronDown className={`h-3.5 w-3.5 transition ${expanded ? 'rotate-180' : ''}`} />{expanded ? '收起' : '展开'}</button>
+      <button type="button" onClick={() => void copy()} className="flex h-8 items-center gap-1 rounded-lg px-2 text-[10px] font-bold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}{copied ? '已复制' : '复制'}</button>
+    </header>
+    {expanded && <div className={`max-h-80 overflow-auto whitespace-pre-wrap break-words px-3 py-2 text-xs leading-5 ${code ? 'font-mono' : ''}`}>{content}</div>}
+    {!expanded && <div className="truncate px-3 py-2 text-xs text-gray-400">{content}</div>}
+  </section>;
+};
+
 const AgentMarkdown: React.FC<{ text: string }> = ({ text }) => {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
-  let inCode = false;
   const output: React.ReactNode[] = [];
-  lines.forEach((line, index) => {
-    if (line.trim().startsWith('```')) { inCode = !inCode; return; }
-    if (inCode) { output.push(<code key={index} className="block whitespace-pre-wrap font-mono text-xs">{line || ' '}</code>); return; }
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim().startsWith('```')) {
+      const language = line.trim().slice(3).trim();
+      const codeLines: string[] = [];
+      index += 1;
+      while (index < lines.length && !lines[index].trim().startsWith('```')) { codeLines.push(lines[index]); index += 1; }
+      output.push(<AgentContentCard key={`code-${index}`} title={language ? `代码 · ${language}` : '代码'} content={codeLines.join('\n')} code />);
+      continue;
+    }
+    const commaCount = (line.match(/[,，]/g) || []).length;
+    if (line.length >= 120 && commaCount >= 5) {
+      output.push(<AgentContentCard key={`prompt-${index}`} title="提示词" content={line} />);
+      continue;
+    }
     const heading = line.match(/^(#{1,3})\s+(.+)$/);
-    if (heading) { output.push(<div key={index} className="mt-2 font-black first:mt-0">{renderInlineMarkdown(heading[2], `h-${index}`)}</div>); return; }
+    if (heading) { output.push(<div key={index} className="mt-2 font-black first:mt-0">{renderInlineMarkdown(heading[2], `h-${index}`)}</div>); continue; }
     const bullet = line.match(/^\s*[-*]\s+(.+)$/);
-    if (bullet) { output.push(<div key={index} className="flex gap-2"><span aria-hidden="true">•</span><span>{renderInlineMarkdown(bullet[1], `b-${index}`)}</span></div>); return; }
+    if (bullet) { output.push(<div key={index} className="flex gap-2"><span aria-hidden="true">•</span><span>{renderInlineMarkdown(bullet[1], `b-${index}`)}</span></div>); continue; }
     const ordered = line.match(/^\s*(\d+)\.\s+(.+)$/);
-    if (ordered) { output.push(<div key={index} className="flex gap-2"><span className="shrink-0">{ordered[1]}.</span><span>{renderInlineMarkdown(ordered[2], `o-${index}`)}</span></div>); return; }
+    if (ordered) { output.push(<div key={index} className="flex gap-2"><span className="shrink-0">{ordered[1]}.</span><span>{renderInlineMarkdown(ordered[2], `o-${index}`)}</span></div>); continue; }
     output.push(line ? <div key={index}>{renderInlineMarkdown(line, `p-${index}`)}</div> : <div key={index} className="h-2" />);
-  });
+  }
   return <>{output}</>;
 };
 
@@ -495,12 +526,12 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     <aside className={`${showSessions ? 'translate-x-0' : '-translate-x-full'} absolute inset-y-0 left-0 z-20 flex w-[min(82%,19rem)] flex-col border-r border-gray-200 bg-white pt-[env(safe-area-inset-top)] shadow-2xl transition-transform dark:border-gray-800 dark:bg-gray-900`}>
       <div className="flex h-14 items-center gap-2 px-3">
         <b className="flex-1 text-sm dark:text-white">Agent 对话</b>
-        <button type="button" onClick={() => void createSession()} disabled={running || busySessionAction} className="mobile-touch flex items-center justify-center rounded-xl bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-xl font-light text-white disabled:opacity-40" aria-label="新建对话">＋</button>
+        <button type="button" onClick={() => void createSession()} disabled={running || busySessionAction} className="mobile-touch flex items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm disabled:opacity-40" aria-label="新建对话"><Plus className="h-4 w-4" /></button>
       </div>
-      <div className="px-2 pb-2"><input value={sessionSearch} onChange={event => setSessionSearch(event.target.value)} placeholder="搜索对话标题" className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-xs outline-none focus:border-fuchsia-400 dark:border-gray-700 dark:bg-gray-950" /></div>
+      <div className="px-2 pb-2"><input value={sessionSearch} onChange={event => setSessionSearch(event.target.value)} placeholder="搜索对话标题" className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-xs outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-950" /></div>
       <div className="flex-1 space-y-1 overflow-y-auto px-2 pb-3">
-        {sessions.filter(session => session.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())).map(session => <div key={session.id} className={`group rounded-2xl border px-3 py-2 ${session.id === activeSessionId ? 'border-fuchsia-200 bg-fuchsia-50 dark:border-fuchsia-900 dark:bg-fuchsia-950/30' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
-          {editingSessionId === session.id ? <form onSubmit={event => { event.preventDefault(); void saveSessionTitle(session); }} className="flex gap-1"><input autoFocus value={editingTitle} onChange={event => setEditingTitle(event.target.value)} onBlur={() => void saveSessionTitle(session)} className="min-w-0 flex-1 rounded-lg border border-fuchsia-300 bg-white px-2 text-sm dark:bg-gray-950" /></form> : <button type="button" disabled={running && session.id !== activeSessionId} onClick={() => { if (!running) { setActiveSessionId(session.id); setShowSessions(false); } }} className="block w-full text-left">
+        {sessions.filter(session => session.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())).map(session => <div key={session.id} className={`group rounded-xl border px-3 py-2 ${session.id === activeSessionId ? 'border-indigo-200 bg-indigo-50 dark:border-indigo-900 dark:bg-indigo-950/30' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+          {editingSessionId === session.id ? <form onSubmit={event => { event.preventDefault(); void saveSessionTitle(session); }} className="flex gap-1"><input autoFocus value={editingTitle} onChange={event => setEditingTitle(event.target.value)} onBlur={() => void saveSessionTitle(session)} className="min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-2 text-sm dark:bg-gray-950" /></form> : <button type="button" disabled={running && session.id !== activeSessionId} onClick={() => { if (!running) { setActiveSessionId(session.id); setShowSessions(false); } }} className="block w-full text-left">
             <span className="block truncate text-sm font-bold text-gray-800 dark:text-gray-100">{session.title}</span>
             <span className="mt-0.5 block text-[10px] text-gray-400">{session.messageCount || 0} 轮 · {new Date(session.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}{session.running ? ' · 工作中' : session.taskStatus === 'interrupted' ? ' · 上次中断' : session.taskStatus === 'failed' ? ' · 上次失败' : ''}</span>
           </button>}
@@ -514,47 +545,45 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     </aside>
 
     <section className="relative flex min-w-0 flex-1 flex-col">
-      <header className="flex min-h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-2 border-b border-fuchsia-100 bg-white px-2 pt-[env(safe-area-inset-top)] dark:border-fuchsia-950 dark:bg-gray-900 md:px-4">
-        <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500" aria-label="返回"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7 7-7m-7 7h18" /></svg></button>
-        <button type="button" onClick={() => setShowSessions(true)} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500" aria-label="会话列表">☰</button>
+      <header className="flex min-h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-1.5 border-b border-gray-200 bg-white px-2 pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900 md:gap-2 md:px-4">
+        <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="返回"><ArrowLeft className="h-5 w-5" /></button>
+        <button type="button" onClick={() => setShowSessions(true)} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="会话列表"><List className="h-5 w-5" /></button>
         <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-black text-gray-900 dark:text-white">{activeSession?.title || '项目 Agent'}</h2><p className="truncate text-[10px] text-gray-500">{running ? '正在执行，可继续追加要求' : `${activeSession?.model || '未选择模型'} · ${activeModel?.imageInput ? '支持识图' : '不支持识图'}`}</p></div>
         <div className="relative">
           <button type="button" disabled={running} onClick={() => setShowModelMenu(value => !value)} className="mobile-touch max-w-36 truncate rounded-xl border border-gray-200 px-2 text-[11px] font-bold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300">模型</button>
-          {showModelMenu && <div className="absolute right-0 top-12 z-30 max-h-[60vh] w-72 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-gray-700 dark:bg-gray-900">{models.map(model => <button key={`${model.provider}/${model.id}`} type="button" onClick={() => void updateSessionModel(model)} className={`block w-full rounded-xl px-3 py-2 text-left ${model.provider === activeSession?.provider && model.id === activeSession?.model ? 'bg-fuchsia-50 dark:bg-fuchsia-950/40' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}><b className="block truncate text-xs dark:text-white">{model.id}</b><span className="block text-[10px] text-gray-400">{model.provider} · {model.reasoning ? '推理' : '普通'}{model.imageInput ? ' · 识图' : ''}</span></button>)}</div>}
+          {showModelMenu && <div className="absolute right-0 top-12 z-30 max-h-[60vh] w-72 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-gray-700 dark:bg-gray-900">{models.map(model => <button key={`${model.provider}/${model.id}`} type="button" onClick={() => void updateSessionModel(model)} className={`block w-full rounded-xl px-3 py-2 text-left ${model.provider === activeSession?.provider && model.id === activeSession?.model ? 'bg-indigo-50 dark:bg-indigo-950/40' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}><b className="block truncate text-xs dark:text-white">{model.id}</b><span className="block text-[10px] text-gray-400">{model.provider} · {model.reasoning ? '推理' : '普通'}{model.imageInput ? ' · 识图' : ''}</span></button>)}</div>}
         </div>
         <select aria-label="思考等级" title="思考等级" disabled={running || !activeModel?.reasoning} value={activeSession?.thinkingLevel || 'off'} onChange={event => void updateThinkingLevel(event.target.value as PromptAgentThinkingLevel)} className="h-11 max-w-24 rounded-xl border border-gray-200 bg-white px-1 text-[11px] font-bold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><option value="off">不思考</option><option value="minimal">极少</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option><option value="xhigh">极高</option><option value="max">最大</option></select>
-        {props.canUndo && <button type="button" onClick={props.onUndo} disabled={running} className="mobile-touch hidden rounded-xl px-2 text-xs font-bold text-fuchsia-600 disabled:opacity-40 sm:block">撤销本次</button>}
-        <button type="button" onClick={() => void reset()} disabled={running || !messages.length} className="mobile-touch rounded-xl px-2 text-xs font-bold text-gray-500 disabled:opacity-30" aria-label="清空当前对话">清空</button>
+        {props.canUndo && <button type="button" onClick={props.onUndo} disabled={running} className="mobile-touch hidden items-center gap-1 rounded-xl px-2 text-xs font-bold text-indigo-600 disabled:opacity-40 sm:flex"><RotateCcw className="h-3.5 w-3.5" />撤销</button>}
+        <button type="button" onClick={() => void reset()} disabled={running || !messages.length} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 disabled:opacity-30" aria-label="清空当前对话" title="清空当前对话"><Trash2 className="h-4 w-4" /></button>
         <button type="button" onClick={() => setFullscreen(value => !value)} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500" aria-label={fullscreen ? '退出全屏' : '全屏显示'} title={fullscreen ? '退出全屏' : '全屏显示'}>
-          {fullscreen
-            ? <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /></svg>
-            : <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>}
+          {fullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
         </button>
       </header>
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
         <div ref={scrollRef} onScroll={event => { const element = event.currentTarget; const next = element.scrollHeight - element.scrollTop - element.clientHeight < 80; followBottomRef.current = next; setFollowingBottom(next); }} className="relative flex-1 space-y-3 overflow-y-auto p-3 md:p-4">
-          {messages.length === 0 && <div className="mt-8 text-center"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-fuchsia-500 to-indigo-600 text-3xl text-white shadow-xl shadow-fuchsia-500/20">✦</div><h3 className="mt-4 text-lg font-black dark:text-white">告诉我你想在项目里做什么</h3><p className="mt-1 text-sm text-gray-500">这是一条独立对话，可在项目的任何页面继续。</p><div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '查看当前设置和 Anlas 预算'].map(value => <button key={value} type="button" onClick={() => void run(value)} className="mobile-touch rounded-2xl border border-gray-200 bg-white px-3 text-sm font-bold text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{value}</button>)}</div></div>}
+          {messages.length === 0 && <div className="mt-8 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">告诉我你想在项目里做什么</h3><p className="mt-1 text-sm text-gray-500">这是一条独立对话，可在项目的任何页面继续。</p><div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '查看当前设置和 Anlas 预算'].map(value => <button key={value} type="button" onClick={() => void run(value)} className="mobile-touch rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold text-gray-700 shadow-sm hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{value}</button>)}</div></div>}
           {messages.map((message, index) => <div key={message.id} className={`group max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === 'user' ? 'ml-auto whitespace-pre-wrap bg-indigo-600 text-white' : message.role === 'error' ? 'whitespace-pre-wrap bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300' : 'bg-white text-gray-800 shadow-sm dark:bg-gray-900 dark:text-gray-100'}`}>
             {message.queued && <div className="mb-1 text-[10px] font-bold opacity-70">{message.queued === 'steer' ? '转向要求 · 当前步骤后处理' : '后续任务 · 完成本轮后处理'}</div>}
             {!!message.thinking && <details className="mb-2 rounded-xl bg-gray-50 px-3 py-1 dark:bg-gray-950"><summary className="cursor-pointer text-[11px] font-bold text-gray-500">思考过程</summary><div className="max-h-48 overflow-y-auto whitespace-pre-wrap text-xs text-gray-500">{message.thinking}</div></details>}
             {message.role === 'agent' ? <AgentMarkdown text={message.text || (running ? '正在思考…' : '')} /> : message.text}
-            {!!message.tools?.length && <div className="mt-2 space-y-1 border-t border-gray-100 pt-2 dark:border-gray-800">{message.tools.map(tool => <details key={tool.id} className={`rounded-xl px-2 py-1 text-[10px] ${tool.state === 'running' ? 'animate-pulse bg-fuchsia-50 text-fuchsia-600 dark:bg-fuchsia-950/50 dark:text-fuchsia-300' : tool.state === 'error' ? 'bg-red-50 text-red-600 dark:bg-red-950/50' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'}`}><summary className="cursor-pointer font-bold">{tool.state === 'running' ? '◌' : tool.state === 'error' ? '!' : '✓'} {toolLabels[tool.name] || tool.name}</summary><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all opacity-75">{JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)}</pre></details>)}</div>}
+            {!!message.tools?.length && <div className="mt-2 space-y-1 border-t border-gray-100 pt-2 dark:border-gray-800">{message.tools.map(tool => <details key={tool.id} className={`rounded-lg px-2 py-1 text-[10px] ${tool.state === 'running' ? 'animate-pulse bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300' : tool.state === 'error' ? 'bg-red-50 text-red-600 dark:bg-red-950/50' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'}`}><summary className="cursor-pointer font-bold">{tool.state === 'running' ? '处理中' : tool.state === 'error' ? '失败' : '完成'} · {toolLabels[tool.name] || tool.name}</summary><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all opacity-75">{JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)}</pre></details>)}</div>}
             <div className={`mt-2 flex items-center gap-2 border-t pt-1 text-[10px] ${message.role === 'user' ? 'border-white/20 text-white/70' : 'border-gray-100 text-gray-400 dark:border-gray-800'}`}>
               {message.role === 'agent' && <span className="truncate">{message.model || ''}{message.usage ? ` · ${formatUsage(message.usage)}` : ''}{message.stopReason && message.stopReason !== 'stop' ? ` · ${message.stopReason}` : ''}</span>}
               <span className="flex-1" />
               <button type="button" onClick={() => void copyMessage(message.id, message.text)} className="rounded-lg px-1.5 font-bold hover:bg-black/5">{copiedMessageId === message.id ? '已复制' : '复制'}</button>
               {message.role === 'user' && !running && !message.queued && <button type="button" onClick={() => { setEditingMessageId(message.id); setInput(message.text); }} className="rounded-lg px-1.5 font-bold hover:bg-white/10">编辑重发</button>}
-              {message.role === 'agent' && index === messages.length - 1 && !running && <button type="button" onClick={() => void run('', 'retry')} className="rounded-lg px-1.5 font-bold text-fuchsia-500 hover:bg-fuchsia-50">重新生成</button>}
+              {message.role === 'agent' && index === messages.length - 1 && !running && <button type="button" onClick={() => void run('', 'retry')} className="rounded-lg px-1.5 font-bold text-indigo-500 hover:bg-indigo-50">重新生成</button>}
             </div>
           </div>)}
-          {!followingBottom && <button type="button" onClick={() => { followBottomRef.current = true; setFollowingBottom(true); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }} className="sticky bottom-1 mx-auto block rounded-full bg-gray-900 px-3 py-1.5 text-xs font-bold text-white shadow-lg dark:bg-white dark:text-gray-900">回到底部 ↓</button>}
+          {!followingBottom && <button type="button" onClick={() => { followBottomRef.current = true; setFollowingBottom(true); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }} className="sticky bottom-1 mx-auto flex items-center gap-1 rounded-full bg-gray-900 px-3 py-1.5 text-xs font-bold text-white shadow-lg dark:bg-white dark:text-gray-900"><ArrowDown className="h-3.5 w-3.5" />回到底部</button>}
         </div>
         <div className="border-t border-gray-200 bg-white p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] dark:border-gray-800 dark:bg-gray-900 md:p-4">
           {editingMessageId && !running && <div className="mb-2 flex items-center rounded-xl bg-amber-50 px-3 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"><b>正在编辑旧消息</b><span className="ml-1">发送后会从这里重新执行，后面的旧回答将被替换。</span><span className="flex-1" /><button type="button" onClick={() => { setEditingMessageId(''); setInput(''); }} className="font-bold">取消</button></div>}
-          {running && <div className="mb-2 flex items-center gap-2 text-[11px]"><span className="font-bold text-fuchsia-600">Agent 正在工作</span><button type="button" onClick={() => setQueueMode('steer')} className={`rounded-full px-2 py-1 font-bold ${queueMode === 'steer' ? 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-950' : 'text-gray-400'}`}>转向当前任务</button><button type="button" onClick={() => setQueueMode('followUp')} className={`rounded-full px-2 py-1 font-bold ${queueMode === 'followUp' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950' : 'text-gray-400'}`}>排到任务之后</button><span className="flex-1" /><button type="button" onClick={() => void promptAgentService.control(activeSessionId, 'clear')} className="font-bold text-gray-400">清空排队</button><button type="button" onClick={() => void promptAgentService.control(activeSessionId, 'abort')} className="font-bold text-red-500">停止</button></div>}
+          {running && <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11px]"><span className="font-bold text-indigo-600">Agent 正在工作</span><button type="button" onClick={() => setQueueMode('steer')} className={`rounded-full px-2 py-1 font-bold ${queueMode === 'steer' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950' : 'text-gray-400'}`}>转向当前任务</button><button type="button" onClick={() => setQueueMode('followUp')} className={`rounded-full px-2 py-1 font-bold ${queueMode === 'followUp' ? 'bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-200' : 'text-gray-400'}`}>排到任务之后</button><span className="flex-1" /><button type="button" onClick={() => void promptAgentService.control(activeSessionId, 'clear')} className="font-bold text-gray-400">清空排队</button><button type="button" onClick={() => void promptAgentService.control(activeSessionId, 'abort')} className="flex items-center gap-1 font-bold text-red-500"><Square className="h-3 w-3 fill-current" />停止</button></div>}
           {!!attachments.length && <div className="mb-2 flex flex-wrap gap-1.5">{attachments.map((attachment, index) => <span key={`${attachment.name}-${index}`} className="flex max-w-48 items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-[10px] text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200"><span className="truncate">{attachment.name}</span><button type="button" onClick={() => setAttachments(previous => previous.filter((_, itemIndex) => itemIndex !== index))} className="font-black">×</button></span>)}</div>}
-          <div className="flex items-end gap-2"><label title={activeModel?.imageInput ? '添加图片' : '当前模型不支持识图'} className={`mobile-touch flex h-14 w-12 items-center justify-center rounded-2xl border border-gray-200 text-xl text-gray-500 dark:border-gray-700 ${activeModel?.imageInput ? 'cursor-pointer hover:border-fuchsia-400' : 'cursor-not-allowed opacity-35'}`}><span aria-hidden="true">＋</span><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden onChange={event => { addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={running || attachments.length >= 4 || !activeModel?.imageInput} /></label><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void run(); } }} rows={2} placeholder={running ? (queueMode === 'steer' ? '补充或纠正当前任务…' : '添加完成后继续处理的任务…') : '告诉 Agent 你想让它查看、修改或生成什么…'} className="min-h-14 flex-1 resize-none rounded-2xl border border-gray-300 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-fuchsia-500 dark:border-gray-700 dark:bg-gray-950" /><button type="button" onClick={() => void run()} disabled={!input.trim() && !attachments.length} className={`mobile-touch rounded-2xl px-5 text-sm font-bold text-white shadow-lg disabled:opacity-40 ${running ? queueMode === 'steer' ? 'bg-gradient-to-r from-fuchsia-600 to-violet-600' : 'bg-gradient-to-r from-indigo-600 to-blue-600' : 'bg-gradient-to-r from-fuchsia-600 to-indigo-600'}`}>{running ? '追加' : editingMessageId ? '重发' : '执行'}</button></div>
+          <div className="flex items-end gap-2"><label title={activeModel?.imageInput ? '添加图片' : '当前模型不支持识图'} className={`mobile-touch flex h-14 w-12 items-center justify-center rounded-xl border border-gray-200 text-gray-500 dark:border-gray-700 ${activeModel?.imageInput ? 'cursor-pointer hover:border-indigo-400' : 'cursor-not-allowed opacity-35'}`}><ImagePlus className="h-5 w-5" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden onChange={event => { addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={running || attachments.length >= 4 || !activeModel?.imageInput} /></label><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void run(); } }} rows={2} placeholder={running ? (queueMode === 'steer' ? '补充或纠正当前任务…' : '添加完成后继续处理的任务…') : '告诉 Agent 你想让它查看、修改或生成什么…'} className="min-h-14 flex-1 resize-none rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950" /><button type="button" onClick={() => void run()} disabled={!input.trim() && !attachments.length} className="mobile-touch flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white shadow-lg shadow-indigo-500/15 hover:bg-indigo-500 disabled:opacity-40"><Send className="h-4 w-4" />{running ? '追加' : editingMessageId ? '重发' : '执行'}</button></div>
         </div>
       </main>
     </section>

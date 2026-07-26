@@ -1,6 +1,31 @@
 
 @import "tailwindcss";
 
+:root {
+  --workspace-toolbar-height: 57px;
+  --workspace-control-radius: 0.75rem;
+  --workspace-card-radius: 1rem;
+}
+
+.workspace-command-bar {
+  min-height: var(--workspace-toolbar-height);
+  box-shadow: 0 1px 0 rgb(15 23 42 / 0.03);
+}
+
+.media-card {
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.media-card:hover {
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .media-card:hover {
+    transform: none;
+  }
+}
+
 @theme {
   --color-gray-750: #2d3748;
   --color-gray-850: #1a202c;

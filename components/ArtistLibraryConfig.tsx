@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { AlertTriangle, Lock, Settings2 } from 'lucide-react';
 
 // Re-define locally to ensure portability
 interface BenchmarkSlot {
@@ -93,7 +94,7 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
 
                 <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                     <div className="flex justify-between items-center">
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">⚙️ 实装测试配置</h3>
+                    <h3 className="flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white"><Settings2 className="h-5 w-5" />实装测试配置</h3>
                     <span className="text-xs bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 px-2 py-0.5 rounded">编辑模式</span>
                     </div>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">配置生成实装图时的参数。系统会自动添加 <code>artist:NAME</code>。</p>
@@ -121,7 +122,7 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
                                 <span className="text-xs text-gray-500 dark:text-gray-400">记住 Key（关闭浏览器后仍保留）</span>
                             </label>
                             <span className="text-[10px] text-yellow-600 dark:text-yellow-400">
-                                {rememberApiKey ? '⚠️ 持久化存储' : '🔒 会话级存储'}
+                                <span className="flex items-center gap-1">{rememberApiKey ? <AlertTriangle className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}{rememberApiKey ? '持久化存储' : '会话级存储'}</span>
                             </span>
                         </div>
                         <p className="text-[10px] text-gray-400 mt-1">

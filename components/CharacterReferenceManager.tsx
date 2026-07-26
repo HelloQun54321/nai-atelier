@@ -149,19 +149,19 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
   };
 
   return <>
-    <section className="mt-4 rounded-lg border border-cyan-100 bg-cyan-50/70 p-4 dark:border-cyan-900/60 dark:bg-cyan-950/20">
+    <section className="mt-4 rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40">
       <button type="button" onClick={() => setOpen(true)} className="mobile-touch flex w-full items-center justify-between gap-3 text-left">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold text-cyan-700 dark:text-cyan-300">角色参考</span>
-            {enabledCount > 0 && <span className="rounded-full bg-cyan-600 px-2 py-0.5 text-[10px] font-bold text-white">{enabledCount} / 4</span>}
+            {enabledCount > 0 && <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">{enabledCount} / 4</span>}
           </div>
           {enabledCount ? <>
             <p className="mt-1 truncate text-xs text-gray-700 dark:text-gray-300">{references.slots.map(slot => slot.assetName || '未知参考').join(' · ')}</p>
             <p className="mt-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">本次生成额外消耗 {enabledCount} × 5 = {enabledCount * 5} Anlas</p>
           </> : <p className="mt-1 text-xs text-gray-500">未启用 · 每张参考图每次生成消耗 5 Anlas</p>}
         </div>
-        <span className="flex-none rounded-xl border border-cyan-300 bg-white px-3 py-2 text-xs font-bold text-cyan-700 dark:border-cyan-800 dark:bg-gray-900 dark:text-cyan-300">管理</span>
+        <span className="flex-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300">管理</span>
       </button>
     </section>
 

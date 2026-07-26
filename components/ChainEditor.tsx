@@ -19,6 +19,7 @@ import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { estimateV45GenerationCost } from '../services/anlasBudget';
 import { PromptAgentPanel } from './PromptAgentPanel';
+import { ArrowLeft, Palette, Pencil, Quote, RotateCcw, Save, Sparkles, UserRound, X } from 'lucide-react';
 
 interface ChainEditorProps {
     chain: PromptChain;
@@ -1207,11 +1208,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             {/* Top Bar */}
             <header className="chain-editor-header flex-shrink-0 min-h-[calc(3.5rem+env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-2 md:px-6 pt-[env(safe-area-inset-top)] md:pt-3 pb-2 md:pb-3 flex items-center justify-between gap-1 md:gap-4 overflow-x-hidden">
                 <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
-                    <button onClick={onBack} className="mobile-touch flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors flex-shrink-0">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7 7-7m-7 7h18" /></svg>
+                    <button onClick={onBack} className="mobile-touch flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors flex-shrink-0" aria-label="返回">
+                        <ArrowLeft className="h-6 w-6" />
                     </button>
 
-                    {isEditingInfo && isOwner ? (
+                    {chain.id !== 'playground' && (isEditingInfo && isOwner ? (
                         <div className="flex flex-col md:flex-row gap-2 flex-1 w-full max-w-2xl min-w-0">
                             <input type="text" value={chainName} onChange={e => { setChainName(e.target.value); markChange() }} className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-gray-900 dark:text-white text-sm focus:border-indigo-500 outline-none font-bold min-w-0" placeholder="名称" />
                             <div className="flex gap-2">
@@ -1282,9 +1283,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 <h1 className="text-base md:text-lg font-bold text-gray-900 dark:text-white truncate min-w-0">{chainName}</h1>
                                 <span className="hidden text-xs text-gray-500 dark:text-gray-500 truncate max-w-full md:block md:max-w-xs min-w-0">{chainDesc}</span>
                             </div>
-                            {isOwner && <svg className="w-4 h-4 text-gray-400 opacity-50 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>}
+                            {isOwner && <Pencil className="h-4 w-4 flex-shrink-0 text-gray-400 opacity-50" />}
                         </div>
-                    )}
+                    ))}
                 </div>
 
                 <div className="chain-editor-actions ml-auto flex flex-shrink-0 items-center gap-2">
@@ -1292,35 +1293,33 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <button
                             type="button"
                             onClick={() => setShowPromptAgent(true)}
-                            className="mobile-touch flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-fuchsia-500 to-indigo-600 p-0 text-white shadow-lg shadow-fuchsia-500/20 transition-transform hover:scale-[1.03]"
+                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-600 p-0 text-white shadow-md shadow-indigo-500/20 transition hover:bg-indigo-500"
                             title="AI 生图 Agent"
                             aria-label="打开 AI 生图 Agent"
                         >
-                            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.75c.42 4.6 2.65 6.83 7.25 7.25-4.6.42-6.83 2.65-7.25 7.25C11.58 12.65 9.35 10.42 4.75 10 9.35 9.58 11.58 7.35 12 2.75ZM5.2 15.2c.2 2.2 1.35 3.35 3.55 3.55-2.2.2-3.35 1.35-3.55 3.55-.2-2.2-1.35-3.35-3.55-3.55 2.2-.2 3.35-1.35 3.55-3.55Zm13.6 1.1c.13 1.45.9 2.22 2.35 2.35-1.45.13-2.22.9-2.35 2.35-.13-1.45-.9-2.22-2.35-2.35 1.45-.13 2.22-.9 2.35-2.35Z" /></svg>
+                            <Sparkles className="h-5 w-5" />
                         </button>
                     )}
                     {canEdit && (
                         <button
                             type="button"
                             onClick={() => setShowImportPreset(true)}
-                            className="mobile-touch flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 p-0 text-indigo-600 transition-colors hover:bg-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950/70"
+                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white p-0 text-indigo-600 transition-colors hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
                             title="引用预设"
                             aria-label="引用预设"
                         >
-                            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                                <path d="M7.25 6.25C5.3 7.55 4.25 9.34 4.25 11.5V16h6v-6H7.02c.28-.94.9-1.72 1.87-2.36L7.25 6.25Zm9 0c-1.95 1.3-3 3.09-3 5.25V16h6v-6h-3.23c.28-.94.9-1.72 1.87-2.36l-1.64-1.39Z" />
-                            </svg>
+                            <Quote className="h-5 w-5" />
                         </button>
                     )}
                     {/* Fork / Save to Library Button */}
                     {((!isOwner && !isGuest) || chain.id === 'playground') && (
                         <button
                             onClick={handleFork}
-                            className={`mobile-touch flex h-12 items-center justify-center rounded-xl bg-green-600 p-0 text-sm font-medium text-white shadow-lg shadow-green-500/20 hover:bg-green-500 ${chain.id === 'playground' ? 'w-12' : 'w-auto px-4'}`}
+                            className={`mobile-touch flex h-11 items-center justify-center rounded-xl bg-indigo-600 p-0 text-sm font-medium text-white shadow-md shadow-indigo-500/20 hover:bg-indigo-500 ${chain.id === 'playground' ? 'w-11' : 'w-auto px-4'}`}
                             title={chain.id === 'playground' ? '保存到库' : 'Fork'}
                             aria-label={chain.id === 'playground' ? '保存到库' : 'Fork'}
                         >
-                            <svg className={`block h-5 w-5 ${chain.id === 'playground' ? '' : 'mr-1'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 10h16v8.25A1.75 1.75 0 0118.25 20H5.75A1.75 1.75 0 014 18.25V10Z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v10m-4-4 4 4 4-4M8.5 17h7" /></svg>
+                            <Save className={`block h-5 w-5 ${chain.id === 'playground' ? '' : 'mr-1'}`} />
                             {chain.id !== 'playground' && <span>Fork</span>}
                         </button>
                     )}
@@ -1329,11 +1328,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <button
                             type="button"
                             onClick={handleReset}
-                            className="mobile-touch flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 p-0 text-red-600 transition-colors hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-950/70"
+                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-red-200 bg-red-50 p-0 text-red-600 transition-colors hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-400"
                             title="重置实验室"
                             aria-label="重置实验室"
                         >
-                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                            <RotateCcw className="h-5 w-5" />
                         </button>
                     )}
                     {isOwner && chain.id !== 'playground' && <button onClick={handleSaveAll} disabled={!hasChanges} className={`mobile-touch rounded-xl px-3 text-sm font-bold lg:hidden ${hasChanges ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}>{hasChanges ? '保存' : '已保存'}</button>}
@@ -1356,8 +1355,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 canUndo={Boolean(agentUndoSnapshot)}
                 onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次 Agent 修改'); } }}
             />
-            <nav className="grid grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
-                {([['global', '全局'], ['character', '角色'], ['params', '参数']] as const).map(([value, label]) => <button key={value} onClick={() => setMobileEditorTab(value)} className={`relative min-h-11 text-sm font-bold ${mobileEditorTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>{label}{mobileEditorTab === value && <span className="absolute inset-x-5 bottom-0 h-0.5 rounded-full bg-indigo-500" />}</button>)}
+            <nav className="grid h-10 grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
+                {([['global', '全局'], ['character', '角色'], ['params', '参数']] as const).map(([value, label]) => <button key={value} onClick={() => setMobileEditorTab(value)} className={`relative min-w-0 text-sm font-bold ${mobileEditorTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>{label}{mobileEditorTab === value && <span className="absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-indigo-500" />}</button>)}
             </nav>
 
             {/* Editor Content */}
@@ -1426,7 +1425,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <section className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
                             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                    <label className="block text-sm font-semibold text-indigo-500 dark:text-indigo-400">2. 模块</label>
+                                    <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">提示词模块</label>
                                     <PresetSourceBadges sources={modulePresetSources} />
                                 </div>
                                 {canEdit && (
@@ -1501,10 +1500,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         </section>
 
                         {/* Character Management (New V4.5) */}
-                        <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'} bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 border border-indigo-100 dark:border-indigo-800/50`}>
+                        <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'} rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40`}>
                             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                    <label className="block text-sm font-semibold text-indigo-600 dark:text-indigo-300">3. 角色专属提示词（单／多角色）</label>
+                                    <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">角色专属提示词</label>
                                     <PresetSourceBadges sources={characterPresetSources} />
                                 </div>
                                 <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
@@ -1616,15 +1615,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         {/* Negative Prompt */}
                         <section className={`${mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'} mb-8`}>
                             <div className="mb-2 flex items-center justify-between gap-3">
-                                <div className="flex min-w-0 flex-wrap items-center gap-2"><label className="block text-sm font-semibold text-red-500 dark:text-red-400">全局负面提示词</label><PresetSourceBadge source={presetSources.negative} /></div>
-                                <button type="button" onClick={() => copyPromptToClipboard(true)} className="flex items-center gap-1 rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30" title="复制负面提示词">
+                                <div className="flex min-w-0 flex-wrap items-center gap-2"><label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">全局负面提示词</label><PresetSourceBadge source={presetSources.negative} /></div>
+                                <button type="button" onClick={() => copyPromptToClipboard(true)} className="flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" title="复制负面提示词">
                                     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
                                     复制
                                 </button>
                             </div>
                             <TagAutocompleteTextarea
                                 disabled={!canEdit}
-                                className={`w-full border rounded-lg p-3 outline-none font-mono text-sm leading-relaxed min-h-[80px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-red-900 dark:text-red-100/80 focus:ring-1 focus:ring-red-500/50'}`}
+                                className={`w-full border rounded-lg p-3 outline-none font-mono text-sm leading-relaxed min-h-[80px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-indigo-500/50'}`}
                                 value={negativePrompt}
                                 onValueChange={(nextValue) => { setNegativePrompt(nextValue); markPresetSectionModified('negative'); markChange() }}
                             />
@@ -1654,14 +1653,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                     onClick={handleSaveAll}
                                     disabled={!hasChanges}
                                     className={`mobile-touch px-5 py-1.5 rounded-xl font-bold text-sm shadow-md transition-all transform active:scale-95 ${hasChanges
-                                        ? 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white shadow-indigo-500/30'
+                                        ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20'
                                         : 'bg-gray-200 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
                                         }`}
                                 >
                                     保存
                                 </button>
                                 }
-                                <button onClick={handleGenerate} disabled={isGenerating} className="mobile-touch rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 text-sm font-bold text-white shadow-lg disabled:opacity-60 lg:hidden">{isGenerating ? '生成中…' : '生成'}</button>
+                                <button onClick={handleGenerate} disabled={isGenerating} className="mobile-touch rounded-xl bg-indigo-600 px-6 text-sm font-bold text-white shadow-lg disabled:opacity-60 lg:hidden">{isGenerating ? '生成中…' : '生成'}</button>
                             </div>
                         </div>
                     )}
@@ -1702,7 +1701,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 {(displayedPreviewImage || chain.previewImage) && <button type="button" onClick={() => setLightboxImg(displayedPreviewImage || chain.previewImage || null)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-700" aria-label="查看最近生成结果"><SmartImage src={displayedPreviewImage || chain.previewImage || ''} alt="最近生成结果" /></button>}
                 {queueStatus
                     ? <InlineCloudQueueStatus compact className="min-w-64 max-w-[calc(100vw-5rem)] shadow-xl shadow-indigo-500/30" />
-                    : <button onClick={handleGenerate} disabled={isGenerating} className="mobile-touch rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 px-6 text-sm font-bold text-white shadow-xl shadow-indigo-500/30 disabled:opacity-60">{isGenerating ? '生成中…' : `生成 · ${estimatedAnlasCost ? `${estimatedAnlasCost} 点` : '免费'}`}</button>}
+                    : <button onClick={handleGenerate} disabled={isGenerating} className="mobile-touch rounded-full bg-indigo-600 px-6 text-sm font-bold text-white shadow-xl shadow-indigo-500/20 disabled:opacity-60">{isGenerating ? '生成中…' : `生成 · ${estimatedAnlasCost ? `${estimatedAnlasCost} 点` : '免费'}`}</button>}
             </div>}
 
             {/* Lightbox Modal */}
@@ -1845,7 +1844,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 </button>
                             </div>
 
-                            <button onClick={() => setShowImportPreset(false)} className="mobile-touch absolute right-3 top-3 rounded-lg px-2 text-xl text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 md:static md:px-0" aria-label="关闭引用预设">✕</button>
+                            <button onClick={() => setShowImportPreset(false)} className="mobile-touch absolute right-3 top-3 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 md:static" aria-label="关闭引用预设"><X className="h-5 w-5" /></button>
                         </div>
                         <div className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4">
                             {/* Extract all unique tags from the filtered list for this modal */}
@@ -2048,14 +2047,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 onClick={() => confirmFork('style')}
                                 className="flex flex-col items-center justify-center p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors gap-2"
                             >
-                                <span className="text-2xl">🎨</span>
+                                <Palette className="h-6 w-6 text-indigo-500" />
                                 <span className="font-bold text-blue-700 dark:text-blue-300">画师/风格串</span>
                             </button>
                             <button
                                 onClick={() => confirmFork('character')}
                                 className="flex flex-col items-center justify-center p-4 rounded-lg bg-pink-50 dark:bg-pink-900/20 border-2 border-pink-200 dark:border-pink-800 hover:bg-pink-100 dark:hover:bg-pink-900/40 transition-colors gap-2"
                             >
-                                <span className="text-2xl">👤</span>
+                                <UserRound className="h-6 w-6 text-indigo-500" />
                                 <span className="font-bold text-pink-700 dark:text-pink-300">角色串</span>
                             </button>
                         </div>

@@ -5,6 +5,8 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { SmartImage } from './SmartImage';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { Copy, Heart, Menu, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -253,99 +255,18 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
       <div className="mx-auto flex min-h-0 w-full max-w-[1920px] flex-1 flex-col">
-        <header className="workspace-page-heading flex flex-none flex-col gap-2 border-b border-gray-200 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 md:px-5 md:py-2.5">
-          <div className="hidden md:block">
-            <h1 className="whitespace-nowrap text-xl font-bold text-gray-900 dark:text-white">{title}</h1>
+        <WorkspaceToolbar>
+          <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={`搜索${title}`} containerClassName="md:w-[22rem] md:flex-none" />
+          <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
+            {allTags.length > 0 && <div className="flex max-w-56 flex-nowrap gap-1 overflow-x-auto">{allTags.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`h-8 whitespace-nowrap rounded-full px-2.5 text-xs font-medium transition ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'}`}>{tag}</button>)}</div>}
+            <select value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className="ml-auto h-10 w-36 rounded-xl border border-gray-200 bg-white px-2 text-xs text-gray-600 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option></select>
+            <IconButton label="仅显示收藏" onClick={() => setFavOnly(value => !value)} className={favOnly ? '!border-indigo-200 !bg-indigo-50 !text-indigo-600 dark:!bg-indigo-950/40' : ''}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} /></IconButton>
+            <IconButton label="刷新列表" onClick={onRefresh} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
+            {!isGuest && <ToolbarButton tone="primary" onClick={() => setIsModalOpen(true)}><Plus className="h-4 w-4" />{createLabel}</ToolbarButton>}
           </div>
-          <div className="workspace-toolbar hidden min-w-0 gap-2 md:flex md:w-full md:items-center">
-             <div className="flex min-w-[240px] flex-1 gap-2">
-                <button 
-                    onClick={onRefresh} 
-                    className={`p-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex-shrink-0`}
-                    title="刷新列表"
-                >
-                    <svg className={`w-6 h-6 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                </button>
-                <input
-                    type="text"
-                    placeholder="搜索..."
-                    className="w-full min-w-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                />
-             </div>
-             {/* Tag Filter Bar */}
-             {allTags.length > 0 && (
-               <div className="flex max-w-48 flex-none flex-nowrap gap-1 overflow-x-auto rounded-lg bg-gray-50 p-1 dark:bg-gray-900/50">
-                 {allTags.map(tag => (
-                   <button
-                     key={tag}
-                     type="button"
-                     aria-pressed={selectedTags.has(tag)}
-                     onClick={() => {
-                       const newSelected = new Set(selectedTags);
-                       if (newSelected.has(tag)) {
-                         newSelected.delete(tag);
-                       } else {
-                         newSelected.add(tag);
-                       }
-                       setSelectedTags(newSelected);
-                     }}
-                      className={`whitespace-nowrap px-2 py-1 rounded-full text-xs font-medium transition-colors ${
-                       selectedTags.has(tag)
-                         ? 'bg-indigo-600 text-white'
-                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
-                     }`}
-                   >
-                     {tag}
-                   </button>
-                 ))}
-               </div>
-             )}
-             {/* Sort & Favorite Controls */}
-             <div className="flex gap-2 w-full md:w-auto items-center">
-                <select
-                  value={sortOption}
-                  onChange={(e) => setSortOption(e.target.value as any)}
-                  className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 text-xs rounded-lg px-2 py-2 focus:ring-2 focus:ring-indigo-500 outline-none w-full md:w-40"
-                >
-                  <option value="updated_desc">按最近更新</option>
-                  <option value="updated_asc">按最早更新</option>
-                  <option value="created_desc">按最近创建</option>
-                  <option value="created_asc">按最早创建</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setFavOnly(!favOnly)}
-                  className={`px-3 py-2 rounded-lg border text-xs flex items-center gap-1 transition-colors ${
-                    favOnly
-                      ? 'bg-yellow-50 border-yellow-300 text-yellow-700 dark:bg-yellow-900/30 dark:border-yellow-700 dark:text-yellow-400'
-                      : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-400'
-                  }`}
-                  title="仅显示收藏的串"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path>
-                  </svg>
-                  <span className="hidden md:inline">收藏</span>
-                </button>
-             </div>
-            {!isGuest && (
-                <button
-                onClick={() => setIsModalOpen(true)}
-                className="flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-indigo-500/20 transition-colors hover:bg-indigo-500 md:justify-start"
-                >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                {createLabel}
-                </button>
-            )}
-          </div>
-          <div className="flex gap-2 md:hidden">
-            <input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={`搜索${title}`} className="h-11 min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-4 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
-            <MobileIconButton label="筛选与排序" onClick={() => setShowMobileFilters(true)} className="border border-gray-300 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">☰</MobileIconButton>
-            {!isGuest && <MobileIconButton label={createLabel} onClick={() => setIsModalOpen(true)} className="bg-indigo-600 text-xl text-white">＋</MobileIconButton>}
-          </div>
-        </header>
+          <MobileIconButton label="筛选与排序" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden"><Menu className="h-5 w-5" /></MobileIconButton>
+          {!isGuest && <MobileIconButton label={createLabel} onClick={() => setIsModalOpen(true)} className="bg-indigo-600 text-white md:hidden"><Plus className="h-5 w-5" /></MobileIconButton>}
+        </WorkspaceToolbar>
 
         <MobileBottomSheet open={showMobileFilters} title="筛选与排序" onClose={() => setShowMobileFilters(false)}>
           <div className="space-y-5">
@@ -368,13 +289,22 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
               {filteredChains.map((chain) => (
               <div key={chain.id} onClick={() => onSelect(chain.id)} className="mobile-gallery-item group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative">
                 {/* Copy Button Overlay - Trigger Modal */}
-                <div className="absolute top-2 right-2 z-10 hidden opacity-0 transition-opacity md:block md:group-hover:opacity-100">
+                <div className="absolute right-2 top-2 z-10 hidden items-center gap-1 opacity-0 transition-opacity md:group-hover:flex md:group-hover:opacity-100">
+                    {!isGuest && <button
+                      type="button"
+                      onClick={async event => {
+                        event.stopPropagation();
+                        if (await confirmAction({ title: `删除“${chain.name}”？`, message: `该${chain.type === 'character' ? '角色串' : '画师串'}及其配置将被永久删除，此操作无法撤销。`, confirmLabel: '确认删除', tone: 'danger' })) onDelete(chain.id);
+                      }}
+                      className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-red-50 hover:text-red-500 dark:bg-black/70 dark:text-gray-300 dark:hover:text-red-400"
+                      title="删除"
+                    ><Trash2 className="h-4 w-4" /></button>}
                     <button 
                         onClick={(e) => { e.stopPropagation(); setCopyModalChain(chain); }} 
-                    className="mobile-touch flex h-11 w-11 items-center justify-center rounded-full bg-white/90 p-0 text-indigo-600 shadow-sm backdrop-blur hover:bg-indigo-50 dark:bg-black/70 dark:text-indigo-400 dark:hover:bg-indigo-900/50"
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 p-0 text-indigo-600 shadow-sm backdrop-blur hover:bg-indigo-50 dark:bg-black/70 dark:text-indigo-400 dark:hover:bg-indigo-900/50"
                         title="复制/查看详情"
                     >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                        <Copy className="h-4 w-4" />
                     </button>
                 </div>
 
@@ -407,8 +337,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                     )}
                 </div>
 
-                <div className="flex h-12 flex-col justify-center px-3 md:h-auto md:flex-1 md:p-3">
-                  <div className="flex items-center justify-between md:mb-1 md:items-start">
+                <div className="flex h-12 flex-col justify-center px-3">
+                  <div className="flex items-center justify-between">
                     <h3 className="w-full truncate pr-1 text-sm font-bold text-gray-900 dark:text-gray-100 md:pr-2" title={chain.name}>{chain.name}</h3>
                     <button
                       type="button"
@@ -424,52 +354,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78Z" />
                       </svg>
                     </button>
-                  </div>
-                  <p className="hidden text-gray-500 dark:text-gray-400 text-xs mb-2 md:line-clamp-2 md:block md:h-8 leading-tight">{chain.description || '暂无描述'}</p>
-
-                  {/* Tags 显示 */}
-                  {chain.tags && chain.tags.length > 0 && (
-                    <div className="hidden flex-wrap gap-1 mb-2 md:flex">
-                      {chain.tags.slice(0, 3).map(tag => (
-                        <span
-                          key={tag}
-                          className="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 text-[10px] rounded-full truncate max-w-16ch"
-                          title={tag}
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                      {chain.tags.length > 3 && (
-                        <span className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-[10px] rounded-full shrink-0">
-                          +{chain.tags.length - 3}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="hidden mt-auto justify-between items-center pt-2 border-t border-gray-100 dark:border-gray-700/50 md:flex">
-                     <div className="flex flex-col min-w-0 mr-2">
-                        <span className="text-[10px] text-gray-400 dark:text-gray-500 truncate">
-                            {new Date(chain.updatedAt).toLocaleString('zh-CN', { hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                     </div>
-                     {!isGuest && (
-                        <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (await confirmAction({
-                            title: `删除“${chain.name}”？`,
-                            message: `该${chain.type === 'character' ? '角色串' : '画师串'}及其配置将被永久删除，此操作无法撤销。`,
-                            confirmLabel: '确认删除',
-                            tone: 'danger',
-                          })) onDelete(chain.id);
-                        }}
-                        className="hidden md:block p-1 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 transition-colors rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0"
-                        title="删除"
-                        >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        </button>
-                     )}
                   </div>
                 </div>
               </div>
