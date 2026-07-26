@@ -97,7 +97,7 @@ const InspirationLightbox: React.FC<InspirationLightboxProps> = ({
                             <input className="text-xl font-bold bg-gray-100 dark:bg-gray-800 border-none rounded p-1 w-full dark:text-white" value={lightboxImg.item.title} onChange={e => setLightboxImg({...lightboxImg, item: {...lightboxImg.item, title: e.target.value}})} />
                         ) : (
                             <div>
-                                <h2 className="text-lg md:text-2xl font-bold text-gray-900 dark:text-white line-clamp-1">{lightboxImg.item.title}</h2>
+                                <h2 className="line-clamp-1 text-lg font-bold text-gray-900 dark:text-white md:text-xl">{lightboxImg.item.title}</h2>
                             </div>
                         )}
                         <button onClick={closeLightbox} className="mobile-touch text-gray-400 hover:text-white">✕</button>
@@ -371,7 +371,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
                          </div>
                          <div className="p-2 md:p-3">
                              <div className="flex justify-between items-start">
-                                <h3 className="font-bold text-gray-900 dark:text-white truncate flex-1 text-sm md:text-base" title={item.title}>{item.title}</h3>
+                                <h3 className="flex-1 truncate text-sm font-bold text-gray-900 dark:text-white" title={item.title}>{item.title}</h3>
                              </div>
                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 font-mono opacity-75">{item.prompt}</p>
                          </div>

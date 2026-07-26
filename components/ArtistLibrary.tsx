@@ -998,7 +998,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                         <input
                             type="text"
                             placeholder="搜索全部画师 Tag（支持中文）..."
-                            className="w-full pl-4 pr-10 py-2 rounded-full border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:border-indigo-500 transition-colors"
+                            className="w-full rounded-full border border-gray-300 bg-gray-100 py-2 pl-4 pr-10 text-sm text-gray-900 transition-colors focus:border-indigo-500 focus:outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />

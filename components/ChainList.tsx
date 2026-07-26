@@ -269,7 +269,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                 <input
                     type="text"
                     placeholder="搜索..."
-                    className="w-full min-w-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                    className="w-full min-w-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -333,7 +333,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             {!isGuest && (
                 <button
                 onClick={() => setIsModalOpen(true)}
-                className="flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white shadow-lg shadow-indigo-500/20 transition-colors hover:bg-indigo-500 md:justify-start"
+                className="flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-indigo-500/20 transition-colors hover:bg-indigo-500 md:justify-start"
                 >
                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                 {createLabel}
@@ -409,7 +409,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
                 <div className="flex h-12 flex-col justify-center px-3 md:h-auto md:flex-1 md:p-3">
                   <div className="flex items-center justify-between md:mb-1 md:items-start">
-                    <h3 className="w-full truncate pr-1 text-base font-bold text-gray-900 dark:text-gray-100 md:pr-2" title={chain.name}>{chain.name}</h3>
+                    <h3 className="w-full truncate pr-1 text-sm font-bold text-gray-900 dark:text-gray-100 md:pr-2" title={chain.name}>{chain.name}</h3>
                     <button
                       type="button"
                       onClick={(e) => toggleFav(chain.id, e)}
@@ -483,7 +483,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 md:p-8 w-full max-w-md border border-gray-200 dark:border-gray-700 shadow-2xl">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">{createLabel}</h2>
+            <h2 className="mb-4 text-xl font-bold text-gray-900 dark:text-white">{createLabel}</h2>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">名称</label>
