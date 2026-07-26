@@ -32,7 +32,11 @@ body,
 .workspace-aitag-grid { --workspace-card-min: 175px; }
 .workspace-manager-grid { --workspace-card-min: 160px; }
 
-@media (min-width: 1280px) {
+@media (min-width: 1024px) {
+.agent-panel-docked {
+  --agent-docked-width: min(var(--agent-panel-width, 520px), calc(100vw - 40rem));
+}
+
 .agent-panel-docked .workspace-container {
   container-name: workspace;
   container-type: inline-size;
@@ -210,13 +214,13 @@ body,
 
 .agent-resize-handle-desktop { display: none; }
 
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .agent-panel {
     inset-block: 0;
     right: 0;
     left: auto;
     height: 100%;
-    width: var(--agent-width, 520px);
+    width: var(--agent-docked-width, var(--agent-width, 520px));
     border-top-width: 0;
     border-left-width: 1px;
     border-radius: 0;
@@ -246,8 +250,8 @@ body,
   .agent-resize-handle-desktop:hover::after { background: rgb(139 92 246 / .75); }
 }
 
-@media (min-width: 1280px) {
-  .agent-panel-docked .agent-stage { padding-right: var(--agent-panel-width, 520px); }
+@media (min-width: 1024px) {
+  .agent-panel-docked .agent-stage { padding-right: var(--agent-docked-width, var(--agent-panel-width, 520px)); }
 }
 
 @media (max-width: 767px) {

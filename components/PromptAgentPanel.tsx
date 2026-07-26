@@ -113,7 +113,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   }, [props.open, fullscreen, panelWidth]);
 
   const startDesktopResize = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (fullscreen || window.innerWidth < 768) return;
+    if (fullscreen || window.innerWidth < 1024) return;
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = panelWidth;
@@ -127,7 +127,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   };
 
   const startMobileResize = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (fullscreen || window.innerWidth >= 768) return;
+    if (fullscreen || window.innerWidth >= 1024) return;
     event.preventDefault();
     const startY = event.clientY;
     const startPixels = window.innerHeight * mobileHeight / 100;
