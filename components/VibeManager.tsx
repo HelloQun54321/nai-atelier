@@ -20,7 +20,7 @@ const emptyVibes = (): NonNullable<NAIParams['vibes']> => ({
   slots: [],
 });
 
-const BackIcon = () => <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>;
+const BackIcon = () => <svg className="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>;
 
 export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, markChange, apiKey, notify }) => {
   const confirmAction = useConfirmDialog();

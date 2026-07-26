@@ -1209,7 +1209,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             <header className="chain-editor-header flex-shrink-0 min-h-[calc(3.5rem+env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-2 md:px-6 pt-[env(safe-area-inset-top)] md:pt-3 pb-2 md:pb-3 flex items-center justify-between gap-1 md:gap-4 overflow-x-hidden">
                 <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
                     <button onClick={onBack} className="mobile-touch flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors flex-shrink-0" aria-label="返回">
-                        <ArrowLeft className="h-6 w-6" />
+                        <ArrowLeft className="h-[18px] w-[18px] md:h-5 md:w-5" />
                     </button>
 
                     {chain.id !== 'playground' && (isEditingInfo && isOwner ? (
@@ -1308,7 +1308,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             title="引用预设"
                             aria-label="引用预设"
                         >
-                            <Quote className="h-5 w-5" />
+                            <Quote className="h-[18px] w-[18px] md:h-5 md:w-5" />
                         </button>
                     )}
                     {/* Fork / Save to Library Button */}
@@ -1319,7 +1319,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             title={chain.id === 'playground' ? '保存到库' : 'Fork'}
                             aria-label={chain.id === 'playground' ? '保存到库' : 'Fork'}
                         >
-                            <Save className={`block h-5 w-5 ${chain.id === 'playground' ? '' : 'mr-1'}`} />
+                            <Save className={`block h-[18px] w-[18px] md:h-5 md:w-5 ${chain.id === 'playground' ? '' : 'mr-1'}`} />
                             {chain.id !== 'playground' && <span>Fork</span>}
                         </button>
                     )}
@@ -1332,7 +1332,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             title="重置实验室"
                             aria-label="重置实验室"
                         >
-                            <RotateCcw className="h-5 w-5" />
+                            <RotateCcw className="h-[18px] w-[18px] md:h-5 md:w-5" />
                         </button>
                     )}
                     {isOwner && chain.id !== 'playground' && <button onClick={handleSaveAll} disabled={!hasChanges} className={`mobile-touch rounded-xl px-3 text-sm font-bold lg:hidden ${hasChanges ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}>{hasChanges ? '保存' : '已保存'}</button>}
@@ -1844,7 +1844,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 </button>
                             </div>
 
-                            <button onClick={() => setShowImportPreset(false)} className="mobile-touch absolute right-3 top-3 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 md:static" aria-label="关闭引用预设"><X className="h-5 w-5" /></button>
+                            <button onClick={() => setShowImportPreset(false)} className="mobile-touch absolute right-3 top-3 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 md:static" aria-label="关闭引用预设"><X className="h-[18px] w-[18px] md:h-5 md:w-5" /></button>
                         </div>
                         <div className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4">
                             {/* Extract all unique tags from the filtered list for this modal */}

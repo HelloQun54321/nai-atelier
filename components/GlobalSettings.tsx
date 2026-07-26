@@ -123,7 +123,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
             <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">连接信息和本地数据维护</p>
           </div>
           <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="关闭全局设置">
-            <X className="h-5 w-5" />
+            <X className="h-[18px] w-[18px]" />
           </button>
         </div>
 

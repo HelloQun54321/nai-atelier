@@ -570,7 +570,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                     {migrationProgress && <span className="hidden truncate text-xs text-indigo-600 dark:text-indigo-400 md:block">{migrationProgress.total > 0 ? `正在迁移浏览器历史 ${migrationProgress.current}/${migrationProgress.total}，请勿关闭页面…` : '正在检查浏览器历史…'}</span>}
                     <div className="ml-auto flex items-center gap-2">
                         <ToolbarButton onClick={() => setShowDateFilter(true)}><CalendarDays className="h-4 w-4" />筛选日期</ToolbarButton>
-                        <button onClick={() => setShowCleanMenu(true)} className="mobile-touch rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden"><SlidersHorizontal className="h-4 w-4" /></button>
+                        <button onClick={() => setShowCleanMenu(true)} className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white p-0 text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden" aria-label="历史管理"><SlidersHorizontal className="h-[18px] w-[18px]" /></button>
                         <div className="relative hidden md:block">
                             <button 
                                 onClick={() => setShowCleanMenu(!showCleanMenu)} 

@@ -85,8 +85,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [mobileAgentDock, setMobileAgentDock] = useState<MobileAgentDock>(readMobileAgentDock);
   const [mobileAgentDrag, setMobileAgentDrag] = useState<{ left: number; y: number } | null>(null);
-  const mobileAgentDragRef = useRef<{ pointerId: number; startX: number; startY: number; offsetX: number; offsetY: number; width: number; height: number; moved: boolean } | null>(null);
-  const suppressMobileAgentClickUntilRef = useRef(0);
+  const mobileAgentDragRef = useRef<{ pointerId: number; target: HTMLButtonElement; startX: number; startY: number; offsetX: number; offsetY: number; width: number; height: number; moved: boolean } | null>(null);
   const desktopGroups = [
     { label: '工作区', items: [
       { id: 'list', label: '画师串', icon: icons.list },
@@ -155,9 +154,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
 
   const startMobileAgentDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
+    event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Older mobile browsers can still use the window-level fallback below.
+    }
     mobileAgentDragRef.current = {
       pointerId: event.pointerId,
+      target: event.currentTarget,
       startX: event.clientX,
       startY: event.clientY,
       offsetX: event.clientX - rect.left,
@@ -184,6 +190,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleEnd);
       window.removeEventListener('pointercancel', handleCancel);
+      try {
+        if (drag.target.hasPointerCapture(drag.pointerId)) drag.target.releasePointerCapture(drag.pointerId);
+      } catch {
+        // The browser may already have released capture after a cancelled gesture.
+      }
       mobileAgentDragRef.current = null;
       if (drag.moved && !cancelled) {
         const centerY = endEvent.clientY - drag.offsetY + drag.height / 2;
@@ -191,13 +202,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
           side: endEvent.clientX < window.innerWidth / 2 ? 'left' : 'right',
           y: clampMobileAgentY(centerY / window.innerHeight, Boolean(hideNav)),
         };
-        suppressMobileAgentClickUntilRef.current = Date.now() + 500;
         setMobileAgentDock(next);
         localStorage.setItem('nai_mobile_agent_dock', JSON.stringify({ ...next, version: MOBILE_AGENT_DOCK_VERSION }));
-      } else if (cancelled) {
-        suppressMobileAgentClickUntilRef.current = Date.now() + 500;
       }
       setMobileAgentDrag(null);
+      if (!drag.moved && !cancelled) onOpenAgent();
     };
     const handleEnd = (endEvent: PointerEvent) => finishDrag(endEvent);
     const handleCancel = (cancelEvent: PointerEvent) => finishDrag(cancelEvent, true);
@@ -209,7 +218,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   const MobileNavButton: React.FC<{ label: string; active: boolean; icon: React.ElementType; onClick: () => void }> = ({ label, active, icon: Icon, onClick }) => (
     <button onClick={onClick} className={`relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-500'}`}>
       {active && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-indigo-500" />}
-      <Icon aria-hidden="true" className="h-6 w-6" strokeWidth={1.8} />
+      <span className="flex h-6 w-6 items-center justify-center"><Icon aria-hidden="true" className="h-[19px] w-[19px]" strokeWidth={1.8} /></span>
       <span className="text-[10px] font-medium">{label}</span>
     </button>
   );
@@ -259,22 +268,19 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       {!showResources && !showSettings && <button
         type="button"
         onPointerDown={startMobileAgentDrag}
-        onClick={() => {
-          if (Date.now() < suppressMobileAgentClickUntilRef.current) return;
-          onOpenAgent();
-        }}
+        onClick={event => { if (event.detail === 0) onOpenAgent(); }}
         aria-label="打开项目 Agent"
         title="项目 Agent（可拖动）"
         style={mobileAgentDrag
           ? { left: mobileAgentDrag.left, right: 'auto', top: `${clampMobileAgentY(mobileAgentDrag.y, Boolean(hideNav)) * 100}dvh` }
           : { left: mobileAgentDock.side === 'left' ? 0 : 'auto', right: mobileAgentDock.side === 'right' ? 0 : 'auto', top: `${clampMobileAgentY(mobileAgentDock.y, Boolean(hideNav)) * 100}dvh` }}
-        className={`fixed z-[950] flex h-14 w-11 touch-none select-none items-center justify-center border border-indigo-300/70 bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-950/20 outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 active:scale-95 dark:border-indigo-400/40 dark:from-indigo-600 dark:to-violet-700 md:hidden ${mobileAgentDrag ? 'cursor-grabbing rounded-2xl transition-none' : `cursor-grab transition-all duration-200 hover:from-indigo-400 hover:to-violet-500 ${mobileAgentDock.side === 'left' ? 'rounded-r-2xl border-l-0' : 'rounded-l-2xl border-r-0'}`} -translate-y-1/2`}
+        className={`fixed z-[950] flex h-11 w-9 touch-none select-none items-center justify-center border border-indigo-300/70 bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-md shadow-indigo-950/20 outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 dark:border-indigo-400/40 dark:from-indigo-600 dark:to-violet-700 md:hidden ${mobileAgentDrag ? 'cursor-grabbing rounded-xl transition-none' : `cursor-grab transition-all duration-200 hover:from-indigo-400 hover:to-violet-500 ${mobileAgentDock.side === 'left' ? 'rounded-r-xl border-l-0' : 'rounded-l-xl border-r-0'}`} -translate-y-1/2`}
       >
-        <Sparkles className="h-5 w-5" aria-hidden="true" />
+        <Sparkles className="h-4 w-4" aria-hidden="true" />
       </button>}
 
       {!hideNav && <>
-        {showResources && <div className="fixed inset-0 z-[60] bg-black/35 backdrop-blur-[2px] md:hidden" onClick={() => setShowResources(false)}><div className="absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-900" onClick={event => event.stopPropagation()}><div className="mb-2 flex items-center justify-between px-2"><span className="text-sm font-bold">资源库</span><button onClick={() => setShowResources(false)} className="mobile-touch flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800" aria-label="关闭资源库菜单"><X className="h-5 w-5" /></button></div><div className="grid grid-cols-2 gap-2">{resourceItems.map(item => { const ResourceIcon = item.icon; return <button key={item.id} onClick={() => navigateMobile(item.id)} className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-2xl ${activeView === item.id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><ResourceIcon className="h-6 w-6" strokeWidth={1.8} /><span className="text-xs font-medium">{item.label}</span></button>; })}</div></div></div>}
+        {showResources && <div className="fixed inset-0 z-[60] bg-black/35 backdrop-blur-[2px] md:hidden" onClick={() => setShowResources(false)}><div className="absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-900" onClick={event => event.stopPropagation()}><div className="mb-2 flex items-center justify-between px-2"><span className="text-sm font-bold">资源库</span><button onClick={() => setShowResources(false)} className="mobile-touch flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800" aria-label="关闭资源库菜单"><X className="h-[18px] w-[18px]" /></button></div><div className="grid grid-cols-2 gap-2">{resourceItems.map(item => { const ResourceIcon = item.icon; return <button key={item.id} onClick={() => navigateMobile(item.id)} className={`flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-2xl ${activeView === item.id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><span className="flex h-6 w-6 items-center justify-center"><ResourceIcon className="h-[18px] w-[18px]" strokeWidth={1.8} /></span><span className="text-[11px] font-medium leading-none">{item.label}</span></button>; })}</div></div></div>}
         <div className="fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] items-start border-t border-gray-200 bg-white/95 px-1 pt-1.5 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 md:hidden">
           <MobileNavButton label="画师串" active={activeView === 'list'} icon={icons.list} onClick={() => navigateMobile('list')} />
           <MobileNavButton label="资源库" active={resourceActive || showResources} icon={icons.resources} onClick={() => setShowResources(value => !value)} />

@@ -546,7 +546,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
     <section className="relative flex min-w-0 flex-1 flex-col">
       <header className="flex min-h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-1.5 border-b border-gray-200 bg-white px-2 pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900 md:gap-2 md:px-4">
-        <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="返回"><ArrowLeft className="h-5 w-5" /></button>
+        <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="返回"><ArrowLeft className="h-[18px] w-[18px]" /></button>
         <button type="button" onClick={() => setShowSessions(true)} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="会话列表"><List className="h-5 w-5" /></button>
         <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-black text-gray-900 dark:text-white">{activeSession?.title || '项目 Agent'}</h2><p className="truncate text-[10px] text-gray-500">{running ? '正在执行，可继续追加要求' : `${activeSession?.model || '未选择模型'} · ${activeModel?.imageInput ? '支持识图' : '不支持识图'}`}</p></div>
         <div className="relative">

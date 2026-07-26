@@ -8,7 +8,7 @@ export const MobileIconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonEle
     type="button"
     aria-label={label}
     title={label}
-    className={`mobile-touch inline-flex h-11 w-11 flex-none items-center justify-center rounded-xl transition-colors ${className}`}
+    className={`mobile-touch inline-flex h-11 w-11 flex-none items-center justify-center rounded-xl transition-colors [&>svg]:h-[18px] [&>svg]:w-[18px] [&>svg]:shrink-0 ${className}`}
     {...props}
   >
     {children}
