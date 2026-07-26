@@ -368,7 +368,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
            <button onClick={() => void drawGacha()} className="mobile-touch flex-none rounded-full bg-purple-600 px-4 text-sm font-bold text-white">🎲 {gachaCards ? '再抽一批' : '随机抽卡'}</button>
            {gachaCards && <button onClick={() => setGachaCards(null)} className="mobile-touch flex-none rounded-full border border-gray-300 px-4 text-sm dark:border-gray-600">返回目录</button>}
          </div>
-         <div className="hidden flex-wrap items-start justify-between gap-3 md:flex">
+         <div className="workspace-page-heading hidden flex-wrap items-start justify-between gap-3 md:flex">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">角色库</h1>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">角色 Tag 完整目录与我的自定义角色还原</p>
@@ -397,7 +397,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
           <input type="range" min="3" max="10" value={gridColumns} onChange={event => { const value = Number(event.target.value); setGridColumns(value); localStorage.setItem('nai_character_grid_columns', String(value)); }} className="hidden w-24 md:block" />
         </div>
 
-         <div className="hidden flex-wrap gap-2 md:flex">
+         <div className="workspace-toolbar hidden flex-wrap gap-2 md:flex">
           <div className="relative min-w-[260px] flex-1">
             <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" /></svg>
             <input value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品、变体或英文 Tag…" className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
@@ -424,7 +424,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
       <div ref={scrollRef} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6">
         {isLoading && <div className="absolute inset-x-0 top-3 z-20 flex justify-center"><span className="rounded-full bg-gray-900/80 px-4 py-2 text-xs text-white">正在加载角色目录…</span></div>}
-        <div className={`${mobileGalleryClassName(imageDisplay)} md:grid md:gap-4`} style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }) }}>
+        <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-character-grid md:grid md:gap-4`} style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }) }}>
           {visibleCards.map(card => {
             const favorite = favorites.has(card.key);
             const generating = generatingKey === card.key;

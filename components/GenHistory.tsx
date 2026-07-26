@@ -608,7 +608,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
 
                 {/* 分页控件 */}
                 {totalCount > 0 && (
-                    <div className="hidden md:flex flex-col sm:flex-row gap-3 items-center justify-between bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <div className="workspace-history-pagination hidden md:flex flex-col sm:flex-row gap-3 items-center justify-between bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
                         {/* 分页按钮 */}
                         <div className="flex items-center gap-2">
                             {/* 首页 */}
@@ -760,7 +760,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                     </div>
                 ) : (
                     <>
-                        <div className={`${mobileGalleryClassName(imageDisplay)} md:grid md:grid-cols-4 xl:grid-cols-5 md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
+                        <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-history-grid md:grid md:grid-cols-4 xl:grid-cols-5 md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
                             {items.map(item => (
                                 <div
                                     key={item.id}

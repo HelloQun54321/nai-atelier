@@ -90,7 +90,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     };
 
     return (
-        <div className="w-full lg:w-1/2 flex flex-col bg-gray-100 dark:bg-black/20 order-1 lg:order-2 border-b lg:border-b-0 border-gray-200 dark:border-gray-800 shrink-0">
+        <div className="chain-editor-preview w-full lg:w-1/2 flex flex-col bg-gray-100 dark:bg-black/20 order-1 lg:order-2 border-b lg:border-b-0 border-gray-200 dark:border-gray-800 shrink-0">
             <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden min-h-[400px]">
                 {/* Subject / Variable Input */}
                 <div className="mb-4 bg-white dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-800">

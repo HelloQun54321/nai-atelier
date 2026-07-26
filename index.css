@@ -19,6 +19,157 @@ body,
   transition: padding-right 180ms ease;
 }
 
+/*
+ * The Agent changes the space available to the workspace without changing the
+ * browser viewport.  Page layouts therefore query the workspace itself instead
+ * of continuing to use viewport-only md/lg/xl breakpoints while docked.
+ */
+.workspace-chain-grid { --workspace-card-min: 200px; }
+.workspace-character-grid { --workspace-card-min: 180px; }
+.workspace-artist-grid { --workspace-card-min: 180px; }
+.workspace-history-grid { --workspace-card-min: 145px; }
+.workspace-inspiration-grid { --workspace-card-min: 190px; }
+.workspace-aitag-grid { --workspace-card-min: 175px; }
+.workspace-manager-grid { --workspace-card-min: 160px; }
+
+@media (min-width: 1280px) {
+.agent-panel-docked .workspace-container {
+  container-name: workspace;
+  container-type: inline-size;
+}
+
+@container workspace (max-width: 1240px) {
+  .agent-panel-docked .workspace-card-grid {
+    grid-template-columns: repeat(auto-fit, minmax(var(--workspace-card-min, 190px), 1fr)) !important;
+  }
+
+  .agent-panel-docked .workspace-toolbar {
+    flex-wrap: wrap !important;
+  }
+
+  .agent-panel-docked .workspace-page-heading {
+    align-items: flex-start !important;
+  }
+
+  .agent-panel-docked .workspace-history-pagination {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .agent-panel-docked .workspace-history-pagination > div {
+    flex-wrap: wrap;
+  }
+
+  .agent-panel-docked .workspace-aitag-filters {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .agent-panel-docked .workspace-aitag-filters > div {
+    padding-right: 1.5rem;
+  }
+
+}
+
+@container workspace (max-width: 1180px) {
+  .agent-panel-docked .chain-editor-header {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .agent-panel-docked .chain-editor-header > :first-child {
+    flex: 1 1 280px;
+  }
+
+  .agent-panel-docked .chain-editor-actions {
+    margin-left: auto;
+  }
+
+  .agent-panel-docked .chain-editor-body {
+    flex-direction: column !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  .agent-panel-docked .chain-editor-main {
+    order: 1 !important;
+    min-height: auto !important;
+    width: 100% !important;
+    flex: 0 0 auto !important;
+    overflow: visible !important;
+    border-right-width: 0 !important;
+    border-bottom-width: 1px !important;
+  }
+
+  .agent-panel-docked .chain-editor-preview-wrapper {
+    order: 2;
+    display: block !important;
+    height: min(900px, calc(100dvh - 3rem));
+    min-height: 720px;
+    width: 100%;
+    flex: 0 0 auto;
+  }
+
+  .agent-panel-docked .chain-editor-preview {
+    height: 100%;
+    min-height: 0;
+    width: 100% !important;
+    border-bottom-width: 0 !important;
+  }
+
+  .agent-panel-docked .chain-editor-param-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+}
+
+@container workspace (max-width: 980px) {
+  .agent-panel-docked .workspace-page-heading {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .agent-panel-docked .workspace-manager-detail {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .agent-panel-docked .workspace-manager-split {
+    display: flex !important;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .agent-panel-docked .workspace-manager-list,
+  .agent-panel-docked .workspace-manager-selection {
+    overflow: visible !important;
+  }
+
+  .agent-panel-docked .workspace-manager-selection {
+    border-left-width: 0 !important;
+    border-top-width: 1px !important;
+  }
+
+  .agent-panel-docked .aitag-split {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .agent-panel-docked .aitag-detail-panel--closed {
+    display: none !important;
+  }
+
+  .agent-panel-docked .aitag-detail-panel--open {
+    position: absolute !important;
+    inset: 0 !important;
+    z-index: 30 !important;
+    display: flex !important;
+    border: 0 !important;
+  }
+
+  .agent-panel-docked .aitag-detail-back {
+    display: flex !important;
+  }
+}
+}
+
 .agent-panel {
   inset-inline: 0;
   bottom: 0;

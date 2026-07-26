@@ -926,7 +926,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                 </div>
                 {(isProcessing || taskQueue.length > 0) && <button onClick={() => setShowLogs(true)} className="mobile-touch flex items-center justify-between rounded-xl bg-indigo-50 px-3 text-xs font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 md:hidden"><span>画师预览任务</span><span>等待 {taskQueue.length}{failedTasks.length ? ` · 失败 ${failedTasks.length}` : ''}</span></button>}
 
-                <div className="hidden gap-2 w-full md:flex">
+                <div className="workspace-toolbar hidden gap-2 w-full md:flex">
                     {/* Refresh locally persisted artists */}
                     {canManageArtists && (
                         <button
@@ -1212,7 +1212,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                 {layoutMode === 'grid' ? (
                     /* --- GRID LAYOUT (Dynamic Columns using gridCols) --- */
                     <div
-                        className={`${mobileGalleryClassName(imageDisplay)} md:grid md:gap-4 md:pr-6 transition-all`}
+                        className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid md:grid md:gap-4 md:pr-6 transition-all`}
                         style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }) }}
                     >
                         {filteredArtists.map((artist, idx) => {

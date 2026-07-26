@@ -906,7 +906,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   };
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col bg-gray-50 dark:bg-gray-900">
+    <div className="aitag-workspace flex-1 min-h-0 flex flex-col bg-gray-50 dark:bg-gray-900">
       <header className="flex-shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 py-2 md:py-4">
         <div className="flex gap-2 px-2 md:hidden">
           <span title={isAitagConnected ? '连接正常' : '当前使用本地缓存'} className={`mt-4 h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
@@ -915,7 +915,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           <MobileIconButton label="刷新" onClick={() => loadWorks(page, { resetScroll: true })} disabled={isLoading} className="border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-900">↻</MobileIconButton>
         </div>
         <div className="hidden px-4 md:block md:px-6">
-          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
+          <div className="workspace-page-heading flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
                 <span
@@ -940,7 +940,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           </div>
         </div>
 
-        <div className="mt-4 hidden grid-cols-1 gap-2 md:grid xl:grid-cols-[minmax(0,1fr)_460px]">
+        <div className="workspace-aitag-filters mt-4 hidden grid-cols-1 gap-2 md:grid xl:grid-cols-[minmax(0,1fr)_460px]">
           <div className="px-4 md:px-6 xl:pr-0 grid grid-cols-1 xl:grid-cols-2 gap-2 min-w-0">
             <input
               value={q}
@@ -1033,7 +1033,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         </div>
       </MobileBottomSheet>
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_460px]">
+      <div className="aitag-split relative flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_460px]">
         <main
           ref={mainScrollRef}
           onScroll={cacheScrollPositions}
@@ -1058,7 +1058,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
               <div className="text-sm">{cacheNeedsMoreData ? '本地没有这一页，且当前无法联网获取' : '没有匹配结果'}</div>
             </div>
           ) : (
-            <div className={`${mobileGalleryClassName(imageDisplay)} md:grid md:grid-cols-4 xl:grid-cols-5 3xl:grid-cols-6 md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
+            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-aitag-grid md:grid md:grid-cols-4 xl:grid-cols-5 3xl:grid-cols-6 md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
               {visibleItems.map(work => {
                 const type = getAitagType(work);
                 const isSelected = selectedId === work.id;
@@ -1215,10 +1215,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           </div>
         </main>
 
-        <aside className={`${selectedWork ? 'flex' : 'hidden'} fixed inset-0 z-[1050] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:static md:z-auto md:flex md:border-t xl:border-l xl:border-t-0`}>
+        <aside className={`aitag-detail-panel ${selectedWork ? 'aitag-detail-panel--open flex' : 'aitag-detail-panel--closed hidden'} fixed inset-0 z-[1050] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:static md:z-auto md:flex md:border-t xl:border-l xl:border-t-0`}>
           <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
             <div className="flex min-w-0 items-center gap-1">
-              <MobileIconButton label="返回作品列表" onClick={closeMobileDetail} className="md:hidden">←</MobileIconButton>
+              <MobileIconButton label="返回作品列表" onClick={closeMobileDetail} className="aitag-detail-back md:hidden">←</MobileIconButton>
               <div className="min-w-0">
               <div className="font-bold text-gray-900 dark:text-white truncate max-w-[300px]">
                 {selectedWork?.title || '作品详情'}

@@ -321,7 +321,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
             </button>
           </div>
           
-          <div className="flex gap-2 items-center w-full">
+          <div className="workspace-toolbar flex gap-2 items-center w-full">
               {selectionMode ? (
                   <>
                     <span className="text-sm text-gray-500 flex-1">已选 {selectedIds.size}</span>
@@ -359,7 +359,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
              )}
             
              {/* Updated Grid for Mobile: 2 cols */}
-             <div className={`${mobileGalleryClassName(imageDisplay)} md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6`} style={mobileGalleryStyle(imageDisplay)}>
+             <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-inspiration-grid md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6`} style={mobileGalleryStyle(imageDisplay)}>
                  {filtered.map(item => (
                      <div 
                         key={item.id} 

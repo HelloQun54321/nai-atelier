@@ -1185,7 +1185,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     return (
         <div
-            className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 transition-colors relative"
+            className="chain-editor-workspace flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 transition-colors relative"
             onDragEnter={handleImportDragEnter}
             onDragOver={handleImportDragOver}
             onDragLeave={handleImportDragLeave}
@@ -1205,7 +1205,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
             )}
             {/* Top Bar */}
-            <header className="flex-shrink-0 min-h-[calc(3.5rem+env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-2 md:px-6 pt-[env(safe-area-inset-top)] md:pt-3 pb-2 md:pb-3 flex items-center justify-between gap-1 md:gap-4 overflow-x-hidden">
+            <header className="chain-editor-header flex-shrink-0 min-h-[calc(3.5rem+env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-2 md:px-6 pt-[env(safe-area-inset-top)] md:pt-3 pb-2 md:pb-3 flex items-center justify-between gap-1 md:gap-4 overflow-x-hidden">
                 <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
                     <button onClick={onBack} className="mobile-touch flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors flex-shrink-0">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7 7-7m-7 7h18" /></svg>
@@ -1287,7 +1287,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     )}
                 </div>
 
-                <div className="ml-auto flex flex-shrink-0 items-center gap-2">
+                <div className="chain-editor-actions ml-auto flex flex-shrink-0 items-center gap-2">
                     {canEdit && (
                         <button
                             type="button"
@@ -1363,9 +1363,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             </nav>
 
             {/* Editor Content */}
-            <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden bg-white dark:bg-gray-900">
+            <div className="chain-editor-body flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden bg-white dark:bg-gray-900">
                 {/* Left Panel - Editor */}
-                <div className="flex w-full lg:w-1/2 min-h-full flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
+                <div className="chain-editor-main flex w-full lg:w-1/2 min-h-full flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
                     <div className="p-4 md:p-6 space-y-6 max-w-3xl mx-auto w-full pb-24">
                         {!isOwner && (
                             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded mb-4 text-sm text-yellow-700 dark:text-yellow-400">
@@ -1646,7 +1646,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
                     {/* Save Footer: fixed on mobile so always visible, sticky in left panel on lg */}
                     {!lightboxImg && (
-                        <div className="hidden lg:sticky lg:bottom-0 lg:z-[999] lg:flex w-full p-2 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-800 justify-between items-center shadow-lg transition-transform duration-300">
+                        <div className="chain-editor-footer hidden lg:sticky lg:bottom-0 lg:z-[999] lg:flex w-full p-2 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-800 justify-between items-center shadow-lg transition-transform duration-300">
                             <div className="text-xs text-gray-500 ml-2">
                                 {chain.id === 'playground' ? <span className="text-indigo-600 dark:text-indigo-400">生图实验室</span> : hasChanges ? <span className="text-yellow-600 dark:text-yellow-500 font-medium">⚠️ 未保存</span> : <span className="text-green-600 dark:text-green-500">✅ 已保存</span>}
                             </div>
@@ -1670,7 +1670,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
 
                 {/* Right Panel - Preview (Testing) - Extracted Component */}
-                <div className="hidden min-h-0 flex-1 lg:contents">
+                <div className="chain-editor-preview-wrapper hidden min-h-0 flex-1 lg:contents">
                 <ChainEditorPreview
                     subjectPrompt={subjectPrompt}
                     setSubjectPrompt={(s) => { setSubjectPrompt(s); markPresetSectionModified('subject'); markChange(); }}

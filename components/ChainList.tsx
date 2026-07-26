@@ -254,12 +254,12 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 p-2 md:p-8">
       <div className="max-w-[1920px] mx-auto">
-        <header className="mb-3 flex flex-col justify-between gap-2 md:mb-10 md:flex-row md:items-center md:gap-4">
+        <header className="workspace-page-heading mb-3 flex flex-col justify-between gap-2 md:mb-10 md:flex-row md:items-center md:gap-4">
           <div className="hidden md:block">
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-2">{title}</h1>
             <p className="text-sm md:text-base text-gray-500 dark:text-gray-400">{subtitle}</p>
           </div>
-          <div className="hidden flex-col gap-2 md:flex md:w-auto md:flex-row md:gap-4">
+          <div className="workspace-toolbar hidden flex-col gap-2 md:flex md:w-auto md:flex-row md:gap-4">
              <div className="flex gap-2 w-full md:w-auto">
                 <button 
                     onClick={onRefresh} 
@@ -365,7 +365,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           </div>
         ) : (
           /* Grid Layout */
-          <div className={`${mobileGalleryClassName(imageDisplay)} md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
+          <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-chain-grid md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
             {filteredChains.map((chain) => (
               <div key={chain.id} onClick={() => onSelect(chain.id)} className="mobile-gallery-item group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative">
                 {/* Copy Button Overlay - Trigger Modal */}

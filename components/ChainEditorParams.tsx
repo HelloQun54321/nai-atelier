@@ -100,7 +100,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
+            <div className="chain-editor-param-grid grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
                 <div className="flex flex-col gap-1">
                     <label className="text-xs text-gray-500 dark:text-gray-500 block">图片尺寸</label>
                     <select
