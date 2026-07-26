@@ -252,9 +252,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const createLabel = type === 'character' ? '新建角色串' : '新建画师串';
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 p-2 md:p-8">
-      <div className="max-w-[1920px] mx-auto">
-        <header className="workspace-page-heading mb-3 flex flex-col justify-between gap-2 md:mb-10 md:flex-row md:items-center md:gap-4">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 p-2 dark:bg-gray-900 md:p-8">
+      <div className="mx-auto flex min-h-0 w-full max-w-[1920px] flex-1 flex-col">
+        <header className="workspace-page-heading mb-3 flex flex-none flex-col justify-between gap-2 md:mb-10 md:flex-row md:items-center md:gap-4">
           <div className="hidden md:block">
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-2">{title}</h1>
             <p className="text-sm md:text-base text-gray-500 dark:text-gray-400">{subtitle}</p>
@@ -358,15 +358,16 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           </div>
         </MobileBottomSheet>
 
-        {filteredChains.length === 0 ? (
-          <div className="text-center py-20 bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700">
-            <p className="text-gray-500 text-lg mb-4">暂无数据</p>
-            {!isGuest && <button onClick={() => setIsModalOpen(true)} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-medium">{createLabel}</button>}
-          </div>
-        ) : (
-          /* Grid Layout */
-          <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-chain-grid md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
-            {filteredChains.map((chain) => (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {filteredChains.length === 0 ? (
+            <div className="text-center py-20 bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700">
+              <p className="text-gray-500 text-lg mb-4">暂无数据</p>
+              {!isGuest && <button onClick={() => setIsModalOpen(true)} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-medium">{createLabel}</button>}
+            </div>
+          ) : (
+            /* Grid Layout */
+            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-chain-grid md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
+              {filteredChains.map((chain) => (
               <div key={chain.id} onClick={() => onSelect(chain.id)} className="mobile-gallery-item group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative">
                 {/* Copy Button Overlay - Trigger Modal */}
                 <div className="absolute top-2 right-2 z-10 hidden opacity-0 transition-opacity md:block md:group-hover:opacity-100">
@@ -474,9 +475,10 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Simple Create Modal */}
