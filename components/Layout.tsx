@@ -1,4 +1,4 @@
-import React, { ReactNode, useEffect, useState } from 'react';
+import React, { ReactNode, useEffect, useRef, useState } from 'react';
 import {
   Archive,
   Beaker,
@@ -60,6 +60,19 @@ const SIDEBAR_MIN_WIDTH = 192;
 const SIDEBAR_MAX_WIDTH = 320;
 const SIDEBAR_COLLAPSE_SNAP = 112;
 const clampSidebarWidth = (value: number) => Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, value));
+type MobileAgentDock = { side: 'left' | 'right'; y: number };
+const clampMobileAgentY = (value: number, hideNav: boolean) => Math.min(hideNav ? 0.92 : 0.86, Math.max(0.1, value));
+const readMobileAgentDock = (): MobileAgentDock => {
+  try {
+    const stored = JSON.parse(localStorage.getItem('nai_mobile_agent_dock') || '{}') as Partial<MobileAgentDock>;
+    if ((stored.side === 'left' || stored.side === 'right') && Number.isFinite(stored.y)) {
+      return { side: stored.side, y: Math.min(0.92, Math.max(0.1, Number(stored.y))) };
+    }
+  } catch {
+    // Ignore malformed local preferences and restore the default position.
+  }
+  return { side: 'right', y: 0.42 };
+};
 
 export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentView, activeView = currentView, isDark, themeMode, setThemeMode, safeMode, toggleSafeMode, toast, hideNav, notify, onOpenAgent }) => {
   const anlasBudget = useAnlasBudget();
@@ -68,6 +81,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('nai_sidebar_collapsed') === 'true');
   const [sidebarWidth, setSidebarWidth] = useState(() => clampSidebarWidth(Number(localStorage.getItem('nai_sidebar_width')) || SIDEBAR_DEFAULT_WIDTH));
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
+  const [mobileAgentDock, setMobileAgentDock] = useState<MobileAgentDock>(readMobileAgentDock);
+  const [mobileAgentDrag, setMobileAgentDrag] = useState<{ left: number; y: number } | null>(null);
+  const mobileAgentDragRef = useRef<{ pointerId: number; startX: number; startY: number; offsetX: number; offsetY: number; width: number; height: number; moved: boolean } | null>(null);
+  const suppressMobileAgentClickUntilRef = useRef(0);
   const desktopGroups = [
     { label: '工作区', items: [
       { id: 'list', label: '画师串', icon: icons.list },
@@ -134,6 +151,59 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     window.addEventListener('pointercancel', handleEnd);
   };
 
+  const startMobileAgentDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    mobileAgentDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      width: rect.width,
+      height: rect.height,
+      moved: false,
+    };
+    setMobileAgentDrag({ left: rect.left, y: clampMobileAgentY((rect.top + rect.height / 2) / window.innerHeight, Boolean(hideNav)) });
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const drag = mobileAgentDragRef.current;
+      if (!drag || moveEvent.pointerId !== drag.pointerId) return;
+      if (!drag.moved && Math.hypot(moveEvent.clientX - drag.startX, moveEvent.clientY - drag.startY) < 5) return;
+      drag.moved = true;
+      moveEvent.preventDefault();
+      const left = Math.min(window.innerWidth - drag.width, Math.max(0, moveEvent.clientX - drag.offsetX));
+      const centerY = moveEvent.clientY - drag.offsetY + drag.height / 2;
+      setMobileAgentDrag({ left, y: clampMobileAgentY(centerY / window.innerHeight, Boolean(hideNav)) });
+    };
+    const finishDrag = (endEvent: PointerEvent, cancelled = false) => {
+      const drag = mobileAgentDragRef.current;
+      if (!drag || endEvent.pointerId !== drag.pointerId) return;
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleEnd);
+      window.removeEventListener('pointercancel', handleCancel);
+      mobileAgentDragRef.current = null;
+      if (drag.moved && !cancelled) {
+        const centerY = endEvent.clientY - drag.offsetY + drag.height / 2;
+        const next: MobileAgentDock = {
+          side: endEvent.clientX < window.innerWidth / 2 ? 'left' : 'right',
+          y: clampMobileAgentY(centerY / window.innerHeight, Boolean(hideNav)),
+        };
+        suppressMobileAgentClickUntilRef.current = Date.now() + 500;
+        setMobileAgentDock(next);
+        localStorage.setItem('nai_mobile_agent_dock', JSON.stringify(next));
+      } else if (cancelled) {
+        suppressMobileAgentClickUntilRef.current = Date.now() + 500;
+      }
+      setMobileAgentDrag(null);
+    };
+    const handleEnd = (endEvent: PointerEvent) => finishDrag(endEvent);
+    const handleCancel = (cancelEvent: PointerEvent) => finishDrag(cancelEvent, true);
+    window.addEventListener('pointermove', handleMove, { passive: false });
+    window.addEventListener('pointerup', handleEnd);
+    window.addEventListener('pointercancel', handleCancel);
+  };
+
   const MobileNavButton: React.FC<{ label: string; active: boolean; icon: React.ElementType; onClick: () => void }> = ({ label, active, icon: Icon, onClick }) => (
     <button onClick={onClick} className={`relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-500'}`}>
       {active && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-indigo-500" />}
@@ -186,10 +256,17 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
 
       {!showResources && !showSettings && <button
         type="button"
-        onClick={onOpenAgent}
+        onPointerDown={startMobileAgentDrag}
+        onClick={() => {
+          if (Date.now() < suppressMobileAgentClickUntilRef.current) return;
+          onOpenAgent();
+        }}
         aria-label="打开项目 Agent"
-        title="项目 Agent"
-        className="fixed right-0 top-[42%] z-[950] flex h-14 w-11 -translate-y-1/2 items-center justify-center rounded-l-2xl border border-r-0 border-indigo-300/70 bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-950/20 outline-none transition hover:w-12 hover:from-indigo-400 hover:to-violet-500 focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 active:scale-95 dark:border-indigo-400/40 dark:from-indigo-600 dark:to-violet-700 md:hidden"
+        title="项目 Agent（可拖动）"
+        style={mobileAgentDrag
+          ? { left: mobileAgentDrag.left, right: 'auto', top: `${clampMobileAgentY(mobileAgentDrag.y, Boolean(hideNav)) * 100}dvh` }
+          : { left: mobileAgentDock.side === 'left' ? 0 : 'auto', right: mobileAgentDock.side === 'right' ? 0 : 'auto', top: `${clampMobileAgentY(mobileAgentDock.y, Boolean(hideNav)) * 100}dvh` }}
+        className={`fixed z-[950] flex h-14 w-11 touch-none select-none items-center justify-center border border-indigo-300/70 bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-950/20 outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 active:scale-95 dark:border-indigo-400/40 dark:from-indigo-600 dark:to-violet-700 md:hidden ${mobileAgentDrag ? 'cursor-grabbing rounded-2xl transition-none' : `cursor-grab transition-all duration-200 hover:from-indigo-400 hover:to-violet-500 ${mobileAgentDock.side === 'left' ? 'rounded-r-2xl border-l-0' : 'rounded-l-2xl border-r-0'}`} -translate-y-1/2`}
       >
         <Sparkles className="h-5 w-5" aria-hidden="true" />
       </button>}
