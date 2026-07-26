@@ -354,27 +354,26 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
-       <header className="flex flex-none flex-col gap-2 border-b border-gray-200 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 md:gap-4 md:p-6">
+       <header className="flex flex-none flex-col gap-2 border-b border-gray-200 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 md:px-5 md:py-2">
          <div className="flex gap-2 md:hidden">
            <div className="relative min-w-0 flex-1">
              <svg className="absolute left-3 top-3 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" /></svg>
              <input value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品或 Tag" className="h-11 w-full rounded-xl border border-gray-300 bg-white pl-10 pr-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
            </div>
            <MobileIconButton label="筛选和抽卡设置" onClick={() => setShowMobileFilters(true)} className="border border-gray-300 bg-white text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300">☰</MobileIconButton>
-           <MobileIconButton label="新建自定义角色" onClick={() => setShowCreate(true)} className="bg-indigo-600 text-xl text-white">＋</MobileIconButton>
+           <MobileIconButton label={gachaCards ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} className="bg-purple-600 text-xl text-white">🎲</MobileIconButton>
          </div>
-         <div className="flex gap-2 overflow-x-auto pb-0.5 md:hidden">
-           {([['all', '全部'], ['catalog', '角色 Tag'], ['custom', `自定义 ${customChains.length}`], ['favorites', '收藏']] as [CharacterTab, string][]).map(([value, label]) => <button key={value} onClick={() => { setTab(value); setGachaCards(null); }} className={`mobile-touch flex-none rounded-full px-4 text-sm font-bold ${tab === value ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>{label}</button>)}
-           <button onClick={() => void drawGacha()} className="mobile-touch flex-none rounded-full bg-purple-600 px-4 text-sm font-bold text-white">🎲 {gachaCards ? '再抽一批' : '随机抽卡'}</button>
-           {gachaCards && <button onClick={() => setGachaCards(null)} className="mobile-touch flex-none rounded-full border border-gray-300 px-4 text-sm dark:border-gray-600">返回目录</button>}
-         </div>
-         <div className="workspace-page-heading hidden flex-wrap items-start justify-between gap-3 md:flex">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">角色库</h1>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">角色 Tag 完整目录与我的自定义角色还原</p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <button onClick={() => setShowCreate(true)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-500">＋ 自定义角色</button>
+         <div className="workspace-page-heading hidden min-w-0 items-center gap-2 overflow-x-auto md:flex">
+           <h1 className="mr-1 flex-none text-xl font-bold text-gray-900 dark:text-white">角色库</h1>
+           <div className="flex flex-none items-center gap-1">
+             {([
+               ['all', '全部'], ['catalog', '角色 Tag'], ['custom', `我的自定义 ${customChains.length}`], ['favorites', '收藏'],
+             ] as [CharacterTab, string][]).map(([value, label]) => (
+               <button key={value} onClick={() => { setTab(value); setGachaCards(null); }} className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium ${tab === value ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'}`}>{label}</button>
+             ))}
+           </div>
+           <div className="ml-auto flex flex-none items-center justify-end gap-2">
+             <button onClick={() => setShowCreate(true)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-500">＋ 自定义角色</button>
             <select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className="rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
               <option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option>
             </select>
@@ -383,36 +382,34 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             </select>
             <button onClick={() => void drawGacha()} disabled={isGachaLoading} className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-bold text-white hover:bg-purple-500 disabled:opacity-50">🎲 {gachaCards ? '再抽一批' : '随机抽卡'}</button>
             {gachaCards && <button onClick={() => setGachaCards(null)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:text-gray-200">返回目录</button>}
-          </div>
-        </div>
+           </div>
+         </div>
 
-         <div className="hidden flex-wrap items-center gap-2 md:flex">
-          {([
-            ['all', `全部`], ['catalog', `角色 Tag`], ['custom', `我的自定义 ${customChains.length}`], ['favorites', '收藏'],
-          ] as [CharacterTab, string][]).map(([value, label]) => (
-            <button key={value} onClick={() => { setTab(value); setGachaCards(null); }} className={`rounded-full px-3 py-1.5 text-sm font-medium ${tab === value ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'}`}>{label}</button>
-          ))}
-          <div className="hidden min-w-[220px] flex-1 md:block" />
-          <span className="hidden text-xs text-gray-400 md:inline">列数</span>
-          <input type="range" min="3" max="10" value={gridColumns} onChange={event => { const value = Number(event.target.value); setGridColumns(value); localStorage.setItem('nai_character_grid_columns', String(value)); }} className="hidden w-24 md:block" />
-        </div>
-
-         <div className="workspace-toolbar hidden flex-wrap gap-2 md:flex">
-          <div className="relative min-w-[260px] flex-1">
+         <div className="workspace-toolbar hidden items-center gap-2 md:flex">
+           <div className="relative min-w-[260px] flex-1">
             <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" /></svg>
             <input value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品、变体或英文 Tag…" className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
           </div>
           <select value={sort} disabled={Boolean(gachaCards)} onChange={event => setSort(event.target.value as CharacterDictionarySort)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white">
             <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">{searchTerm.trim() ? '相关性优先 · 名称 A → Z' : '名称 A → Z'}</option><option value="name-desc">{searchTerm.trim() ? '相关性优先 · 名称 Z → A' : '名称 Z → A'}</option>
           </select>
-          <div className="flex items-center rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-300">
-            显示 {visibleCards.length.toLocaleString('zh-CN')} · 目录 {catalogTotal.toLocaleString('zh-CN')} · 自定义 {customChains.length}
-          </div>
-        </div>
+           <div className="flex items-center rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+             显示 {visibleCards.length.toLocaleString('zh-CN')} · 目录 {catalogTotal.toLocaleString('zh-CN')} · 自定义 {customChains.length}
+           </div>
+           <span className="text-xs text-gray-400">列数</span>
+           <input type="range" min="3" max="10" value={gridColumns} onChange={event => { const value = Number(event.target.value); setGridColumns(value); localStorage.setItem('nai_character_grid_columns', String(value)); }} className="w-24 flex-none" />
+         </div>
        </header>
 
        <MobileBottomSheet open={showMobileFilters} title="角色筛选与抽卡" onClose={() => setShowMobileFilters(false)}>
          <div className="space-y-5">
+           <div className="grid grid-cols-2 gap-2">
+             <button onClick={() => { setShowMobileFilters(false); setShowCreate(true); }} className="mobile-touch rounded-xl bg-indigo-600 px-3 text-sm font-bold text-white">＋ 新建自定义角色</button>
+             {gachaCards && <button onClick={() => { setGachaCards(null); setShowMobileFilters(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">返回目录</button>}
+           </div>
+           <div><div className="mb-2 text-sm font-bold dark:text-white">显示范围</div><div className="grid grid-cols-2 gap-2">
+             {([['all', '全部'], ['catalog', '角色 Tag'], ['custom', `自定义 ${customChains.length}`], ['favorites', '收藏']] as [CharacterTab, string][]).map(([value, label]) => <button key={value} onClick={() => { setTab(value); setGachaCards(null); }} className={`mobile-touch rounded-xl px-3 text-sm font-bold ${tab === value ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{label}</button>)}
+           </div></div>
            <label className="block text-sm font-bold dark:text-white">排序方式<select value={sort} disabled={Boolean(gachaCards)} onChange={event => setSort(event.target.value as CharacterDictionarySort)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="popular">热度从高到低</option><option value="least">热度从低到高</option><option value="name-asc">名称 A → Z</option><option value="name-desc">名称 Z → A</option></select></label>
            <div className="grid grid-cols-2 gap-3">
              <label className="text-sm font-bold dark:text-white">抽卡范围<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option></select></label>

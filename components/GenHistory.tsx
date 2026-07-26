@@ -544,17 +544,16 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
 
     return (
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
-            <header className="p-2 md:p-6 bg-white dark:bg-gray-800 shadow-md border-b border-gray-200 dark:border-gray-700 z-10 flex-shrink-0">
-                <div className="flex justify-between items-center mb-2 md:mb-4">
-                    <div className="hidden md:block">
-                        <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">本地生图历史</h1>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">保存在本机 local-data，不上传云端</p>
+            <header className="z-10 flex-shrink-0 border-b border-gray-200 bg-white p-2 shadow-md dark:border-gray-700 dark:bg-gray-800 md:px-5 md:py-2">
+                <div className="flex items-center justify-between">
+                    <div className="hidden min-w-0 items-center gap-2 md:flex">
+                        <h1 className="whitespace-nowrap text-xl font-bold text-gray-900 dark:text-white">本地生图历史</h1>
                         {migrationProgress && (
-                            <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-1">
+                            <span className="truncate text-xs text-indigo-600 dark:text-indigo-400">
                                 {migrationProgress.total > 0
                                     ? `正在迁移浏览器历史 ${migrationProgress.current}/${migrationProgress.total}，请勿关闭页面…`
                                     : '正在检查浏览器历史…'}
-                            </p>
+                            </span>
                         )}
                     </div>
                     <div className="ml-auto flex items-center gap-2">
@@ -606,109 +605,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                     </div>
                 </div>
 
-                {/* 分页控件 */}
-                {totalCount > 0 && (
-                    <div className="workspace-history-pagination hidden md:flex flex-col sm:flex-row gap-3 items-center justify-between bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                        {/* 分页按钮 */}
-                        <div className="flex items-center gap-2">
-                            {/* 首页 */}
-                            <button
-                                onClick={() => goToPage(1)}
-                                disabled={currentPage === 1 || isLoading}
-                                className="px-2 py-1 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-                            >
-                                首页
-                            </button>
-
-                            {/* 上一页 */}
-                            <button
-                                onClick={() => goToPage(currentPage - 1)}
-                                disabled={currentPage === 1 || isLoading}
-                                className="px-2 py-1 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-                            >
-                                上一页
-                            </button>
-
-                            {/* 页码按钮 */}
-                            <div className="flex gap-1">
-                                {getPageButtons().map(page => (
-                                    <button
-                                        key={page}
-                                        onClick={() => goToPage(page)}
-                                        disabled={isLoading}
-                                        className={`px-2 py-1 text-xs rounded border transition-colors ${
-                                            page === currentPage
-                                                ? 'bg-indigo-500 text-white border-indigo-500'
-                                                : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
-                                        }`}
-                                    >
-                                        {page}
-                                    </button>
-                                ))}
-                            </div>
-
-                            {/* 下一页 */}
-                            <button
-                                onClick={() => goToPage(currentPage + 1)}
-                                disabled={currentPage === totalPages || isLoading}
-                                className="px-2 py-1 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-                            >
-                                下一页
-                            </button>
-
-                            {/* 末页 */}
-                            <button
-                                onClick={() => goToPage(totalPages)}
-                                disabled={currentPage === totalPages || isLoading}
-                                className="px-2 py-1 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-                            >
-                                末页
-                            </button>
-                        </div>
-
-                        {/* 页码输入框 */}
-                        <div className="flex items-center gap-2">
-                            <span className="text-sm text-gray-600 dark:text-gray-300">跳至</span>
-                            <input
-                                type="number"
-                                min="1"
-                                max={totalPages}
-                                placeholder="页码"
-                                value={jumpPage}
-                                disabled={isLoading}
-                                onChange={e => setJumpPage(e.target.value)}
-                                className="w-16 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        const page = parseInt((e.target as HTMLInputElement).value);
-                                        if (page >= 1 && page <= totalPages) {
-                                            void goToPage(page);
-                                            setJumpPage('');
-                                        }
-                                    }
-                                }}
-                            />
-                            <button
-                                onClick={() => {
-                                    const page = parseInt(jumpPage);
-                                    if (page >= 1 && page <= totalPages) {
-                                        void goToPage(page);
-                                        setJumpPage('');
-                                    }
-                                }}
-                                disabled={isLoading}
-                                className="px-2 py-1 text-xs bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors disabled:opacity-50"
-                            >
-                                跳转
-                            </button>
-                        </div>
-                    </div>
-                )}
-                {totalCount > 0 && <div className="hidden grid-cols-[2.75rem_1fr_2.75rem] items-center gap-2 md:hidden">
-                    <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1 || isLoading} aria-label="上一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">‹</button>
-                    <button onClick={() => setShowCleanMenu(true)} className="mobile-touch rounded-lg text-sm font-bold text-indigo-600 dark:text-indigo-300">{currentPage} / {totalPages}</button>
-                    <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || isLoading} aria-label="下一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">›</button>
-                </div>}
             </header>
 
             <MobileBottomSheet open={showDateFilter} title="筛选历史日期" onClose={() => setShowDateFilter(false)}>

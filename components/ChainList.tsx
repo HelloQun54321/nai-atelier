@@ -248,18 +248,16 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   }, [chains, type, searchTerm, favOnly, favorites, selectedTags, sortOption]);
 
   const title = type === 'character' ? '我的角色串' : '我的画师串';
-  const subtitle = type === 'character' ? '管理角色外观、服装与特征预设。' : '管理并迭代你的 NovelAI 提示词风格组合。';
   const createLabel = type === 'character' ? '新建角色串' : '新建画师串';
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 p-2 dark:bg-gray-900 md:p-8">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
       <div className="mx-auto flex min-h-0 w-full max-w-[1920px] flex-1 flex-col">
-        <header className="workspace-page-heading mb-3 flex flex-none flex-col justify-between gap-2 md:mb-10 md:flex-row md:items-center md:gap-4">
+        <header className="workspace-page-heading flex flex-none flex-col justify-between gap-2 border-b border-gray-200 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 md:flex-row md:items-center md:px-5 md:py-2">
           <div className="hidden md:block">
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-2">{title}</h1>
-            <p className="text-sm md:text-base text-gray-500 dark:text-gray-400">{subtitle}</p>
+            <h1 className="whitespace-nowrap text-xl font-bold text-gray-900 dark:text-white">{title}</h1>
           </div>
-          <div className="workspace-toolbar hidden flex-col gap-2 md:flex md:w-auto md:flex-row md:gap-4">
+          <div className="workspace-toolbar hidden min-w-0 flex-col gap-2 md:flex md:flex-1 md:flex-row md:justify-end">
              <div className="flex gap-2 w-full md:w-auto">
                 <button 
                     onClick={onRefresh} 
@@ -271,14 +269,14 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                 <input
                     type="text"
                     placeholder="搜索..."
-                    className="w-full md:w-64 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none md:w-56"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
              </div>
              {/* Tag Filter Bar */}
              {allTags.length > 0 && (
-               <div className="flex flex-wrap gap-2 p-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 max-h-20 overflow-y-auto">
+               <div className="flex max-w-40 flex-none flex-nowrap gap-1 overflow-x-auto rounded-lg bg-gray-50 p-1 dark:bg-gray-900/50">
                  {allTags.map(tag => (
                    <button
                      key={tag}
@@ -293,7 +291,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                        }
                        setSelectedTags(newSelected);
                      }}
-                     className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                      className={`whitespace-nowrap px-2 py-1 rounded-full text-xs font-medium transition-colors ${
                        selectedTags.has(tag)
                          ? 'bg-indigo-600 text-white'
                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
@@ -335,7 +333,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             {!isGuest && (
                 <button
                 onClick={() => setIsModalOpen(true)}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-indigo-500/20 flex items-center justify-center md:justify-start"
+                className="flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white shadow-lg shadow-indigo-500/20 transition-colors hover:bg-indigo-500 md:justify-start"
                 >
                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                 {createLabel}
@@ -358,7 +356,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           </div>
         </MobileBottomSheet>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 md:p-5">
           {filteredChains.length === 0 ? (
             <div className="text-center py-20 bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700">
               <p className="text-gray-500 text-lg mb-4">暂无数据</p>

@@ -907,24 +907,21 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
 
   return (
     <div className="aitag-workspace flex-1 min-h-0 flex flex-col bg-gray-50 dark:bg-gray-900">
-      <header className="flex-shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 py-2 md:py-4">
-        <div className="flex gap-2 px-2 md:hidden">
+      <header className="flex-shrink-0 border-b border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-950 md:px-5 md:py-2">
+        <div className="flex gap-2 md:hidden">
           <span title={isAitagConnected ? '连接正常' : '当前使用本地缓存'} className={`mt-4 h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
           <input value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') handleSearch(); }} placeholder="搜索 AITag 作品" className="h-11 min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
           <MobileIconButton label="AITag 筛选" onClick={() => setShowMobileFilters(true)} className="border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-900">☰</MobileIconButton>
           <MobileIconButton label="刷新" onClick={() => loadWorks(page, { resetScroll: true })} disabled={isLoading} className="border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-900">↻</MobileIconButton>
         </div>
-        <div className="hidden px-4 md:block md:px-6">
-          <div className="workspace-page-heading flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
+        <div className="hidden md:block">
+          <div className="workspace-page-heading flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
                 <span
                   title={isAitagConnected ? 'aitag.win 连接正常' : 'aitag.win 暂时不可用'}
                   className={`w-2.5 h-2.5 rounded-full ${isAitagConnected ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]' : 'bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.14)]'}`}
                 />
-                <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">aitag</h1>
-              </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">从 aitag.win 读取 Pixiv AI 元数据，在大图中一键导入、保存和收藏参数</p>
+                <h1 className="text-xl font-bold text-gray-900 dark:text-white">AITag</h1>
             </div>
             <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
               <span>第 {page} / {totalPages} 页</span>
@@ -940,8 +937,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           </div>
         </div>
 
-        <div className="workspace-aitag-filters mt-4 hidden grid-cols-1 gap-2 md:grid xl:grid-cols-[minmax(0,1fr)_460px]">
-          <div className="px-4 md:px-6 xl:pr-0 grid grid-cols-1 xl:grid-cols-2 gap-2 min-w-0">
+        <div className="workspace-aitag-filters mt-2 hidden grid-cols-1 gap-2 md:grid xl:grid-cols-[minmax(0,1fr)_460px]">
+          <div className="grid min-w-0 grid-cols-1 gap-2 xl:grid-cols-2">
             <input
               value={q}
               onChange={e => setQ(e.target.value)}
@@ -957,7 +954,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
               className="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
-          <div className="px-4 grid grid-cols-[minmax(0,1fr)_auto] gap-2 min-w-0">
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2">
             <div className="grid grid-cols-4 gap-2 min-w-0">
               <select
                 value={aiType}

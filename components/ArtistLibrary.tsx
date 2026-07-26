@@ -925,7 +925,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
 
             {/* --- Controls Header --- */}
-            <div className="p-2 md:p-4 bg-white dark:bg-gray-800 shadow-md flex flex-col items-stretch gap-2 md:gap-4 z-10 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+            <div className="flex flex-shrink-0 flex-col items-stretch gap-2 border-b border-gray-200 bg-white p-2 shadow-md dark:border-gray-700 dark:bg-gray-800 md:px-5 md:py-2">
 
                 <div className="flex gap-2 md:hidden">
                     <div className="relative min-w-0 flex-1">
@@ -1008,8 +1008,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     </div>
                 </div>
 
-                <div className="hidden justify-between items-center flex-wrap gap-2 md:flex">
-                    <div className="text-xs text-gray-500 dark:text-gray-400" title="画师名称来自每日更新的中英对照 Tag 词库；预览图保存在本地">
+                <div className="hidden min-w-0 items-center justify-between gap-2 md:flex">
+                    <div className="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400" title="画师名称来自每日更新的中英对照 Tag 词库；预览图保存在本地">
                         {searchTerm.trim() ? '搜索结果' : gachaArtists ? '抽卡结果' : '当前显示'} {filteredArtists.length.toLocaleString('zh-CN')}
                         {' · '}完整目录 {artistCatalogCount.toLocaleString('zh-CN')}
                         {' · '}本地预览 {artistsData?.length || 0}

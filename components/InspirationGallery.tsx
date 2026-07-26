@@ -305,23 +305,12 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
       {/* Header */}
-      <header className="p-2 md:p-6 bg-white dark:bg-gray-800 shadow-md flex flex-col gap-2 md:gap-4 items-stretch border-b border-gray-200 dark:border-gray-700 z-10 flex-shrink-0">
-          <div className="hidden justify-between items-center md:flex">
-             <div className="hidden md:block">
-                 <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">灵感图库</h1>
-                 <p className="text-xs text-gray-500 dark:text-gray-400">收藏优秀的生成结果与 Prompt</p>
-             </div>
-             {/* Refresh Button (Added) */}
-            <button 
-                onClick={handleRefresh} 
-                className={`mobile-touch p-2 rounded-lg bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors`}
-                title="刷新灵感库"
-            >
-                <svg className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-            </button>
+      <header className="z-10 flex flex-shrink-0 flex-col items-stretch gap-2 border-b border-gray-200 bg-white p-2 shadow-md dark:border-gray-700 dark:bg-gray-800 md:flex-row md:items-center md:px-5 md:py-2">
+          <div className="hidden flex-none items-center md:flex">
+             <h1 className="text-xl font-bold text-gray-900 dark:text-white">灵感图库</h1>
           </div>
           
-          <div className="workspace-toolbar flex gap-2 items-center w-full">
+          <div className="workspace-toolbar flex w-full min-w-0 items-center gap-2 md:flex-1">
               {selectionMode ? (
                   <>
                     <span className="text-sm text-gray-500 flex-1">已选 {selectedIds.size}</span>
@@ -337,7 +326,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                     />
-                    <button onClick={handleRefresh} className="mobile-touch flex-shrink-0 rounded-lg border border-gray-300 bg-gray-100 p-2 text-gray-600 transition-colors hover:text-indigo-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:text-indigo-400 md:hidden" title="刷新灵感库" aria-label="刷新灵感库">
+                    <button onClick={handleRefresh} className="mobile-touch flex-shrink-0 rounded-lg border border-gray-300 bg-gray-100 p-2 text-gray-600 transition-colors hover:text-indigo-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:text-indigo-400" title="刷新灵感库" aria-label="刷新灵感库">
                       <svg className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                     </button>
                     <button onClick={() => setSelectionMode(true)} className="mobile-touch bg-gray-200 dark:bg-gray-700 px-3 py-2 rounded text-sm hover:bg-gray-300 whitespace-nowrap">管理</button>
