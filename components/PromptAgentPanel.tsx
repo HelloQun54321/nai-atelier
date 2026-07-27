@@ -208,7 +208,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   useLayoutEffect(() => {
     const root = document.documentElement;
     root.style.setProperty('--agent-panel-width', `${panelWidth}px`);
-    root.classList.toggle('agent-panel-docked', props.open && !fullscreen);
+    // Multiple editors can stay mounted at once. A closed panel must not clear
+    // the docking class owned by the currently visible panel.
+    if (!props.open || fullscreen) return;
+    root.classList.add('agent-panel-docked');
     return () => root.classList.remove('agent-panel-docked');
   }, [props.open, fullscreen, panelWidth]);
 

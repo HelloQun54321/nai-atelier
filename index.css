@@ -180,6 +180,60 @@ body,
 
 }
 
+/*
+ * Chromium can defer container-query evaluation when an editor mounts beneath
+ * an already-open portal. Layout.tsx mirrors the measured state onto this
+ * class so the first frame and subsequent Agent/sidebar resizes agree.
+ */
+.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-header {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-header > :first-child {
+  flex: 1 1 280px;
+}
+
+.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-actions {
+  margin-left: auto;
+}
+
+.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-body {
+  flex-direction: column !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+
+.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-main {
+  order: 1 !important;
+  min-height: auto !important;
+  width: 100% !important;
+  flex: 0 0 auto !important;
+  overflow: visible !important;
+  border-right-width: 0 !important;
+  border-bottom-width: 1px !important;
+}
+
+.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-preview-wrapper {
+  order: 2;
+  display: block !important;
+  height: min(900px, calc(100dvh - 3rem));
+  min-height: 720px;
+  width: 100%;
+  flex: 0 0 auto;
+}
+
+.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-preview {
+  height: 100%;
+  min-height: 0;
+  width: 100% !important;
+  border-bottom-width: 0 !important;
+}
+
+.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-param-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
 @container workspace (max-width: 980px) {
   .agent-panel-docked .workspace-page-heading {
     flex-direction: column !important;

@@ -1,4 +1,4 @@
-import React, { ReactNode, useEffect, useRef, useState } from 'react';
+import React, { ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Archive,
   Beaker,
@@ -90,6 +90,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   const mobileDragFrameRef = useRef<number | null>(null);
   const pendingSidebarRef = useRef<{ collapsed: boolean; width: number } | null>(null);
   const pendingMobileDragRef = useRef<{ left: number; y: number } | null>(null);
+  const workspaceRef = useRef<HTMLElement | null>(null);
   const desktopGroups = [
     { label: '工作区', items: [
       { id: 'list', label: '画师串', icon: icons.list },
@@ -105,6 +106,23 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       { id: 'history', label: '历史', icon: icons.history },
     ] },
   ];
+
+  useLayoutEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    const syncEditorLayout = () => {
+      const agentDocked = document.documentElement.classList.contains('agent-panel-docked');
+      workspace.classList.toggle('workspace-editor-compact', agentDocked && workspace.clientWidth <= 1180);
+    };
+    syncEditorLayout();
+    const observer = new ResizeObserver(syncEditorLayout);
+    observer.observe(workspace);
+    const frame = window.requestAnimationFrame(syncEditorLayout);
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(frame);
+    };
+  }, [currentView]);
   const resourceItems = [
     { id: 'library', label: '画师 Tag', icon: icons.artist },
     { id: 'characters', label: '角色库', icon: icons.character },
@@ -287,7 +305,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         <button type="button" aria-label="调整侧边栏宽度" title="拖动调整宽度；双击恢复默认" onPointerDown={startSidebarResize} onDoubleClick={() => { setSidebarCollapsed(false); setSidebarWidth(SIDEBAR_DEFAULT_WIDTH); localStorage.setItem('nai_sidebar_width', String(SIDEBAR_DEFAULT_WIDTH)); }} className="group absolute -right-1 top-0 bottom-0 z-30 hidden w-2 cursor-col-resize outline-none md:block"><span className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors ${isSidebarResizing ? 'bg-indigo-500' : 'bg-transparent group-hover:bg-indigo-400'}`} /></button>
       </aside>
 
-      <main className={`workspace-container relative flex min-w-0 flex-1 flex-col overflow-hidden bg-white transition-colors duration-300 dark:bg-gray-900 ${hideNav ? 'pb-0' : 'pb-[calc(4.25rem+env(safe-area-inset-bottom))]'} md:pb-0`}>{children}</main>
+      <main ref={workspaceRef} className={`workspace-container relative flex min-w-0 flex-1 flex-col overflow-hidden bg-white transition-colors duration-300 dark:bg-gray-900 ${hideNav ? 'pb-0' : 'pb-[calc(4.25rem+env(safe-area-inset-bottom))]'} md:pb-0`}>{children}</main>
 
       {!showResources && !showSettings && <button
         type="button"
