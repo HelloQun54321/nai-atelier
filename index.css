@@ -14,6 +14,8 @@
 
 .media-card {
   box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
 }
 
 .media-card:hover {
@@ -23,6 +25,17 @@
 @media (prefers-reduced-motion: reduce) {
   .media-card:hover {
     transform: none;
+  }
+
+  .ui-backdrop-enter,
+  .ui-modal-enter,
+  .ui-sheet-enter,
+  .agent-overlay,
+  .agent-panel,
+  .mobile-layer,
+  .mobile-sheet,
+  .mobile-detail {
+    animation: none !important;
   }
 }
 
@@ -44,6 +57,14 @@ body,
   transition: padding-right 180ms ease;
 }
 
+.ui-backdrop-enter { animation: ui-fade-in 140ms ease-out; }
+.ui-modal-enter { animation: ui-modal-in 180ms cubic-bezier(.2,.8,.2,1); }
+.ui-sheet-enter { animation: ui-sheet-in 180ms cubic-bezier(.2,.8,.2,1); }
+
+@keyframes ui-fade-in { from { opacity: 0; } }
+@keyframes ui-modal-in { from { opacity: 0; transform: translateY(8px) scale(.992); } }
+@keyframes ui-sheet-in { from { opacity: 0; transform: translateY(18px); } }
+
 /*
  * The Agent changes the space available to the workspace without changing the
  * browser viewport.  Page layouts therefore query the workspace itself instead
@@ -56,6 +77,11 @@ body,
 .workspace-inspiration-grid { --workspace-card-min: 190px; }
 .workspace-aitag-grid { --workspace-card-min: 175px; }
 .workspace-manager-grid { --workspace-card-min: 160px; }
+
+.workspace-card-grid > .mobile-gallery-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}
 
 @media (min-width: 1024px) {
 .agent-panel-docked {
@@ -206,6 +232,26 @@ body,
   width: 100%;
   border-top-width: 1px;
   border-radius: 1.5rem 1.5rem 0 0;
+  contain: layout paint style;
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  will-change: transform, opacity;
+  transition: width 160ms ease, height 160ms ease, border-radius 160ms ease,
+    transform 160ms cubic-bezier(.2,.8,.2,1), opacity 120ms ease;
+}
+
+.agent-overlay {
+  visibility: visible;
+}
+
+.agent-overlay--closed {
+  visibility: hidden;
+  transition: visibility 0s linear 160ms;
+}
+
+.agent-overlay--closed .agent-panel {
+  opacity: 0;
+  transform: translate3d(0, calc(100% + 1rem), 0);
 }
 
 .agent-panel--fullscreen {
@@ -249,6 +295,10 @@ body,
     border-top-width: 0;
     border-left-width: 1px;
     border-radius: 0;
+  }
+
+  .agent-overlay--closed .agent-panel {
+    transform: translate3d(calc(100% + 1rem), 0, 0);
   }
 
   .agent-panel--fullscreen { width: 100%; border-left-width: 0; }
@@ -339,10 +389,11 @@ body,
   .dark .mobile-page-header { border-color: rgb(55 65 81); background: rgb(31 41 55 / .96); }
   .mobile-toolbar { display: flex; align-items: center; gap: .5rem; padding: .625rem .75rem; }
   .mobile-safe-bottom { padding-bottom: max(.75rem, env(safe-area-inset-bottom)); }
-  .mobile-layer { position: fixed; inset: 0; z-index: 1100; background: rgb(0 0 0 / .5); backdrop-filter: blur(2px); }
-  .mobile-sheet { position: absolute; inset-inline: 0; bottom: 0; display: flex; max-height: min(82dvh, 44rem); flex-direction: column; overflow: hidden; border-radius: 1.5rem 1.5rem 0 0; background: white; box-shadow: 0 -16px 40px rgb(0 0 0 / .25); }
+  .mobile-layer { position: fixed; inset: 0; z-index: 1100; background: rgb(0 0 0 / .5); backdrop-filter: blur(2px); animation: ui-fade-in 140ms ease-out; }
+  .mobile-sheet { position: absolute; inset-inline: 0; bottom: 0; display: flex; max-height: min(82dvh, 44rem); flex-direction: column; overflow: hidden; border-radius: 1.5rem 1.5rem 0 0; background: white; box-shadow: 0 -16px 40px rgb(0 0 0 / .25); animation: ui-sheet-in 180ms cubic-bezier(.2,.8,.2,1); }
   .dark .mobile-sheet { background: rgb(17 24 39); }
-  .mobile-detail { position: fixed; inset: 0; z-index: 1050; display: flex; height: 100dvh; flex-direction: column; overflow: hidden; background: rgb(249 250 251); }
+  .mobile-detail { position: fixed; inset: 0; z-index: 1050; display: flex; height: 100dvh; flex-direction: column; overflow: hidden; background: rgb(249 250 251); animation: mobile-detail-in 160ms cubic-bezier(.2,.8,.2,1); }
+  @keyframes mobile-detail-in { from { opacity: 0; transform: translateX(10px); } }
   .dark .mobile-detail { background: rgb(17 24 39); }
   .mobile-detail-header { display: flex; min-height: calc(3.5rem + env(safe-area-inset-top)); align-items: center; gap: .375rem; border-bottom: 1px solid rgb(229 231 235); background: rgb(255 255 255 / .97); padding: env(safe-area-inset-top) .5rem 0; }
   .dark .mobile-detail-header { border-color: rgb(55 65 81); background: rgb(3 7 18 / .97); }

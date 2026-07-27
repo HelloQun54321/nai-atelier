@@ -86,6 +86,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   const [mobileAgentDock, setMobileAgentDock] = useState<MobileAgentDock>(readMobileAgentDock);
   const [mobileAgentDrag, setMobileAgentDrag] = useState<{ left: number; y: number } | null>(null);
   const mobileAgentDragRef = useRef<{ pointerId: number; target: HTMLButtonElement; startX: number; startY: number; offsetX: number; offsetY: number; width: number; height: number; moved: boolean } | null>(null);
+  const sidebarResizeFrameRef = useRef<number | null>(null);
+  const mobileDragFrameRef = useRef<number | null>(null);
+  const pendingSidebarRef = useRef<{ collapsed: boolean; width: number } | null>(null);
+  const pendingMobileDragRef = useRef<{ left: number; y: number } | null>(null);
   const desktopGroups = [
     { label: '工作区', items: [
       { id: 'list', label: '画师串', icon: icons.list },
@@ -117,10 +121,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     localStorage.setItem('nai_sidebar_collapsed', String(sidebarCollapsed));
   }, [sidebarCollapsed]);
 
-  useEffect(() => {
-    localStorage.setItem('nai_sidebar_width', String(sidebarWidth));
-  }, [sidebarWidth]);
-
   const startSidebarResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -132,14 +132,30 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
 
     const handleMove = (moveEvent: PointerEvent) => {
       const rawWidth = startWidth + moveEvent.clientX - startX;
-      if (rawWidth <= SIDEBAR_COLLAPSE_SNAP) {
-        setSidebarCollapsed(true);
-        return;
-      }
-      setSidebarCollapsed(false);
-      setSidebarWidth(clampSidebarWidth(rawWidth));
+      pendingSidebarRef.current = rawWidth <= SIDEBAR_COLLAPSE_SNAP
+        ? { collapsed: true, width: sidebarWidth }
+        : { collapsed: false, width: clampSidebarWidth(rawWidth) };
+      if (sidebarResizeFrameRef.current !== null) return;
+      sidebarResizeFrameRef.current = window.requestAnimationFrame(() => {
+        sidebarResizeFrameRef.current = null;
+        const next = pendingSidebarRef.current;
+        if (!next) return;
+        setSidebarCollapsed(next.collapsed);
+        if (!next.collapsed) setSidebarWidth(next.width);
+      });
     };
     const handleEnd = () => {
+      if (sidebarResizeFrameRef.current !== null) window.cancelAnimationFrame(sidebarResizeFrameRef.current);
+      sidebarResizeFrameRef.current = null;
+      const next = pendingSidebarRef.current;
+      pendingSidebarRef.current = null;
+      if (next) {
+        setSidebarCollapsed(next.collapsed);
+        if (!next.collapsed) {
+          setSidebarWidth(next.width);
+          localStorage.setItem('nai_sidebar_width', String(Math.round(next.width)));
+        }
+      }
       setIsSidebarResizing(false);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
@@ -182,7 +198,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       moveEvent.preventDefault();
       const left = Math.min(window.innerWidth - drag.width, Math.max(0, moveEvent.clientX - drag.offsetX));
       const centerY = moveEvent.clientY - drag.offsetY + drag.height / 2;
-      setMobileAgentDrag({ left, y: clampMobileAgentY(centerY / window.innerHeight, Boolean(hideNav)) });
+      pendingMobileDragRef.current = { left, y: clampMobileAgentY(centerY / window.innerHeight, Boolean(hideNav)) };
+      if (mobileDragFrameRef.current !== null) return;
+      mobileDragFrameRef.current = window.requestAnimationFrame(() => {
+        mobileDragFrameRef.current = null;
+        if (pendingMobileDragRef.current) setMobileAgentDrag(pendingMobileDragRef.current);
+      });
     };
     const finishDrag = (endEvent: PointerEvent, cancelled = false) => {
       const drag = mobileAgentDragRef.current;
@@ -196,6 +217,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         // The browser may already have released capture after a cancelled gesture.
       }
       mobileAgentDragRef.current = null;
+      if (mobileDragFrameRef.current !== null) window.cancelAnimationFrame(mobileDragFrameRef.current);
+      mobileDragFrameRef.current = null;
+      pendingMobileDragRef.current = null;
       if (drag.moved && !cancelled) {
         const centerY = endEvent.clientY - drag.offsetY + drag.height / 2;
         const next: MobileAgentDock = {
@@ -260,7 +284,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
           </div>
         </div>
 
-        <button type="button" aria-label="调整侧边栏宽度" title="拖动调整宽度；双击恢复默认" onPointerDown={startSidebarResize} onDoubleClick={() => { setSidebarCollapsed(false); setSidebarWidth(SIDEBAR_DEFAULT_WIDTH); }} className="group absolute -right-1 top-0 bottom-0 z-30 hidden w-2 cursor-col-resize outline-none md:block"><span className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors ${isSidebarResizing ? 'bg-indigo-500' : 'bg-transparent group-hover:bg-indigo-400'}`} /></button>
+        <button type="button" aria-label="调整侧边栏宽度" title="拖动调整宽度；双击恢复默认" onPointerDown={startSidebarResize} onDoubleClick={() => { setSidebarCollapsed(false); setSidebarWidth(SIDEBAR_DEFAULT_WIDTH); localStorage.setItem('nai_sidebar_width', String(SIDEBAR_DEFAULT_WIDTH)); }} className="group absolute -right-1 top-0 bottom-0 z-30 hidden w-2 cursor-col-resize outline-none md:block"><span className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors ${isSidebarResizing ? 'bg-indigo-500' : 'bg-transparent group-hover:bg-indigo-400'}`} /></button>
       </aside>
 
       <main className={`workspace-container relative flex min-w-0 flex-1 flex-col overflow-hidden bg-white transition-colors duration-300 dark:bg-gray-900 ${hideNav ? 'pb-0' : 'pb-[calc(4.25rem+env(safe-area-inset-bottom))]'} md:pb-0`}>{children}</main>

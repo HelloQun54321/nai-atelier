@@ -287,7 +287,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             /* Grid Layout */
             <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-chain-grid md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
               {filteredChains.map((chain) => (
-              <div key={chain.id} onClick={() => onSelect(chain.id)} className="mobile-gallery-item group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative">
+              <div key={chain.id} onClick={() => onSelect(chain.id)} className="mobile-gallery-item group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative">
                 {/* Copy Button Overlay - Trigger Modal */}
                 <div className="absolute right-2 top-2 z-10 hidden items-center gap-1 opacity-0 transition-opacity md:group-hover:flex md:group-hover:opacity-100">
                     {!isGuest && <button

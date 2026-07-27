@@ -69,7 +69,14 @@ const AgentContentCard: React.FC<{ title: string; content: string; code?: boolea
   </section>;
 };
 
-const AgentMarkdown: React.FC<{ text: string }> = ({ text }) => {
+const AgentMarkdown: React.FC<{ text: string }> = React.memo(({ text }) => {
+  const [expanded, setExpanded] = useState(() => text.length < 4_000);
+  if (!expanded) {
+    return <div className="space-y-2">
+      <div className="line-clamp-4 whitespace-pre-wrap text-gray-600 dark:text-gray-300">{text.slice(0, 520)}</div>
+      <button type="button" onClick={() => setExpanded(true)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-indigo-50 px-2.5 text-[11px] font-bold text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:hover:bg-indigo-900/60"><Expand className="h-3.5 w-3.5" />展开完整长回答</button>
+    </div>;
+  }
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   const output: React.ReactNode[] = [];
   for (let index = 0; index < lines.length; index += 1) {
@@ -96,7 +103,54 @@ const AgentMarkdown: React.FC<{ text: string }> = ({ text }) => {
     output.push(line ? <div key={index}>{renderInlineMarkdown(line, `p-${index}`)}</div> : <div key={index} className="h-2" />);
   }
   return <>{output}</>;
-};
+});
+
+const AgentMessageList = React.memo(({
+  messages,
+  visibleMessageCount,
+  running,
+  copiedMessageId,
+  onLoadEarlier,
+  onCopy,
+  onEdit,
+  onRetry,
+}: {
+  messages: PanelMessage[];
+  visibleMessageCount: number;
+  running: boolean;
+  copiedMessageId: string;
+  onLoadEarlier: () => void;
+  onCopy: (message: PanelMessage) => void;
+  onEdit: (message: PanelMessage) => void;
+  onRetry: () => void;
+}) => {
+  const visibleMessages = messages.slice(-visibleMessageCount);
+  const hiddenMessageCount = Math.max(0, messages.length - visibleMessages.length);
+  return <>
+    {hiddenMessageCount > 0 && <button type="button" onClick={onLoadEarlier} className="mx-auto flex h-9 items-center rounded-full border border-gray-200 bg-white px-3 text-[11px] font-bold text-gray-500 shadow-sm hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">再显示前面的 {Math.min(60, hiddenMessageCount)} 条消息</button>}
+    {visibleMessages.map((message, index) => <div key={message.id} className={`group max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === 'user' ? 'ml-auto whitespace-pre-wrap bg-indigo-600 text-white' : message.role === 'error' ? 'whitespace-pre-wrap bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300' : 'bg-white text-gray-800 shadow-sm dark:bg-gray-900 dark:text-gray-100'}`}>
+      {message.queued && <div className="mb-1 text-[10px] font-bold opacity-70">{message.queued === 'steer' ? '转向要求 · 当前步骤后处理' : '后续任务 · 完成本轮后处理'}</div>}
+      {!!message.thinking && <details className="mb-2 rounded-xl bg-gray-50 px-3 py-1 dark:bg-gray-950"><summary className="cursor-pointer text-[11px] font-bold text-gray-500">思考过程</summary><div className="max-h-48 overflow-y-auto whitespace-pre-wrap text-xs text-gray-500">{message.thinking}</div></details>}
+      {message.role === 'agent' ? <AgentMarkdown text={message.text || (running ? '正在思考…' : '')} /> : message.text}
+      {!!message.tools?.length && <div className="mt-2 space-y-1 border-t border-gray-100 pt-2 dark:border-gray-800">{message.tools.map(tool => <details key={tool.id} className={`rounded-lg px-2 py-1 text-[10px] ${tool.state === 'running' ? 'animate-pulse bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300' : tool.state === 'error' ? 'bg-red-50 text-red-600 dark:bg-red-950/50' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'}`}><summary className="cursor-pointer font-bold">{tool.state === 'running' ? '处理中' : tool.state === 'error' ? '失败' : '完成'} · {toolLabels[tool.name] || tool.name}</summary><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all opacity-75">{JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)}</pre></details>)}</div>}
+      <div className={`mt-2 flex min-w-0 items-center gap-1 border-t pt-1 text-[10px] ${message.role === 'user' ? 'border-white/20 text-white/70' : 'border-gray-100 text-gray-400 dark:border-gray-800'}`}>
+        {message.role === 'agent' && <span className="min-w-0 flex-1 truncate pr-1">{message.model || ''}{message.usage ? ` · ${message.usage.totalTokens.toLocaleString()} tokens${message.usage.cost?.total ? ` · $${message.usage.cost.total.toFixed(4)}` : ''}` : ''}{message.stopReason && message.stopReason !== 'stop' ? ` · ${message.stopReason}` : ''}</span>}
+        {message.role !== 'agent' && <span className="flex-1" />}
+        <div className="flex flex-none items-center gap-0.5 whitespace-nowrap">
+          <button type="button" onClick={() => onCopy(message)} className="mobile-touch flex items-center justify-center rounded-lg font-bold hover:bg-black/5" title={copiedMessageId === message.id ? '已复制' : '复制'} aria-label={copiedMessageId === message.id ? '已复制' : '复制'}>
+            {copiedMessageId === message.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            <span className="ml-1 hidden md:inline">{copiedMessageId === message.id ? '已复制' : '复制'}</span>
+          </button>
+          {message.role === 'user' && !running && !message.queued && <button type="button" onClick={() => onEdit(message)} className="mobile-touch rounded-lg px-1.5 font-bold whitespace-nowrap hover:bg-white/10">编辑重发</button>}
+          {message.role === 'agent' && index === visibleMessages.length - 1 && !running && <button type="button" onClick={onRetry} className="mobile-touch flex items-center justify-center rounded-lg font-bold text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-950/40" title="重新生成" aria-label="重新生成"><RotateCcw className="h-3.5 w-3.5" /><span className="ml-1 hidden md:inline">重新生成</span></button>}
+        </div>
+      </div>
+    </div>)}
+  </>;
+}, (previous, next) => previous.messages === next.messages
+  && previous.visibleMessageCount === next.visibleMessageCount
+  && previous.running === next.running
+  && previous.copiedMessageId === next.copiedMessageId);
 
 export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [input, setInput] = useState('');
@@ -116,6 +170,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [copiedMessageId, setCopiedMessageId] = useState('');
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [followingBottom, setFollowingBottom] = useState(true);
+  const [visibleMessageCount, setVisibleMessageCount] = useState(60);
+  const [hasOpened, setHasOpened] = useState(false);
   const [fullscreen, setFullscreen] = useState(() => localStorage.getItem('nai_agent_fullscreen') === 'true');
   const [panelWidth, setPanelWidth] = useState(() => Math.min(680, Math.max(420, Number(localStorage.getItem('nai_agent_panel_width')) || 520)));
   const [mobileHeight, setMobileHeight] = useState(() => Math.min(92, Math.max(25, Number(localStorage.getItem('nai_agent_mobile_height')) || 68)));
@@ -124,6 +180,16 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const followBottomRef = useRef(true);
   const forceBottomAfterLoadRef = useRef(false);
+  const loadedSessionIdRef = useRef('');
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const pendingPanelWidthRef = useRef(panelWidth);
+  const pendingMobileHeightRef = useRef(mobileHeight);
+  const messageActionsRef = useRef({
+    loadEarlier: () => {},
+    copy: (_message: PanelMessage) => {},
+    edit: (_message: PanelMessage) => {},
+    retry: () => {},
+  });
   const confirmAction = useConfirmDialog();
   const closePanel = () => {
     props.onClose();
@@ -131,12 +197,14 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const requestClose = useMobileHistoryLayer(props.open, closePanel, 'prompt-agent');
 
   useEffect(() => {
-    localStorage.setItem('nai_agent_fullscreen', String(fullscreen));
-    localStorage.setItem('nai_agent_panel_width', String(Math.round(panelWidth)));
-    localStorage.setItem('nai_agent_mobile_height', String(Math.round(mobileHeight)));
-  }, [fullscreen, panelWidth, mobileHeight]);
+    if (props.open) setHasOpened(true);
+  }, [props.open]);
 
   useEffect(() => {
+    localStorage.setItem('nai_agent_fullscreen', String(fullscreen));
+  }, [fullscreen]);
+
+  useLayoutEffect(() => {
     const root = document.documentElement;
     root.style.setProperty('--agent-panel-width', `${panelWidth}px`);
     root.classList.toggle('agent-panel-docked', props.open && !fullscreen);
@@ -148,10 +216,20 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = panelWidth;
-    const move = (moveEvent: PointerEvent) => setPanelWidth(Math.min(680, Math.max(420, startWidth + startX - moveEvent.clientX)));
+    panelRef.current?.style.setProperty('transition', 'none');
+    const move = (moveEvent: PointerEvent) => {
+      const next = Math.min(680, Math.max(420, startWidth + startX - moveEvent.clientX));
+      pendingPanelWidthRef.current = next;
+      document.documentElement.style.setProperty('--agent-panel-width', `${next}px`);
+      panelRef.current?.style.setProperty('--agent-width', `${next}px`);
+    };
     const stop = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', stop);
+      const next = pendingPanelWidthRef.current;
+      setPanelWidth(next);
+      localStorage.setItem('nai_agent_panel_width', String(Math.round(next)));
+      panelRef.current?.style.removeProperty('transition');
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', stop, { once: true });
@@ -162,13 +240,20 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     event.preventDefault();
     const startY = event.clientY;
     const startPixels = window.innerHeight * mobileHeight / 100;
+    panelRef.current?.style.setProperty('transition', 'none');
     const move = (moveEvent: PointerEvent) => {
       const nextPixels = startPixels + startY - moveEvent.clientY;
-      setMobileHeight(Math.min(92, Math.max(25, nextPixels / window.innerHeight * 100)));
+      const next = Math.min(92, Math.max(25, nextPixels / window.innerHeight * 100));
+      pendingMobileHeightRef.current = next;
+      panelRef.current?.style.setProperty('--agent-mobile-height', `${next}dvh`);
     };
     const stop = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', stop);
+      const next = pendingMobileHeightRef.current;
+      setMobileHeight(next);
+      localStorage.setItem('nai_agent_mobile_height', String(Math.round(next)));
+      panelRef.current?.style.removeProperty('transition');
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', stop, { once: true });
@@ -185,7 +270,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   useEffect(() => {
     if (!props.open) return;
-    void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(setModels)]).catch(() => {});
+    void Promise.all([
+      refreshSessions(),
+      models.length ? Promise.resolve() : promptAgentService.getAvailableModels().then(setModels),
+    ]).catch(() => {});
   }, [props.open]);
 
   useEffect(() => {
@@ -196,7 +284,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     followBottomRef.current = true;
     setFollowingBottom(true);
     localStorage.setItem('nai_prompt_agent_session', activeSessionId);
-    setMessages([]);
+    const switchingSession = loadedSessionIdRef.current !== activeSessionId;
+    if (switchingSession) {
+      setMessages([]);
+      setVisibleMessageCount(60);
+    }
     void Promise.all([promptAgentService.getSession(activeSessionId), promptAgentService.getTask(activeSessionId)]).then(([items, task]) => {
       const restored = items.map(item => ({ ...item }));
       if ((task.status === 'interrupted' || task.status === 'running') && task.events?.length) {
@@ -210,6 +302,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         }).join('').trim();
         restored.push({ id: `task-replay-${activeSessionId}`, role: 'agent', text: `任务执行回放（${task.status === 'running' ? '异常中断' : '中断'}）\n\n${replayText || '没有可恢复的文本事件。'}\n\n你可以继续发送要求。` });
       }
+      loadedSessionIdRef.current = activeSessionId;
       setMessages(restored);
     }).catch(() => {});
   }, [props.open, activeSessionId]);
@@ -274,7 +367,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [props.open]);
 
-  if (!props.open) return null;
+  if (!props.open && !hasOpened) return null;
 
   const run = async (suggestion?: string, mode: 'prompt' | 'retry' = 'prompt') => {
     const prompt = (suggestion ?? input).trim() || (attachments.length ? '请分析我附带的图片，并结合项目内容给出建议。' : '');
@@ -515,8 +608,16 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     });
   };
 
-  return createPortal(<div className="pointer-events-none fixed inset-0 z-[1100]">
+  messageActionsRef.current = {
+    loadEarlier: () => setVisibleMessageCount(count => count + 60),
+    copy: message => { void copyMessage(message.id, message.text); },
+    edit: message => { setEditingMessageId(message.id); setInput(message.text); },
+    retry: () => { void run('', 'retry'); },
+  };
+
+  return createPortal(<div aria-hidden={!props.open} className={`agent-overlay pointer-events-none fixed inset-0 z-[1100] ${props.open ? 'agent-overlay--open' : 'agent-overlay--closed'}`}>
     <div
+      ref={panelRef}
       className={`agent-panel pointer-events-auto absolute flex overflow-hidden border-gray-200 bg-gray-50 shadow-2xl transition-[width,height,border-radius] dark:border-gray-800 dark:bg-gray-950 ${fullscreen ? 'agent-panel--fullscreen' : ''}`}
       style={{ '--agent-mobile-height': `${mobileHeight}dvh`, '--agent-width': `${panelWidth}px` } as React.CSSProperties}
     >
@@ -564,19 +665,16 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
         <div ref={scrollRef} onScroll={event => { const element = event.currentTarget; const next = element.scrollHeight - element.scrollTop - element.clientHeight < 80; followBottomRef.current = next; setFollowingBottom(next); }} className="relative flex-1 space-y-3 overflow-y-auto p-3 md:p-4">
           {messages.length === 0 && <div className="mt-8 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">告诉我你想在项目里做什么</h3><p className="mt-1 text-sm text-gray-500">这是一条独立对话，可在项目的任何页面继续。</p><div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '查看当前设置和 Anlas 预算'].map(value => <button key={value} type="button" onClick={() => void run(value)} className="mobile-touch rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold text-gray-700 shadow-sm hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{value}</button>)}</div></div>}
-          {messages.map((message, index) => <div key={message.id} className={`group max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === 'user' ? 'ml-auto whitespace-pre-wrap bg-indigo-600 text-white' : message.role === 'error' ? 'whitespace-pre-wrap bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300' : 'bg-white text-gray-800 shadow-sm dark:bg-gray-900 dark:text-gray-100'}`}>
-            {message.queued && <div className="mb-1 text-[10px] font-bold opacity-70">{message.queued === 'steer' ? '转向要求 · 当前步骤后处理' : '后续任务 · 完成本轮后处理'}</div>}
-            {!!message.thinking && <details className="mb-2 rounded-xl bg-gray-50 px-3 py-1 dark:bg-gray-950"><summary className="cursor-pointer text-[11px] font-bold text-gray-500">思考过程</summary><div className="max-h-48 overflow-y-auto whitespace-pre-wrap text-xs text-gray-500">{message.thinking}</div></details>}
-            {message.role === 'agent' ? <AgentMarkdown text={message.text || (running ? '正在思考…' : '')} /> : message.text}
-            {!!message.tools?.length && <div className="mt-2 space-y-1 border-t border-gray-100 pt-2 dark:border-gray-800">{message.tools.map(tool => <details key={tool.id} className={`rounded-lg px-2 py-1 text-[10px] ${tool.state === 'running' ? 'animate-pulse bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300' : tool.state === 'error' ? 'bg-red-50 text-red-600 dark:bg-red-950/50' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'}`}><summary className="cursor-pointer font-bold">{tool.state === 'running' ? '处理中' : tool.state === 'error' ? '失败' : '完成'} · {toolLabels[tool.name] || tool.name}</summary><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all opacity-75">{JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)}</pre></details>)}</div>}
-            <div className={`mt-2 flex items-center gap-2 border-t pt-1 text-[10px] ${message.role === 'user' ? 'border-white/20 text-white/70' : 'border-gray-100 text-gray-400 dark:border-gray-800'}`}>
-              {message.role === 'agent' && <span className="truncate">{message.model || ''}{message.usage ? ` · ${formatUsage(message.usage)}` : ''}{message.stopReason && message.stopReason !== 'stop' ? ` · ${message.stopReason}` : ''}</span>}
-              <span className="flex-1" />
-              <button type="button" onClick={() => void copyMessage(message.id, message.text)} className="rounded-lg px-1.5 font-bold hover:bg-black/5">{copiedMessageId === message.id ? '已复制' : '复制'}</button>
-              {message.role === 'user' && !running && !message.queued && <button type="button" onClick={() => { setEditingMessageId(message.id); setInput(message.text); }} className="rounded-lg px-1.5 font-bold hover:bg-white/10">编辑重发</button>}
-              {message.role === 'agent' && index === messages.length - 1 && !running && <button type="button" onClick={() => void run('', 'retry')} className="rounded-lg px-1.5 font-bold text-indigo-500 hover:bg-indigo-50">重新生成</button>}
-            </div>
-          </div>)}
+          <AgentMessageList
+            messages={messages}
+            visibleMessageCount={visibleMessageCount}
+            running={running}
+            copiedMessageId={copiedMessageId}
+            onLoadEarlier={() => messageActionsRef.current.loadEarlier()}
+            onCopy={message => messageActionsRef.current.copy(message)}
+            onEdit={message => messageActionsRef.current.edit(message)}
+            onRetry={() => messageActionsRef.current.retry()}
+          />
           {!followingBottom && <button type="button" onClick={() => { followBottomRef.current = true; setFollowingBottom(true); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }} className="sticky bottom-1 mx-auto flex items-center gap-1 rounded-full bg-gray-900 px-3 py-1.5 text-xs font-bold text-white shadow-lg dark:bg-white dark:text-gray-900"><ArrowDown className="h-3.5 w-3.5" />回到底部</button>}
         </div>
         <div className="border-t border-gray-200 bg-white p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] dark:border-gray-800 dark:bg-gray-900 md:p-4">

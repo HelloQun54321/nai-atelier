@@ -1225,7 +1225,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                 {layoutMode === 'grid' ? (
                     /* --- GRID LAYOUT (Dynamic Columns using gridCols) --- */
                     <div
-                        className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid md:grid md:gap-4 md:pr-6 transition-all`}
+                        className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid md:grid md:gap-4 md:pr-6`}
                         style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }) }}
                     >
                         {filteredArtists.map((artist, idx) => {
@@ -1251,7 +1251,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                             return (
                                 <div
                                     key={artist.id}
-                                    className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-xl overflow-hidden border transition-all cursor-pointer shadow-sm hover:shadow-lg ${isSelected ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500'}`}
+                                    className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-xl overflow-hidden border transition-[border-color,box-shadow,transform] cursor-pointer shadow-sm hover:shadow-lg ${isSelected ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500'}`}
                                     onClick={() => toggleCart(artist.name)}
                                 >
                                     <div className="mobile-gallery-frame md:aspect-[2/3] relative overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': '2 / 3' } as React.CSSProperties}>

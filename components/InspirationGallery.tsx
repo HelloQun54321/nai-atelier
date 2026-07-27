@@ -347,7 +347,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
                  {filtered.map(item => (
                      <div 
                         key={item.id} 
-                        className={`mobile-gallery-item group bg-white dark:bg-gray-800 rounded-xl overflow-hidden border transition-all flex flex-col relative ${selectionMode && selectedIds.has(item.id) ? 'ring-2 ring-indigo-600 border-indigo-600' : 'border-gray-200 dark:border-gray-700'}`}
+                        className={`mobile-gallery-item group bg-white dark:bg-gray-800 rounded-xl overflow-hidden border transition-[border-color,box-shadow,transform] flex flex-col relative ${selectionMode && selectedIds.has(item.id) ? 'ring-2 ring-indigo-600 border-indigo-600' : 'border-gray-200 dark:border-gray-700'}`}
                         onClick={() => selectionMode ? toggleSelection(item.id) : null}
                      >
                          <div 

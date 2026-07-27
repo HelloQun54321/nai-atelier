@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { startTransition, useState, useEffect } from 'react';
 import { Layout } from './components/Layout';
 import { ChainList } from './components/ChainList';
 import { ChainEditor } from './components/ChainEditor';
@@ -190,14 +190,20 @@ const App = () => {
     const handleVisibilityChange = () => {
       if (document.hidden) resetRevealedImages();
     };
+    let pointerFrame: number | null = null;
+    let pointerPosition = { x: 0, y: 0 };
     const handlePointerMove = (event: PointerEvent) => {
       if (event.pointerType !== 'mouse') return;
-
-      document.querySelectorAll<HTMLImageElement>('img[data-safe-revealed="true"]').forEach(image => {
-        const rect = image.getBoundingClientRect();
-        const isInsideImage = event.clientX >= rect.left && event.clientX <= rect.right
-          && event.clientY >= rect.top && event.clientY <= rect.bottom;
-        if (!isInsideImage) delete image.dataset.safeRevealed;
+      pointerPosition = { x: event.clientX, y: event.clientY };
+      if (pointerFrame !== null) return;
+      pointerFrame = window.requestAnimationFrame(() => {
+        pointerFrame = null;
+        document.querySelectorAll<HTMLImageElement>('img[data-safe-revealed="true"]').forEach(image => {
+          const rect = image.getBoundingClientRect();
+          const isInsideImage = pointerPosition.x >= rect.left && pointerPosition.x <= rect.right
+            && pointerPosition.y >= rect.top && pointerPosition.y <= rect.bottom;
+          if (!isInsideImage) delete image.dataset.safeRevealed;
+        });
       });
     };
 
@@ -206,6 +212,7 @@ const App = () => {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     document.addEventListener('pointermove', handlePointerMove, true);
     return () => {
+      if (pointerFrame !== null) window.cancelAnimationFrame(pointerFrame);
       window.removeEventListener('blur', resetRevealedImages);
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -280,7 +287,11 @@ const App = () => {
     // Agent is a tool overlay, not a destination. Opening it must never trigger
     // the editor navigation guard or discard the page underneath it.
     if (view === 'edit') {
-      setEditorAgentOpenToken(value => value + 1);
+      window.dispatchEvent(new CustomEvent('nai-open-prompt-agent', { detail: { chainId: selectedId } }));
+      return;
+    }
+    if (playgroundChain && mountedViews.includes('playground')) {
+      window.dispatchEvent(new CustomEvent('nai-open-prompt-agent', { detail: { chainId: 'playground' } }));
       return;
     }
     ensurePlayground();
@@ -302,19 +313,21 @@ const App = () => {
       setIsEditorDirty(false);
     }
 
-    setSelectedId(id);
-    setView(newView);
-    keepViewMounted(newView);
-    if (newView === 'playground' && options.externalImport) {
-      setPlaygroundImportToken(prev => prev + 1);
-    }
+    startTransition(() => {
+      setSelectedId(id);
+      setView(newView);
+      keepViewMounted(newView);
+      if (newView === 'playground' && options.externalImport) {
+        setPlaygroundImportToken(prev => prev + 1);
+      }
+      if (newView === 'playground') ensurePlayground();
+    });
 
     // Auto-load data based on view, respecting cache
     if (newView === 'list' || newView === 'characters') refreshData();
     if (newView === 'library') loadArtists();
     if (newView === 'inspiration') loadInspirations();
 
-    if (newView === 'playground') ensurePlayground();
   };
 
   const handleUpdatePlaygroundChain = async (id: string, updates: Partial<PromptChain>) => {

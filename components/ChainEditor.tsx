@@ -54,6 +54,64 @@ const PresetSourceBadges: React.FC<{ sources: Record<string, PresetSource> }> = 
     return values.length > 0 ? <div className="flex min-w-0 flex-wrap items-center gap-1">{values.map(source => <PresetSourceBadge key={source.name} source={source} />)}</div> : null;
 };
 
+interface PromptAgentOverlayControllerProps {
+    chainId: string;
+    openToken?: number;
+    draft: PromptAgentDraft;
+    apiKey: string;
+    onRunStart: (snapshot: PromptAgentDraft) => void;
+    onFinalDraft: (draft: PromptAgentDraft) => void;
+    onRequestGeneration: (draft: PromptAgentDraft, reason?: string) => Promise<boolean>;
+    canUndo: boolean;
+    onUndo: () => void;
+}
+
+/** Keep the overlay's visibility local so opening it does not rerender the editor. */
+const PromptAgentOverlayController: React.FC<PromptAgentOverlayControllerProps> = ({
+    chainId,
+    openToken,
+    draft,
+    apiKey,
+    onRunStart,
+    onFinalDraft,
+    onRequestGeneration,
+    canUndo,
+    onUndo,
+}) => {
+    const [open, setOpen] = useState(false);
+
+    useEffect(() => {
+        if (openToken) setOpen(true);
+    }, [openToken]);
+
+    useEffect(() => {
+        const handleOpen = (event: Event) => {
+            const requestedChainId = (event as CustomEvent<{ chainId?: string }>).detail?.chainId;
+            if (requestedChainId === chainId) setOpen(true);
+        };
+        window.addEventListener('nai-open-prompt-agent', handleOpen);
+        return () => window.removeEventListener('nai-open-prompt-agent', handleOpen);
+    }, [chainId]);
+
+    return (
+        <PromptAgentPanel
+            open={open}
+            onClose={() => setOpen(false)}
+            draft={draft}
+            apiKey={apiKey}
+            onRunStart={onRunStart}
+            onFinalDraft={onFinalDraft}
+            onRequestGeneration={async (nextDraft, reason) => {
+                const started = await onRequestGeneration(nextDraft, reason);
+                if (started) setOpen(false);
+                return started;
+            }}
+            canUndo={canUndo}
+            onUndo={onUndo}
+        />
+    );
+};
+
 export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken, agentOpenToken }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
     const queueStatus = useCloudQueueStatus();
@@ -145,14 +203,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [showJsonPasteModal, setShowJsonPasteModal] = useState(false);
     const [jsonPasteText, setJsonPasteText] = useState('');
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
-    const [showPromptAgent, setShowPromptAgent] = useState(false);
     const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<PromptAgentDraft | null>(null);
     const editorRevisionRef = useRef(0);
     const agentRunRevisionRef = useRef(0);
-
-    useEffect(() => {
-        if (agentOpenToken) setShowPromptAgent(true);
-    }, [agentOpenToken]);
 
     useEffect(() => {
         const viewport = window.visualViewport;
@@ -1107,7 +1160,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             message: `${reason ? `${reason}\n\n` : ''}预计本次消耗 ${cost} Anlas。确认后才会提交给 NovelAI。`,
             confirmLabel: `消耗 ${cost} 点并生成`,
         })) return false;
-        setShowPromptAgent(false);
         return handleGenerateDraft(draft);
     };
 
@@ -1292,7 +1344,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     {canEdit && (
                         <button
                             type="button"
-                            onClick={() => setShowPromptAgent(true)}
+                            onClick={() => window.dispatchEvent(new CustomEvent('nai-open-prompt-agent', { detail: { chainId: chain.id } }))}
                             className="mobile-touch hidden h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40 md:flex"
                             title="AI 生图 Agent"
                             aria-label="打开 AI 生图 Agent"
@@ -1338,9 +1390,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     {isOwner && chain.id !== 'playground' && <button onClick={handleSaveAll} disabled={!hasChanges} className={`mobile-touch rounded-xl px-3 text-sm font-bold lg:hidden ${hasChanges ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}>{hasChanges ? '保存' : '已保存'}</button>}
                 </div>
             </header>
-            <PromptAgentPanel
-                open={showPromptAgent}
-                onClose={() => setShowPromptAgent(false)}
+            <PromptAgentOverlayController
+                chainId={chain.id}
+                openToken={agentOpenToken}
                 draft={currentAgentDraft()}
                 apiKey={apiKey}
                 onRunStart={snapshot => { agentRunRevisionRef.current = editorRevisionRef.current; setAgentUndoSnapshot(snapshot); }}

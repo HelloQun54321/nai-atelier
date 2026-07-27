@@ -115,8 +115,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/55 p-0 md:p-4" onMouseDown={requestClose}>
-      <div className="flex h-[100dvh] max-h-none w-full max-w-none flex-col overflow-hidden border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 md:h-[82vh] md:max-h-[860px] md:max-w-6xl md:rounded-2xl md:border" onMouseDown={event => event.stopPropagation()}>
+    <div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-center justify-center bg-black/55 p-0 md:p-4" onMouseDown={requestClose}>
+      <div className="ui-modal-enter flex h-[100dvh] max-h-none w-full max-w-none flex-col overflow-hidden border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 md:h-[82vh] md:max-h-[860px] md:max-w-6xl md:rounded-2xl md:border" onMouseDown={event => event.stopPropagation()}>
         <div className="flex min-h-[calc(3.5rem+env(safe-area-inset-top))] items-center justify-between border-b border-gray-200 px-3 pt-[env(safe-area-inset-top)] dark:border-gray-800 md:min-h-0 md:px-5 md:py-4 md:pt-4">
           <div>
             <h2 className="text-lg font-bold text-gray-900 dark:text-white">全局设置</h2>

@@ -53,7 +53,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
             {children}
             {options && (
                 <div
-                    className="fixed inset-0 z-[2000] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm md:items-center md:p-4"
+                    className="ui-backdrop-enter fixed inset-0 z-[2000] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm md:items-center md:p-4"
                     onClick={() => closeDialog(false)}
                 >
                     <div
@@ -61,7 +61,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                         aria-modal="true"
                         aria-labelledby="confirm-dialog-title"
                         aria-describedby="confirm-dialog-description"
-                        className="mobile-safe-bottom w-full max-w-md rounded-t-3xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-850 md:rounded-2xl md:p-6"
+                        className="ui-sheet-enter mobile-safe-bottom w-full max-w-md rounded-t-3xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-850 md:rounded-2xl md:p-6"
                         onClick={event => event.stopPropagation()}
                     >
                         <div className="flex items-start gap-4">
