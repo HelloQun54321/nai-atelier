@@ -1,6 +1,9 @@
 
 @import "tailwindcss";
 
+/* Theme selection is controlled by App.tsx, not directly by the OS media query. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --workspace-toolbar-height: 57px;
   --workspace-control-radius: 0.75rem;
