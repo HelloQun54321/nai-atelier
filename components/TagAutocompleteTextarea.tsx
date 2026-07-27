@@ -1,5 +1,13 @@
-import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Languages, LoaderCircle } from 'lucide-react';
 import { normalizeTagQuery, preloadTagDictionary, searchTagDictionary, TagSuggestion } from '../services/tagDictionary';
+import {
+  parsePromptTags,
+  PromptTagTranslation,
+  resolvePromptTranslations,
+  subscribeTagTranslations,
+  translateMissingPromptTags,
+} from '../services/tagTranslations';
 
 interface CompletionTarget {
   query: string;
@@ -12,6 +20,8 @@ interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes
   value: string;
   onValueChange: (value: string) => void;
   containerClassName?: string;
+  showTranslations?: boolean;
+  allowAiTranslation?: boolean;
 }
 
 const findCompletionTarget = (value: string, caret: number): CompletionTarget | null => {
@@ -48,6 +58,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   onValueChange,
   className,
   containerClassName = '',
+  showTranslations = true,
+  allowAiTranslation = true,
   disabled,
   onFocus,
   onBlur,
@@ -69,7 +81,47 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const [target, setTarget] = useState<CompletionTarget | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [dropUp, setDropUp] = useState(false);
+  const [translations, setTranslations] = useState<PromptTagTranslation[]>([]);
+  const [translationLoading, setTranslationLoading] = useState(false);
+  const [translationError, setTranslationError] = useState('');
+  const [translationRevision, setTranslationRevision] = useState(0);
   const listboxId = useId();
+  const promptTokens = useMemo(() => parsePromptTags(value), [value]);
+
+  useEffect(() => subscribeTagTranslations(() => setTranslationRevision(revision => revision + 1)), []);
+
+  useEffect(() => {
+    if (!showTranslations || promptTokens.length === 0) {
+      setTranslations([]);
+      return;
+    }
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void resolvePromptTranslations(promptTokens).then(items => {
+        if (active) setTranslations(items);
+      }).catch(error => {
+        if (active) console.warn('Prompt translation lookup failed:', error);
+      });
+    }, 250);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [promptTokens, showTranslations, translationRevision]);
+
+  const missingTags = useMemo(() => [...new Set(translations
+    .filter(item => item.source === 'missing')
+    .map(item => item.lookupTag))], [translations]);
+
+  const translateMissing = async () => {
+    if (!missingTags.length || translationLoading) return;
+    setTranslationLoading(true);
+    setTranslationError('');
+    try {
+      await translateMissingPromptTags(missingTags);
+    } catch (error) {
+      setTranslationError(error instanceof Error ? error.message : '翻译失败');
+    } finally {
+      setTranslationLoading(false);
+    }
+  };
 
   useEffect(() => () => {
     if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
@@ -227,6 +279,49 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
           onCompositionEnd?.(event);
         }}
       />
+
+      {showTranslations && translations.length > 0 && (
+        <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50/80 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-900/55" aria-label="提示词中文翻译">
+          <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto overscroll-contain pr-0.5">
+            {translations.map(item => (
+              <span
+                key={item.id}
+                className={`inline-flex max-w-full flex-col rounded-md border px-2 py-1 leading-tight ${item.source === 'dictionary'
+                  ? 'border-purple-200/80 bg-purple-50/70 dark:border-purple-800/70 dark:bg-purple-950/25'
+                  : item.source === 'ai'
+                    ? 'border-emerald-200/80 bg-emerald-50/70 dark:border-emerald-800/70 dark:bg-emerald-950/25'
+                    : 'border-dashed border-gray-300 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'
+                }`}
+              >
+                <span className="max-w-48 truncate font-mono text-[10px] text-gray-500 dark:text-gray-400" title={item.displayTag}>{item.displayTag}</span>
+                <span className={`max-w-48 truncate text-xs font-medium ${item.source === 'dictionary'
+                  ? 'text-purple-600 dark:text-purple-300'
+                  : item.source === 'ai'
+                    ? 'text-emerald-600 dark:text-emerald-300'
+                    : 'text-gray-400 dark:text-gray-500'
+                }`} title={item.chinese || '词库暂无翻译'}>{item.chinese || '待翻译'}</span>
+              </span>
+            ))}
+          </div>
+          {(missingTags.length > 0 || translationError) && (
+            <div className="mt-1.5 flex min-h-7 items-center justify-end gap-2 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
+              {translationError && <span className="min-w-0 flex-1 truncate text-[10px] text-red-500" title={translationError}>{translationError}</span>}
+              {allowAiTranslation && !disabled && missingTags.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void translateMissing()}
+                  disabled={translationLoading}
+                  className="inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-60 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
+                  title={`使用当前 Agent 模型翻译 ${missingTags.length} 个词库缺失项`}
+                >
+                  {translationLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5" />}
+                  {translationLoading ? '翻译中' : `翻译缺失项 ${missingTags.length}`}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {isOpen && (
         <div

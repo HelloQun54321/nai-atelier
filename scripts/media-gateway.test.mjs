@@ -15,7 +15,16 @@ import {
   CloudQueueCoordinator,
   fetchNovelAiGeneration,
 } from './media-gateway.mjs';
-import { PromptAgentService, customProviderRuntime, estimateContextTokens, sanitizeCustomProvider, trimContextMessages } from './prompt-agent.mjs';
+import { PromptAgentService, customProviderRuntime, estimateContextTokens, parseTranslationResponse, sanitizeCustomProvider, trimContextMessages } from './prompt-agent.mjs';
+
+test('tag translation responses accept only requested tags and cached translations remain local', () => {
+  const allowed = new Set(['custom phrase', 'artist name']);
+  const parsed = parseTranslationResponse('```json\n[{"tag":"custom_phrase","chinese":"自定义短语"},{"tag":"unknown","chinese":"未知"},{"tag":"artist name","chinese":"画师名"}]\n```', allowed);
+  assert.deepEqual([...parsed], [['custom phrase', '自定义短语'], ['artist name', '画师名']]);
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  service.tagTranslations = { 'custom phrase': { chinese: '自定义短语', updatedAt: 123 } };
+  assert.deepEqual(service.lookupTagTranslations(['CUSTOM_phrase', 'missing']), [{ tag: 'custom phrase', chinese: '自定义短语', source: 'ai', updatedAt: 123 }]);
+});
 
 test('prompt agent custom providers use Pi runtime models and reject unsafe URLs', () => {
   const custom = sanitizeCustomProvider({

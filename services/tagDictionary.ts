@@ -131,6 +131,17 @@ export const searchTagDictionary = async (rawQuery: string, limit = 10): Promise
     }));
 };
 
+/** Resolve exact English Tag matches without treating prefix suggestions as translations. */
+export const lookupTagTranslations = async (rawTags: string[]): Promise<Map<string, TagSuggestion>> => {
+  const normalizedTags = [...new Set(rawTags.map(normalizeTagQuery).filter(Boolean))];
+  const resolved = await Promise.all(normalizedTags.map(async tag => {
+    const matches = await searchTagDictionary(tag, 8);
+    const exact = matches.find(item => normalizeTagQuery(item.name) === tag && item.chinese.trim());
+    return exact ? [tag, exact] as const : null;
+  }));
+  return new Map(resolved.filter((item): item is readonly [string, TagSuggestion] => item !== null));
+};
+
 export interface ArtistDictionaryEntry {
   name: string;
   chinese: string;

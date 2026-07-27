@@ -1151,6 +1151,13 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
           return sendJson(res, 200, promptAgent.publicConfig());
         }
+        if (url.pathname === '/api/prompt-agent/tag-translations') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 16 * 1024)).toString('utf8') || '{}');
+          if (body.action === 'lookup') return sendJson(res, 200, { items: promptAgent.lookupTagTranslations(body.tags) });
+          if (body.action === 'translate') return sendJson(res, 200, await promptAgent.translateTags(body.tags));
+          return sendJson(res, 400, { error: '不支持的翻译操作' });
+        }
         if (url.pathname === '/api/prompt-agent/models') {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
           return sendJson(res, 200, { items: promptAgent.getModels(url.searchParams.get('provider') || '') });
