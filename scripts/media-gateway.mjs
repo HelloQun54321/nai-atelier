@@ -7,6 +7,7 @@ import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { PromptAgentService } from './prompt-agent.mjs';
+import { StChatu8Bridge } from './st-chatu8-bridge.mjs';
 
 const CACHE_VERSION = 'v1';
 const CACHE_DIR = join(process.cwd(), 'local-cache', 'thumbnails');
@@ -241,6 +242,25 @@ const sendJson = (res, status, payload) => {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': body.length,
     'Cache-Control': 'no-store',
+  });
+  res.end(body);
+};
+
+const isLoopbackOrigin = value => {
+  try {
+    const url = new URL(String(value || ''));
+    return (url.protocol === 'http:' || url.protocol === 'https:') && isLoopbackHost(url.hostname);
+  } catch { return false; }
+};
+
+const sendBridgeJson = (req, res, status, payload) => {
+  const body = Buffer.from(JSON.stringify(payload));
+  const origin = isLoopbackOrigin(req.headers.origin) ? req.headers.origin : '';
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': body.length,
+    'Cache-Control': 'no-store',
+    ...(origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
   });
   res.end(body);
 };
@@ -1097,12 +1117,75 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
   const cloudQueuePreferences = await loadCloudQueuePreferences();
   const cache = new ThumbnailCache();
   const promptAgent = new PromptAgentService({ lanSecret, outboundProxyUrl });
+  const stChatu8Bridge = new StChatu8Bridge({
+    projectRoot: process.cwd(),
+    requestWorkerJson: (path, options) => requestWorkerJson(path, internalWorkerRequest, workerPort, options),
+    requestWorkerBuffer: path => requestWorkerBuffer(path, internalWorkerRequest, workerPort),
+  });
   await cache.init();
   await promptAgent.init();
+  await stChatu8Bridge.init();
   await recoverPendingVibeEncodings(workerPort);
+  stChatu8Bridge.startHistorySync();
   const server = createServer(async (req, res) => {
     let url;
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
+    if (url.pathname.startsWith('/api/integrations/st-chatu8/')) {
+      const isLocalRequest = isLoopbackIp(req.socket.remoteAddress);
+      const isHistoryImage = /^\/api\/integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image$/i.test(url.pathname);
+      if (req.method === 'OPTIONS') {
+        if (!isLocalRequest || !isLoopbackOrigin(req.headers.origin)) return sendJson(res, 403, { error: 'Forbidden' });
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': req.headers.origin,
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+          'Access-Control-Max-Age': '600',
+          Vary: 'Origin',
+        });
+        return res.end();
+      }
+      if (isHistoryImage) {
+        if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+        try {
+          const externalId = decodeURIComponent(url.pathname.split('/')[5]);
+          const image = await stChatu8Bridge.readHistoryImage(externalId);
+          res.writeHead(200, {
+            'Content-Type': image.contentType,
+            'Content-Length': image.buffer.length,
+            'Cache-Control': 'private, max-age=3600',
+            'X-Content-Type-Options': 'nosniff',
+          });
+          return res.end(image.buffer);
+        } catch (error) {
+          return sendJson(res, Number(error.status) || 404, { error: error.message || 'st-chatu8 原图不存在' });
+        }
+      }
+      if (!isLocalRequest) return sendJson(res, 403, { error: 'st-chatu8 桥接只允许本机 SillyTavern 使用' });
+      try {
+        if (url.pathname === '/api/integrations/st-chatu8/status' && req.method === 'GET') {
+          return sendBridgeJson(req, res, 200, stChatu8Bridge.status());
+        }
+        if (url.pathname === '/api/integrations/st-chatu8/sync' && req.method === 'POST') {
+          const payload = JSON.parse((await readRequestBody(req, 64 * 1024 * 1024)).toString('utf8') || '{}');
+          return sendBridgeJson(req, res, 200, await stChatu8Bridge.sync(payload));
+        }
+        const vibeFileMatch = url.pathname.match(/^\/api\/integrations\/st-chatu8\/vibes\/([^/]+)\/file$/);
+        if (vibeFileMatch && req.method === 'GET') {
+          const file = await stChatu8Bridge.readVibeFile(decodeURIComponent(vibeFileMatch[1]));
+          const origin = isLoopbackOrigin(req.headers.origin) ? req.headers.origin : '';
+          res.writeHead(200, {
+            'Content-Type': file.contentType,
+            'Content-Length': file.buffer.length,
+            'Cache-Control': 'no-store',
+            ...(origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
+          });
+          return res.end(file.buffer);
+        }
+        return sendBridgeJson(req, res, 404, { error: 'st-chatu8 桥接接口不存在' });
+      } catch (error) {
+        return sendBridgeJson(req, res, Number(error.status) || 400, { error: error.message || 'st-chatu8 同步失败' });
+      }
+    }
     if (url.pathname.startsWith('/api/prompt-agent/')) {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       try {

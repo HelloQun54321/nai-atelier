@@ -1430,6 +1430,8 @@ const INIT_SQL = `
     source_chain_id TEXT,
     source_chain_name TEXT,
     source_chain_type TEXT,
+    external_source TEXT,
+    external_id TEXT,
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_local_history_user_created
@@ -1495,11 +1497,21 @@ async function ensureLocalHistorySchema(db: D1Database) {
       source_chain_id TEXT,
       source_chain_name TEXT,
       source_chain_type TEXT,
+      external_source TEXT,
+      external_id TEXT,
       created_at INTEGER NOT NULL
     )
   `).run();
+  for (const statement of [
+    'ALTER TABLE local_generation_history ADD COLUMN external_source TEXT',
+    'ALTER TABLE local_generation_history ADD COLUMN external_id TEXT',
+  ]) {
+    try { await db.prepare(statement).run(); } catch { /* Column already exists. */ }
+  }
   await db.prepare(`CREATE INDEX IF NOT EXISTS idx_local_history_user_created
     ON local_generation_history(user_id, created_at DESC)`).run();
+  await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_local_history_external
+    ON local_generation_history(user_id, external_source, external_id)`).run();
 }
 
 async function ensureVibeSchema(db: D1Database) {
@@ -1644,13 +1656,17 @@ function parseStoredJson(value: string | null | undefined, fallback: any) {
 function mapLocalHistoryRow(row: any) {
   return {
     id: row.id,
-    imageUrl: `/api/local-history/${encodeURIComponent(row.id)}/image`,
+    imageUrl: row.external_source === 'st-chatu8' && row.external_id
+      ? `/api/integrations/st-chatu8/history/${encodeURIComponent(row.external_id)}/image`
+      : `/api/local-history/${encodeURIComponent(row.id)}/image`,
     prompt: row.prompt || '',
     negativePrompt: row.negative_prompt || '',
     params: parseStoredJson(row.params, {}),
     sourceChainId: row.source_chain_id || undefined,
     sourceChainName: row.source_chain_name || undefined,
     sourceChainType: row.source_chain_type || undefined,
+    externalSource: row.external_source || undefined,
+    externalId: row.external_id || undefined,
     createdAt: Number(row.created_at || 0),
   };
 }
@@ -2701,9 +2717,20 @@ export default {
             } catch { return error('Vibe 文件中的缩略图无效', 400); }
           }
           const actualSourceHash = original ? await sha256Hex(original.bytes) : '';
-          const sourceHash = String(document.id || actualSourceHash).toLowerCase();
-          if (!/^[a-f0-9]{64}$/.test(sourceHash)) return error('Vibe 文件缺少有效的图片标识', 400);
-          if (actualSourceHash && sourceHash !== actualSourceHash) return error('Vibe 文件的原图哈希不匹配', 400);
+          const declaredSourceHash = String(document.id || actualSourceHash).toLowerCase();
+          if (!/^[a-f0-9]{64}$/.test(declaredSourceHash)) return error('Vibe 文件缺少有效的图片标识', 400);
+          if (actualSourceHash && declaredSourceHash !== actualSourceHash) {
+            // st-chatu8 and some official-compatible exporters hash the Base64 text,
+            // while NaiPromptManager hashes the decoded image bytes. Accept both,
+            // then keep the byte hash as the canonical deduplication key.
+            const rawImage = String(document.image).replace(/^data:image\/[^;]+;base64,/i, '');
+            const textHashes = new Set([
+              await sha256Hex(new TextEncoder().encode(rawImage)),
+              await sha256Hex(new TextEncoder().encode(String(document.image))),
+            ]);
+            if (!textHashes.has(declaredSourceHash)) return error('Vibe 文件的原图哈希不匹配', 400);
+          }
+          const sourceHash = actualSourceHash || declaredSourceHash;
           let asset = await db.prepare('SELECT * FROM vibe_assets WHERE source_hash = ?').bind(sourceHash).first<any>();
           const id = asset?.id || crypto.randomUUID();
           const now = Date.now();
@@ -2908,6 +2935,51 @@ export default {
       }
 
       // --- Local-only generation history (D1 metadata + R2 images) ---
+      if (path === '/api/integrations/st-chatu8/history/known' && method === 'POST') {
+        if (!localHistoryEnabled(env)) return error('Local history is disabled', 404);
+        await ensureLocalHistorySchema(db);
+        const body = await request.json() as any;
+        const ids = Array.isArray(body.externalIds)
+          ? body.externalIds.slice(0, 1000).map((id: any) => String(id)).filter((id: string) => /^[a-f0-9]{64}$/i.test(id))
+          : [];
+        if (!ids.length) return json({ externalIds: [] });
+        const placeholders = ids.map(() => '?').join(',');
+        const rows = await db.prepare(`SELECT external_id FROM local_generation_history
+          WHERE user_id = ? AND external_source = 'st-chatu8' AND external_id IN (${placeholders})`)
+          .bind(currentUser.id, ...ids).all<{external_id: string}>();
+        return json({ externalIds: rows.results.map(row => row.external_id) });
+      }
+
+      if (path === '/api/integrations/st-chatu8/history/import' && method === 'POST') {
+        if (!localHistoryEnabled(env)) return error('Local history is disabled', 404);
+        await ensureLocalHistorySchema(db);
+        const body = await request.json() as any;
+        const items = Array.isArray(body.items) ? body.items.slice(0, 500) : [];
+        if (!items.length) return json({ imported: 0, skipped: 0 });
+        let imported = 0;
+        let skipped = 0;
+        for (const item of items) {
+          const externalId = String(item?.externalId || '').trim();
+          if (!/^[a-f0-9]{64}$/i.test(externalId)) { skipped++; continue; }
+          const existing = await db.prepare(`SELECT id FROM local_generation_history
+            WHERE user_id = ? AND external_source = 'st-chatu8' AND external_id = ?`)
+            .bind(currentUser.id, externalId).first<{id: string}>();
+          if (existing) { skipped++; continue; }
+          const id = `st-chatu8-${externalId.slice(0, 32)}`;
+          await db.prepare(`INSERT OR IGNORE INTO local_generation_history (
+            id, user_id, image_key, image_type, prompt, negative_prompt, params,
+            source_chain_id, source_chain_name, source_chain_type, external_source, external_id, created_at
+          ) VALUES (?, ?, '', ?, ?, ?, ?, NULL, ?, 'playground', 'st-chatu8', ?, ?)`)
+            .bind(
+              id, currentUser.id, String(item.imageType || 'image/png'), String(item.prompt || ''),
+              String(item.negativePrompt || ''), JSON.stringify(item.params || {}),
+              String(item.sourceName || 'st-chatu8'), externalId, Number(item.createdAt || Date.now())
+            ).run();
+          imported++;
+        }
+        return json({ imported, skipped });
+      }
+
       if (path === '/api/local-history/status' && method === 'GET') {
         const enabled = localHistoryEnabled(env) && Boolean(env.BUCKET);
         if (enabled) await ensureLocalHistorySchema(db);
@@ -2921,7 +2993,7 @@ export default {
 
         const deleteHistoryRows = async (rows: Array<{id: string, image_key: string}>) => {
           for (const row of rows) {
-            await env.BUCKET!.delete(row.image_key);
+            if (row.image_key) await env.BUCKET!.delete(row.image_key);
             await db.prepare('DELETE FROM local_generation_history WHERE id = ? AND user_id = ?')
               .bind(row.id, currentUser.id).run();
           }
@@ -2934,6 +3006,7 @@ export default {
           const row = await db.prepare('SELECT image_key FROM local_generation_history WHERE id = ? AND user_id = ?')
             .bind(id, currentUser.id).first<{image_key: string}>();
           if (!row) return error('History image not found', 404);
+          if (!row.image_key) return error('External history image is served by the local gateway', 404);
           const object = await env.BUCKET.get(row.image_key);
           if (!object) return error('History image file not found', 404);
           const headers = new Headers();

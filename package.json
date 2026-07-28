@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build && npm run build:worker",
     "build:worker": "esbuild worker/index.ts --bundle --format=esm --outfile=dist/_worker.js --platform=browser",
-    "test:gateway": "node --test scripts/media-gateway.test.mjs",
+    "test:gateway": "node --test scripts/media-gateway.test.mjs scripts/st-chatu8-bridge.test.mjs",
     "update:tags": "node --no-warnings scripts/update-tag-dictionary.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && npx wrangler pages project create nai-prompt-manager --production-branch main || true && npx wrangler pages deploy dist --project-name=nai-prompt-manager --commit-message=deploy",
