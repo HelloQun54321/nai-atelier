@@ -194,9 +194,13 @@ async function reuseExistingServer() {
 
 async function waitForWorker(port) {
   const startedAt = Date.now();
-  const notices = [8_000, 20_000, 35_000];
+  // A large local R2 store can take longer to recover after an interrupted
+  // workerd process. Do not kill a healthy recovery just because the usual
+  // fast-start window has elapsed.
+  const timeoutMs = 180_000;
+  const notices = [8_000, 20_000, 35_000, 60_000, 90_000, 120_000, 150_000];
   let noticeIndex = 0;
-  while (Date.now() - startedAt < 45_000) {
+  while (Date.now() - startedAt < timeoutMs) {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/lan/status`, { cache: 'no-store', signal: AbortSignal.timeout(1500) });
       const payload = await response.json().catch(() => null);
@@ -211,7 +215,7 @@ async function waitForWorker(port) {
     }
     await new Promise(resolve => setTimeout(resolve, 500));
   }
-  throw new Error('核心页面服务启动超过 45 秒，请关闭此窗口后重新启动；若再次出现，请保留本窗口中的红色错误信息');
+  throw new Error('核心页面服务启动超过 3 分钟，请关闭此窗口后重新启动；若再次出现，请保留本窗口中的红色错误信息');
 }
 
 function terminateProcessTree(pid) {
