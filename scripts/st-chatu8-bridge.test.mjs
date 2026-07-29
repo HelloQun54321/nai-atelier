@@ -35,10 +35,14 @@ test('known external history rows are not imported again', async () => {
     jiuguanStorage: { one: { images: [{ path: '/user/images/chatu8/a.png', thumbnail_path: '/user/images/chatu8/thumbnails/a.jpg' }] } },
   } } }));
   let imports = 0;
+  let knownChecks = 0;
   const bridge = new StChatu8Bridge({
     projectRoot: root,
     requestWorkerJson: async (path, options) => {
-      if (path.endsWith('/known')) return { externalIds: options.body.externalIds };
+      if (path.endsWith('/known')) {
+        knownChecks++;
+        return { externalIds: options.body.externalIds };
+      }
       if (path.endsWith('/import')) imports++;
       return {};
     },
@@ -49,6 +53,9 @@ test('known external history rows are not imported again', async () => {
   await bridge.syncHistory();
   assert.equal(imports, 0);
   assert.equal(Object.keys(bridge.state.history).length, 1);
+  assert.equal(knownChecks, 1);
+  await bridge.syncHistory();
+  assert.equal(knownChecks, 1, 'already indexed history must not query the worker again');
 });
 
 test('st-chatu8 remains authoritative for linked artists without creating duplicates', async () => {

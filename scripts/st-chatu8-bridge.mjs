@@ -247,17 +247,21 @@ export class StChatu8Bridge {
   async syncHistory() {
     const settings = await this.readStSettings();
     const candidates = collectStHistoryCandidates(settings, publicPath => this.resolveStUserPath(publicPath));
+    const unchecked = [];
     const known = new Set();
-    for (const { image, externalId } of candidates) {
+    for (const candidate of candidates) {
+      const { image, externalId } = candidate;
+      const previous = this.state.history[externalId];
       this.state.history[externalId] = { ...this.state.history[externalId], path: image.path, createdAt: Number(image.date || Date.now()) };
+      if (!previous?.importedAt) unchecked.push(candidate);
     }
-    for (let offset = 0; offset < candidates.length; offset += 80) {
-      const batch = candidates.slice(offset, offset + 80).map(item => item.externalId);
+    for (let offset = 0; offset < unchecked.length; offset += 80) {
+      const batch = unchecked.slice(offset, offset + 80).map(item => item.externalId);
       const result = await this.requestWorkerJson('/api/integrations/st-chatu8/history/known', { method: 'POST', body: { externalIds: batch } });
       for (const id of result.externalIds || []) known.add(id);
     }
     const pending = [];
-    for (const { image, filePath, externalId } of candidates) {
+    for (const { image, filePath, externalId } of unchecked) {
         if (known.has(externalId)) {
           this.state.history[externalId].importedAt ||= Date.now();
           continue;
