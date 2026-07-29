@@ -331,7 +331,10 @@ export class StChatu8Bridge {
         || String(chain.previewImage || '') !== String(link.lastNpmPreviewImage || '');
       if (stHash !== npmHash || previewChanged) {
         const body = artistToChainBody(artist, chain);
-        body.previewImage = artist.previewPath ? await this.readStPreviewData(artist.previewPath) : null;
+        // A missing st-chatu8 preview means "no preview supplied", not
+        // "delete the NaiPromptManager cover". Only replace a cover when the
+        // authoritative side actually provides image data.
+        if (artist.previewPath) body.previewImage = await this.readStPreviewData(artist.previewPath);
         await this.requestWorkerJson(`/api/chains/${encodeURIComponent(chain.id)}`, { method: 'PUT', body });
         const refreshed = await this.requestWorkerJson(`/api/chains/${encodeURIComponent(chain.id)}`);
         if (refreshed?.id) {

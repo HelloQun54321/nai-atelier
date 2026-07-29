@@ -122,6 +122,32 @@ test('artist preview is retained and an unchanged preview is not uploaded on eve
   assert.equal(bridge.state.artistLinks['st:cover'].lastNpmPreviewImage, '/api/assets/covers/chain-cover.png');
 });
 
+test('an st-chatu8 preset without a preview never clears an existing project cover', async () => {
+  const chains = [{
+    id: 'chain-local-cover', name: '本地画风', type: 'style', description: '', tags: [],
+    previewImage: '/api/assets/covers/original.png', basePrompt: 'old', negativePrompt: '',
+    modules: [], params: {}, variableValues: {}, createdAt: 1, updatedAt: 1,
+  }];
+  let updateBody = null;
+  const bridge = new StChatu8Bridge({
+    requestWorkerJson: async (path, options = {}) => {
+      if (path === '/api/chains' && !options.method) return structuredClone(chains);
+      if (path === '/api/chains/chain-local-cover' && options.method === 'PUT') {
+        updateBody = structuredClone(options.body);
+        Object.assign(chains[0], options.body, { updatedAt: 2 });
+        return { success: true };
+      }
+      if (path === '/api/chains/chain-local-cover' && !options.method) return structuredClone(chains[0]);
+      throw new Error(`Unexpected request: ${options.method || 'GET'} ${path}`);
+    },
+    requestWorkerBuffer: async () => ({ status: 404, buffer: Buffer.alloc(0) }),
+  });
+  bridge.saveState = async () => {};
+  await bridge.syncArtists([{ externalId: 'st:no-cover', name: '本地画风', fixedPrompt: 'new', previewPath: '', updatedAt: 2 }]);
+  assert.equal(chains[0].previewImage, '/api/assets/covers/original.png');
+  assert.equal(Object.hasOwn(updateBody, 'previewImage'), false);
+});
+
 test('Vibe identity is canonicalized from image bytes across exporter-specific ids', () => {
   const image = Buffer.from('same-vibe-image');
   const a = canonicalVibeSourceHash({ image: image.toString('base64'), id: 'a'.repeat(64) });
