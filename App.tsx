@@ -227,6 +227,15 @@ const App = () => {
   const findImageAtPointer = (target: HTMLElement, clientX: number, clientY: number) => {
     if (target instanceof HTMLImageElement) return target;
 
+    // Interactive controls are a hard lookup boundary. Mobile floating actions
+    // (for example Generate) can share a wrapper with a preview thumbnail; the
+    // old ancestor walk treated that sibling image as the click target and the
+    // safe-mode capture handler swallowed the button click before its onClick
+    // could run. Images that actually belong to a button/card still work,
+    // because the boundary itself is searched before traversal stops.
+    const interactiveBoundary = target.closest<HTMLElement>(
+      'button, a, input, textarea, select, [role="button"], [contenteditable="true"]',
+    );
     let current: HTMLElement | null = target;
     for (let depth = 0; current && depth < 6; depth++, current = current.parentElement) {
       const candidates = Array.from(current.querySelectorAll<HTMLImageElement>('img'))
@@ -240,6 +249,7 @@ const App = () => {
           return aRect.width * aRect.height - bRect.width * bRect.height;
         });
       if (candidates[0]) return candidates[0];
+      if (current === interactiveBoundary) break;
     }
     return null;
   };

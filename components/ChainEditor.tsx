@@ -1019,7 +1019,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const handleGenerateDraft = async (override?: PromptAgentDraft) => {
         if (!apiKey) {
-            setErrorMsg('请在左侧“全局设置”中配置 NovelAI API Key');
+            const message = '请先在“全局设置”中配置 NovelAI API Key';
+            setErrorMsg(message);
+            notify(message, 'error');
             return false;
         }
         const generationPrompt = override ? compilePrompt({ basePrompt: override.basePrompt, modules: override.modules }, override.subjectPrompt) : finalPrompt;
