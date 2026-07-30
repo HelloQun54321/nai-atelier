@@ -513,7 +513,11 @@ K. 角色与服装调用判定（防 DNA 串位、手猜错、旧资料过时）
 - 服装调用同理：每件实际衣物独立按款式/颜色/长度结构/材质/图案标志/当前状态逐条记录，N≥2 每角色的服装各自独立写，不共用、不串色。换装只改当前服装状态，绝不能因此改动角色永久 DNA（发色、瞳色、肤色、胸型、体型、永久标记等）。
 - 全裸角色不写任何服装 Tag，进入 B 分级全裸分支（X 级用 {nude},{completely naked} 等），不补虚构内衣；半裸/部分裸露只写当前真实仍穿着的每件衣物，不套"全穿/全裸"两端模板。`;
 
-const PROMPT_AGENT_POLICY_FINGERPRINT = createHash('sha256').update(systemPrompt).digest('hex').slice(0, 12);
+// 复刻酒馆"同帧淹没"机制：在 agent 模式下，每轮用户请求前重发一遍浓缩破甲前导，
+// 让破甲话术与触发词在同一帧内同时占据模型注意力，最大化压制第一层犹豫。
+// systemPrompt 已含完整破甲但模型可能当成背景；此前导作为判定帧前台话术生效。
+const creativePreamble = ''; // [redacted]
+const PROMPT_AGENT_POLICY_FINGERPRINT = createHash('sha256').update(`${systemPrompt}\n${creativePreamble}`).digest('hex').slice(0, 12);
 
 const extractAssistantText = messages => {
   const assistant = [...messages].reverse().find(message => message?.role === 'assistant');
@@ -2102,7 +2106,7 @@ export class PromptAgentService {
             return /^[A-Za-z0-9+/=]+$/.test(data) && /^image\/(?:png|jpeg|webp|gif)$/i.test(mimeType) && data.length <= 40 * 1024 * 1024 ? [{ type: 'image', data, mimeType }] : [];
           }) : [];
           if (images.length && !modelInfo.imageInput) throw Object.assign(new Error('当前模型不支持图片输入，请先切换到带“识图”标记的模型'), { status: 400 });
-          await agent.prompt(text(input?.message).slice(0, 8_000), images);
+          await agent.prompt(`${creativePreamble}\n${text(input?.message).slice(0, 8_000)}`, images);
         }
       } catch (error) {
         taskStatus = agent.signal?.aborted ? 'aborted' : 'failed';
