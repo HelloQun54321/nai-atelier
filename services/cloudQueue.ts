@@ -22,11 +22,17 @@ let currentQueueStatus: CloudQueueStatus | null = null;
 let clearStatusTimer: number | null = null;
 const statusListeners = new Set<() => void>();
 
-export const getCachedCloudQueuePreferences = (): CloudQueuePreferences => cachedPreferences;
+export const getCachedCloudQueuePreferences = (): CloudQueuePreferences => ({ ...cachedPreferences });
 
 export const getCloudQueuePreferences = async (): Promise<CloudQueuePreferences> => {
   const response = await fetch(`/api/generation-queue/preferences?_t=${Date.now()}`, { cache: 'no-store' });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) {
+    const payload = await response.clone().json().catch(() => null);
+    if (response.status === 401 && payload?.code === 'LAN_ACCESS_REQUIRED') {
+      window.dispatchEvent(new CustomEvent('nai-lan-access-required'));
+    }
+    throw new Error(payload?.error || await response.text());
+  }
   cachedPreferences = await response.json();
   return cachedPreferences;
 };
@@ -35,7 +41,13 @@ export const setCloudQueuePreferences = async (preferences: CloudQueuePreference
   const response = await fetch('/api/generation-queue/preferences', {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(preferences),
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) {
+    const payload = await response.clone().json().catch(() => null);
+    if (response.status === 401 && payload?.code === 'LAN_ACCESS_REQUIRED') {
+      window.dispatchEvent(new CustomEvent('nai-lan-access-required'));
+    }
+    throw new Error(payload?.error || await response.text());
+  }
   cachedPreferences = await response.json();
   window.dispatchEvent(new CustomEvent('nai-cloud-queue-preferences-changed', { detail: cachedPreferences }));
   return cachedPreferences;

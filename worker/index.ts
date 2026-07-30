@@ -114,6 +114,7 @@ const LOG_STRING_LIMIT = 600;
 const LAN_ACCESS_COOKIE = 'nai_lan_access';
 const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const lanAccessAttempts = new Map<string, { failures: number; blockedUntil: number }>();
+const MAX_MANAGED_IMAGE_BYTES = 12 * 1024 * 1024;
 
 const isLoopbackHostname = (hostname: string) => {
   const normalized = hostname.replace(/^\[|\]$/g, '').toLowerCase();
@@ -161,8 +162,12 @@ const hasValidLanAccess = async (request: Request, secret: string) => {
 };
 
 const getLanAttemptKey = (request: Request) =>
+  // This header is overwritten by the local media gateway from its socket.
+  // Do not use an arbitrary client-supplied X-Forwarded-For value as the
+  // primary key for a security rate limit.
+  request.headers.get('X-Nai-Client-IP') ||
   request.headers.get('CF-Connecting-IP') ||
-  request.headers.get('X-Forwarded-For') ||
+  request.headers.get('X-Forwarded-For')?.split(',').at(-1)?.trim() ||
   request.headers.get('User-Agent') ||
   'lan-device';
 
@@ -1430,6 +1435,7 @@ const INIT_SQL = `
     base_prompt TEXT DEFAULT '',
     subject_prompt TEXT DEFAULT '',
     modules TEXT DEFAULT '[]',
+    structure_version INTEGER NOT NULL DEFAULT 0,
     source_chain_id TEXT,
     source_chain_name TEXT,
     source_chain_type TEXT,
@@ -1500,6 +1506,7 @@ async function ensureLocalHistorySchema(db: D1Database) {
       base_prompt TEXT DEFAULT '',
       subject_prompt TEXT DEFAULT '',
       modules TEXT DEFAULT '[]',
+      structure_version INTEGER NOT NULL DEFAULT 0,
       source_chain_id TEXT,
       source_chain_name TEXT,
       source_chain_type TEXT,
@@ -1514,6 +1521,7 @@ async function ensureLocalHistorySchema(db: D1Database) {
     "ALTER TABLE local_generation_history ADD COLUMN base_prompt TEXT DEFAULT ''",
     "ALTER TABLE local_generation_history ADD COLUMN subject_prompt TEXT DEFAULT ''",
     "ALTER TABLE local_generation_history ADD COLUMN modules TEXT DEFAULT '[]'",
+    'ALTER TABLE local_generation_history ADD COLUMN structure_version INTEGER NOT NULL DEFAULT 0',
   ]) {
     try { await db.prepare(statement).run(); } catch { /* Column already exists. */ }
   }
@@ -1521,6 +1529,17 @@ async function ensureLocalHistorySchema(db: D1Database) {
     ON local_generation_history(user_id, created_at DESC)`).run();
   await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_local_history_external
     ON local_generation_history(user_id, external_source, external_id)`).run();
+  // Rows written before structured history existed have migration defaults
+  // (empty strings and []).  They must continue to import their full prompt.
+  // Preserve any older row that demonstrably contains structured information.
+  await db.prepare(`UPDATE local_generation_history
+    SET structure_version = 1
+    WHERE COALESCE(structure_version, 0) = 0
+      AND (
+        TRIM(COALESCE(base_prompt, '')) != ''
+        OR TRIM(COALESCE(subject_prompt, '')) != ''
+        OR TRIM(COALESCE(modules, '')) NOT IN ('', '[]', 'null')
+      )`).run();
 }
 
 async function ensureVibeSchema(db: D1Database) {
@@ -1663,6 +1682,7 @@ function parseStoredJson(value: string | null | undefined, fallback: any) {
 }
 
 function mapLocalHistoryRow(row: any) {
+  const hasStructuredPrompt = Number(row.structure_version || 0) >= 1;
   return {
     id: row.id,
     imageUrl: row.external_source === 'st-chatu8' && row.external_id
@@ -1671,9 +1691,11 @@ function mapLocalHistoryRow(row: any) {
     prompt: row.prompt || '',
     negativePrompt: row.negative_prompt || '',
     params: parseStoredJson(row.params, {}),
-    basePrompt: row.base_prompt || undefined,
-    subjectPrompt: row.subject_prompt || undefined,
-    modules: parseStoredJson(row.modules, []),
+    ...(hasStructuredPrompt ? {
+      basePrompt: row.base_prompt || '',
+      subjectPrompt: row.subject_prompt || '',
+      modules: parseStoredJson(row.modules, []),
+    } : {}),
     sourceChainId: row.source_chain_id || undefined,
     sourceChainName: row.source_chain_name || undefined,
     sourceChainType: row.source_chain_type || undefined,
@@ -1738,19 +1760,10 @@ async function removeLegacyArtistLibrary(env: Env, db: D1Database) {
   const marker = await db.prepare("SELECT value FROM settings WHERE key = 'artist_catalog_local_v2'")
     .first<{value: string}>();
   if (marker?.value === '1') return;
-
-  const result = await db.prepare('SELECT image_url, preview_url, benchmarks FROM artists').all<any>();
-  const assetUrls = new Set<string>();
-  for (const artist of result.results || []) {
-    if (artist.image_url) assetUrls.add(artist.image_url);
-    if (artist.preview_url) assetUrls.add(artist.preview_url);
-    for (const url of parseStoredJson(artist.benchmarks, [])) {
-      if (url) assetUrls.add(url);
-    }
-  }
-
-  for (const url of assetUrls) await deleteR2File(env, url);
-  await db.prepare('DELETE FROM artists').run();
+  // This migration used to erase every artist and its R2 assets.  A missing
+  // marker is also possible after restoring an older backup, so it must never
+  // be interpreted as permission to destroy user data.
+  void env;
   await db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('artist_catalog_local_v2', '1')").run();
 }
 
@@ -2002,6 +2015,58 @@ async function deleteR2File(env: Env, url: string) {
     }
 }
 
+const isPrivateOrLocalImageHost = (hostname: string) => {
+    const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    if (host === 'localhost' || host.endsWith('.localhost') || host === 'metadata.google.internal') return true;
+    if (host === '::1' || host === '::' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:')) return true;
+    const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!ipv4) return false;
+    const octets = ipv4.slice(1).map(Number);
+    if (octets.some(value => value > 255)) return true;
+    const [a, b] = octets;
+    return a === 0 || a === 10 || a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168);
+};
+
+const validateExternalImageUrl = (value: string) => {
+    let url: URL;
+    try { url = new URL(value); } catch { throw new Error('外链图片地址无效'); }
+    if (url.protocol !== 'https:' || url.username || url.password || isPrivateOrLocalImageHost(url.hostname)) {
+        throw new Error('外链图片必须是可公开访问的 HTTPS 图片地址');
+    }
+    return url;
+};
+
+const readLimitedImageBody = async (response: Response) => {
+    const advertisedLength = Number(response.headers.get('content-length') || 0);
+    if (advertisedLength > MAX_MANAGED_IMAGE_BYTES) throw new Error(`图片不能超过 ${Math.floor(MAX_MANAGED_IMAGE_BYTES / 1024 / 1024)}MB`);
+    const reader = response.body?.getReader();
+    if (!reader) return new Uint8Array();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.byteLength;
+            if (total > MAX_MANAGED_IMAGE_BYTES) {
+                await reader.cancel();
+                throw new Error(`图片不能超过 ${Math.floor(MAX_MANAGED_IMAGE_BYTES / 1024 / 1024)}MB`);
+            }
+            chunks.push(value);
+        }
+    } finally {
+        reader.releaseLock();
+    }
+    const output = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { output.set(chunk, offset); offset += chunk.byteLength; }
+    return output;
+};
+
 // Helper: Process Base64 Image and Upload to R2 with Quota Check
 async function processImageUpload(
     env: Env,
@@ -2016,12 +2081,12 @@ async function processImageUpload(
         throw new Error("R2 Bucket not configured");
     }
 
-    const matches = imageData.match(/^data:image\/([a-zA-Z]+);base64,(.+)$/);
+    const matches = imageData.match(/^data:image\/(png|jpe?g|webp);base64,(.+)$/i);
     if (!matches || matches.length !== 3) {
         throw new Error("Invalid image data format");
     }
 
-    const ext = matches[1]; 
+    const ext = matches[1].toLowerCase() === 'jpg' ? 'jpeg' : matches[1].toLowerCase();
     const base64Data = matches[2];
     const filename = `${folder}/${id}_${Date.now()}.${ext}`;
 
@@ -2032,6 +2097,9 @@ async function processImageUpload(
     }
     
     const fileSize = bytes.length;
+    if (fileSize > MAX_MANAGED_IMAGE_BYTES) {
+        throw new Error(`图片不能超过 ${Math.floor(MAX_MANAGED_IMAGE_BYTES / 1024 / 1024)}MB`);
+    }
 
     if (user && user.role !== 'admin') {
         const currentUsage = user.storage_usage || 0;
@@ -2068,24 +2136,28 @@ async function fetchAndUploadImage(
     }
 
     try {
-        // Fetch the image from external URL
-        const response = await fetch(imageUrl);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+        let target = validateExternalImageUrl(imageUrl);
+        let response: Response | null = null;
+        for (let redirects = 0; redirects <= 3; redirects++) {
+            response = await fetch(target.toString(), { redirect: 'manual', signal: AbortSignal.timeout(20_000) });
+            if (![301, 302, 303, 307, 308].includes(response.status)) break;
+            const location = response.headers.get('location');
+            if (!location) throw new Error('外链图片重定向地址无效');
+            target = validateExternalImageUrl(new URL(location, target).toString());
+            response = null;
         }
+        if (!response) throw new Error('外链图片重定向次数过多');
+        if (!response.ok) throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
 
-        // Get the image data as ArrayBuffer
-        const arrayBuffer = await response.arrayBuffer();
-        const fileSize = arrayBuffer.byteLength;
-
-        // Extract file extension from URL or Content-Type
-        const contentType = response.headers.get('Content-Type') || 'image/jpeg';
-        const ext = contentType.split('/')[1] || 'jpg';
+        const contentType = (response.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+        const extensionByType: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
+        const ext = extensionByType[contentType];
+        if (!ext) throw new Error('外链响应不是支持的 PNG、JPEG 或 WebP 图片');
+        const bytes = await readLimitedImageBody(response);
+        const fileSize = bytes.byteLength;
         
         // Generate filename
-        const urlPathname = new URL(imageUrl).pathname;
-        const originalFilename = urlPathname.split('/').pop() || `${id}_${Date.now()}`;
-        const filename = `${folder}/${id}_${originalFilename}`;
+        const filename = `${folder}/${id}_${Date.now()}.${ext}`;
 
         if (user && user.role !== 'admin') {
             const currentUsage = user.storage_usage || 0;
@@ -2095,7 +2167,7 @@ async function fetchAndUploadImage(
             }
         }
 
-        await env.BUCKET.put(filename, arrayBuffer, {
+        await env.BUCKET.put(filename, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, {
             httpMetadata: { contentType }
         });
         
@@ -3068,6 +3140,8 @@ export default {
         if (path === '/api/local-history' && method === 'POST') {
           const body = await request.json() as any;
           const id = String(body.id || crypto.randomUUID());
+          const hasStructuredInput = typeof body.basePrompt === 'string' ||
+            typeof body.subjectPrompt === 'string' || Array.isArray(body.modules);
           const match = String(body.imageUrl || '').match(/^data:image\/(png|jpe?g|webp);base64,(.+)$/i);
           if (!match) return error('Invalid history image data', 400);
           const imageType = `image/${match[1].toLowerCase() === 'jpg' ? 'jpeg' : match[1].toLowerCase()}`;
@@ -3075,6 +3149,9 @@ export default {
           const binary = atob(match[2]);
           const bytes = new Uint8Array(binary.length);
           for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          if (bytes.byteLength > MAX_MANAGED_IMAGE_BYTES) {
+            return error(`历史图片不能超过 ${Math.floor(MAX_MANAGED_IMAGE_BYTES / 1024 / 1024)}MB`, 413);
+          }
           const imageKey = `local-history/${currentUser.id}/${id}.${extension}`;
           const existing = await db.prepare('SELECT image_key FROM local_generation_history WHERE id = ? AND user_id = ?')
             .bind(id, currentUser.id).first<{image_key: string}>();
@@ -3083,12 +3160,13 @@ export default {
           await db.prepare(`
             INSERT OR REPLACE INTO local_generation_history (
               id, user_id, image_key, image_type, prompt, negative_prompt, params,
-              base_prompt, subject_prompt, modules,
+              base_prompt, subject_prompt, modules, structure_version,
               source_chain_id, source_chain_name, source_chain_type, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).bind(
             id, currentUser.id, imageKey, imageType, body.prompt || '', body.negativePrompt || '',
             JSON.stringify(body.params || {}), body.basePrompt || '', body.subjectPrompt || '', JSON.stringify(body.modules || []),
+            hasStructuredInput ? 1 : 0,
             body.sourceChainId || null, body.sourceChainName || null, body.sourceChainType || null,
             Number(body.createdAt || Date.now())
           ).run();
@@ -3096,7 +3174,7 @@ export default {
           return json({ item: mapLocalHistoryRow({
             id, image_key: imageKey, prompt: body.prompt, negative_prompt: body.negativePrompt,
             params: JSON.stringify(body.params || {}), base_prompt: body.basePrompt, subject_prompt: body.subjectPrompt,
-            modules: JSON.stringify(body.modules || []), source_chain_id: body.sourceChainId,
+            modules: JSON.stringify(body.modules || []), structure_version: hasStructuredInput ? 1 : 0, source_chain_id: body.sourceChainId,
             source_chain_name: body.sourceChainName, source_chain_type: body.sourceChainType,
             created_at: Number(body.createdAt || Date.now())
           }) });
@@ -4172,12 +4250,8 @@ export default {
         // Handle Chain Cover Cleanup
         if (updates.previewImage && updates.previewImage.startsWith('data:')) {
              try { 
-                 const newUrl = await processImageUpload(env, updates.previewImage, 'covers', id, currentUser);
-                 // Delete old cover if exists and different
-                 if (chain.preview_image && chain.preview_image !== newUrl) {
-                     await deleteR2File(env, chain.preview_image);
-                 }
-                 updates.previewImage = newUrl;
+                  const newUrl = await processImageUpload(env, updates.previewImage, 'covers', id, currentUser);
+                  updates.previewImage = newUrl;
              } catch (e: any) { return error(e.message, 413); }
         }
 
@@ -4206,6 +4280,11 @@ export default {
               throw e;
             }
           }
+        }
+        // Delete only after the new reference has committed.  This covers
+        // replacement, clearing a cover, and future non-base64 cover sources.
+        if (updates.previewImage !== undefined && chain.preview_image && chain.preview_image !== updates.previewImage) {
+          await deleteR2File(env, chain.preview_image);
         }
         await writeSystemLog(db, {
           user: currentUser,
@@ -4270,17 +4349,9 @@ export default {
         let imageUrl = body.imageUrl;
         if (imageUrl && imageUrl.startsWith('data:')) {
             imageUrl = await processImageUpload(env, imageUrl, 'artists', id);
-            // Delete old avatar if changed
-            if (existing && existing.image_url && existing.image_url !== imageUrl) {
-                await deleteR2File(env, existing.image_url);
-            }
         } else if (imageUrl && imageUrl.startsWith('http')) {
             // Fetch external image URL and store in R2
             imageUrl = await fetchAndUploadImage(env, imageUrl, 'artists', id, currentUser);
-            // Delete old avatar if changed
-            if (existing && existing.image_url && existing.image_url !== imageUrl) {
-                await deleteR2File(env, existing.image_url);
-            }
         }
 
         // Process benchmarks - handle both Base64 and external URLs
@@ -4292,21 +4363,11 @@ export default {
                     const newUrl = await processImageUpload(env, benchmarks[i], `artists/benchmarks_${i}`, id);
                     benchmarks[i] = newUrl;
                     
-                    // Check and delete old file at this index
-                    const oldUrl = oldBenchmarks[i];
-                    if (oldUrl && oldUrl !== newUrl) {
-                        await deleteR2File(env, oldUrl);
-                    }
                 } else if (benchmarks[i] && benchmarks[i].startsWith('http')) {
                     // Fetch external image URL and store in R2
                     const newUrl = await fetchAndUploadImage(env, benchmarks[i], `artists/benchmarks_${i}`, id, currentUser);
                     benchmarks[i] = newUrl;
                     
-                    // Check and delete old file at this index
-                    const oldUrl = oldBenchmarks[i];
-                    if (oldUrl && oldUrl !== newUrl) {
-                        await deleteR2File(env, oldUrl);
-                    }
                 }
             }
         }
@@ -4317,6 +4378,15 @@ export default {
         const sanitizedName = body.name ? body.name.trim() : '';
         
         await db.prepare(`INSERT INTO artists (id, name, image_url, benchmarks, preview_url) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, image_url = excluded.image_url, benchmarks = excluded.benchmarks, preview_url = excluded.preview_url`).bind(id, sanitizedName, imageUrl, benchmarksJson, previewUrl).run();
+        // A database update must become durable before any old asset is
+        // removed.  This also cleans up benchmarks that were removed from the
+        // edited list instead of leaving them orphaned forever.
+        const retainedAssets = new Set([imageUrl, previewUrl, ...benchmarks].filter((url): url is string => typeof url === 'string' && url.length > 0));
+        const previousAssets = [existing?.image_url, existing?.preview_url, ...oldBenchmarks]
+          .filter((url): url is string => typeof url === 'string' && url.length > 0);
+        for (const oldUrl of new Set(previousAssets)) {
+          if (!retainedAssets.has(oldUrl)) await deleteR2File(env, oldUrl);
+        }
         await writeSystemLog(db, {
           user: currentUser,
           request,

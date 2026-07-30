@@ -292,6 +292,7 @@ const requestWorkerJson = (path, req, workerPort, { method = 'GET', body } = {})
       accept: 'application/json', 'content-type': 'application/json', cookie: req.headers.cookie || '',
       host: getForwardHost(req), 'user-agent': req.headers['user-agent'] || 'NaiPromptManager-MediaGateway',
       'x-forwarded-for': normalizeIp(req.socket.remoteAddress),
+      'x-nai-client-ip': normalizeIp(req.socket.remoteAddress),
       ...(payload ? { 'content-length': payload.length } : {}),
     },
   }, async upstreamRes => {
@@ -911,6 +912,7 @@ const requestWorkerBuffer = (source, req, workerPort) => new Promise((resolve, r
       host: getForwardHost(req),
       'user-agent': req.headers['user-agent'] || 'NaiPromptManager-MediaGateway',
       'x-forwarded-for': normalizeIp(req.socket.remoteAddress),
+      'x-nai-client-ip': normalizeIp(req.socket.remoteAddress),
     },
   }, async upstreamRes => {
     if ((upstreamRes.statusCode || 500) >= 400) {
@@ -1098,7 +1100,11 @@ class ThumbnailCache {
 const proxyRequest = (req, res, workerPort) => {
   const headers = { ...req.headers };
   headers.host = getForwardHost(req);
-  headers['x-forwarded-for'] = [headers['x-forwarded-for'], normalizeIp(req.socket.remoteAddress)].filter(Boolean).join(', ');
+  // The Worker uses this address for the LAN PIN rate limit.  Never retain a
+  // client supplied forwarding chain here: otherwise a LAN client can change
+  // X-Forwarded-For on every attempt and bypass the PIN lockout.
+  headers['x-forwarded-for'] = normalizeIp(req.socket.remoteAddress);
+  headers['x-nai-client-ip'] = normalizeIp(req.socket.remoteAddress);
   const upstream = httpRequest({ hostname: '127.0.0.1', port: workerPort, path: req.url, method: req.method, headers }, upstreamRes => {
     res.writeHead(upstreamRes.statusCode || 502, upstreamRes.headers);
     upstreamRes.pipe(res);

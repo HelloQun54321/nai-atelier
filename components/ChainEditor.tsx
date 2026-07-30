@@ -1064,14 +1064,24 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
             // Use actual seed returned from generation
             const finalParams = { ...activeParams, seed: result.seed };
+            // Agent generation can use a draft that has not been applied to
+            // the editor.  Persist that exact draft so re-importing history
+            // reconstructs the image that was actually generated.
+            const generatedStructure = override ?? {
+                basePrompt,
+                subjectPrompt,
+                negativePrompt,
+                modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })),
+                params: activeParams,
+            };
             try {
                 const historyItem = await localHistory.add(result.image, generationPrompt, finalParams, generationNegativePrompt, {
                 sourceChainId,
                 sourceChainName: chainName,
                 sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
-                basePrompt,
-                subjectPrompt,
-                modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })),
+                basePrompt: generatedStructure.basePrompt,
+                subjectPrompt: generatedStructure.subjectPrompt,
+                modules: generatedStructure.modules,
             });
                 setPreviewHistory(prev => [historyItem, ...prev.filter(item => item.id !== historyItem.id)]);
                 setPreviewIndex(0);

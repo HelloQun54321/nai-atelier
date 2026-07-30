@@ -3,7 +3,7 @@ import JSZip from 'jszip';
 import { NAIParams } from '../types';
 import { api } from './api';
 import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
-import { emitCloudQueueStatus, getCloudQueuePreferences, scheduleCloudQueueStatusClear, watchCloudQueueTask } from './cloudQueue';
+import { emitCloudQueueStatus, getCachedCloudQueuePreferences, getCloudQueuePreferences, scheduleCloudQueueStatusClear, watchCloudQueueTask } from './cloudQueue';
 
 export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams) => {
   // Logic update: NAI API treats missing seed as random. 0 is a specific seed.
@@ -125,7 +125,15 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   }
 
   // 调用 Worker Proxy, 传递 API Key Header
-  const queue = await getCloudQueuePreferences();
+  // Queue status is auxiliary.  A temporary failure to read its preference
+  // must not prevent a direct NovelAI generation from being submitted.
+  let queue = getCachedCloudQueuePreferences();
+  try {
+    queue = await getCloudQueuePreferences();
+  } catch {
+    // The request below remains authoritative and also triggers the common
+    // LAN unlock flow when the session has expired.
+  }
   const queueTaskId = typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -171,7 +179,9 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
 
   // 解析 Zip (逻辑保持不变)
   const zip = await JSZip.loadAsync(blob);
-  const filename = Object.keys(zip.files)[0];
+  const filename = Object.keys(zip.files).find(name =>
+    !zip.files[name].dir && /\.(?:png|jpe?g|webp)$/i.test(name)
+  );
   if (!filename) throw new Error("No image found in response");
 
   const fileData = await zip.files[filename].async('base64');
@@ -184,7 +194,7 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   // NAI Zip often contains the image and sometimes a JSON metadata file.
 
   // Let's try to find a .json file in the zip
-  let actualSeed = seed ?? 0;
+  let actualSeed: number | undefined = seed;
   const jsonFile = Object.keys(zip.files).find(f => f.endsWith('.json'));
   if (jsonFile) {
     const jsonText = await zip.files[jsonFile].async('text');
@@ -194,7 +204,8 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
          NAI JSON format usually usually has:
          { ... "seed": 123456 ... }
       */
-      if (json.seed) actualSeed = json.seed;
+      const reportedSeed = json.seed ?? json.parameters?.seed ?? json.metadata?.seed;
+      if (typeof reportedSeed === 'number' && Number.isFinite(reportedSeed)) actualSeed = reportedSeed;
     } catch (e) { console.error('Failed to parse metadata json', e); }
   } else {
     // Fallback: If we didn't send a seed, and can't find it, we might be out of luck without reading PNG chunks.
