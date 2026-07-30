@@ -30,6 +30,7 @@ const settingsSections: Array<{ id: SettingsSection; label: string; description:
 interface GlobalSettingsProps {
   open: boolean;
   onClose: () => void;
+  initialSection?: SettingsSection;
   notify: (message: string, type?: 'success' | 'error') => void;
   isDark: boolean;
   themeMode: 'light' | 'dark' | 'system';
@@ -40,7 +41,7 @@ interface GlobalSettingsProps {
 
 const readApiKey = () => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '';
 
-export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, notify, isDark, themeMode, setThemeMode, safeMode, toggleSafeMode }) => {
+export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, initialSection = 'appearance', notify, isDark, themeMode, setThemeMode, safeMode, toggleSafeMode }) => {
   const confirmAction = useConfirmDialog();
   const [apiKey, setApiKey] = useState(readApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(() => localStorage.getItem('nai_api_key') !== null);
@@ -63,10 +64,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, n
 
   useEffect(() => {
     if (!open) return;
+    setMobileSection(initialSection);
     setApiKey(readApiKey());
     setRememberApiKey(localStorage.getItem('nai_api_key') !== null);
     void getCloudQueuePreferences().then(setCloudQueue).catch(() => notify('读取公共队列设置失败', 'error'));
-  }, [open]);
+  }, [open, initialSection]);
 
   useEffect(() => { setAnlasInput(String(anlasBudget.remaining)); }, [anlasBudget.remaining]);
 
