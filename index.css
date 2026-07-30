@@ -549,7 +549,6 @@ body,
 
 /* 公共队列状态：只保留正常、排队、成功和失败四种视觉语言。 */
 .queue-status-surface {
-  position: relative;
   isolation: isolate;
   overflow: hidden;
   background-size: 100% 100%;
