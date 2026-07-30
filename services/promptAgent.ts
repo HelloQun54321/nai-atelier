@@ -148,6 +148,11 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
+  fetchCustomProviderModels: async (input: PromptAgentCustomProvider): Promise<{ ok: boolean; models: string[] }> => {
+    const response = await fetch('/api/prompt-agent/custom-providers/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
   deleteCustomProvider: async (id: string): Promise<PromptAgentConfig> => {
     const response = await fetch(`/api/prompt-agent/custom-providers/${encodeURIComponent(id)}`, { method: 'DELETE' });
     if (!response.ok) return readError(response) as never;

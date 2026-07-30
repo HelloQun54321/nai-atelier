@@ -276,7 +276,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     if (!props.open) return;
     void Promise.all([
       refreshSessions(),
-      models.length ? Promise.resolve() : promptAgentService.getAvailableModels().then(setModels),
+      promptAgentService.getAvailableModels().then(setModels),
     ]).catch(() => {});
   }, [props.open]);
 
