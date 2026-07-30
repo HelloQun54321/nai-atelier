@@ -369,7 +369,15 @@ J. 字段误用警告
 - 不得把"人物外貌/角色身份Tag"写进 subjectPrompt；这些进 characters.prompt（通过 set_characters）。
 - 主体 Tag 和分级前缀属整图关系时放 subjectPrompt；某角色专属朝向/可见面才放该角色 characters.prompt。
 - characters.negativePrompt 放该角色专属 UC（人脸稳定+分级+针对性泄漏），不放全局质量词以外的本应属 base 的内容。
-- 坐标只走 characters.x/characters.y，不写进 tag 文本。`;
+- 坐标只走 characters.x/characters.y，不写进 tag 文本。
+
+K. 角色与服装调用判定（防 DNA 串位、手猜错、旧资料过时）
+- 已知角色优先用目录可靠值：用户提到角色时先调用 search_character_catalog 在本地角色目录精确匹配中文名/英文名/作品名；目录里已锁定的发色/瞳色/胸型/体型等永久 DNA 优先采用，不让模型自行脑补（模型对 IP 角色的记忆可能比目录值更不准）。
+- N=1 且目录精确匹配：可用目录锁定值作为本角色 DNA 主档，再补正文明确的当前变化（染发、剪发、换装、伤势）；不是强制调用，把握度不足或目录资料与本图当前形态明显相悖时改用手动完整提取。
+- N≥2 强制手动独立提取：禁止从目录批量拉取任一角色的整套 DNA 后复制进另一角色槽，每角色必须按 F 的字段顺序逐条独立写完整可见 DNA；防止 A 的发色、瞳型、胸型世界观身份泄漏进 B 的描述。
+- 当前形态大幅改写内置 DNA（变身、年龄变化、换皮等）或对目录资料把握不足：弃用目录值，按当前正文实际状态手动完整写本角色 DNA，不让旧资料注入过时特征。
+- 服装调用同理：每件实际衣物独立按款式/颜色/长度结构/材质/图案标志/当前状态逐条记录，N≥2 每角色的服装各自独立写，不共用、不串色。换装只改当前服装状态，绝不能因此改动角色永久 DNA（发色、瞳色、肤色、胸型、体型、永久标记等）。
+- 全裸角色不写任何服装 Tag，进入 B 分级全裸分支（X 级用 {nude},{completely naked} 等），不补虚构内衣；半裸/部分裸露只写当前真实仍穿着的每件衣物，不套"全穿/全裸"两端模板。`;
 
 const extractAssistantText = messages => {
   const assistant = [...messages].reverse().find(message => message?.role === 'assistant');
