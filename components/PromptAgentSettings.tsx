@@ -219,17 +219,34 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
     finally { setBusy(false); }
   };
 
+  const toggleCreativeMode = async () => {
+    if (!config) return;
+    setBusy(true);
+    try {
+      await promptAgentService.setCreativeMode(!config.creativeMode);
+      await reload();
+      notify(`创作模式已${config.creativeMode ? '关闭' : '开启'}`);
+    } catch (error) { notify(error instanceof Error ? error.message : '切换创作模式失败', 'error'); }
+    finally { setBusy(false); }
+  };
+
   const currentModel = models.find(model => model.current) || (config ? { id: config.model, name: config.model, provider: config.provider } : null);
   const configured = providers.filter(provider => provider.configured);
 
   return <>
     <div className="mt-3 space-y-3">
-      <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-950/60">
-        <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-500">当前 Agent 模型</div>
-        <div className="mt-1 truncate text-base font-black text-gray-900 dark:text-white">{config?.configured ? currentModel?.name || config.model : '尚未配置模型服务'}</div>
-        {config?.configured && <div className="mt-1 text-xs text-gray-500">{currentModel?.provider} · {config.configuredProviders.length} 个服务已配置</div>}
-      </div>
-      {config?.credentialWarning && <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{config.credentialWarning}</div>}
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-950/60">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-500">当前 Agent 模型</div>
+          <div className="mt-1 truncate text-base font-black text-gray-900 dark:text-white">{config?.configured ? currentModel?.name || config.model : '尚未配置模型服务'}</div>
+          {config?.configured && <div className="mt-1 text-xs text-gray-500">{currentModel?.provider} · {config.configuredProviders.length} 个服务已配置</div>}
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-950/60">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0"><div className="text-sm font-bold text-gray-900 dark:text-white">创作模式 (Creative Mode)</div><p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">{config?.creativeMode ? '已开启' : '已关闭'}</p></div>
+            <button type="button" role="switch" aria-checked={config?.creativeMode === true} aria-label="切换创作模式" disabled={busy || !config} onClick={() => void toggleCreativeMode()} className={`relative h-5 w-10 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${config?.creativeMode ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${config?.creativeMode ? 'translate-x-5' : 'translate-x-0.5'}`} /></button>
+          </div>
+        </div>
+        {config?.credentialWarning && <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{config.credentialWarning}</div>}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <button type="button" onClick={() => openView('login')} className="mobile-touch rounded-xl border border-gray-200 bg-white px-3 text-left text-sm font-bold text-gray-800 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"><span className="mr-2 text-emerald-500">＋</span>登录模型服务</button>
         <button type="button" disabled={configured.length === 0} onClick={() => openView('model')} className="mobile-touch rounded-xl border border-gray-200 bg-white px-3 text-left text-sm font-bold text-gray-800 shadow-sm disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"><span className="mr-2 text-indigo-500">◆</span>选择模型</button>
