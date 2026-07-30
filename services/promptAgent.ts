@@ -80,6 +80,9 @@ export interface PromptAgentSession {
   provider: string;
   model: string;
   thinkingLevel: PromptAgentThinkingLevel;
+  creativeMode: boolean;
+  creativeModeLocked?: boolean;
+  policyFingerprint?: string;
   messageCount?: number;
   running?: boolean;
   taskStatus?: 'running' | 'completed' | 'failed' | 'aborted' | 'interrupted';
@@ -182,11 +185,6 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
-  setCreativeMode: async (enabled: boolean): Promise<PromptAgentConfig> => {
-    const response = await fetch('/api/prompt-agent/creative-mode', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) });
-    if (!response.ok) return readError(response) as never;
-    return response.json();
-  },
   getModels: async (provider: string): Promise<PromptAgentModel[]> => {
     const response = await fetch(`/api/prompt-agent/models?provider=${encodeURIComponent(provider)}`, { cache: 'no-store' });
     if (!response.ok) return readError(response) as never;
@@ -197,12 +195,12 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return (await response.json()).items || [];
   },
-  createSession: async (input: { title?: string } = {}): Promise<PromptAgentSession> => {
+  createSession: async (input: { title?: string; creativeMode?: boolean } = {}): Promise<PromptAgentSession> => {
     const response = await fetch('/api/prompt-agent/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
-  updateSession: async (sessionId: string, patch: Partial<Pick<PromptAgentSession, 'title' | 'provider' | 'model' | 'thinkingLevel'>>): Promise<PromptAgentSession> => {
+  updateSession: async (sessionId: string, patch: Partial<Pick<PromptAgentSession, 'title' | 'provider' | 'model' | 'thinkingLevel' | 'creativeMode'>>): Promise<PromptAgentSession> => {
     const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
     if (!response.ok) return readError(response) as never;
     return response.json();

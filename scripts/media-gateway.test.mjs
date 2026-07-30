@@ -60,6 +60,21 @@ test('prompt agent supports no-thinking mode and trims context at a real user bo
   assert.equal(trimmed.some(message => JSON.stringify(message).includes('old-call')), false);
 });
 
+test('prompt agent locks a session creative mode after its first user message', async () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const session = await service.createSession({ creativeMode: false });
+  try {
+    const beforeStart = await service.updateSession(session.id, { creativeMode: true });
+    assert.equal(beforeStart.creativeMode, true);
+    await service.saveMessages(session.id, [{ role: 'user', content: 'first request' }]);
+    await assert.rejects(() => service.updateSession(session.id, { creativeMode: false }), /对话已经开始/);
+    await service.resetSession(session.id);
+    await assert.rejects(() => service.updateSession(session.id, { creativeMode: false }), /对话已经开始/);
+  } finally {
+    await service.deleteSession(session.id);
+  }
+});
+
 test('prompt agent keeps API keys encrypted and out of its public config', async () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
   const encrypted = service.encrypt('private-llm-key');
@@ -77,6 +92,10 @@ test('prompt agent keeps API keys encrypted and out of its public config', async
   assert.match(runtime.policyVersion, /^\d{4}-\d{2}-\d{2}\.\d+$/);
   assert.match(runtime.policyFingerprint, /^[a-f0-9]{12}$/);
   assert.ok(runtime.runtimeStartedAt <= Date.now());
+  service.config.creativeMode = false;
+  const standardRuntime = service.publicConfig();
+  assert.equal(standardRuntime.creativeMode, false);
+  assert.notEqual(standardRuntime.policyFingerprint, runtime.policyFingerprint);
   service.setCredential('deepseek', { type: 'api_key', key: 'deepseek-private' });
   assert.equal(service.getCredential('deepseek').key, 'deepseek-private');
   assert.equal(JSON.stringify(service.config.encryptedKeys.deepseek).includes('deepseek-private'), false);

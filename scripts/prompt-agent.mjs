@@ -308,7 +308,20 @@ const validatePromptDraft = draft => {
   });
   return issues;
 };
-const baseSystemPrompt = [redacted];
+const baseSystemPrompt = `你是 NaiPromptManager 的项目业务 Agent。你的职责不是只给建议，而是读取项目中的真实数据并使用工具完成操作。
+
+规则：
+1. NovelAI 提示词优先使用英文 Danbooru/NovelAI tag，以逗号分隔；给用户的解释使用中文。
+2. 先理解用户意图，必要时读取历史原图和元数据、搜索 Tag、画师串、角色、灵感、AITag、Vibe 或角色参考图，再调用修改工具。项目里已有的数据绝不能要求用户重新描述或手工复制。
+3. 保留用户没有要求修改的内容。修改参数时遵守 V4.5 合理范围。
+4. 用户明确要求“生成、出图、跑一张、试试看”等操作时，修改完成后调用 request_generation；否则不要擅自消耗 Anlas。
+5. request_generation 只发出待确认请求，不能声称图片已经生成。
+6. 当用户要求参考上一张/最近一张生成图时，先调用 list_generation_history，再调用 inspect_generation_image。没有真正收到图片时不得声称看过图片。
+7. 删除、清空等危险操作只能调用请求确认工具；确认前不得声称已经完成。
+8. 不得要求或泄露 API Key，不得访问任意电脑文件、命令行、系统进程或任意网址。只能使用这里明确提供的项目业务工具。
+9. 优先执行工具。完成后只用简短中文总结实际读取、修改或待确认的事项，不复述整份实验室内容。
+10. Precise/角色参考每张每次生图增加 5 Anlas，当前与 Vibe Transfer 互斥；设置其中一项时必须关闭另一项。
+11. 必须严格区分三类正面提示词：basePrompt 只放画师名、媒介、渲染和可复用画风；subjectPrompt 只放整图主体、场景、动作、构图和其他全局动态内容；params.characters 通过 set_characters 存放角色专属外貌、服装、身份 Tag 与角色专属负面词。用户说“角色提示词”“人物提示词”“角色外貌”或要求填写某个角色时，即使只有一个角色，也必须优先调用 set_characters，除非用户明确指定放到主体／变量提示词框。不得把角色专属提示词写入 subjectPrompt。`;
 
 const jailbreakBlock = ''; // [redacted]
 
@@ -428,7 +441,16 @@ const creativeSeedMessages = [
   { role: 'user', content: [{ type: 'text', text: [redacted] }], timestamp: 3 },
   { role: 'assistant', content: [{ type: 'text', text: [redacted] }], timestamp: 4, usage: SEED_USAGE, model: '', provider: '', stopReason: 'stop' },
 ];
-const PROMPT_AGENT_POLICY_FINGERPRINT = createHash('sha256').update(`${buildSystemPrompt(true)}\n${creativePreamble}`).digest('hex').slice(0, 12);
+
+const runtimePolicyInfo = creativeMode => {
+  const enabled = creativeMode !== false;
+  const systemPrompt = buildSystemPrompt(enabled);
+  return {
+    creativeMode: enabled,
+    fingerprint: createHash('sha256').update(`${systemPrompt}\n${enabled ? creativePreamble : ''}`).digest('hex').slice(0, 12),
+    seedFingerprint: enabled ? createHash('sha256').update(JSON.stringify(creativeSeedMessages)).digest('hex').slice(0, 12) : '',
+  };
+};
 
 const extractAssistantText = messages => {
   const assistant = [...messages].reverse().find(message => message?.role === 'assistant');
@@ -464,6 +486,10 @@ export const parseTranslationResponse = (raw, allowedTags) => {
 export class PromptAgentService {
   constructor({ lanSecret, outboundProxyUrl = '' }) {
     this.runtimeStartedAt = Date.now();
+    this.legacyEncryptionKey = createHash('sha256').update(`nai-prompt-agent|${lanSecret}`).digest();
+    this.encryptionKey = this.legacyEncryptionKey;
+    this.credentialKeyError = '';
+    this.credentialWarning = '';
     this.config = { version: 3, provider: 'google', model: defaultModelFor('google'), encryptedKeys: {}, customProviders: [], creativeMode: true };
     this.activeAgents = new Map();
     this.startingAgents = new Set();
@@ -652,6 +678,7 @@ export class PromptAgentService {
     const provider = configuredProviders.includes(requestedProvider) ? requestedProvider : configuredProviders[0] || requestedProvider;
     const models = listModels(provider);
     const model = models.some(item => item.id === this.config.model) ? this.config.model : defaultModelFor(provider);
+    const policy = runtimePolicyInfo(this.config.creativeMode);
     return {
       provider,
       model,
@@ -659,9 +686,9 @@ export class PromptAgentService {
       configured: configuredProviders.includes(provider),
       configuredProviders,
       policyVersion: PROMPT_AGENT_POLICY_VERSION,
-      policyFingerprint: PROMPT_AGENT_POLICY_FINGERPRINT,
+      policyFingerprint: policy.fingerprint,
       runtimeStartedAt: this.runtimeStartedAt,
-      creativeMode: this.config.creativeMode !== false,
+      creativeMode: policy.creativeMode,
       ...(this.credentialWarning ? { credentialWarning: this.credentialWarning } : {}),
     };
   }
@@ -886,12 +913,6 @@ export class PromptAgentService {
     return this.publicConfig();
   }
 
-  async setCreativeMode(enabled) {
-    this.config.creativeMode = enabled !== false;
-    await atomicJsonWrite(CONFIG_FILE, this.config);
-    return this.publicConfig();
-  }
-
   getModels(provider) { return listModels(provider); }
 
   async executeConfirmedProjectAction(input, project) {
@@ -1012,6 +1033,7 @@ export class PromptAgentService {
       });
     } catch { /* A session with no run yet has no audit file. */ }
     const session = await this.readSession(safeSessionId);
+    const creativeMode = typeof session.meta?.creativeMode === 'boolean' ? session.meta.creativeMode : this.config.creativeMode !== false;
     return {
       schema: 'nai-prompt-agent-audit-export/v1',
       exportedAt: new Date().toISOString(),
@@ -1021,11 +1043,12 @@ export class PromptAgentService {
         provider: session.meta.provider,
         model: session.meta.model,
         thinkingLevel: session.meta.thinkingLevel,
+        creativeMode,
+        creativeModeLocked: session.meta.creativeModeLocked === true,
       } : { id: safeSessionId },
       policy: {
         version: PROMPT_AGENT_POLICY_VERSION,
-        fingerprint: PROMPT_AGENT_POLICY_FINGERPRINT,
-        seedFingerprint: createHash('sha256').update(JSON.stringify(creativeSeedMessages)).digest('hex').slice(0, 12),
+        ...runtimePolicyInfo(creativeMode),
         runtimeStartedAt: this.runtimeStartedAt,
       },
       entries,
@@ -1137,6 +1160,8 @@ export class PromptAgentService {
       id, title, createdAt: now, updatedAt: now,
       provider: config.provider, model: config.model,
       thinkingLevel: this.normalizeThinkingLevel(input.thinkingLevel, modelInfo?.reasoning),
+      creativeMode: typeof input.creativeMode === 'boolean' ? input.creativeMode : this.config.creativeMode !== false,
+      creativeModeLocked: false,
     };
     await this.writeSession(id, { version: 2, meta, messages: [] });
     await this.appendAuditLog(id, { type: 'session_created', session: meta });
@@ -1154,7 +1179,9 @@ export class PromptAgentService {
           let task = {};
           try { task = JSON.parse(await readFile(this.taskFile(value.meta.id), 'utf8')); } catch { /* No task yet. */ }
           const running = this.activeAgents.has(value.meta.id) || this.startingAgents.has(value.meta.id);
-          items.push({ ...value.meta, messageCount: Array.isArray(value.messages) ? value.messages.filter(message => message?.role === 'user').length : 0, running, taskStatus: running ? 'running' : task.status });
+          const messageCount = Array.isArray(value.messages) ? value.messages.filter(message => message?.role === 'user').length : 0;
+          const creativeMode = typeof value.meta.creativeMode === 'boolean' ? value.meta.creativeMode : this.config.creativeMode !== false;
+          items.push({ ...value.meta, creativeMode, creativeModeLocked: value.meta.creativeModeLocked === true || messageCount > 0, messageCount, running, taskStatus: running ? 'running' : task.status, policyFingerprint: runtimePolicyInfo(creativeMode).fingerprint });
         }
       } catch { /* Ignore broken legacy files. */ }
     }
@@ -1170,11 +1197,15 @@ export class PromptAgentService {
     const modelInfo = listModels(provider).find(item => item.id === model);
     const changesRuntime = patch.provider !== undefined || patch.model !== undefined || patch.thinkingLevel !== undefined;
     if (changesRuntime && (!modelInfo || !this.configuredProviderIds().includes(provider))) throw Object.assign(new Error('所选模型不可用或尚未登录'), { status: 400 });
+    const hasStarted = value.meta.creativeModeLocked === true || (Array.isArray(value.messages) && value.messages.some(message => message?.role === 'user'));
+    if (patch.creativeMode !== undefined && hasStarted) throw Object.assign(new Error('对话已经开始，创作模式不能再修改；请新建对话后选择'), { status: 409 });
     value.meta = {
       ...value.meta,
       ...(typeof patch.title === 'string' ? { title: text(patch.title).trim().slice(0, 60) || '未命名对话' } : {}),
       provider, model,
       thinkingLevel: changesRuntime ? this.normalizeThinkingLevel(patch.thinkingLevel ?? value.meta.thinkingLevel, modelInfo?.reasoning) : value.meta.thinkingLevel,
+      creativeMode: typeof patch.creativeMode === 'boolean' ? patch.creativeMode : typeof value.meta.creativeMode === 'boolean' ? value.meta.creativeMode : this.config.creativeMode !== false,
+      creativeModeLocked: hasStarted,
       updatedAt: Date.now(),
     };
     await this.writeSession(sessionId, value);
@@ -1208,7 +1239,11 @@ export class PromptAgentService {
         : typeof message.content === 'string' ? message.content.slice(0, MAX_SAVED_MESSAGE_CHARS) : message.content,
     }));
     const existing = await this.readSession(sessionId);
-    const meta = existing.meta?.id ? { ...existing.meta, updatedAt: Date.now() } : undefined;
+    const meta = existing.meta?.id ? {
+      ...existing.meta,
+      creativeModeLocked: existing.meta.creativeModeLocked === true || safeMessages.some(message => message?.role === 'user'),
+      updatedAt: Date.now(),
+    } : undefined;
     if (meta && (!meta.title || meta.title === '新对话')) {
       const firstUser = safeMessages.find(message => message?.role === 'user');
       const firstText = typeof firstUser?.content === 'string' ? firstUser.content : Array.isArray(firstUser?.content) ? firstUser.content.find(item => item?.type === 'text')?.text : '';
@@ -2057,7 +2092,7 @@ export class PromptAgentService {
     }
     this.runHistory.push(now);
     const thinkingLevel = this.normalizeThinkingLevel(storedSession.meta?.thinkingLevel, modelInfo.reasoning);
-    const creativeMode = this.config.creativeMode !== false;
+    const creativeMode = typeof storedSession.meta?.creativeMode === 'boolean' ? storedSession.meta.creativeMode : this.config.creativeMode !== false;
     const activeSystemPrompt = buildSystemPrompt(creativeMode);
     const draft = sanitizeDraft(input?.draft);
     const contextData = {
@@ -2067,11 +2102,15 @@ export class PromptAgentService {
     let taskStatus = 'failed';
     const taskStartedAt = Date.now();
     try {
+      if (storedSession.meta?.id && storedSession.meta.creativeModeLocked !== true) {
+        storedSession.meta = { ...storedSession.meta, creativeMode, creativeModeLocked: true, updatedAt: Date.now() };
+        await this.writeSession(sessionId, storedSession);
+      }
       audit('runtime_resolved', {
         provider,
         model: modelId,
         thinkingLevel,
-        policy: { version: PROMPT_AGENT_POLICY_VERSION, fingerprint: PROMPT_AGENT_POLICY_FINGERPRINT, seedFingerprint: createHash('sha256').update(JSON.stringify(creativeSeedMessages)).digest('hex').slice(0, 12) },
+        policy: { version: PROMPT_AGENT_POLICY_VERSION, ...runtimePolicyInfo(creativeMode) },
         storedMessageCount: Array.isArray(storedSession.messages) ? storedSession.messages.length : 0,
       });
       const taskEmit = event => {
@@ -2113,10 +2152,15 @@ export class PromptAgentService {
         followUpMode: 'one-at-a-time',
         transformContext: async messages => {
           const tokenBudget = Math.max(8_000, Math.min(180_000, Math.floor((Number(modelInfo.contextWindow) || 32_000) * 0.68)));
-          const trimmed = trimContextMessages(messages, tokenBudget);
-          const seeds = creativeMode ? creativeSeedMessages : [];
+          const seedCandidates = creativeMode ? creativeSeedMessages : [];
+          const seeds = estimateContextTokens(seedCandidates) > tokenBudget ? trimContextMessages(seedCandidates, tokenBudget) : seedCandidates;
+          const seedTokenCount = estimateContextTokens(seeds);
+          const conversationTokenBudget = Math.max(1, tokenBudget - seedTokenCount);
+          const trimmed = trimContextMessages(messages, conversationTokenBudget);
           audit('model_context', {
             tokenBudget,
+            conversationTokenBudget,
+            injectedSeedTokenCount: seedTokenCount,
             inputMessageCount: messages.length,
             storedConversation: trimmed,
             injectedSeedMessageCount: seeds.length,
