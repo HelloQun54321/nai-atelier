@@ -109,6 +109,19 @@ test('prompt agent exposes pi steering, follow-up, queue clearing and abort cont
   assert.deepEqual(events.map(event => event.action), ['steer', 'followUp']);
 });
 
+test('prompt agent exports ordered local audit records and redacts secrets', async () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const sessionId = `audit-test-${Date.now()}`;
+  await service.appendAuditLog(sessionId, { type: 'first_step', apiKey: 'must-not-export', image: { data: 'A'.repeat(2048) } });
+  await service.appendAuditLog(sessionId, { type: 'second_step', value: 2 });
+  const exported = await service.getAuditLog(sessionId);
+  assert.equal(exported.schema, 'nai-prompt-agent-audit-export/v1');
+  assert.deepEqual(exported.entries.map(entry => entry.type), ['first_step', 'second_step']);
+  assert.equal(exported.entries[0].apiKey, '[redacted]');
+  assert.match(exported.entries[0].image.data, /^\[image\/base64 omitted:/);
+  await service.deleteSession(sessionId);
+});
+
 test('prompt agent Vibe tool accepts only known encodings and at most four slots', async () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
   const draft = { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' } };

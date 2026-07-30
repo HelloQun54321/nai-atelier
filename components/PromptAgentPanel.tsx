@@ -7,7 +7,7 @@ import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
 import { getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { clearMobileThumbnailCache, getMobileCacheStats, setMobileCacheLimitMb } from '../services/mobileImageCache';
-import { ArrowDown, ArrowLeft, Bot, Check, ChevronDown, Clipboard, Copy, Expand, ImagePlus, List, Maximize2, Minimize2, MoreHorizontal, Pencil, Plus, RotateCcw, Send, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, Bot, Check, ChevronDown, Clipboard, Copy, Download, Expand, ImagePlus, List, Maximize2, Minimize2, MoreHorizontal, Pencil, Plus, RotateCcw, Send, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
 
 interface PromptAgentPanelProps {
   open: boolean;
@@ -170,6 +170,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [editingMessageId, setEditingMessageId] = useState('');
   const [sessionSearch, setSessionSearch] = useState('');
   const [copiedMessageId, setCopiedMessageId] = useState('');
+  const [exportingLog, setExportingLog] = useState(false);
+  const [logExportError, setLogExportError] = useState('');
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [followingBottom, setFollowingBottom] = useState(true);
   const [visibleMessageCount, setVisibleMessageCount] = useState(60);
@@ -374,6 +376,29 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   }, [props.open]);
 
   if (!props.open && !hasOpened) return null;
+
+  const exportAuditLog = async () => {
+    if (!activeSessionId || exportingLog) return;
+    setExportingLog(true);
+    setLogExportError('');
+    try {
+      const log = await promptAgentService.getAuditLog(activeSessionId);
+      const blob = new Blob([`${JSON.stringify(log, null, 2)}\n`], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const title = (activeSession?.title || 'agent').replace(/[\\/:*?"<>|]/g, '_').slice(0, 36);
+      anchor.href = url;
+      anchor.download = `nai-agent-log-${title || 'session'}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    } catch (error) {
+      setLogExportError(error instanceof Error ? error.message : '导出日志失败');
+    } finally {
+      setExportingLog(false);
+    }
+  };
 
   const run = async (suggestion?: string, mode: 'prompt' | 'retry' = 'prompt') => {
     const prompt = (suggestion ?? input).trim() || (attachments.length ? '请分析我附带的图片，并结合项目内容给出建议。' : '');
@@ -664,12 +689,14 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             <div className="overflow-y-auto p-2">{models.map(model => <button key={`${model.provider}/${model.id}`} type="button" onClick={() => void updateSessionModel(model)} className={`block w-full rounded-xl px-3 py-2 text-left ${model.provider === activeSession?.provider && model.id === activeSession?.model ? 'bg-indigo-50 dark:bg-indigo-950/40' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}><b className="block truncate text-xs text-gray-800 dark:text-white">{model.id}</b><span className="block text-[10px] text-gray-400">{model.provider} · {model.reasoning ? '推理' : '普通'}{model.imageInput ? ' · 识图' : ''}</span></button>)}</div>
           </div>}
         </div>
+        <button type="button" onClick={() => void exportAuditLog()} disabled={exportingLog || !activeSessionId} className="mobile-touch flex items-center justify-center gap-1 rounded-xl px-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800" aria-label="导出本会话 Agent 日志" title="导出本会话 Agent 日志（含步骤、工具调用与流式响应）"><Download className="h-[17px] w-[17px]" /><span className="hidden text-[11px] font-bold sm:inline">{exportingLog ? '导出中' : '导出日志'}</span></button>
         {props.canUndo && <button type="button" onClick={props.onUndo} disabled={running} className="mobile-touch hidden items-center justify-center rounded-xl text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 sm:flex dark:hover:bg-indigo-950/40" aria-label="撤销 Agent 修改" title="撤销 Agent 修改"><RotateCcw className="h-[18px] w-[18px]" /></button>}
         <button type="button" onClick={() => void reset()} disabled={running || !messages.length} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 disabled:opacity-30" aria-label="清空当前对话" title="清空当前对话"><Trash2 className="h-4 w-4" /></button>
         <button type="button" onClick={() => setFullscreen(value => !value)} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500" aria-label={fullscreen ? '退出全屏' : '全屏显示'} title={fullscreen ? '退出全屏' : '全屏显示'}>
           {fullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
         </button>
       </header>
+      {logExportError && <div role="status" className="absolute right-3 top-[calc(3.5rem+env(safe-area-inset-top)+.25rem)] z-40 max-w-[min(28rem,calc(100%-1.5rem))] rounded-lg bg-red-50 px-2 py-1 text-[10px] font-bold text-red-600 shadow dark:bg-red-950/80 dark:text-red-300">{logExportError}</div>}
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
         <div ref={scrollRef} onScroll={event => { const element = event.currentTarget; const next = element.scrollHeight - element.scrollTop - element.clientHeight < 80; followBottomRef.current = next; setFollowingBottom(next); }} className="relative flex-1 space-y-3 overflow-y-auto p-3 md:p-4">

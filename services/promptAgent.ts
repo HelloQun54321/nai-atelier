@@ -233,6 +233,11 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
+  getAuditLog: async (sessionId: string): Promise<Record<string, unknown>> => {
+    const response = await fetch(`/api/prompt-agent/log?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
   run: async (
     input: { sessionId: string; message: string; mode?: 'prompt' | 'retry'; images?: Array<{ data: string; mimeType: string }>; draft: PromptAgentDraft; context: { clientSettings?: Record<string, unknown> } },
     onEvent: (event: PromptAgentEvent) => void,

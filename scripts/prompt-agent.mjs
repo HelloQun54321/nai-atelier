@@ -5,7 +5,7 @@ import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completio
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'crypto';
-import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'fs/promises';
+import { appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { getGlobalDispatcher, ProxyAgent, setGlobalDispatcher } from 'undici';
 
@@ -13,6 +13,7 @@ const CONFIG_FILE = 'local-data/prompt-agent.json';
 const CREDENTIAL_KEY_FILE = 'local-data/prompt-agent.key';
 const SESSION_DIR = 'local-data/prompt-agent-sessions';
 const TASK_DIR = 'local-data/prompt-agent-tasks';
+const AUDIT_LOG_DIR = 'local-data/prompt-agent-logs';
 const TAG_TRANSLATION_FILE = 'local-data/tag-translations.json';
 const TAG_ROOT = 'public/tag-data';
 const PROVIDER_CATALOG = new Map(builtinProviders().map(provider => [provider.id, provider]));
@@ -576,6 +577,7 @@ export class PromptAgentService {
     this.taskEventWrites = new Map();
     this.taskEventBuffers = new Map();
     this.taskEventFlushTimers = new Map();
+    this.auditLogWrites = new Map();
     this.loginFlows = new Map();
     this.runHistory = [];
     this.tagManifest = null;
@@ -588,6 +590,7 @@ export class PromptAgentService {
   async init() {
     await mkdir(SESSION_DIR, { recursive: true });
     await mkdir(TASK_DIR, { recursive: true });
+    await mkdir(AUDIT_LOG_DIR, { recursive: true });
     for (const file of await readdir(TASK_DIR).catch(() => [])) {
       if (!file.endsWith('.json')) continue;
       try {
@@ -998,6 +1001,7 @@ export class PromptAgentService {
     const action = text(input?.action).slice(0, 80);
     const resourceId = text(input?.resourceId).slice(0, 200);
     const encodedId = encodeURIComponent(resourceId);
+    void this.appendAuditLog(input?.sessionId, { type: 'project_action_started', action, resourceId, payload: input?.payload || {} }).catch(() => {});
     try {
       if (action === 'delete_chain' && resourceId) await project.requestJson(`/api/chains/${encodedId}`, { method: 'DELETE' });
       else if (action === 'delete_inspiration' && resourceId) await project.requestJson(`/api/inspirations/${encodedId}`, { method: 'DELETE' });
@@ -1032,11 +1036,13 @@ export class PromptAgentService {
       clearTimeout(confirmation.timer);
       this.pendingConfirmations.delete(requestId);
       confirmation.resolve({ accepted: true, result: { action, resourceId } });
+      void this.appendAuditLog(input?.sessionId, { type: 'project_action_completed', action, resourceId, payload: input?.payload || {} }).catch(() => {});
       return { ok: true, action, resourceId };
     } catch (error) {
       clearTimeout(confirmation.timer);
       this.pendingConfirmations.delete(requestId);
       confirmation.resolve({ accepted: false, result: {} });
+      void this.appendAuditLog(input?.sessionId, { type: 'project_action_failed', action, resourceId, error: error instanceof Error ? error.message : 'Unknown error' }).catch(() => {});
       throw error;
     }
   }
@@ -1054,6 +1060,75 @@ export class PromptAgentService {
   taskEventsFile(sessionId) {
     const hash = createHash('sha256').update(String(sessionId || 'playground')).digest('hex');
     return join(TASK_DIR, `${hash}.events.json`);
+  }
+
+  auditLogFile(sessionId) {
+    const hash = createHash('sha256').update(String(sessionId || 'playground')).digest('hex');
+    return join(AUDIT_LOG_DIR, `${hash}.ndjson`);
+  }
+
+  sanitizeAuditValue(value) {
+    return JSON.parse(JSON.stringify(value, (key, item) => {
+      // Provider credentials, confirmation tokens, and raw image data never belong
+      // in an exportable diagnostic log. Image metadata is recorded separately.
+      if (/^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[_-]?key|token|secret|password)$/i.test(key)) return '[redacted]';
+      if (key === 'requestId') return '[redacted]';
+      if (key === 'data' && typeof item === 'string' && item.length > 1024 && /^[A-Za-z0-9+/=]+$/.test(item)) return `[image/base64 omitted: ${item.length} chars]`;
+      return item;
+    }));
+  }
+
+  async appendAuditLog(sessionId, entry) {
+    const safeSessionId = text(sessionId || 'playground').slice(0, 200);
+    const record = this.sanitizeAuditValue({
+      schema: 'nai-prompt-agent-audit/v1',
+      timestamp: Date.now(),
+      at: new Date().toISOString(),
+      ...entry,
+    });
+    const previous = this.auditLogWrites.get(safeSessionId) || Promise.resolve();
+    const next = previous.catch(() => {}).then(async () => {
+      await mkdir(AUDIT_LOG_DIR, { recursive: true });
+      await appendFile(this.auditLogFile(safeSessionId), `${JSON.stringify(record)}\n`, { encoding: 'utf8', mode: 0o600 });
+    });
+    this.auditLogWrites.set(safeSessionId, next);
+    try { await next; } finally { if (this.auditLogWrites.get(safeSessionId) === next) this.auditLogWrites.delete(safeSessionId); }
+  }
+
+  async flushAuditLog(sessionId) {
+    await (this.auditLogWrites.get(text(sessionId || 'playground').slice(0, 200)) || Promise.resolve()).catch(() => {});
+  }
+
+  async getAuditLog(sessionId) {
+    const safeSessionId = text(sessionId || 'playground').slice(0, 200);
+    await this.flushAuditLog(safeSessionId);
+    let entries = [];
+    try {
+      const raw = await readFile(this.auditLogFile(safeSessionId), 'utf8');
+      entries = raw.split(/\r?\n/).flatMap(line => {
+        if (!line.trim()) return [];
+        try { return [JSON.parse(line)]; } catch { return [{ type: 'log_parse_error', raw: line.slice(0, 500) }]; }
+      });
+    } catch { /* A session with no run yet has no audit file. */ }
+    const session = await this.readSession(safeSessionId);
+    return {
+      schema: 'nai-prompt-agent-audit-export/v1',
+      exportedAt: new Date().toISOString(),
+      session: session.meta ? {
+        id: session.meta.id,
+        title: session.meta.title,
+        provider: session.meta.provider,
+        model: session.meta.model,
+        thinkingLevel: session.meta.thinkingLevel,
+      } : { id: safeSessionId },
+      policy: {
+        version: PROMPT_AGENT_POLICY_VERSION,
+        fingerprint: PROMPT_AGENT_POLICY_FINGERPRINT,
+        seedFingerprint: createHash('sha256').update(JSON.stringify(creativeSeedMessages)).digest('hex').slice(0, 12),
+        runtimeStartedAt: this.runtimeStartedAt,
+      },
+      entries,
+    };
   }
 
   sanitizeTaskEvent(event) {
@@ -1163,6 +1238,7 @@ export class PromptAgentService {
       thinkingLevel: this.normalizeThinkingLevel(input.thinkingLevel, modelInfo?.reasoning),
     };
     await this.writeSession(id, { version: 2, meta, messages: [] });
+    await this.appendAuditLog(id, { type: 'session_created', session: meta });
     return meta;
   }
 
@@ -1201,6 +1277,7 @@ export class PromptAgentService {
       updatedAt: Date.now(),
     };
     await this.writeSession(sessionId, value);
+    await this.appendAuditLog(sessionId, { type: 'session_updated', patch, session: value.meta });
     return value.meta;
   }
 
@@ -1209,6 +1286,7 @@ export class PromptAgentService {
     await unlink(this.sessionFile(sessionId)).catch(() => {});
     await unlink(this.taskFile(sessionId)).catch(() => {});
     await unlink(this.taskEventsFile(sessionId)).catch(() => {});
+    await unlink(this.auditLogFile(sessionId)).catch(() => {});
     this.clearTaskEventState(sessionId);
   }
 
@@ -1246,6 +1324,7 @@ export class PromptAgentService {
     await unlink(this.taskFile(sessionId)).catch(() => {});
     await unlink(this.taskEventsFile(sessionId)).catch(() => {});
     this.clearTaskEventState(sessionId);
+    await this.appendAuditLog(sessionId, { type: 'session_reset' });
   }
 
   async getSessionHistory(sessionId) {
@@ -1282,6 +1361,7 @@ export class PromptAgentService {
     value.messages[index] = { ...original, content: nextContent, timestamp: Date.now() };
     value.meta = value.meta?.id ? { ...value.meta, updatedAt: Date.now() } : value.meta;
     await this.writeSession(sessionId, value);
+    await this.appendAuditLog(sessionId, { type: 'message_revised', messageId, content: nextContent });
     return this.getSessionHistory(sessionId);
   }
 
@@ -1315,6 +1395,7 @@ export class PromptAgentService {
       pending.resolve({ accepted: payload.success === true, result: payload.result || {} });
     }
     else throw Object.assign(new Error('未知的 Agent 控制操作'), { status: 400 });
+    void this.appendAuditLog(sessionId, { type: 'control', action, message: text(message).trim().slice(0, 8_000), payload }).catch(() => {});
     return { ok: true, action };
   }
 
@@ -2028,21 +2109,51 @@ export class PromptAgentService {
 
   async run(input, emit, signal, project = {}) {
     const sessionId = text(input?.sessionId || 'playground').slice(0, 200);
-    if (this.activeAgents.has(sessionId) || this.startingAgents.has(sessionId)) throw Object.assign(new Error('这个会话的 Agent 正在工作'), { status: 409 });
+    const runId = randomUUID();
+    const audit = (type, details = {}) => { void this.appendAuditLog(sessionId, { type, runId, ...details }).catch(() => {}); };
+    const imageMetadata = (Array.isArray(input?.images) ? input.images : []).slice(0, 4).map(image => ({
+      mimeType: String(image?.mimeType || 'image/png').split(';')[0],
+      base64Chars: String(image?.data || '').replace(/^data:[^;]+;base64,/, '').length,
+    }));
+    audit('run_requested', {
+      mode: input?.mode === 'retry' ? 'retry' : 'prompt',
+      userMessage: text(input?.message).slice(0, 8_000),
+      imageMetadata,
+      clientSettings: input?.context?.clientSettings || {},
+    });
+    if (this.activeAgents.has(sessionId) || this.startingAgents.has(sessionId)) {
+      audit('run_rejected', { reason: '这个会话的 Agent 正在工作', status: 409 });
+      throw Object.assign(new Error('这个会话的 Agent 正在工作'), { status: 409 });
+    }
     const now = Date.now();
     this.runHistory = this.runHistory.filter(timestamp => now - timestamp < 60_000);
-    if (this.activeAgents.size + this.startingAgents.size >= 3) throw Object.assign(new Error('电脑当前最多同时运行 3 个 Agent 任务，请稍后再试'), { status: 429 });
-    if (this.runHistory.length >= 12) throw Object.assign(new Error('Agent 请求过于频繁，请一分钟后再试'), { status: 429 });
+    if (this.activeAgents.size + this.startingAgents.size >= 3) {
+      audit('run_rejected', { reason: '电脑当前最多同时运行 3 个 Agent 任务，请稍后再试', status: 429 });
+      throw Object.assign(new Error('电脑当前最多同时运行 3 个 Agent 任务，请稍后再试'), { status: 429 });
+    }
+    if (this.runHistory.length >= 12) {
+      audit('run_rejected', { reason: 'Agent 请求过于频繁，请一分钟后再试', status: 429 });
+      throw Object.assign(new Error('Agent 请求过于频繁，请一分钟后再试'), { status: 429 });
+    }
     this.startingAgents.add(sessionId);
     const storedSession = await this.readSession(sessionId);
     const globalConfig = this.publicConfig();
     const provider = normalizeProvider(storedSession.meta?.provider || globalConfig.provider);
     const modelId = storedSession.meta?.model || globalConfig.model;
     const storedCredential = this.getCredential(provider);
-    if (!storedCredential) { this.startingAgents.delete(sessionId); throw Object.assign(new Error(`请先使用“登录模型服务”配置 ${PROVIDER_CATALOG.get(provider)?.name || provider}`), { status: 400 }); }
+    if (!storedCredential) {
+      const message = `请先使用“登录模型服务”配置 ${PROVIDER_CATALOG.get(provider)?.name || provider}`;
+      this.startingAgents.delete(sessionId);
+      audit('run_rejected', { reason: message, status: 400 });
+      throw Object.assign(new Error(message), { status: 400 });
+    }
     const models = listModels(provider);
     const modelInfo = models.find(item => item.id === modelId);
-    if (!modelInfo) { this.startingAgents.delete(sessionId); throw Object.assign(new Error('选择的模型已不可用，请在设置中重新选择'), { status: 400 }); }
+    if (!modelInfo) {
+      this.startingAgents.delete(sessionId);
+      audit('run_rejected', { reason: '选择的模型已不可用，请在设置中重新选择', status: 400 });
+      throw Object.assign(new Error('选择的模型已不可用，请在设置中重新选择'), { status: 400 });
+    }
     this.runHistory.push(now);
     const thinkingLevel = this.normalizeThinkingLevel(storedSession.meta?.thinkingLevel, modelInfo.reasoning);
     const draft = sanitizeDraft(input?.draft);
@@ -2053,7 +2164,18 @@ export class PromptAgentService {
     let taskStatus = 'failed';
     const taskStartedAt = Date.now();
     try {
-      const taskEmit = event => { emit(event); void this.appendTaskEvent(sessionId, event).catch(() => {}); };
+      audit('runtime_resolved', {
+        provider,
+        model: modelId,
+        thinkingLevel,
+        policy: { version: PROMPT_AGENT_POLICY_VERSION, fingerprint: PROMPT_AGENT_POLICY_FINGERPRINT, seedFingerprint: createHash('sha256').update(JSON.stringify(creativeSeedMessages)).digest('hex').slice(0, 12) },
+        storedMessageCount: Array.isArray(storedSession.messages) ? storedSession.messages.length : 0,
+      });
+      const taskEmit = event => {
+        emit(event);
+        void this.appendTaskEvent(sessionId, event).catch(() => {});
+        audit('agent_event', { event });
+      };
       const credentials = new InMemoryCredentialStore();
       await credentials.modify(provider, async () => ({
         ...storedCredential,
@@ -2064,13 +2186,16 @@ export class PromptAgentService {
       if (customProvider) modelRuntime.setProvider(customProviderRuntime(customProvider));
       const model = modelRuntime.getModel(provider, modelId);
       if (!model) throw new Error('无法加载所选模型');
+      const tools = this.createTools(draft, contextData, taskEmit, { ...project, agentSessionId: sessionId }, modelInfo);
+      const loadedMessages = await this.loadMessages(sessionId);
+      audit('agent_initialized', { toolNames: tools.map(tool => tool.name), loadedMessages });
       const agent = new Agent({
         initialState: {
           systemPrompt,
           model,
           thinkingLevel,
-          tools: this.createTools(draft, contextData, taskEmit, { ...project, agentSessionId: sessionId }, modelInfo),
-          messages: await this.loadMessages(sessionId),
+          tools,
+          messages: loadedMessages,
         },
         streamFn: modelRuntime.streamSimple.bind(modelRuntime),
         sessionId: `nai-prompt-agent-${createHash('sha256').update(sessionId).digest('hex').slice(0, 20)}`,
@@ -2086,6 +2211,13 @@ export class PromptAgentService {
         transformContext: async messages => {
           const tokenBudget = Math.max(8_000, Math.min(180_000, Math.floor((Number(modelInfo.contextWindow) || 32_000) * 0.68)));
           const trimmed = trimContextMessages(messages, tokenBudget);
+          audit('model_context', {
+            tokenBudget,
+            inputMessageCount: messages.length,
+            storedConversation: trimmed,
+            injectedSeedMessageCount: creativeSeedMessages.length,
+            injectedSeedFingerprint: createHash('sha256').update(JSON.stringify(creativeSeedMessages)).digest('hex').slice(0, 12),
+          });
           return [...creativeSeedMessages, ...trimmed];
         },
       });
@@ -2110,6 +2242,7 @@ export class PromptAgentService {
           for (let index = messages.length - 1; index >= 0; index -= 1) if (messages[index]?.role === 'user') { lastUser = index; break; }
           if (lastUser < 0) throw Object.assign(new Error('没有可以重试的用户消息'), { status: 400 });
           agent.state.messages = messages.slice(0, lastUser + 1);
+          audit('retry_continued', { lastUserMessage: agent.state.messages[lastUser] });
           await agent.continue();
         } else {
           const images = Array.isArray(input?.images) ? input.images.slice(0, 4).flatMap(image => {
@@ -2118,17 +2251,28 @@ export class PromptAgentService {
             return /^[A-Za-z0-9+/=]+$/.test(data) && /^image\/(?:png|jpeg|webp|gif)$/i.test(mimeType) && data.length <= 40 * 1024 * 1024 ? [{ type: 'image', data, mimeType }] : [];
           }) : [];
           if (images.length && !modelInfo.imageInput) throw Object.assign(new Error('当前模型不支持图片输入，请先切换到带“识图”标记的模型'), { status: 400 });
-          await agent.prompt(`${creativePreamble}\n${text(input?.message).slice(0, 8_000)}`, images);
+          const actualUserMessage = `${creativePreamble}\n${text(input?.message).slice(0, 8_000)}`;
+          audit('prompt_submitted', {
+            actualUserMessage,
+            acceptedImages: images.map(image => ({ mimeType: image.mimeType, base64Chars: image.data.length, sha256: createHash('sha256').update(image.data).digest('hex') })),
+          });
+          await agent.prompt(actualUserMessage, images);
         }
       } catch (error) {
         taskStatus = agent.signal?.aborted ? 'aborted' : 'failed';
+        audit('run_failed', { status: taskStatus, error: error instanceof Error ? error.message : 'Unknown error' });
         throw error;
       }
       finally { signal?.removeEventListener('abort', abort); unsubscribe(); }
       await this.saveMessages(sessionId, agent.state.messages);
       const lastAssistant = [...agent.state.messages].reverse().find(message => message?.role === 'assistant');
-      if (agent.state.errorMessage && lastAssistant?.stopReason !== 'aborted') { taskStatus = 'failed'; throw new Error(agent.state.errorMessage); }
+      if (agent.state.errorMessage && lastAssistant?.stopReason !== 'aborted') {
+        taskStatus = 'failed';
+        audit('run_failed', { status: taskStatus, error: agent.state.errorMessage });
+        throw new Error(agent.state.errorMessage);
+      }
       taskStatus = lastAssistant?.stopReason === 'aborted' ? 'aborted' : 'completed';
+      audit('run_completed', { status: taskStatus, finalDraft: draft, lastAssistant });
       return { draft, message: extractAssistantText(agent.state.messages), provider, model: modelId };
     } finally {
       leaveOutboundProxy();
@@ -2137,6 +2281,7 @@ export class PromptAgentService {
       this.cancelPendingConfirmations(sessionId);
       this.activeAgents.delete(sessionId);
       this.startingAgents.delete(sessionId);
+      await this.flushAuditLog(sessionId);
     }
   }
 }
