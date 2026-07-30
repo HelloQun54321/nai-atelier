@@ -521,11 +521,12 @@ const creativePreamble = ''; // [redacted]
 // 复刻 SillyTavern 预设的 assistant 确认机制：通过伪造 user→assistant 确认对话
 // [redacted]
 // 注入，不进 agent.state.messages，不存盘、不污染 UI/会话标题/历史。
+const SEED_USAGE = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 const creativeSeedMessages = [
-  { role: 'user', content: [{ type: 'text', text: [redacted] }], timestamp: 0 },
-  { role: 'assistant', content: [{ type: 'text', text: [redacted] }], timestamp: 0 },
-  { role: 'user', content: [{ type: 'text', text: [redacted] }], timestamp: 0 },
-  { role: 'assistant', content: [{ type: 'text', text: [redacted] }], timestamp: 0 },
+  { role: 'user', content: [{ type: 'text', text: [redacted] }], timestamp: 1 },
+  { role: 'assistant', content: [{ type: 'text', text: [redacted] }], timestamp: 2, usage: SEED_USAGE, model: '', provider: '', stopReason: 'stop' },
+  { role: 'user', content: [{ type: 'text', text: [redacted] }], timestamp: 3 },
+  { role: 'assistant', content: [{ type: 'text', text: [redacted] }], timestamp: 4, usage: SEED_USAGE, model: '', provider: '', stopReason: 'stop' },
 ];
 const PROMPT_AGENT_POLICY_FINGERPRINT = createHash('sha256').update(`${systemPrompt}\n${creativePreamble}`).digest('hex').slice(0, 12);
 
