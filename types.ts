@@ -205,6 +205,10 @@ export interface LocalGenItem {
   prompt: string;
   negativePrompt?: string;
   params: NAIParams;
+  /** Generation-time prompt structure, used to restore a history image without mixing style and subject text. */
+  basePrompt?: string;
+  subjectPrompt?: string;
+  modules?: PromptModule[];
   sourceChainId?: string;
   sourceChainName?: string;
   sourceChainType?: ChainType | 'playground';

@@ -143,7 +143,7 @@ class LocalHistoryService {
         prompt: string,
         params: NAIParams,
         negativePrompt = '',
-        source?: Pick<LocalGenItem, 'sourceChainId' | 'sourceChainName' | 'sourceChainType'>
+        source?: Pick<LocalGenItem, 'basePrompt' | 'subjectPrompt' | 'modules' | 'sourceChainId' | 'sourceChainName' | 'sourceChainType'>
     ): Promise<LocalGenItem> {
         const db = await this.open();
         const item: LocalGenItem = {
@@ -152,6 +152,9 @@ class LocalHistoryService {
             prompt,
             negativePrompt,
             params,
+            basePrompt: source?.basePrompt,
+            subjectPrompt: source?.subjectPrompt,
+            modules: source?.modules,
             sourceChainId: source?.sourceChainId,
             sourceChainName: source?.sourceChainName,
             sourceChainType: source?.sourceChainType,

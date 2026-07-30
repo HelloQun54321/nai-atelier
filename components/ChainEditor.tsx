@@ -400,7 +400,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (!raw) return;
 
         try {
-            const data = JSON.parse(raw) as { prompt: string; negativePrompt: string; params: NAIParams };
+            const data = JSON.parse(raw) as { prompt: string; negativePrompt: string; params: NAIParams; basePrompt?: string; subjectPrompt?: string; modules?: PromptModule[] };
             // 清除标志位，防止重复消费
             sessionStorage.removeItem(IMPORT_SESSION_KEY);
             // 应用数据到当前编辑器
@@ -915,17 +915,28 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
      * 从外部投递的数据（历史/灵感页面的一键导入）中加载参数
      * 由 useEffect 在检测到 sessionStorage 中的 nai_pending_import 时调用
      */
-    const applyImportData = (data: { prompt: string; negativePrompt: string; params: NAIParams }) => {
-        // Imported image/history prompts are complete scene prompts, not a
-        // reusable artist/style preset. Keep that semantic distinction clear
-        // and remove stale style text that would otherwise be compiled twice.
-        setBasePrompt('');
-        setSubjectPrompt(data.prompt);
+    const applyImportData = (data: { prompt: string; negativePrompt: string; params: NAIParams; basePrompt?: string; subjectPrompt?: string; modules?: PromptModule[] }) => {
+        const hasPromptStructure = typeof data.basePrompt === 'string' || typeof data.subjectPrompt === 'string' || Array.isArray(data.modules);
+        if (hasPromptStructure) {
+            const importedModules = (data.modules || []).map(module => ({ ...module, position: module.position || 'post' }));
+            setBasePrompt(data.basePrompt || '');
+            setSubjectPrompt(data.subjectPrompt || '');
+            setModules(importedModules);
+            setActiveModules(Object.fromEntries(importedModules.map(module => [module.id, module.isActive])));
+        } else {
+            // Older images only saved their compiled prompt. Their original
+            // style/subject boundary no longer exists in the metadata, so do
+            // not invent one. Keep this legacy fallback in the subject field.
+            setBasePrompt('');
+            setSubjectPrompt(data.prompt);
+        }
         setNegativePrompt(data.negativePrompt);
         setParams(data.params);
         clearPresetSources();
         markChange();
-        notify('已将整图提示词导入主体／变量区域，并恢复完整配置。');
+        notify(hasPromptStructure
+            ? '已按原结构恢复全局画风、模块和主体／变量提示词。'
+            : '这张旧历史图未保存提示词结构，完整提示词已放入主体／变量区域。');
     };
 
 
@@ -1055,10 +1066,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             const finalParams = { ...activeParams, seed: result.seed };
             try {
                 const historyItem = await localHistory.add(result.image, generationPrompt, finalParams, generationNegativePrompt, {
-                    sourceChainId,
-                    sourceChainName: chainName,
-                    sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
-                });
+                sourceChainId,
+                sourceChainName: chainName,
+                sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
+                basePrompt,
+                subjectPrompt,
+                modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })),
+            });
                 setPreviewHistory(prev => [historyItem, ...prev.filter(item => item.id !== historyItem.id)]);
                 setPreviewIndex(0);
                 setPreviewMode('history');

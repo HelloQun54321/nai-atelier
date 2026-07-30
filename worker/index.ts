@@ -1427,6 +1427,9 @@ const INIT_SQL = `
     prompt TEXT DEFAULT '',
     negative_prompt TEXT DEFAULT '',
     params TEXT DEFAULT '{}',
+    base_prompt TEXT DEFAULT '',
+    subject_prompt TEXT DEFAULT '',
+    modules TEXT DEFAULT '[]',
     source_chain_id TEXT,
     source_chain_name TEXT,
     source_chain_type TEXT,
@@ -1494,6 +1497,9 @@ async function ensureLocalHistorySchema(db: D1Database) {
       prompt TEXT DEFAULT '',
       negative_prompt TEXT DEFAULT '',
       params TEXT DEFAULT '{}',
+      base_prompt TEXT DEFAULT '',
+      subject_prompt TEXT DEFAULT '',
+      modules TEXT DEFAULT '[]',
       source_chain_id TEXT,
       source_chain_name TEXT,
       source_chain_type TEXT,
@@ -1505,6 +1511,9 @@ async function ensureLocalHistorySchema(db: D1Database) {
   for (const statement of [
     'ALTER TABLE local_generation_history ADD COLUMN external_source TEXT',
     'ALTER TABLE local_generation_history ADD COLUMN external_id TEXT',
+    "ALTER TABLE local_generation_history ADD COLUMN base_prompt TEXT DEFAULT ''",
+    "ALTER TABLE local_generation_history ADD COLUMN subject_prompt TEXT DEFAULT ''",
+    "ALTER TABLE local_generation_history ADD COLUMN modules TEXT DEFAULT '[]'",
   ]) {
     try { await db.prepare(statement).run(); } catch { /* Column already exists. */ }
   }
@@ -1662,6 +1671,9 @@ function mapLocalHistoryRow(row: any) {
     prompt: row.prompt || '',
     negativePrompt: row.negative_prompt || '',
     params: parseStoredJson(row.params, {}),
+    basePrompt: row.base_prompt || undefined,
+    subjectPrompt: row.subject_prompt || undefined,
+    modules: parseStoredJson(row.modules, []),
     sourceChainId: row.source_chain_id || undefined,
     sourceChainName: row.source_chain_name || undefined,
     sourceChainType: row.source_chain_type || undefined,
@@ -3071,17 +3083,20 @@ export default {
           await db.prepare(`
             INSERT OR REPLACE INTO local_generation_history (
               id, user_id, image_key, image_type, prompt, negative_prompt, params,
+              base_prompt, subject_prompt, modules,
               source_chain_id, source_chain_name, source_chain_type, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).bind(
             id, currentUser.id, imageKey, imageType, body.prompt || '', body.negativePrompt || '',
-            JSON.stringify(body.params || {}), body.sourceChainId || null, body.sourceChainName || null,
-            body.sourceChainType || null, Number(body.createdAt || Date.now())
+            JSON.stringify(body.params || {}), body.basePrompt || '', body.subjectPrompt || '', JSON.stringify(body.modules || []),
+            body.sourceChainId || null, body.sourceChainName || null, body.sourceChainType || null,
+            Number(body.createdAt || Date.now())
           ).run();
           if (existing?.image_key && existing.image_key !== imageKey) await env.BUCKET.delete(existing.image_key);
           return json({ item: mapLocalHistoryRow({
             id, image_key: imageKey, prompt: body.prompt, negative_prompt: body.negativePrompt,
-            params: JSON.stringify(body.params || {}), source_chain_id: body.sourceChainId,
+            params: JSON.stringify(body.params || {}), base_prompt: body.basePrompt, subject_prompt: body.subjectPrompt,
+            modules: JSON.stringify(body.modules || []), source_chain_id: body.sourceChainId,
             source_chain_name: body.sourceChainName, source_chain_type: body.sourceChainType,
             created_at: Number(body.createdAt || Date.now())
           }) });

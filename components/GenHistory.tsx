@@ -2,10 +2,11 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { LocalHistoryDateRange, localHistory } from '../services/localHistory';
 import { db } from '../services/dbService';
-import { LocalGenItem, User } from '../types';
+import { LocalGenItem, PromptChain, User } from '../types';
 import { PAGINATION_CONFIG } from '../config/pagination';
 import { MobileBottomSheet, useMobileHistoryLayer } from './MobileUI';
 import { extractMetadata, IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../services/metadataService';
+import { compilePrompt } from '../services/promptUtils';
 import { ParamsViewer } from './ParamsViewer';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
@@ -16,6 +17,7 @@ import { IconButton, ToolbarButton, WorkspaceToolbar } from './DesignSystem';
 
 interface GenHistoryProps {
     currentUser: User;
+    chains: PromptChain[];
     notify: (msg: string, type?: 'success' | 'error') => void;
     onNavigateToPlayground?: () => void;
     onRefreshInspiration?: () => void;
@@ -35,7 +37,7 @@ const formatHistoryDay = (key: string) => {
     return date.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' });
 };
 
-export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onNavigateToPlayground, onRefreshInspiration }) => {
+export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, notify, onNavigateToPlayground, onRefreshInspiration }) => {
     const confirmAction = useConfirmDialog();
     const imageDisplay = useMobileImageDisplayPreferences();
     const [items, setItems] = useState<LocalGenItem[]>([]);
@@ -89,6 +91,35 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
             negativePrompt: getHistoryNegativePrompt(item),
             params: item.params,
         };
+
+        if (typeof item.basePrompt === 'string' || typeof item.subjectPrompt === 'string' || Array.isArray(item.modules)) {
+            return {
+                ...fallbackData,
+                basePrompt: item.basePrompt || '',
+                subjectPrompt: item.subjectPrompt || '',
+                modules: item.modules || [],
+            };
+        }
+
+        // Old local records did not store the split fields. If their linked
+        // source chain still produces exactly the saved prompt, we can safely
+        // recover the original split instead of guessing from tag wording.
+        const source = item.sourceChainId && item.sourceChainId !== 'playground'
+            ? chains.find(chain => chain.id === item.sourceChainId)
+            : undefined;
+        if (source) {
+            const sourceSubject = source.variableValues?.subject || '';
+            const compiled = compilePrompt(source, sourceSubject);
+            const normalize = (value: string) => value.split(',').map(tag => tag.trim()).filter(Boolean).join(',');
+            if (normalize(compiled) === normalize(item.prompt)) {
+                return {
+                    ...fallbackData,
+                    basePrompt: source.basePrompt || '',
+                    subjectPrompt: sourceSubject,
+                    modules: source.modules || [],
+                };
+            }
+        }
 
         if (Object.prototype.hasOwnProperty.call(item, 'negativePrompt')) {
             return fallbackData;

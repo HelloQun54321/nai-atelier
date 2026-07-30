@@ -468,7 +468,7 @@ const App = () => {
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
         />;
       case 'history':
-        return <GenHistory currentUser={currentUser} notify={notify} onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })} onRefreshInspiration={() => loadInspirations(true)} />;
+        return <GenHistory currentUser={currentUser} chains={chains} notify={notify} onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })} onRefreshInspiration={() => loadInspirations(true)} />;
       case 'playground':
         if (!playgroundChain) return <div>Loading...</div>;
         return <ChainEditor
