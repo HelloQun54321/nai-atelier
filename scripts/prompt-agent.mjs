@@ -265,6 +265,44 @@ const sanitizeDraft = raw => ({
   params: sanitizeParams(raw?.params),
 });
 
+// 软校验：模型每次写入提示词字段后，按 systemPrompt 的 A–K 规则检测常见违反点。
+// 违反不阻断写入，只把 issues 通过工具返回值回执给模型，让它看到规则约束、自行重写。
+// 命中点只拣能可靠从文本特征判定的、失败率最高的几类，不做全规则穷举。
+const DNA_IN_SUBJECT = /\b(?:hair|eyes|pupil|bangs|ponytail|twintails|braids|bob cut|long hair|short hair|breasts|bust|skin|skinny|petite|tall|short|freckles|scar|tattoo|horn|tail|ears|wings)\b/i;
+const NON_NAI_WEIGHT = /\(\s*[\w\s,]+\s*:\s*-?\d*\.?\d+\s*\)/;
+const SAFE_VIOLATION = /\b(?:nsfw|nude|naked|nipples|pussy|penis|vagina|anus|genitals|uncensored|explicit|penetration|topless|bottomless|undressed)\b/i;
+const DIGIT_GENDER = /\b[1-9]\s*(?:girls?|boys?|others?)\b/i;
+const NUDE_TAGS = /\{?nude\}?|\{?completely naked\}?|\{?fully nude\}?|\{?naked\}?/i;
+const CLOTHING_TAGS = /\b(?:shirt|skirt|dress|pants|jacket|coat|uniform|bikini|swimsuit|lingerie|underwear|bra|panties| stockings|socks|shoes|boots|hat|gloves|scarf|vest|sweater|hoodie|blouse|kimono|cheongsam|sweater|tank top|shorts|jeans)\b/i;
+const validatePromptDraft = draft => {
+  const issues = [];
+  const chars = Array.isArray(draft?.params?.characters) ? draft.params.characters : [];
+  // J: 角色外貌 DNA 不得写进 subjectPrompt
+  if (draft?.subjectPrompt && DNA_IN_SUBJECT.test(draft.subjectPrompt)) {
+    issues.push('subjectPrompt 含有角色外貌 DNA 词（hair/eyes/breasts 等），违反 J：角色专属外貌应进 characters.prompt（set_characters），subjectPrompt 只放整图共用信息。');
+  }
+  // A: 禁止 (tag:1.5) 非 NAI 权重写法
+  for (const [field, value] of [['basePrompt', draft?.basePrompt], ['subjectPrompt', draft?.subjectPrompt], ...chars.map((c, i) => [`characters[${i}].prompt`, c?.prompt])]) {
+    if (value && NON_NAI_WEIGHT.test(value)) issues.push(`${field} 含 (tag:权重) 写法，违反 A：NAI 原生精确权重只用 x::tag::，禁止 (tag:1.5)。`);
+  }
+  // B: Safe 级 base 不得含 nsfw/器官词（粗筛：base 同时无 nsfw 又含违规词才算）
+  if (draft?.basePrompt && !/\bnsfw\b/i.test(draft.basePrompt) && SAFE_VIOLATION.test(draft.basePrompt)) {
+    issues.push('basePrompt 无 nsfw 前缀却含 nsfw/器官/性行为词，违反 B：Safe 级禁止此类 Tag；要写则把分级升到 R 或 X 并加对应前缀。');
+  }
+  // C: N≥2 时角色槽不得含数字性别词
+  if (chars.length >= 2) {
+    chars.forEach((c, i) => {
+      if (c?.prompt && DIGIT_GENDER.test(c.prompt)) issues.push(`characters[${i}].prompt 含数字性别词（如 1girl），违反 C：N≥2 各角色槽只写无数字的 girl/boy/other，准确总数只写在 basePrompt。`);
+    });
+  }
+  // K: 全裸角色不应再写服装 tag（粗筛，仅作提醒）
+  chars.forEach((c, i) => {
+    if (c?.prompt && NUDE_TAGS.test(c.prompt) && CLOTHING_TAGS.test(c.prompt)) {
+      issues.push(`characters[${i}].prompt 同时含裸体 tag 与服装 tag，违反 K：全裸角色不写任何服装 Tag，半裸只写仍穿着的衣物。`);
+    }
+  });
+  return issues;
+};
 const systemPrompt = `你是 NaiPromptManager 的项目业务 Agent。你的职责不是只给建议，而是读取项目中的真实数据并使用工具完成操作。
 
 规则：
@@ -1768,7 +1806,11 @@ export class PromptAgentService {
         execute: async (_id, args) => {
           const patch = {};
           for (const key of ['basePrompt', 'subjectPrompt', 'negativePrompt']) if (typeof args[key] === 'string') { draft[key] = text(args[key]); patch[key] = draft[key]; }
-          return apply('update_prompts', patch);
+          emit({ type: 'action', action: { kind: 'update_prompts', patch } });
+          const issues = validatePromptDraft(draft);
+          return issues.length
+            ? { content: jsonText({ ok: false, issues, hint: '请按上述违反点重写并再次调用本工具' }), details: { patch, issues } }
+            : { content: jsonText({ ok: true, applied: patch }), details: { kind: 'update_prompts', patch } };
         },
       },
       {
@@ -1784,7 +1826,11 @@ export class PromptAgentService {
         parameters: Type.Object({ characters: Type.Array(Type.Object({ prompt: Type.String(), negativePrompt: Type.Optional(Type.String()), x: Type.Optional(Type.Number()), y: Type.Optional(Type.Number()) })) }),
         execute: async (_id, args) => {
           draft.params.characters = sanitizeParams({ ...draft.params, characters: args.characters }).characters || [];
-          return apply('set_characters', { characters: draft.params.characters });
+          emit({ type: 'action', action: { kind: 'set_characters', patch: { characters: draft.params.characters } } });
+          const issues = validatePromptDraft(draft);
+          return issues.length
+            ? { content: jsonText({ ok: false, issues, hint: '请按上述违反点重写并再次调用本工具' }), details: { characters: draft.params.characters, issues } }
+            : { content: jsonText({ ok: true, applied: { characters: draft.params.characters } }), details: { kind: 'set_characters', characters: draft.params.characters } };
         },
       },
       {
