@@ -186,6 +186,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const forceBottomAfterLoadRef = useRef(false);
   const loadedSessionIdRef = useRef('');
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const modelMenuRef = useRef<HTMLDivElement | null>(null);
   const pendingPanelWidthRef = useRef(panelWidth);
   const pendingMobileHeightRef = useRef(mobileHeight);
   const messageActionsRef = useRef({
@@ -374,6 +375,15 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [props.open]);
+
+  useEffect(() => {
+    if (!showModelMenu) return;
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !modelMenuRef.current?.contains(event.target)) setShowModelMenu(false);
+    };
+    window.addEventListener('pointerdown', closeOnOutsidePointerDown);
+    return () => window.removeEventListener('pointerdown', closeOnOutsidePointerDown);
+  }, [showModelMenu]);
 
   if (!props.open && !hasOpened) return null;
 
@@ -692,7 +702,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="返回"><ArrowLeft className="h-[18px] w-[18px]" /></button>
         <button type="button" onClick={() => setShowSessions(true)} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="会话列表"><List className="h-5 w-5" /></button>
         <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-black text-gray-900 dark:text-white">{activeSession?.title || '项目 Agent'}</h2><p className="truncate text-[10px] text-gray-500">{running ? '正在执行，可继续追加要求' : `${activeSession?.model || '未选择模型'} · ${activeModel?.imageInput ? '支持识图' : '不支持识图'}`}</p>{runtimeInfo && <p className="truncate text-[9px] text-gray-400" title={`策略 ${runtimeInfo.policyVersion} · 本对话破限模式${activeSession?.creativeMode ? '开' : '关'} · 指纹 ${activeSession?.policyFingerprint || runtimeInfo.policyFingerprint} · 后台启动 ${new Date(runtimeInfo.runtimeStartedAt).toLocaleString()}`}>策略 {runtimeInfo.policyVersion} · 破限{activeSession?.creativeMode ? '开' : '关'} · {activeSession?.policyFingerprint || runtimeInfo.policyFingerprint} · 启动 {new Date(runtimeInfo.runtimeStartedAt).toLocaleTimeString()}</p>}</div>
-        <div className="relative">
+        <div ref={modelMenuRef} className="relative">
           <button type="button" onClick={() => setShowModelMenu(value => !value)} className={`mobile-touch flex items-center justify-center rounded-xl text-gray-500 dark:text-gray-400 ${showModelMenu ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`} aria-label="模型与思考设置" title="模型与思考设置"><SlidersHorizontal className="h-[18px] w-[18px]" /></button>
           {showModelMenu && <div className="absolute right-0 top-12 z-30 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
             <div className="border-b border-gray-100 p-3 dark:border-gray-800"><div className="mb-1.5 flex items-center justify-between"><b className="text-xs text-gray-700 dark:text-gray-100">模型与思考</b><span className="max-w-40 truncate text-[10px] text-gray-400">{activeSession?.model || '未选择'}</span></div><label className="flex items-center gap-2 text-[11px] text-gray-500"><span className="flex-1">思考等级</span><select aria-label="思考等级" disabled={running || !activeModel?.reasoning} value={activeSession?.thinkingLevel || 'off'} onChange={event => void updateThinkingLevel(event.target.value as PromptAgentThinkingLevel)} className="h-9 min-w-24 rounded-lg border border-gray-200 bg-gray-50 px-2 text-xs font-bold text-gray-700 outline-none disabled:opacity-40 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200"><option value="off">不思考</option><option value="minimal">极少</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option><option value="xhigh">极高</option><option value="max">最大</option></select></label>{activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount && <div className="mt-2 flex items-center justify-between gap-2 border-t border-gray-100 pt-2 text-[11px] text-gray-500 dark:border-gray-800"><span>破限模式（首条消息前可选）</span><button type="button" role="switch" aria-checked={activeSession.creativeMode} aria-label="切换本对话破限模式" onClick={() => void updateCreativeMode(!activeSession.creativeMode)} className={`relative h-5 w-10 shrink-0 rounded-full transition-colors ${activeSession.creativeMode ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${activeSession.creativeMode ? 'translate-x-5' : 'translate-x-0.5'}`} /></button></div>}{activeSession?.creativeModeLocked && <p className="mt-2 border-t border-gray-100 pt-2 text-[10px] text-gray-400 dark:border-gray-800">破限模式已随首条消息锁定。</p>}</div>
