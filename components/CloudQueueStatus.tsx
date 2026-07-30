@@ -3,7 +3,11 @@ import { cancelCloudQueueTask, CloudQueueStatus as QueueStatus, getCurrentCloudQ
 
 const statusLabel = (status: QueueStatus) => {
   if (status.phase === 'preparing' || status.phase === 'joining') return '正在加入公共队列…';
-  if (status.phase === 'waiting') return `排队中 · 前方 ${Math.max(0, Number(status.position) || 0)} 个任务`;
+  if (status.phase === 'waiting') {
+    const ahead = Math.max(0, Number(status.position) || 0);
+    const queueSize = Math.max(0, Number(status.queueSize) || 0);
+    return `排队中 · 前方 ${ahead} 个任务${queueSize ? ` · 队列共 ${queueSize} 个任务` : ''}`;
+  }
   if (status.phase === 'ready') return '轮到你了 · 即将开始';
   if (status.phase === 'generating') return '已获得队列许可 · 正在生成';
   if (status.phase === 'cancelled') return '已取消排队';
