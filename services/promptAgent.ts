@@ -8,6 +8,7 @@ export interface PromptAgentConfig {
   configuredProviders: string[];
   policyVersion: string;
   policyFingerprint: string;
+  creativeMode: boolean;
   runtimeStartedAt: number;
   credentialWarning?: string;
 }
@@ -178,6 +179,11 @@ export const promptAgentService = {
   },
   selectModel: async (provider: string, model: string): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/selection', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, model }) });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  setCreativeMode: async (enabled: boolean): Promise<PromptAgentConfig> => {
+    const response = await fetch('/api/prompt-agent/creative-mode', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) });
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
