@@ -321,16 +321,18 @@ body,
 
 .agent-resize-handle-mobile {
   position: absolute;
-  inset-inline: 0;
+  left: 50%;
   top: 0;
   z-index: 30;
   display: flex;
-  height: 14px;
+  width: 4.5rem;
+  height: 16px;
+  transform: translateX(-50%);
   cursor: ns-resize;
   align-items: center;
   justify-content: center;
   touch-action: none;
-  min-height: 14px !important;
+  min-height: 16px !important;
 }
 
 .agent-resize-handle-mobile span {
