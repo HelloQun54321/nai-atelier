@@ -2085,8 +2085,8 @@ export class PromptAgentService {
         followUpMode: 'one-at-a-time',
         transformContext: async messages => {
           const tokenBudget = Math.max(8_000, Math.min(180_000, Math.floor((Number(modelInfo.contextWindow) || 32_000) * 0.68)));
-          const seeded = [...creativeSeedMessages, ...messages];
-          return trimContextMessages(seeded, tokenBudget);
+          const trimmed = trimContextMessages(messages, tokenBudget);
+          return [...creativeSeedMessages, ...trimmed];
         },
       });
       const unsubscribe = agent.subscribe(event => {
