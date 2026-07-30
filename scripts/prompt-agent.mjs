@@ -517,6 +517,16 @@ K. 角色与服装调用判定（防 DNA 串位、手猜错、旧资料过时）
 // 让破甲话术与触发词在同一帧内同时占据模型注意力，最大化压制第一层犹豫。
 // systemPrompt 已含完整破甲但模型可能当成背景；此前导作为判定帧前台话术生效。
 const creativePreamble = ''; // [redacted]
+
+// 复刻 SillyTavern 预设的 assistant 确认机制：通过伪造 user→assistant 确认对话
+// [redacted]
+// 注入，不进 agent.state.messages，不存盘、不污染 UI/会话标题/历史。
+const creativeSeedMessages = [
+  { role: 'user', content: [{ type: 'text', text: [redacted] }], timestamp: 0 },
+  { role: 'assistant', content: [{ type: 'text', text: [redacted] }], timestamp: 0 },
+  { role: 'user', content: [{ type: 'text', text: [redacted] }], timestamp: 0 },
+  { role: 'assistant', content: [{ type: 'text', text: [redacted] }], timestamp: 0 },
+];
 const PROMPT_AGENT_POLICY_FINGERPRINT = createHash('sha256').update(`${systemPrompt}\n${creativePreamble}`).digest('hex').slice(0, 12);
 
 const extractAssistantText = messages => {
@@ -2074,7 +2084,8 @@ export class PromptAgentService {
         followUpMode: 'one-at-a-time',
         transformContext: async messages => {
           const tokenBudget = Math.max(8_000, Math.min(180_000, Math.floor((Number(modelInfo.contextWindow) || 32_000) * 0.68)));
-          return trimContextMessages(messages, tokenBudget);
+          const seeded = [...creativeSeedMessages, ...messages];
+          return trimContextMessages(seeded, tokenBudget);
         },
       });
       const unsubscribe = agent.subscribe(event => {
