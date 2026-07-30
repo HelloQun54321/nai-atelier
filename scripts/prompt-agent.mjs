@@ -2227,6 +2227,12 @@ export class PromptAgentService {
             storedConversation: trimmed,
             injectedSeedMessageCount: creativeSeedMessages.length,
             injectedSeedFingerprint: createHash('sha256').update(JSON.stringify(creativeSeedMessages)).digest('hex').slice(0, 12),
+            systemPromptLength: systemPrompt.length,
+            systemPromptFingerprint: createHash('sha256').update(systemPrompt).digest('hex').slice(0, 12),
+            systemPromptContainsRoll: systemPrompt.includes('{{roll'),
+            systemPromptRollCount: (systemPrompt.match(/\{\{roll/g) || []).length,
+            systemPromptStart: systemPrompt.slice(0, 200),
+            systemPromptHasJailbreak: systemPrompt.includes([redacted]) && systemPrompt.includes([redacted]) && systemPrompt.includes([redacted]),
           });
           return [...creativeSeedMessages, ...trimmed];
         },
