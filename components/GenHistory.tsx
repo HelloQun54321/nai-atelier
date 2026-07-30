@@ -55,6 +55,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
     const [totalCount, setTotalCount] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
     const [jumpPage, setJumpPage] = useState('');
+    const [desktopJumpPage, setDesktopJumpPage] = useState('1');
     const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
     const dateRangeRef = useRef<LocalHistoryDateRange>({});
     const [migrationProgress, setMigrationProgress] = useState<{ current: number; total: number } | null>(null);
@@ -249,6 +250,21 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
         setShowDateFilter(false);
         void goToPage(1, true);
     };
+
+    const submitDesktopPageJump = (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const page = Number.parseInt(desktopJumpPage, 10);
+        if (!Number.isInteger(page) || page < 1 || page > totalPages) {
+            notify(`请输入 1 到 ${totalPages} 之间的页码`, 'error');
+            setDesktopJumpPage(String(currentPage));
+            return;
+        }
+        void goToPage(page);
+    };
+
+    useEffect(() => {
+        setDesktopJumpPage(String(currentPage));
+    }, [currentPage]);
 
     useEffect(() => {
         const unsubscribe = localHistory.subscribe(change => {
@@ -622,6 +638,29 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                 </div>
             </MobileBottomSheet>
 
+            {showDateFilter && <div className="fixed inset-0 z-[1100] hidden items-center justify-center bg-slate-950/35 p-6 backdrop-blur-sm md:flex" onPointerDown={event => {
+                if (event.target === event.currentTarget) setShowDateFilter(false);
+            }}>
+                <section role="dialog" aria-modal="true" aria-label="筛选历史日期" className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900" onPointerDown={event => event.stopPropagation()}>
+                    <header className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+                        <h2 className="font-bold text-gray-900 dark:text-white">筛选历史日期</h2>
+                        <button type="button" onClick={() => setShowDateFilter(false)} className="rounded-lg px-2.5 py-1.5 text-sm font-bold text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">关闭</button>
+                    </header>
+                    <div className="space-y-4 p-5">
+                        <div className="grid grid-cols-2 gap-3">
+                            <label className="text-sm font-bold dark:text-white">开始日期<input type="date" value={dateFilter.from} onChange={event => setDateFilter(previous => ({ ...previous, from: event.target.value }))} className="mt-2 h-11 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-600 dark:bg-gray-800" /></label>
+                            <label className="text-sm font-bold dark:text-white">结束日期<input type="date" value={dateFilter.to} onChange={event => setDateFilter(previous => ({ ...previous, to: event.target.value }))} className="mt-2 h-11 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-600 dark:bg-gray-800" /></label>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                            <button type="button" onClick={() => { const today = toDateInputValue(new Date()); setDateFilter({ from: today, to: today }); }} className="h-10 rounded-xl bg-gray-100 text-sm font-bold hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700">今天</button>
+                            <button type="button" onClick={() => { const end = new Date(); const start = new Date(Date.now() - 6 * 86400000); setDateFilter({ from: toDateInputValue(start), to: toDateInputValue(end) }); }} className="h-10 rounded-xl bg-gray-100 text-sm font-bold hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700">近 7 天</button>
+                            <button type="button" onClick={() => setDateFilter({ from: '', to: '' })} className="h-10 rounded-xl bg-gray-100 text-sm font-bold hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700">清除</button>
+                        </div>
+                        <button type="button" onClick={() => applyDateFilter(dateFilter)} className="h-11 w-full rounded-xl bg-indigo-600 font-bold text-white hover:bg-indigo-500">应用筛选</button>
+                    </div>
+                </section>
+            </div>}
+
             <MobileBottomSheet open={showCleanMenu} title="历史管理" onClose={() => setShowCleanMenu(false)}>
                 <div className="space-y-2">
                             <button onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-50 px-4 text-left text-sm font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">批量选择图片</button>
@@ -706,20 +745,26 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                         {selectionMode && <div className="mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 flex items-center gap-2 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><button onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }} className="mobile-touch flex-1 rounded-xl bg-gray-100 dark:bg-gray-800">取消</button><div className="px-2 text-sm font-bold dark:text-white">已选 {selectedIds.size}</div><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch flex-1 rounded-xl bg-red-600 font-bold text-white disabled:opacity-40">删除</button></div>}
                         
                         {/* 底部分页信息 */}
-                        {totalCount > 0 && <div className="mx-auto mb-4 grid max-w-sm grid-cols-[2.75rem_1fr_2.75rem] items-center gap-2">
-                            <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1 || isLoading} aria-label="上一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">‹</button>
-                            <button onClick={() => setShowPageMenu(true)} className="mobile-touch rounded-lg text-sm font-bold text-indigo-600 dark:text-indigo-300">{currentPage} / {totalPages}</button>
-                            <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || isLoading} aria-label="下一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">›</button>
-                        </div>}
-                        <div className="flex flex-col items-center justify-center py-6">
-                            {isLoading ? (
-                                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />加载中...</div>
-                            ) : (
-                                <div className="text-sm text-gray-500 dark:text-gray-400 text-center">
-                                    <p>当前显示第 {getDisplayedRange().start} - {getDisplayedRange().end} 张</p>
-                                    <p className="mt-1">共 {totalCount} 张，已缓存 {Object.keys(pageCache).length} 页</p>
-                                </div>
-                            )}
+                        <div className="mt-12 md:mt-16">
+                            {totalCount > 0 && <div className="mx-auto mb-4 grid max-w-sm grid-cols-[2.75rem_1fr_2.75rem] items-center gap-2">
+                                <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1 || isLoading} aria-label="上一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">‹</button>
+                                <button onClick={() => setShowPageMenu(true)} className="mobile-touch rounded-lg text-sm font-bold text-indigo-600 dark:text-indigo-300 md:hidden">{currentPage} / {totalPages}</button>
+                                <form onSubmit={submitDesktopPageJump} className="hidden items-center justify-center gap-1.5 md:flex">
+                                    <input type="number" min="1" max={totalPages} value={desktopJumpPage} onChange={event => setDesktopJumpPage(event.target.value)} onFocus={event => event.currentTarget.select()} aria-label="输入页码跳转" className="h-10 w-16 rounded-lg border border-indigo-200 bg-white px-2 text-center text-sm font-bold text-indigo-600 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 dark:border-indigo-900/60 dark:bg-gray-800 dark:text-indigo-300" />
+                                    <span className="text-sm font-bold text-indigo-600 dark:text-indigo-300">/ {totalPages}</span>
+                                </form>
+                                <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || isLoading} aria-label="下一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">›</button>
+                            </div>}
+                            <div className="flex flex-col items-center justify-center py-6">
+                                {isLoading ? (
+                                    <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />加载中...</div>
+                                ) : (
+                                    <div className="text-sm text-gray-500 dark:text-gray-400 text-center">
+                                        <p>当前显示第 {getDisplayedRange().start} - {getDisplayedRange().end} 张</p>
+                                        <p className="mt-1">共 {totalCount} 张，已缓存 {Object.keys(pageCache).length} 页</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </>
                 )}
