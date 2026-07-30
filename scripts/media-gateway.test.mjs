@@ -44,9 +44,13 @@ test('prompt agent custom providers use Pi runtime models and reject unsafe URLs
   assert.throws(() => sanitizeCustomProvider({ name: 'secret-header', baseUrl: 'https://example.com/v1', headers: { Authorization: 'secret' }, models: [{ id: 'x' }] }), /API Key/);
 });
 
-test('prompt agent supports no-thinking mode and trims context at a real user boundary', () => {
+test('prompt agent uses Pi-supported thinking levels and trims context at a real user boundary', () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
-  assert.equal(service.normalizeThinkingLevel('off', true), 'off');
+  assert.equal(service.normalizeThinkingLevel('off', { reasoning: true }), 'off');
+  assert.equal(service.normalizeThinkingLevel(undefined, { reasoning: true }), 'high');
+  assert.equal(service.normalizeThinkingLevel(undefined, { thinkingLevels: ['off', 'high', 'max'] }), 'max');
+  assert.equal(service.normalizeThinkingLevel('low', { thinkingLevels: ['off', 'high', 'max'] }), 'max');
+  assert.deepEqual(service.getModels('deepseek').find(model => model.id === 'deepseek-v4-flash')?.thinkingLevels, ['off', 'high', 'max']);
   assert.ok(estimateContextTokens('中文上下文') >= 5);
   const messages = [
     { role: 'user', content: 'old request' },

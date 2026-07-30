@@ -67,6 +67,8 @@ export interface PromptAgentModel {
   contextWindow: number;
   maxTokens: number;
   cost: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } | null;
+  /** Exact levels supported by this model according to Pi's model metadata. */
+  thinkingLevels: PromptAgentThinkingLevel[];
   current?: boolean;
 }
 

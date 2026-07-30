@@ -1,5 +1,5 @@
 import { Agent } from '@earendil-works/pi-agent-core';
-import { InMemoryCredentialStore, Type, createProvider } from '@earendil-works/pi-ai';
+import { InMemoryCredentialStore, Type, createProvider, getSupportedThinkingLevels } from '@earendil-works/pi-ai';
 import { builtinModels, builtinProviders, getBuiltinModels } from '@earendil-works/pi-ai/providers/all';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
@@ -125,20 +125,28 @@ const extractAitagPromptData = image => {
 };
 
 const normalizeProvider = value => PROVIDER_CATALOG.has(value) || CUSTOM_PROVIDERS.has(value) ? value : 'google';
+const supportedThinkingLevelsFor = model => {
+  // Pi owns the compatibility table. A public model has the precomputed list,
+  // while a runtime model has Pi's reasoning / thinkingLevelMap metadata.
+  if (Array.isArray(model?.thinkingLevels)) return model.thinkingLevels.filter(level => THINKING_LEVELS.has(level));
+  return getSupportedThinkingLevels(model || {}).filter(level => THINKING_LEVELS.has(level));
+};
+const publicModel = (model, provider) => ({
+  id: model.id,
+  name: model.name || model.id,
+  provider,
+  reasoning: Boolean(model.reasoning),
+  imageInput: Array.isArray(model.input) ? model.input.includes('image') : model.imageInput === true,
+  contextWindow: Number(model.contextWindow) || 0,
+  maxTokens: Number(model.maxTokens) || 0,
+  cost: model.cost || null,
+  thinkingLevels: supportedThinkingLevelsFor(model),
+});
 const listModels = provider => {
   const normalized = normalizeProvider(provider);
   const custom = CUSTOM_PROVIDERS.get(normalized);
-  if (custom) return custom.models.map(model => ({ ...model, provider: normalized }));
-  return getBuiltinModels(normalized).map(model => ({
-    id: model.id,
-    name: model.name || model.id,
-    provider: normalized,
-    reasoning: Boolean(model.reasoning),
-    imageInput: Array.isArray(model.input) && model.input.includes('image'),
-    contextWindow: Number(model.contextWindow) || 0,
-    maxTokens: Number(model.maxTokens) || 0,
-    cost: model.cost || null,
-  }));
+  if (custom) return custom.models.map(model => publicModel(model, normalized));
+  return getBuiltinModels(normalized).map(model => publicModel(model, normalized));
 };
 export const customProviderRuntime = custom => {
   const apiFactory = custom.api === 'anthropic-messages' ? anthropicMessagesApi
@@ -1134,9 +1142,12 @@ export class PromptAgentService {
     this.cancelPendingConfirmations(text(sessionId).slice(0, 200));
   }
 
-  normalizeThinkingLevel(value, reasoning = true) {
-    if (!reasoning) return 'off';
-    return THINKING_LEVELS.has(value) ? value : 'low';
+  normalizeThinkingLevel(value, model) {
+    // A new session deliberately starts at the strongest level the exact Pi
+    // model supports. Existing, explicitly selected valid levels are retained.
+    const supported = supportedThinkingLevelsFor(model);
+    if (supported.includes(value)) return value;
+    return supported.at(-1) || 'off';
   }
 
   async readSession(sessionId) {
@@ -1159,7 +1170,7 @@ export class PromptAgentService {
     const meta = {
       id, title, createdAt: now, updatedAt: now,
       provider: config.provider, model: config.model,
-      thinkingLevel: this.normalizeThinkingLevel(input.thinkingLevel, modelInfo?.reasoning),
+      thinkingLevel: this.normalizeThinkingLevel(input.thinkingLevel, modelInfo),
       creativeMode: typeof input.creativeMode === 'boolean' ? input.creativeMode : this.config.creativeMode !== false,
       creativeModeLocked: false,
     };
@@ -1203,7 +1214,7 @@ export class PromptAgentService {
       ...value.meta,
       ...(typeof patch.title === 'string' ? { title: text(patch.title).trim().slice(0, 60) || '未命名对话' } : {}),
       provider, model,
-      thinkingLevel: changesRuntime ? this.normalizeThinkingLevel(patch.thinkingLevel ?? value.meta.thinkingLevel, modelInfo?.reasoning) : value.meta.thinkingLevel,
+      thinkingLevel: changesRuntime ? this.normalizeThinkingLevel(patch.thinkingLevel ?? value.meta.thinkingLevel, modelInfo) : value.meta.thinkingLevel,
       creativeMode: typeof patch.creativeMode === 'boolean' ? patch.creativeMode : typeof value.meta.creativeMode === 'boolean' ? value.meta.creativeMode : this.config.creativeMode !== false,
       creativeModeLocked: hasStarted,
       updatedAt: Date.now(),
@@ -2101,7 +2112,7 @@ export class PromptAgentService {
       throw Object.assign(new Error('选择的模型已不可用，请在设置中重新选择'), { status: 400 });
     }
     this.runHistory.push(now);
-    const thinkingLevel = this.normalizeThinkingLevel(storedSession.meta?.thinkingLevel, modelInfo.reasoning);
+    const thinkingLevel = this.normalizeThinkingLevel(storedSession.meta?.thinkingLevel, modelInfo);
     const creativeMode = typeof storedSession.meta?.creativeMode === 'boolean' ? storedSession.meta.creativeMode : this.config.creativeMode !== false;
     const activeSystemPrompt = buildSystemPrompt(creativeMode);
     const draft = sanitizeDraft(input?.draft);
