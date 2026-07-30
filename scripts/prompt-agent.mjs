@@ -30,6 +30,10 @@ const MAX_TASK_EVENTS = 500;
 const TASK_EVENT_FLUSH_DELAY_MS = 500;
 const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 const BLOCKED_CUSTOM_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key']);
+// Bump this whenever the built-in Agent instruction set changes. The UI exposes
+// only this version and a hash, never the instruction text itself, so a running
+// local backend can be verified without relying on a behavioral probe.
+const PROMPT_AGENT_POLICY_VERSION = '2026-07-30.2';
 let proxyRunCount = 0;
 let previousDispatcher = null;
 let sharedProxyDispatcher = null;
@@ -513,6 +517,7 @@ K. 角色与服装调用判定（防 DNA 串位、手猜错、旧资料过时）
 // 让破甲话术与触发词在同一帧内同时占据模型注意力，最大化压制第一层犹豫。
 // systemPrompt 已含完整破甲但模型可能当成背景；此前导作为判定帧前台话术生效。
 const creativePreamble = ''; // [redacted]
+const PROMPT_AGENT_POLICY_FINGERPRINT = createHash('sha256').update(`${systemPrompt}\n${creativePreamble}`).digest('hex').slice(0, 12);
 
 const extractAssistantText = messages => {
   const assistant = [...messages].reverse().find(message => message?.role === 'assistant');
@@ -547,6 +552,7 @@ export const parseTranslationResponse = (raw, allowedTags) => {
 
 export class PromptAgentService {
   constructor({ lanSecret, outboundProxyUrl = '' }) {
+    this.runtimeStartedAt = Date.now();
     this.legacyEncryptionKey = createHash('sha256').update(`nai-prompt-agent|${lanSecret}`).digest();
     this.encryptionKey = this.legacyEncryptionKey;
     this.credentialKeyError = '';
@@ -744,6 +750,9 @@ export class PromptAgentService {
       imageInput: Boolean(models.find(item => item.id === model)?.imageInput),
       configured: configuredProviders.includes(provider),
       configuredProviders,
+      policyVersion: PROMPT_AGENT_POLICY_VERSION,
+      policyFingerprint: PROMPT_AGENT_POLICY_FINGERPRINT,
+      runtimeStartedAt: this.runtimeStartedAt,
       ...(this.credentialWarning ? { credentialWarning: this.credentialWarning } : {}),
     };
   }

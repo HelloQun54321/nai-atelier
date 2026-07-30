@@ -73,6 +73,10 @@ test('prompt agent keeps API keys encrypted and out of its public config', async
   assert.equal(service.listProviders().some(provider => provider.id === 'deepseek'), true);
   assert.equal(service.listAvailableModels().every(model => model.provider === 'google'), true);
   assert.equal(service.listAvailableModels().some(model => model.id === 'gemini-2.5-flash'), true);
+  const runtime = service.publicConfig();
+  assert.match(runtime.policyVersion, /^\d{4}-\d{2}-\d{2}\.\d+$/);
+  assert.match(runtime.policyFingerprint, /^[a-f0-9]{12}$/);
+  assert.ok(runtime.runtimeStartedAt <= Date.now());
   service.setCredential('deepseek', { type: 'api_key', key: 'deepseek-private' });
   assert.equal(service.getCredential('deepseek').key, 'deepseek-private');
   assert.equal(JSON.stringify(service.config.encryptedKeys.deepseek).includes('deepseek-private'), false);

@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PromptAgentDraft } from '../types';
-import { PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, promptAgentService } from '../services/promptAgent';
+import { PromptAgentConfig, PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, promptAgentService } from '../services/promptAgent';
 import { vibeService } from '../services/vibeService';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -159,6 +159,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [sessions, setSessions] = useState<PromptAgentSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState('');
   const [models, setModels] = useState<PromptAgentModel[]>([]);
+  const [runtimeInfo, setRuntimeInfo] = useState<Pick<PromptAgentConfig, 'policyVersion' | 'policyFingerprint' | 'runtimeStartedAt'> | null>(null);
   const [showSessions, setShowSessions] = useState(false);
   const [showModelMenu, setShowModelMenu] = useState(false);
   const [queueMode, setQueueMode] = useState<'steer' | 'followUp'>('steer');
@@ -277,6 +278,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     void Promise.all([
       refreshSessions(),
       promptAgentService.getAvailableModels().then(setModels),
+      promptAgentService.getConfig().then(config => setRuntimeInfo({ policyVersion: config.policyVersion, policyFingerprint: config.policyFingerprint, runtimeStartedAt: config.runtimeStartedAt })),
     ]).catch(() => {});
   }, [props.open]);
 
@@ -654,7 +656,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       <header className="flex min-h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-1 border-b border-gray-200 bg-white px-2 pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900 md:px-3">
         <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="返回"><ArrowLeft className="h-[18px] w-[18px]" /></button>
         <button type="button" onClick={() => setShowSessions(true)} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="会话列表"><List className="h-5 w-5" /></button>
-        <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-black text-gray-900 dark:text-white">{activeSession?.title || '项目 Agent'}</h2><p className="truncate text-[10px] text-gray-500">{running ? '正在执行，可继续追加要求' : `${activeSession?.model || '未选择模型'} · ${activeModel?.imageInput ? '支持识图' : '不支持识图'}`}</p></div>
+        <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-black text-gray-900 dark:text-white">{activeSession?.title || '项目 Agent'}</h2><p className="truncate text-[10px] text-gray-500">{running ? '正在执行，可继续追加要求' : `${activeSession?.model || '未选择模型'} · ${activeModel?.imageInput ? '支持识图' : '不支持识图'}`}</p>{runtimeInfo && <p className="truncate text-[9px] text-gray-400" title={`策略 ${runtimeInfo.policyVersion} · 指纹 ${runtimeInfo.policyFingerprint} · 后台启动 ${new Date(runtimeInfo.runtimeStartedAt).toLocaleString()}`}>策略 {runtimeInfo.policyVersion} · {runtimeInfo.policyFingerprint} · 启动 {new Date(runtimeInfo.runtimeStartedAt).toLocaleTimeString()}</p>}</div>
         <div className="relative">
           <button type="button" disabled={running} onClick={() => setShowModelMenu(value => !value)} className={`mobile-touch flex items-center justify-center rounded-xl text-gray-500 disabled:opacity-40 dark:text-gray-400 ${showModelMenu ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`} aria-label="模型与思考设置" title="模型与思考设置"><SlidersHorizontal className="h-[18px] w-[18px]" /></button>
           {showModelMenu && <div className="absolute right-0 top-12 z-30 flex max-h-[70vh] w-72 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">

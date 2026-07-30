@@ -6,6 +6,9 @@ export interface PromptAgentConfig {
   imageInput: boolean;
   configured: boolean;
   configuredProviders: string[];
+  policyVersion: string;
+  policyFingerprint: string;
+  runtimeStartedAt: number;
   credentialWarning?: string;
 }
 
