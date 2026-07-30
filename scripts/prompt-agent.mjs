@@ -1198,7 +1198,7 @@ export class PromptAgentService {
     const changesRuntime = patch.provider !== undefined || patch.model !== undefined || patch.thinkingLevel !== undefined;
     if (changesRuntime && (!modelInfo || !this.configuredProviderIds().includes(provider))) throw Object.assign(new Error('所选模型不可用或尚未登录'), { status: 400 });
     const hasStarted = value.meta.creativeModeLocked === true || (Array.isArray(value.messages) && value.messages.some(message => message?.role === 'user'));
-    if (patch.creativeMode !== undefined && hasStarted) throw Object.assign(new Error('对话已经开始，创作模式不能再修改；请新建对话后选择'), { status: 409 });
+    if (patch.creativeMode !== undefined && hasStarted) throw Object.assign(new Error('对话已经开始，破限模式不能再修改；请新建对话后选择'), { status: 409 });
     value.meta = {
       ...value.meta,
       ...(typeof patch.title === 'string' ? { title: text(patch.title).trim().slice(0, 60) || '未命名对话' } : {}),
@@ -1227,6 +1227,15 @@ export class PromptAgentService {
     return trimStoredMessages(value.messages);
   }
 
+  async setInitialSessionTitle(sessionId, userMessage) {
+    const title = text(userMessage).trim().replace(/\s+/g, ' ').slice(0, 28);
+    if (!title) return;
+    const value = await this.readSession(sessionId);
+    if (!value.meta?.id || (value.meta.title && value.meta.title !== '新对话')) return;
+    value.meta = { ...value.meta, title, updatedAt: Date.now() };
+    await this.writeSession(sessionId, value);
+  }
+
   async saveMessages(sessionId, messages) {
     // Tool images can be tens of megabytes. They are transient model context and must
     // never be duplicated into the chat session store.
@@ -1247,7 +1256,8 @@ export class PromptAgentService {
     if (meta && (!meta.title || meta.title === '新对话')) {
       const firstUser = safeMessages.find(message => message?.role === 'user');
       const firstText = typeof firstUser?.content === 'string' ? firstUser.content : Array.isArray(firstUser?.content) ? firstUser.content.find(item => item?.type === 'text')?.text : '';
-      if (firstText?.trim()) meta.title = firstText.trim().replace(/\s+/g, ' ').slice(0, 28);
+      const originalText = firstText.startsWith(creativePreamble) ? firstText.slice(creativePreamble.length) : firstText;
+      if (originalText?.trim()) meta.title = originalText.trim().replace(/\s+/g, ' ').slice(0, 28);
     }
     await this.writeSession(sessionId, { version: meta ? 2 : 1, ...(meta ? { meta } : { updatedAt: Date.now() }), messages: safeMessages });
   }
@@ -2207,6 +2217,7 @@ export class PromptAgentService {
           const actualUserMessage = creativeMode
             ? `${creativePreamble}\n${text(input?.message).slice(0, 8_000)}`
             : text(input?.message).slice(0, 8_000);
+          await this.setInitialSessionTitle(sessionId, text(input?.message).slice(0, 8_000));
           audit('prompt_submitted', {
             actualUserMessage,
             acceptedImages: images.map(image => ({ mimeType: image.mimeType, base64Chars: image.data.length, sha256: createHash('sha256').update(image.data).digest('hex') })),

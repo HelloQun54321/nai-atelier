@@ -75,6 +75,18 @@ test('prompt agent locks a session creative mode after its first user message', 
   }
 });
 
+test('prompt agent titles a new session from the raw user input', async () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const session = await service.createSession({ creativeMode: true });
+  try {
+    await service.setInitialSessionTitle(session.id, '  给这个角色设计雨天的服装  ');
+    const stored = await service.readSession(session.id);
+    assert.equal(stored.meta.title, '给这个角色设计雨天的服装');
+  } finally {
+    await service.deleteSession(session.id);
+  }
+});
+
 test('prompt agent keeps API keys encrypted and out of its public config', async () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
   const encrypted = service.encrypt('private-llm-key');
