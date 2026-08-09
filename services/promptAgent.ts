@@ -4,6 +4,10 @@ export interface PromptAgentConfig {
   provider: string;
   model: string;
   imageInput: boolean;
+  visionProvider: string;
+  visionModel: string;
+  visionAvailable: boolean;
+  visionDedicated: boolean;
   configured: boolean;
   configuredProviders: string[];
   policyVersion: string;
@@ -70,6 +74,7 @@ export interface PromptAgentModel {
   /** Exact levels supported by this model according to Pi's model metadata. */
   thinkingLevels: PromptAgentThinkingLevel[];
   current?: boolean;
+  currentVision?: boolean;
 }
 
 export type PromptAgentThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -184,6 +189,11 @@ export const promptAgentService = {
   },
   selectModel: async (provider: string, model: string): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/selection', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, model }) });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  selectVisionModel: async (provider: string, model: string): Promise<PromptAgentConfig> => {
+    const response = await fetch('/api/prompt-agent/vision-selection', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, model }) });
     if (!response.ok) return readError(response) as never;
     return response.json();
   },

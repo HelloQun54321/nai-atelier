@@ -17,7 +17,21 @@ import {
   getValidatedSource,
   selectThumbnailConcurrency,
 } from './media-gateway.mjs';
-import { PromptAgentService, customProviderRuntime, estimateContextTokens, parseTranslationResponse, sanitizeCustomProvider, trimContextMessages } from './prompt-agent.mjs';
+import { PromptAgentService, customProviderRuntime, estimateContextTokens, parseTranslationResponse, parseWebSearchResponse, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
+
+test('prompt agent parses web results and blocks private web targets', async () => {
+  const html = '<div class="result"><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fdocs&amp;rut=x"><b>Example</b> docs</a><a class="result__snippet">Current documentation &amp; examples.</a></div>';
+  assert.deepEqual(parseWebSearchResponse(html), [{ title: 'Example docs', url: 'https://example.com/docs', snippet: 'Current documentation & examples.' }]);
+  const publicUrl = await validatePublicWebUrl('https://example.com/page#part', async () => [{ address: '93.184.216.34', family: 4 }]);
+  assert.equal(publicUrl.toString(), 'https://example.com/page');
+  assert.equal((await validatePublicWebUrl('https://example.com/proxied', async () => [{ address: '198.18.0.53', family: 4 }])).hostname, 'example.com');
+  await assert.rejects(() => validatePublicWebUrl('https://198.18.0.53/page'), /保留网段/);
+  await assert.rejects(() => validatePublicWebUrl('https://router.local/page', async () => [{ address: '192.168.1.1', family: 4 }]), /局域网/);
+  await assert.rejects(() => validatePublicWebUrl('https://example.com:8443/page', async () => [{ address: '93.184.216.34', family: 4 }]), /自定义端口/);
+  const tools = new PromptAgentService({ lanSecret: 'test-lan-secret' }).createTools({}, {}, () => {});
+  assert.ok(tools.some(tool => tool.name === 'web_search'));
+  assert.ok(tools.some(tool => tool.name === 'read_web_page'));
+});
 
 test('tag translation responses accept only requested tags and cached translations remain local', () => {
   const allowed = new Set(['custom phrase', 'artist name']);
@@ -287,7 +301,19 @@ test('prompt agent history inspection returns the real image only to vision mode
   assert.equal(result.content[1].mimeType, 'image/png');
   assert.equal(result.content[1].data, Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64'));
   const textOnlyTool = service.createTools(draft, { presets: [], vibes: [] }, () => {}, project, { imageInput: false }).find(item => item.name === 'inspect_generation_image');
-  await assert.rejects(() => textOnlyTool.execute('call', { id: 'history-1' }), /不支持图片输入/);
+  await assert.rejects(() => textOnlyTool.execute('call', { id: 'history-1' }), /没有可用的视觉模型/);
+  const routedTool = service.createTools(draft, { presets: [], vibes: [] }, () => {}, {
+    ...project,
+    visionModelLabel: 'google/gemini-vision',
+    analyzeImages: async (images, focus) => {
+      assert.equal(images[0].type, 'image');
+      assert.match(focus, /构图/);
+      return '画面构图稳定';
+    },
+  }, { imageInput: false }).find(item => item.name === 'inspect_generation_image');
+  const routed = await routedTool.execute('call', { id: 'history-1', focus: '分析构图' });
+  assert.equal(JSON.parse(routed.content[0].text).visualAnalysis, '画面构图稳定');
+  assert.equal(JSON.parse(routed.content[0].text).visionModel, 'google/gemini-vision');
 });
 
 test('prompt agent destructive tools only emit confirmation requests', async () => {
