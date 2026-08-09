@@ -86,14 +86,19 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     if (!activated || !src) return;
     setLoaded(false);
     setFailed(false);
-    if (!isMobileViewport() || !canUseMediaGateway(src)) {
+    if (!canUseMediaGateway(src)) {
       setDisplaySrc(src);
       return;
     }
 
     const width = (containerRef.current?.clientWidth || 160) * Math.max(1, window.devicePixelRatio || 1);
     const variant = width > 320 ? 'thumb-640' : 'thumb-320';
-    const request = acquireMobileThumbnail(buildMediaUrl(src, variant));
+    const thumbnailUrl = buildMediaUrl(src, variant);
+    if (!isMobileViewport()) {
+      setDisplaySrc(thumbnailUrl);
+      return;
+    }
+    const request = acquireMobileThumbnail(thumbnailUrl);
     let active = true;
     request.promise.then(blob => {
       if (!active) return;

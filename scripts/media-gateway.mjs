@@ -869,11 +869,13 @@ const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, vibeId, 
   }
 };
 
-const getValidatedSource = value => {
+export const getValidatedSource = value => {
   const source = String(value || '');
   if (!source || source.length > SOURCE_LIMIT || /[\r\n]/.test(source)) throw new Error('Invalid image source');
   if (source.startsWith('/api/assets/')) return { type: 'local', source };
   if (/^\/api\/(?:local-history\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail))(?:\?.*)?$/.test(source)) return { type: 'local', source };
+  const stChatu8History = source.match(/^\/api\/integrations\/st-chatu8\/history\/([a-f0-9]{64})\/image$/i);
+  if (stChatu8History) return { type: 'st-chatu8-history', source, externalId: stChatu8History[1].toLowerCase() };
   let url;
   try { url = new URL(source); } catch { throw new Error('Unsupported image source'); }
   if (url.protocol !== 'https:' || !ALLOWED_REMOTE_HOSTS.has(url.hostname.toLowerCase())) throw new Error('Remote image host is not allowed');
@@ -1407,6 +1409,12 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
       const validated = getValidatedSource(url.searchParams.get('source'));
       const loadOriginal = () => validated.type === 'local'
         ? requestWorkerBuffer(validated.source, req, workerPort)
+        : validated.type === 'st-chatu8-history'
+          ? stChatu8Bridge.readHistoryImage(validated.externalId).then(image => ({
+            status: 200,
+            buffer: image.buffer,
+            headers: { 'content-type': image.contentType },
+          }))
         : requestRemoteBuffer(validated.source, remoteFetch);
 
       if (variant === 'original') {

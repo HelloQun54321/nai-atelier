@@ -14,6 +14,7 @@ import {
   selectPreciseReferenceCanvas,
   CloudQueueCoordinator,
   fetchNovelAiGeneration,
+  getValidatedSource,
 } from './media-gateway.mjs';
 import { PromptAgentService, customProviderRuntime, estimateContextTokens, parseTranslationResponse, sanitizeCustomProvider, trimContextMessages } from './prompt-agent.mjs';
 
@@ -440,6 +441,20 @@ test('AITag computer proxy only accepts known API and image targets', () => {
   assert.equal(classifyAitagRemoteTarget('https://aitag.win/admin'), null);
   assert.equal(classifyAitagRemoteTarget('https://example.com/api/work/1'), null);
   assert.equal(classifyAitagRemoteTarget('file:///etc/passwd'), null);
+});
+
+test('media thumbnails accept project and st-chatu8 history sources without opening arbitrary local routes', () => {
+  const externalId = 'a'.repeat(64);
+  assert.deepEqual(getValidatedSource('/api/local-history/item-1/image'), {
+    type: 'local', source: '/api/local-history/item-1/image',
+  });
+  assert.deepEqual(getValidatedSource(`/api/integrations/st-chatu8/history/${externalId}/image`), {
+    type: 'st-chatu8-history',
+    source: `/api/integrations/st-chatu8/history/${externalId}/image`,
+    externalId,
+  });
+  assert.throws(() => getValidatedSource('/api/integrations/st-chatu8/history/not-a-hash/image'), /Unsupported image source/);
+  assert.throws(() => getValidatedSource('/api/integrations/st-chatu8/status'), /Unsupported image source/);
 });
 
 test('Vibe strengths are only scaled when their sum exceeds one', () => {
