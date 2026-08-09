@@ -5,19 +5,21 @@ import { createUuid } from './id';
 
 const DB_NAME = 'NAI_History_DB';
 const STORE_NAME = 'generations';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const HISTORY_THUMBNAIL_MAX_EDGE = 960;
 const HISTORY_THUMBNAIL_VARIANT = 'thumb-960';
 
 export type LocalHistoryChange = {
-    type: 'add' | 'delete' | 'clear' | 'cleanup';
+    type: 'add' | 'delete' | 'clear' | 'cleanup' | 'favorite';
     id?: string;
+    favorite?: boolean;
     external?: boolean;
 };
 
 export interface LocalHistoryDateRange {
     from?: number;
     to?: number;
+    favoriteOnly?: boolean;
 }
 
 export interface LocalHistoryPage {
@@ -160,6 +162,9 @@ class LocalHistoryService {
                 if (!store.indexNames.contains('sourceChainId')) {
                     store.createIndex('sourceChainId', 'sourceChainId', { unique: false });
                 }
+                if (!store.indexNames.contains('isFavorite')) {
+                    store.createIndex('isFavorite', 'isFavorite', { unique: false });
+                }
             };
 
             request.onsuccess = (event) => {
@@ -192,6 +197,7 @@ class LocalHistoryService {
             prompt,
             negativePrompt,
             params,
+            isFavorite: false,
             basePrompt: source?.basePrompt,
             subjectPrompt: source?.subjectPrompt,
             modules: source?.modules,
@@ -392,6 +398,50 @@ class LocalHistoryService {
             request.onerror = () => reject(request.error);
         });
     }
+
+    async setFavorite(id: string, favorite: boolean): Promise<number> {
+        return this.setFavorites([id], favorite);
+    }
+
+    async setFavorites(ids: string[], favorite: boolean): Promise<number> {
+        const uniqueIds = Array.from(new Set(ids.map(id => String(id || '').trim()).filter(Boolean)));
+        if (uniqueIds.length === 0) return 0;
+
+        if (await this.isRemoteEnabled()) {
+            const result = await api.post('/local-history/favorites', { ids: uniqueIds, favorite });
+            const count = Number(result.updatedCount || 0);
+            if (count > 0) this.emit({ type: 'favorite', id: uniqueIds.length === 1 ? uniqueIds[0] : undefined, favorite });
+            return count;
+        }
+
+        const db = await this.open();
+        const favoriteAt = favorite ? Date.now() : undefined;
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            let updatedCount = 0;
+
+            uniqueIds.forEach(id => {
+                const request = store.get(id);
+                request.onsuccess = () => {
+                    const item = request.result as LocalGenItem | undefined;
+                    if (!item) return;
+                    const updated: LocalGenItem = { ...item, isFavorite: favorite };
+                    if (favoriteAt) updated.favoriteAt = favoriteAt;
+                    else delete updated.favoriteAt;
+                    store.put(updated);
+                    updatedCount++;
+                };
+                request.onerror = () => reject(request.error);
+            });
+
+            transaction.oncomplete = () => {
+                if (updatedCount > 0) this.emit({ type: 'favorite', id: uniqueIds.length === 1 ? uniqueIds[0] : undefined, favorite });
+                resolve(updatedCount);
+            };
+            transaction.onerror = () => reject(transaction.error);
+        });
+    }
     
     async clear(): Promise<void> {
         if (await this.isRemoteEnabled()) {
@@ -426,6 +476,7 @@ class LocalHistoryService {
             const params = new URLSearchParams({ page: String(Math.max(0, page)), pageSize: String(Math.max(1, pageSize)) });
             if (range?.from) params.set('from', String(range.from));
             if (range?.to) params.set('to', String(range.to));
+            if (range?.favoriteOnly) params.set('favorite', '1');
             if (!includeCount) params.set('includeCount', '0');
             const result = await api.get(`/local-history?${params.toString()}`);
             return { items: result.items || [], ...(includeCount ? { count: Number(result.count || 0) } : {}) };
@@ -454,7 +505,7 @@ class LocalHistoryService {
             const request = index.openCursor(keyRange, 'prev');
             const results: LocalGenItem[] = [];
             const offset = safePage * safePageSize;
-            let positioned = offset === 0;
+            let skipped = 0;
 
             request.onsuccess = (event) => {
                 const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>).result;
@@ -463,13 +514,18 @@ class LocalHistoryService {
                     return;
                 }
 
-                if (!positioned) {
-                    positioned = true;
-                    cursor.advance(offset);
+                const item = cursor.value as LocalGenItem;
+                if (range?.favoriteOnly && !item.isFavorite) {
+                    cursor.continue();
+                    return;
+                }
+                if (skipped < offset) {
+                    skipped++;
+                    cursor.continue();
                     return;
                 }
 
-                results.push(cursor.value as LocalGenItem);
+                results.push(item);
                 if (results.length >= safePageSize) {
                     resolve(results);
                     return;
@@ -491,6 +547,7 @@ class LocalHistoryService {
             const params = new URLSearchParams();
             if (range?.from) params.set('from', String(range.from));
             if (range?.to) params.set('to', String(range.to));
+            if (range?.favoriteOnly) params.set('favorite', '1');
             const result = await api.get(`/local-history/count${params.toString() ? `?${params.toString()}` : ''}`);
             return Number(result.count || 0);
         }
@@ -505,9 +562,25 @@ class LocalHistoryService {
             const keyRange = range?.from || range?.to
                 ? IDBKeyRange.bound(range.from ?? 0, range.to ?? Number.MAX_SAFE_INTEGER)
                 : undefined;
-            const request = store.index('createdAt').count(keyRange);
-            
-            request.onsuccess = () => resolve(request.result);
+            const index = store.index('createdAt');
+            if (!range?.favoriteOnly) {
+                const request = index.count(keyRange);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+                return;
+            }
+
+            let count = 0;
+            const request = index.openCursor(keyRange);
+            request.onsuccess = () => {
+                const cursor = request.result;
+                if (!cursor) {
+                    resolve(count);
+                    return;
+                }
+                if ((cursor.value as LocalGenItem).isFavorite) count++;
+                cursor.continue();
+            };
             request.onerror = () => reject(request.error);
         });
     }

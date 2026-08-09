@@ -202,6 +202,8 @@ export interface Inspiration {
 export interface LocalGenItem {
   id: string;
   imageUrl: string; // Base64
+  isFavorite?: boolean;
+  favoriteAt?: number;
   prompt: string;
   negativePrompt?: string;
   params: NAIParams;

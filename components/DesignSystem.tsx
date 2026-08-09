@@ -24,10 +24,12 @@ export const ToolbarSearch: React.FC<React.InputHTMLAttributes<HTMLInputElement>
 
 export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
-  tone?: 'neutral' | 'primary' | 'danger';
+  tone?: 'neutral' | 'primary' | 'danger' | 'favorite';
 }> = ({ label, tone = 'neutral', className = '', children, ...props }) => {
   const toneClass = tone === 'primary'
     ? 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500'
+    : tone === 'favorite'
+      ? 'border-rose-500 bg-rose-500 text-white hover:bg-rose-400 dark:border-rose-500 dark:bg-rose-500 dark:text-white'
     : tone === 'danger'
       ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300'
       : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white';
@@ -39,10 +41,12 @@ export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> 
 };
 
 export const ToolbarButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  tone?: 'neutral' | 'primary' | 'danger';
+  tone?: 'neutral' | 'primary' | 'danger' | 'favorite';
 }> = ({ tone = 'neutral', className = '', children, ...props }) => {
   const toneClass = tone === 'primary'
     ? 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500'
+    : tone === 'favorite'
+      ? 'border-rose-500 bg-rose-500 text-white hover:bg-rose-400 dark:border-rose-500 dark:bg-rose-500 dark:text-white'
     : tone === 'danger'
       ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300'
       : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800';

@@ -1497,6 +1497,8 @@ const INIT_SQL = `
     source_chain_type TEXT,
     external_source TEXT,
     external_id TEXT,
+    is_favorite INTEGER NOT NULL DEFAULT 0,
+    favorite_at INTEGER,
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_local_history_user_created
@@ -1568,6 +1570,8 @@ async function ensureLocalHistorySchema(db: D1Database) {
       source_chain_type TEXT,
       external_source TEXT,
       external_id TEXT,
+      is_favorite INTEGER NOT NULL DEFAULT 0,
+      favorite_at INTEGER,
       created_at INTEGER NOT NULL
     )
   `).run();
@@ -1578,6 +1582,8 @@ async function ensureLocalHistorySchema(db: D1Database) {
     "ALTER TABLE local_generation_history ADD COLUMN subject_prompt TEXT DEFAULT ''",
     "ALTER TABLE local_generation_history ADD COLUMN modules TEXT DEFAULT '[]'",
     'ALTER TABLE local_generation_history ADD COLUMN structure_version INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE local_generation_history ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE local_generation_history ADD COLUMN favorite_at INTEGER',
   ]) {
     try { await db.prepare(statement).run(); } catch { /* Column already exists. */ }
   }
@@ -1585,6 +1591,8 @@ async function ensureLocalHistorySchema(db: D1Database) {
     ON local_generation_history(user_id, created_at DESC)`).run();
   await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_local_history_external
     ON local_generation_history(user_id, external_source, external_id)`).run();
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_local_history_user_favorite_created
+    ON local_generation_history(user_id, is_favorite, created_at DESC)`).run();
   // Rows written before structured history existed have migration defaults
   // (empty strings and []).  They must continue to import their full prompt.
   // Preserve any older row that demonstrably contains structured information.
@@ -1767,6 +1775,8 @@ function mapLocalHistoryRow(row: any) {
   return {
     id: row.id,
     imageUrl: localHistoryImageUrl(row),
+    isFavorite: Number(row.is_favorite || 0) === 1,
+    favoriteAt: row.favorite_at ? Number(row.favorite_at) : undefined,
     prompt: row.prompt || '',
     negativePrompt: row.negative_prompt || '',
     params: parseStoredJson(row.params, {}),
@@ -3240,15 +3250,17 @@ export default {
           const from = Number(url.searchParams.get('from') || 0);
           const to = Number(url.searchParams.get('to') || 0);
           const includeCount = url.searchParams.get('includeCount') !== '0';
+          const favoriteOnly = url.searchParams.get('favorite') === '1';
           const dateWhere = from || to ? ` AND created_at >= ? AND created_at <= ?` : '';
+          const favoriteWhere = favoriteOnly ? ' AND COALESCE(is_favorite, 0) = 1' : '';
           const dateValues = from || to ? [from || 0, to || Number.MAX_SAFE_INTEGER] : [];
           const count = includeCount
-            ? await db.prepare(`SELECT COUNT(*) AS count FROM local_generation_history WHERE user_id = ?${dateWhere}`)
+            ? await db.prepare(`SELECT COUNT(*) AS count FROM local_generation_history WHERE user_id = ?${dateWhere}${favoriteWhere}`)
                 .bind(currentUser.id, ...dateValues).first<{count: number}>()
             : null;
           const result = await db.prepare(`
             SELECT * FROM local_generation_history
-            WHERE user_id = ?${dateWhere} ORDER BY created_at DESC LIMIT ? OFFSET ?
+            WHERE user_id = ?${dateWhere}${favoriteWhere} ORDER BY created_at DESC LIMIT ? OFFSET ?
           `).bind(currentUser.id, ...dateValues, pageSize, page * pageSize).all<any>();
           return json({ items: result.results.map(mapLocalHistoryRow), ...(includeCount ? { count: Number(count?.count || 0) } : {}) });
         }
@@ -3256,11 +3268,32 @@ export default {
         if (path === '/api/local-history/count' && method === 'GET') {
           const from = Number(url.searchParams.get('from') || 0);
           const to = Number(url.searchParams.get('to') || 0);
+          const favoriteOnly = url.searchParams.get('favorite') === '1';
           const dateWhere = from || to ? ' AND created_at >= ? AND created_at <= ?' : '';
+          const favoriteWhere = favoriteOnly ? ' AND COALESCE(is_favorite, 0) = 1' : '';
           const dateValues = from || to ? [from || 0, to || Number.MAX_SAFE_INTEGER] : [];
-          const result = await db.prepare(`SELECT COUNT(*) AS count FROM local_generation_history WHERE user_id = ?${dateWhere}`)
+          const result = await db.prepare(`SELECT COUNT(*) AS count FROM local_generation_history WHERE user_id = ?${dateWhere}${favoriteWhere}`)
             .bind(currentUser.id, ...dateValues).first<{count: number}>();
           return json({ count: Number(result?.count || 0) });
+        }
+
+        if (path === '/api/local-history/favorites' && method === 'POST') {
+          const body = await request.json() as any;
+          const ids = Array.from(new Set(
+            (Array.isArray(body.ids) ? body.ids : [])
+              .slice(0, 200)
+              .map((id: any) => String(id || '').trim())
+              .filter(Boolean)
+          )) as string[];
+          if (!ids.length) return json({ updatedCount: 0 });
+          const favorite = Boolean(body.favorite);
+          const placeholders = ids.map(() => '?').join(',');
+          const result = await db.prepare(`
+            UPDATE local_generation_history
+            SET is_favorite = ?, favorite_at = ?
+            WHERE user_id = ? AND id IN (${placeholders})
+          `).bind(favorite ? 1 : 0, favorite ? Date.now() : null, currentUser.id, ...ids).run();
+          return json({ updatedCount: Number(result.meta?.changes || 0), favorite });
         }
 
         if (path === '/api/local-history' && method === 'POST') {
@@ -3297,21 +3330,24 @@ export default {
             return error(`历史图片不能超过 ${Math.floor(MAX_MANAGED_IMAGE_BYTES / 1024 / 1024)}MB`, 413);
           }
           const imageKey = `local-history/${currentUser.id}/${id}.${extension}`;
-          const existing = await db.prepare('SELECT image_key FROM local_generation_history WHERE id = ? AND user_id = ?')
-            .bind(id, currentUser.id).first<{image_key: string}>();
+          const existing = await db.prepare('SELECT image_key, is_favorite, favorite_at FROM local_generation_history WHERE id = ? AND user_id = ?')
+            .bind(id, currentUser.id).first<{image_key: string, is_favorite: number, favorite_at: number | null}>();
+          const isFavorite = body.isFavorite === undefined ? Number(existing?.is_favorite || 0) === 1 : Boolean(body.isFavorite);
+          const favoriteAt = isFavorite ? Number(body.favoriteAt || existing?.favorite_at || Date.now()) : null;
 
           await env.BUCKET.put(imageKey, exactArrayBuffer(bytes), { httpMetadata: { contentType: imageType } });
           await db.prepare(`
             INSERT OR REPLACE INTO local_generation_history (
               id, user_id, image_key, image_type, prompt, negative_prompt, params,
               base_prompt, subject_prompt, modules, structure_version,
-              source_chain_id, source_chain_name, source_chain_type, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              source_chain_id, source_chain_name, source_chain_type, is_favorite, favorite_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).bind(
             id, currentUser.id, imageKey, imageType, body.prompt || '', body.negativePrompt || '',
             JSON.stringify(body.params || {}), body.basePrompt || '', body.subjectPrompt || '', JSON.stringify(body.modules || []),
             hasStructuredInput ? 1 : 0,
             body.sourceChainId || null, body.sourceChainName || null, body.sourceChainType || null,
+            isFavorite ? 1 : 0, favoriteAt,
             Number(body.createdAt || Date.now())
           ).run();
           if (existing?.image_key && existing.image_key !== imageKey) await env.BUCKET.delete(existing.image_key);
@@ -3320,6 +3356,7 @@ export default {
             params: JSON.stringify(body.params || {}), base_prompt: body.basePrompt, subject_prompt: body.subjectPrompt,
             modules: JSON.stringify(body.modules || []), structure_version: hasStructuredInput ? 1 : 0, source_chain_id: body.sourceChainId,
             source_chain_name: body.sourceChainName, source_chain_type: body.sourceChainType,
+            is_favorite: isFavorite ? 1 : 0, favorite_at: favoriteAt,
             created_at: Number(body.createdAt || Date.now())
           }) });
         }

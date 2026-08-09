@@ -73,8 +73,13 @@ CREATE TABLE local_generation_history (
   source_chain_id TEXT,
   source_chain_name TEXT,
   source_chain_type TEXT,
+  is_favorite INTEGER NOT NULL DEFAULT 0,
+  favorite_at INTEGER,
   created_at INTEGER NOT NULL
 );
 
 CREATE INDEX idx_local_history_user_created
   ON local_generation_history(user_id, created_at DESC);
+
+CREATE INDEX idx_local_history_user_favorite_created
+  ON local_generation_history(user_id, is_favorite, created_at DESC);

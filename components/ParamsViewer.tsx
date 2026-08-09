@@ -127,7 +127,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                     <ParamItem label="Scale (CFG)" value={params.scale} />
                     <ParamItem
                         label="Sampler"
-                        value={params.sampler.replace(/_/g, ' ')}
+                        value={typeof params.sampler === 'string' && params.sampler ? params.sampler.replace(/_/g, ' ') : '-'}
                     />
                     <ParamItem label="Seed" value={params.seed ?? 'Random'} />
                     <ParamItem

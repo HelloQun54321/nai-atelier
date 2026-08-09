@@ -12,7 +12,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
-import { AlertTriangle, CalendarDays, ChevronDown, Clock3, ListChecks, LoaderCircle, RefreshCw, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, ListChecks, LoaderCircle, RefreshCw, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { IconButton, ToolbarButton, WorkspaceToolbar } from './DesignSystem';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 
@@ -82,8 +82,10 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     const [jumpPage, setJumpPage] = useState('');
     const [desktopJumpPage, setDesktopJumpPage] = useState('1');
     const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
+    const [favoriteOnly, setFavoriteOnly] = useState(false);
     const dateRangeRef = useRef<LocalHistoryDateRange>({});
     const [migrationProgress, setMigrationProgress] = useState<{ current: number; total: number } | null>(null);
+    const [pendingFavoriteIds, setPendingFavoriteIds] = useState<Set<string>>(new Set());
     
     // 缓存管理
     const [pageCache, setPageCache] = useState<Record<number, LocalGenItem[]>>({});
@@ -171,6 +173,11 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         setPageCache(nextCache);
     };
 
+    const getHistoryQueryKey = () => {
+        const range = dateRangeRef.current;
+        return `${range.from || ''}:${range.to || ''}:${range.favoriteOnly ? 'favorite' : 'all'}`;
+    };
+
     const trimCacheAroundPage = (centerPage: number, totalPages: number, extraPages: Record<number, LocalGenItem[]> = {}) => {
         const validPages = [centerPage - 1, centerPage, centerPage + 1].filter(page => page >= 1 && page <= totalPages);
         const nextCache: Record<number, LocalGenItem[]> = {};
@@ -192,7 +199,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             return { items: cached };
         }
 
-        const cacheKey = `${page}:${includeCount ? 'count' : 'items'}`;
+        const cacheKey = `${getHistoryQueryKey()}:${page}:${includeCount ? 'count' : 'items'}`;
         const inflight = inflightPagesRef.current[cacheKey];
         if (!force && inflight) {
             return inflight;
@@ -223,9 +230,10 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         }
 
         try {
+            const queryKey = getHistoryQueryKey();
             const { items: data } = await getPageData(page);
 
-            if (currentPageRef.current !== centerPage) {
+            if (currentPageRef.current !== centerPage || getHistoryQueryKey() !== queryKey) {
                 return;
             }
 
@@ -303,12 +311,23 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     const applyDateFilter = (next: { from: string; to: string }) => {
         const from = next.from ? new Date(`${next.from}T00:00:00`).getTime() : undefined;
         const to = next.to ? new Date(`${next.to}T23:59:59.999`).getTime() : undefined;
-        dateRangeRef.current = { from, to };
+        dateRangeRef.current = { from, to, favoriteOnly };
         setDateFilter(next);
         setCacheState({});
         inflightPagesRef.current = {};
         currentPageRef.current = 1;
         setShowDateFilter(false);
+        void goToPage(1, true);
+    };
+
+    const toggleFavoriteFilter = () => {
+        const nextFavoriteOnly = !favoriteOnly;
+        setFavoriteOnly(nextFavoriteOnly);
+        dateRangeRef.current = { ...dateRangeRef.current, favoriteOnly: nextFavoriteOnly };
+        setCacheState({});
+        inflightPagesRef.current = {};
+        currentPageRef.current = 1;
+        exitSelectionMode();
         void goToPage(1, true);
     };
 
@@ -333,11 +352,16 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
             setCacheState({});
             inflightPagesRef.current = {};
-            setLightbox(current => (
-                change.type === 'clear' || change.type === 'cleanup' || current?.id === change.id
-                    ? null
-                    : current
-            ));
+            setLightbox(current => {
+                if (change.type === 'clear' || change.type === 'cleanup' || (change.type === 'delete' && current?.id === change.id)) return null;
+                if (change.type === 'favorite' && current?.id === change.id && typeof change.favorite === 'boolean') {
+                    const updated = { ...current, isFavorite: change.favorite };
+                    if (change.favorite) updated.favoriteAt = Date.now();
+                    else delete updated.favoriteAt;
+                    return updated;
+                }
+                return current;
+            });
             const targetPage = change.type === 'add' ? 1 : currentPageRef.current;
             void refreshPageRef.current(targetPage, true);
         });
@@ -455,6 +479,83 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         notify('选中的历史图片已删除');
     };
 
+    const patchFavoriteState = (ids: Set<string>, favorite: boolean) => {
+        const favoriteAt = favorite ? Date.now() : undefined;
+        const patchItems = (source: LocalGenItem[]) => source.map(item => {
+            if (!ids.has(item.id)) return item;
+            const updated = { ...item, isFavorite: favorite };
+            if (favoriteAt) updated.favoriteAt = favoriteAt;
+            else delete updated.favoriteAt;
+            return updated;
+        });
+        setItems(patchItems);
+        const nextCache = Object.fromEntries(
+            Object.entries(pageCacheRef.current).map(([page, pageItems]) => [page, patchItems(pageItems)])
+        );
+        setCacheState(nextCache);
+        setLightbox(current => current && ids.has(current.id) ? patchItems([current])[0] : current);
+    };
+
+    const setFavoritePending = (ids: Iterable<string>, pending: boolean) => {
+        setPendingFavoriteIds(previous => {
+            const next = new Set(previous);
+            for (const id of ids) pending ? next.add(id) : next.delete(id);
+            return next;
+        });
+    };
+
+    const handleFavorite = async (item: LocalGenItem, event?: React.SyntheticEvent) => {
+        event?.stopPropagation();
+        if (pendingFavoriteIds.has(item.id)) return;
+        const favorite = !item.isFavorite;
+        setFavoritePending([item.id], true);
+        try {
+            await localHistory.setFavorite(item.id, favorite);
+            if (favoriteOnly && !favorite) {
+                setLightbox(current => current?.id === item.id ? null : current);
+                setCacheState({});
+                inflightPagesRef.current = {};
+                await goToPage(currentPageRef.current, true);
+            } else {
+                patchFavoriteState(new Set([item.id]), favorite);
+            }
+            void db.logClientEvent({
+                category: 'history',
+                action: favorite ? 'history_favorite_add' : 'history_favorite_remove',
+                resourceType: 'local_history',
+                resourceId: item.id,
+                message: favorite ? '收藏历史图片' : '取消收藏历史图片',
+            }).catch(console.error);
+        } catch (e: any) {
+            notify((favorite ? '收藏失败: ' : '取消收藏失败: ') + (e?.message || '未知错误'), 'error');
+        } finally {
+            setFavoritePending([item.id], false);
+        }
+    };
+
+    const handleBulkFavorite = async (favorite: boolean) => {
+        const ids = Array.from(selectedIds);
+        if (!ids.length) return;
+        setFavoritePending(ids, true);
+        try {
+            await localHistory.setFavorites(ids, favorite);
+            if (favoriteOnly && !favorite) {
+                setCacheState({});
+                inflightPagesRef.current = {};
+                await goToPage(currentPageRef.current, true);
+            } else {
+                patchFavoriteState(new Set(ids), favorite);
+            }
+            setSelectionMode(false);
+            setSelectedIds(new Set());
+            notify(favorite ? `已收藏 ${ids.length} 张历史图片` : `已取消收藏 ${ids.length} 张历史图片`);
+        } catch (e: any) {
+            notify((favorite ? '批量收藏失败: ' : '批量取消收藏失败: ') + (e?.message || '未知错误'), 'error');
+        } finally {
+            setFavoritePending(ids, false);
+        }
+    };
+
     const exitSelectionMode = () => {
         setSelectionMode(false);
         setSelectedIds(new Set());
@@ -479,7 +580,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     const handleClearAll = async () => {
         if (await confirmAction({
             title: '清空全部生成历史？',
-            message: '所有历史记录和本地历史图片都将被永久删除，此操作无法撤销。',
+            message: '所有历史记录和本地历史图片都会被永久删除，包括已收藏图片。此操作无法撤销。',
             confirmLabel: '确认清空',
             tone: 'danger',
         })) {
@@ -661,12 +762,14 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         });
         return Array.from(groups, ([key, groupItems]) => ({ key, label: formatHistoryDay(key), items: groupItems }));
     }, [items]);
+    const selectionFavoritePending = Array.from(selectedIds).some(id => pendingFavoriteIds.has(id));
 
     return (
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
             <WorkspaceToolbar>
                     {migrationProgress && <span className="hidden truncate text-xs text-indigo-600 dark:text-indigo-400 md:block">{migrationProgress.total > 0 ? `正在迁移浏览器历史 ${migrationProgress.current}/${migrationProgress.total}，请勿关闭页面…` : '正在检查浏览器历史…'}</span>}
                     <div className="ml-auto flex items-center gap-2">
+                        <ToolbarButton tone={favoriteOnly ? 'favorite' : 'neutral'} onClick={toggleFavoriteFilter} aria-pressed={favoriteOnly} title={favoriteOnly ? '显示全部历史图片' : '只看收藏图片'}><Heart className={favoriteOnly ? 'fill-current' : ''} />收藏</ToolbarButton>
                         <ToolbarButton onClick={() => setShowDateFilter(true)}><CalendarDays className="h-4 w-4" />筛选日期</ToolbarButton>
                         <button onClick={() => setShowCleanMenu(true)} className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white p-0 text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden" aria-label="历史管理"><SlidersHorizontal className="h-[18px] w-[18px]" /></button>
                         <div className="relative hidden md:block">
@@ -707,7 +810,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                             )}
                         </div>
                         <IconButton label="刷新历史" onClick={handleRefresh} disabled={isLoading || migrationProgress !== null}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
-                        <div className="hidden rounded-full bg-gray-100 px-3 py-1.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400 md:flex">{totalCount} 张</div>
+                        <div className="hidden rounded-full bg-gray-100 px-3 py-1.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400 md:flex">{favoriteOnly ? '收藏 ' : ''}{totalCount} 张</div>
                     </div>
             </WorkspaceToolbar>
 
@@ -774,6 +877,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                     <span className="mr-auto text-sm font-bold text-indigo-700 dark:text-indigo-200">多选模式 · 已选 {selectedIds.size} 张</span>
                     <button type="button" onClick={selectCurrentPage} className="rounded-lg px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 dark:text-indigo-200 dark:hover:bg-indigo-900/50">全选本页</button>
                     <button type="button" onClick={invertCurrentPageSelection} className="rounded-lg px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 dark:text-indigo-200 dark:hover:bg-indigo-900/50">反选本页</button>
+                    <button type="button" onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending} className="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-400 disabled:opacity-40">收藏选中</button>
+                    <button type="button" onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending} className="rounded-lg px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-100 disabled:opacity-40 dark:text-rose-300 dark:hover:bg-rose-950/40">取消收藏</button>
                     <button type="button" onClick={exitSelectionMode} className="rounded-lg px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800">退出</button>
                     <button type="button" onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-500 disabled:opacity-40">删除选中</button>
                 </div>}
@@ -784,9 +889,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                     </div>
                 ) : items.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                        <Clock3 className="mb-3 h-10 w-10" />
-                        <p>暂无生成记录</p>
-                        <p className="text-sm mt-2">在 Chain 编辑器中生成图片会自动保存到这里</p>
+                        {favoriteOnly ? <Heart className="mb-3 h-10 w-10" /> : <Clock3 className="mb-3 h-10 w-10" />}
+                        <p>{favoriteOnly ? '还没有收藏历史图片' : '暂无生成记录'}</p>
+                        <p className="text-sm mt-2">{favoriteOnly ? '点击图片右上角的爱心即可收藏' : '在 Chain 编辑器中生成图片会自动保存到这里'}</p>
                     </div>
                 ) : (
                     <>
@@ -821,12 +926,15 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                     <div className="mobile-gallery-frame md:aspect-square relative w-full overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': `${item.params.width || 832} / ${item.params.height || 1216}` } as React.CSSProperties}>
                                       <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt={`生成于 ${new Date(item.createdAt).toLocaleString()} 的图片`} className="w-full h-full object-cover" />
                                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-                                      {selectionMode && <div className="absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white shadow">{selectedIds.has(item.id) ? '✓' : ''}</div>}
-                                      <div className="absolute top-2 right-2 hidden md:block opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={(e) => handleDelete(item.id, e)} className="p-1.5 bg-red-500 text-white rounded-full shadow hover:bg-red-600">
+                                      {selectionMode && <div className={`absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-sm font-bold shadow backdrop-blur transition ${selectedIds.has(item.id) ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/80 bg-black/35 text-transparent'}`}>{selectedIds.has(item.id) ? '✓' : ''}</div>}
+                                      {!selectionMode && <button type="button" onPointerDown={event => event.stopPropagation()} onClick={event => void handleFavorite(item, event)} disabled={pendingFavoriteIds.has(item.id)} title={item.isFavorite ? '取消收藏' : '收藏'} aria-label={item.isFavorite ? '取消收藏' : '收藏'} aria-pressed={Boolean(item.isFavorite)} className={`absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border shadow backdrop-blur transition ${item.isFavorite ? 'border-rose-400 bg-rose-500 text-white hover:bg-rose-400' : 'border-white/60 bg-black/45 text-white hover:bg-black/65'} disabled:cursor-wait disabled:opacity-70`}>
+                                        {pendingFavoriteIds.has(item.id) ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Heart className={`h-4 w-4 ${item.isFavorite ? 'fill-current' : ''}`} />}
+                                      </button>}
+                                      {!selectionMode && <div className="absolute right-2 top-12 hidden opacity-0 transition-opacity group-hover:opacity-100 md:block">
+                                        <button onClick={(e) => handleDelete(item.id, e)} className="rounded-full bg-red-500 p-1.5 text-white shadow hover:bg-red-600" aria-label="删除历史图片" title="删除">
                                             <Trash2 className="h-4 w-4" />
                                         </button>
-                                      </div>
+                                      </div>}
                                       <div className="absolute bottom-0 left-0 right-0 hidden p-2 bg-gradient-to-t from-black/80 to-transparent text-white text-[10px] md:block md:opacity-0 group-hover:opacity-100 transition-opacity truncate">
                                         {new Date(item.createdAt).toLocaleString()}
                                       </div>
@@ -837,7 +945,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                             </div>
                           </section>)}
                         </div>
-                        {selectionMode && <div className="mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><div className="mb-1 text-center text-xs font-bold dark:text-white">多选模式 · 已选 {selectedIds.size} 张</div><div className="grid grid-cols-4 gap-2"><button onClick={exitSelectionMode} className="mobile-touch rounded-xl bg-gray-100 text-sm font-bold dark:bg-gray-800">退出</button><button onClick={selectCurrentPage} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">全选</button><button onClick={invertCurrentPageSelection} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">反选</button><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch rounded-xl bg-red-600 text-sm font-bold text-white disabled:opacity-40">删除</button></div></div>}
+                        {selectionMode && <div className="mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><div className="mb-1 text-center text-xs font-bold dark:text-white">多选模式 · 已选 {selectedIds.size} 张</div><div className="grid grid-cols-3 gap-2"><button onClick={selectCurrentPage} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">全选</button><button onClick={invertCurrentPageSelection} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">反选</button><button onClick={exitSelectionMode} className="mobile-touch rounded-xl bg-gray-100 text-sm font-bold dark:bg-gray-800">退出</button><button onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-500 text-sm font-bold text-white disabled:opacity-40">收藏</button><button onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-50 text-sm font-bold text-rose-600 disabled:opacity-40 dark:bg-rose-950/40 dark:text-rose-300">取消收藏</button><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch rounded-xl bg-red-600 text-sm font-bold text-white disabled:opacity-40">删除</button></div></div>}
                         
                         {/* 底部分页信息 */}
                         <div className="mt-12 md:mt-16">
@@ -856,7 +964,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                 ) : (
                                     <div className="text-sm text-gray-500 dark:text-gray-400 text-center">
                                         <p>当前显示第 {getDisplayedRange().start} - {getDisplayedRange().end} 张</p>
-                                        <p className="mt-1">共 {totalCount} 张，已缓存 {Object.keys(pageCache).length} 页</p>
+                                        <p className="mt-1">共 {totalCount} 张{favoriteOnly ? '收藏' : ''}，已缓存 {Object.keys(pageCache).length} 页</p>
                                     </div>
                                 )}
                             </div>
@@ -878,9 +986,12 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                         <div className="w-full md:w-[400px] bg-white dark:bg-gray-900 flex flex-col p-4 md:p-6 h-[55%] md:h-auto overflow-hidden">
                             <div className="flex justify-between items-center mb-4 flex-shrink-0">
                                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">图片详情</h2>
-                                <button onClick={closeLightbox} className="mobile-touch text-gray-500 hover:text-gray-900 dark:hover:text-white p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                </button>
+                                <div className="flex items-center gap-2">
+                                    <IconButton label={lightbox.isFavorite ? '取消收藏' : '收藏'} tone={lightbox.isFavorite ? 'favorite' : 'neutral'} onClick={event => void handleFavorite(lightbox, event)} disabled={pendingFavoriteIds.has(lightbox.id)} aria-pressed={Boolean(lightbox.isFavorite)}>{pendingFavoriteIds.has(lightbox.id) ? <LoaderCircle className="animate-spin" /> : <Heart className={lightbox.isFavorite ? 'fill-current' : ''} />}</IconButton>
+                                    <button onClick={closeLightbox} aria-label="关闭图片详情" className="mobile-touch text-gray-500 hover:text-gray-900 dark:hover:text-white p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="flex-1 overflow-y-auto space-y-6 pr-2 custom-scrollbar">
