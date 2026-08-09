@@ -20,6 +20,7 @@ const TAG_TRANSLATION_FILE = 'local-data/tag-translations.json';
 const TAG_ROOT = 'public/tag-data';
 const PROVIDER_CATALOG = new Map(builtinProviders().map(provider => [provider.id, provider]));
 const CUSTOM_PROVIDERS = new Map();
+const PROMPT_AGENT_CONFIG_VERSION = 5;
 const PREFERRED_MODELS = {
   deepseek: 'deepseek-v4-flash', google: 'gemini-2.5-flash', xai: 'grok-4.3',
   openrouter: 'google/gemini-2.5-flash', openai: 'gpt-5-mini', anthropic: 'claude-sonnet-4-6',
@@ -310,6 +311,10 @@ export const sanitizeCustomProvider = raw => {
       contextWindow: Math.round(clamp(item?.contextWindow, 1_024, 10_000_000, 128_000)),
       maxTokens: Math.round(clamp(item?.maxTokens, 256, 1_000_000, 16_384)),
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      ...(item?.capabilityDetection && typeof item.capabilityDetection === 'object' ? { capabilityDetection: {
+        imageInput: ['metadata', 'pi_catalog', 'model_name', 'unknown', 'manual'].includes(item.capabilityDetection.imageInput) ? item.capabilityDetection.imageInput : 'manual',
+        reasoning: ['metadata', 'pi_catalog', 'model_name', 'unknown', 'manual'].includes(item.capabilityDetection.reasoning) ? item.capabilityDetection.reasoning : 'manual',
+      } } : {}),
     }];
   });
   if (!models.length) throw Object.assign(new Error('请至少添加一个模型 ID'), { status: 400 });
@@ -329,6 +334,90 @@ const defaultModelFor = provider => {
   const models = listModels(provider);
   return models.some(model => model.id === PREFERRED_MODELS[provider]) ? PREFERRED_MODELS[provider] : models[0]?.id || '';
 };
+
+let builtinCapabilityIndex;
+const getBuiltinCapabilityIndex = () => {
+  if (builtinCapabilityIndex) return builtinCapabilityIndex;
+  const exact = new Map();
+  const basename = new Map();
+  for (const provider of PROVIDER_CATALOG.keys()) {
+    for (const model of getBuiltinModels(provider)) {
+      const capability = publicModel(model, provider);
+      const id = String(model.id || '').toLowerCase();
+      if (!id) continue;
+      if (!exact.has(id)) exact.set(id, capability);
+      const tail = id.split('/').at(-1);
+      const matches = basename.get(tail) || [];
+      matches.push(capability);
+      basename.set(tail, matches);
+    }
+  }
+  builtinCapabilityIndex = { exact, basename };
+  return builtinCapabilityIndex;
+};
+
+const firstBoolean = (value, paths) => {
+  for (const path of paths) {
+    let current = value;
+    for (const key of path.split('.')) current = current && typeof current === 'object' ? current[key] : undefined;
+    if (typeof current === 'boolean') return current;
+  }
+  return undefined;
+};
+
+const firstNumber = (value, paths) => {
+  for (const path of paths) {
+    let current = value;
+    for (const key of path.split('.')) current = current && typeof current === 'object' ? current[key] : undefined;
+    const number = Number(current);
+    if (Number.isFinite(number) && number > 0) return number;
+  }
+  return undefined;
+};
+
+const modelModalityTokens = value => {
+  const fields = [value?.input, value?.modalities, value?.input_modalities, value?.supported_input_modalities, value?.architecture?.input_modalities, value?.capabilities?.input_modalities];
+  return fields.flatMap(field => Array.isArray(field) ? field : typeof field === 'string' ? field.split(/[\s,|/]+/) : []).map(item => String(item).toLowerCase());
+};
+
+export const detectModelCapabilities = raw => {
+  const item = raw && typeof raw === 'object' ? raw : { id: raw };
+  const id = text(item.id || item.model || item.name).trim().slice(0, 160);
+  if (!id) return null;
+  const normalizedId = id.toLowerCase();
+  const catalog = getBuiltinCapabilityIndex();
+  const tailMatches = catalog.basename.get(normalizedId.split('/').at(-1)) || [];
+  const catalogModel = catalog.exact.get(normalizedId) || (tailMatches.length === 1 ? tailMatches[0] : null);
+  const modalityTokens = modelModalityTokens(item);
+  const metadataVision = firstBoolean(item, ['imageInput', 'image_input', 'supports_vision', 'vision', 'capabilities.vision', 'capabilities.image_input', 'features.vision']);
+  const metadataReasoning = firstBoolean(item, ['reasoning', 'supports_reasoning', 'reasoning_supported', 'capabilities.reasoning', 'features.reasoning', 'supports_thinking']);
+  const visionByModality = modalityTokens.length ? modalityTokens.some(value => ['image', 'images', 'vision', 'multimodal'].includes(value)) : undefined;
+  const nameVision = /(?:^|[-_/.])(vision|vl|omni|multimodal)(?:$|[-_/.])|llava|pixtral/i.test(normalizedId);
+  const nameReasoning = /(?:^|[-_/.])(reasoning|thinking|qwq)(?:$|[-_/.])|(?:^|[-_/.])o[1-9](?:$|[-_/.])|deepseek[-_/]?r1/i.test(normalizedId);
+  const imageInput = metadataVision ?? visionByModality ?? catalogModel?.imageInput ?? nameVision;
+  const reasoning = metadataReasoning ?? catalogModel?.reasoning ?? nameReasoning;
+  const contextWindow = firstNumber(item, ['contextWindow', 'context_window', 'context_length', 'max_context_length', 'limits.context', 'capabilities.context_window']) || catalogModel?.contextWindow || 128_000;
+  const maxTokens = firstNumber(item, ['maxTokens', 'max_output_tokens', 'max_completion_tokens', 'output_token_limit', 'limits.output', 'capabilities.max_output_tokens']) || catalogModel?.maxTokens || 16_384;
+  return {
+    id,
+    name: text(item.display_name || item.name || catalogModel?.name || id).trim().slice(0, 160) || id,
+    reasoning: Boolean(reasoning),
+    imageInput: Boolean(imageInput),
+    contextWindow: Math.round(clamp(contextWindow, 1_024, 10_000_000, 128_000)),
+    maxTokens: Math.round(clamp(maxTokens, 256, 1_000_000, 16_384)),
+    capabilityDetection: {
+      imageInput: metadataVision !== undefined || visionByModality !== undefined ? 'metadata' : catalogModel ? 'pi_catalog' : nameVision ? 'model_name' : 'unknown',
+      reasoning: metadataReasoning !== undefined ? 'metadata' : catalogModel ? 'pi_catalog' : nameReasoning ? 'model_name' : 'unknown',
+    },
+  };
+};
+
+const withDiscoveryPlaceholder = input => ({
+  ...input,
+  models: Array.isArray(input?.models) && input.models.some(model => text(model?.id).trim())
+    ? input.models
+    : [{ id: '__capability_discovery__', reasoning: false, imageInput: false, contextWindow: 1024, maxTokens: 256 }],
+});
 
 const sanitizeParams = raw => {
   const value = raw && typeof raw === 'object' ? raw : {};
@@ -616,7 +705,7 @@ export class PromptAgentService {
     this.encryptionKey = this.legacyEncryptionKey;
     this.credentialKeyError = '';
     this.credentialWarning = '';
-    this.config = { version: 4, provider: 'google', model: defaultModelFor('google'), visionProvider: '', visionModel: '', encryptedKeys: {}, customProviders: [], creativeMode: true };
+    this.config = { version: PROMPT_AGENT_CONFIG_VERSION, provider: 'google', model: defaultModelFor('google'), visionProvider: '', visionModel: '', visionMode: 'auto', encryptedKeys: {}, customProviders: [], creativeMode: true };
     this.activeAgents = new Map();
     this.startingAgents = new Set();
     this.pendingConfirmations = new Map();
@@ -805,10 +894,29 @@ export class PromptAgentService {
       const info = listModels(provider).find(item => item.id === model && item.imageInput);
       return info ? { provider, model, info } : null;
     };
-    return resolve(this.config.visionProvider, this.config.visionModel)
-      || resolve(mainProvider, mainModel)
-      || [...configured].flatMap(provider => listModels(provider).filter(item => item.imageInput).map(info => ({ provider, model: info.id, info })))[0]
+    const pickVision = provider => {
+      const models = listModels(provider).filter(item => item.imageInput);
+      const preferred = models.find(item => item.id === PREFERRED_MODELS[provider]);
+      const info = preferred || models.sort((a, b) => Number(a.cost?.input || 0) - Number(b.cost?.input || 0) || Number(a.cost?.output || 0) - Number(b.cost?.output || 0))[0];
+      return info ? { provider, model: info.id, info } : null;
+    };
+    const explicit = resolve(this.config.visionProvider, this.config.visionModel);
+    const main = resolve(mainProvider, mainModel);
+    const sameProvider = configured.has(mainProvider) ? pickVision(mainProvider) : null;
+    const automatic = main
+      || sameProvider
+      || [...configured].map(pickVision).find(Boolean)
       || null;
+    return this.config.visionMode === 'manual' ? explicit || automatic : automatic || explicit;
+  }
+
+  syncAutomaticVisionSelection(mainProvider = this.config.provider, mainModel = this.config.model) {
+    if (this.config.visionMode === 'manual') return this.resolveVisionSelection(mainProvider, mainModel);
+    const vision = this.resolveVisionSelection(mainProvider, mainModel);
+    this.config.visionProvider = vision?.provider || '';
+    this.config.visionModel = vision?.model || '';
+    this.config.visionMode = 'auto';
+    return vision;
   }
 
   publicConfig() {
@@ -827,6 +935,7 @@ export class PromptAgentService {
       visionModel: vision?.model || '',
       visionAvailable: Boolean(vision),
       visionDedicated: Boolean(vision && (vision.provider !== provider || vision.model !== model)),
+      visionMode: this.config.visionMode === 'manual' ? 'manual' : 'auto',
       configured: configuredProviders.includes(provider),
       configuredProviders,
       policyVersion: PROMPT_AGENT_POLICY_VERSION,
@@ -954,7 +1063,8 @@ export class PromptAgentService {
       this.config.provider = providerId;
       this.config.model = defaultModelFor(providerId);
     }
-    this.config.version = 3;
+    this.syncAutomaticVisionSelection();
+    this.config.version = PROMPT_AGENT_CONFIG_VERSION;
     await atomicJsonWrite(CONFIG_FILE, this.config);
     return { complete: true, provider: this.listProviders().find(item => item.id === providerId), selection: this.publicConfig(), events };
   }
@@ -967,6 +1077,7 @@ export class PromptAgentService {
       this.config.provider = next;
       this.config.model = defaultModelFor(next);
     }
+    this.syncAutomaticVisionSelection();
     await atomicJsonWrite(CONFIG_FILE, this.config);
     return this.publicConfig();
   }
@@ -986,7 +1097,8 @@ export class PromptAgentService {
       this.config.provider = custom.id;
       this.config.model = custom.models[0].id;
     }
-    this.config.version = 3;
+    this.syncAutomaticVisionSelection();
+    this.config.version = PROMPT_AGENT_CONFIG_VERSION;
     await atomicJsonWrite(CONFIG_FILE, this.config);
     return { provider: this.listCustomProviders().find(item => item.id === custom.id), selection: this.publicConfig() };
   }
@@ -1002,12 +1114,13 @@ export class PromptAgentService {
       this.config.provider = next;
       this.config.model = defaultModelFor(next);
     }
+    this.syncAutomaticVisionSelection();
     await atomicJsonWrite(CONFIG_FILE, this.config);
     return this.publicConfig();
   }
 
   async testCustomProvider(input) {
-    const custom = sanitizeCustomProvider(input);
+    const custom = sanitizeCustomProvider(withDiscoveryPlaceholder(input));
     const key = typeof input?.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : this.getCredential(custom.id)?.key || '';
     const authHeaders = custom.api === 'anthropic-messages'
       ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
@@ -1025,7 +1138,7 @@ export class PromptAgentService {
   }
 
   async fetchCustomProviderModels(input) {
-    const custom = sanitizeCustomProvider(input);
+    const custom = sanitizeCustomProvider(withDiscoveryPlaceholder(input));
     const key = typeof input?.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : this.getCredential(custom.id)?.key || '';
     const authHeaders = custom.api === 'anthropic-messages'
       ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
@@ -1040,9 +1153,9 @@ export class PromptAgentService {
         : Array.isArray(payload?.models) ? payload.models
           : Array.isArray(payload) ? payload
             : [];
-      const ids = items.map(item => text(typeof item === 'string' ? item : item?.id).trim()).filter(Boolean);
-      if (!ids.length) throw Object.assign(new Error('接口未返回任何模型 ID'), { status: 400 });
-      return { ok: true, models: [...new Set(ids)] };
+      const models = [...new Map(items.map(detectModelCapabilities).filter(Boolean).map(model => [model.id.toLowerCase(), model])).values()];
+      if (!models.length) throw Object.assign(new Error('接口未返回任何模型 ID'), { status: 400 });
+      return { ok: true, models };
     } catch (error) {
       if (error?.status) throw error;
       throw Object.assign(new Error(`获取模型失败：${error instanceof Error ? error.message : '未知网络错误'}`), { status: 400 });
@@ -1054,17 +1167,25 @@ export class PromptAgentService {
     if (!listModels(providerId).some(model => model.id === modelId)) throw Object.assign(new Error('选择的模型不存在'), { status: 400 });
     this.config.provider = providerId;
     this.config.model = modelId;
+    this.syncAutomaticVisionSelection(providerId, modelId);
     await atomicJsonWrite(CONFIG_FILE, this.config);
     return this.publicConfig();
   }
 
-  async selectVisionModel(providerId, modelId) {
+  async selectVisionModel(providerId, modelId, mode = 'manual') {
+    if (mode === 'auto') {
+      this.config.visionMode = 'auto';
+      this.syncAutomaticVisionSelection();
+      await atomicJsonWrite(CONFIG_FILE, this.config);
+      return this.publicConfig();
+    }
     if (!this.configuredProviderIds().includes(providerId)) throw Object.assign(new Error('请先登录这个视觉模型服务'), { status: 400 });
     const model = listModels(providerId).find(item => item.id === modelId);
     if (!model) throw Object.assign(new Error('选择的视觉模型不存在'), { status: 400 });
     if (!model.imageInput) throw Object.assign(new Error('这个模型没有标记为支持图片输入'), { status: 400 });
     this.config.visionProvider = providerId;
     this.config.visionModel = modelId;
+    this.config.visionMode = 'manual';
     await atomicJsonWrite(CONFIG_FILE, this.config);
     return this.publicConfig();
   }

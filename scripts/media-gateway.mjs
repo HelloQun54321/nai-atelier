@@ -1260,7 +1260,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         if (url.pathname === '/api/prompt-agent/vision-selection') {
           if (req.method !== 'PUT') return sendJson(res, 405, { error: 'Method not allowed' });
           const body = JSON.parse((await readRequestBody(req, 8 * 1024)).toString('utf8') || '{}');
-          return sendJson(res, 200, await promptAgent.selectVisionModel(String(body.provider || ''), String(body.model || '')));
+          return sendJson(res, 200, await promptAgent.selectVisionModel(String(body.provider || ''), String(body.model || ''), body.mode === 'auto' ? 'auto' : 'manual'));
         }
         if (url.pathname === '/api/prompt-agent/config') {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });

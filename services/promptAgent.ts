@@ -8,6 +8,7 @@ export interface PromptAgentConfig {
   visionModel: string;
   visionAvailable: boolean;
   visionDedicated: boolean;
+  visionMode: 'auto' | 'manual';
   configured: boolean;
   configuredProviders: string[];
   policyVersion: string;
@@ -38,6 +39,10 @@ export interface PromptAgentCustomModel {
   imageInput: boolean;
   contextWindow: number;
   maxTokens: number;
+  capabilityDetection?: {
+    imageInput: 'metadata' | 'pi_catalog' | 'model_name' | 'unknown' | 'manual';
+    reasoning: 'metadata' | 'pi_catalog' | 'model_name' | 'unknown' | 'manual';
+  };
 }
 export interface PromptAgentCustomProvider {
   id?: string;
@@ -162,7 +167,7 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
-  fetchCustomProviderModels: async (input: PromptAgentCustomProvider): Promise<{ ok: boolean; models: string[] }> => {
+  fetchCustomProviderModels: async (input: PromptAgentCustomProvider): Promise<{ ok: boolean; models: PromptAgentCustomModel[] }> => {
     const response = await fetch('/api/prompt-agent/custom-providers/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
     if (!response.ok) return readError(response) as never;
     return response.json();
@@ -194,6 +199,11 @@ export const promptAgentService = {
   },
   selectVisionModel: async (provider: string, model: string): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/vision-selection', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, model }) });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  selectVisionAuto: async (): Promise<PromptAgentConfig> => {
+    const response = await fetch('/api/prompt-agent/vision-selection', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'auto' }) });
     if (!response.ok) return readError(response) as never;
     return response.json();
   },

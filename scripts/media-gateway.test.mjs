@@ -17,7 +17,47 @@ import {
   getValidatedSource,
   selectThumbnailConcurrency,
 } from './media-gateway.mjs';
-import { PromptAgentService, customProviderRuntime, estimateContextTokens, parseTranslationResponse, parseWebSearchResponse, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
+import { PromptAgentService, customProviderRuntime, detectModelCapabilities, estimateContextTokens, parseTranslationResponse, parseWebSearchResponse, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
+
+test('prompt agent discovers model capabilities from metadata, Pi catalog and conservative names', () => {
+  const metadata = detectModelCapabilities({ id: 'vendor/model-x', display_name: 'Model X', input_modalities: ['text', 'image'], capabilities: { reasoning: true }, context_window: 262144, max_output_tokens: 32768 });
+  assert.deepEqual({ imageInput: metadata.imageInput, reasoning: metadata.reasoning, contextWindow: metadata.contextWindow, maxTokens: metadata.maxTokens }, { imageInput: true, reasoning: true, contextWindow: 262144, maxTokens: 32768 });
+  assert.deepEqual(metadata.capabilityDetection, { imageInput: 'metadata', reasoning: 'metadata' });
+  const catalog = detectModelCapabilities('gemini-2.5-flash');
+  assert.equal(catalog.imageInput, true);
+  assert.equal(catalog.reasoning, true);
+  assert.equal(catalog.capabilityDetection.imageInput, 'pi_catalog');
+  const named = detectModelCapabilities('lab/deepseek-r1-vision');
+  assert.equal(named.imageInput, true);
+  assert.equal(named.reasoning, true);
+  const unknown = detectModelCapabilities('lab/plain-custom-model');
+  assert.equal(unknown.imageInput, false);
+  assert.equal(unknown.reasoning, false);
+});
+
+test('prompt agent automatically gives a text-only main model a configured vision model', () => {
+  const sameProviderService = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  sameProviderService.setCredential('openai', { type: 'api_key', key: 'openai-key' });
+  sameProviderService.setCredential('google', { type: 'api_key', key: 'google-key' });
+  sameProviderService.config.provider = 'openai';
+  sameProviderService.config.model = 'gpt-4';
+  sameProviderService.config.visionMode = 'auto';
+  const sameProviderVision = sameProviderService.syncAutomaticVisionSelection('openai', 'gpt-4');
+  assert.equal(sameProviderVision.provider, 'openai');
+  assert.equal(sameProviderVision.model, 'gpt-5-mini');
+
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  service.setCredential('deepseek', { type: 'api_key', key: 'deepseek-key' });
+  service.setCredential('google', { type: 'api_key', key: 'google-key' });
+  service.config.provider = 'deepseek';
+  service.config.model = 'deepseek-v4-flash';
+  service.config.visionMode = 'auto';
+  const vision = service.syncAutomaticVisionSelection('deepseek', 'deepseek-v4-flash');
+  assert.equal(vision.provider, 'google');
+  assert.equal(vision.info.imageInput, true);
+  assert.equal(service.publicConfig().visionDedicated, true);
+  assert.equal(service.publicConfig().visionMode, 'auto');
+});
 
 test('prompt agent parses web results and blocks private web targets', async () => {
   const html = '<div class="result"><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fdocs&amp;rut=x"><b>Example</b> docs</a><a class="result__snippet">Current documentation &amp; examples.</a></div>';
