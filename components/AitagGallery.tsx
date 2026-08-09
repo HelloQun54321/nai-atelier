@@ -901,7 +901,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       onRefreshInspiration?.();
       notify('已加入灵感库');
     } catch (e: any) {
-      notify(e.message || '收藏失败', 'error');
+      notify(e.message || '加入灵感库失败', 'error');
     }
   };
 

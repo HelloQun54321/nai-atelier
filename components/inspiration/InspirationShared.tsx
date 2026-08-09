@@ -39,7 +39,7 @@ export const fetchImageFile = async (item: Inspiration) => {
 export const CollectionButton: React.FC<{
   active: boolean; count: number; icon: React.ReactNode; label: string; onClick: () => void;
 }> = ({ active, count, icon, label, onClick }) => (
-  <button type="button" onClick={onClick} className={`flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-sm font-semibold transition ${active ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+  <button type="button" onClick={onClick} className={`flex h-10 w-full items-center gap-2 rounded-xl border px-3 text-left text-sm font-semibold transition ${active ? 'border-gray-200 bg-white text-indigo-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300' : 'border-transparent text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800'}`}>
     <span className="flex h-5 w-5 items-center justify-center [&>svg]:h-4 [&>svg]:w-4">{icon}</span>
     <span className="min-w-0 flex-1 truncate">{label}</span><span className="text-[11px] font-medium text-gray-400">{count}</span>
   </button>
