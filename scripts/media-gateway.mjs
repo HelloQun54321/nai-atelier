@@ -1049,7 +1049,11 @@ class ThumbnailCache {
       else referencedFiles.add(entry.file);
     }
     for (const file of files) {
-      if (file === 'index.json' || file.endsWith('.tmp')) continue;
+      if (file === 'index.json') continue;
+      if (file.endsWith('.tmp')) {
+        await unlink(join(CACHE_DIR, file)).catch(() => {});
+        continue;
+      }
       if (!referencedFiles.has(file)) await unlink(join(CACHE_DIR, file)).catch(() => {});
     }
     this.scheduleIndexWrite();
@@ -1063,7 +1067,7 @@ class ThumbnailCache {
         const temporary = `${CACHE_INDEX}.${process.pid}.tmp`;
         await writeFile(temporary, snapshot, 'utf8');
         await rename(temporary, CACHE_INDEX);
-      });
+      }).catch(() => {});
     }, 500);
     this.writeTimer.unref?.();
   }

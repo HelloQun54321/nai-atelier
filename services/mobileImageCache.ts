@@ -43,6 +43,7 @@ let databasePromise: Promise<IDBDatabase> | null = null;
 let accessFlushTimer: number | null = null;
 let pruneTimer: number | null = null;
 let migrationPromise: Promise<void> | null = null;
+let cacheGeneration = 0;
 
 const emitCacheChanged = () => window.dispatchEvent(new CustomEvent('nai-mobile-cache-changed'));
 
@@ -246,11 +247,7 @@ export const refreshMobileCacheMetadata = async () => {
 };
 
 export const clearMobileThumbnailCache = async () => {
-  activeResources.forEach(resource => {
-    resource.controller.abort();
-    if (resource.objectUrl) URL.revokeObjectURL(resource.objectUrl);
-  });
-  activeResources.clear();
+  cacheGeneration++;
   pendingAccessUpdates.clear();
   if ('indexedDB' in window) {
     await runTransaction([THUMBNAIL_STORE, METADATA_STORE], 'readwrite', transaction => {
@@ -294,6 +291,7 @@ export const pruneMobileThumbnailCache = async () => {
 };
 
 const loadThumbnail = async (url: string, signal: AbortSignal): Promise<Blob> => {
+  const generation = cacheGeneration;
   const limitMb = getMobileCacheLimitMb();
   const canPersist = 'indexedDB' in window && limitMb > 0;
   if (canPersist) {
@@ -308,8 +306,9 @@ const loadThumbnail = async (url: string, signal: AbortSignal): Promise<Blob> =>
   if (!response.ok) throw new Error(response.status === 401 ? '局域网访问已失效' : '图片加载失败');
   const blob = await response.blob();
   if (!blob.type.startsWith('image/')) throw new Error('返回内容不是图片');
-  if (canPersist) {
+  if (canPersist && generation === cacheGeneration) {
     void putCachedBlob(url, blob).then(previous => {
+      if (generation !== cacheGeneration) return;
       const stats = readStats();
       writeStats({
         count: stats.count + (previous ? 0 : 1),

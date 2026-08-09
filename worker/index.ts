@@ -2821,10 +2821,11 @@ export default {
                 .bind(includeArchived ? 1 : 0).all<any>();
           const vibeIds = rows.results.map(row => row.id);
           const encodingsByVibe = new Map<string, any[]>();
-          if (vibeIds.length) {
-            const placeholders = vibeIds.map(() => '?').join(',');
+          for (let offset = 0; offset < vibeIds.length; offset += 80) {
+            const batchIds = vibeIds.slice(offset, offset + 80);
+            const placeholders = batchIds.map(() => '?').join(',');
             const encodings = await db.prepare(`SELECT * FROM vibe_encodings WHERE vibe_id IN (${placeholders}) ORDER BY information_extracted DESC`)
-              .bind(...vibeIds).all<any>();
+              .bind(...batchIds).all<any>();
             for (const encoding of encodings.results) {
               const grouped = encodingsByVibe.get(encoding.vibe_id) || [];
               grouped.push(encoding);

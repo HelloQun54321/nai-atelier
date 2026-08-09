@@ -94,6 +94,8 @@ const PromptAgentOverlayController: React.FC<PromptAgentOverlayControllerProps> 
         return () => window.removeEventListener('nai-open-prompt-agent', handleOpen);
     }, [chainId]);
 
+    if (!open) return null;
+
     return (
         <React.Suspense fallback={null}><PromptAgentPanel
             open={open}

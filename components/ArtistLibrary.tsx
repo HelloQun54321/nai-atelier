@@ -29,14 +29,21 @@ interface ArtistLibraryProps {
 
 const compressImage = async (source: string, quality = 0.8): Promise<string> => {
     const response = await fetch(source);
-    const bitmap = await createImageBitmap(await response.blob());
+    const sourceBlob = await response.blob();
+    const toDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('读取压缩图片失败'));
+        reader.readAsDataURL(blob);
+    });
+    const bitmap = await createImageBitmap(sourceBlob);
     try {
         const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
         const canvas = document.createElement('canvas');
         canvas.width = Math.max(1, Math.round(bitmap.width * scale));
         canvas.height = Math.max(1, Math.round(bitmap.height * scale));
         const ctx = canvas.getContext('2d');
-        if (!ctx) return source;
+        if (!ctx) return toDataUrl(sourceBlob);
         ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
@@ -45,12 +52,7 @@ const compressImage = async (source: string, quality = 0.8): Promise<string> => 
             'image/jpeg',
             quality,
         ));
-        return await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result || ''));
-            reader.onerror = () => reject(reader.error || new Error('读取压缩图片失败'));
-            reader.readAsDataURL(blob);
-        });
+        return await toDataUrl(blob);
     } finally {
         bitmap.close();
     }
@@ -651,6 +653,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
 
             const task = taskQueue[0];
             setCurrentTask(task);
+            let generatedObjectUrl = '';
 
             try {
                 // Find the artist info
@@ -676,6 +679,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     width: 832, height: 1216, steps: config.steps, scale: config.scale, sampler: 'k_euler_ancestral', seed: seed,
                     qualityToggle: true, ucPreset: 0
                 });
+                generatedObjectUrl = result.image;
 
                 // Compress before upload (Save Space!)
                 const compressedImg = await compressImage(result.image, 0.8);
@@ -755,6 +759,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     notify(`生成失败: ${artistName}`, 'error');
                 }
             } finally {
+                if (generatedObjectUrl.startsWith('blob:')) URL.revokeObjectURL(generatedObjectUrl);
                 // Remove done task and loop
                 setTaskQueue(prev => prev.slice(1));
                 setCurrentTask(null);

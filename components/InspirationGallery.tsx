@@ -209,6 +209,14 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       if (upImg.startsWith('blob:')) URL.revokeObjectURL(upImg);
   }, [upImg]);
 
+  const closeUpload = () => {
+      setUploadMode(false);
+      setUpTitle('');
+      setUpImg('');
+      setUpFile(null);
+      setUpPrompt('');
+  };
+
   // Initial load handled by App.tsx now
   // removed empty useEffect that called load
 
@@ -277,8 +285,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
           username: currentUser.username,
           createdAt: Date.now()
       });
-      setUploadMode(false);
-      setUpTitle(''); setUpImg(''); setUpFile(null); setUpPrompt('');
+      closeUpload();
       onRefresh();
   };
 
@@ -415,7 +422,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
                       <textarea placeholder="Prompt" className="w-full p-2 border rounded h-24 dark:bg-gray-900 dark:border-gray-600 dark:text-white" value={upPrompt} onChange={e => setUpPrompt(e.target.value)} />
                   </div>
                   <div className="flex justify-end gap-3 mt-6">
-                      <button onClick={() => setUploadMode(false)} className="px-4 py-2 text-gray-500">取消</button>
+                      <button onClick={closeUpload} className="px-4 py-2 text-gray-500">取消</button>
                       <button onClick={handleUpload} className="px-4 py-2 bg-indigo-600 text-white rounded">上传</button>
                   </div>
               </div>
