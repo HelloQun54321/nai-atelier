@@ -16,6 +16,16 @@ interface SmartImageProps {
   onLoad?: React.ReactEventHandler<HTMLImageElement>;
 }
 
+const findScrollRoot = (node: HTMLElement) => {
+  let parent = node.parentElement;
+  while (parent) {
+    const { overflowY } = window.getComputedStyle(parent);
+    if (/auto|scroll|overlay/.test(overflowY)) return parent;
+    parent = parent.parentElement;
+  }
+  return null;
+};
+
 export const SmartImage: React.FC<SmartImageProps> = ({
   src,
   alt,
@@ -27,7 +37,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const onErrorRef = useRef(onError);
   const objectUrlRef = useRef('');
-  const [visible, setVisible] = useState(false);
+  const [activatedSrc, setActivatedSrc] = useState('');
   const [displaySrc, setDisplaySrc] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -44,21 +54,30 @@ export const SmartImage: React.FC<SmartImageProps> = ({
 
   useEffect(() => {
     replaceObjectUrl();
-    setVisible(false);
     setDisplaySrc('');
     setLoaded(false);
     setFailed(false);
     const node = containerRef.current;
     if (!node) return;
+    if (!('IntersectionObserver' in window)) {
+      setActivatedSrc(src);
+      return;
+    }
+    const root = findScrollRoot(node);
+    const preloadDistance = Math.max(root?.clientHeight || window.innerHeight, 600);
     const observer = new IntersectionObserver(entries => {
-      setVisible(Boolean(entries[0]?.isIntersecting));
-    }, { rootMargin: `${Math.max(window.innerHeight, 600)}px 0px` });
+      if (!entries[0]?.isIntersecting) return;
+      setActivatedSrc(src);
+      observer.disconnect();
+    }, { root, rootMargin: `${preloadDistance}px 0px` });
     observer.observe(node);
     return () => observer.disconnect();
   }, [src]);
 
+  const activated = activatedSrc === src;
+
   useEffect(() => {
-    if (!visible || !src) return;
+    if (!activated || !src) return;
     setLoaded(false);
     setFailed(false);
     if (!isMobileViewport() || !canUseMediaGateway(src)) {
@@ -89,11 +108,11 @@ export const SmartImage: React.FC<SmartImageProps> = ({
       active = false;
       request.release();
     };
-  }, [retryToken, src, visible]);
+  }, [activated, retryToken, src]);
 
   return (
     <div ref={containerRef} className={containerClassName}>
-      {visible && displaySrc && !failed && (
+      {activated && displaySrc && !failed && (
         <img
           src={displaySrc}
           alt={alt}
@@ -103,8 +122,8 @@ export const SmartImage: React.FC<SmartImageProps> = ({
           decoding="async"
         />
       )}
-      {visible && !loaded && !failed && <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400"><span className="animate-pulse">加载中…</span></div>}
-      {visible && failed && (
+      {activated && !loaded && !failed && <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400"><span className="animate-pulse">加载中…</span></div>}
+      {activated && failed && (
         <button
           type="button"
           className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-transparent px-2 text-[10px] text-gray-500 dark:text-gray-400"
