@@ -789,7 +789,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                     }}
                                 >
                                     <div className="mobile-gallery-frame md:aspect-square relative w-full overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': `${item.params.width || 832} / ${item.params.height || 1216}` } as React.CSSProperties}>
-                                      <SmartImage src={item.imageUrl} alt={`生成于 ${new Date(item.createdAt).toLocaleString()} 的图片`} className="w-full h-full object-cover" />
+                                      <SmartImage eager src={item.imageUrl} alt={`生成于 ${new Date(item.createdAt).toLocaleString()} 的图片`} className="w-full h-full object-cover" />
                                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                                       {selectionMode && <div className="absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white shadow">{selectedIds.has(item.id) ? '✓' : ''}</div>}
                                       <div className="absolute top-2 right-2 hidden md:block opacity-0 group-hover:opacity-100 transition-opacity">

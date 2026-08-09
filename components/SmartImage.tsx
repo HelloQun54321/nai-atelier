@@ -10,6 +10,7 @@ import {
 interface SmartImageProps {
   src: string;
   alt: string;
+  eager?: boolean;
   className?: string;
   containerClassName?: string;
   onError?: () => void;
@@ -29,6 +30,7 @@ const findScrollRoot = (node: HTMLElement) => {
 export const SmartImage: React.FC<SmartImageProps> = ({
   src,
   alt,
+  eager = false,
   className = 'h-full w-full object-cover',
   containerClassName = 'relative h-full w-full overflow-hidden bg-gray-200 dark:bg-gray-900',
   onError,
@@ -59,6 +61,10 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     setFailed(false);
     const node = containerRef.current;
     if (!node) return;
+    if (eager) {
+      setActivatedSrc(src);
+      return;
+    }
     if (!('IntersectionObserver' in window)) {
       setActivatedSrc(src);
       return;
@@ -72,9 +78,9 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     }, { root, rootMargin: `${preloadDistance}px 0px` });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [src]);
+  }, [eager, src]);
 
-  const activated = activatedSrc === src;
+  const activated = eager || activatedSrc === src;
 
   useEffect(() => {
     if (!activated || !src) return;
@@ -120,6 +126,8 @@ export const SmartImage: React.FC<SmartImageProps> = ({
           onLoad={event => { setLoaded(true); onLoad?.(event); }}
           onError={() => { setFailed(true); onErrorRef.current?.(); }}
           decoding="async"
+          loading={eager ? 'eager' : undefined}
+          fetchPriority={eager ? 'high' : 'auto'}
         />
       )}
       {activated && !loaded && !failed && <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400"><span className="animate-pulse">加载中…</span></div>}
