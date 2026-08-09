@@ -572,7 +572,8 @@ test('thumbnail generation concurrency scales conservatively with CPU and memory
   const gib = 1024 ** 3;
   assert.equal(selectThumbnailConcurrency({ logicalProcessors: 4, totalMemoryBytes: 8 * gib }), 2);
   assert.equal(selectThumbnailConcurrency({ logicalProcessors: 8, totalMemoryBytes: 16 * gib }), 4);
-  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 16, totalMemoryBytes: 32 * gib }), 6);
+  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 12, totalMemoryBytes: 16 * gib }), 8);
+  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 16, totalMemoryBytes: 32 * gib }), 12);
   assert.equal(selectThumbnailConcurrency({ logicalProcessors: 16, totalMemoryBytes: 8 * gib }), 2);
 });
 

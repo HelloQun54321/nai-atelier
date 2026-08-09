@@ -1756,13 +1756,17 @@ function parseStoredJson(value: string | null | undefined, fallback: any) {
   try { return value ? JSON.parse(value) : fallback; } catch { return fallback; }
 }
 
+function localHistoryImageUrl(row: any) {
+  return row.external_source === 'st-chatu8' && row.external_id
+    ? `/api/integrations/st-chatu8/history/${encodeURIComponent(row.external_id)}/image`
+    : `/api/local-history/${encodeURIComponent(row.id)}/image`;
+}
+
 function mapLocalHistoryRow(row: any) {
   const hasStructuredPrompt = Number(row.structure_version || 0) >= 1;
   return {
     id: row.id,
-    imageUrl: row.external_source === 'st-chatu8' && row.external_id
-      ? `/api/integrations/st-chatu8/history/${encodeURIComponent(row.external_id)}/image`
-      : `/api/local-history/${encodeURIComponent(row.id)}/image`,
+    imageUrl: localHistoryImageUrl(row),
     prompt: row.prompt || '',
     negativePrompt: row.negative_prompt || '',
     params: parseStoredJson(row.params, {}),
@@ -3183,6 +3187,25 @@ export default {
           }
           return rows.length;
         };
+
+        if (path === '/api/local-history/media-index' && method === 'GET') {
+          const page = clampInt(url.searchParams.get('page'), 0, 0, 1000000);
+          const pageSize = clampInt(url.searchParams.get('pageSize'), 100, 1, 250);
+          const includeCount = url.searchParams.get('includeCount') !== '0';
+          const count = includeCount
+            ? await db.prepare('SELECT COUNT(*) AS count FROM local_generation_history WHERE user_id = ?')
+                .bind(currentUser.id).first<{count: number}>()
+            : null;
+          const result = await db.prepare(`
+            SELECT id, external_source, external_id
+            FROM local_generation_history
+            WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?
+          `).bind(currentUser.id, pageSize, page * pageSize).all<any>();
+          return json({
+            items: result.results.map(row => ({ id: row.id, imageUrl: localHistoryImageUrl(row) })),
+            ...(includeCount ? { count: Number(count?.count || 0) } : {}),
+          });
+        }
 
         const imageMatch = path.match(/^\/api\/local-history\/([^/]+)\/image$/);
         if (imageMatch && method === 'GET') {

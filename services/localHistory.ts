@@ -6,6 +6,8 @@ import { createUuid } from './id';
 const DB_NAME = 'NAI_History_DB';
 const STORE_NAME = 'generations';
 const DB_VERSION = 2;
+const HISTORY_THUMBNAIL_MAX_EDGE = 960;
+const HISTORY_THUMBNAIL_VARIANT = 'thumb-960';
 
 export type LocalHistoryChange = {
     type: 'add' | 'delete' | 'clear' | 'cleanup';
@@ -26,6 +28,38 @@ export interface LocalHistoryPage {
 export type LocalHistoryMigrationProgress = {
     current: number;
     total: number;
+};
+
+const createHistoryThumbnail = async (image: Blob): Promise<Blob | undefined> => {
+    try {
+        const bitmap = await createImageBitmap(image);
+        const scale = Math.min(1, HISTORY_THUMBNAIL_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        const context = canvas.getContext('2d');
+        if (!context) {
+            bitmap.close();
+            return undefined;
+        }
+        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        bitmap.close();
+        return await new Promise<Blob | undefined>(resolve => {
+            canvas.toBlob(blob => resolve(blob || undefined), 'image/webp', 0.8);
+        });
+    } catch {
+        return undefined;
+    }
+};
+
+const seedHistoryThumbnailCache = async (source: string, thumbnail: Blob) => {
+    const response = await fetch(`/api/media/cache?source=${encodeURIComponent(source)}&variant=${HISTORY_THUMBNAIL_VARIANT}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'image/webp' },
+        body: thumbnail,
+        credentials: 'same-origin',
+    });
+    if (!response.ok) throw new Error('Unable to seed history thumbnail cache');
 };
 
 class LocalHistoryService {
@@ -168,14 +202,19 @@ class LocalHistoryService {
         };
 
         if (remoteEnabled) {
+            let thumbnail: Blob | undefined;
             const result = image instanceof Blob
-                ? await (() => {
+                ? await (async () => {
+                    thumbnail = await createHistoryThumbnail(image);
                     const formData = new FormData();
                     formData.append('image', image, `generation.${image.type === 'image/jpeg' ? 'jpg' : image.type.split('/')[1] || 'png'}`);
                     formData.append('metadata', JSON.stringify(item));
                     return api.postForm('/local-history', formData);
                 })()
                 : await api.post('/local-history', item);
+            if (thumbnail && result.item?.imageUrl) {
+                await seedHistoryThumbnailCache(result.item.imageUrl, thumbnail).catch(() => {});
+            }
             this.emit({ type: 'add', id: item.id });
             return result.item as LocalGenItem;
         }

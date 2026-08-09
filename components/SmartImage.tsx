@@ -5,6 +5,7 @@ import {
   canUseMediaGateway,
   getMobileOriginalUrl,
   isMobileViewport,
+  type MediaVariant,
   selectThumbnailVariant,
 } from '../services/mobileImageCache';
 
@@ -18,6 +19,7 @@ interface SmartImageProps {
   src: string;
   alt: string;
   eager?: boolean;
+  thumbnailVariant?: Exclude<MediaVariant, 'original'>;
   className?: string;
   containerClassName?: string;
   onError?: () => void;
@@ -38,6 +40,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   src,
   alt,
   eager = false,
+  thumbnailVariant,
   className = 'h-full w-full object-cover',
   containerClassName = 'relative h-full w-full overflow-hidden bg-gray-200 dark:bg-gray-900',
   onError,
@@ -95,7 +98,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
 
   const activated = viewActive && (eager || activatedSrc === src);
   const pixelWidth = measuredWidth * Math.max(1, window.devicePixelRatio || 1);
-  const variant = selectThumbnailVariant(pixelWidth);
+  const variant = thumbnailVariant ?? selectThumbnailVariant(pixelWidth);
 
   useEffect(() => {
     if (!activated || !src) {

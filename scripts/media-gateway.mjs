@@ -11,6 +11,7 @@ import { PromptAgentService } from './prompt-agent.mjs';
 import { StChatu8Bridge } from './st-chatu8-bridge.mjs';
 
 const CACHE_VERSION = 'v1';
+const HISTORY_THUMBNAIL_CACHE_VERSION = 'v2';
 const CACHE_DIR = join(process.cwd(), 'local-cache', 'thumbnails');
 const CACHE_INDEX = join(CACHE_DIR, 'index.json');
 const VIBE_RECOVERY_DIR = join(process.cwd(), 'local-data', 'vibe-recovery');
@@ -49,7 +50,8 @@ export const selectThumbnailConcurrency = ({
   totalMemoryBytes = totalmem(),
 } = {}) => {
   const memoryGb = totalMemoryBytes / (1024 ** 3);
-  if (logicalProcessors >= 12 && memoryGb >= 24) return 6;
+  if (logicalProcessors >= 16 && memoryGb >= 24) return 12;
+  if (logicalProcessors >= 12 && memoryGb >= 16) return 8;
   if (logicalProcessors >= 8 && memoryGb >= 12) return 4;
   return 2;
 };
@@ -1094,8 +1096,32 @@ class ThumbnailCache {
     this.scheduleIndexWrite();
   }
 
+  keyFor(source, variant) {
+    const version = variant === 'thumb-960' && (
+      /^\/api\/local-history\/[^/]+\/image$/i.test(source)
+      || /^\/api\/integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image$/i.test(source)
+    ) ? HISTORY_THUMBNAIL_CACHE_VERSION : CACHE_VERSION;
+    return createHash('sha256').update(`${version}|${variant}|${source}`).digest('hex');
+  }
+
+  has(source, variant) {
+    return Boolean(this.entries[this.keyFor(source, variant)]);
+  }
+
+  async put(source, variant, buffer) {
+    const key = this.keyFor(source, variant);
+    const file = `${key}.webp`;
+    const temp = join(CACHE_DIR, `${key}.${process.pid}.${Date.now()}.tmp`);
+    await writeFile(temp, buffer);
+    await rename(temp, join(CACHE_DIR, file));
+    this.entries[key] = { file, size: buffer.length, accessedAt: Date.now(), source, variant };
+    this.scheduleIndexWrite();
+    await this.prune();
+    return { etag: `"nai-${key}"` };
+  }
+
   async get(source, variant, loadOriginal) {
-    const key = createHash('sha256').update(`${CACHE_VERSION}|${variant}|${source}`).digest('hex');
+    const key = this.keyFor(source, variant);
     const existing = this.entries[key];
     if (existing) {
       try {
@@ -1122,7 +1148,7 @@ class ThumbnailCache {
       const output = await sharp(original.buffer, { failOn: 'warning', limitInputPixels: 100_000_000 })
         .rotate()
         .resize({ width: THUMB_WIDTHS.get(variant), height: THUMB_WIDTHS.get(variant), fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 72, effort: 4 })
+        .webp({ quality: variant === 'thumb-960' ? 78 : 72, effort: variant === 'thumb-960' ? 3 : 4 })
         .toBuffer();
       const file = `${key}.webp`;
       const temp = join(CACHE_DIR, `${key}.${process.pid}.${Date.now()}.tmp`);
@@ -1174,6 +1200,90 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
   await stChatu8Bridge.init();
   await recoverPendingVibeEncodings(workerPort);
   stChatu8Bridge.startHistorySync();
+
+  const historyIndexStatus = {
+    running: false,
+    total: 0,
+    completed: 0,
+    generated: 0,
+    skipped: 0,
+    failed: 0,
+    startedAt: 0,
+    completedAt: 0,
+  };
+  let historyIndexPromise = null;
+
+  const warmHistorySources = async (sources, variant = 'thumb-960', onProgress) => {
+    let cursor = 0;
+    const workers = Array.from({ length: Math.min(THUMBNAIL_JOB_CONCURRENCY, sources.length) }, async () => {
+      while (cursor < sources.length) {
+        const source = sources[cursor++];
+        if (cache.has(source, variant)) {
+          onProgress?.('skipped');
+          continue;
+        }
+        try {
+      const validated = getValidatedSource(source);
+      const loadOriginal = () => validated.type === 'local'
+        ? requestWorkerBuffer(validated.source, internalWorkerRequest, workerPort)
+        : validated.type === 'st-chatu8-history'
+          ? stChatu8Bridge.readHistoryImage(validated.externalId).then(image => ({
+            status: 200,
+            buffer: image.buffer,
+            headers: { 'content-type': image.contentType },
+          }))
+          : requestRemoteBuffer(validated.source, remoteFetch);
+      await cache.get(validated.source, variant, loadOriginal);
+          onProgress?.('generated');
+        } catch {
+          onProgress?.('failed');
+        }
+      }
+    });
+    await Promise.all(workers);
+  };
+
+  try {
+    const recentHistory = await requestWorkerJson('/api/local-history/media-index?page=0&pageSize=20&includeCount=0', internalWorkerRequest, workerPort);
+    await warmHistorySources((recentHistory.items || []).map(item => item.imageUrl).filter(Boolean));
+  } catch {
+    // History warming is an optimization and must never block local startup.
+  }
+
+  const buildHistoryIndex = () => {
+    if (historyIndexPromise) return historyIndexPromise;
+    historyIndexPromise = (async () => {
+      Object.assign(historyIndexStatus, {
+        running: true,
+        total: 0,
+        completed: 0,
+        generated: 0,
+        skipped: 0,
+        failed: 0,
+        startedAt: Date.now(),
+        completedAt: 0,
+      });
+      for (let page = 0; ; page++) {
+        const result = await requestWorkerJson(`/api/local-history/media-index?page=${page}&pageSize=100&includeCount=${page === 0 ? '1' : '0'}`, internalWorkerRequest, workerPort);
+        const items = result.items || [];
+        if (page === 0) historyIndexStatus.total = Number(result.count || items.length);
+        if (!items.length) break;
+        await warmHistorySources(items.map(item => item.imageUrl).filter(Boolean), 'thumb-960', outcome => {
+          historyIndexStatus.completed++;
+          historyIndexStatus[outcome]++;
+        });
+        if (items.length < 100) break;
+      }
+      historyIndexStatus.running = false;
+      historyIndexStatus.completedAt = Date.now();
+    })().catch(() => {
+      historyIndexStatus.running = false;
+      historyIndexStatus.failed++;
+      historyIndexStatus.completedAt = Date.now();
+    }).finally(() => { historyIndexPromise = null; });
+    return historyIndexPromise;
+  };
+
   const server = createServer(async (req, res) => {
     let url;
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
@@ -1443,6 +1553,34 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
     }
     const vibeEncodeMatch = url.pathname.match(/^\/api\/vibes\/([^/]+)\/encodings$/);
     if (vibeEncodeMatch) return handleVibeEncodeRequest(req, res, lanSecret, workerPort, decodeURIComponent(vibeEncodeMatch[1]), remoteFetch);
+    if (url.pathname === '/api/media/history-index/status') {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      return sendJson(res, 200, historyIndexStatus);
+    }
+    if (url.pathname === '/api/media/cache') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      try {
+        const variant = url.searchParams.get('variant') || '';
+        if (!THUMB_WIDTHS.has(variant)) return sendJson(res, 400, { error: 'Invalid image variant' });
+        const validated = getValidatedSource(url.searchParams.get('source'));
+        if (validated.type !== 'local' || !/^\/api\/local-history\/[^/]+\/image$/i.test(validated.source)) {
+          return sendJson(res, 400, { error: 'Only local history thumbnails can be cached' });
+        }
+        if (!String(req.headers['content-type'] || '').toLowerCase().startsWith('image/webp')) {
+          return sendJson(res, 415, { error: 'Only WebP thumbnails are supported' });
+        }
+        const thumbnail = await readRequestBody(req, 2 * 1024 * 1024);
+        if (thumbnail.length < 12 || thumbnail.toString('ascii', 0, 4) !== 'RIFF' || thumbnail.toString('ascii', 8, 12) !== 'WEBP') {
+          return sendJson(res, 400, { error: 'Invalid WebP thumbnail' });
+        }
+        const cached = await cache.put(validated.source, variant, thumbnail);
+        return sendJson(res, 200, { cached: true, etag: cached.etag, bytes: thumbnail.length });
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 500, { error: error.message || 'Unable to cache thumbnail' });
+      }
+    }
     if (url.pathname !== '/api/media') return proxyRequest(req, res, workerPort);
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
     if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
@@ -1522,6 +1660,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
     server.once('error', reject);
     server.listen(port, '0.0.0.0', resolve);
   });
+  setTimeout(() => void buildHistoryIndex(), 0).unref?.();
   return server;
 }
 
