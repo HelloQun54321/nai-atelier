@@ -1,5 +1,5 @@
 
-import { PromptChain, Artist, Inspiration, User, ChainType } from '../types';
+import { PromptChain, Artist, Inspiration, InspirationBoard, User, ChainType } from '../types';
 import { api } from './api';
 
 class DBService {
@@ -92,6 +92,24 @@ class DBService {
     return await api.get('/inspirations');
   }
 
+  async getInspirationBoards(): Promise<InspirationBoard[]> {
+    const result = await api.get('/inspiration-boards');
+    return result.items || [];
+  }
+
+  async createInspirationBoard(board: InspirationBoard): Promise<InspirationBoard> {
+    const result = await api.post('/inspiration-boards', board);
+    return result.item;
+  }
+
+  async updateInspirationBoard(id: string, updates: Partial<InspirationBoard>): Promise<void> {
+    await api.put(`/inspiration-boards/${encodeURIComponent(id)}`, updates);
+  }
+
+  async deleteInspirationBoard(id: string): Promise<void> {
+    await api.delete(`/inspiration-boards/${encodeURIComponent(id)}`);
+  }
+
   async saveInspiration(inspiration: Inspiration): Promise<void> {
     await api.post('/inspirations', inspiration);
   }
@@ -106,6 +124,14 @@ class DBService {
 
   async bulkDeleteInspirations(ids: string[]): Promise<void> {
     await api.post('/inspirations/bulk-delete', { ids });
+  }
+
+  async bulkUpdateInspirations(ids: string[], updates: Partial<Inspiration>): Promise<void> {
+    await api.post('/inspirations/bulk-update', { ids, updates });
+  }
+
+  async markInspirationUsed(id: string): Promise<void> {
+    await api.post(`/inspirations/${encodeURIComponent(id)}/use`, {});
   }
 
 }

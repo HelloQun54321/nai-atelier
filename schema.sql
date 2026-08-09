@@ -59,7 +59,33 @@ CREATE TABLE inspirations (
   prompt TEXT,
   negative_prompt TEXT DEFAULT '',
   params TEXT,
-  created_at INTEGER
+  board_id TEXT,
+  notes TEXT DEFAULT '',
+  tags TEXT DEFAULT '[]',
+  source_type TEXT,
+  source_id TEXT,
+  source_url TEXT,
+  rating INTEGER NOT NULL DEFAULT 0,
+  is_pinned INTEGER NOT NULL DEFAULT 0,
+  archived INTEGER NOT NULL DEFAULT 0,
+  last_used_at INTEGER,
+  use_count INTEGER NOT NULL DEFAULT 0,
+  parent_id TEXT,
+  analysis TEXT DEFAULT '{}',
+  image_key TEXT,
+  image_type TEXT,
+  created_at INTEGER,
+  updated_at INTEGER
+);
+
+CREATE TABLE inspiration_boards (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  color TEXT DEFAULT '#6366f1',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
 );
 
 CREATE TABLE local_generation_history (

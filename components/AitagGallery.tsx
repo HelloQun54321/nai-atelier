@@ -731,7 +731,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       }
     } catch (e: any) {
       loadWorks(page, { silent: true });
-      notify(e.message || '收藏失败', 'error');
+      notify(e.message || '加入灵感库失败', 'error');
     }
   };
 
@@ -891,10 +891,15 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         prompt: importData.prompt,
         negativePrompt: importData.negativePrompt,
         params: importData.params,
+        tags: ['AITag', selectedWork ? getAitagType(selectedWork) : image.image_type].filter(Boolean),
+        sourceType: 'aitag',
+        sourceId: String(image.work_id),
+        sourceUrl: selectedWork ? getAitagUrl(selectedWork) : `https://aitag.win/i/${image.work_id}`,
         createdAt: Date.now(),
+        updatedAt: Date.now(),
       });
       onRefreshInspiration?.();
-      notify('已收藏到灵感');
+      notify('已加入灵感库');
     } catch (e: any) {
       notify(e.message || '收藏失败', 'error');
     }
@@ -1203,8 +1208,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                               </button>
                               <button
                                 onClick={() => saveToInspiration(image, index)}
-                                title="收藏到灵感"
-                                aria-label="收藏到灵感"
+                                title="加入灵感库"
+                                aria-label="加入灵感库"
                                 className="w-10 h-10 rounded-lg bg-amber-500 hover:bg-amber-400 text-white flex items-center justify-center shadow transition-colors"
                               >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -31,6 +31,16 @@ export interface ParsedNAIData {
     params: NAIParams;
 }
 
+export type ImportMode = 'replace' | 'prompt-only' | 'negative-only' | 'params-only' | 'append-prompt';
+
+export interface PendingImportData extends ParsedNAIData {
+    mode?: ImportMode;
+    basePrompt?: string;
+    subjectPrompt?: string;
+    modules?: import('../types').PromptModule[];
+    sourceInspirationId?: string;
+}
+
 // ========== 常量 / 预编译正则 ==========
 const COMPILED_REGEX = {
     Steps: /Steps:\s*([^,]+)/,

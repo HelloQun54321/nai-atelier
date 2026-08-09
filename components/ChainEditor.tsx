@@ -7,7 +7,7 @@ import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus'
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
 import { db } from '../services/dbService';
-import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY } from '../services/metadataService';
+import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
 import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
@@ -407,7 +407,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (!raw) return;
 
         try {
-            const data = JSON.parse(raw) as { prompt: string; negativePrompt: string; params: NAIParams; basePrompt?: string; subjectPrompt?: string; modules?: PromptModule[] };
+            const data = JSON.parse(raw) as PendingImportData;
             // 清除标志位，防止重复消费
             sessionStorage.removeItem(IMPORT_SESSION_KEY);
             // 应用数据到当前编辑器
@@ -922,7 +922,31 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
      * 从外部投递的数据（历史/灵感页面的一键导入）中加载参数
      * 由 useEffect 在检测到 sessionStorage 中的 nai_pending_import 时调用
      */
-    const applyImportData = (data: { prompt: string; negativePrompt: string; params: NAIParams; basePrompt?: string; subjectPrompt?: string; modules?: PromptModule[] }) => {
+    const applyImportData = (data: PendingImportData) => {
+        if (data.mode === 'append-prompt') {
+            setSubjectPrompt(current => [current.trim(), data.prompt.trim()].filter(Boolean).join(', '));
+            markChange();
+            notify('已把灵感 Prompt 追加到主体／变量区域。');
+            return;
+        }
+        if (data.mode === 'prompt-only') {
+            setSubjectPrompt(data.prompt || '');
+            markChange();
+            notify('已使用灵感的正面 Prompt。');
+            return;
+        }
+        if (data.mode === 'negative-only') {
+            setNegativePrompt(data.negativePrompt || '');
+            markChange();
+            notify('已使用灵感的负面 Prompt。');
+            return;
+        }
+        if (data.mode === 'params-only') {
+            setParams(data.params);
+            markChange();
+            notify('已使用灵感的生成参数。');
+            return;
+        }
         const hasPromptStructure = typeof data.basePrompt === 'string' || typeof data.subjectPrompt === 'string' || Array.isArray(data.modules);
         if (hasPromptStructure) {
             const importedModules = (data.modules || []).map(module => ({ ...module, position: module.position || 'post' }));

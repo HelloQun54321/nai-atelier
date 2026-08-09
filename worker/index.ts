@@ -1474,7 +1474,32 @@ const INIT_SQL = `
     prompt TEXT,
     negative_prompt TEXT DEFAULT '',
     params TEXT,
-    created_at INTEGER
+    board_id TEXT,
+    notes TEXT DEFAULT '',
+    tags TEXT DEFAULT '[]',
+    source_type TEXT,
+    source_id TEXT,
+    source_url TEXT,
+    rating INTEGER NOT NULL DEFAULT 0,
+    is_pinned INTEGER NOT NULL DEFAULT 0,
+    archived INTEGER NOT NULL DEFAULT 0,
+    last_used_at INTEGER,
+    use_count INTEGER NOT NULL DEFAULT 0,
+    parent_id TEXT,
+    analysis TEXT DEFAULT '{}',
+    image_key TEXT,
+    image_type TEXT,
+    created_at INTEGER,
+    updated_at INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS inspiration_boards (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    color TEXT DEFAULT '#6366f1',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
   );
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -1550,6 +1575,37 @@ const INIT_SQL = `
     updated_at INTEGER NOT NULL
   );
 `;
+
+async function ensureInspirationSchema(db: D1Database) {
+  await db.prepare(`CREATE TABLE IF NOT EXISTS inspiration_boards (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
+    color TEXT DEFAULT '#6366f1', sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+  )`).run();
+  for (const statement of [
+    "ALTER TABLE inspirations ADD COLUMN board_id TEXT",
+    "ALTER TABLE inspirations ADD COLUMN notes TEXT DEFAULT ''",
+    "ALTER TABLE inspirations ADD COLUMN tags TEXT DEFAULT '[]'",
+    "ALTER TABLE inspirations ADD COLUMN source_type TEXT",
+    "ALTER TABLE inspirations ADD COLUMN source_id TEXT",
+    "ALTER TABLE inspirations ADD COLUMN source_url TEXT",
+    "ALTER TABLE inspirations ADD COLUMN rating INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE inspirations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE inspirations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE inspirations ADD COLUMN last_used_at INTEGER",
+    "ALTER TABLE inspirations ADD COLUMN use_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE inspirations ADD COLUMN parent_id TEXT",
+    "ALTER TABLE inspirations ADD COLUMN analysis TEXT DEFAULT '{}'",
+    "ALTER TABLE inspirations ADD COLUMN image_key TEXT",
+    "ALTER TABLE inspirations ADD COLUMN image_type TEXT",
+    "ALTER TABLE inspirations ADD COLUMN updated_at INTEGER",
+  ]) {
+    try { await db.prepare(statement).run(); } catch { /* Column already exists. */ }
+  }
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_inspirations_board ON inspirations(user_id, board_id, archived, is_pinned, created_at DESC)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_inspirations_source ON inspirations(user_id, source_type, source_id)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_inspiration_boards_sort ON inspiration_boards(user_id, sort_order, created_at)').run();
+}
 
 async function ensureLocalHistorySchema(db: D1Database) {
   await db.prepare(`
@@ -1791,6 +1847,50 @@ function mapLocalHistoryRow(row: any) {
     externalSource: row.external_source || undefined,
     externalId: row.external_id || undefined,
     createdAt: Number(row.created_at || 0),
+  };
+}
+
+function inspirationImageUrl(row: any) {
+  return row.image_key ? `/api/inspirations/${encodeURIComponent(row.id)}/image` : row.image_url;
+}
+
+function mapInspirationRow(row: any) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    username: row.username,
+    title: row.title || '未命名灵感',
+    imageUrl: inspirationImageUrl(row),
+    prompt: row.prompt || '',
+    negativePrompt: row.negative_prompt || '',
+    params: parseStoredJson(row.params, undefined),
+    boardId: row.board_id || undefined,
+    notes: row.notes || '',
+    tags: parseStoredJson(row.tags, []),
+    sourceType: row.source_type || undefined,
+    sourceId: row.source_id || undefined,
+    sourceUrl: row.source_url || undefined,
+    rating: Number(row.rating || 0),
+    isPinned: Number(row.is_pinned || 0) === 1,
+    archived: Number(row.archived || 0) === 1,
+    lastUsedAt: row.last_used_at ? Number(row.last_used_at) : undefined,
+    useCount: Number(row.use_count || 0),
+    parentId: row.parent_id || undefined,
+    analysis: parseStoredJson(row.analysis, {}),
+    createdAt: Number(row.created_at || 0),
+    updatedAt: Number(row.updated_at || row.created_at || 0),
+  };
+}
+
+function mapInspirationBoardRow(row: any) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    color: row.color || '#6366f1',
+    sortOrder: Number(row.sort_order || 0),
+    createdAt: Number(row.created_at || 0),
+    updatedAt: Number(row.updated_at || 0),
   };
 }
 
@@ -2466,6 +2566,7 @@ export default {
       // Lightweight project summary for the local Agent. Keep image/base64
       // fields out of the response and let SQLite perform all counts.
       if (path === '/api/agent/project-overview' && method === 'GET') {
+          await ensureInspirationSchema(db);
           const [chains, inspirations, artists, vibes, groups, characterReferences, history] = await Promise.all([
               db.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN type = 'character' THEN 1 ELSE 0 END) AS characters FROM chains`).first<any>(),
               db.prepare('SELECT COUNT(*) AS total FROM inspirations').first<any>(),
@@ -2498,6 +2599,7 @@ export default {
       }
 
       if (path === '/api/agent/library' && method === 'GET') {
+          await ensureInspirationSchema(db);
           const kind = new URL(request.url).searchParams.get('kind') || 'all';
           const output: any = {};
           if (kind === 'all' || kind === 'chains') {
@@ -2505,8 +2607,15 @@ export default {
               output.chains = rows.results.map((item: any) => ({ ...item, tags: parseStoredJson(item.tags, []), variableValues: parseStoredJson(item.variable_values, {}), basePrompt: item.base_prompt, negativePrompt: item.negative_prompt, createdAt: item.created_at, updatedAt: item.updated_at }));
           }
           if (kind === 'all' || kind === 'inspirations') {
-              const rows = await db.prepare(`SELECT id, title, prompt, negative_prompt, params, created_at FROM inspirations ORDER BY created_at DESC`).all<any>();
-              output.inspirations = rows.results.map((item: any) => ({ id: item.id, title: item.title, prompt: item.prompt, negativePrompt: item.negative_prompt, params: parseStoredJson(item.params, undefined), createdAt: item.created_at }));
+              const rows = await db.prepare(`SELECT id, title, prompt, negative_prompt, params, board_id, notes, tags, source_type, source_id, source_url, rating, is_pinned, archived, last_used_at, use_count, parent_id, analysis, created_at, updated_at FROM inspirations ORDER BY is_pinned DESC, created_at DESC`).all<any>();
+              output.inspirations = rows.results.map((item: any) => ({
+                id: item.id, title: item.title, prompt: item.prompt, negativePrompt: item.negative_prompt,
+                params: parseStoredJson(item.params, undefined), boardId: item.board_id, notes: item.notes || '',
+                tags: parseStoredJson(item.tags, []), sourceType: item.source_type, sourceId: item.source_id,
+                sourceUrl: item.source_url, rating: Number(item.rating || 0), isPinned: Number(item.is_pinned || 0) === 1,
+                archived: Number(item.archived || 0) === 1, lastUsedAt: item.last_used_at, useCount: Number(item.use_count || 0),
+                parentId: item.parent_id, analysis: parseStoredJson(item.analysis, {}), createdAt: item.created_at, updatedAt: item.updated_at,
+              }));
           }
           if (kind === 'all' || kind === 'artists') {
               const rows = await db.prepare(`SELECT id, name, benchmarks FROM artists ORDER BY name ASC`).all<any>();
@@ -3188,10 +3297,14 @@ export default {
         if (!localHistoryEnabled(env)) return error('Local history is disabled', 404);
         if (!env.BUCKET) return error('Local history storage is unavailable', 503);
         await ensureLocalHistorySchema(db);
+        await ensureInspirationSchema(db);
 
         const deleteHistoryRows = async (rows: Array<{id: string, image_key: string}>) => {
           for (const row of rows) {
-            if (row.image_key) await env.BUCKET!.delete(row.image_key);
+            if (row.image_key) {
+              const reference = await db.prepare('SELECT COUNT(*) AS count FROM inspirations WHERE image_key = ?').bind(row.image_key).first<{count: number}>();
+              if (Number(reference?.count || 0) === 0) await env.BUCKET!.delete(row.image_key);
+            }
             await db.prepare('DELETE FROM local_generation_history WHERE id = ? AND user_id = ?')
               .bind(row.id, currentUser.id).run();
           }
@@ -4620,177 +4733,206 @@ export default {
         return json({ success: true });
       }
 
-      // Inspirations
+      // Inspiration boards and curated inspiration library
+      if (path.startsWith('/api/inspiration-boards') || path.startsWith('/api/inspirations')) {
+        await ensureInspirationSchema(db);
+      }
+
+      if (path === '/api/inspiration-boards' && method === 'GET') {
+        const result = await db.prepare('SELECT * FROM inspiration_boards WHERE user_id = ? ORDER BY sort_order ASC, created_at ASC')
+          .bind(currentUser.id).all<any>();
+        return json({ items: result.results.map(mapInspirationBoardRow) });
+      }
+      if (path === '/api/inspiration-boards' && method === 'POST') {
+        if (currentUser.role === 'guest') return error('Forbidden', 403);
+        const body = await request.json() as any;
+        const now = Date.now();
+        const id = String(body.id || crypto.randomUUID());
+        const name = String(body.name || '').trim().slice(0, 80);
+        if (!name) return error('Board name is required', 400);
+        await db.prepare(`INSERT INTO inspiration_boards (id, user_id, name, color, sort_order, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`)
+          .bind(id, currentUser.id, name, String(body.color || '#6366f1'), Number(body.sortOrder || 0), now, now).run();
+        const row = await db.prepare('SELECT * FROM inspiration_boards WHERE id = ?').bind(id).first<any>();
+        return json({ item: mapInspirationBoardRow(row) });
+      }
+      const boardMatch = path.match(/^\/api\/inspiration-boards\/([^/]+)$/);
+      if (boardMatch && method === 'PUT') {
+        if (currentUser.role === 'guest') return error('Forbidden', 403);
+        const id = decodeURIComponent(boardMatch[1]);
+        const body = await request.json() as any;
+        const current = await db.prepare('SELECT * FROM inspiration_boards WHERE id = ? AND user_id = ?').bind(id, currentUser.id).first<any>();
+        if (!current) return error('Not Found', 404);
+        await db.prepare('UPDATE inspiration_boards SET name = ?, color = ?, sort_order = ?, updated_at = ? WHERE id = ? AND user_id = ?')
+          .bind(
+            typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 80) : current.name,
+            typeof body.color === 'string' ? body.color : current.color,
+            Number.isFinite(body.sortOrder) ? Number(body.sortOrder) : current.sort_order,
+            Date.now(), id, currentUser.id,
+          ).run();
+        return json({ success: true });
+      }
+      if (boardMatch && method === 'DELETE') {
+        if (currentUser.role === 'guest') return error('Forbidden', 403);
+        const id = decodeURIComponent(boardMatch[1]);
+        const board = await db.prepare('SELECT id FROM inspiration_boards WHERE id = ? AND user_id = ?').bind(id, currentUser.id).first<any>();
+        if (!board) return error('Not Found', 404);
+        await db.prepare('UPDATE inspirations SET board_id = NULL, updated_at = ? WHERE board_id = ? AND user_id = ?').bind(Date.now(), id, currentUser.id).run();
+        await db.prepare('DELETE FROM inspiration_boards WHERE id = ? AND user_id = ?').bind(id, currentUser.id).run();
+        return json({ success: true });
+      }
+
+      const updateInspirationFields = async (id: string, updates: any) => {
+        const statements: Array<{sql: string; value: any}> = [];
+        const stringFields: Record<string, string> = {
+          title: 'title', prompt: 'prompt', negativePrompt: 'negative_prompt', boardId: 'board_id', notes: 'notes',
+          sourceType: 'source_type', sourceId: 'source_id', sourceUrl: 'source_url', parentId: 'parent_id',
+        };
+        for (const [key, column] of Object.entries(stringFields)) {
+          if (updates[key] !== undefined) statements.push({ sql: `${column} = ?`, value: updates[key] || null });
+        }
+        if (updates.tags !== undefined) statements.push({ sql: 'tags = ?', value: JSON.stringify(Array.isArray(updates.tags) ? updates.tags.slice(0, 80) : []) });
+        if (updates.params !== undefined) statements.push({ sql: 'params = ?', value: updates.params ? JSON.stringify(updates.params) : null });
+        if (updates.analysis !== undefined) statements.push({ sql: 'analysis = ?', value: JSON.stringify(updates.analysis || {}) });
+        if (updates.rating !== undefined) statements.push({ sql: 'rating = ?', value: Math.max(0, Math.min(5, Math.floor(Number(updates.rating) || 0))) });
+        if (updates.isPinned !== undefined) statements.push({ sql: 'is_pinned = ?', value: updates.isPinned ? 1 : 0 });
+        if (updates.archived !== undefined) statements.push({ sql: 'archived = ?', value: updates.archived ? 1 : 0 });
+        if (!statements.length) return 0;
+        statements.push({ sql: 'updated_at = ?', value: Date.now() });
+        const result = await db.prepare(`UPDATE inspirations SET ${statements.map(item => item.sql).join(', ')} WHERE id = ? AND user_id = ?`)
+          .bind(...statements.map(item => item.value), id, currentUser.id).run();
+        return Number(result.meta?.changes || 0);
+      };
+
+      const deleteInspirationAsset = async (item: any) => {
+        if (item.image_key) {
+          const references = await db.prepare(`SELECT
+            (SELECT COUNT(*) FROM local_generation_history WHERE image_key = ?) +
+            (SELECT COUNT(*) FROM inspirations WHERE image_key = ? AND id != ?) AS count`)
+            .bind(item.image_key, item.image_key, item.id).first<{count: number}>();
+          if (Number(references?.count || 0) === 0 && env.BUCKET) await env.BUCKET.delete(item.image_key);
+        } else if (item.image_url) {
+          await deleteR2File(env, item.image_url);
+        }
+      };
+
+      const inspirationImageMatch = path.match(/^\/api\/inspirations\/([^/]+)\/image$/);
+      if (inspirationImageMatch && method === 'GET') {
+        const id = decodeURIComponent(inspirationImageMatch[1]);
+        const row = await db.prepare('SELECT image_key, image_type FROM inspirations WHERE id = ?').bind(id).first<any>();
+        if (!row?.image_key || !env.BUCKET) return error('Inspiration image not found', 404);
+        const object = await env.BUCKET.get(row.image_key);
+        if (!object) return error('Inspiration image file not found', 404);
+        const headers = new Headers();
+        object.writeHttpMetadata(headers);
+        headers.set('Content-Type', row.image_type || headers.get('Content-Type') || 'image/png');
+        headers.set('etag', object.httpEtag);
+        headers.set('Cache-Control', 'private, max-age=31536000, immutable');
+        return new Response(object.body, { headers });
+      }
+
       if (path === '/api/inspirations' && method === 'GET') {
-        const res = await db.prepare('SELECT * FROM inspirations ORDER BY created_at DESC').all();
-        return json(res.results.map((i: any) => ({
-          id: i.id,
-          userId: i.user_id,
-          username: i.username,
-          title: i.title,
-          imageUrl: i.image_url,
-          prompt: i.prompt,
-          negativePrompt: i.negative_prompt || '',
-          params: i.params ? JSON.parse(i.params) : undefined,
-          createdAt: i.created_at
-        })));
+        const result = await db.prepare('SELECT * FROM inspirations ORDER BY is_pinned DESC, created_at DESC').all<any>();
+        return json(result.results.map(mapInspirationRow));
       }
       if (path === '/api/inspirations' && method === 'POST') {
         if (currentUser.role === 'guest') return error('Forbidden', 403);
-        
         const body = await request.json() as any;
-        let imageUrl = body.imageUrl;
-        if (imageUrl && imageUrl.startsWith('data:')) { 
-          try { imageUrl = await processImageUpload(env, imageUrl, 'inspirations', body.id || crypto.randomUUID(), currentUser); } 
-          catch (e: any) { return error(e.message, 413); } 
-        }
-        
-        let paramsJson: string | null = null;
-        if (body.params) {
-          try {
-            paramsJson = JSON.stringify(body.params);
-          } catch (e: any) {
-            console.error('Failed to serialize params:', e);
-            paramsJson = null;
+        const id = String(body.id || crypto.randomUUID());
+        const now = Number(body.createdAt || Date.now());
+        let imageUrl = body.imageUrl || null;
+        let imageKey: string | null = null;
+        let imageType: string | null = null;
+        if (body.sourceType === 'history' && body.sourceId) {
+          const history = await db.prepare('SELECT image_key, image_type FROM local_generation_history WHERE id = ? AND user_id = ?')
+            .bind(String(body.sourceId), currentUser.id).first<any>();
+          if (history?.image_key) {
+            imageKey = history.image_key;
+            imageType = history.image_type || 'image/png';
+            imageUrl = null;
           }
         }
-        
-        try {
-          await db.prepare('INSERT OR REPLACE INTO inspirations (id, user_id, username, title, image_url, prompt, negative_prompt, params, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-            .bind(body.id, currentUser.id, currentUser.username, body.title, imageUrl, body.prompt, body.negativePrompt || '', paramsJson, body.createdAt)
-            .run();
-          await writeSystemLog(db, {
-            user: currentUser,
-            request,
-            action: 'inspiration_save',
-            category: 'inspiration',
-            resourceType: 'inspiration',
-            resourceId: body.id,
-            message: `保存灵感：${body.title || body.id}`,
-            metadata: {
-              title: body.title,
-              promptLength: typeof body.prompt === 'string' ? body.prompt.length : 0,
-              negativeLength: typeof body.negativePrompt === 'string' ? body.negativePrompt.length : 0,
-              hasParams: Boolean(body.params),
-              imageUrl,
-            },
-          });
-          return json({ success: true });
-        } catch (e: any) {
-          if (isMissingColumnError(e)) {
-            await initDB();
-            try {
-              await db.prepare('INSERT OR REPLACE INTO inspirations (id, user_id, username, title, image_url, prompt, negative_prompt, params, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-                .bind(body.id, currentUser.id, currentUser.username, body.title, imageUrl, body.prompt, body.negativePrompt || '', paramsJson, body.createdAt)
-                .run();
-              await writeSystemLog(db, {
-                user: currentUser,
-                request,
-                action: 'inspiration_save',
-                category: 'inspiration',
-                resourceType: 'inspiration',
-                resourceId: body.id,
-                message: `保存灵感：${body.title || body.id}`,
-                metadata: { title: body.title, repairedSchema: true },
-              });
-              return json({ success: true });
-            } catch (retryError: any) {
-              return error(retryError.message || 'Database initialization failed', 500);
-            }
-          }
-          console.error('POST /api/inspirations error:', e.message, e.stack);
-          return error(e.message || 'Internal Server Error', 500);
+        if (imageUrl && String(imageUrl).startsWith('data:')) {
+          try { imageUrl = await processImageUpload(env, imageUrl, 'inspirations', id, currentUser); }
+          catch (e: any) { return error(e.message, 413); }
         }
+        await db.prepare(`INSERT OR REPLACE INTO inspirations (
+          id, user_id, username, title, image_url, image_key, image_type, prompt, negative_prompt, params,
+          board_id, notes, tags, source_type, source_id, source_url, rating, is_pinned, archived,
+          last_used_at, use_count, parent_id, analysis, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(
+            id, currentUser.id, currentUser.username, String(body.title || '未命名灵感').slice(0, 160), imageUrl, imageKey, imageType,
+            String(body.prompt || ''), String(body.negativePrompt || ''), body.params ? JSON.stringify(body.params) : null,
+            body.boardId || null, String(body.notes || ''), JSON.stringify(Array.isArray(body.tags) ? body.tags.slice(0, 80) : []),
+            body.sourceType || 'other', body.sourceId || null, body.sourceUrl || null,
+            Math.max(0, Math.min(5, Math.floor(Number(body.rating) || 0))), body.isPinned ? 1 : 0, body.archived ? 1 : 0,
+            body.lastUsedAt || null, Number(body.useCount || 0), body.parentId || null, JSON.stringify(body.analysis || {}), now, Number(body.updatedAt || now),
+          ).run();
+        const row = await db.prepare('SELECT * FROM inspirations WHERE id = ?').bind(id).first<any>();
+        await writeSystemLog(db, { user: currentUser, request, action: 'inspiration_save', category: 'inspiration', resourceType: 'inspiration', resourceId: id, message: `保存灵感：${body.title || id}`, metadata: { sourceType: body.sourceType, sourceId: body.sourceId, tags: body.tags, boardId: body.boardId } });
+        return json({ success: true, id, item: mapInspirationRow(row) });
+      }
+      if (path === '/api/inspirations/bulk-update' && method === 'POST') {
+        if (currentUser.role === 'guest') return error('Forbidden', 403);
+        const body = await request.json() as any;
+        const ids = Array.from(new Set((Array.isArray(body.ids) ? body.ids : []).slice(0, 500).map((id: any) => String(id)).filter(Boolean))) as string[];
+        let updatedCount = 0;
+        for (const id of ids) updatedCount += await updateInspirationFields(id, body.updates || {});
+        return json({ success: true, updatedCount });
       }
       if (path === '/api/inspirations/bulk-delete' && method === 'POST') {
-          if (currentUser.role === 'guest') return error('Forbidden', 403);
-          const { ids } = await request.json() as { ids: string[] };
-          let deletedCount = 0;
-          let skippedCount = 0;
-          for (const id of ids) {
-              const item = await db.prepare('SELECT user_id, image_url FROM inspirations WHERE id = ?').bind(id).first<{user_id: string, image_url: string}>();
-              if (item) {
-                  if (currentUser.role !== 'admin' && item.user_id !== currentUser.id) {
-                    skippedCount++;
-                    continue;
-                  }
-                  await deleteR2File(env, item.image_url);
-                  await db.prepare('DELETE FROM inspirations WHERE id = ?').bind(id).run();
-                  deletedCount++;
-              }
-          }
-          await writeSystemLog(db, {
-            user: currentUser,
-            request,
-            action: 'inspiration_bulk_delete',
-            category: 'inspiration',
-            resourceType: 'inspiration',
-            message: `批量删除灵感：${deletedCount} 条`,
-            metadata: { requestedCount: ids.length, deletedCount, skippedCount, ids },
-          });
-          return json({ success: true });
+        if (currentUser.role === 'guest') return error('Forbidden', 403);
+        const body = await request.json() as any;
+        const ids = Array.from(new Set((Array.isArray(body.ids) ? body.ids : []).slice(0, 500).map((id: any) => String(id)).filter(Boolean))) as string[];
+        let deletedCount = 0;
+        for (const id of ids) {
+          const item = await db.prepare('SELECT * FROM inspirations WHERE id = ?').bind(id).first<any>();
+          if (!item || (currentUser.role !== 'admin' && item.user_id !== currentUser.id)) continue;
+          await db.prepare('DELETE FROM inspirations WHERE id = ?').bind(id).run();
+          await deleteInspirationAsset(item);
+          deletedCount++;
+        }
+        return json({ success: true, deletedCount });
       }
-      if (path.startsWith('/api/inspirations/') && method === 'PUT') {
-         if (currentUser.role === 'guest') return error('Forbidden', 403);
-         const id = path.split('/').pop();
-         const updates = await request.json() as any;
-         const item = await db.prepare('SELECT user_id FROM inspirations WHERE id = ?').bind(id).first<{user_id: string}>();
-         if (!item) return error('Not Found', 404);
-         if (item.user_id !== currentUser.id && currentUser.role !== 'admin') return error('Permission Denied', 403);
-         const applyInspirationUpdates = async () => {
-           if (updates.title) await db.prepare('UPDATE inspirations SET title = ? WHERE id = ?').bind(updates.title, id).run();
-           if (updates.prompt) await db.prepare('UPDATE inspirations SET prompt = ? WHERE id = ?').bind(updates.prompt, id).run();
-           if (updates.negativePrompt !== undefined) await db.prepare('UPDATE inspirations SET negative_prompt = ? WHERE id = ?').bind(updates.negativePrompt, id).run();
-         };
-         try {
-           await applyInspirationUpdates();
-         } catch (e: any) {
-           if (isMissingColumnError(e)) {
-             await initDB();
-             await applyInspirationUpdates();
-           } else {
-             throw e;
-           }
-         }
-         await writeSystemLog(db, {
-           user: currentUser,
-           request,
-           action: 'inspiration_update',
-           category: 'inspiration',
-           resourceType: 'inspiration',
-           resourceId: id,
-           message: `更新灵感：${updates.title || id}`,
-           metadata: {
-             fields: Object.keys(updates),
-             title: updates.title,
-             promptLength: typeof updates.prompt === 'string' ? updates.prompt.length : undefined,
-             negativeLength: typeof updates.negativePrompt === 'string' ? updates.negativePrompt.length : undefined,
-           },
-         });
-         return json({ success: true });
+      const inspirationUseMatch = path.match(/^\/api\/inspirations\/([^/]+)\/use$/);
+      if (inspirationUseMatch && method === 'POST') {
+        const id = decodeURIComponent(inspirationUseMatch[1]);
+        await db.prepare('UPDATE inspirations SET use_count = COALESCE(use_count, 0) + 1, last_used_at = ?, updated_at = ? WHERE id = ?')
+          .bind(Date.now(), Date.now(), id).run();
+        return json({ success: true });
       }
-      if (path.startsWith('/api/inspirations/') && method === 'DELETE') {
-         if (currentUser.role === 'guest') return error('Forbidden', 403);
-         const id = path.split('/').pop();
-         const item = await db.prepare('SELECT user_id, image_url FROM inspirations WHERE id = ?').bind(id).first<{user_id: string, image_url: string}>();
-         if (item) {
-             if (item.user_id !== currentUser.id && currentUser.role !== 'admin') return error('Permission Denied', 403);
-             await deleteR2File(env, item.image_url);
-             await db.prepare('DELETE FROM inspirations WHERE id = ?').bind(id).run();
-             await writeSystemLog(db, {
-               user: currentUser,
-               request,
-               action: 'inspiration_delete',
-               category: 'inspiration',
-               resourceType: 'inspiration',
-               resourceId: id,
-               message: '删除灵感',
-               metadata: { imageUrl: item.image_url },
-             });
-         }
-         return json({ success: true });
+      const inspirationMatch = path.match(/^\/api\/inspirations\/([^/]+)$/);
+      if (inspirationMatch && method === 'PUT') {
+        if (currentUser.role === 'guest') return error('Forbidden', 403);
+        const id = decodeURIComponent(inspirationMatch[1]);
+        const item = await db.prepare('SELECT user_id FROM inspirations WHERE id = ?').bind(id).first<any>();
+        if (!item) return error('Not Found', 404);
+        if (item.user_id !== currentUser.id && currentUser.role !== 'admin') return error('Permission Denied', 403);
+        const updates = await request.json() as any;
+        if (currentUser.role === 'admin' && item.user_id !== currentUser.id) {
+          const ownerId = item.user_id;
+          const statements: string[] = [];
+          const values: any[] = [];
+          if (typeof updates.title === 'string') { statements.push('title = ?'); values.push(updates.title.slice(0, 160)); }
+          if (typeof updates.prompt === 'string') { statements.push('prompt = ?'); values.push(updates.prompt); }
+          if (typeof updates.negativePrompt === 'string') { statements.push('negative_prompt = ?'); values.push(updates.negativePrompt); }
+          if (statements.length) await db.prepare(`UPDATE inspirations SET ${statements.join(', ')}, updated_at = ? WHERE id = ? AND user_id = ?`).bind(...values, Date.now(), id, ownerId).run();
+        } else {
+          await updateInspirationFields(id, updates);
+        }
+        return json({ success: true });
       }
-
+      if (inspirationMatch && method === 'DELETE') {
+        if (currentUser.role === 'guest') return error('Forbidden', 403);
+        const id = decodeURIComponent(inspirationMatch[1]);
+        const item = await db.prepare('SELECT * FROM inspirations WHERE id = ?').bind(id).first<any>();
+        if (!item) return json({ success: true });
+        if (item.user_id !== currentUser.id && currentUser.role !== 'admin') return error('Permission Denied', 403);
+        await db.prepare('DELETE FROM inspirations WHERE id = ?').bind(id).run();
+        await deleteInspirationAsset(item);
+        return json({ success: true });
+      }
       if (path.startsWith('/api/')) return error('Not Found', 404);
       return env.ASSETS.fetch(request);
 

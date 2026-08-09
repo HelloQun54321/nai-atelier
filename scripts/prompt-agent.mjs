@@ -1838,7 +1838,7 @@ export class PromptAgentService {
       }
     };
     const compactChain = item => ({ id: item.id, type: item.type, name: item.name, description: item.description, tags: item.tags, basePrompt: item.basePrompt, negativePrompt: item.negativePrompt, modules: item.modules, params: item.params, variableValues: item.variableValues, createdAt: item.createdAt, updatedAt: item.updatedAt });
-    const compactInspiration = item => ({ id: item.id, title: item.title || item.name, prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params, tags: item.tags, createdAt: item.createdAt, updatedAt: item.updatedAt });
+    const compactInspiration = item => ({ id: item.id, title: item.title || item.name, prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params, boardId: item.boardId, notes: item.notes, tags: item.tags, sourceType: item.sourceType, sourceId: item.sourceId, sourceUrl: item.sourceUrl, rating: item.rating, isPinned: item.isPinned, archived: item.archived, lastUsedAt: item.lastUsedAt, useCount: item.useCount, createdAt: item.createdAt, updatedAt: item.updatedAt });
     const getAitagImage = async (workId, imageIndex = 0) => {
       if (!project?.requestBuffer) throw new Error('电脑项目图片服务不可用');
       const detail = await readProject(`/api/aitag/work/${Math.floor(clamp(workId, 1, Number.MAX_SAFE_INTEGER, 1))}`);
@@ -2000,7 +2000,7 @@ export class PromptAgentService {
           }
           if (kind === 'all' || kind === 'inspirations') {
             const items = listItems((await readProject('/api/agent/library?kind=inspirations')).inspirations);
-            output.inspirations = items.map(compactInspiration).filter(item => !query || JSON.stringify([item.title, item.prompt, item.negativePrompt, item.tags]).toLowerCase().includes(query)).slice(0, limit);
+            output.inspirations = items.map(compactInspiration).filter(item => !query || JSON.stringify([item.title, item.prompt, item.negativePrompt, item.notes, item.tags, item.sourceType]).toLowerCase().includes(query)).slice(0, limit);
           }
           if (kind === 'all' || kind === 'artists') {
             const items = listItems((await readProject('/api/agent/library?kind=artists')).artists);
@@ -2123,7 +2123,7 @@ export class PromptAgentService {
           let result;
           if (args.target === 'inspiration') {
             const now = Date.now();
-            result = await readProject('/api/inspirations', { method: 'POST', body: { id: randomBytes(16).toString('hex'), title: name, imageUrl: source.imageData, prompt: source.prompt, negativePrompt: source.negativePrompt, params: source.params, createdAt: now, updatedAt: now } });
+            result = await readProject('/api/inspirations', { method: 'POST', body: { id: randomBytes(16).toString('hex'), title: name, imageUrl: source.imageData, prompt: source.prompt, negativePrompt: source.negativePrompt, params: source.params, tags: ['AITag'], sourceType: 'aitag', sourceId: String(Math.floor(args.workId)), sourceUrl: `https://aitag.win/i/${Math.floor(args.workId)}`, createdAt: now, updatedAt: now } });
             changed('inspirations');
           } else if (args.target === 'character_reference') {
             result = await readProject('/api/character-references', { method: 'POST', body: { name, imageData: source.imageData } });
@@ -2175,27 +2175,28 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'create_inspiration', label: '新建灵感', description: '把一条生成历史的原图、提示词和参数保存到灵感库。historyId必须来自list_generation_history。',
-        parameters: Type.Object({ title: Type.String(), prompt: Type.String(), negativePrompt: Type.Optional(Type.String()), historyId: Type.String(), params: Type.Optional(Type.Any()) }),
+        name: 'create_inspiration', label: '新建并整理灵感', description: '把生成历史保存到精选灵感库，并可同时填写灵感板、备注、标签和评分。historyId必须来自list_generation_history。',
+        parameters: Type.Object({ title: Type.String(), prompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), historyId: Type.String(), params: Type.Optional(Type.Any()), boardId: Type.Optional(Type.String()), notes: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), rating: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => {
           const now = Date.now();
-          const body = { id: randomBytes(16).toString('hex'), title: text(args.title).slice(0, 160), prompt: text(args.prompt), negativePrompt: text(args.negativePrompt), params: args.params && typeof args.params === 'object' ? args.params : undefined, createdAt: now, updatedAt: now };
           const item = await findHistory(args.historyId);
           if (!item) throw new Error('找不到用于灵感封面的历史图片');
-          const image = await project.requestBuffer(`/api/local-history/${encodeURIComponent(item.id)}/image`, MAX_AGENT_IMAGE_BYTES);
-          body.imageUrl = `data:${image.mimeType || 'image/png'};base64,${image.buffer.toString('base64')}`;
-          body.params ||= item.params;
+          const body = { id: randomBytes(16).toString('hex'), title: text(args.title).slice(0, 160), prompt: typeof args.prompt === 'string' ? text(args.prompt) : text(item.prompt), negativePrompt: typeof args.negativePrompt === 'string' ? text(args.negativePrompt) : text(item.negativePrompt), params: args.params && typeof args.params === 'object' ? args.params : item.params, boardId: text(args.boardId).slice(0, 200) || undefined, notes: text(args.notes), tags: Array.isArray(args.tags) ? args.tags.slice(0, 80).map(value => text(value).slice(0, 80)) : ['生成历史'], rating: Math.floor(clamp(args.rating, 0, 5, 0)), sourceType: 'history', sourceId: String(item.id), createdAt: now, updatedAt: now };
           const result = await readProject('/api/inspirations', { method: 'POST', body });
           changed('inspirations');
           return { content: jsonText({ ok: true, id: result.id || body.id, title: body.title }), details: result };
         },
       },
       {
-        name: 'update_inspiration', label: '更新灵感', description: '更新已有灵感的标题、提示词或负面提示词。',
-        parameters: Type.Object({ id: Type.String(), title: Type.Optional(Type.String()), prompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()) }),
+        name: 'update_inspiration', label: '整理灵感', description: '更新灵感的内容、灵感板、备注、标签、评分、置顶或归档状态。',
+        parameters: Type.Object({ id: Type.String(), title: Type.Optional(Type.String()), prompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), boardId: Type.Optional(Type.String()), notes: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), rating: Type.Optional(Type.Number()), isPinned: Type.Optional(Type.Boolean()), archived: Type.Optional(Type.Boolean()) }),
         execute: async (_id, args) => {
           const body = {};
-          for (const key of ['title', 'prompt', 'negativePrompt']) if (typeof args[key] === 'string') body[key] = text(args[key]);
+          for (const key of ['title', 'prompt', 'negativePrompt', 'boardId', 'notes']) if (typeof args[key] === 'string') body[key] = text(args[key]);
+          if (Array.isArray(args.tags)) body.tags = args.tags.slice(0, 80).map(value => text(value).slice(0, 80));
+          if (typeof args.rating === 'number') body.rating = Math.floor(clamp(args.rating, 0, 5, 0));
+          if (typeof args.isPinned === 'boolean') body.isPinned = args.isPinned;
+          if (typeof args.archived === 'boolean') body.archived = args.archived;
           await readProject(`/api/inspirations/${encodeURIComponent(args.id)}`, { method: 'PUT', body });
           changed('inspirations');
           return { content: jsonText({ ok: true, id: args.id, updated: Object.keys(body) }), details: body };

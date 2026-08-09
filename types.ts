@@ -186,6 +186,18 @@ export interface Artist {
 }
 
 // Inspiration Gallery Types
+export type InspirationSourceType = 'history' | 'aitag' | 'upload' | 'agent' | 'other';
+
+export interface InspirationBoard {
+  id: string;
+  userId: string;
+  name: string;
+  color?: string;
+  sortOrder: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Inspiration {
   id: string;
   userId: string; // Owner
@@ -195,7 +207,21 @@ export interface Inspiration {
   prompt: string;
   negativePrompt?: string;
   params?: NAIParams; // 完整生成参数（含 characters），可选字段兼容旧数据
+  boardId?: string;
+  notes?: string;
+  tags?: string[];
+  sourceType?: InspirationSourceType;
+  sourceId?: string;
+  sourceUrl?: string;
+  rating?: number;
+  isPinned?: boolean;
+  archived?: boolean;
+  lastUsedAt?: number;
+  useCount?: number;
+  parentId?: string;
+  analysis?: Record<string, unknown>;
   createdAt: number;
+  updatedAt?: number;
 }
 
 // Local Generation History Item

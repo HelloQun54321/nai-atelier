@@ -468,6 +468,12 @@ const App = () => {
           onRefresh={() => loadInspirations(true)}
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
+          chains={chains}
+          onCreateArtistChain={handleCreateChainFromAitag}
+          onSetChainCover={async (chainId, imageUrl) => {
+            await db.updateChain(chainId, { previewImage: imageUrl });
+            await refreshData(true);
+          }}
         />;
       case 'history':
         return <GenHistory currentUser={currentUser} chains={chains} notify={notify} onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })} onRefreshInspiration={() => loadInspirations(true)} />;

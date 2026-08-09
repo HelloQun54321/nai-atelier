@@ -688,9 +688,13 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 params: importData.params,
                 userId: currentUser.id,
                 username: currentUser.username,
-                createdAt: Date.now()
+                tags: ['生成历史'],
+                sourceType: 'history',
+                sourceId: lightbox.id,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
             });
-            notify('发布成功！已加入灵感图库');
+            notify('已加入灵感库，稍后可继续分类整理');
             setIsPublishing(false);
             setPublishTitle('');
             setLightbox(null);
@@ -701,7 +705,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 action: 'history_publish_inspiration',
                 resourceType: 'local_history',
                 resourceId: lightbox.id,
-                message: `从历史发布到灵感：${publishTitle}`,
+                message: `从历史加入灵感库：${publishTitle}`,
                 metadata: {
                     title: publishTitle,
                     promptLength: importData.prompt.length,
@@ -710,7 +714,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 },
             }).catch(console.error);
         } catch (e: any) {
-            notify('发布失败: ' + e.message, 'error');
+            notify('加入灵感库失败: ' + e.message, 'error');
             setIsPublishing(false);
         }
     };
@@ -1015,7 +1019,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                 </button>
 
                                 <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
-                                    <label className="block text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-2">发布到灵感图库</label>
+                                    <label className="block text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-2">加入灵感库</label>
                                     <div className="flex gap-2">
                                         <input
                                             type="text"
@@ -1029,7 +1033,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                             disabled={isPublishing}
                                             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-sm font-bold whitespace-nowrap disabled:opacity-50 transition-colors shadow-sm"
                                         >
-                                            {isPublishing ? '发布中' : '发布'}
+                                            {isPublishing ? '整理中' : '加入'}
                                         </button>
                                     </div>
                                 </div>
@@ -1132,9 +1136,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                         <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-500 rounded-full flex items-center justify-center text-3xl mb-4">
                             ✨
                         </div>
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">发布成功！</h3>
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">已加入灵感库</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-                            您的作品已添加到灵感图库，其他用户可以查看并引用您的 Prompt。
+                            图片与完整参数已保存，可前往灵感库继续添加灵感板、标签和备注。
                         </p>
                         <button
                             onClick={() => setShowSuccessModal(false)}
