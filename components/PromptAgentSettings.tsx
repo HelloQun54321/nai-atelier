@@ -49,7 +49,7 @@ const CustomProviderForm: React.FC<{
         <label className="text-xs font-bold text-gray-600 dark:text-gray-300">接口名称<input value={value.name} onChange={event => onChange({ ...value, name: event.target.value })} placeholder="例如：我的中转站" className="mobile-touch mt-1 w-full rounded-xl border border-gray-300 bg-gray-50 px-3 text-sm font-normal dark:border-gray-700 dark:bg-gray-950" /></label>
         <label className="text-xs font-bold text-gray-600 dark:text-gray-300">接口协议<select value={value.api} onChange={event => onChange({ ...value, api: event.target.value as PromptAgentCustomProvider['api'] })} className="mobile-touch mt-1 w-full rounded-xl border border-gray-300 bg-gray-50 px-3 text-sm font-normal dark:border-gray-700 dark:bg-gray-950"><option value="openai-completions">OpenAI Chat / Completions</option><option value="openai-responses">OpenAI Responses</option><option value="anthropic-messages">Anthropic Messages</option></select></label>
       </div>
-      <label className="block text-xs font-bold text-gray-600 dark:text-gray-300">Base URL<input value={value.baseUrl} onChange={event => onChange({ ...value, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" className="mobile-touch mt-1 w-full rounded-xl border border-gray-300 bg-gray-50 px-3 font-mono text-sm font-normal dark:border-gray-700 dark:bg-gray-950" /><span className="mt-1 block font-normal text-gray-400">填写到版本路径，例如 OpenAI兼容接口通常以 /v1 结尾。</span></label>
+      <label className="block text-xs font-bold text-gray-600 dark:text-gray-300">Base URL<input value={value.baseUrl} onChange={event => onChange({ ...value, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" className="mobile-touch mt-1 w-full rounded-xl border border-gray-300 bg-gray-50 px-3 font-mono text-sm font-normal dark:border-gray-700 dark:bg-gray-950" /><span className="mt-1 block font-normal text-gray-400">填写到版本路径，例如 OpenAI兼容接口通常以 /v1 结尾。HTTP 只允许本机回环地址，局域网或公网接口必须使用 HTTPS。</span></label>
       <label className="block text-xs font-bold text-gray-600 dark:text-gray-300">API Key<input type="password" value={value.apiKey || ''} onChange={event => onChange({ ...value, apiKey: event.target.value })} placeholder={value.id ? '留空则继续使用原密钥' : '本地无密钥服务可以留空'} autoComplete="new-password" className="mobile-touch mt-1 w-full rounded-xl border border-gray-300 bg-gray-50 px-3 font-mono text-sm font-normal dark:border-gray-700 dark:bg-gray-950" /></label>
       <div className="rounded-2xl border border-gray-200 p-3 dark:border-gray-700">
         <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -69,12 +69,12 @@ const CustomProviderForm: React.FC<{
           <div className="flex gap-2"><input value={model.id} onChange={event => patchModel(index, { id: event.target.value })} placeholder="模型 ID，例如 deepseek-chat" className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-300 bg-gray-50 px-3 font-mono text-sm dark:border-gray-700 dark:bg-gray-950" />{value.models.length > 1 && <button type="button" onClick={() => onChange({ ...value, models: value.models.filter((_, modelIndex) => modelIndex !== index) })} className="mobile-touch rounded-xl px-3 text-sm font-bold text-red-500">删除</button>}</div>
           <input value={model.name || ''} onChange={event => patchModel(index, { name: event.target.value })} placeholder="显示名称（可选）" className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-gray-50 px-3 text-sm dark:border-gray-700 dark:bg-gray-950" />
           <div className="mt-2 grid grid-cols-2 gap-2"><label className="text-[11px] text-gray-500">上下文长度<input type="number" min="1024" value={model.contextWindow} onChange={event => patchModel(index, { contextWindow: Number(event.target.value) })} className="mobile-touch mt-1 w-full rounded-xl border border-gray-300 bg-gray-50 px-2 text-sm dark:border-gray-700 dark:bg-gray-950" /></label><label className="text-[11px] text-gray-500">最大输出<input type="number" min="256" value={model.maxTokens} onChange={event => patchModel(index, { maxTokens: Number(event.target.value) })} className="mobile-touch mt-1 w-full rounded-xl border border-gray-300 bg-gray-50 px-2 text-sm dark:border-gray-700 dark:bg-gray-950" /></label></div>
-          <div className="mt-2 flex flex-wrap gap-4"><label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300"><input type="checkbox" checked={model.imageInput} onChange={event => patchModel(index, { imageInput: event.target.checked, capabilityDetection: { imageInput: 'manual', reasoning: model.capabilityDetection?.reasoning || 'manual' } })}/>支持识图</label><label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300"><input type="checkbox" checked={model.reasoning} onChange={event => patchModel(index, { reasoning: event.target.checked, capabilityDetection: { imageInput: model.capabilityDetection?.imageInput || 'manual', reasoning: 'manual' } })}/>支持推理</label></div>
+          <div className="mt-2 flex flex-wrap gap-4"><label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300"><input type="checkbox" checked={model.imageInput} onChange={event => patchModel(index, { imageInput: event.target.checked, capabilityDetection: { imageInput: 'manual', reasoning: model.capabilityDetection?.reasoning || 'unknown' } })}/>支持识图</label><label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300"><input type="checkbox" checked={model.reasoning} onChange={event => patchModel(index, { reasoning: event.target.checked, capabilityDetection: { imageInput: model.capabilityDetection?.imageInput || 'unknown', reasoning: 'manual' } })}/>支持推理</label></div>
           {model.capabilityDetection && <div className="mt-2 text-[10px] text-gray-400">能力来源：识图 {model.capabilityDetection.imageInput === 'manual' ? '人工' : '自动'} · 推理 {model.capabilityDetection.reasoning === 'manual' ? '人工' : '自动'}（仍可手动纠正）</div>}
         </div>)}</div>
       </div>
       <div className="flex gap-2 border-t border-gray-100 pt-4 dark:border-gray-800"><button type="button" disabled={busy || !fetchReady} onClick={onFetch} className="mobile-touch flex-1 rounded-xl border border-indigo-300 text-sm font-bold text-indigo-600 disabled:opacity-40 dark:border-indigo-800 dark:text-indigo-300">获取模型</button><button type="button" disabled={busy || !ready} onClick={onTest} className="mobile-touch flex-1 rounded-xl border border-indigo-300 text-sm font-bold text-indigo-600 disabled:opacity-40 dark:border-indigo-800 dark:text-indigo-300">测试连接</button><button type="button" disabled={busy || !ready} onClick={onSave} className="mobile-touch flex-[1.4] rounded-xl bg-indigo-600 text-sm font-bold text-white disabled:opacity-40">保存并选用</button></div>
-      <p className="text-[10px] leading-4 text-gray-400">API Key只会加密保存在运行项目的电脑。「获取模型」会请求该地址的 /models 把模型 ID 自动填入；「测试连接」仅验证接口可访问。两者均由电脑发起，不经过手机。</p>
+      <p className="text-[10px] leading-4 text-gray-400">API Key只会加密保存在运行项目的电脑。「获取模型」会请求 /models 并自动识别能力；人工纠正的识图/推理标记不会被覆盖。「测试连接」还会执行一次极小文本与工具调用，可能产生少量模型费用；标记为识图的模型也会附带最小图片请求。两者均由电脑发起，不经过手机。</p>
     </div>
   </div>;
 };
@@ -106,6 +106,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
     setProviders(nextProviders);
     setModels(nextModels);
     setCustomProviders(nextCustomProviders);
+    window.dispatchEvent(new CustomEvent('nai-agent-runtime-changed'));
   };
 
   useEffect(() => { void reload().catch(() => notify('读取 AI 模型服务失败', 'error')); }, []);
@@ -219,7 +220,22 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
       const result = await promptAgentService.fetchCustomProviderModels(customDraft);
       const existing = new Map(customDraft.models.filter(model => model.id.trim()).map(model => [model.id.trim().toLowerCase(), model]));
       const remoteIds = new Set(result.models.map(model => model.id.toLowerCase()));
-      const merged = result.models.map(model => ({ ...existing.get(model.id.toLowerCase()), ...model }));
+      const merged = result.models.map(model => {
+        const previous = existing.get(model.id.toLowerCase());
+        if (!previous) return model;
+        const manualImage = previous.capabilityDetection?.imageInput === 'manual';
+        const manualReasoning = previous.capabilityDetection?.reasoning === 'manual';
+        return {
+          ...previous,
+          ...model,
+          imageInput: manualImage ? previous.imageInput : model.imageInput,
+          reasoning: manualReasoning ? previous.reasoning : model.reasoning,
+          capabilityDetection: {
+            imageInput: manualImage ? 'manual' as const : model.capabilityDetection?.imageInput || 'unknown',
+            reasoning: manualReasoning ? 'manual' as const : model.capabilityDetection?.reasoning || 'unknown',
+          },
+        };
+      });
       merged.push(...[...existing.entries()].filter(([id]) => !remoteIds.has(id)).map(([, model]) => model));
       setCustomDraft(previous => ({ ...previous, models: merged }));
       const visionCount = result.models.filter(model => model.imageInput).length;
@@ -259,7 +275,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
       </div>
       {customProviders.length > 0 && <div className="rounded-2xl border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900"><div className="px-2 py-1 text-[11px] font-bold text-gray-400">自定义接口</div>{customProviders.map(provider => <div key={provider.id} className="flex items-center gap-2 rounded-xl px-2 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"><span className="h-2.5 w-2.5 rounded-full bg-indigo-500"/><div className="min-w-0 flex-1"><b className="block truncate text-sm dark:text-white">{provider.name}</b><span className="block truncate text-[10px] text-gray-400">{provider.baseUrl} · {provider.models.length} 个模型</span></div><button type="button" onClick={() => openCustom(provider)} className="mobile-touch rounded-xl px-3 text-xs font-bold text-indigo-600">编辑</button><button type="button" onClick={() => void deleteCustom(provider)} className="mobile-touch rounded-xl px-3 text-xs font-bold text-red-500">删除</button></div>)}</div>}
       {configured.length > 0 && <div className="flex flex-wrap gap-1.5">{configured.map(provider => <span key={provider.id} className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">✓ {provider.name}</span>)}</div>}
-      <p className="text-[11px] leading-5 text-gray-500 dark:text-gray-400">主模型负责推理和工具调用；视觉模型可独立分析附件与历史原图。Agent 还可受限搜索公网并读取搜索结果，不能访问本机或局域网地址。密钥加密保存在电脑，不进入浏览器存储。</p>
+      <p className="text-[11px] leading-5 text-gray-500 dark:text-gray-400">这里选择的是新对话默认主模型；已有对话在对话顶部单独切换。视觉模型会按每个对话的主模型独立解析，可分析附件与历史原图。Agent 还可受限搜索公网并读取搜索结果，不能访问本机或局域网地址。密钥加密保存在电脑，不进入浏览器存储。</p>
     </div>
 
     {view !== 'home' && <div className="fixed inset-0 z-[1700] flex flex-col bg-gray-50 dark:bg-gray-950">

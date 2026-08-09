@@ -93,6 +93,11 @@ export interface PromptAgentSession {
   model: string;
   thinkingLevel: PromptAgentThinkingLevel;
   creativeMode: boolean;
+  visionProvider: string;
+  visionModel: string;
+  visionAvailable: boolean;
+  visionDedicated: boolean;
+  visionMode: 'auto' | 'manual';
   creativeModeLocked?: boolean;
   policyFingerprint?: string;
   messageCount?: number;
@@ -110,6 +115,13 @@ export interface PromptAgentUsage {
   cost: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
 }
 
+export interface PromptAgentVisionUsage {
+  provider: string;
+  model: string;
+  imageCount: number;
+  usage?: PromptAgentUsage;
+}
+
 export interface PromptAgentHistoryMessage {
   id: string;
   role: 'user' | 'agent';
@@ -117,6 +129,7 @@ export interface PromptAgentHistoryMessage {
   model?: string;
   provider?: string;
   usage?: PromptAgentUsage;
+  visionUsage?: PromptAgentVisionUsage[];
   stopReason?: string;
   timestamp?: number;
   thinking?: string;
@@ -128,6 +141,7 @@ export type PromptAgentEvent =
   | { type: 'text_delta'; delta: string }
   | { type: 'thinking_delta'; delta: string }
   | { type: 'response_end'; model: string; provider: string; usage: PromptAgentUsage; stopReason: string; timestamp: number }
+  | { type: 'vision_usage'; model: string; provider: string; imageCount: number; usage?: PromptAgentUsage }
   | { type: 'tool_start'; toolCallId: string; toolName: string; args: unknown }
   | { type: 'tool_end'; toolCallId: string; toolName: string; isError: boolean; result?: unknown }
   | { type: 'queue'; action: 'steer' | 'followUp'; message: string }

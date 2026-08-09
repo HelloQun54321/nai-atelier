@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PromptAgentDraft } from '../types';
-import { PromptAgentConfig, PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, promptAgentService } from '../services/promptAgent';
+import { PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, PromptAgentVisionUsage, promptAgentService } from '../services/promptAgent';
 import { vibeService } from '../services/vibeService';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -22,7 +22,7 @@ interface PromptAgentPanelProps {
 }
 
 type ToolProgress = { id: string; name: string; state: 'running' | 'done' | 'error'; args?: unknown; result?: unknown };
-type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; stopReason?: string; timestamp?: number; queued?: 'steer' | 'followUp' };
+type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; visionUsage?: PromptAgentVisionUsage[]; stopReason?: string; timestamp?: number; queued?: 'steer' | 'followUp' };
 type AgentAttachment = { data: string; mimeType: string; name: string };
 const toolLabels: Record<string, string> = {
   web_search: '联网搜索', read_web_page: '读取网页',
@@ -134,6 +134,7 @@ const AgentMessageList = React.memo(({
       {!!message.thinking && <details className="mb-2 rounded-xl bg-gray-50 px-3 py-1.5 dark:bg-gray-950"><summary className="cursor-pointer text-[11px] font-bold text-gray-500">思考过程 <span className="font-normal text-gray-400">· 点击展开</span></summary><div className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere] text-xs leading-5 text-gray-500">{message.thinking}</div></details>}
       {message.role === 'agent' ? <AgentMarkdown text={message.text || (running ? '正在思考…' : '')} /> : message.text}
       {!!message.tools?.length && <div className="mt-2 space-y-1 border-t border-gray-100 pt-2 dark:border-gray-800">{message.tools.map(tool => <details key={tool.id} className={`rounded-lg px-2 py-1.5 text-[10px] ${tool.state === 'running' ? 'animate-pulse bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300' : tool.state === 'error' ? 'bg-red-50 text-red-600 dark:bg-red-950/50' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'}`}><summary className="cursor-pointer font-bold">{tool.state === 'running' ? '处理中' : tool.state === 'error' ? '失败' : '完成'} · {toolLabels[tool.name] || tool.name}<span className="ml-1 font-normal opacity-70">· 详情</span></summary><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all border-t border-current/10 pt-1 opacity-75">{JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)}</pre></details>)}</div>}
+      {!!message.visionUsage?.length && <div className="mt-2 space-y-0.5 border-t border-violet-100 pt-1.5 text-[10px] text-violet-500 dark:border-violet-950 dark:text-violet-300">{message.visionUsage.map((item, usageIndex) => <div key={`${item.provider}/${item.model}/${usageIndex}`} className="truncate">视觉 {item.model} · {item.imageCount} 图{typeof item.usage?.totalTokens === 'number' ? ` · ${item.usage.totalTokens.toLocaleString()} tokens${item.usage.cost?.total ? ` · $${item.usage.cost.total.toFixed(4)}` : ''}` : ''}</div>)}</div>}
       <div className={`mt-1 flex min-w-0 items-center gap-1 border-t pt-1 text-[10px] ${message.role === 'user' ? 'border-white/20 text-white/70' : 'border-gray-100 text-gray-400 dark:border-gray-800'}`}>
         {message.role === 'agent' && <span className="min-w-0 flex-1 truncate pr-1">{message.model || ''}{message.usage && typeof message.usage.totalTokens === 'number' ? ` · ${message.usage.totalTokens.toLocaleString()} tokens${message.usage.cost?.total ? ` · $${message.usage.cost.total.toFixed(4)}` : ''}` : ''}{message.stopReason && message.stopReason !== 'stop' ? ` · ${message.stopReason}` : ''}</span>}
         {message.role !== 'agent' && <span className="flex-1" />}
@@ -160,7 +161,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [sessions, setSessions] = useState<PromptAgentSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState('');
   const [models, setModels] = useState<PromptAgentModel[]>([]);
-  const [runtimeInfo, setRuntimeInfo] = useState<Pick<PromptAgentConfig, 'policyVersion' | 'policyFingerprint' | 'runtimeStartedAt' | 'visionProvider' | 'visionModel' | 'visionAvailable' | 'visionDedicated'> | null>(null);
   const [showSessions, setShowSessions] = useState(false);
   const [showModelMenu, setShowModelMenu] = useState(false);
   const [queueMode, setQueueMode] = useState<'steer' | 'followUp'>('steer');
@@ -299,12 +299,15 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   useEffect(() => {
     if (!props.open) return;
-    void Promise.all([
-      refreshSessions(),
-      promptAgentService.getAvailableModels().then(setModels),
-      promptAgentService.getConfig().then(config => setRuntimeInfo({ policyVersion: config.policyVersion, policyFingerprint: config.policyFingerprint, runtimeStartedAt: config.runtimeStartedAt, visionProvider: config.visionProvider, visionModel: config.visionModel, visionAvailable: config.visionAvailable, visionDedicated: config.visionDedicated })),
-    ]).catch(() => {});
+    void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(setModels)]).catch(() => {});
   }, [props.open]);
+
+  useEffect(() => {
+    if (!props.open) return;
+    const refreshRuntime = () => { void Promise.all([refreshSessions(activeSessionId), promptAgentService.getAvailableModels().then(setModels)]).catch(() => {}); };
+    window.addEventListener('nai-agent-runtime-changed', refreshRuntime);
+    return () => window.removeEventListener('nai-agent-runtime-changed', refreshRuntime);
+  }, [props.open, activeSessionId]);
 
   useEffect(() => {
     if (!props.open || !activeSessionId || running) return;
@@ -368,7 +371,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   const activeSession = sessions.find(item => item.id === activeSessionId);
   const activeModel = models.find(item => item.provider === activeSession?.provider && item.id === activeSession?.model);
-  const supportsImages = Boolean(activeModel?.imageInput || runtimeInfo?.visionAvailable);
+  const supportsImages = Boolean(activeModel?.imageInput || activeSession?.visionAvailable);
   const sessionReady = Boolean(activeSessionId && activeSession);
   const runningTool = messages.slice().reverse().map(message => message.tools?.find(tool => tool.state === 'running')).find(Boolean);
   const executionStatus = running
@@ -496,6 +499,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         if (event.type === 'text_delta') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, text: item.text + event.delta } : item));
         if (event.type === 'thinking_delta') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, thinking: (item.thinking || '') + event.delta } : item));
         if (event.type === 'response_end') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, model: event.model, provider: event.provider, usage: event.usage, stopReason: event.stopReason, timestamp: event.timestamp } : item));
+        if (event.type === 'vision_usage') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, visionUsage: [...(item.visionUsage || []), { provider: event.provider, model: event.model, imageCount: event.imageCount, usage: event.usage }] } : item));
         if (event.type === 'tool_start') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, tools: [...(item.tools || []), { id: event.toolCallId, name: event.toolName, args: event.args, state: 'running' }] } : item));
         if (event.type === 'tool_end') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, tools: (item.tools || []).map(tool => tool.id === event.toolCallId ? { ...tool, result: event.result, state: event.isError ? 'error' : 'done' } : tool) } : item));
         if (event.type === 'project_changed') window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: event.resource } }));
@@ -576,7 +580,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       if (controller.signal.aborted) {
         setMessages(previous => previous.map(item => item.id === assistantId && !item.text ? { ...item, text: '已停止。' } : item));
       } else {
-        setMessages(previous => [...previous.filter(item => item.id !== assistantId || item.text || item.tools?.length), { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : 'Agent 执行失败' }]);
+        setMessages(previous => [...previous.filter(item => item.id !== assistantId || item.text || item.tools?.length || item.visionUsage?.length), { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : 'Agent 执行失败' }]);
       }
     } finally {
       setRunning(false);
@@ -738,7 +742,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         <div className="flex h-12 items-center gap-1 px-2 md:px-3">
           <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="返回"><ArrowLeft className="h-[18px] w-[18px]" /></button>
           <button type="button" onClick={() => setShowSessions(true)} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="会话列表"><List className="h-5 w-5" /></button>
-          <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-black text-gray-900 dark:text-white">{activeSession?.title || '项目 Agent'}</h2><p className="truncate text-[10px] text-gray-500">{activeSession?.model || '未选择模型'} · {runtimeInfo?.visionDedicated ? `视觉 ${runtimeInfo.visionModel}` : supportsImages ? '支持识图' : '不支持识图'}</p></div>
+          <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-black text-gray-900 dark:text-white">{activeSession?.title || '项目 Agent'}</h2><p className="truncate text-[10px] text-gray-500">{activeSession?.model || '未选择模型'} · {activeSession?.visionDedicated ? `视觉 ${activeSession.visionModel}` : supportsImages ? '支持识图' : '不支持识图'}</p></div>
           <div ref={modelMenuRef} className="static flex items-center gap-1 md:relative">
             <button type="button" onClick={() => setShowModelMenu(value => !value)} className={`mobile-touch flex h-9 items-center justify-center rounded-xl px-2 text-gray-500 dark:text-gray-400 ${showModelMenu ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`} aria-label="模型与思考设置" title="模型与思考设置"><SlidersHorizontal className="h-[18px] w-[18px]" /></button>
             {showModelMenu && <div className="absolute inset-x-2 bottom-2 top-12 z-30 flex w-auto max-h-none flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 md:inset-x-auto md:bottom-auto md:right-0 md:top-11 md:max-h-[min(76vh,42rem)] md:w-[min(20rem,calc(100vw-1rem))]">

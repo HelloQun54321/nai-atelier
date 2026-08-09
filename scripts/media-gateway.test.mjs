@@ -17,7 +17,7 @@ import {
   getValidatedSource,
   selectThumbnailConcurrency,
 } from './media-gateway.mjs';
-import { PromptAgentService, customProviderRuntime, detectModelCapabilities, estimateContextTokens, parseTranslationResponse, parseWebSearchResponse, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
+import { PromptAgentService, calculateAgentContextBudget, customProviderRuntime, detectModelCapabilities, estimateContextTokens, parseTranslationResponse, parseWebSearchResponse, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
 
 test('prompt agent discovers model capabilities from metadata, Pi catalog and conservative names', () => {
   const metadata = detectModelCapabilities({ id: 'vendor/model-x', display_name: 'Model X', input_modalities: ['text', 'image'], capabilities: { reasoning: true }, context_window: 262144, max_output_tokens: 32768 });
@@ -33,6 +33,9 @@ test('prompt agent discovers model capabilities from metadata, Pi catalog and co
   const unknown = detectModelCapabilities('lab/plain-custom-model');
   assert.equal(unknown.imageInput, false);
   assert.equal(unknown.reasoning, false);
+  assert.equal(detectModelCapabilities({ name: 'Display label only' }), null);
+  const clamped = detectModelCapabilities({ id: 'tiny', context_window: 2048, max_output_tokens: 999999 });
+  assert.equal(clamped.maxTokens, 2048);
 });
 
 test('prompt agent automatically gives a text-only main model a configured vision model', () => {
@@ -57,6 +60,17 @@ test('prompt agent automatically gives a text-only main model a configured visio
   assert.equal(vision.info.imageInput, true);
   assert.equal(service.publicConfig().visionDedicated, true);
   assert.equal(service.publicConfig().visionMode, 'auto');
+
+  service.config.visionMode = 'manual';
+  service.config.visionProvider = 'missing-provider';
+  service.config.visionModel = 'missing-model';
+  service.syncAutomaticVisionSelection('deepseek', 'deepseek-v4-flash');
+  assert.equal(service.config.visionMode, 'auto');
+  assert.equal(service.config.visionProvider, 'google');
+
+  const sessionMeta = service.publicSessionMeta({ id: 'session', provider: 'deepseek', model: 'deepseek-v4-flash' });
+  assert.equal(sessionMeta.visionProvider, 'google');
+  assert.equal(sessionMeta.visionDedicated, true);
 });
 
 test('prompt agent parses web results and blocks private web targets', async () => {
@@ -98,6 +112,10 @@ test('prompt agent custom providers use Pi runtime models and reject unsafe URLs
   assert.throws(() => sanitizeCustomProvider({ name: 'bad', baseUrl: 'file:///secret', models: [{ id: 'x' }] }), /HTTP\/HTTPS/);
   assert.throws(() => sanitizeCustomProvider({ name: 'empty', baseUrl: 'https://example.com/v1', models: [] }), /至少添加一个模型/);
   assert.throws(() => sanitizeCustomProvider({ name: 'secret-header', baseUrl: 'https://example.com/v1', headers: { Authorization: 'secret' }, models: [{ id: 'x' }] }), /API Key/);
+  assert.throws(() => sanitizeCustomProvider({ name: 'lan-http', baseUrl: 'http://192.168.1.8:8080/v1', models: [{ id: 'x' }] }), /HTTPS/);
+  assert.throws(() => sanitizeCustomProvider({ name: 'public-http', baseUrl: 'http://example.com/v1', models: [{ id: 'x' }] }), /HTTPS/);
+  const bounded = sanitizeCustomProvider({ name: 'bounded', baseUrl: 'https://example.com/v1', models: [{ id: 'x', contextWindow: 2048, maxTokens: 999999 }] });
+  assert.equal(bounded.models[0].maxTokens, 2048);
 });
 
 test('prompt agent uses Pi-supported thinking levels and trims context at a real user boundary', () => {
@@ -118,6 +136,10 @@ test('prompt agent uses Pi-supported thinking levels and trims context at a real
   const trimmed = trimContextMessages(messages, estimateContextTokens(messages.at(-1)) + estimateContextTokens(messages.at(-2)) + 2);
   assert.equal(trimmed[0].content, 'new request');
   assert.equal(trimmed.some(message => JSON.stringify(message).includes('old-call')), false);
+  const budget = calculateAgentContextBudget({ contextWindow: 4096, maxTokens: 2048 }, 'system'.repeat(100), []);
+  assert.ok(budget.tokenBudget < 4096);
+  assert.ok(budget.tokenBudget + budget.outputReserve + budget.systemTokens + budget.protocolReserve <= 4096);
+  assert.throws(() => calculateAgentContextBudget({ contextWindow: 1024, maxTokens: 512 }, '系'.repeat(900), []), /上下文窗口/);
 });
 
 test('prompt agent locks a session creative mode after its first user message', async () => {
@@ -142,6 +164,25 @@ test('prompt agent titles a new session from the raw user input', async () => {
     await service.setInitialSessionTitle(session.id, '  给这个角色设计雨天的服装  ');
     const stored = await service.readSession(session.id);
     assert.equal(stored.meta.title, '给这个角色设计雨天的服装');
+  } finally {
+    await service.deleteSession(session.id);
+  }
+});
+
+test('prompt agent preserves vision usage in history without feeding it back to the model', async () => {
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
+  const session = await service.createSession({ creativeMode: false });
+  const firstMessages = [
+    { role: 'user', content: 'inspect', timestamp: 1 },
+    { role: 'assistant', content: 'done', timestamp: 2, provider: 'deepseek', model: 'deepseek-v4-flash', visionUsage: [{ provider: 'google', model: 'gemini-2.5-flash', imageCount: 1, usage: { totalTokens: 12, cost: { total: 0.001 } } }] },
+  ];
+  try {
+    await service.saveMessages(session.id, firstMessages);
+    const runtimeMessages = await service.loadMessages(session.id);
+    assert.equal('visionUsage' in runtimeMessages[1], false);
+    await service.saveMessages(session.id, [...runtimeMessages, { role: 'user', content: 'continue', timestamp: 3 }]);
+    const history = await service.getSessionHistory(session.id);
+    assert.equal(history.find(message => message.timestamp === 2).visionUsage[0].usage.totalTokens, 12);
   } finally {
     await service.deleteSession(session.id);
   }

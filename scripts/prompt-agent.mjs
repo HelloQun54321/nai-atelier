@@ -68,6 +68,10 @@ const clamp = (value, min, max, fallback = min) => {
   return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
 };
 const text = value => String(value ?? '').slice(0, 30_000);
+const isLoopbackHostname = hostname => {
+  const normalized = String(hostname || '').replace(/^\[|\]$/g, '').toLowerCase();
+  return normalized === 'localhost' || normalized.endsWith('.localhost') || normalized === '::1' || /^127(?:\.\d{1,3}){3}$/.test(normalized);
+};
 const jsonText = value => [{ type: 'text', text: JSON.stringify(value) }];
 const atomicJsonWrite = async (file, value) => {
   await mkdir(dirname(file), { recursive: true });
@@ -194,6 +198,30 @@ export const estimateContextTokens = value => {
   return cjk + Math.ceil((serialized.length - cjk) / 4);
 };
 
+export const calculateAgentContextBudget = (modelInfo, systemPrompt, seedMessages = []) => {
+  const contextWindow = Math.round(clamp(modelInfo?.contextWindow, 1_024, 10_000_000, 32_000));
+  const configuredOutput = Math.round(clamp(modelInfo?.maxTokens, 256, contextWindow, Math.min(16_384, contextWindow)));
+  const outputReserve = Math.min(configuredOutput, Math.max(256, Math.floor(contextWindow * 0.2)));
+  const systemTokens = estimateContextTokens(systemPrompt || '');
+  const protocolReserve = Math.max(256, Math.min(2_048, Math.floor(contextWindow * 0.04)));
+  const availableInput = contextWindow - outputReserve - systemTokens - protocolReserve;
+  if (availableInput < 256) throw Object.assign(new Error(`当前系统提示词和输出预留已超过模型上下文窗口（${contextWindow.toLocaleString()} tokens），请换用更大上下文模型`), { status: 400 });
+  const tokenBudget = Math.min(180_000, availableInput);
+  const seeds = estimateContextTokens(seedMessages) > tokenBudget ? trimContextMessages(seedMessages, tokenBudget) : seedMessages;
+  const seedTokenCount = estimateContextTokens(seeds);
+  return {
+    contextWindow,
+    configuredOutput,
+    outputReserve,
+    systemTokens,
+    protocolReserve,
+    tokenBudget,
+    seeds,
+    seedTokenCount,
+    conversationTokenBudget: Math.max(1, tokenBudget - seedTokenCount),
+  };
+};
+
 export const trimContextMessages = (messages, tokenBudget) => {
   if (!Array.isArray(messages) || messages.length === 0) return [];
   const budget = Math.max(1, Number(tokenBudget) || 1);
@@ -295,6 +323,7 @@ export const sanitizeCustomProvider = raw => {
   let parsed;
   try { parsed = new URL(text(raw?.baseUrl).trim()); } catch { throw Object.assign(new Error('Base URL 格式无效'), { status: 400 }); }
   if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw Object.assign(new Error('Base URL 只允许不含账号密码的 HTTP/HTTPS 地址'), { status: 400 });
+  if (parsed.protocol === 'http:' && !isLoopbackHostname(parsed.hostname)) throw Object.assign(new Error('为避免 API Key 被明文传输，HTTP 只允许 localhost、127.0.0.0/8 或 ::1；局域网和公网接口请使用 HTTPS'), { status: 400 });
   parsed.hash = '';
   parsed.search = '';
   const supportedApis = ['openai-completions', 'openai-responses', 'anthropic-messages'];
@@ -303,13 +332,14 @@ export const sanitizeCustomProvider = raw => {
   const models = (Array.isArray(raw?.models) ? raw.models : []).slice(0, 50).flatMap(item => {
     const id = text(item?.id).trim().slice(0, 160);
     if (!id) return [];
+    const contextWindow = Math.round(clamp(item?.contextWindow, 1_024, 10_000_000, 128_000));
     return [{
       id,
       name: text(item?.name || id).trim().slice(0, 160) || id,
       reasoning: item?.reasoning === true,
       imageInput: item?.imageInput === true,
-      contextWindow: Math.round(clamp(item?.contextWindow, 1_024, 10_000_000, 128_000)),
-      maxTokens: Math.round(clamp(item?.maxTokens, 256, 1_000_000, 16_384)),
+      contextWindow,
+      maxTokens: Math.round(clamp(item?.maxTokens, 256, contextWindow, Math.min(16_384, contextWindow))),
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       ...(item?.capabilityDetection && typeof item.capabilityDetection === 'object' ? { capabilityDetection: {
         imageInput: ['metadata', 'pi_catalog', 'model_name', 'unknown', 'manual'].includes(item.capabilityDetection.imageInput) ? item.capabilityDetection.imageInput : 'manual',
@@ -382,7 +412,7 @@ const modelModalityTokens = value => {
 
 export const detectModelCapabilities = raw => {
   const item = raw && typeof raw === 'object' ? raw : { id: raw };
-  const id = text(item.id || item.model || item.name).trim().slice(0, 160);
+  const id = text(item.id || item.model).trim().slice(0, 160);
   if (!id) return null;
   const normalizedId = id.toLowerCase();
   const catalog = getBuiltinCapabilityIndex();
@@ -398,13 +428,14 @@ export const detectModelCapabilities = raw => {
   const reasoning = metadataReasoning ?? catalogModel?.reasoning ?? nameReasoning;
   const contextWindow = firstNumber(item, ['contextWindow', 'context_window', 'context_length', 'max_context_length', 'limits.context', 'capabilities.context_window']) || catalogModel?.contextWindow || 128_000;
   const maxTokens = firstNumber(item, ['maxTokens', 'max_output_tokens', 'max_completion_tokens', 'output_token_limit', 'limits.output', 'capabilities.max_output_tokens']) || catalogModel?.maxTokens || 16_384;
+  const normalizedContextWindow = Math.round(clamp(contextWindow, 1_024, 10_000_000, 128_000));
   return {
     id,
     name: text(item.display_name || item.name || catalogModel?.name || id).trim().slice(0, 160) || id,
     reasoning: Boolean(reasoning),
     imageInput: Boolean(imageInput),
-    contextWindow: Math.round(clamp(contextWindow, 1_024, 10_000_000, 128_000)),
-    maxTokens: Math.round(clamp(maxTokens, 256, 1_000_000, 16_384)),
+    contextWindow: normalizedContextWindow,
+    maxTokens: Math.round(clamp(maxTokens, 256, normalizedContextWindow, Math.min(16_384, normalizedContextWindow))),
     capabilityDetection: {
       imageInput: metadataVision !== undefined || visionByModality !== undefined ? 'metadata' : catalogModel ? 'pi_catalog' : nameVision ? 'model_name' : 'unknown',
       reasoning: metadataReasoning !== undefined ? 'metadata' : catalogModel ? 'pi_catalog' : nameReasoning ? 'model_name' : 'unknown',
@@ -733,9 +764,11 @@ export class PromptAgentService {
         if (task.status === 'running') await atomicJsonWrite(join(TASK_DIR, file), { ...task, status: 'interrupted', updatedAt: Date.now() });
       } catch { /* Ignore a damaged status record; session data remains usable. */ }
     }
+    let configNeedsMigration = false;
     try {
       const stored = JSON.parse(await readFile(CONFIG_FILE, 'utf8'));
       this.config = { ...this.config, ...stored, encryptedKeys: stored.encryptedKeys || {}, customProviders: Array.isArray(stored.customProviders) ? stored.customProviders : [] };
+      configNeedsMigration = stored.version !== PROMPT_AGENT_CONFIG_VERSION || !['auto', 'manual'].includes(stored.visionMode);
     } catch { /* First use. */ }
     try {
       const stored = JSON.parse(await readFile(TAG_TRANSLATION_FILE, 'utf8'));
@@ -749,6 +782,14 @@ export class PromptAgentService {
         CUSTOM_PROVIDERS.set(custom.id, custom);
       } catch { /* Ignore invalid legacy custom entries without affecting built-ins. */ }
     }
+    const beforeNormalization = JSON.stringify(this.config);
+    const normalizedCustomProviders = [...CUSTOM_PROVIDERS.values()];
+    if (normalizedCustomProviders.length !== this.config.customProviders.length) configNeedsMigration = true;
+    this.config.customProviders = normalizedCustomProviders;
+    this.config.version = PROMPT_AGENT_CONFIG_VERSION;
+    this.syncAutomaticVisionSelection();
+    if (JSON.stringify(this.config) !== beforeNormalization) configNeedsMigration = true;
+    if (configNeedsMigration) await atomicJsonWrite(CONFIG_FILE, this.config);
   }
 
   lookupTagTranslations(rawTags) {
@@ -910,13 +951,34 @@ export class PromptAgentService {
     return this.config.visionMode === 'manual' ? explicit || automatic : automatic || explicit;
   }
 
+  hasValidManualVisionSelection() {
+    if (this.config.visionMode !== 'manual') return false;
+    if (!this.configuredProviderIds().includes(this.config.visionProvider)) return false;
+    return listModels(this.config.visionProvider).some(item => item.id === this.config.visionModel && item.imageInput);
+  }
+
   syncAutomaticVisionSelection(mainProvider = this.config.provider, mainModel = this.config.model) {
-    if (this.config.visionMode === 'manual') return this.resolveVisionSelection(mainProvider, mainModel);
+    if (this.hasValidManualVisionSelection()) return this.resolveVisionSelection(mainProvider, mainModel);
+    if (this.config.visionMode === 'manual') this.config.visionMode = 'auto';
     const vision = this.resolveVisionSelection(mainProvider, mainModel);
     this.config.visionProvider = vision?.provider || '';
     this.config.visionModel = vision?.model || '';
     this.config.visionMode = 'auto';
     return vision;
+  }
+
+  publicSessionMeta(meta) {
+    const provider = normalizeProvider(meta?.provider || this.publicConfig().provider);
+    const model = text(meta?.model || this.publicConfig().model);
+    const vision = this.resolveVisionSelection(provider, model);
+    return {
+      ...meta,
+      visionProvider: vision?.provider || '',
+      visionModel: vision?.model || '',
+      visionAvailable: Boolean(vision),
+      visionDedicated: Boolean(vision && (vision.provider !== provider || vision.model !== model)),
+      visionMode: this.config.visionMode === 'manual' ? 'manual' : 'auto',
+    };
   }
 
   publicConfig() {
@@ -1078,6 +1140,7 @@ export class PromptAgentService {
       this.config.model = defaultModelFor(next);
     }
     this.syncAutomaticVisionSelection();
+    this.config.version = PROMPT_AGENT_CONFIG_VERSION;
     await atomicJsonWrite(CONFIG_FILE, this.config);
     return this.publicConfig();
   }
@@ -1115,6 +1178,7 @@ export class PromptAgentService {
       this.config.model = defaultModelFor(next);
     }
     this.syncAutomaticVisionSelection();
+    this.config.version = PROMPT_AGENT_CONFIG_VERSION;
     await atomicJsonWrite(CONFIG_FILE, this.config);
     return this.publicConfig();
   }
@@ -1130,7 +1194,59 @@ export class PromptAgentService {
     try {
       const response = await fetch(`${custom.baseUrl}/models`, { headers, redirect: 'error', signal: AbortSignal.timeout(12_000) });
       if (!response.ok) throw Object.assign(new Error(`接口返回 HTTP ${response.status}`), { status: 400 });
-      return { ok: true, message: '连接成功，模型接口可以访问' };
+      const payload = await response.json().catch(() => null);
+      const items = Array.isArray(payload?.data) ? payload.data
+        : Array.isArray(payload?.models) ? payload.models
+          : Array.isArray(payload) ? payload
+            : [];
+      const discovered = [...new Map(items.map(detectModelCapabilities).filter(Boolean).map(model => [model.id.toLowerCase(), model])).values()];
+      const configuredCandidate = custom.models.find(model => model.id !== '__capability_discovery__');
+      const candidate = configuredCandidate || discovered[0];
+      if (!candidate) throw Object.assign(new Error('接口可访问，但没有返回可用于能力测试的模型 ID'), { status: 400 });
+      const probeProvider = { ...custom, models: [{ ...candidate, cost: candidate.cost || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] };
+      const credentials = new InMemoryCredentialStore();
+      await credentials.modify(probeProvider.id, async () => ({ type: 'api_key', key }));
+      const modelRuntime = builtinModels({ credentials });
+      modelRuntime.setProvider(customProviderRuntime(probeProvider));
+      const model = modelRuntime.getModel(probeProvider.id, candidate.id);
+      if (!model) throw Object.assign(new Error('Pi 无法加载这个模型配置'), { status: 400 });
+      let toolCalled = false;
+      const probeTool = {
+        name: 'capability_probe',
+        label: '能力测试',
+        description: '连接测试专用工具。必须调用一次以证明模型支持 Agent 工具协议。',
+        parameters: Type.Object({ status: Type.String() }),
+        execute: async () => {
+          toolCalled = true;
+          return { content: jsonText({ ok: true }), details: { ok: true } };
+        },
+      };
+      const probeAgent = new Agent({
+        initialState: {
+          systemPrompt: '你正在执行一次最小化连接测试。必须调用 capability_probe 一次；不要解释，不要调用其他内容。若附带图片，它只是用来验证图片输入协议。',
+          model,
+          thinkingLevel: 'off',
+          tools: [probeTool],
+          messages: [],
+        },
+        streamFn: modelRuntime.streamSimple.bind(modelRuntime),
+        sessionId: `nai-capability-probe-${randomUUID()}`,
+      });
+      const probeImages = candidate.imageInput === true ? [{
+        type: 'image',
+        mimeType: 'image/png',
+        data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nH0AAAAASUVORK5CYII=',
+      }] : [];
+      let probeTimeout;
+      try {
+        await Promise.race([
+          probeAgent.prompt('现在调用 capability_probe，status 填 ok。', probeImages),
+          new Promise((_, reject) => { probeTimeout = setTimeout(() => { probeAgent.abort(); reject(Object.assign(new Error('模型能力测试 20 秒超时'), { status: 400 })); }, 20_000); }),
+        ]);
+      } finally { clearTimeout(probeTimeout); }
+      if (probeAgent.state.errorMessage) throw Object.assign(new Error(`模型推理失败：${probeAgent.state.errorMessage}`), { status: 400 });
+      if (!toolCalled) throw Object.assign(new Error('文本推理可用，但模型没有按要求调用工具；它不适合直接作为项目 Agent 主模型'), { status: 400 });
+      return { ok: true, message: `连接成功：${candidate.id} 已通过文本推理和工具调用测试${candidate.imageInput ? '，图片输入请求也已被接口接受' : ''}` };
     } catch (error) {
       if (error?.status) throw error;
       throw Object.assign(new Error(`连接失败：${error instanceof Error ? error.message : '未知网络错误'}`), { status: 400 });
@@ -1168,6 +1284,7 @@ export class PromptAgentService {
     this.config.provider = providerId;
     this.config.model = modelId;
     this.syncAutomaticVisionSelection(providerId, modelId);
+    this.config.version = PROMPT_AGENT_CONFIG_VERSION;
     await atomicJsonWrite(CONFIG_FILE, this.config);
     return this.publicConfig();
   }
@@ -1176,6 +1293,7 @@ export class PromptAgentService {
     if (mode === 'auto') {
       this.config.visionMode = 'auto';
       this.syncAutomaticVisionSelection();
+      this.config.version = PROMPT_AGENT_CONFIG_VERSION;
       await atomicJsonWrite(CONFIG_FILE, this.config);
       return this.publicConfig();
     }
@@ -1186,6 +1304,7 @@ export class PromptAgentService {
     this.config.visionProvider = providerId;
     this.config.visionModel = modelId;
     this.config.visionMode = 'manual';
+    this.config.version = PROMPT_AGENT_CONFIG_VERSION;
     await atomicJsonWrite(CONFIG_FILE, this.config);
     return this.publicConfig();
   }
@@ -1445,7 +1564,7 @@ export class PromptAgentService {
     };
     await this.writeSession(id, { version: 2, meta, messages: [] });
     await this.appendAuditLog(id, { type: 'session_created', session: meta });
-    return meta;
+    return this.publicSessionMeta(meta);
   }
 
   async listSessions() {
@@ -1461,7 +1580,7 @@ export class PromptAgentService {
           const running = this.activeAgents.has(value.meta.id) || this.startingAgents.has(value.meta.id);
           const messageCount = Array.isArray(value.messages) ? value.messages.filter(message => message?.role === 'user').length : 0;
           const creativeMode = typeof value.meta.creativeMode === 'boolean' ? value.meta.creativeMode : this.config.creativeMode !== false;
-          items.push({ ...value.meta, creativeMode, creativeModeLocked: value.meta.creativeModeLocked === true || messageCount > 0, messageCount, running, taskStatus: running ? 'running' : task.status, policyFingerprint: runtimePolicyInfo(creativeMode).fingerprint });
+          items.push(this.publicSessionMeta({ ...value.meta, creativeMode, creativeModeLocked: value.meta.creativeModeLocked === true || messageCount > 0, messageCount, running, taskStatus: running ? 'running' : task.status, policyFingerprint: runtimePolicyInfo(creativeMode).fingerprint }));
         }
       } catch { /* Ignore broken legacy files. */ }
     }
@@ -1490,7 +1609,7 @@ export class PromptAgentService {
     };
     await this.writeSession(sessionId, value);
     await this.appendAuditLog(sessionId, { type: 'session_updated', patch, session: value.meta });
-    return value.meta;
+    return this.publicSessionMeta(value.meta);
   }
 
   async deleteSession(sessionId) {
@@ -1504,7 +1623,10 @@ export class PromptAgentService {
 
   async loadMessages(sessionId) {
     const value = await this.readSession(sessionId);
-    return trimStoredMessages(value.messages);
+    return trimStoredMessages(value.messages).map(message => {
+      const { visionUsage: _visionUsage, ...runtimeMessage } = message;
+      return runtimeMessage;
+    });
   }
 
   async setInitialSessionTitle(sessionId, userMessage) {
@@ -1519,15 +1641,21 @@ export class PromptAgentService {
   async saveMessages(sessionId, messages) {
     // Tool images can be tens of megabytes. They are transient model context and must
     // never be duplicated into the chat session store.
+    const existing = await this.readSession(sessionId);
+    const existingVisionUsage = new Map((Array.isArray(existing.messages) ? existing.messages : []).flatMap(message => message?.role === 'assistant' && Array.isArray(message.visionUsage) && message.visionUsage.length
+      ? [[`${message.timestamp || 0}/${message.provider || ''}/${message.model || ''}`, message.visionUsage]]
+      : []));
     const safeMessages = trimStoredMessages(messages).map(message => ({
       ...message,
+      ...(message?.role === 'assistant' && !Array.isArray(message.visionUsage) && existingVisionUsage.has(`${message.timestamp || 0}/${message.provider || ''}/${message.model || ''}`)
+        ? { visionUsage: existingVisionUsage.get(`${message.timestamp || 0}/${message.provider || ''}/${message.model || ''}`) }
+        : {}),
       content: Array.isArray(message.content)
         ? message.content.filter(item => item?.type !== 'image').map(item => item?.type === 'toolResult'
           ? { ...item, content: Array.isArray(item.content) ? item.content.filter(part => part?.type !== 'image').map(part => part?.type === 'text' ? { ...part, text: String(part.text || '').slice(0, MAX_SAVED_MESSAGE_CHARS) } : part) : item.content }
           : item?.type === 'text' ? { ...item, text: String(item.text || '').slice(0, MAX_SAVED_MESSAGE_CHARS) } : item)
         : typeof message.content === 'string' ? message.content.slice(0, MAX_SAVED_MESSAGE_CHARS) : message.content,
     }));
-    const existing = await this.readSession(sessionId);
     const meta = existing.meta?.id ? {
       ...existing.meta,
       creativeModeLocked: existing.meta.creativeModeLocked === true || safeMessages.some(message => message?.role === 'user'),
@@ -1570,7 +1698,7 @@ export class PromptAgentService {
       return (content.trim() || tools.length || thinking) ? [{
         id: `saved-${sourceOffset + index}`, role: message.role === 'user' ? 'user' : 'agent', text: content.trim(),
         ...(thinking ? { thinking } : {}), ...(tools.length ? { tools } : {}),
-        ...(message.role === 'assistant' ? { model: message.model, provider: message.provider, usage: message.usage, stopReason: message.stopReason, timestamp: message.timestamp } : { timestamp: message.timestamp }),
+        ...(message.role === 'assistant' ? { model: message.model, provider: message.provider, usage: message.usage, visionUsage: Array.isArray(message.visionUsage) ? message.visionUsage : [], stopReason: message.stopReason, timestamp: message.timestamp } : { timestamp: message.timestamp }),
       }] : [];
     });
   }
@@ -2510,6 +2638,7 @@ export class PromptAgentService {
       const dedicatedVision = Boolean(visionSelection && (visionSelection.provider !== provider || visionSelection.model !== modelId));
       const visionModel = dedicatedVision ? modelRuntime.getModel(visionSelection.provider, visionSelection.model) : null;
       if (dedicatedVision && !visionModel) throw new Error('无法加载所选视觉模型');
+      const visionUsages = [];
       const analyzeImages = visionModel ? async (images, focus) => {
         const visionAgent = new Agent({
           initialState: {
@@ -2526,6 +2655,15 @@ export class PromptAgentService {
         if (visionAgent.state.errorMessage) throw new Error(`视觉模型分析失败：${visionAgent.state.errorMessage}`);
         const result = extractAssistantText(visionAgent.state.messages);
         if (!result) throw new Error('视觉模型没有返回分析结果');
+        const assistant = [...visionAgent.state.messages].reverse().find(message => message?.role === 'assistant');
+        const visionUsage = {
+          provider: visionSelection.provider,
+          model: visionSelection.model,
+          imageCount: images.length,
+          ...(assistant?.usage ? { usage: assistant.usage } : {}),
+        };
+        visionUsages.push(visionUsage);
+        taskEmit({ type: 'vision_usage', ...visionUsage });
         return result.slice(0, 24_000);
       } : null;
       const tools = this.createTools(draft, contextData, taskEmit, {
@@ -2555,13 +2693,15 @@ export class PromptAgentService {
         steeringMode: 'one-at-a-time',
         followUpMode: 'one-at-a-time',
         transformContext: async messages => {
-          const tokenBudget = Math.max(8_000, Math.min(180_000, Math.floor((Number(modelInfo.contextWindow) || 32_000) * 0.68)));
           const seedCandidates = creativeMode ? creativeSeedMessages : [];
-          const seeds = estimateContextTokens(seedCandidates) > tokenBudget ? trimContextMessages(seedCandidates, tokenBudget) : seedCandidates;
-          const seedTokenCount = estimateContextTokens(seeds);
-          const conversationTokenBudget = Math.max(1, tokenBudget - seedTokenCount);
+          const budget = calculateAgentContextBudget(modelInfo, activeSystemPrompt, seedCandidates);
+          const { tokenBudget, seeds, seedTokenCount, conversationTokenBudget } = budget;
           const trimmed = trimContextMessages(messages, conversationTokenBudget);
           audit('model_context', {
+            contextWindow: budget.contextWindow,
+            outputReserve: budget.outputReserve,
+            protocolReserve: budget.protocolReserve,
+            systemPromptTokenCount: budget.systemTokens,
             tokenBudget,
             conversationTokenBudget,
             injectedSeedTokenCount: seedTokenCount,
@@ -2633,8 +2773,9 @@ export class PromptAgentService {
         throw error;
       }
       finally { signal?.removeEventListener('abort', abort); unsubscribe(); }
-      await this.saveMessages(sessionId, agent.state.messages);
       const lastAssistant = [...agent.state.messages].reverse().find(message => message?.role === 'assistant');
+      if (lastAssistant && visionUsages.length) lastAssistant.visionUsage = visionUsages;
+      await this.saveMessages(sessionId, agent.state.messages);
       if (agent.state.errorMessage && lastAssistant?.stopReason !== 'aborted') {
         taskStatus = 'failed';
         audit('run_failed', { status: taskStatus, error: agent.state.errorMessage });
