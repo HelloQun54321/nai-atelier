@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { createServer, request as httpRequest } from 'node:http';
 import { connect as connectSocket } from 'node:net';
+import { availableParallelism, totalmem } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
@@ -35,6 +36,18 @@ const ALLOWED_AITAG_API_PATHS = [
   /^\/api\/work\/\d+$/,
 ];
 const THUMB_WIDTHS = new Map([['thumb-320', 320], ['thumb-640', 640]]);
+
+export const selectThumbnailConcurrency = ({
+  logicalProcessors = availableParallelism(),
+  totalMemoryBytes = totalmem(),
+} = {}) => {
+  const memoryGb = totalMemoryBytes / (1024 ** 3);
+  if (logicalProcessors >= 12 && memoryGb >= 24) return 6;
+  if (logicalProcessors >= 8 && memoryGb >= 12) return 4;
+  return 2;
+};
+
+const THUMBNAIL_JOB_CONCURRENCY = selectThumbnailConcurrency();
 const vibeEncodingJobs = new Map();
 const pendingVibeRecoveries = new Map();
 const vibeCacheHmacSecret = randomBytes(32);
@@ -1008,10 +1021,11 @@ const handleAitagRemoteRequest = async (req, res, url, lanSecret, remoteFetch) =
 };
 
 class ThumbnailCache {
-  constructor() {
+  constructor(concurrency = THUMBNAIL_JOB_CONCURRENCY) {
     this.entries = {};
     this.inFlight = new Map();
     this.activeJobs = 0;
+    this.concurrency = concurrency;
     this.jobQueue = [];
     this.writeTimer = null;
   }
@@ -1039,7 +1053,7 @@ class ThumbnailCache {
   }
 
   async withJobSlot(task) {
-    if (this.activeJobs >= 2) await new Promise(resolve => this.jobQueue.push(resolve));
+    if (this.activeJobs >= this.concurrency) await new Promise(resolve => this.jobQueue.push(resolve));
     this.activeJobs++;
     try { return await task(); } finally {
       this.activeJobs--;

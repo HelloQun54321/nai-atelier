@@ -15,6 +15,7 @@ import {
   CloudQueueCoordinator,
   fetchNovelAiGeneration,
   getValidatedSource,
+  selectThumbnailConcurrency,
 } from './media-gateway.mjs';
 import { PromptAgentService, customProviderRuntime, estimateContextTokens, parseTranslationResponse, sanitizeCustomProvider, trimContextMessages } from './prompt-agent.mjs';
 
@@ -455,6 +456,14 @@ test('media thumbnails accept project and st-chatu8 history sources without open
   });
   assert.throws(() => getValidatedSource('/api/integrations/st-chatu8/history/not-a-hash/image'), /Unsupported image source/);
   assert.throws(() => getValidatedSource('/api/integrations/st-chatu8/status'), /Unsupported image source/);
+});
+
+test('thumbnail generation concurrency scales conservatively with CPU and memory', () => {
+  const gib = 1024 ** 3;
+  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 4, totalMemoryBytes: 8 * gib }), 2);
+  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 8, totalMemoryBytes: 16 * gib }), 4);
+  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 16, totalMemoryBytes: 32 * gib }), 6);
+  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 16, totalMemoryBytes: 8 * gib }), 2);
 });
 
 test('Vibe strengths are only scaled when their sum exceeds one', () => {
