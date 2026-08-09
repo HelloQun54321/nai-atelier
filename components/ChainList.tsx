@@ -150,6 +150,7 @@ const CopyModal: React.FC<{
 };
 
 export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onRefresh, isLoading, notify, isGuest = false }) => {
+  const RENDER_BATCH_SIZE = 60;
   const imageDisplay = useMobileImageDisplayPreferences();
   const [previewRatios, setPreviewRatios] = useState<Record<string, number>>({});
   const confirmAction = useConfirmDialog();
@@ -163,6 +164,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [favOnly, setFavOnly] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(RENDER_BATCH_SIZE);
 
   // Load favorites from localStorage (client-side only)
   useEffect(() => {
@@ -249,6 +251,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       });
   }, [chains, type, searchTerm, favOnly, favorites, selectedTags, sortOption]);
 
+  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, selectedTags, sortOption]);
+  const visibleChains = filteredChains.slice(0, visibleCount);
+
   const title = type === 'character' ? '我的角色串' : '我的画师串';
   const createLabel = type === 'character' ? '新建角色串' : '新建画师串';
 
@@ -285,8 +290,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             </div>
           ) : (
             /* Grid Layout */
+            <>
             <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-chain-grid md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-4`} style={mobileGalleryStyle(imageDisplay)}>
-              {filteredChains.map((chain) => (
+              {visibleChains.map((chain) => (
               <div key={chain.id} onClick={() => onSelect(chain.id)} className="mobile-gallery-item group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative">
                 {/* Copy Button Overlay - Trigger Modal */}
                 <div className="absolute right-2 top-2 z-10 hidden items-center gap-1 opacity-0 transition-opacity md:group-hover:flex md:group-hover:opacity-100">
@@ -359,6 +365,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
               </div>
               ))}
             </div>
+            {visibleCount < filteredChains.length && <div className="flex justify-center py-6"><button type="button" onClick={() => setVisibleCount(count => count + RENDER_BATCH_SIZE)} className="mobile-touch rounded-xl border border-gray-300 bg-white px-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">加载更多（{filteredChains.length - visibleCount}）</button></div>}
+            </>
           )}
         </div>
       </div>

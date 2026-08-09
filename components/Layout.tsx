@@ -18,9 +18,10 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { GlobalSettings } from './GlobalSettings';
 import { useAnlasBudget } from '../services/anlasBudget';
 import { CloudQueueStatus } from './CloudQueueStatus';
+
+const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module => ({ default: module.GlobalSettings })));
 
 type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'inspiration' | 'history' | 'playground';
 type ThemeMode = 'light' | 'dark' | 'system';
@@ -343,7 +344,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         </div>
       </>}
 
-      <GlobalSettings open={showSettings} onClose={() => setShowSettings(false)} initialSection={settingsSection} notify={notify} isDark={isDark} themeMode={themeMode} setThemeMode={setThemeMode} safeMode={safeMode} toggleSafeMode={toggleSafeMode} />
+      {showSettings && <React.Suspense fallback={null}><GlobalSettings open onClose={() => setShowSettings(false)} initialSection={settingsSection} notify={notify} isDark={isDark} themeMode={themeMode} setThemeMode={setThemeMode} safeMode={safeMode} toggleSafeMode={toggleSafeMode} /></React.Suspense>}
     </div>
   );
 };

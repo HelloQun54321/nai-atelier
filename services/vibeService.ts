@@ -2,13 +2,6 @@ import { VibeAsset, VibeGroup, VibeSelection } from '../types';
 import { api } from './api';
 import { ANLAS_BUDGET_CHANGED_EVENT } from './anlasBudget';
 
-const fileToDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve(String(reader.result || ''));
-  reader.onerror = () => reject(reader.error || new Error('读取文件失败'));
-  reader.readAsDataURL(file);
-});
-
 const fileToText = (file: File) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = () => resolve(String(reader.result || ''));
@@ -16,7 +9,7 @@ const fileToText = (file: File) => new Promise<string>((resolve, reject) => {
   reader.readAsText(file, 'utf-8');
 });
 
-const createThumbnailDataUrl = async (file: File) => {
+const createThumbnailBlob = async (file: File) => {
   try {
     const bitmap = await createImageBitmap(file);
     const scale = Math.min(1, 320 / Math.max(bitmap.width, bitmap.height));
@@ -25,7 +18,7 @@ const createThumbnailDataUrl = async (file: File) => {
     canvas.height = Math.max(1, Math.round(bitmap.height * scale));
     canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     bitmap.close();
-    return canvas.toDataURL('image/webp', 0.72);
+    return await new Promise<Blob | undefined>(resolve => canvas.toBlob(blob => resolve(blob || undefined), 'image/webp', 0.72));
   } catch { return undefined; }
 };
 
@@ -41,9 +34,14 @@ export const vibeService = {
   },
 
   create: async (file: File, name: string): Promise<{item: VibeAsset; duplicate?: boolean}> => {
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) throw new Error('只支持 PNG、JPEG 或 WebP 图片');
     if (file.size > 30 * 1024 * 1024) throw new Error('参考图不能超过 30 MB');
-    const [imageData, thumbnailData] = await Promise.all([fileToDataUrl(file), createThumbnailDataUrl(file)]);
-    return api.post('/vibes', { name, imageData, thumbnailData });
+    const thumbnail = await createThumbnailBlob(file);
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('image', file);
+    if (thumbnail) formData.append('thumbnail', thumbnail, 'thumbnail.webp');
+    return api.postForm('/vibes', formData);
   },
 
   importFile: async (file: File): Promise<{item: VibeAsset; imported: number}> => {

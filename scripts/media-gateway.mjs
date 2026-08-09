@@ -35,7 +35,14 @@ const ALLOWED_AITAG_API_PATHS = [
   /^\/api\/rank\/monthly\/(?:real|fixed)$/,
   /^\/api\/work\/\d+$/,
 ];
-const THUMB_WIDTHS = new Map([['thumb-320', 320], ['thumb-640', 640]]);
+const THUMB_WIDTHS = new Map([
+  ['thumb-160', 160],
+  ['thumb-240', 240],
+  ['thumb-320', 320],
+  ['thumb-480', 480],
+  ['thumb-640', 640],
+  ['thumb-960', 960],
+]);
 
 export const selectThumbnailConcurrency = ({
   logicalProcessors = availableParallelism(),
@@ -886,7 +893,7 @@ export const getValidatedSource = value => {
   const source = String(value || '');
   if (!source || source.length > SOURCE_LIMIT || /[\r\n]/.test(source)) throw new Error('Invalid image source');
   if (source.startsWith('/api/assets/')) return { type: 'local', source };
-  if (/^\/api\/(?:local-history\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail))(?:\?.*)?$/.test(source)) return { type: 'local', source };
+  if (/^\/api\/(?:local-history\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail))(?:\?.*)?$/.test(source)) return { type: 'local', source };
   const stChatu8History = source.match(/^\/api\/integrations\/st-chatu8\/history\/([a-f0-9]{64})\/image$/i);
   if (stChatu8History) return { type: 'st-chatu8-history', source, externalId: stChatu8History[1].toLowerCase() };
   let url;
@@ -1024,22 +1031,26 @@ class ThumbnailCache {
   constructor(concurrency = THUMBNAIL_JOB_CONCURRENCY) {
     this.entries = {};
     this.inFlight = new Map();
+    this.sourceInFlight = new Map();
     this.activeJobs = 0;
     this.concurrency = concurrency;
     this.jobQueue = [];
     this.writeTimer = null;
+    this.indexWritePromise = Promise.resolve();
   }
 
   async init() {
     await mkdir(CACHE_DIR, { recursive: true });
     try { this.entries = JSON.parse(await readFile(CACHE_INDEX, 'utf8')); } catch { this.entries = {}; }
     const files = new Set(await readdir(CACHE_DIR));
+    const referencedFiles = new Set();
     for (const [key, entry] of Object.entries(this.entries)) {
       if (!entry?.file || !files.has(entry.file)) delete this.entries[key];
+      else referencedFiles.add(entry.file);
     }
     for (const file of files) {
       if (file === 'index.json' || file.endsWith('.tmp')) continue;
-      if (!Object.values(this.entries).some(entry => entry.file === file)) await unlink(join(CACHE_DIR, file)).catch(() => {});
+      if (!referencedFiles.has(file)) await unlink(join(CACHE_DIR, file)).catch(() => {});
     }
     this.scheduleIndexWrite();
   }
@@ -1047,7 +1058,12 @@ class ThumbnailCache {
   scheduleIndexWrite() {
     clearTimeout(this.writeTimer);
     this.writeTimer = setTimeout(() => {
-      writeFile(CACHE_INDEX, `${JSON.stringify(this.entries)}\n`, 'utf8').catch(() => {});
+      const snapshot = `${JSON.stringify(this.entries)}\n`;
+      this.indexWritePromise = this.indexWritePromise.catch(() => {}).then(async () => {
+        const temporary = `${CACHE_INDEX}.${process.pid}.tmp`;
+        await writeFile(temporary, snapshot, 'utf8');
+        await rename(temporary, CACHE_INDEX);
+      });
     }, 500);
     this.writeTimer.unref?.();
   }
@@ -1082,12 +1098,17 @@ class ThumbnailCache {
         const buffer = await readFile(join(CACHE_DIR, existing.file));
         existing.accessedAt = Date.now();
         this.scheduleIndexWrite();
-        return buffer;
+        return { buffer, etag: `"nai-${key}"` };
       } catch { delete this.entries[key]; }
     }
     if (this.inFlight.has(key)) return this.inFlight.get(key);
     const promise = this.withJobSlot(async () => {
-      const original = await loadOriginal();
+      let originalPromise = this.sourceInFlight.get(source);
+      if (!originalPromise) {
+        originalPromise = Promise.resolve().then(loadOriginal).finally(() => this.sourceInFlight.delete(source));
+        this.sourceInFlight.set(source, originalPromise);
+      }
+      const original = await originalPromise;
       if (original.status >= 400) {
         const error = new Error('Source image was not found');
         error.status = original.status;
@@ -1106,7 +1127,7 @@ class ThumbnailCache {
       this.entries[key] = { file, size: output.length, accessedAt: Date.now(), source, variant };
       this.scheduleIndexWrite();
       await this.prune();
-      return output;
+      return { buffer: output, etag: `"nai-${key}"` };
     }).finally(() => this.inFlight.delete(key));
     this.inFlight.set(key, promise);
     return promise;
@@ -1437,26 +1458,45 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         : requestRemoteBuffer(validated.source, remoteFetch);
 
       if (variant === 'original') {
+        if (validated.type === 'local' || validated.type === 'remote') {
+          const location = validated.type === 'local'
+            ? new URL(validated.source, `http://${req.headers.host || 'localhost'}`).toString()
+            : validated.source;
+          res.writeHead(302, {
+            Location: location,
+            'Cache-Control': 'private, max-age=3600',
+            'X-Content-Type-Options': 'nosniff',
+          });
+          return res.end();
+        }
         const original = await loadOriginal();
         if (original.status >= 400) return sendJson(res, original.status, { error: 'Source image was not found' });
         res.writeHead(200, {
           'Content-Type': original.headers['content-type'] || 'application/octet-stream',
           'Content-Length': original.buffer.length,
-          'Cache-Control': 'private, no-store',
+          'Cache-Control': 'private, max-age=3600',
           'X-Content-Type-Options': 'nosniff',
         });
         return res.end(original.buffer);
       }
 
       const thumbnail = await cache.get(validated.source, variant, loadOriginal);
+      if (req.headers['if-none-match'] === thumbnail.etag) {
+        res.writeHead(304, {
+          ETag: thumbnail.etag,
+          'Cache-Control': 'private, max-age=31536000, immutable',
+        });
+        return res.end();
+      }
       res.writeHead(200, {
         'Content-Type': 'image/webp',
-        'Content-Length': thumbnail.length,
-        'Cache-Control': 'private, no-store',
-        'X-Nai-Thumbnail-Bytes': thumbnail.length,
+        'Content-Length': thumbnail.buffer.length,
+        'Cache-Control': 'private, max-age=31536000, immutable',
+        ETag: thumbnail.etag,
+        'X-Nai-Thumbnail-Bytes': thumbnail.buffer.length,
         'X-Content-Type-Options': 'nosniff',
       });
-      res.end(thumbnail);
+      res.end(thumbnail.buffer);
     } catch (error) {
       sendJson(res, Number(error.status) || 502, { error: error.message || 'Image processing failed' });
     }

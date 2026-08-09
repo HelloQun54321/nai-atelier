@@ -23,13 +23,10 @@ const handleResponse = async (res: Response) => {
 };
 
 export const api = {
-  get: async (endpoint: string) => {
-    // Add timestamp to prevent caching
-    const separator = endpoint.includes('?') ? '&' : '?';
-    const url = `${API_BASE}${endpoint}${separator}_t=${Date.now()}`;
-    
-    const res = await fetch(url, { 
-        headers: getHeaders() 
+  get: async (endpoint: string, options: { cache?: RequestCache } = {}) => {
+    const res = await fetch(`${API_BASE}${endpoint}`, {
+        headers: getHeaders(),
+        cache: options.cache || 'default',
     });
     return handleResponse(res);
   },
@@ -39,6 +36,14 @@ export const api = {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  postForm: async (endpoint: string, data: FormData) => {
+    const res = await fetch(`${API_BASE}${endpoint}`, {
+      method: 'POST',
+      body: data,
     });
     return handleResponse(res);
   },

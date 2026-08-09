@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { LocalHistoryDateRange, localHistory } from '../services/localHistory';
+import { LocalHistoryDateRange, LocalHistoryPage, localHistory } from '../services/localHistory';
 import { db } from '../services/dbService';
 import { LocalGenItem, PromptChain, User } from '../types';
 import { PAGINATION_CONFIG } from '../config/pagination';
@@ -65,7 +65,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     // 缓存管理
     const [pageCache, setPageCache] = useState<Record<number, LocalGenItem[]>>({});
     const pageCacheRef = useRef<Record<number, LocalGenItem[]>>({});
-    const inflightPagesRef = useRef<Record<number, Promise<LocalGenItem[]>>>({});
+    const inflightPagesRef = useRef<Record<string, Promise<LocalHistoryPage>>>({});
     const currentPageRef = useRef(1);
     const loadRequestRef = useRef(0);
     const refreshPageRef = useRef<(page: number, force?: boolean) => Promise<void>>(async () => undefined);
@@ -163,33 +163,34 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     };
 
     // 获取页面数据（优先从缓存）
-    const getPageData = async (page: number, force = false): Promise<LocalGenItem[]> => {
+    const getPageData = async (page: number, force = false, includeCount = false): Promise<LocalHistoryPage> => {
         const cached = pageCacheRef.current[page];
-        if (!force && cached) {
-            return cached;
+        if (!force && cached && !includeCount) {
+            return { items: cached };
         }
 
-        const inflight = inflightPagesRef.current[page];
+        const cacheKey = `${page}:${includeCount ? 'count' : 'items'}`;
+        const inflight = inflightPagesRef.current[cacheKey];
         if (!force && inflight) {
             return inflight;
         }
 
-        let request: Promise<LocalGenItem[]>;
-        request = localHistory.getPage(page - 1, PAGE_SIZE, dateRangeRef.current)
+        let request: Promise<LocalHistoryPage>;
+        request = localHistory.getPage(page - 1, PAGE_SIZE, dateRangeRef.current, includeCount)
             .then(data => {
-                if (inflightPagesRef.current[page] === request) {
-                    delete inflightPagesRef.current[page];
+                if (inflightPagesRef.current[cacheKey] === request) {
+                    delete inflightPagesRef.current[cacheKey];
                 }
                 return data;
             })
             .catch(error => {
-                if (inflightPagesRef.current[page] === request) {
-                    delete inflightPagesRef.current[page];
+                if (inflightPagesRef.current[cacheKey] === request) {
+                    delete inflightPagesRef.current[cacheKey];
                 }
                 throw error;
             });
 
-        inflightPagesRef.current[page] = request;
+        inflightPagesRef.current[cacheKey] = request;
         return request;
     };
 
@@ -199,7 +200,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         }
 
         try {
-            const data = await getPageData(page);
+            const { items: data } = await getPageData(page);
 
             if (currentPageRef.current !== centerPage) {
                 return;
@@ -224,7 +225,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         setIsLoading(true);
 
         try {
-            const count = await localHistory.getCount(dateRangeRef.current);
+            const requestedPage = Math.max(1, page);
+            let pageResult = await getPageData(requestedPage, force, true);
+            const count = Number(pageResult.count || 0);
             const calculatedTotalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
             const targetPage = Math.max(1, Math.min(page, calculatedTotalPages));
 
@@ -235,7 +238,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             setTotalPages(calculatedTotalPages);
             setTotalCount(count);
 
-            const data = await getPageData(targetPage, force);
+            if (targetPage !== requestedPage) pageResult = await getPageData(targetPage, force);
+            const data = pageResult.items;
             if (requestId !== loadRequestRef.current) return;
 
             setItems(data);
@@ -789,7 +793,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                     }}
                                 >
                                     <div className="mobile-gallery-frame md:aspect-square relative w-full overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': `${item.params.width || 832} / ${item.params.height || 1216}` } as React.CSSProperties}>
-                                      <SmartImage eager src={item.imageUrl} alt={`生成于 ${new Date(item.createdAt).toLocaleString()} 的图片`} className="w-full h-full object-cover" />
+                                      <SmartImage src={item.imageUrl} alt={`生成于 ${new Date(item.createdAt).toLocaleString()} 的图片`} className="w-full h-full object-cover" />
                                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                                       {selectionMode && <div className="absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white shadow">{selectedIds.has(item.id) ? '✓' : ''}</div>}
                                       <div className="absolute top-2 right-2 hidden md:block opacity-0 group-hover:opacity-100 transition-opacity">

@@ -184,7 +184,10 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   );
   if (!filename) throw new Error("No image found in response");
 
-  const fileData = await zip.files[filename].async('base64');
+  const imageBytes = await zip.files[filename].async('uint8array');
+  const imageType = /\.jpe?g$/i.test(filename) ? 'image/jpeg' : /\.webp$/i.test(filename) ? 'image/webp' : 'image/png';
+  const imageBuffer = imageBytes.buffer.slice(imageBytes.byteOffset, imageBytes.byteOffset + imageBytes.byteLength) as ArrayBuffer;
+  const fileData = new Blob([imageBuffer], { type: imageType });
 
   // Extract seed from payload if available, or finding it in metadata would be ideal but for now we rely on what we sent
   // Actually, NAI returns the seed in the response JSON if we used the proper endpoint or read the png info.
@@ -212,5 +215,5 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
     // But typically NAI returns a JSON alongside the image in the zip.
   }
 
-  return { image: `data:image/png;base64,${fileData}`, seed: actualSeed };
+  return { image: URL.createObjectURL(fileData), blob: fileData, seed: actualSeed };
 };

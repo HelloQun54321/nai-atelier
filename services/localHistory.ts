@@ -18,6 +18,11 @@ export interface LocalHistoryDateRange {
     to?: number;
 }
 
+export interface LocalHistoryPage {
+    items: LocalGenItem[];
+    count?: number;
+}
+
 export type LocalHistoryMigrationProgress = {
     current: number;
     total: number;
@@ -139,13 +144,14 @@ class LocalHistoryService {
     }
 
     async add(
-        imageUrl: string,
+        image: string | Blob,
         prompt: string,
         params: NAIParams,
         negativePrompt = '',
         source?: Pick<LocalGenItem, 'basePrompt' | 'subjectPrompt' | 'modules' | 'sourceChainId' | 'sourceChainName' | 'sourceChainType'>
     ): Promise<LocalGenItem> {
-        const db = await this.open();
+        const remoteEnabled = await this.isRemoteEnabled();
+        const imageUrl = typeof image === 'string' ? image : '';
         const item: LocalGenItem = {
             id: createUuid(),
             imageUrl,
@@ -161,10 +167,27 @@ class LocalHistoryService {
             createdAt: Date.now()
         };
 
-        if (await this.isRemoteEnabled()) {
-            const result = await api.post('/local-history', item);
+        if (remoteEnabled) {
+            const result = image instanceof Blob
+                ? await (() => {
+                    const formData = new FormData();
+                    formData.append('image', image, `generation.${image.type === 'image/jpeg' ? 'jpg' : image.type.split('/')[1] || 'png'}`);
+                    formData.append('metadata', JSON.stringify(item));
+                    return api.postForm('/local-history', formData);
+                })()
+                : await api.post('/local-history', item);
             this.emit({ type: 'add', id: item.id });
             return result.item as LocalGenItem;
+        }
+
+        const db = await this.open();
+        if (image instanceof Blob) {
+            item.imageUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(reader.error || new Error('读取生成图片失败'));
+                reader.readAsDataURL(image);
+            });
         }
 
         return new Promise((resolve, reject) => {
@@ -359,15 +382,20 @@ class LocalHistoryService {
      * @param pageSize 每页数量
      * @returns 当前页的记录数组
      */
-    async getPage(page: number, pageSize: number, range?: LocalHistoryDateRange): Promise<LocalGenItem[]> {
+    async getPage(page: number, pageSize: number, range?: LocalHistoryDateRange, includeCount = true): Promise<LocalHistoryPage> {
         if (await this.isRemoteEnabled()) {
             const params = new URLSearchParams({ page: String(Math.max(0, page)), pageSize: String(Math.max(1, pageSize)) });
             if (range?.from) params.set('from', String(range.from));
             if (range?.to) params.set('to', String(range.to));
+            if (!includeCount) params.set('includeCount', '0');
             const result = await api.get(`/local-history?${params.toString()}`);
-            return result.items || [];
+            return { items: result.items || [], ...(includeCount ? { count: Number(result.count || 0) } : {}) };
         }
-        return this.getBrowserPage(page, pageSize, range);
+        const [items, count] = await Promise.all([
+            this.getBrowserPage(page, pageSize, range),
+            includeCount ? this.getBrowserCount(range) : Promise.resolve(undefined),
+        ]);
+        return { items, ...(count === undefined ? {} : { count }) };
     }
 
     private async getBrowserPage(page: number, pageSize: number, range?: LocalHistoryDateRange): Promise<LocalGenItem[]> {

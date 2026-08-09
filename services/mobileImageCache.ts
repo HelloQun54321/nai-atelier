@@ -1,32 +1,74 @@
 const DB_NAME = 'nai-mobile-image-cache';
-const DB_VERSION = 1;
-const STORE_NAME = 'thumbnails';
-const META_KEY = 'nai_mobile_thumbnail_cache_meta_v1';
+const DB_VERSION = 2;
+const THUMBNAIL_STORE = 'thumbnails';
+const METADATA_STORE = 'metadata';
+const ACCESS_INDEX = 'accessedAt';
+const STATS_KEY = 'nai_mobile_thumbnail_cache_stats_v2';
+const MIGRATION_KEY = 'nai_mobile_thumbnail_cache_migrated_v2';
+const LEGACY_META_KEY = 'nai_mobile_thumbnail_cache_meta_v1';
 const LIMIT_KEY = 'nai_mobile_image_cache_limit_mb';
 const DEFAULT_LIMIT_MB = 100;
 const PRUNE_RATIO = 0.9;
+const ACCESS_FLUSH_DELAY_MS = 5_000;
+const PRUNE_DELAY_MS = 2_000;
 
-interface CacheMetaEntry {
-  size: number;
-  accessedAt: number;
+export type MediaVariant = 'thumb-160' | 'thumb-240' | 'thumb-320' | 'thumb-480' | 'thumb-640' | 'thumb-960' | 'original';
+
+interface CacheStats {
+  count: number;
+  bytes: number;
 }
-
-type CacheMeta = Record<string, CacheMetaEntry>;
-
-const activeRequests = new Map<string, {
-  promise: Promise<Blob>;
-  controller: AbortController;
-  references: number;
-}>();
 
 interface ThumbnailRecord {
   url: string;
   blob: Blob;
+}
+
+interface MetadataRecord {
+  url: string;
   size: number;
   accessedAt: number;
 }
 
+interface ActiveImageResource {
+  promise: Promise<string>;
+  controller: AbortController;
+  references: number;
+  objectUrl: string;
+}
+
+const activeResources = new Map<string, ActiveImageResource>();
+const pendingAccessUpdates = new Map<string, number>();
 let databasePromise: Promise<IDBDatabase> | null = null;
+let accessFlushTimer: number | null = null;
+let pruneTimer: number | null = null;
+let migrationPromise: Promise<void> | null = null;
+
+const emitCacheChanged = () => window.dispatchEvent(new CustomEvent('nai-mobile-cache-changed'));
+
+const readStats = (): CacheStats => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STATS_KEY) || '{}') as Partial<CacheStats>;
+    return {
+      count: Number.isFinite(saved.count) ? Math.max(0, Number(saved.count)) : 0,
+      bytes: Number.isFinite(saved.bytes) ? Math.max(0, Number(saved.bytes)) : 0,
+    };
+  } catch {
+    return { count: 0, bytes: 0 };
+  }
+};
+
+const writeStats = (stats: CacheStats) => {
+  try {
+    localStorage.setItem(STATS_KEY, JSON.stringify({
+      count: Math.max(0, Math.round(stats.count)),
+      bytes: Math.max(0, Math.round(stats.bytes)),
+    }));
+  } catch {
+    // Cache statistics are best-effort and must never block image display.
+  }
+  emitCacheChanged();
+};
 
 const openCacheDatabase = () => {
   if (!('indexedDB' in window)) return Promise.reject(new Error('IndexedDB is unavailable'));
@@ -34,38 +76,132 @@ const openCacheDatabase = () => {
     databasePromise = new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
       request.onupgradeneeded = () => {
-        if (!request.result.objectStoreNames.contains(STORE_NAME)) request.result.createObjectStore(STORE_NAME, { keyPath: 'url' });
+        const database = request.result;
+        if (!database.objectStoreNames.contains(THUMBNAIL_STORE)) {
+          database.createObjectStore(THUMBNAIL_STORE, { keyPath: 'url' });
+        }
+        if (!database.objectStoreNames.contains(METADATA_STORE)) {
+          const metadata = database.createObjectStore(METADATA_STORE, { keyPath: 'url' });
+          metadata.createIndex(ACCESS_INDEX, ACCESS_INDEX);
+        }
       };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error || new Error('Unable to open image cache'));
+      request.onsuccess = () => {
+        request.result.onversionchange = () => request.result.close();
+        resolve(request.result);
+        window.setTimeout(() => void migrateLegacyMetadata().catch(() => {}), 0);
+      };
+      request.onerror = () => {
+        databasePromise = null;
+        reject(request.error || new Error('Unable to open image cache'));
+      };
+      request.onblocked = () => {
+        databasePromise = null;
+        reject(new Error('Image cache upgrade is blocked'));
+      };
     });
   }
   return databasePromise;
 };
 
-const runStoreRequest = async <T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>) => {
+const runTransaction = async <T>(stores: string[], mode: IDBTransactionMode, action: (transaction: IDBTransaction) => Promise<T> | T) => {
   const database = await openCacheDatabase();
   return await new Promise<T>((resolve, reject) => {
-    const transaction = database.transaction(STORE_NAME, mode);
-    const request = action(transaction.objectStore(STORE_NAME));
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('Image cache operation failed'));
+    const transaction = database.transaction(stores, mode);
+    let result: T;
+    let actionError: unknown;
+    Promise.resolve(action(transaction)).then(value => { result = value; }).catch(error => {
+      actionError = error;
+      transaction.abort();
+    });
+    transaction.oncomplete = () => resolve(result!);
+    transaction.onerror = () => reject(actionError || transaction.error || new Error('Image cache operation failed'));
+    transaction.onabort = () => reject(actionError || transaction.error || new Error('Image cache operation aborted'));
   });
 };
 
-const getCachedRecord = (url: string) => runStoreRequest<ThumbnailRecord | undefined>('readonly', store => store.get(url));
-const getAllCachedRecords = () => runStoreRequest<ThumbnailRecord[]>('readonly', store => store.getAll());
-const putCachedRecord = (record: ThumbnailRecord) => runStoreRequest<IDBValidKey>('readwrite', store => store.put(record));
-const deleteCachedRecord = (url: string) => runStoreRequest<undefined>('readwrite', store => store.delete(url));
-const clearCachedRecords = () => runStoreRequest<undefined>('readwrite', store => store.clear());
+const requestResult = <T>(request: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error || new Error('Image cache request failed'));
+});
 
-const readMeta = (): CacheMeta => {
-  try { return JSON.parse(localStorage.getItem(META_KEY) || '{}'); } catch { return {}; }
+const getCachedBlob = async (url: string) => runTransaction([THUMBNAIL_STORE], 'readonly', async transaction => {
+  const record = await requestResult<ThumbnailRecord | undefined>(transaction.objectStore(THUMBNAIL_STORE).get(url));
+  return record?.blob;
+});
+
+const putCachedBlob = async (url: string, blob: Blob) => runTransaction([THUMBNAIL_STORE, METADATA_STORE], 'readwrite', async transaction => {
+  const metadataStore = transaction.objectStore(METADATA_STORE);
+  const previous = await requestResult<MetadataRecord | undefined>(metadataStore.get(url));
+  transaction.objectStore(THUMBNAIL_STORE).put({ url, blob } satisfies ThumbnailRecord);
+  metadataStore.put({ url, size: blob.size, accessedAt: Date.now() } satisfies MetadataRecord);
+  return previous;
+});
+
+const flushAccessUpdates = async () => {
+  accessFlushTimer = null;
+  if (!pendingAccessUpdates.size || !('indexedDB' in window)) return;
+  const updates = [...pendingAccessUpdates.entries()];
+  pendingAccessUpdates.clear();
+  await runTransaction([METADATA_STORE], 'readwrite', async transaction => {
+    const store = transaction.objectStore(METADATA_STORE);
+    for (const [url, accessedAt] of updates) {
+      const record = await requestResult<MetadataRecord | undefined>(store.get(url));
+      if (record) store.put({ ...record, accessedAt });
+    }
+  }).catch(() => {});
 };
 
-const writeMeta = (meta: CacheMeta) => {
-  localStorage.setItem(META_KEY, JSON.stringify(meta));
-  window.dispatchEvent(new CustomEvent('nai-mobile-cache-changed'));
+const scheduleAccessUpdate = (url: string) => {
+  pendingAccessUpdates.set(url, Date.now());
+  if (accessFlushTimer !== null) return;
+  accessFlushTimer = window.setTimeout(() => void flushAccessUpdates(), ACCESS_FLUSH_DELAY_MS);
+};
+
+const schedulePrune = () => {
+  if (pruneTimer !== null) return;
+  const run = () => {
+    pruneTimer = null;
+    void pruneMobileThumbnailCache();
+  };
+  if ('requestIdleCallback' in window) {
+    pruneTimer = window.setTimeout(() => window.requestIdleCallback(run, { timeout: 2_000 }), PRUNE_DELAY_MS);
+  } else {
+    pruneTimer = globalThis.setTimeout(run, PRUNE_DELAY_MS) as unknown as number;
+  }
+};
+
+const migrateLegacyMetadata = async () => {
+  if (localStorage.getItem(MIGRATION_KEY) === '1') return;
+  if (migrationPromise) return migrationPromise;
+  migrationPromise = runTransaction([THUMBNAIL_STORE, METADATA_STORE], 'readwrite', transaction => new Promise<CacheStats>((resolve, reject) => {
+    const thumbnailStore = transaction.objectStore(THUMBNAIL_STORE);
+    const metadataStore = transaction.objectStore(METADATA_STORE);
+    const cursorRequest = thumbnailStore.openCursor();
+    let count = 0;
+    let bytes = 0;
+    cursorRequest.onsuccess = () => {
+      const cursor = cursorRequest.result;
+      if (!cursor) {
+        resolve({ count, bytes });
+        return;
+      }
+      const legacy = cursor.value as ThumbnailRecord & Partial<MetadataRecord>;
+      const size = Number(legacy.size || legacy.blob?.size || 0);
+      metadataStore.put({
+        url: legacy.url,
+        size,
+        accessedAt: Number(legacy.accessedAt || Date.now()),
+      } satisfies MetadataRecord);
+      count++;
+      bytes += size;
+      cursor.continue();
+    };
+    cursorRequest.onerror = () => reject(cursorRequest.error || new Error('Unable to migrate image cache metadata'));
+  })).then(stats => {
+    localStorage.setItem(MIGRATION_KEY, '1');
+    writeStats(stats);
+  }).finally(() => { migrationPromise = null; });
+  return migrationPromise;
 };
 
 export const getMobileCacheLimitMb = () => {
@@ -78,130 +214,184 @@ export const getMobileCacheLimitMb = () => {
 export const setMobileCacheLimitMb = (value: number) => {
   const normalized = [0, 25, 50, 100].includes(value) ? value : DEFAULT_LIMIT_MB;
   localStorage.setItem(LIMIT_KEY, String(normalized));
-  void pruneMobileThumbnailCache();
-  window.dispatchEvent(new CustomEvent('nai-mobile-cache-changed'));
+  schedulePrune();
+  emitCacheChanged();
 };
 
-export const getMobileCacheStats = () => {
-  const entries = Object.values(readMeta());
-  return {
-    count: entries.length,
-    bytes: entries.reduce((sum, entry) => sum + Number(entry.size || 0), 0),
-    limitMb: getMobileCacheLimitMb(),
-  };
-};
+export const getMobileCacheStats = () => ({ ...readStats(), limitMb: getMobileCacheLimitMb() });
 
 export const refreshMobileCacheMetadata = async () => {
   if (!('indexedDB' in window)) return getMobileCacheStats();
-  const records: ThumbnailRecord[] = await getAllCachedRecords().catch((): ThumbnailRecord[] => []);
-  const meta = Object.fromEntries(records.map(record => [record.url, { size: record.size, accessedAt: record.accessedAt }]));
-  writeMeta(meta);
-  return getMobileCacheStats();
+  await migrateLegacyMetadata().catch(() => {});
+  const stats = await runTransaction([METADATA_STORE], 'readonly', transaction => new Promise<CacheStats>((resolve, reject) => {
+    const cursorRequest = transaction.objectStore(METADATA_STORE).openCursor();
+    let count = 0;
+    let bytes = 0;
+    cursorRequest.onsuccess = () => {
+      const cursor = cursorRequest.result;
+      if (!cursor) {
+        resolve({ count, bytes });
+        return;
+      }
+      const record = cursor.value as MetadataRecord;
+      count++;
+      bytes += Number(record.size || 0);
+      cursor.continue();
+    };
+    cursorRequest.onerror = () => reject(cursorRequest.error || new Error('Unable to scan cache metadata'));
+  })).catch(() => readStats());
+  writeStats(stats);
+  try { localStorage.removeItem(LEGACY_META_KEY); } catch { /* Ignore storage failures. */ }
+  return { ...stats, limitMb: getMobileCacheLimitMb() };
 };
 
 export const clearMobileThumbnailCache = async () => {
-  if ('indexedDB' in window) await clearCachedRecords().catch(() => {});
-  localStorage.removeItem(META_KEY);
-  window.dispatchEvent(new CustomEvent('nai-mobile-cache-changed'));
+  activeResources.forEach(resource => {
+    resource.controller.abort();
+    if (resource.objectUrl) URL.revokeObjectURL(resource.objectUrl);
+  });
+  activeResources.clear();
+  pendingAccessUpdates.clear();
+  if ('indexedDB' in window) {
+    await runTransaction([THUMBNAIL_STORE, METADATA_STORE], 'readwrite', transaction => {
+      transaction.objectStore(THUMBNAIL_STORE).clear();
+      transaction.objectStore(METADATA_STORE).clear();
+    }).catch(() => {});
+  }
+  try {
+    localStorage.removeItem(STATS_KEY);
+    localStorage.removeItem(LEGACY_META_KEY);
+  } catch { /* Ignore storage failures. */ }
+  emitCacheChanged();
 };
 
 export const pruneMobileThumbnailCache = async () => {
   if (!('indexedDB' in window)) return;
   const limit = getMobileCacheLimitMb() * 1024 * 1024;
+  const current = readStats();
+  if (limit > 0 && current.bytes <= limit) return;
   const target = Math.floor(limit * PRUNE_RATIO);
-  const records: ThumbnailRecord[] = await getAllCachedRecords().catch((): ThumbnailRecord[] => []);
-  let total = records.reduce<number>((sum, record) => sum + Number(record.size || 0), 0);
-  const kept = new Map<string, ThumbnailRecord>(records.map(record => [record.url, record]));
-  if (limit === 0 || total > limit) {
-    for (const record of records.sort((a, b) => a.accessedAt - b.accessedAt)) {
-      await deleteCachedRecord(record.url).catch(() => {});
-      kept.delete(record.url);
-      total -= Number(record.size || 0);
-      if (total <= target) break;
-    }
-  }
-  const meta = Object.fromEntries([...kept.values()].map(record => [record.url, { size: record.size, accessedAt: record.accessedAt }]));
-  writeMeta(meta);
+  let bytes = current.bytes;
+  let count = current.count;
+  await runTransaction([THUMBNAIL_STORE, METADATA_STORE], 'readwrite', transaction => new Promise<void>((resolve, reject) => {
+    const thumbnailStore = transaction.objectStore(THUMBNAIL_STORE);
+    const cursorRequest = transaction.objectStore(METADATA_STORE).index(ACCESS_INDEX).openCursor();
+    cursorRequest.onsuccess = () => {
+      const cursor = cursorRequest.result;
+      if (!cursor || bytes <= target) {
+        resolve();
+        return;
+      }
+      const record = cursor.value as MetadataRecord;
+      thumbnailStore.delete(record.url);
+      cursor.delete();
+      bytes = Math.max(0, bytes - Number(record.size || 0));
+      count = Math.max(0, count - 1);
+      cursor.continue();
+    };
+    cursorRequest.onerror = () => reject(cursorRequest.error || new Error('Unable to prune image cache'));
+  })).then(() => writeStats({ count, bytes })).catch(() => {});
 };
 
 const loadThumbnail = async (url: string, signal: AbortSignal): Promise<Blob> => {
   const limitMb = getMobileCacheLimitMb();
-  const canPersist = 'indexedDB' in window;
-  if (canPersist && limitMb > 0) {
-    const cached = await getCachedRecord(url).catch(() => undefined);
+  const canPersist = 'indexedDB' in window && limitMb > 0;
+  if (canPersist) {
+    const cached = await getCachedBlob(url).catch(() => undefined);
     if (cached) {
-      const meta = readMeta();
-      meta[url] = { size: cached.size, accessedAt: Date.now() };
-      writeMeta(meta);
-      void putCachedRecord({ ...cached, accessedAt: Date.now() }).catch(() => {});
-      return cached.blob;
+      scheduleAccessUpdate(url);
+      return cached;
     }
   }
 
-  const response = await fetch(url, { cache: 'no-store', credentials: 'same-origin', signal });
+  const response = await fetch(url, { cache: 'default', credentials: 'same-origin', signal });
   if (!response.ok) throw new Error(response.status === 401 ? '局域网访问已失效' : '图片加载失败');
   const blob = await response.blob();
   if (!blob.type.startsWith('image/')) throw new Error('返回内容不是图片');
-  if (canPersist && limitMb > 0) {
-    await putCachedRecord({ url, blob, size: blob.size, accessedAt: Date.now() });
-    const meta = readMeta();
-    meta[url] = { size: blob.size, accessedAt: Date.now() };
-    writeMeta(meta);
-    await pruneMobileThumbnailCache();
+  if (canPersist) {
+    void putCachedBlob(url, blob).then(previous => {
+      const stats = readStats();
+      writeStats({
+        count: stats.count + (previous ? 0 : 1),
+        bytes: stats.bytes + blob.size - Number(previous?.size || 0),
+      });
+      schedulePrune();
+    }).catch(() => {});
   }
   return blob;
 };
 
-export const acquireMobileThumbnail = (url: string) => {
-  let active = activeRequests.get(url);
-  if (!active) {
+export const acquireMobileThumbnailUrl = (url: string) => {
+  let resource = activeResources.get(url);
+  if (!resource) {
     const controller = new AbortController();
-    const entry = {
-      promise: Promise.resolve(new Blob()),
-      controller,
-      references: 0,
-    };
-    entry.promise = loadThumbnail(url, controller.signal).finally(() => {
-      if (activeRequests.get(url) === entry) activeRequests.delete(url);
+    const entry: ActiveImageResource = { promise: Promise.resolve(''), controller, references: 0, objectUrl: '' };
+    entry.promise = loadThumbnail(url, controller.signal).then(blob => {
+      if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      entry.objectUrl = URL.createObjectURL(blob);
+      return entry.objectUrl;
+    }).catch(error => {
+      if (activeResources.get(url) === entry) activeResources.delete(url);
+      throw error;
     });
-    active = entry;
-    activeRequests.set(url, active);
+    resource = entry;
+    activeResources.set(url, resource);
   }
-  active.references++;
+  resource.references++;
   let released = false;
   return {
-    promise: active.promise,
+    promise: resource.promise,
     release: () => {
       if (released) return;
       released = true;
-      const current = activeRequests.get(url);
+      const current = activeResources.get(url);
       if (!current) return;
       current.references--;
-      if (current.references <= 0) {
-        activeRequests.delete(url);
-        current.controller.abort();
-      }
+      if (current.references > 0) return;
+      activeResources.delete(url);
+      current.controller.abort();
+      if (current.objectUrl) URL.revokeObjectURL(current.objectUrl);
     },
   };
 };
 
 export const abortMobileThumbnailRequests = () => {
-  activeRequests.forEach(request => request.controller.abort());
-  activeRequests.clear();
+  activeResources.forEach(resource => {
+    resource.controller.abort();
+    if (resource.objectUrl) URL.revokeObjectURL(resource.objectUrl);
+  });
+  activeResources.clear();
 };
 
 export const isMobileViewport = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
 
 export const canUseMediaGateway = (source: string) => {
-  if (source.startsWith('/api/assets/') || /^\/api\/(?:local-history\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image)(?:\?.*)?$/i.test(source)) return true;
+  if (source.startsWith('/api/assets/') || /^\/api\/(?:local-history\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail)|integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image)(?:\?.*)?$/i.test(source)) return true;
   try {
     const url = new URL(source, window.location.origin);
     return url.protocol === 'https:' && ['ai-img.10118899.xyz', 'aitag.win'].includes(url.hostname.toLowerCase());
   } catch { return false; }
 };
 
-export const buildMediaUrl = (source: string, variant: 'thumb-320' | 'thumb-640' | 'original') =>
-  `/api/media?source=${encodeURIComponent(source)}&variant=${variant}`;
+export const selectThumbnailVariant = (width: number): Exclude<MediaVariant, 'original'> => {
+  const target = Math.max(1, Math.ceil(width));
+  if (target <= 160) return 'thumb-160';
+  if (target <= 240) return 'thumb-240';
+  if (target <= 320) return 'thumb-320';
+  if (target <= 480) return 'thumb-480';
+  if (target <= 640) return 'thumb-640';
+  return 'thumb-960';
+};
 
-export const getMobileOriginalUrl = (source: string) =>
-  isMobileViewport() && canUseMediaGateway(source) ? buildMediaUrl(source, 'original') : source;
+export const buildMediaUrl = (source: string, variant: MediaVariant) => `/api/media?source=${encodeURIComponent(source)}&variant=${variant}`;
+
+export const getMobileOriginalUrl = (source: string) => {
+  if (!isMobileViewport() || !canUseMediaGateway(source)) return source;
+  try {
+    const url = new URL(source, window.location.origin);
+    if (url.origin === window.location.origin) return source;
+  } catch {
+    return source;
+  }
+  return buildMediaUrl(source, 'original');
+};

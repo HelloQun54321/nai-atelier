@@ -1,14 +1,7 @@
 import { CharacterReferenceAsset } from '../types';
 import { api } from './api';
 
-const fileToDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve(String(reader.result || ''));
-  reader.onerror = () => reject(reader.error || new Error('读取文件失败'));
-  reader.readAsDataURL(file);
-});
-
-const createThumbnailDataUrl = async (file: File) => {
+const createThumbnailBlob = async (file: File) => {
   try {
     const bitmap = await createImageBitmap(file);
     const scale = Math.min(1, 320 / Math.max(bitmap.width, bitmap.height));
@@ -17,7 +10,7 @@ const createThumbnailDataUrl = async (file: File) => {
     canvas.height = Math.max(1, Math.round(bitmap.height * scale));
     canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     bitmap.close();
-    return canvas.toDataURL('image/webp', 0.72);
+    return await new Promise<Blob | undefined>(resolve => canvas.toBlob(blob => resolve(blob || undefined), 'image/webp', 0.72));
   } catch {
     return undefined;
   }
@@ -39,8 +32,12 @@ export const characterReferenceService = {
       throw new Error('只支持 PNG、JPEG 或 WebP 图片');
     }
     if (!file.size || file.size > 30 * 1024 * 1024) throw new Error('角色参考图大小必须在 30 MB 以内');
-    const [imageData, thumbnailData] = await Promise.all([fileToDataUrl(file), createThumbnailDataUrl(file)]);
-    return api.post('/character-references', { name, imageData, thumbnailData });
+    const thumbnail = await createThumbnailBlob(file);
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('image', file);
+    if (thumbnail) formData.append('thumbnail', thumbnail, 'thumbnail.webp');
+    return api.postForm('/character-references', formData);
   },
 
   rename: (id: string, name: string, defaultStrength?: number, defaultFidelity?: number) =>

@@ -1,11 +1,18 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
-  acquireMobileThumbnail,
+  acquireMobileThumbnailUrl,
   buildMediaUrl,
   canUseMediaGateway,
   getMobileOriginalUrl,
   isMobileViewport,
+  selectThumbnailVariant,
 } from '../services/mobileImageCache';
+
+const ImageActivityContext = createContext(true);
+
+export const ImageActivityProvider: React.FC<React.PropsWithChildren<{ active: boolean }>> = ({ active, children }) => (
+  <ImageActivityContext.Provider value={active}>{children}</ImageActivityContext.Provider>
+);
 
 interface SmartImageProps {
   src: string;
@@ -36,36 +43,42 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   onError,
   onLoad,
 }) => {
+  const viewActive = useContext(ImageActivityContext);
   const containerRef = useRef<HTMLDivElement>(null);
   const onErrorRef = useRef(onError);
-  const objectUrlRef = useRef('');
   const [activatedSrc, setActivatedSrc] = useState('');
   const [displaySrc, setDisplaySrc] = useState('');
+  const [measuredWidth, setMeasuredWidth] = useState(160);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [useOriginal, setUseOriginal] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
 
-  const replaceObjectUrl = (nextUrl = '') => {
-    if (objectUrlRef.current && objectUrlRef.current !== nextUrl) URL.revokeObjectURL(objectUrlRef.current);
-    objectUrlRef.current = nextUrl;
-  };
-
-  useEffect(() => () => replaceObjectUrl(), []);
+  useEffect(() => {
+    if (!viewActive) return;
+    const node = containerRef.current;
+    if (!node) return;
+    const updateWidth = () => setMeasuredWidth(Math.max(1, node.clientWidth));
+    updateWidth();
+    if (!('ResizeObserver' in window)) return;
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [viewActive]);
 
   useEffect(() => {
-    replaceObjectUrl();
     setDisplaySrc('');
     setLoaded(false);
     setFailed(false);
-    const node = containerRef.current;
-    if (!node) return;
-    if (eager) {
-      setActivatedSrc(src);
+    setUseOriginal(false);
+    if (!viewActive || !src) {
+      setActivatedSrc('');
       return;
     }
-    if (!('IntersectionObserver' in window)) {
+    const node = containerRef.current;
+    if (!node || eager || !('IntersectionObserver' in window)) {
       setActivatedSrc(src);
       return;
     }
@@ -78,48 +91,50 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     }, { root, rootMargin: `${preloadDistance}px 0px` });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [eager, src]);
+  }, [eager, retryToken, src, viewActive]);
 
-  const activated = eager || activatedSrc === src;
+  const activated = viewActive && (eager || activatedSrc === src);
+  const pixelWidth = measuredWidth * Math.max(1, window.devicePixelRatio || 1);
+  const variant = selectThumbnailVariant(pixelWidth);
 
   useEffect(() => {
-    if (!activated || !src) return;
+    if (!activated || !src) {
+      setDisplaySrc('');
+      return;
+    }
     setLoaded(false);
     setFailed(false);
-    if (!canUseMediaGateway(src)) {
+    if (useOriginal || !canUseMediaGateway(src)) {
       setDisplaySrc(src);
       return;
     }
 
-    const width = (containerRef.current?.clientWidth || 160) * Math.max(1, window.devicePixelRatio || 1);
-    const variant = width > 320 ? 'thumb-640' : 'thumb-320';
     const thumbnailUrl = buildMediaUrl(src, variant);
     if (!isMobileViewport()) {
       setDisplaySrc(thumbnailUrl);
       return;
     }
-    const request = acquireMobileThumbnail(thumbnailUrl);
+    const resource = acquireMobileThumbnailUrl(thumbnailUrl);
     let active = true;
-    request.promise.then(blob => {
-      if (!active) return;
-      const objectUrl = URL.createObjectURL(blob);
-      replaceObjectUrl(objectUrl);
-      setDisplaySrc(objectUrl);
+    resource.promise.then(objectUrl => {
+      if (active) setDisplaySrc(objectUrl);
     }).catch(error => {
-      if (!active || error?.name === 'AbortError') return;
-      if (onErrorRef.current) {
-        setFailed(true);
-        onErrorRef.current();
-      } else {
-        setLoaded(false);
-        setDisplaySrc(getMobileOriginalUrl(src));
-      }
+      if (active && error?.name !== 'AbortError') setUseOriginal(true);
     });
     return () => {
       active = false;
-      request.release();
+      resource.release();
     };
-  }, [activated, retryToken, src]);
+  }, [activated, src, useOriginal, variant]);
+
+  const handleImageError = () => {
+    if (!useOriginal && canUseMediaGateway(src)) {
+      setUseOriginal(true);
+      return;
+    }
+    setFailed(true);
+    onErrorRef.current?.();
+  };
 
   return (
     <div ref={containerRef} className={containerClassName}>
@@ -127,11 +142,11 @@ export const SmartImage: React.FC<SmartImageProps> = ({
         <img
           src={displaySrc}
           alt={alt}
-          className={`${className} transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          className={`${className} ${loaded ? 'opacity-100' : 'opacity-0'}`}
           onLoad={event => { setLoaded(true); onLoad?.(event); }}
-          onError={() => { setFailed(true); onErrorRef.current?.(); }}
+          onError={handleImageError}
           decoding="async"
-          loading={eager ? 'eager' : undefined}
+          loading={eager ? 'eager' : 'lazy'}
           fetchPriority={eager ? 'high' : 'auto'}
         />
       )}
@@ -153,6 +168,26 @@ interface OriginalImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   src: string;
 }
 
-export const OriginalImage: React.FC<OriginalImageProps> = ({ src, ...props }) => (
-  <img src={getMobileOriginalUrl(src)} {...props} />
-);
+export const OriginalImage: React.FC<OriginalImageProps> = ({ src, decoding = 'async', onError, ...props }) => {
+  const viewActive = useContext(ImageActivityContext);
+  const gatewaySrc = getMobileOriginalUrl(src);
+  const [displaySrc, setDisplaySrc] = useState(gatewaySrc);
+
+  useEffect(() => setDisplaySrc(gatewaySrc), [gatewaySrc, src]);
+  if (!viewActive) return null;
+
+  return (
+    <img
+      src={displaySrc}
+      decoding={decoding}
+      onError={event => {
+        if (displaySrc !== src) {
+          setDisplaySrc(src);
+          return;
+        }
+        onError?.(event);
+      }}
+      {...props}
+    />
+  );
+};

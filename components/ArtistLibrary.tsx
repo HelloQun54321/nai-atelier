@@ -27,31 +27,33 @@ interface ArtistLibraryProps {
     currentUser?: User | null; // Add current user prop for permission check
 }
 
-// Helper: Compress Base64 Image to JPEG
-const compressImage = (base64: string, quality: number = 0.8): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                resolve(base64); // Fallback
-                return;
-            }
-            // Fill white background for transparency safety
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, 0);
-
-            // Convert to JPEG with quality
-            const compressed = canvas.toDataURL('image/jpeg', quality);
-            resolve(compressed);
-        };
-        img.onerror = (e) => reject(e);
-        img.src = base64;
-    });
+const compressImage = async (source: string, quality = 0.8): Promise<string> => {
+    const response = await fetch(source);
+    const bitmap = await createImageBitmap(await response.blob());
+    try {
+        const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return source;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+            value => value ? resolve(value) : reject(new Error('图片压缩失败')),
+            'image/jpeg',
+            quality,
+        ));
+        return await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(reader.error || new Error('读取压缩图片失败'));
+            reader.readAsDataURL(blob);
+        });
+    } finally {
+        bitmap.close();
+    }
 };
 
 const LazyImage = SmartImage;

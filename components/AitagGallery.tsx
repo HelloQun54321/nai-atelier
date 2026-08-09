@@ -33,8 +33,7 @@ interface AitagGalleryProps {
 }
 
 const PAGE_SIZE = 60;
-const FIRST_IMAGE_CACHE_SYNC_DELAY_MS = 7000;
-const FIRST_IMAGE_IDLE_DELAYS_MS = [1000, 2000, 4000, 8000, 12000, 12000];
+const FIRST_IMAGE_IDLE_DELAYS_MS = [1500, 3000, 6000];
 
 const formatCount = (value?: number) => {
   const count = Number(value || 0);
@@ -488,6 +487,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
 
     let cancelled = false;
     let idleRounds = 0;
+    let pollRounds = 0;
     let cancelIdleDelay = () => {};
     const controller = new AbortController();
     const pendingIds = new Set(
@@ -498,15 +498,16 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     );
 
     const waitForFirstImages = async () => {
-      while (!cancelled && pendingIds.size > 0) {
+      while (!cancelled && pendingIds.size > 0 && pollRounds < 4) {
+        pollRounds++;
         try {
           const data = await aitagService.waitForFirstImageCache({
             ids: Array.from(pendingIds),
             sort,
             timeRange: getAitagTimeRange(sort, rankMonth),
             aiType,
-            timeoutMs: 4500,
-            intervalMs: 700,
+            timeoutMs: 3500,
+            intervalMs: 1000,
             signal: controller.signal,
           });
           if (cancelled) return;
@@ -547,6 +548,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           return;
         }
       }
+      if (!cancelled && pendingIds.size > 0) await refreshCurrentPageFromCache().catch(console.error);
     };
 
     waitForFirstImages().catch(console.error);
@@ -555,16 +557,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       controller.abort();
       cancelIdleDelay();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, q, prompt, sort, rankMonth, aiType, cacheFilter, isLoading, isOfflineCache, hasPendingFirstImageCache, allowBackgroundChecks]);
-
-  useEffect(() => {
-    if (!allowBackgroundChecks || isLoading || isOfflineCache || visibleItems.length === 0 || !hasPendingFirstImageCache) return;
-
-    const timer = window.setTimeout(() => {
-      refreshCurrentPageFromCache().catch(console.error);
-    }, FIRST_IMAGE_CACHE_SYNC_DELAY_MS);
-    return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, q, prompt, sort, rankMonth, aiType, cacheFilter, isLoading, isOfflineCache, hasPendingFirstImageCache, allowBackgroundChecks]);
 

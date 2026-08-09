@@ -556,6 +556,9 @@ test('media thumbnails accept project and st-chatu8 history sources without open
   assert.deepEqual(getValidatedSource('/api/local-history/item-1/image'), {
     type: 'local', source: '/api/local-history/item-1/image',
   });
+  assert.deepEqual(getValidatedSource('/api/character-references/ref-1/thumbnail'), {
+    type: 'local', source: '/api/character-references/ref-1/thumbnail',
+  });
   assert.deepEqual(getValidatedSource(`/api/integrations/st-chatu8/history/${externalId}/image`), {
     type: 'st-chatu8-history',
     source: `/api/integrations/st-chatu8/history/${externalId}/image`,

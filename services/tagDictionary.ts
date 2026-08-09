@@ -173,49 +173,77 @@ export interface ArtistDictionaryPage {
 }
 
 export type ArtistDictionarySort = 'popular' | 'least' | 'name-asc' | 'name-desc';
+const DICTIONARY_PAGE_SIZE = 100;
+
+const loadDictionaryPhysicalPage = async (
+  manifest: TagDictionaryManifest,
+  kind: 'artist' | 'character',
+  physicalPage: number,
+  nameSort: boolean,
+) => {
+  const files = kind === 'artist'
+    ? (nameSort ? manifest.artistNamePages : manifest.artistPages)
+    : (nameSort ? manifest.characterNamePages : manifest.characterPages);
+  const filename = files?.[physicalPage];
+  if (!filename) return [];
+  const directory = `${kind}${nameSort ? '-name' : ''}-pages`;
+  const cacheKey = `${directory}:${physicalPage}`;
+  if (!shardPromises.has(cacheKey)) {
+    shardPromises.set(cacheKey, fetch(`/tag-data/${directory}/${filename}?v=${encodeURIComponent(manifest.generatedAt)}`)
+      .then(response => {
+        if (!response.ok) throw new Error(`${kind} dictionary page failed: ${response.status}`);
+        return response.json() as Promise<TagDictionaryEntry[]>;
+      })
+      .catch(error => {
+        shardPromises.delete(cacheKey);
+        throw error;
+      }));
+  }
+  return shardPromises.get(cacheKey)!;
+};
+
+const loadVirtualDictionaryPage = async (
+  manifest: TagDictionaryManifest,
+  kind: 'artist' | 'character',
+  page: number,
+  sort: ArtistDictionarySort,
+) => {
+  const normalizedPage = Math.max(0, Math.trunc(page));
+  const total = manifest.categoryCounts?.[kind] || 0;
+  const physicalPageSize = kind === 'artist' ? (manifest.artistPageSize || 500) : (manifest.characterPageSize || 500);
+  const nameSort = sort === 'name-asc' || sort === 'name-desc';
+  const reverse = sort === 'least' || sort === 'name-desc';
+  const start = normalizedPage * DICTIONARY_PAGE_SIZE;
+  const length = Math.max(0, Math.min(DICTIONARY_PAGE_SIZE, total - start));
+  const sourceIndices = Array.from({ length }, (_, offset) => reverse ? total - 1 - start - offset : start + offset);
+  const physicalPages = [...new Set(sourceIndices.map(index => Math.floor(index / physicalPageSize)))];
+  const loaded = new Map<number, TagDictionaryEntry[]>();
+  await Promise.all(physicalPages.map(async physicalPage => {
+    loaded.set(physicalPage, await loadDictionaryPhysicalPage(manifest, kind, physicalPage, nameSort));
+  }));
+  return {
+    entries: sourceIndices.flatMap(index => {
+      const entry = loaded.get(Math.floor(index / physicalPageSize))?.[index % physicalPageSize];
+      return entry ? [entry] : [];
+    }),
+    page: normalizedPage,
+    pageCount: Math.ceil(total / DICTIONARY_PAGE_SIZE),
+    pageSize: DICTIONARY_PAGE_SIZE,
+    total,
+  };
+};
 
 export const getArtistDictionaryPage = async (page: number, sort: ArtistDictionarySort = 'popular'): Promise<ArtistDictionaryPage> => {
   const manifest = await loadManifest();
-  const normalizedPage = Math.max(0, Math.trunc(page));
-  const isNameSort = sort === 'name-asc' || sort === 'name-desc';
-  const isReverse = sort === 'least' || sort === 'name-desc';
-  const pages = (isNameSort ? manifest.artistNamePages : manifest.artistPages) || [];
-  const physicalPage = isReverse ? pages.length - 1 - normalizedPage : normalizedPage;
-  const filename = pages?.[physicalPage];
-  let entries: TagDictionaryEntry[] = [];
-
-  if (filename) {
-    const directory = isNameSort ? 'artist-name-pages' : 'artist-pages';
-    const cacheKey = `${directory}:${physicalPage}`;
-    if (!shardPromises.has(cacheKey)) {
-      shardPromises.set(cacheKey, fetch(`/tag-data/${directory}/${filename}?v=${encodeURIComponent(manifest.generatedAt)}`)
-        .then(response => {
-          if (!response.ok) throw new Error(`Artist dictionary page failed: ${response.status}`);
-          return response.json() as Promise<TagDictionaryEntry[]>;
-        })
-        .catch(error => {
-          shardPromises.delete(cacheKey);
-          throw error;
-        }));
-    }
-    entries = await shardPromises.get(cacheKey)!;
-    if (isReverse) entries = [...entries].reverse();
-  }
-
-  return {
-    entries: entries.map(mapArtistEntry),
-    page: normalizedPage,
-    pageCount: pages?.length || 0,
-    pageSize: manifest.artistPageSize || 500,
-    total: manifest.categoryCounts?.artist || 0
-  };
+  const result = await loadVirtualDictionaryPage(manifest, 'artist', page, sort);
+  return { ...result, entries: result.entries.map(mapArtistEntry) };
 };
 
 export const getArtistDictionaryEntriesAt = async (indices: number[]): Promise<ArtistDictionaryEntry[]> => {
   if (indices.length === 0) return [];
 
   const manifest = await loadManifest();
-  const pageSize = manifest.artistPageSize || 500;
+  const pageSize = DICTIONARY_PAGE_SIZE;
   const total = manifest.categoryCounts?.artist || 0;
   const validIndices = [...new Set(indices)]
     .map(index => Math.trunc(index))
@@ -284,45 +312,14 @@ const mapCharacterEntry = (entry: TagDictionaryEntry): CharacterDictionaryEntry 
 
 export const getCharacterDictionaryPage = async (page: number, sort: CharacterDictionarySort = 'popular'): Promise<CharacterDictionaryPage> => {
   const manifest = await loadManifest();
-  const normalizedPage = Math.max(0, Math.trunc(page));
-  const isNameSort = sort === 'name-asc' || sort === 'name-desc';
-  const isReverse = sort === 'least' || sort === 'name-desc';
-  const pageFiles = (isNameSort ? manifest.characterNamePages : manifest.characterPages) || [];
-  const physicalPage = isReverse ? pageFiles.length - 1 - normalizedPage : normalizedPage;
-  const filename = pageFiles[physicalPage];
-  let entries: TagDictionaryEntry[] = [];
-
-  if (filename) {
-    const directory = isNameSort ? 'character-name-pages' : 'character-pages';
-    const cacheKey = `${directory}:${physicalPage}`;
-    if (!shardPromises.has(cacheKey)) {
-      shardPromises.set(cacheKey, fetch(`/tag-data/${directory}/${filename}?v=${encodeURIComponent(manifest.generatedAt)}`)
-        .then(response => {
-          if (!response.ok) throw new Error(`Character dictionary page failed: ${response.status}`);
-          return response.json() as Promise<TagDictionaryEntry[]>;
-        })
-        .catch(error => {
-          shardPromises.delete(cacheKey);
-          throw error;
-        }));
-    }
-    entries = await shardPromises.get(cacheKey)!;
-    if (isReverse) entries = [...entries].reverse();
-  }
-
-  return {
-    entries: entries.map(mapCharacterEntry),
-    page: normalizedPage,
-    pageCount: pageFiles.length,
-    pageSize: manifest.characterPageSize || 500,
-    total: manifest.categoryCounts?.character || 0
-  };
+  const result = await loadVirtualDictionaryPage(manifest, 'character', page, sort);
+  return { ...result, entries: result.entries.map(mapCharacterEntry) };
 };
 
 export const getCharacterDictionaryEntriesAt = async (indices: number[]): Promise<CharacterDictionaryEntry[]> => {
   if (indices.length === 0) return [];
   const manifest = await loadManifest();
-  const pageSize = manifest.characterPageSize || 500;
+  const pageSize = DICTIONARY_PAGE_SIZE;
   const total = manifest.categoryCounts?.character || 0;
   const validIndices = [...new Set(indices.map(index => Math.trunc(index)).filter(index => index >= 0 && index < total))];
   const pageNumbers = [...new Set(validIndices.map(index => Math.floor(index / pageSize)))];
@@ -339,10 +336,13 @@ export const getCharacterDictionaryEntriesAt = async (indices: number[]): Promis
   });
 };
 
-const splitCharacterSearchSegments = (value: string) => String(value)
-  .normalize('NFKC')
-  .toLowerCase()
-  .match(/[\p{Script=Han}]+|[\p{L}\p{N}]+/gu) || [];
+const splitCharacterSearchSegments = (value: string): string[] => {
+  const matches = String(value)
+    .normalize('NFKC')
+    .toLowerCase()
+    .match(/[\p{Script=Han}]+|[\p{L}\p{N}]+/gu);
+  return matches ? [...matches] : [];
+};
 
 const getCharacterSearchLookupTokens = (value: string) => {
   const tokens = new Set<string>();

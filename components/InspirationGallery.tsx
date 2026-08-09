@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { db } from '../services/dbService';
+import { api } from '../services/api';
 import { Inspiration, User, NAIParams } from '../types';
 import { extractMetadata, parseNovelAIMetadata, ParsedNAIData, IMPORT_SESSION_KEY } from '../services/metadataService';
 import { ParamsViewer } from './ParamsViewer';
@@ -187,6 +188,7 @@ const InspirationLightbox: React.FC<InspirationLightboxProps> = ({
 };
 
 export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentUser, inspirationsData, onRefresh, notify, onNavigateToPlayground }) => {
+  const RENDER_BATCH_SIZE = 60;
   const confirmAction = useConfirmDialog();
   const imageDisplay = useMobileImageDisplayPreferences();
   const [searchTerm, setSearchTerm] = useState('');
@@ -195,11 +197,17 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(RENDER_BATCH_SIZE);
   
   // Upload State
   const [upTitle, setUpTitle] = useState('');
   const [upImg, setUpImg] = useState('');
+  const [upFile, setUpFile] = useState<File | null>(null);
   const [upPrompt, setUpPrompt] = useState('');
+
+  useEffect(() => () => {
+      if (upImg.startsWith('blob:')) URL.revokeObjectURL(upImg);
+  }, [upImg]);
 
   // Initial load handled by App.tsx now
   // removed empty useEffect that called load
@@ -226,9 +234,18 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-        const reader = new FileReader();
-        reader.onloadend = () => setUpImg(reader.result as string);
-        reader.readAsDataURL(file);
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+            notify('只支持 PNG、JPEG 或 WebP 图片', 'error');
+            e.target.value = '';
+            return;
+        }
+        if (!file.size || file.size > 12 * 1024 * 1024) {
+            notify('灵感图片不能超过 12 MB', 'error');
+            e.target.value = '';
+            return;
+        }
+        setUpFile(file);
+        setUpImg(URL.createObjectURL(file));
         const meta = await extractMetadata(file);
         if (meta) {
             setUpPrompt(meta);
@@ -238,7 +255,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   };
 
   const handleUpload = async () => {
-      if (!upTitle || !upImg) return;
+      if (!upTitle || !upFile) return;
       let parsedParams: NAIParams | undefined = undefined;
       let parsedNegativePrompt = '';
       if (upPrompt && upPrompt.trim()) {
@@ -248,10 +265,11 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
               parsedNegativePrompt = parsed.negativePrompt;
           } catch { /* 解析失败时 params 为 undefined */ }
       }
+      const uploaded = await api.uploadFile(upFile, 'inspirations');
       await db.saveInspiration({
           id: createUuid(),
           title: upTitle,
-          imageUrl: upImg,
+          imageUrl: uploaded.url,
           prompt: upPrompt,
           negativePrompt: parsedNegativePrompt,
           params: parsedParams,
@@ -260,7 +278,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
           createdAt: Date.now()
       });
       setUploadMode(false);
-      setUpTitle(''); setUpImg(''); setUpPrompt('');
+      setUpTitle(''); setUpImg(''); setUpFile(null); setUpPrompt('');
       onRefresh();
   };
 
@@ -298,11 +316,16 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
   const canEdit = (item: Inspiration) => item.userId === currentUser.id || currentUser.role === 'admin';
 
-  const filtered = (inspirationsData || []).filter(i => 
-    i.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    i.prompt.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (i.negativePrompt || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    const query = searchTerm.toLowerCase();
+    return (inspirationsData || []).filter(i =>
+      i.title.toLowerCase().includes(query) ||
+      i.prompt.toLowerCase().includes(query) ||
+      (i.negativePrompt || '').toLowerCase().includes(query)
+    );
+  }, [inspirationsData, searchTerm]);
+  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [inspirationsData, searchTerm]);
+  const visibleItems = filtered.slice(0, visibleCount);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
@@ -344,7 +367,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
             
              {/* Updated Grid for Mobile: 2 cols */}
              <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-inspiration-grid md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6`} style={mobileGalleryStyle(imageDisplay)}>
-                 {filtered.map(item => (
+                 {visibleItems.map(item => (
                      <div 
                         key={item.id} 
                         className={`mobile-gallery-item group bg-white dark:bg-gray-800 rounded-xl overflow-hidden border transition-[border-color,box-shadow,transform] flex flex-col relative ${selectionMode && selectedIds.has(item.id) ? 'ring-2 ring-indigo-600 border-indigo-600' : 'border-gray-200 dark:border-gray-700'}`}
@@ -373,6 +396,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
                      </div>
                  ))}
              </div>
+             {visibleCount < filtered.length && <div className="flex justify-center py-6"><button type="button" onClick={() => setVisibleCount(count => count + RENDER_BATCH_SIZE)} className="mobile-touch rounded-xl border border-gray-300 bg-white px-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">加载更多（{filtered.length - visibleCount}）</button></div>}
       </div>
 
       {/* Upload Modal */}
@@ -382,7 +406,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
                   <h2 className="text-xl font-bold mb-4 dark:text-white">上传灵感图</h2>
                   <div className="space-y-4">
                       <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4 text-center cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition">
-                          <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" id="up-file" />
+                          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleFileUpload} className="hidden" id="up-file" />
                           <label htmlFor="up-file" className="cursor-pointer block">
                               {upImg ? <img src={upImg} className="h-32 mx-auto object-contain" /> : <span className="text-gray-500">点击选择图片 (自动读取 Prompt)</span>}
                           </label>

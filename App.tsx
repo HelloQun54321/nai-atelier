@@ -1,16 +1,18 @@
 
-import React, { startTransition, useState, useEffect } from 'react';
+import React, { lazy, startTransition, Suspense, useState, useEffect } from 'react';
 import { Layout } from './components/Layout';
 import { ChainList } from './components/ChainList';
-import { ChainEditor } from './components/ChainEditor';
-import { ArtistLibrary } from './components/ArtistLibrary';
-import { InspirationGallery } from './components/InspirationGallery';
-import { GenHistory } from './components/GenHistory';
-import { AitagGallery } from './components/AitagGallery';
 import { useConfirmDialog } from './components/ConfirmDialog';
-import { CharacterLibrary } from './components/CharacterLibrary';
+import { ImageActivityProvider } from './components/SmartImage';
 import { db } from './services/dbService';
 import { PromptChain, User, Artist, Inspiration, ChainType } from './types';
+
+const ChainEditor = lazy(() => import('./components/ChainEditor').then(module => ({ default: module.ChainEditor })));
+const ArtistLibrary = lazy(() => import('./components/ArtistLibrary').then(module => ({ default: module.ArtistLibrary })));
+const InspirationGallery = lazy(() => import('./components/InspirationGallery').then(module => ({ default: module.InspirationGallery })));
+const GenHistory = lazy(() => import('./components/GenHistory').then(module => ({ default: module.GenHistory })));
+const AitagGallery = lazy(() => import('./components/AitagGallery').then(module => ({ default: module.AitagGallery })));
+const CharacterLibrary = lazy(() => import('./components/CharacterLibrary').then(module => ({ default: module.CharacterLibrary })));
 
 type ViewState = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'inspiration' | 'history' | 'playground';
 type KeepAliveView = Exclude<ViewState, 'edit'>;
@@ -500,7 +502,9 @@ const App = () => {
               key={mountedView}
               className={view === mountedView ? 'flex flex-1 min-h-0 flex-col overflow-hidden' : 'hidden'}
             >
-              {renderViewContent(mountedView)}
+              <ImageActivityProvider active={view === mountedView}>
+                {renderViewContent(mountedView)}
+              </ImageActivityProvider>
             </div>
           ))}
         </div>
@@ -535,7 +539,9 @@ const App = () => {
         notify={notify}
         onOpenAgent={handleOpenAgent}
       >
-        {renderContent()}
+        <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-gray-500">正在加载工作区…</div>}>
+          {renderContent()}
+        </Suspense>
       </Layout>
     </div>
   );

@@ -115,6 +115,9 @@ const LAN_ACCESS_COOKIE = 'nai_lan_access';
 const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const lanAccessAttempts = new Map<string, { failures: number; blockedUntil: number }>();
 const MAX_MANAGED_IMAGE_BYTES = 12 * 1024 * 1024;
+const MEDIA_VARIANTS = new Set(['thumb-160', 'thumb-240', 'thumb-320', 'thumb-480', 'thumb-640', 'thumb-960', 'original']);
+const MEDIA_REMOTE_HOSTS = new Set(['ai-img.10118899.xyz', 'aitag.win']);
+const MEDIA_INTERNAL_SOURCE = /^\/api\/(?:assets\/.+|local-history\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail)|integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image)(?:\?.*)?$/i;
 
 const isLoopbackHostname = (hostname: string) => {
   const normalized = hostname.replace(/^\[|\]$/g, '').toLowerCase();
@@ -172,6 +175,59 @@ const getLanAttemptKey = (request: Request) =>
   'lan-device';
 
 const lanAccessRequired = () => json({ error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' }, 401);
+
+const validateMediaSource = (value: string | null) => {
+  const source = String(value || '');
+  if (!source || source.length > 2048 || /[\r\n]/.test(source)) throw new Error('Invalid image source');
+  if (MEDIA_INTERNAL_SOURCE.test(source)) return { source, internal: true };
+  const target = new URL(source);
+  if (target.protocol !== 'https:' || target.username || target.password || !MEDIA_REMOTE_HOSTS.has(target.hostname.toLowerCase())) {
+    throw new Error('Remote image host is not allowed');
+  }
+  return { source: target.toString(), internal: false };
+};
+
+const handleMediaRequest = async (request: Request, env: Env, url: URL) => {
+  if (request.method !== 'GET') return error('Method not allowed', 405);
+  const variant = url.searchParams.get('variant') || '';
+  if (!MEDIA_VARIANTS.has(variant)) return error('Invalid image variant', 400);
+  let validated: { source: string; internal: boolean };
+  try {
+    validated = validateMediaSource(url.searchParams.get('source'));
+  } catch (mediaError: any) {
+    return error(mediaError?.message || 'Invalid image source', 400);
+  }
+
+  const assetMatch = validated.source.match(/^\/api\/assets\/(.+?)(?:\?.*)?$/);
+  if (assetMatch && env.BUCKET) {
+    let key = '';
+    try { key = decodeURIComponent(assetMatch[1]); } catch { return error('Invalid asset key', 400); }
+    const object = await env.BUCKET.get(key);
+    if (!object) return error('File not found', 404);
+    if (request.headers.get('If-None-Match') === object.httpEtag) {
+      return new Response(null, { status: 304, headers: {
+        ETag: object.httpEtag,
+        'Cache-Control': 'private, max-age=31536000, immutable',
+      }});
+    }
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set('ETag', object.httpEtag);
+    headers.set('Cache-Control', 'private, max-age=31536000, immutable');
+    headers.set('X-Content-Type-Options', 'nosniff');
+    return new Response(object.body, { headers });
+  }
+
+  const target = validated.internal ? new URL(validated.source, url.origin).toString() : validated.source;
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: target,
+      'Cache-Control': variant === 'original' ? 'private, max-age=3600' : 'private, max-age=86400',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
+};
 
 const clampInt = (value: string | null, fallback: number, min: number, max: number) => {
   const parsed = Number.parseInt(value || '', 10);
@@ -1627,6 +1683,25 @@ function parseImageData(value: string) {
   return { bytes, format, contentType: format === 'jpg' ? 'image/jpeg' : `image/${format}` };
 }
 
+async function parseUploadedImage(value: FormDataEntryValue | null, limit = VIBE_UPLOAD_LIMIT) {
+  if (!(value instanceof File)) throw new Error('缺少图片文件');
+  const contentType = value.type.toLowerCase();
+  const format = contentType === 'image/png' ? 'png'
+    : contentType === 'image/jpeg' ? 'jpg'
+      : contentType === 'image/webp' ? 'webp'
+        : '';
+  if (!format) throw new Error('只支持 PNG、JPEG 或 WebP 图片');
+  if (!value.size || value.size > limit) throw new Error(`图片大小必须在 ${Math.floor(limit / 1024 / 1024)} MB 以内`);
+  const bytes = new Uint8Array(await value.arrayBuffer());
+  const valid = format === 'png'
+    ? bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+    : format === 'webp'
+      ? String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF' && String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP'
+      : bytes[0] === 0xff && bytes[1] === 0xd8;
+  if (!valid) throw new Error('图片内容与文件格式不一致');
+  return { bytes, format, contentType };
+}
+
 const mapVibeEncoding = (row: any) => ({
   id: row.id,
   model: row.model,
@@ -1636,9 +1711,9 @@ const mapVibeEncoding = (row: any) => ({
   createdAt: Number(row.created_at),
 });
 
-async function mapVibeAsset(db: D1Database, row: any) {
-  const encodings = await db.prepare('SELECT * FROM vibe_encodings WHERE vibe_id = ? ORDER BY information_extracted DESC')
-    .bind(row.id).all<any>();
+async function mapVibeAsset(db: D1Database, row: any, preloadedEncodings?: any[]) {
+  const encodings = preloadedEncodings || (await db.prepare('SELECT * FROM vibe_encodings WHERE vibe_id = ? ORDER BY information_extracted DESC')
+    .bind(row.id).all<any>()).results;
   return {
     id: row.id,
     name: row.name,
@@ -1649,7 +1724,7 @@ async function mapVibeAsset(db: D1Database, row: any) {
       : row.original_key ? `/api/vibes/${encodeURIComponent(row.id)}/image` : undefined,
     hasOriginal: Boolean(row.original_key),
     defaultStrength: Number(row.default_strength ?? 0.6),
-    encodings: encodings.results.map(mapVibeEncoding),
+    encodings: encodings.map(mapVibeEncoding),
     archived: row.archived === 1,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -2237,6 +2312,10 @@ export default {
       return lanAccessRequired();
     }
 
+    if (path === '/api/media') {
+      return handleMediaRequest(request, env, url);
+    }
+
     // --- R2 Asset Proxy Route (LAN sessions are checked above) ---
     if (path.startsWith('/api/assets/') && method === 'GET') {
         if (!env.BUCKET) return error('Bucket not configured', 503);
@@ -2597,9 +2676,11 @@ export default {
         }
 
         if (path === '/api/character-references' && method === 'POST') {
-          const body = await request.json() as any;
+          const multipart = request.headers.get('Content-Type')?.includes('multipart/form-data');
+          const form = multipart ? await request.formData() : null;
+          const body = multipart ? { name: String(form?.get('name') || '') } : await request.json() as any;
           let original;
-          try { original = parseImageData(body.imageData); } catch (e: any) { return error(e.message, 400); }
+          try { original = multipart ? await parseUploadedImage(form?.get('image') || null) : parseImageData(body.imageData); } catch (e: any) { return error(e.message, 400); }
           const sourceHash = await sha256Hex(original.bytes);
           const existing = await db.prepare('SELECT * FROM character_reference_assets WHERE source_hash = ?')
             .bind(sourceHash).first<any>();
@@ -2623,9 +2704,11 @@ export default {
 
           let thumbnailKey: string | null = null;
           let thumbnailType: string | null = null;
-          if (body.thumbnailData) {
+          if (multipart ? form?.get('thumbnail') instanceof File : body.thumbnailData) {
             try {
-              const thumbnail = parseImageData(body.thumbnailData);
+              const thumbnail = multipart
+                ? await parseUploadedImage(form?.get('thumbnail') || null, 2 * 1024 * 1024)
+                : parseImageData(body.thumbnailData);
               if (thumbnail.bytes.length <= 2 * 1024 * 1024) {
                 thumbnailKey = `character-references/thumbnails/${id}.${thumbnail.format}`;
                 thumbnailType = thumbnail.contentType;
@@ -2736,13 +2819,27 @@ export default {
                 .bind(includeArchived ? 1 : 0, `%${query.toLowerCase()}%`).all<any>()
             : await db.prepare('SELECT * FROM vibe_assets WHERE archived = ? ORDER BY updated_at DESC')
                 .bind(includeArchived ? 1 : 0).all<any>();
-          return json({ items: await Promise.all(rows.results.map(row => mapVibeAsset(db, row))) });
+          const vibeIds = rows.results.map(row => row.id);
+          const encodingsByVibe = new Map<string, any[]>();
+          if (vibeIds.length) {
+            const placeholders = vibeIds.map(() => '?').join(',');
+            const encodings = await db.prepare(`SELECT * FROM vibe_encodings WHERE vibe_id IN (${placeholders}) ORDER BY information_extracted DESC`)
+              .bind(...vibeIds).all<any>();
+            for (const encoding of encodings.results) {
+              const grouped = encodingsByVibe.get(encoding.vibe_id) || [];
+              grouped.push(encoding);
+              encodingsByVibe.set(encoding.vibe_id, grouped);
+            }
+          }
+          return json({ items: await Promise.all(rows.results.map(row => mapVibeAsset(db, row, encodingsByVibe.get(row.id) || []))) });
         }
 
         if (path === '/api/vibes' && method === 'POST') {
-          const body = await request.json() as any;
+          const multipart = request.headers.get('Content-Type')?.includes('multipart/form-data');
+          const form = multipart ? await request.formData() : null;
+          const body = multipart ? { name: String(form?.get('name') || '') } : await request.json() as any;
           let parsed;
-          try { parsed = parseImageData(body.imageData); } catch (e: any) { return error(e.message, 400); }
+          try { parsed = multipart ? await parseUploadedImage(form?.get('image') || null) : parseImageData(body.imageData); } catch (e: any) { return error(e.message, 400); }
           const sourceHash = await sha256Hex(parsed.bytes);
           const existing = await db.prepare('SELECT * FROM vibe_assets WHERE source_hash = ?').bind(sourceHash).first<any>();
           if (existing) {
@@ -2758,9 +2855,11 @@ export default {
           await env.BUCKET.put(key, exactArrayBuffer(parsed.bytes), { httpMetadata: { contentType: parsed.contentType } });
           let thumbnailKey: string | null = null;
           let thumbnailType: string | null = null;
-          if (body.thumbnailData) {
+          if (multipart ? form?.get('thumbnail') instanceof File : body.thumbnailData) {
             try {
-              const thumbnail = parseImageData(body.thumbnailData);
+              const thumbnail = multipart
+                ? await parseUploadedImage(form?.get('thumbnail') || null, 2 * 1024 * 1024)
+                : parseImageData(body.thumbnailData);
               if (thumbnail.bytes.length <= 2 * 1024 * 1024) {
                 thumbnailKey = `vibes/thumbnails/${id}.${thumbnail.format}`;
                 thumbnailType = thumbnail.contentType;
@@ -3116,15 +3215,18 @@ export default {
           const pageSize = clampInt(url.searchParams.get('pageSize'), 20, 1, 100);
           const from = Number(url.searchParams.get('from') || 0);
           const to = Number(url.searchParams.get('to') || 0);
+          const includeCount = url.searchParams.get('includeCount') !== '0';
           const dateWhere = from || to ? ` AND created_at >= ? AND created_at <= ?` : '';
           const dateValues = from || to ? [from || 0, to || Number.MAX_SAFE_INTEGER] : [];
-          const count = await db.prepare(`SELECT COUNT(*) AS count FROM local_generation_history WHERE user_id = ?${dateWhere}`)
-            .bind(currentUser.id, ...dateValues).first<{count: number}>();
+          const count = includeCount
+            ? await db.prepare(`SELECT COUNT(*) AS count FROM local_generation_history WHERE user_id = ?${dateWhere}`)
+                .bind(currentUser.id, ...dateValues).first<{count: number}>()
+            : null;
           const result = await db.prepare(`
             SELECT * FROM local_generation_history
             WHERE user_id = ?${dateWhere} ORDER BY created_at DESC LIMIT ? OFFSET ?
           `).bind(currentUser.id, ...dateValues, pageSize, page * pageSize).all<any>();
-          return json({ items: result.results.map(mapLocalHistoryRow), count: Number(count?.count || 0) });
+          return json({ items: result.results.map(mapLocalHistoryRow), ...(includeCount ? { count: Number(count?.count || 0) } : {}) });
         }
 
         if (path === '/api/local-history/count' && method === 'GET') {
@@ -3138,17 +3240,35 @@ export default {
         }
 
         if (path === '/api/local-history' && method === 'POST') {
-          const body = await request.json() as any;
+          const multipart = request.headers.get('Content-Type')?.includes('multipart/form-data');
+          const form = multipart ? await request.formData() : null;
+          let body: any;
+          try {
+            body = multipart ? JSON.parse(String(form?.get('metadata') || '{}')) : await request.json();
+          } catch {
+            return error('Invalid history metadata', 400);
+          }
           const id = String(body.id || crypto.randomUUID());
           const hasStructuredInput = typeof body.basePrompt === 'string' ||
             typeof body.subjectPrompt === 'string' || Array.isArray(body.modules);
-          const match = String(body.imageUrl || '').match(/^data:image\/(png|jpe?g|webp);base64,(.+)$/i);
-          if (!match) return error('Invalid history image data', 400);
-          const imageType = `image/${match[1].toLowerCase() === 'jpg' ? 'jpeg' : match[1].toLowerCase()}`;
-          const extension = imageType === 'image/jpeg' ? 'jpg' : imageType.split('/')[1];
-          const binary = atob(match[2]);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          let bytes: Uint8Array;
+          let imageType: string;
+          let extension: string;
+          if (multipart) {
+            let parsed;
+            try { parsed = await parseUploadedImage(form?.get('image') || null, MAX_MANAGED_IMAGE_BYTES); } catch (e: any) { return error(e.message, 400); }
+            bytes = parsed.bytes;
+            imageType = parsed.contentType;
+            extension = parsed.format;
+          } else {
+            const match = String(body.imageUrl || '').match(/^data:image\/(png|jpe?g|webp);base64,(.+)$/i);
+            if (!match) return error('Invalid history image data', 400);
+            imageType = `image/${match[1].toLowerCase() === 'jpg' ? 'jpeg' : match[1].toLowerCase()}`;
+            extension = imageType === 'image/jpeg' ? 'jpg' : imageType.split('/')[1];
+            const binary = atob(match[2]);
+            bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          }
           if (bytes.byteLength > MAX_MANAGED_IMAGE_BYTES) {
             return error(`历史图片不能超过 ${Math.floor(MAX_MANAGED_IMAGE_BYTES / 1024 / 1024)}MB`, 413);
           }
@@ -3156,7 +3276,7 @@ export default {
           const existing = await db.prepare('SELECT image_key FROM local_generation_history WHERE id = ? AND user_id = ?')
             .bind(id, currentUser.id).first<{image_key: string}>();
 
-          await env.BUCKET.put(imageKey, bytes.buffer, { httpMetadata: { contentType: imageType } });
+          await env.BUCKET.put(imageKey, exactArrayBuffer(bytes), { httpMetadata: { contentType: imageType } });
           await db.prepare(`
             INSERT OR REPLACE INTO local_generation_history (
               id, user_id, image_key, image_type, prompt, negative_prompt, params,

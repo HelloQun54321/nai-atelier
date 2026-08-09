@@ -18,8 +18,9 @@ import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { estimateV45GenerationCost } from '../services/anlasBudget';
-import { PromptAgentPanel } from './PromptAgentPanel';
 import { ArrowLeft, Palette, Pencil, Quote, RotateCcw, Save, Sparkles, UserRound, X } from 'lucide-react';
+
+const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
 
 interface ChainEditorProps {
     chain: PromptChain;
@@ -94,7 +95,7 @@ const PromptAgentOverlayController: React.FC<PromptAgentOverlayControllerProps> 
     }, [chainId]);
 
     return (
-        <PromptAgentPanel
+        <React.Suspense fallback={null}><PromptAgentPanel
             open={open}
             onClose={() => setOpen(false)}
             draft={draft}
@@ -108,7 +109,7 @@ const PromptAgentOverlayController: React.FC<PromptAgentOverlayControllerProps> 
             }}
             canUndo={canUndo}
             onUndo={onUndo}
-        />
+        /></React.Suspense>
     );
 };
 
@@ -196,6 +197,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [previewIndex, setPreviewIndex] = useState(0);
     const [previewMode, setPreviewMode] = useState<'history' | 'cover' | 'result' | 'unsaved'>('cover');
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+    useEffect(() => () => {
+        if (generatedImage?.startsWith('blob:')) URL.revokeObjectURL(generatedImage);
+    }, [generatedImage]);
     const importInputRef = useRef<HTMLInputElement>(null);
     const importDragDepthRef = useRef(0);
     const [showForkModal, setShowForkModal] = useState(false);
@@ -1075,7 +1080,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 params: activeParams,
             };
             try {
-                const historyItem = await localHistory.add(result.image, generationPrompt, finalParams, generationNegativePrompt, {
+                const historyItem = await localHistory.add(result.blob, generationPrompt, finalParams, generationNegativePrompt, {
                 sourceChainId,
                 sourceChainName: chainName,
                 sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
@@ -1086,6 +1091,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 setPreviewHistory(prev => [historyItem, ...prev.filter(item => item.id !== historyItem.id)]);
                 setPreviewIndex(0);
                 setPreviewMode('history');
+                setGeneratedImage(historyItem.imageUrl);
                 setLightboxImg(current => current === result.image ? historyItem.imageUrl : current);
             } catch (historyError: any) {
                 // Generation has already succeeded. Keep the in-memory image
