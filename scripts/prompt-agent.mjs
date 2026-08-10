@@ -2422,7 +2422,7 @@ export class PromptAgentService {
       },
       {
         name: 'navigate_view', label: '切换项目页面', description: '完成当前任务后切换到指定项目页面。',
-        parameters: Type.Object({ view: Type.Union([Type.Literal('list'), Type.Literal('characters'), Type.Literal('library'), Type.Literal('aitag'), Type.Literal('inspiration'), Type.Literal('history'), Type.Literal('playground')]) }),
+        parameters: Type.Object({ view: Type.Union([Type.Literal('list'), Type.Literal('characters'), Type.Literal('library'), Type.Literal('aitag'), Type.Literal('danbooru'), Type.Literal('inspiration'), Type.Literal('history'), Type.Literal('playground')]) }),
         execute: async (_id, args) => apply('navigate_view', { view: args.view }),
       },
       {

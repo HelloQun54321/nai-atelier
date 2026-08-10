@@ -30,7 +30,7 @@ NaiPromptManager 是一套运行在个人电脑上的 NovelAI 创作管理工具
 | --- | --- |
 | 🖥️ **电脑是数据主机** | 原图、数据库、历史、画师串和角色资料都以电脑为准 |
 | 🏠 **只服务个人与家庭局域网** | 电脑本机免密，手机使用四位密码，不开放公网 |
-| 🧩 **功能围绕创作工作流组织** | 画师、角色、Tag、AITag、实验室、历史和灵感可以互相导入与复用 |
+| 🧩 **功能围绕创作工作流组织** | 画师、角色、Tag、Danbooru、AITag、实验室、历史和灵感可以互相导入与复用 |
 
 ### 与原项目的关系
 
@@ -59,6 +59,7 @@ NaiPromptManager 是一套运行在个人电脑上的 NovelAI 创作管理工具
 | 画师资料 | 依赖第三方静态画师仓库 | 约 14.6 万画师 Tag，自维护目录、热度、抽卡、按需生成预览 |
 | 角色资料 | 简单角色串 | 约 9.9 万官方角色 Tag + 自定义外貌还原角色 |
 | AITag | 无完整资料工作流 | 远程检索、本地索引、离线缓存、参数识别与三向导入 |
+| Danbooru | 无内置浏览与封面回填 | 通用级图片检索、中文 Tag 匹配、目录按需封面与实验室导入 |
 | Vibe Transfer | 无永久 Vibe 资料库 | 付费编码一次、本地永久保存、1～4 个组合、官方文件导入导出 |
 | Precise Reference | 无本地角色参考资料库 | 电脑保存参考原图、三种官方参考类型、最多 4 张并准确计算费用 |
 | SillyTavern 互通 | 两套资料和历史彼此隔离 | 与 st-chatu8 同步画师串、封面、Vibe 和组合，并接入其原图历史 |
@@ -92,6 +93,7 @@ flowchart LR
 | 👤 **角色库** | 查找官方角色 Tag，维护自定义角色外貌还原 | 实验室、角色串 |
 | 🖌️ **画师 Tag** | 搜索、排序、收藏、抽卡和生成画师基准图 | 画师组合、实验室 |
 | 🗃️ **AITag** | 检索外部 AI 作品，缓存图片与元数据 | 实验室、画师串、灵感 |
+| 🖼️ **Danbooru** | 检索通用级图片与分类 Tag，补全画师和角色预览 | 实验室、灵感 |
 | 💡 **灵感** | 保存值得复用的图片、Prompt 和参数 | 实验室 |
 | 🧪 **实验室** | 组合提示词、引用预设、生成与预览 | 历史、画师串、下载 |
 | ✦ **项目 Agent** | 用 DeepSeek、Gemini、Grok 等模型查看历史图片并操作资料库、设置、实验室与生图流程 | 整个项目 |
@@ -403,6 +405,19 @@ AITag 是连接 [aitag.win](https://aitag.win/) 的独立作品检索、缓存�
 
 详情中保留 aitag.win 和 Pixiv 原作品入口，便于回到来源核对。
 
+### Danbooru：通用级素材与 Tag 参考
+
+Danbooru 页面连接 `safebooru.donmai.us`，只展示其通用级作品，并保留原帖来源入口。它适合查构图、角色、画师和标准 Tag，不等同于把外部图片收归项目所有。
+
+- 支持英文 Tag、中文精确匹配和最多两个 Tag 的组合检索；中文会先匹配项目本地中英词典，再转换为 Danbooru 标准 Tag。
+- 详情按画师、作品、角色、通用和元 Tag 分类展示，可复制或把角色与通用 Tag 追加到实验室。
+- 画师 Tag 和官方角色没有本地图片时，进入视口后按需请求对应分类精确 Tag 命中的最高分作品，以较高清样图生成缩略图并缓存 14 天；不会批量下载约 25 万个目录条目的图片，已有本地封面始终优先。
+- 外部图片经过电脑媒体网关提供给局域网设备，并继续受全局安全模式的模糊规则控制。
+
+### 图片反推 Tag：本地 WD Tagger
+
+实验室的图片导入栏可以选择 PNG、JPEG 或 WebP，让电脑本地反推 Danbooru 风格 Tag。首次使用会下载约 379 MB 的 `SmilingWolf/wd-vit-tagger-v3` 模型到被 Git 忽略的 `local-cache/models`，以后直接复用；图片只在自己的电脑上用 CPU 推理，不上传给第三方识图服务。结果可以调整通用 Tag 与角色 Tag 阈值、按置信度筛选，再追加到实验室主体 Prompt。
+
 ---
 
 ## 📱 手机局域网访问
@@ -678,6 +693,7 @@ NaiPromptManager/
 - 电脑关闭、休眠或服务停止时，手机无法访问。
 - NovelAI 生成仍需要有效 API Key，并受 NovelAI 服务规则与网络状态影响。
 - AITag 内容来自外部服务；远端不可用时只能访问已缓存内容。
+- Danbooru 预览和检索依赖外部服务；图片版权与使用条件由原作者和来源页面决定，项目只保存来源链接与按需缓存。
 - 项目不会自动把 `local-data` 上传到 GitHub。
 
 ---
@@ -695,6 +711,10 @@ NaiPromptManager/
 - Tag 中文数据：[ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)
 - NovelAI Tag 与模型说明：[NovelAI Documentation](https://docs.novelai.net/)
 - AITag 作品与元数据：[aitag.win](https://aitag.win/)
+- Danbooru 数据与图片：[Danbooru / Safebooru](https://safebooru.donmai.us/)（图片权利归各自作者或权利人所有）
+- 图片反推 Tag 模型：[SmilingWolf/wd-vit-tagger-v3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3)（Apache-2.0）
+- 本地 ONNX 推理：[microsoft/onnxruntime](https://github.com/microsoft/onnxruntime)（MIT）
+- 预处理与推理实现参考：[pythongosssss/ComfyUI-WD14-Tagger](https://github.com/pythongosssss/ComfyUI-WD14-Tagger)（MIT）
 - 应用图标：Microsoft Fluent Emoji，详见 [第三方资源说明](./docs/THIRD_PARTY_ASSETS.md)
 
 感谢原项目作者提供的基础实现。当前版本的目标不是替代原项目，而是围绕个人长期使用、本地数据安全、手机局域网和 NovelAI 创作效率持续改造。

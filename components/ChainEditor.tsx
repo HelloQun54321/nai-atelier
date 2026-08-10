@@ -11,6 +11,7 @@ import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImpor
 import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
+import { ImageTaggerPanel } from './ImageTaggerPanel';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
@@ -1518,6 +1519,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 4H7a2 2 0 01-2-2V6a2 2 0 012-2h5l5 5v9a2 2 0 01-2 2z" /></svg>
                                                 粘贴
                                             </button>
+                                            {chain.id === 'playground' && <ImageTaggerPanel notify={notify} onInsert={(tags) => { setSubjectPrompt(current => [current.trim(), tags].filter(Boolean).join(', ')); markPresetSectionModified('subject'); markChange(); }} />}
                                         </div>
                                     )}
                                 </div>

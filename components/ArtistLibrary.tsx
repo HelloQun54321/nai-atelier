@@ -13,6 +13,7 @@ import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { Bot, ClipboardList, Clock3, Dice5, Download, Grid3X3, Heart, List, LoaderCircle, Menu, RefreshCw, Settings2 } from 'lucide-react';
 import { ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { DanbooruCover } from './DanbooruCover';
 
 interface CartItem {
     name: string;
@@ -1264,21 +1265,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                     <div className="mobile-gallery-frame md:aspect-[2/3] relative overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': '2 / 3' } as React.CSSProperties}>
                                         {displayImg && !isBenchmarkMissing ? (
                                             <LazyImage src={displayImg} alt={artist.name} />
-                                        ) : (
-                                            <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
-                                                <Bot className="mb-1 h-6 w-6" />
-                                                <span className="text-[10px]">尚未生成本地预览</span>
-                                                {apiKey && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={(event) => queueGeneration(artist, [viewMode === 'benchmark' ? activeSlot : 0], event)}
-                                                        className="mt-2 rounded bg-indigo-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-indigo-500"
-                                                    >
-                                                        生成预览
-                                                    </button>
-                                                )}
-                                            </div>
-                                        )}
+                                        ) : <DanbooruCover tag={artist.name} kind="artist" alt={artist.chineseName || artist.name} />}
                                         {(isTaskPending || isTaskRunning || isTaskFailed) && (
                                             <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center z-10">
                                                 {isTaskRunning ? (

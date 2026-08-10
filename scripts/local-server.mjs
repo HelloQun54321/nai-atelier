@@ -251,6 +251,7 @@ async function startServer() {
     '--binding', `LAN_ACCESS_PIN=${lanAccess.pin}`,
     '--binding', `LAN_ACCESS_SECRET=${lanAccess.secret}`,
     '--binding', 'AITAG_LOCAL_PROXY_URL=http://127.0.0.1:3000/__internal/aitag-fetch',
+    '--binding', 'DANBOORU_LOCAL_PROXY_URL=http://127.0.0.1:3000/__internal/danbooru-fetch',
     '--ip', '127.0.0.1',
     '--port', '3001',
     '--compatibility-date', '2024-04-01',

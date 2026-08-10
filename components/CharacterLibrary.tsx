@@ -17,6 +17,7 @@ import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileU
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { Dice5, Heart, Menu, Plus, Settings2, Tag, UserRound } from 'lucide-react';
 import { ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { DanbooruCover } from './DanbooruCover';
 
 const CATALOG_MARKER = '__character_catalog__';
 const getDanbooruPostsUrl = (tagName: string) =>
@@ -424,7 +425,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             return (
               <article key={card.key} className="mobile-gallery-item group flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition hover:border-indigo-400 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800">
                 <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': '2 / 3' } as React.CSSProperties}>
-                  {card.previewImage ? <button className="h-full w-full" onClick={() => setLightbox(card)}><LazyImage src={card.previewImage} alt={card.name} /></button> : (
+                  {card.previewImage ? <button className="h-full w-full" onClick={() => setLightbox(card)}><LazyImage src={card.previewImage} alt={card.name} /></button> : card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} /> : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
                       {card.kind === 'catalog' ? <Tag className="h-8 w-8" /> : <UserRound className="h-8 w-8" />}
                       <span className="mt-2 text-[11px]">尚未生成本地预览</span>

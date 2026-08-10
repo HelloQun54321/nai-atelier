@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { PromptAgentService } from './prompt-agent.mjs';
 import { StChatu8Bridge } from './st-chatu8-bridge.mjs';
+import { ImageTaggerService } from './image-tagger.mjs';
 
 const CACHE_VERSION = 'v1';
 const HISTORY_THUMBNAIL_CACHE_VERSION = 'v2';
@@ -29,7 +30,7 @@ const CLOUD_QUEUE_URL = 'https://st-chatu-novelai-queue.hf.space';
 const CLOUD_QUEUE_POLL_INTERVAL = 1000;
 const CLOUD_QUEUE_MAX_FAILURES = 3;
 const CLOUD_QUEUE_STATUS_TTL = 5 * 60 * 1000;
-const ALLOWED_REMOTE_HOSTS = new Set(['ai-img.10118899.xyz', 'aitag.win']);
+const ALLOWED_REMOTE_HOSTS = new Set(['ai-img.10118899.xyz', 'aitag.win', 'cdn.donmai.us']);
 const ALLOWED_AITAG_API_PATHS = [
   /^\/api\/config$/,
   /^\/api\/ai_works_search$/,
@@ -218,6 +219,14 @@ export const classifyAitagRemoteTarget = value => {
   if (hostname === 'aitag.win' && ALLOWED_AITAG_API_PATHS.some(pattern => pattern.test(target.pathname))) return 'json';
   if (hostname === 'ai-img.10118899.xyz' && target.pathname.startsWith('/')) return 'image';
   return null;
+};
+
+export const classifyDanbooruRemoteTarget = value => {
+  let target;
+  try { target = new URL(value); } catch { return null; }
+  if (target.protocol !== 'https:' || target.username || target.password) return null;
+  if (target.hostname.toLowerCase() !== 'safebooru.donmai.us') return null;
+  return target.pathname === '/posts.json' ? 'json' : null;
 };
 
 const normalizeIp = value => String(value || '').replace(/^::ffff:/, '');
@@ -1029,6 +1038,44 @@ const handleAitagRemoteRequest = async (req, res, url, lanSecret, remoteFetch) =
   }
 };
 
+const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remoteFetch) => {
+  const suppliedSecret = String(req.headers['x-nai-internal-secret'] || '');
+  const expected = Buffer.from(lanSecret);
+  const supplied = Buffer.from(suppliedSecret);
+  if (!isLoopbackIp(req.socket.remoteAddress) || !lanSecret || expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) {
+    return sendJson(res, 404, { error: 'Not found' });
+  }
+  if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+
+  try {
+    const target = new URL(url.searchParams.get('url') || '');
+    if (!classifyDanbooruRemoteTarget(target.toString())) return sendJson(res, 400, { error: 'Invalid Danbooru target' });
+    const response = await remoteFetch(target, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(30_000),
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'NaiPromptManager/0.5 (+local personal use)',
+      },
+    });
+    const contentType = response.headers.get('content-type') || '';
+    const body = await readLimitedResponse(response);
+    if (body.length > 16 * 1024 * 1024) return sendJson(res, 502, { error: 'Danbooru response is too large' });
+    if (!contentType.toLowerCase().includes('json')) return sendJson(res, 502, { error: 'Danbooru returned a non-JSON response' });
+    res.writeHead(response.status, {
+      'Content-Type': contentType,
+      'Content-Length': body.length,
+      'Cache-Control': 'private, max-age=120',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    return res.end(body);
+  } catch (error) {
+    return sendJson(res, error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 504 : 502, {
+      error: `电脑无法连接 Danbooru：${error?.cause?.message || error?.message || '未知错误'}`,
+    });
+  }
+};
+
 class ThumbnailCache {
   constructor(concurrency = THUMBNAIL_JOB_CONCURRENCY) {
     this.entries = {};
@@ -1187,6 +1234,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
   const proxyAgent = outboundProxyUrl ? new ProxyAgent(outboundProxyUrl) : null;
   const remoteFetch = (url, options = {}) => undiciFetch(url, { ...options, ...(proxyAgent ? { dispatcher: proxyAgent } : {}) });
   const cloudQueue = new CloudQueueCoordinator(remoteFetch);
+  const imageTagger = new ImageTaggerService(remoteFetch);
   const cloudQueuePreferences = await loadCloudQueuePreferences();
   const cache = new ThumbnailCache();
   const promptAgent = new PromptAgentService({ lanSecret, outboundProxyUrl });
@@ -1520,7 +1568,28 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         return sendJson(res, Number(error.status) || 400, { error: error.message || 'Agent 请求失败' });
       }
     }
+    if (url.pathname === '/api/image-tagger/status') {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      return sendJson(res, 200, await imageTagger.status());
+    }
+    if (url.pathname === '/api/image-tagger') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      const contentType = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+      if (!['image/png', 'image/jpeg', 'image/webp'].includes(contentType)) return sendJson(res, 415, { error: '只支持 PNG、JPEG 和 WebP 图片' });
+      try {
+        const image = await readRequestBody(req, 20 * 1024 * 1024);
+        if (!image.length) return sendJson(res, 400, { error: '图片内容为空' });
+        const threshold = Math.min(0.95, Math.max(0.05, Number(url.searchParams.get('threshold') || 0.35)));
+        const characterThreshold = Math.min(0.99, Math.max(0.05, Number(url.searchParams.get('characterThreshold') || 0.85)));
+        return sendJson(res, 200, await imageTagger.tag(image, { threshold, characterThreshold }));
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 500, { error: error.message || '图片反推 Tag 失败' });
+      }
+    }
     if (url.pathname === '/__internal/aitag-fetch') return handleAitagRemoteRequest(req, res, url, lanSecret, remoteFetch);
+    if (url.pathname === '/__internal/danbooru-fetch') return handleDanbooruRemoteRequest(req, res, url, lanSecret, remoteFetch);
     if (url.pathname === '/api/generate') return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, cloudQueuePreferences, remoteFetch);
     if (url.pathname === '/api/generation-queue/preferences') {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });

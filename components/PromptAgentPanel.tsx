@@ -479,7 +479,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     const runSnapshot = structuredClone(props.draft);
     props.onRunStart(runSnapshot);
     let labChanged = false;
-    let navigationTarget: { view: 'list' | 'characters' | 'library' | 'aitag' | 'inspiration' | 'history' | 'playground'; id?: string } | null = null;
+    let navigationTarget: { view: 'list' | 'characters' | 'library' | 'aitag' | 'danbooru' | 'inspiration' | 'history' | 'playground'; id?: string } | null = null;
     const controller = new AbortController();
     try {
       const imageDisplay = getMobileImageDisplayPreferences();

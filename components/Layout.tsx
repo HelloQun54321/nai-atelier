@@ -9,6 +9,7 @@ import {
   FolderOpen,
   Gem,
   Lightbulb,
+  Images,
   Palette,
   PanelLeft,
   Settings,
@@ -23,7 +24,7 @@ import { CloudQueueStatus } from './CloudQueueStatus';
 
 const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module => ({ default: module.GlobalSettings })));
 
-type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'inspiration' | 'history' | 'playground';
+type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'inspiration' | 'history' | 'playground';
 type ThemeMode = 'light' | 'dark' | 'system';
 
 interface LayoutProps {
@@ -47,6 +48,7 @@ const icons = {
   character: CircleUserRound,
   artist: Palette,
   tag: Tag,
+  danbooru: Images,
   resources: FolderOpen,
   lab: Beaker,
   inspiration: Lightbulb,
@@ -102,6 +104,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       { id: 'characters', label: '角色库', icon: icons.character },
       { id: 'library', label: '画师 Tag', icon: icons.artist },
       { id: 'aitag', label: 'AITag', icon: icons.tag },
+      { id: 'danbooru', label: 'Danbooru', icon: icons.danbooru },
       { id: 'inspiration', label: '灵感', icon: icons.inspiration },
     ] },
     { label: '记录', items: [
@@ -139,6 +142,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { id: 'library', label: '画师 Tag', icon: icons.artist },
     { id: 'characters', label: '角色库', icon: icons.character },
     { id: 'aitag', label: 'AITag', icon: icons.tag },
+    { id: 'danbooru', label: 'Danbooru', icon: icons.danbooru },
     { id: 'inspiration', label: '灵感库', icon: icons.inspiration },
   ];
   const resourceActive = resourceItems.some(item => item.id === activeView);

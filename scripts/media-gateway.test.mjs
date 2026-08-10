@@ -8,6 +8,7 @@ import {
   generateWithVibeCacheRetry,
   getVibeCacheSecretKey,
   classifyAitagRemoteTarget,
+  classifyDanbooruRemoteTarget,
   estimateNovelAiGenerationCost,
   normalizeVibeStrengths,
   parseInvalidVibeCacheKeys,
@@ -549,6 +550,14 @@ test('AITag computer proxy only accepts known API and image targets', () => {
   assert.equal(classifyAitagRemoteTarget('https://aitag.win/admin'), null);
   assert.equal(classifyAitagRemoteTarget('https://example.com/api/work/1'), null);
   assert.equal(classifyAitagRemoteTarget('file:///etc/passwd'), null);
+});
+
+test('Danbooru computer proxy only accepts the Safebooru posts API', () => {
+  assert.equal(classifyDanbooruRemoteTarget('https://safebooru.donmai.us/posts.json?tags=1girl'), 'json');
+  assert.equal(classifyDanbooruRemoteTarget('https://safebooru.donmai.us/posts/1.json'), null);
+  assert.equal(classifyDanbooruRemoteTarget('https://danbooru.donmai.us/posts.json'), null);
+  assert.equal(classifyDanbooruRemoteTarget('https://safebooru.donmai.us.evil.example/posts.json'), null);
+  assert.equal(classifyDanbooruRemoteTarget('file:///etc/passwd'), null);
 });
 
 test('media thumbnails accept project and st-chatu8 history sources without opening arbitrary local routes', () => {

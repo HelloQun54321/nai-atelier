@@ -368,7 +368,7 @@ export const canUseMediaGateway = (source: string) => {
   if (source.startsWith('/api/assets/') || /^\/api\/(?:local-history\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail)|integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image)(?:\?.*)?$/i.test(source)) return true;
   try {
     const url = new URL(source, window.location.origin);
-    return url.protocol === 'https:' && ['ai-img.10118899.xyz', 'aitag.win'].includes(url.hostname.toLowerCase());
+    return url.protocol === 'https:' && ['ai-img.10118899.xyz', 'aitag.win', 'cdn.donmai.us'].includes(url.hostname.toLowerCase());
   } catch { return false; }
 };
 
