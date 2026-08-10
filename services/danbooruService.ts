@@ -26,7 +26,7 @@ export interface DanbooruSearchResult {
   hasMore: boolean;
 }
 
-const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v3';
+const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v7';
 const COVER_CACHE_TTL = 14 * 24 * 60 * 60 * 1000;
 const COVER_CACHE_LIMIT = 600;
 const COVER_REQUEST_INTERVAL_MS = 300;
@@ -99,14 +99,71 @@ const search = (options: { query?: string; page?: number; limit?: number } = {})
   const params = new URLSearchParams();
   if (options.query) params.set('tags', options.query);
   params.set('page', String(Math.max(1, options.page || 1)));
-  params.set('limit', String(Math.min(60, Math.max(1, options.limit || 40))));
+  params.set('limit', String(Math.min(200, Math.max(1, options.limit || 40))));
   return api.get(`/danbooru/posts?${params.toString()}`, { cache: 'no-store' });
 };
+
+const CHARACTER_COVER_EXCLUDED_TAGS = new Set([
+  'multiple_girls', 'multiple_boys', 'comic', '4koma', 'manga', 'chibi', 'super_deformed',
+  'multiple_views', 'character_sheet', 'reference_sheet', 'model_sheet', 'comparison', 'chart',
+  'collage', 'cosplay', 'faceless', 'head_out_of_frame', 'from_behind',
+  'meme', 'english_text', 'japanese_text', 'chinese_text', 'korean_text', 'text_focus', 'caption',
+  'speech_bubble', 'dialogue_box', 'thought_bubble', 'fumo_(doll)', 'doll', 'plushie', 'plush_toy',
+  'food', 'eating', 'food_focus', 'personification', 'animalization', 'monochrome', 'greyscale',
+  'sketch', 'lineart',
+]);
+
+const CHARACTER_COVER_VARIANT_TAGS = new Set([
+  'alternate_costume', 'official_alternate_costume', 'alternate_hairstyle', 'alternate_hair_length',
+  'genderswap', 'genderswap_(mtf)', 'genderswap_(ftm)', 'aged_up', 'aged_down', 'swimsuit',
+  'bikini', 'school_swimsuit', 'one-piece_swimsuit', 'competition_swimsuit', 'underwear',
+  'lingerie', 'nude', 'topless', 'bottomless',
+]);
+
+const CHARACTER_VARIANT_NAME = /(?:^|_)(?:alter|lily|lancer|master|swimsuit|bikini|casual|maid|school_uniform|summer|winter|halloween|christmas|wedding|young|adult|child|ghost|race_queen|idol)(?:_|$)|\((?:alter|lily|lancer|master|swimsuit|bikini|casual|maid|school_uniform|summer|winter|halloween|christmas|wedding|young|adult|child|ghost|race_queen|idol)\)/;
+const CHARACTER_COVER_FRAMING_TAGS = new Set(['portrait', 'upper_body', 'cowboy_shot', 'full_body', 'standing']);
+const CHARACTER_SIGNATURE_IGNORED_TAGS = new Set([
+  '1girl', '1boy', 'solo', 'looking_at_viewer', 'facing_viewer', 'closed_mouth', 'open_mouth',
+  'smile', 'blush', 'breasts', 'large_breasts', 'medium_breasts', 'small_breasts',
+  'simple_background', 'white_background',
+]);
 
 const chooseCover = (items: DanbooruPost[], tag: string, kind: 'artist' | 'character') => {
   const normalizedTag = tag.toLowerCase().replaceAll(' ', '_');
   const exact = items.filter(post => post.tags[kind].some(value => value.toLowerCase() === normalizedTag));
-  return exact[0] || null;
+  if (kind === 'artist') return exact[0] || null;
+
+  const targetIsVariant = CHARACTER_VARIANT_NAME.test(normalizedTag);
+  const representative = exact.filter(post => (
+    post.tags.general.includes('solo')
+    && post.tags.character.length <= 2
+    && !post.tags.general.some(value => CHARACTER_COVER_EXCLUDED_TAGS.has(value))
+    && !post.tags.meta.some(value => CHARACTER_COVER_EXCLUDED_TAGS.has(value))
+    && (targetIsVariant || !post.tags.general.some(value => CHARACTER_COVER_VARIANT_TAGS.has(value)))
+    && (targetIsVariant || !post.tags.meta.some(value => CHARACTER_COVER_VARIANT_TAGS.has(value)))
+    && !post.tags.character.some(value => value !== normalizedTag && CHARACTER_VARIANT_NAME.test(value))
+  ));
+  const canonical = representative.filter(post => post.tags.character.length === 1);
+  const candidates = canonical.length ? canonical : representative;
+  const tagFrequency = new Map<string, number>();
+  for (const post of candidates) {
+    for (const value of new Set(post.tags.general)) {
+      if (!CHARACTER_SIGNATURE_IGNORED_TAGS.has(value)) tagFrequency.set(value, (tagFrequency.get(value) || 0) + 1);
+    }
+  }
+  const minimumFrequency = Math.max(3, Math.ceil(candidates.length * 0.2));
+  const signatureWeight = new Map(
+    [...tagFrequency].filter(([, count]) => count >= minimumFrequency)
+      .map(([value, count]) => [value, count / Math.max(1, candidates.length)]),
+  );
+  const representativeScore = (post: DanbooruPost) => {
+    const signatureScore = post.tags.general.reduce((sum, value) => sum + (signatureWeight.get(value) || 0), 0);
+    return signatureScore * 25
+      + Math.log2(Math.max(1, post.score + 1)) * 5
+      + (post.tags.general.some(value => ['looking_at_viewer', 'facing_viewer'].includes(value)) ? 35 : 0)
+      + (post.tags.general.some(value => CHARACTER_COVER_FRAMING_TAGS.has(value)) ? 20 : 0);
+  };
+  return candidates.sort((left, right) => representativeScore(right) - representativeScore(left))[0] || null;
 };
 
 const getCover = (tag: string, kind: 'artist' | 'character'): Promise<DanbooruPost | null> => {
@@ -118,7 +175,7 @@ const getCover = (tag: string, kind: 'artist' | 'character'): Promise<DanbooruPo
   const pending = coverRequests.get(key);
   if (pending) return pending;
 
-  const request = scheduleCoverRequest(() => search({ query: `${normalizedTag} order:score`, limit: 20 }))
+  const request = scheduleCoverRequest(() => search({ query: `${normalizedTag} order:score`, limit: kind === 'character' ? 160 : 20 }))
     .then(result => {
       const post = chooseCover(result.items, normalizedTag, kind);
       readCoverCache()[key] = { post, updatedAt: Date.now() };

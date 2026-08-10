@@ -66,7 +66,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt }) 
       <span className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-1 text-[9px] font-bold text-white backdrop-blur">Danbooru</span>
     </> : <div className="absolute inset-0 flex flex-col items-center justify-center px-3 text-center text-gray-400">
       <ImageIcon className={`h-7 w-7 ${post === undefined ? 'animate-pulse' : ''}`} />
-      <span className="mt-2 text-[10px]">{post === undefined ? '正在查找参考图…' : 'Danbooru 暂无普通级图片'}</span>
+      <span className="mt-2 text-[10px]">{post === undefined ? '正在查找参考图…' : kind === 'character' ? '暂无合适的单人代表图' : 'Danbooru 暂无普通级图片'}</span>
     </div>}
   </div>;
 };
