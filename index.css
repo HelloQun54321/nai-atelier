@@ -650,18 +650,14 @@ body,
 
 /* 全局安全模式：图片默认遮挡，首次点击仅临时显示该图片。 */
 .safe-mode img:not([data-safe-mode-ignore="true"]):not([data-safe-revealed="true"]) {
-  filter: none !important;
-  opacity: 0 !important;
-  transform: none !important;
+  filter: blur(24px) brightness(0.4) saturate(0.65) !important;
+  transform: scale(1.08) !important;
   cursor: pointer;
   user-select: none;
-  transition: opacity 100ms ease;
+  transition: filter 160ms ease, transform 160ms ease;
 }
 
 /* 避免页面自身的长动画拖慢解除模糊，例如画师tag和灵感的 700ms 懒加载过渡。 */
 .safe-mode img[data-safe-revealed="true"]:not([data-safe-mode-ignore="true"]) {
-  filter: none !important;
-  opacity: 1 !important;
-  transform: none !important;
-  transition: opacity 100ms ease !important;
+  transition: filter 160ms ease, transform 160ms ease !important;
 }
