@@ -140,7 +140,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </button>;
             })}
           </nav>
-        <div className="min-w-0 flex-1 space-y-3 overflow-y-auto p-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:p-6">
+        <div className="min-w-0 flex-1 space-y-3 overflow-y-auto p-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:grid md:grid-cols-2 md:content-start md:items-start md:gap-4 md:space-y-0 md:p-6">
           <section id={`settings-appearance`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'appearance' ? 'hidden' : ''}`}>
             <button type="button" onClick={() => isMobile && setMobileSection('appearance')} className="flex min-h-11 w-full items-center justify-between text-left">
               <div><h3 className="font-semibold text-gray-900 dark:text-white">外观与隐私</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">主题与图片安全显示状态：{safeMode ? '安全模式已开启' : isDark ? '深色' : '浅色'}</p></div>
@@ -154,8 +154,12 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <div className="grid grid-cols-3 gap-2">
                   {([['masonry', '瀑布流'], ['portrait', '竖向卡片'], ['square', '方形']] as const).map(([layout, label]) => <button key={layout} type="button" onClick={() => { const next = { ...imageDisplay, layout: layout as MobileImageLayout }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch rounded-xl border px-2 text-xs font-bold ${imageDisplay.layout === layout ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}
                 </div>
-                <div className="mt-2 grid grid-cols-4 gap-2">
-                  {([['auto', '自动'], [1, '1 张'], [2, '2 张'], [3, '3 张']] as const).map(([columns, label]) => <button key={columns} type="button" onClick={() => { const next = { ...imageDisplay, columns: columns as MobileImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch rounded-xl border px-1 text-xs font-bold ${imageDisplay.columns === columns ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="w-full text-xs font-bold text-gray-500 dark:text-gray-400 md:w-24">移动端列数</span>
+                  <div className="flex flex-1 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800 md:max-w-56">
+                    <input type="range" min={0} max={3} step={1} value={imageDisplay.columns === 'auto' ? 0 : imageDisplay.columns} onChange={event => { const value = Number(event.target.value); const next = { ...imageDisplay, columns: (value === 0 ? 'auto' : value) as MobileImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className="w-full accent-indigo-500" aria-label="移动端列数" />
+                    <span className="w-14 flex-none text-right text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.columns === 'auto' ? '自适应' : `${imageDisplay.columns} 列`}</span>
+                  </div>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <span className="w-full text-xs font-bold text-gray-500 dark:text-gray-400 md:w-24">桌面端列数</span>
