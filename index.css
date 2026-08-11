@@ -467,6 +467,9 @@ body,
  */
 .mobile-gallery { display: grid; width: 100%; grid-template-columns: repeat(min(var(--mobile-gallery-columns, var(--mobile-gallery-cols-setting, 2)), var(--mobile-gallery-cols-cap, 999)), minmax(0, 1fr)); gap: .75rem; }
 .mobile-gallery--masonry { display: grid; width: 100%; grid-template-columns: repeat(min(var(--mobile-gallery-columns, var(--mobile-gallery-cols-setting, 2)), var(--mobile-gallery-cols-cap, 999)), minmax(0, 1fr)); gap: .75rem; }
+/* 自然高度卡片（画师串/历史，图片比例各异）用真瀑布流：columns 垂直填充，高度差异让各列自动平衡、不会整列空缺 */
+.mobile-gallery--masonry.mobile-gallery-flow { display: block; column-count: min(var(--mobile-gallery-columns, var(--mobile-gallery-cols-setting, 2)), var(--mobile-gallery-cols-cap, 999)); column-gap: .75rem; }
+.mobile-gallery--masonry.mobile-gallery-flow > * { display: inline-flex; width: 100%; margin: 0 0 .75rem; break-inside: avoid; }
 .mobile-gallery--masonry .mobile-gallery-frame { aspect-ratio: var(--mobile-image-ratio, 2 / 3); }
 .mobile-gallery--portrait .mobile-gallery-frame { aspect-ratio: 2 / 3; }
 .mobile-gallery--square .mobile-gallery-frame { aspect-ratio: 1; }
