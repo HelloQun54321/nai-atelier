@@ -1321,21 +1321,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                             onToggleFavorite={() => toggleFav(artist.name)}
                                             candidate={viewMode === 'original' ? coverCandidates[artist.id] : null}
                                             onSetCover={viewMode === 'original' ? candidate => setDanbooruCover(artist, candidate) : undefined}
+                                            pinPlacement="bottom-right"
                                         >
-                                            <a href={`https://danbooru.donmai.us/posts?tags=${artist.name}`} target="_blank" rel="noreferrer" className="hidden md:block p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm text-blue-500 dark:text-blue-300 hover:text-blue-600 pointer-events-auto">
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                            </a>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    const slot = viewMode === 'benchmark' ? activeSlot : -1;
-                                                    setLightboxState({ artistIdx: idx, slotIdx: slot });
-                                                }}
-                                                className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm text-gray-700 dark:text-white pointer-events-auto"
-                                            >
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
-                                            </button>
-
                                             {isAdmin && viewMode === 'benchmark' && apiKey && (
                                                 <>
                                                     <button

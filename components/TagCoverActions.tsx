@@ -7,6 +7,8 @@ interface TagCoverActionsProps {
   onToggleFavorite: () => void;
   candidate?: DanbooruCoverCandidate | null;
   onSetCover?: (candidate: DanbooruCoverCandidate) => Promise<void> | void;
+  /** Pin（设为固定封面）按钮位置：右上动作组（默认，角色卡）或图片右下角（画师卡）。 */
+  pinPlacement?: 'top-right' | 'bottom-right';
   children?: React.ReactNode;
 }
 
@@ -16,6 +18,7 @@ export const TagCoverActions: React.FC<TagCoverActionsProps> = ({
   onToggleFavorite,
   candidate = null,
   onSetCover,
+  pinPlacement = 'top-right',
   children,
 }) => {
   const [isSaving, setIsSaving] = useState(false);
@@ -29,13 +32,24 @@ export const TagCoverActions: React.FC<TagCoverActionsProps> = ({
     }
   };
 
-  return <div className="absolute right-2 top-2 z-20 flex flex-col items-center gap-2" onClick={event => event.stopPropagation()}>
-    <button type="button" onClick={onToggleFavorite} className={`rounded-full bg-black/65 p-1.5 text-white shadow backdrop-blur hover:bg-black/85 ${favorite ? 'text-rose-400' : ''}`} title={favorite ? '取消收藏' : '收藏'} aria-label={favorite ? '取消收藏' : '收藏'}>
-      <Heart className={`h-4 w-4 ${favorite ? 'fill-current' : ''}`} />
-    </button>
-    {candidate && onSetCover && <button type="button" disabled={isSaving} onClick={() => void setCover()} className="rounded-full bg-indigo-600/90 p-1.5 text-white shadow backdrop-blur hover:bg-indigo-500 disabled:opacity-60" title="设为固定封面" aria-label="设为固定封面">
+  const pinButton = candidate && onSetCover ? (
+    <button type="button" disabled={isSaving} onClick={() => void setCover()} className="rounded-full bg-indigo-600/90 p-1.5 text-white shadow backdrop-blur hover:bg-indigo-500 disabled:opacity-60" title="设为固定封面" aria-label="设为固定封面">
       <Pin className="h-3.5 w-3.5" />
-    </button>}
-    {children}
-  </div>;
+    </button>
+  ) : null;
+
+  return <>
+    <div className="absolute right-2 top-2 z-20 flex flex-col items-center gap-2" onClick={event => event.stopPropagation()}>
+      <button type="button" onClick={onToggleFavorite} className={`rounded-full bg-black/65 p-1.5 text-white shadow backdrop-blur hover:bg-black/85 ${favorite ? 'text-rose-400' : ''}`} title={favorite ? '取消收藏' : '收藏'} aria-label={favorite ? '取消收藏' : '收藏'}>
+        <Heart className={`h-4 w-4 ${favorite ? 'fill-current' : ''}`} />
+      </button>
+      {pinPlacement === 'top-right' && pinButton}
+      {children}
+    </div>
+    {pinPlacement === 'bottom-right' && pinButton && (
+      <div className="absolute bottom-2 right-2 z-20" onClick={event => event.stopPropagation()}>
+        {pinButton}
+      </div>
+    )}
+  </>;
 };
