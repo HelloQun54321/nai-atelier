@@ -408,7 +408,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              <ToolbarButton onClick={() => void drawGacha()} disabled={isGachaLoading}><Dice5 className="h-4 w-4" />{gachaCards ? '再抽一批' : '随机抽卡'}</ToolbarButton>
              {gachaCards && <ToolbarButton onClick={() => setGachaCards(null)}>返回目录</ToolbarButton>}
              <IconButton label="抽卡设置" onClick={() => setShowDesktopGachaSettings(value => !value)}><Settings2 /></IconButton>
-             {showDesktopGachaSettings && <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-xl border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-800">
+             {showDesktopGachaSettings && <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
                <div className="mb-3 text-sm font-bold text-gray-800 dark:text-white">随机抽卡设置</div>
                <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">抽卡范围<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option></select></label>
                <label className="block text-xs text-gray-500 dark:text-gray-400">抽卡数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label>
@@ -424,8 +424,10 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
            <div className="hidden items-center whitespace-nowrap rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-300 2xl:flex">
              显示 {visibleCards.length.toLocaleString('zh-CN')} · 目录 {catalogTotal.toLocaleString('zh-CN')} · 自定义 {customChains.length}
            </div>
-           <span className="text-xs text-gray-400">列数</span>
-           <input type="range" min="3" max="10" value={gridColumns} onChange={event => { const value = Number(event.target.value); setGridColumns(value); localStorage.setItem('nai_character_grid_columns', String(value)); }} className="w-24 flex-none" />
+           <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2 dark:border-gray-800 dark:bg-gray-900/50">
+             <span className="text-xs text-gray-400">列数</span>
+             <input type="range" min="3" max="10" value={gridColumns} onChange={event => { const value = Number(event.target.value); setGridColumns(value); localStorage.setItem('nai_character_grid_columns', String(value)); }} className="w-24 flex-none" />
+           </div>
          </div>
        </WorkspaceToolbar>
 
@@ -477,7 +479,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                   {card.kind === 'catalog' ? <>
                     <div className="mt-0.5 truncate font-mono text-[10px] text-gray-400" title={card.tagName}>{card.tagName}</div>
                     <div className="mt-1 flex items-center justify-between gap-1 text-[10px]">
-                      <span className="text-orange-500">作品 {(card.postCount || 0).toLocaleString('zh-CN')}</span>
+                      <span className="text-gray-500">作品 {(card.postCount || 0).toLocaleString('zh-CN')}</span>
                       {card.matchReason && <span className="truncate rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 dark:bg-gray-700 dark:text-gray-300" title={`匹配：${card.matchReason}`}>匹配：{card.matchReason}</span>}
                     </div>
                   </> : <div className="mt-1 truncate text-[10px] text-gray-400">{card.chain?.description || '手工组合外貌与服装提示词'}</div>}
