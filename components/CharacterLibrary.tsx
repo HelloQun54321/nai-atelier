@@ -15,7 +15,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
-import { Dice5, Menu, Plus, Settings2, Tag, UserRound } from 'lucide-react';
+import { Check, Dice5, Menu, Plus, Settings2, Tag, UserRound } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
@@ -94,6 +94,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     catch { return new Set(); }
   });
   const [coverCandidates, setCoverCandidates] = useState<Record<string, DanbooruCoverCandidate | null>>({});
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [gachaMode, setGachaMode] = useState<GachaMode>(() => {
     const saved = localStorage.getItem('nai_character_gacha_mode');
     return saved === 'catalog' || saved === 'custom' ? saved : 'mixed';
@@ -251,21 +252,73 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     setCoverCandidates(previous => previous[cardKey]?.id === candidate?.id ? previous : { ...previous, [cardKey]: candidate });
   }, []);
 
+  /** 单卡复制文本：角色 Tag 用其英文 Tag，自定义角色用编译后的完整提示词。 */
+  const cardPromptText = (card: CharacterCard): string => card.kind === 'catalog'
+    ? card.tagName || card.name
+    : compilePrompt(card.chain!, card.chain?.variableValues?.subject || '');
+
   const copyCharacter = async (card: CharacterCard) => {
-    const text = card.kind === 'catalog'
-      ? card.tagName || card.name
-      : compilePrompt(card.chain!, card.chain?.variableValues?.subject || '');
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.writeText(cardPromptText(card));
     notify(card.kind === 'catalog' ? '角色 Tag 已复制' : '完整角色提示词已复制');
   };
 
   const sendToPlayground = (card: CharacterCard) => {
     const chain = card.chain;
     sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify({
-      prompt: card.kind === 'catalog' ? card.tagName : compilePrompt(chain!, chain?.variableValues?.subject || ''),
+      prompt: cardPromptText(card),
       negativePrompt: chain?.negativePrompt || '',
       params: chain?.params || DEFAULT_PARAMS,
     }));
+    onNavigateToPlayground();
+  };
+
+  /** 当前选中的卡片集合；key 与卡片 key 一致（catalog:tagName / custom:chainId），
+   *  跨搜索/抽卡/切换 Tab 保持选中。 */
+  const selectedCards = useMemo(() => {
+    const cards: CharacterCard[] = [];
+    selectedKeys.forEach(key => {
+      if (key.startsWith('catalog:')) {
+        const tagName = key.slice('catalog:'.length);
+        const chain = persistedCatalog.get(tagName.toLowerCase());
+        cards.push({ key, kind: 'catalog', name: chain?.name || tagName, tagName, chain });
+      } else if (key.startsWith('custom:')) {
+        const id = key.slice('custom:'.length);
+        const chain = customChains.find(candidate => candidate.id === id);
+        if (chain) cards.push({ key, kind: 'custom', name: chain.name, previewImage: chain.previewImage, chain });
+      }
+    });
+    return cards;
+  }, [customChains, persistedCatalog, selectedKeys]);
+
+  const toggleSelect = (card: CharacterCard) => {
+    setSelectedKeys(previous => {
+      const next = new Set(previous);
+      if (next.has(card.key)) next.delete(card.key); else next.add(card.key);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedKeys(new Set());
+
+  /** 批量复制：各角色按单卡语义取提示词，英文逗号拼接（与画师串/Tag 串语义一致）。 */
+  const copyAllSelected = async () => {
+    if (selectedCards.length === 0) return;
+    await navigator.clipboard.writeText(selectedCards.map(cardPromptText).join(', '));
+    notify(`已复制 ${selectedCards.length} 个角色提示词`);
+  };
+
+  /** 批量导入：拼接后的提示词整体放入主体区；负面提示词与参数沿用第一个
+   *  带本地链的角色（其余角色共享实验室当前参数），与单卡 sendToPlayground 语义一致。 */
+  const importAllSelected = () => {
+    if (selectedCards.length === 0) return;
+    const firstChain = selectedCards.find(card => card.chain)?.chain;
+    sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify({
+      prompt: selectedCards.map(cardPromptText).join(', '),
+      negativePrompt: firstChain?.negativePrompt || '',
+      params: firstChain?.params || DEFAULT_PARAMS,
+    }));
+    setSelectedKeys(new Set());
+    notify(`已把 ${selectedCards.length} 个角色提示词送往实验室`);
     onNavigateToPlayground();
   };
 
@@ -376,6 +429,11 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       tone: 'danger',
     })) return;
     await onDelete(card.chain.id);
+    setSelectedKeys(previous => {
+      const next = new Set(previous);
+      next.delete(card.key);
+      return next;
+    });
     notify('自定义角色已删除');
   };
 
@@ -389,7 +447,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
+    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
        <WorkspaceToolbar className="flex-col !items-stretch">
          <div className="flex gap-2 md:hidden">
            <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品或 Tag" />
@@ -397,13 +455,21 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
            <ImageTaggerAction notify={notify} />
            <MobileIconButton label={gachaCards ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} className="bg-indigo-600 text-white"><Dice5 className="h-5 w-5" /></MobileIconButton>
          </div>
-         <div className="workspace-page-heading hidden min-w-0 items-center gap-2 md:flex">
-           <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+         <div className="workspace-page-heading workspace-toolbar hidden min-w-0 flex-wrap items-center gap-2 md:flex">
+           <div className="flex flex-none items-center gap-1 overflow-x-auto">
              {([
                ['all', '全部'], ['catalog', '角色 Tag'], ['custom', `我的自定义 ${customChains.length}`], ['favorites', '收藏'],
              ] as [CharacterTab, string][]).map(([value, label]) => (
                <button key={value} onClick={() => { setTab(value); setGachaCards(null); }} className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium ${tab === value ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'}`}>{label}</button>
              ))}
+           </div>
+           <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品、变体或英文 Tag…" containerClassName="min-w-[10rem] flex-1 md:max-w-none!" />
+           <select value={sort} disabled={Boolean(gachaCards)} onChange={event => setSort(event.target.value as CharacterDictionarySort)} className="flex-none rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white">
+             <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">{searchTerm.trim() ? '相关性优先 · 名称 A → Z' : '名称 A → Z'}</option><option value="name-desc">{searchTerm.trim() ? '相关性优先 · 名称 Z → A' : '名称 Z → A'}</option>
+           </select>
+           <div className="flex flex-none items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2 dark:border-gray-800 dark:bg-gray-900/50">
+             <span className="text-xs text-gray-400">列数</span>
+             <input type="range" min="3" max="10" value={gridColumns} onChange={event => { const value = Number(event.target.value); setGridColumns(value); localStorage.setItem('nai_character_grid_columns', String(value)); }} className="w-24 flex-none" />
            </div>
            <div className="relative ml-auto flex flex-none items-center justify-end gap-2">
              <ToolbarButton tone="primary" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4" />自定义角色</ToolbarButton>
@@ -418,21 +484,15 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              </div>}
            </div>
          </div>
-
-         <div className="workspace-toolbar hidden items-center gap-2 md:flex">
-           <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品、变体或英文 Tag…" containerClassName="w-[26rem] flex-none" />
-          <select value={sort} disabled={Boolean(gachaCards)} onChange={event => setSort(event.target.value as CharacterDictionarySort)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-            <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">{searchTerm.trim() ? '相关性优先 · 名称 A → Z' : '名称 A → Z'}</option><option value="name-desc">{searchTerm.trim() ? '相关性优先 · 名称 Z → A' : '名称 Z → A'}</option>
-          </select>
-           <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2 dark:border-gray-800 dark:bg-gray-900/50">
-             <span className="text-xs text-gray-400">列数</span>
-             <input type="range" min="3" max="10" value={gridColumns} onChange={event => { const value = Number(event.target.value); setGridColumns(value); localStorage.setItem('nai_character_grid_columns', String(value)); }} className="w-24 flex-none" />
-           </div>
-           <div className="ml-auto hidden items-center whitespace-nowrap text-xs text-gray-400 dark:text-gray-500 2xl:flex">
-             显示 {visibleCards.length.toLocaleString('zh-CN')} · 目录 {catalogTotal.toLocaleString('zh-CN')} · 自定义 {customChains.length}
-           </div>
-         </div>
        </WorkspaceToolbar>
+
+       <div className="hidden items-center gap-1.5 border-b border-gray-100 px-5 py-1 text-[11px] text-gray-400 dark:border-gray-800 dark:text-gray-500 md:flex">
+         <span>显示 {visibleCards.length.toLocaleString('zh-CN')}</span>
+         <span className="opacity-50">·</span>
+         <span>目录 {catalogTotal.toLocaleString('zh-CN')}</span>
+         <span className="opacity-50">·</span>
+         <span>自定义 {customChains.length}</span>
+       </div>
 
        <MobileBottomSheet open={showMobileFilters} title="角色筛选与抽卡" onClose={() => setShowMobileFilters(false)}>
          <div className="space-y-5">
@@ -452,30 +512,37 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
          </div>
        </MobileBottomSheet>
 
-      <div ref={scrollRef} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6">
+      <div ref={scrollRef} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
         {isLoading && <div className="absolute inset-x-0 top-3 z-20 flex justify-center"><span className="rounded-full bg-gray-900/80 px-4 py-2 text-xs text-white">正在加载角色目录…</span></div>}
         <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-character-grid`} style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { '--mobile-gallery-columns': gridColumns }) }}>
           {visibleCards.map(card => {
             const favorite = favorites.has(card.key);
             const generating = generatingKey === card.key;
+            const selected = selectedKeys.has(card.key);
+            const showPin = card.kind === 'catalog' && Boolean(coverCandidates[card.key]);
             return (
-              <article key={card.key} className="mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border border-gray-200 bg-white transition-colors hover:border-indigo-500 dark:border-gray-700 dark:bg-gray-800">
+              <article key={card.key} onClick={() => toggleSelect(card)} aria-pressed={selected} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors cursor-pointer dark:bg-gray-800 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-500 dark:border-gray-700'}`}>
                 <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': '2 / 3' } as React.CSSProperties}>
-                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} onCandidateChange={candidate => rememberCoverCandidate(card.key, candidate)} /> : card.previewImage ? <button className="h-full w-full" onClick={() => setLightbox(card)}><LazyImage src={card.previewImage} alt={card.name} /></button> : (
+                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} onCandidateChange={candidate => rememberCoverCandidate(card.key, candidate)} /> : card.previewImage ? <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} /></button> : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
                       {card.kind === 'catalog' ? <Tag className="h-8 w-8" /> : <UserRound className="h-8 w-8" />}
                       <span className="mt-2 text-[11px]">尚未生成本地预览</span>
-                      <button disabled={!apiKey || generating} onClick={() => void generatePreview(card)} className="mt-3 rounded bg-indigo-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40">{generating ? '生成中…' : '生成预览'}</button>
+                      <button disabled={!apiKey || generating} onClick={event => { event.stopPropagation(); void generatePreview(card); }} className="mt-3 rounded bg-indigo-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40">{generating ? '生成中…' : '生成预览'}</button>
                     </div>
                   )}
-                  <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[10px] font-bold text-white shadow backdrop-blur">{card.kind === 'catalog' ? '角色 Tag' : '自定义还原'}</span>
                   <TagCoverActions
                     favorite={favorite}
                     onToggleFavorite={() => toggleFavorite(card)}
                     candidate={card.kind === 'catalog' ? coverCandidates[card.key] : null}
                     onSetCover={card.kind === 'catalog' ? candidate => setDanbooruCover(card, candidate) : undefined}
+                    pinPlacement="bottom-right"
                   />
-                  {card.previewImage && <button disabled={generating} onClick={() => void generatePreview(card)} className="absolute bottom-2 right-2 rounded bg-black/60 px-2 py-1 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:opacity-40">{generating ? '生成中…' : '重新生成'}</button>}
+                  {card.previewImage && <button disabled={generating} onClick={event => { event.stopPropagation(); void generatePreview(card); }} className={`absolute bottom-2 rounded bg-black/60 px-2 py-1 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:opacity-40 ${showPin ? 'right-12' : 'right-2'}`}>{generating ? '生成中…' : '重新生成'}</button>}
+                  {selected && (
+                    <div className="pointer-events-none absolute inset-0 z-10 border-4 border-indigo-500/80">
+                      <div className="absolute left-2 top-2 rounded-full bg-indigo-600 p-1 text-white shadow-lg"><Check className="h-3 w-3" strokeWidth={4} /></div>
+                    </div>
+                  )}
                 </div>
                 <div className="p-3">
                   <h2 className="truncate text-sm font-bold text-gray-900 dark:text-white" title={card.name}>{card.name}</h2>
@@ -486,10 +553,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                       {card.matchReason && <span className="truncate rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 dark:bg-gray-700 dark:text-gray-300" title={`匹配：${card.matchReason}`}>匹配：{card.matchReason}</span>}
                     </div>
                   </> : <div className="mt-1 truncate text-[10px] text-gray-400">{card.chain?.description || '手工组合外貌与服装提示词'}</div>}
-                  <div className="mt-3 grid grid-cols-2 gap-1.5 text-[11px]">
-                    <button onClick={() => void copyCharacter(card)} className="rounded bg-gray-100 px-2 py-1.5 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">复制</button>
-                    <button onClick={() => sendToPlayground(card)} className="rounded bg-indigo-50 px-2 py-1.5 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300">实验室</button>
-                  </div>
                 </div>
               </article>
             );
@@ -502,6 +565,19 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
           </div>
         )}
         {!isLoading && visibleCards.length === 0 && <div className="py-20 text-center text-gray-400">没有找到符合条件的角色</div>}
+      </div>
+
+      <div className={`absolute bottom-0 left-0 right-0 z-30 border-t border-gray-200 bg-white/95 shadow-[0_-5px_20px_rgba(0,0,0,0.1)] backdrop-blur transition-transform duration-300 dark:border-gray-800 dark:bg-gray-950/95 ${selectedCards.length > 0 ? 'translate-y-0' : 'translate-y-full'}`}>
+        <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-3 p-4 md:flex-row md:gap-4">
+          <div className="text-sm text-gray-500 dark:text-gray-400">已选 <span className="font-bold text-gray-900 dark:text-white">{selectedCards.length}</span> 个</div>
+          <div className="flex w-full items-center justify-between gap-2 md:ml-auto md:w-auto">
+            <button type="button" onClick={clearSelection} className="rounded-lg bg-gray-200 px-4 py-2 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">清空</button>
+            <div className="flex gap-2">
+              <button type="button" disabled={selectedCards.length === 0} onClick={() => void copyAllSelected()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40">复制全部</button>
+              <button type="button" disabled={selectedCards.length === 0} onClick={importAllSelected} className="rounded-lg bg-white px-4 py-2 text-sm font-bold text-indigo-600 ring-1 ring-indigo-200 transition-colors hover:bg-indigo-50 dark:bg-gray-900 dark:text-indigo-300 dark:ring-indigo-900 disabled:cursor-not-allowed disabled:opacity-40">导入实验室</button>
+            </div>
+          </div>
+        </div>
       </div>
 
        {lightbox?.previewImage && (
