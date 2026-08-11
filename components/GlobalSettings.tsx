@@ -154,19 +154,21 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <div className="grid grid-cols-3 gap-2">
                   {([['masonry', '瀑布流'], ['portrait', '竖向卡片'], ['square', '方形']] as const).map(([layout, label]) => <button key={layout} type="button" onClick={() => { const next = { ...imageDisplay, layout: layout as MobileImageLayout }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch md:h-10 rounded-xl border px-2 text-xs font-bold ${imageDisplay.layout === layout ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
+                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="w-full text-xs font-bold text-gray-500 dark:text-gray-400 md:w-24">移动端列数</span>
                   <div className="flex flex-1 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 md:h-10 md:py-0 dark:border-gray-700 dark:bg-gray-800 md:max-w-56">
                     <input type="range" min={0} max={3} step={1} value={imageDisplay.columns === 'auto' ? 0 : imageDisplay.columns} onChange={event => { const value = Number(event.target.value); const next = { ...imageDisplay, columns: (value === 0 ? 'auto' : value) as MobileImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className="w-full accent-indigo-500" aria-label="移动端列数" />
                     <span className="w-14 flex-none text-right text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.columns === 'auto' ? '自适应' : `${imageDisplay.columns} 列`}</span>
                   </div>
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="w-full text-xs font-bold text-gray-500 dark:text-gray-400 md:w-24">桌面端列数</span>
                   <div className="flex flex-1 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 md:h-10 md:py-0 dark:border-gray-700 dark:bg-gray-800 md:max-w-56">
                     <input type="range" min={0} max={5} step={1} value={imageDisplay.desktopColumns === 'auto' ? 0 : imageDisplay.desktopColumns} onChange={event => { const value = Number(event.target.value); const next = { ...imageDisplay, desktopColumns: (value === 0 ? 'auto' : value) as DesktopImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className="w-full accent-indigo-500" aria-label="桌面端列数" />
                     <span className="w-10 flex-none text-right text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.desktopColumns === 'auto' ? '自适应' : `${imageDisplay.desktopColumns} 列`}</span>
                   </div>
+                </div>
                 </div>
                 <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">布局在所有图片列表全局生效（手机与桌面）；移动端列数仅作用于手机（自动 = 手机 2 列/横屏 3 列）。桌面端：滑块 0 = 自适应（按屏幕宽度 4-6 列），1-5 = 固定列数；角色与画师库可用工具栏滑块单独调整并记住。详情、下载和导入始终使用完整原图。</p>
               </div>
