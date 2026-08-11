@@ -1,5 +1,6 @@
 
 import bcrypt from 'bcryptjs';
+import { readImageDimensions } from './imageDimensions.mjs';
 
 // Add missing D1 type definitions locally
 interface D1Result<T = unknown> {
@@ -1811,14 +1812,14 @@ function parseImageData(value: string) {
   if (!match) throw new Error('只支持 PNG、JPEG 或 WebP 图片');
   const bytes = base64ToBytes(match[2]);
   if (!bytes.length || bytes.length > VIBE_UPLOAD_LIMIT) throw new Error('参考图大小必须在 30 MB 以内');
-  const format = match[1].toLowerCase().replace('jpeg', 'jpg');
+  const format = match[1].toLowerCase().replace('jpeg', 'jpg') as 'png' | 'jpg' | 'webp';
   const valid = format === 'png'
     ? bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
     : format === 'webp'
       ? String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF' && String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP'
       : bytes[0] === 0xff && bytes[1] === 0xd8;
   if (!valid) throw new Error('图片内容与文件格式不一致');
-  return { bytes, format, contentType: format === 'jpg' ? 'image/jpeg' : `image/${format}` };
+  return { bytes, format, contentType: format === 'jpg' ? 'image/jpeg' : `image/${format}`, ...readImageDimensions(bytes, format) };
 }
 
 async function parseUploadedImage(value: FormDataEntryValue | null, limit = VIBE_UPLOAD_LIMIT) {
@@ -1837,7 +1838,7 @@ async function parseUploadedImage(value: FormDataEntryValue | null, limit = VIBE
       ? String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF' && String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP'
       : bytes[0] === 0xff && bytes[1] === 0xd8;
   if (!valid) throw new Error('图片内容与文件格式不一致');
-  return { bytes, format, contentType };
+  return { bytes, format, contentType, ...readImageDimensions(bytes, format) };
 }
 
 const mapVibeEncoding = (row: any) => ({
@@ -3498,24 +3499,31 @@ export default {
           let bytes: Uint8Array;
           let imageType: string;
           let extension: string;
+          let width: number;
+          let height: number;
           if (multipart) {
             let parsed;
             try { parsed = await parseUploadedImage(form?.get('image') || null, MAX_MANAGED_IMAGE_BYTES); } catch (e: any) { return error(e.message, 400); }
             bytes = parsed.bytes;
             imageType = parsed.contentType;
             extension = parsed.format;
+            width = parsed.width;
+            height = parsed.height;
           } else {
-            const match = String(body.imageUrl || '').match(/^data:image\/(png|jpe?g|webp);base64,(.+)$/i);
-            if (!match) return error('Invalid history image data', 400);
-            imageType = `image/${match[1].toLowerCase() === 'jpg' ? 'jpeg' : match[1].toLowerCase()}`;
-            extension = imageType === 'image/jpeg' ? 'jpg' : imageType.split('/')[1];
-            const binary = atob(match[2]);
-            bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            let parsed;
+            try { parsed = parseImageData(String(body.imageUrl || '')); } catch (e: any) { return error(e.message, 400); }
+            bytes = parsed.bytes;
+            imageType = parsed.contentType;
+            extension = parsed.format;
+            width = parsed.width;
+            height = parsed.height;
           }
           if (bytes.byteLength > MAX_MANAGED_IMAGE_BYTES) {
             return error(`历史图片不能超过 ${Math.floor(MAX_MANAGED_IMAGE_BYTES / 1024 / 1024)}MB`, 413);
           }
+          // 以图片真实尺寸为准覆盖宽高；保留 steps/scale/sampler/seed 等其他生成参数
+          const rawParams = body.params && typeof body.params === 'object' && !Array.isArray(body.params) ? body.params : {};
+          const normalizedParams = { ...rawParams, width, height };
           const imageKey = `local-history/${currentUser.id}/${id}.${extension}`;
           const existing = await db.prepare('SELECT image_key, is_favorite, favorite_at FROM local_generation_history WHERE id = ? AND user_id = ?')
             .bind(id, currentUser.id).first<{image_key: string, is_favorite: number, favorite_at: number | null}>();
@@ -3531,7 +3539,7 @@ export default {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).bind(
             id, currentUser.id, imageKey, imageType, body.prompt || '', body.negativePrompt || '',
-            JSON.stringify(body.params || {}), body.basePrompt || '', body.subjectPrompt || '', JSON.stringify(body.modules || []),
+            JSON.stringify(normalizedParams), body.basePrompt || '', body.subjectPrompt || '', JSON.stringify(body.modules || []),
             hasStructuredInput ? 1 : 0,
             body.sourceChainId || null, body.sourceChainName || null, body.sourceChainType || null,
             isFavorite ? 1 : 0, favoriteAt,
@@ -3540,7 +3548,7 @@ export default {
           if (existing?.image_key && existing.image_key !== imageKey) await env.BUCKET.delete(existing.image_key);
           return json({ item: mapLocalHistoryRow({
             id, image_key: imageKey, prompt: body.prompt, negative_prompt: body.negativePrompt,
-            params: JSON.stringify(body.params || {}), base_prompt: body.basePrompt, subject_prompt: body.subjectPrompt,
+            params: JSON.stringify(normalizedParams), base_prompt: body.basePrompt, subject_prompt: body.subjectPrompt,
             modules: JSON.stringify(body.modules || []), structure_version: hasStructuredInput ? 1 : 0, source_chain_id: body.sourceChainId,
             source_chain_name: body.sourceChainName, source_chain_type: body.sourceChainType,
             is_favorite: isFavorite ? 1 : 0, favorite_at: favoriteAt,

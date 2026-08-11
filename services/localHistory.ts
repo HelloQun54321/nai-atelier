@@ -32,9 +32,10 @@ export type LocalHistoryMigrationProgress = {
     total: number;
 };
 
-const createHistoryThumbnail = async (image: Blob): Promise<Blob | undefined> => {
+const createHistoryThumbnail = async (image: Blob): Promise<{ thumbnail: Blob | undefined; width: number; height: number } | undefined> => {
     try {
         const bitmap = await createImageBitmap(image);
+        const { width, height } = { width: bitmap.width, height: bitmap.height };
         const scale = Math.min(1, HISTORY_THUMBNAIL_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
         const canvas = document.createElement('canvas');
         canvas.width = Math.max(1, Math.round(bitmap.width * scale));
@@ -46,9 +47,10 @@ const createHistoryThumbnail = async (image: Blob): Promise<Blob | undefined> =>
         }
         context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
         bitmap.close();
-        return await new Promise<Blob | undefined>(resolve => {
+        const thumbnail = await new Promise<Blob | undefined>(resolve => {
             canvas.toBlob(blob => resolve(blob || undefined), 'image/webp', 0.8);
         });
+        return { thumbnail, width, height };
     } catch {
         return undefined;
     }
@@ -208,18 +210,22 @@ class LocalHistoryService {
         };
 
         if (remoteEnabled) {
-            let thumbnail: Blob | undefined;
+            let thumbnail: { thumbnail: Blob | undefined; width: number; height: number } | undefined;
             const result = image instanceof Blob
                 ? await (async () => {
                     thumbnail = await createHistoryThumbnail(image);
+                    // 复用缩略图 bitmap 的真实尺寸：调用方提供的宽高可能与图片文件不一致
+                    if (thumbnail && thumbnail.width > 0 && thumbnail.height > 0) {
+                        item.params = { ...item.params, width: thumbnail.width, height: thumbnail.height };
+                    }
                     const formData = new FormData();
                     formData.append('image', image, `generation.${image.type === 'image/jpeg' ? 'jpg' : image.type.split('/')[1] || 'png'}`);
                     formData.append('metadata', JSON.stringify(item));
                     return api.postForm('/local-history', formData);
                 })()
                 : await api.post('/local-history', item);
-            if (thumbnail && result.item?.imageUrl) {
-                await seedHistoryThumbnailCache(result.item.imageUrl, thumbnail).catch(() => {});
+            if (thumbnail?.thumbnail && result.item?.imageUrl) {
+                await seedHistoryThumbnailCache(result.item.imageUrl, thumbnail.thumbnail).catch(() => {});
             }
             this.emit({ type: 'add', id: item.id });
             return result.item as LocalGenItem;

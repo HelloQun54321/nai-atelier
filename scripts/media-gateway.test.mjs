@@ -19,6 +19,7 @@ import {
   selectThumbnailConcurrency,
 } from './media-gateway.mjs';
 import { PromptAgentService, calculateAgentContextBudget, customProviderRuntime, detectModelCapabilities, estimateContextTokens, parseTranslationResponse, parseWebSearchResponse, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
+import { readImageDimensions } from '../worker/imageDimensions.mjs';
 
 test('prompt agent discovers model capabilities from metadata, Pi catalog and conservative names', () => {
   const metadata = detectModelCapabilities({ id: 'vendor/model-x', display_name: 'Model X', input_modalities: ['text', 'image'], capabilities: { reasoning: true }, context_window: 262144, max_output_tokens: 32768 });
@@ -723,4 +724,103 @@ test('generation retries once with encoded data when NovelAI cache has expired',
   assert.equal(requests.length, 2);
   assert.equal('data' in requests[0].parameters.reference_image_multiple_cached[0], false);
   assert.equal(requests[1].parameters.reference_image_multiple_cached[0].data, encoding);
+});
+
+// ---------- 图片真实尺寸解析（worker/imageDimensions.mjs） ----------
+
+const buildPng = (width, height) => {
+  const b = new Uint8Array(24);
+  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  b[8] = 0; b[9] = 0; b[10] = 0; b[11] = 13; // IHDR 长度
+  b.set([0x49, 0x48, 0x44, 0x52], 12);
+  b[16] = (width >>> 24) & 0xff; b[17] = (width >>> 16) & 0xff; b[18] = (width >>> 8) & 0xff; b[19] = width & 0xff;
+  b[20] = (height >>> 24) & 0xff; b[21] = (height >>> 16) & 0xff; b[22] = (height >>> 8) & 0xff; b[23] = height & 0xff;
+  return b;
+};
+
+const buildJpeg = (width, height) => {
+  const b = new Uint8Array(20);
+  b[0] = 0xff; b[1] = 0xd8; // SOI
+  b[2] = 0xff; b[3] = 0xc0; // SOF0
+  b[4] = 0; b[5] = 17; // 段长（含自身 2 字节）
+  b[6] = 8; // 精度
+  b[7] = (height >>> 8) & 0xff; b[8] = height & 0xff;
+  b[9] = (width >>> 8) & 0xff; b[10] = width & 0xff;
+  return b;
+};
+
+const buildWebpVp8 = (width, height) => {
+  const b = new Uint8Array(30);
+  b.set([0x52, 0x49, 0x46, 0x46], 0); // RIFF
+  b.set([0x57, 0x45, 0x42, 0x50], 8); // WEBP
+  b.set([0x56, 0x50, 0x38, 0x20], 12); // VP8
+  b[20] = 0x9d; b[21] = 0x01; b[22] = 0x2a;
+  b[23] = width & 0xff; b[24] = (width >>> 8) & 0xff; b[25] = (width >>> 16) & 0xff;
+  b[26] = height & 0xff; b[27] = (height >>> 8) & 0xff; b[28] = (height >>> 16) & 0xff;
+  return b;
+};
+
+const buildWebpVp8l = (width, height) => {
+  const b = new Uint8Array(25);
+  b.set([0x52, 0x49, 0x46, 0x46], 0);
+  b.set([0x57, 0x45, 0x42, 0x50], 8);
+  b.set([0x56, 0x50, 0x38, 0x4c], 12); // VP8L
+  b[20] = 0x2f;
+  const bits = (width - 1) | ((height - 1) << 14);
+  b[21] = bits & 0xff; b[22] = (bits >>> 8) & 0xff; b[23] = (bits >>> 16) & 0xff; b[24] = (bits >>> 24) & 0xff;
+  return b;
+};
+
+const buildWebpVp8x = (width, height) => {
+  const b = new Uint8Array(30);
+  b.set([0x52, 0x49, 0x46, 0x46], 0);
+  b.set([0x57, 0x45, 0x42, 0x50], 8);
+  b.set([0x56, 0x50, 0x38, 0x58], 12); // VP8X
+  const w = width - 1; const h = height - 1;
+  b[24] = w & 0xff; b[25] = (w >>> 8) & 0xff; b[26] = (w >>> 16) & 0xff;
+  b[27] = h & 0xff; b[28] = (h >>> 8) & 0xff; b[29] = (h >>> 16) & 0xff;
+  return b;
+};
+
+test('image dimensions: PNG reads landscape, portrait and square from IHDR', () => {
+  assert.deepEqual(readImageDimensions(buildPng(1216, 832), 'png'), { width: 1216, height: 832 });
+  assert.deepEqual(readImageDimensions(buildPng(832, 1216), 'png'), { width: 832, height: 1216 });
+  assert.deepEqual(readImageDimensions(buildPng(1024, 1024), 'png'), { width: 1024, height: 1024 });
+});
+
+test('image dimensions: JPEG reads SOF0 width/height', () => {
+  assert.deepEqual(readImageDimensions(buildJpeg(1216, 832), 'jpg'), { width: 1216, height: 832 });
+  assert.deepEqual(readImageDimensions(buildJpeg(832, 1216), 'jpg'), { width: 832, height: 1216 });
+});
+
+test('image dimensions: WebP VP8/VP8L/VP8X read width/height', () => {
+  assert.deepEqual(readImageDimensions(buildWebpVp8(1216, 832), 'webp'), { width: 1216, height: 832 });
+  assert.deepEqual(readImageDimensions(buildWebpVp8l(832, 1216), 'webp'), { width: 832, height: 1216 });
+  assert.deepEqual(readImageDimensions(buildWebpVp8x(1024, 1024), 'webp'), { width: 1024, height: 1024 });
+});
+
+test('image dimensions: truncated files are rejected', () => {
+  assert.throws(() => readImageDimensions(buildPng(100, 100).subarray(0, 20), 'png'), /不完整/);
+  assert.throws(() => readImageDimensions(buildJpeg(100, 100).subarray(0, 8), 'jpg'), /不完整/);
+  assert.throws(() => readImageDimensions(buildWebpVp8(100, 100).subarray(0, 20), 'webp'), /不完整/);
+});
+
+test('image dimensions: forged signatures are rejected', () => {
+  assert.throws(() => readImageDimensions(buildPng(100, 100), 'jpg'), /签名无效/);
+  assert.throws(() => readImageDimensions(buildJpeg(100, 100), 'png'), /不完整|签名无效/);
+  assert.throws(() => readImageDimensions(buildPng(100, 100), 'webp'), /签名无效/);
+  assert.throws(() => readImageDimensions(buildJpeg(100, 100), 'webp'), /签名无效/);
+  assert.throws(() => readImageDimensions(new Uint8Array([1, 2, 3, 4]), 'png'), /不完整|签名无效/);
+});
+
+test('image dimensions: zero and oversized dimensions are rejected', () => {
+  assert.throws(() => readImageDimensions(buildPng(0, 832), 'png'), /尺寸无效/);
+  assert.throws(() => readImageDimensions(buildPng(832, 0), 'png'), /尺寸无效/);
+  assert.throws(() => readImageDimensions(buildJpeg(0, 832), 'jpg'), /尺寸无效/);
+  assert.throws(() => readImageDimensions(buildPng(65537, 832), 'png'), /异常过大|尺寸无效/);
+  assert.throws(() => readImageDimensions(buildWebpVp8(0, 832), 'webp'), /尺寸无效/);
+});
+
+test('image dimensions: unknown format is rejected', () => {
+  assert.throws(() => readImageDimensions(buildPng(100, 100), 'gif'), /不支持的图片格式/);
 });

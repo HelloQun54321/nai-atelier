@@ -74,6 +74,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         return () => window.removeEventListener('resize', update);
     }, []);
     const [items, setItems] = useState<LocalGenItem[]>([]);
+    // 图片加载后从文件真实尺寸得到的宽高比，用于纠正错误的 params.width/height（不修改数据库）
+    const [actualImageRatios, setActualImageRatios] = useState<Record<string, number>>({});
     const [lightbox, setLightbox] = useState<LocalGenItem | null>(null);
     const closeLightbox = useMobileHistoryLayer(Boolean(lightbox), () => setLightbox(null), 'history-detail');
     const [isPublishing, setIsPublishing] = useState(false);
@@ -778,14 +780,22 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     }, [items]);
     const selectionFavoritePending = Array.from(selectedIds).some(id => pendingFavoriteIds.has(id));
 
-    // 历史卡预计高度：图片区（列宽 / 生成参数宽高比）+ 边框 2px + 列间 12px 间距；手机端另计底部时间行。
+    // 历史卡比例读取：真实图片比例 → 有效 params 比例 → 默认 832/1216；防御 0/负数/NaN/Infinity/缺失
+    const getHistoryImageRatio = useCallback((item: LocalGenItem) => {
+        const actual = actualImageRatios[item.id];
+        if (Number.isFinite(actual) && actual > 0) return actual;
+        const { width, height } = item.params || {};
+        if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) return width / height;
+        return 832 / 1216;
+    }, [actualImageRatios]);
+
+    // 历史卡预计高度：图片区（列宽 / 图片比例）+ 边框 2px + 列间 12px 间距；手机端另计底部时间行。
     const estimateHistoryCardHeight = useCallback(
         (item: LocalGenItem, columnWidth: number) => {
-            const ratio = (item.params.width || 832) / (item.params.height || 1216);
-            const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
+            const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, getHistoryImageRatio(item));
             return imageHeight + (isMobileViewport ? 34 : 0) + 2 + 12;
         },
-        [isMobileViewport],
+        [isMobileViewport, getHistoryImageRatio],
     );
 
     const renderHistoryCard = (item: LocalGenItem) => (
@@ -808,8 +818,16 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 else setLightbox(item);
             }}
         >
-            <div className="mobile-gallery-frame md:aspect-square relative w-full overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': `${item.params.width || 832} / ${item.params.height || 1216}` } as React.CSSProperties}>
-              <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt={`生成于 ${new Date(item.createdAt).toLocaleString()} 的图片`} className="w-full h-full object-cover" />
+            <div className="mobile-gallery-frame md:aspect-square relative w-full overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': `${getHistoryImageRatio(item)}` } as React.CSSProperties}>
+              <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt={`生成于 ${new Date(item.createdAt).toLocaleString()} 的图片`} className="w-full h-full object-cover"
+                onLoad={event => {
+                  const image = event.currentTarget;
+                  const ratio = image.naturalWidth / Math.max(1, image.naturalHeight);
+                  if (Number.isFinite(ratio) && ratio > 0 && actualImageRatios[item.id] !== ratio) {
+                    setActualImageRatios(previous => (previous[item.id] === ratio ? previous : { ...previous, [item.id]: ratio }));
+                  }
+                }}
+              />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
               {selectionMode && <div className={`absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-sm font-bold shadow backdrop-blur transition ${selectedIds.has(item.id) ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/80 bg-black/35 text-transparent'}`}>{selectedIds.has(item.id) ? '✓' : ''}</div>}
               {!selectionMode && <button type="button" onPointerDown={event => event.stopPropagation()} onClick={event => void handleFavorite(item, event)} disabled={pendingFavoriteIds.has(item.id)} title={item.isFavorite ? '取消收藏' : '收藏'} aria-label={item.isFavorite ? '取消收藏' : '收藏'} aria-pressed={Boolean(item.isFavorite)} className={`absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border shadow backdrop-blur transition ${item.isFavorite ? 'border-rose-400 bg-rose-500 text-white hover:bg-rose-400' : 'border-white/60 bg-black/45 text-white hover:bg-black/65'} disabled:cursor-wait disabled:opacity-70`}>
