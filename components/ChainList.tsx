@@ -1,10 +1,11 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PromptChain, ChainType } from '../types';
 import { useConfirmDialog } from './ConfirmDialog';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { SmartImage } from './SmartImage';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { Copy, Heart, Menu, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isInternalChainTag } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
@@ -33,7 +34,7 @@ const CopyModal: React.FC<{
     const [checkBase, setCheckBase] = useState(true);
     const [checkSubject, setCheckSubject] = useState(false); // Subject is variable, usually skipped for static copy
     const [checkNegative, setCheckNegative] = useState(false);
-    
+
     // Initialize module selection (all active modules checked by default)
     const [selectedModules, setSelectedModules] = useState<Record<string, boolean>>(() => {
         const initial: Record<string, boolean> = {};
@@ -45,7 +46,7 @@ const CopyModal: React.FC<{
 
     const handleCopy = () => {
         const parts: string[] = [];
-        
+
         // 1. Base
         if (checkBase && chain.basePrompt) parts.push(chain.basePrompt);
 
@@ -80,7 +81,7 @@ const CopyModal: React.FC<{
                     <h3 className="font-bold text-gray-900 dark:text-white truncate pr-4">{chain.name}</h3>
                     <button onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white">✕</button>
                 </div>
-                
+
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                     {/* Description Section (Full View) */}
                     {chain.description && (
@@ -92,7 +93,7 @@ const CopyModal: React.FC<{
 
                     <div className="space-y-3">
                         <h4 className="font-bold text-xs text-indigo-500 uppercase tracking-wider">选择要复制的内容</h4>
-                        
+
                         {/* Base Prompt */}
                         <label className="flex items-start gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
                             <input type="checkbox" checked={checkBase} onChange={e => setCheckBase(e.target.checked)} className="mt-1" />
@@ -107,9 +108,9 @@ const CopyModal: React.FC<{
                             <div className="space-y-2 pl-4 border-l-2 border-gray-100 dark:border-gray-700">
                                 {chain.modules.map(m => (
                                     <label key={m.id} className="flex items-center gap-2 cursor-pointer">
-                                        <input 
-                                            type="checkbox" 
-                                            checked={!!selectedModules[m.id]} 
+                                        <input
+                                            type="checkbox"
+                                            checked={!!selectedModules[m.id]}
                                             onChange={e => setSelectedModules({...selectedModules, [m.id]: e.target.checked})}
                                         />
                                         <span className="text-sm dark:text-gray-300">{m.name}</span>
@@ -153,6 +154,7 @@ const CopyModal: React.FC<{
 export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onRefresh, isLoading, notify, isGuest = false }) => {
   const RENDER_BATCH_SIZE = 60;
   const imageDisplay = useMobileImageDisplayPreferences();
+  const masonryColumns = useMasonryColumnCount(imageDisplay);
   const [previewRatios, setPreviewRatios] = useState<Record<string, number>>({});
   const confirmAction = useConfirmDialog();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -258,6 +260,88 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, selectedTags, sortOption]);
   const visibleChains = filteredChains.slice(0, visibleCount);
 
+  // 卡片预计高度：图片区（列宽 / 实际宽高比）+ 48px 标题区 + 上下边框。previewRatios 更新后自动重算分列。
+  const estimateChainCardHeight = useCallback(
+    (chain: PromptChain, columnWidth: number) => {
+      const ratio = previewRatios[chain.id] || 4 / 3;
+      return Math.max(1, columnWidth) / Math.max(0.1, ratio) + 50;
+    },
+    [previewRatios],
+  );
+
+  const renderChainCard = (chain: PromptChain) => (
+    <div key={chain.id} onClick={() => onSelect(chain.id)} className="mobile-gallery-item group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative">
+      {/* Copy Button Overlay - Trigger Modal */}
+      <div className="absolute right-2 top-2 z-10 hidden items-center gap-1 opacity-0 transition-opacity md:group-hover:flex md:group-hover:opacity-100">
+          {!isGuest && <button
+            type="button"
+            onClick={async event => {
+              event.stopPropagation();
+              if (await confirmAction({ title: `删除“${chain.name}”？`, message: `该${chain.type === 'character' ? '角色串' : '画师串'}及其配置将被永久删除，此操作无法撤销。`, confirmLabel: '确认删除', tone: 'danger' })) onDelete(chain.id);
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-red-50 hover:text-red-500 dark:bg-black/70 dark:text-gray-300 dark:hover:text-red-400"
+            title="删除"
+          ><Trash2 className="h-4 w-4" /></button>}
+          <button
+              onClick={(e) => { e.stopPropagation(); setCopyModalChain(chain); }}
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 p-0 text-indigo-600 shadow-sm backdrop-blur hover:bg-indigo-50 dark:bg-black/70 dark:text-indigo-400 dark:hover:bg-indigo-900/50"
+              title="复制/查看详情"
+          >
+              <Copy className="h-4 w-4" />
+          </button>
+      </div>
+
+      {/* Preview Image */}
+      <div
+          className="mobile-gallery-frame md:aspect-square bg-gray-200 dark:bg-gray-900 relative border-b border-gray-200 dark:border-gray-700 overflow-hidden flex items-center justify-center"
+          style={{ '--mobile-image-ratio': String(previewRatios[chain.id] || 4 / 3) } as React.CSSProperties}
+      >
+          {chain.previewImage ? (
+              <div className="w-full h-full relative group/img">
+                  <SmartImage
+                      src={chain.previewImage}
+                      alt={chain.name}
+                      className="w-full h-full object-contain"
+                      onLoad={event => {
+                        const image = event.currentTarget;
+                        const ratio = image.naturalWidth / Math.max(1, image.naturalHeight);
+                        if (Number.isFinite(ratio) && ratio > 0 && previewRatios[chain.id] !== ratio) setPreviewRatios(previous => ({ ...previous, [chain.id]: ratio }));
+                      }}
+                  />
+              </div>
+          ) : (
+              <div className="text-gray-400 dark:text-gray-700">
+                   {type === 'character' ? (
+                      <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                   ) : (
+                      <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                   )}
+              </div>
+          )}
+      </div>
+
+      <div className="flex h-12 flex-col justify-center px-3">
+        <div className="flex items-center justify-between">
+          <h3 className="w-full truncate pr-1 text-sm font-bold text-gray-900 dark:text-gray-100 md:pr-2" title={chain.name}>{chain.name}</h3>
+          <button
+            type="button"
+            onClick={(e) => toggleFav(chain.id, e)}
+            className={`mobile-touch ml-1 flex translate-x-1 flex-shrink-0 items-center justify-center rounded-full p-0 ${
+              favorites.has(chain.id)
+                ? 'text-rose-500'
+                : 'text-gray-300 hover:text-rose-400 dark:text-gray-500 dark:hover:text-rose-400'
+            }`}
+            title={favorites.has(chain.id) ? '取消收藏' : '收藏该串'}
+          >
+            <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill={favorites.has(chain.id) ? 'currentColor' : 'none'} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78Z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   const title = type === 'character' ? '我的角色串' : '我的画师串';
   const createLabel = type === 'character' ? '新建角色串' : '新建画师串';
 
@@ -305,80 +389,19 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           ) : (
             /* Grid Layout */
             <>
-            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-chain-grid`} style={mobileGalleryStyle(imageDisplay)}>
-              {visibleChains.map((chain) => (
-              <div key={chain.id} onClick={() => onSelect(chain.id)} className="mobile-gallery-item group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative">
-                {/* Copy Button Overlay - Trigger Modal */}
-                <div className="absolute right-2 top-2 z-10 hidden items-center gap-1 opacity-0 transition-opacity md:group-hover:flex md:group-hover:opacity-100">
-                    {!isGuest && <button
-                      type="button"
-                      onClick={async event => {
-                        event.stopPropagation();
-                        if (await confirmAction({ title: `删除“${chain.name}”？`, message: `该${chain.type === 'character' ? '角色串' : '画师串'}及其配置将被永久删除，此操作无法撤销。`, confirmLabel: '确认删除', tone: 'danger' })) onDelete(chain.id);
-                      }}
-                      className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-red-50 hover:text-red-500 dark:bg-black/70 dark:text-gray-300 dark:hover:text-red-400"
-                      title="删除"
-                    ><Trash2 className="h-4 w-4" /></button>}
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); setCopyModalChain(chain); }} 
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 p-0 text-indigo-600 shadow-sm backdrop-blur hover:bg-indigo-50 dark:bg-black/70 dark:text-indigo-400 dark:hover:bg-indigo-900/50"
-                        title="复制/查看详情"
-                    >
-                        <Copy className="h-4 w-4" />
-                    </button>
-                </div>
-
-                {/* Preview Image */}
-                <div 
-                    className="mobile-gallery-frame md:aspect-square bg-gray-200 dark:bg-gray-900 relative border-b border-gray-200 dark:border-gray-700 overflow-hidden flex items-center justify-center"
-                    style={{ '--mobile-image-ratio': String(previewRatios[chain.id] || 4 / 3) } as React.CSSProperties}
-                >
-                    {chain.previewImage ? (
-                        <div className="w-full h-full relative group/img">
-                            <SmartImage
-                                src={chain.previewImage}
-                                alt={chain.name}
-                                className="w-full h-full object-contain"
-                                onLoad={event => {
-                                  const image = event.currentTarget;
-                                  const ratio = image.naturalWidth / Math.max(1, image.naturalHeight);
-                                  if (Number.isFinite(ratio) && ratio > 0 && previewRatios[chain.id] !== ratio) setPreviewRatios(previous => ({ ...previous, [chain.id]: ratio }));
-                                }}
-                            />
-                        </div>
-                    ) : (
-                        <div className="text-gray-400 dark:text-gray-700">
-                             {type === 'character' ? (
-                                <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                             ) : (
-                                <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                             )}
-                        </div>
-                    )}
-                </div>
-
-                <div className="flex h-12 flex-col justify-center px-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="w-full truncate pr-1 text-sm font-bold text-gray-900 dark:text-gray-100 md:pr-2" title={chain.name}>{chain.name}</h3>
-                    <button
-                      type="button"
-                      onClick={(e) => toggleFav(chain.id, e)}
-                      className={`mobile-touch ml-1 flex translate-x-1 flex-shrink-0 items-center justify-center rounded-full p-0 ${
-                        favorites.has(chain.id)
-                          ? 'text-rose-500'
-                          : 'text-gray-300 hover:text-rose-400 dark:text-gray-500 dark:hover:text-rose-400'
-                      }`}
-                      title={favorites.has(chain.id) ? '取消收藏' : '收藏该串'}
-                    >
-                      <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill={favorites.has(chain.id) ? 'currentColor' : 'none'} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78Z" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
+            {imageDisplay.layout === 'masonry' ? (
+              <ShortestColumnMasonry
+                items={visibleChains}
+                columns={masonryColumns}
+                getItemKey={chain => chain.id}
+                estimateItemHeight={estimateChainCardHeight}
+                renderItem={renderChainCard}
+              />
+            ) : (
+              <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-chain-grid`} style={mobileGalleryStyle(imageDisplay)}>
+                {visibleChains.map(renderChainCard)}
               </div>
-              ))}
-            </div>
+            )}
             {visibleCount < filteredChains.length && <div className="flex justify-center py-6"><button type="button" onClick={() => setVisibleCount(count => count + RENDER_BATCH_SIZE)} className="mobile-touch rounded-xl border border-gray-300 bg-white px-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">加载更多（{filteredChains.length - visibleCount}）</button></div>}
             </>
           )}
@@ -422,10 +445,10 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
       {/* Smart Copy Modal */}
       {copyModalChain && (
-          <CopyModal 
-            chain={copyModalChain} 
-            onClose={() => setCopyModalChain(null)} 
-            notify={notify} 
+          <CopyModal
+            chain={copyModalChain}
+            onClose={() => setCopyModalChain(null)}
+            notify={notify}
           />
       )}
     </div>

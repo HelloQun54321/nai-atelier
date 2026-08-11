@@ -488,6 +488,15 @@ body,
   .mobile-gallery--auto { --mobile-gallery-columns: 3 !important; }
 }
 
+/*
+ * ChainList 最短列瀑布流：外层 Grid 只生成等宽列，每列 flex column 自上而下堆积，
+ * 不依赖 CSS column-count 的自动平衡（小数量时会在最右侧留下完整空列）。
+ * 列数由组件按偏好与视口解析后以内联样式注入，此处的 --chain-masonry-columns 仅为兜底。
+ */
+.chain-masonry { display: grid; width: 100%; align-items: start; }
+.chain-masonry-column { display: flex; flex-direction: column; gap: .75rem; min-width: 0; }
+.chain-masonry .mobile-gallery-frame { aspect-ratio: var(--mobile-image-ratio, 2 / 3); }
+
 /* VIP 用户样式 */
 .vip-username {
   background: linear-gradient(
