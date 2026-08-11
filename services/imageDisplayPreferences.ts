@@ -2,7 +2,7 @@ import { CSSProperties, useEffect, useState } from 'react';
 
 export type MobileImageLayout = 'masonry' | 'portrait' | 'square';
 export type MobileImageColumns = 'auto' | 1 | 2 | 3;
-export type DesktopImageColumns = 'auto' | 2 | 3 | 4 | 5;
+export type DesktopImageColumns = 'auto' | 1 | 2 | 3 | 4 | 5;
 
 export interface MobileImageDisplayPreferences {
   layout: MobileImageLayout;
@@ -19,7 +19,7 @@ export const getMobileImageDisplayPreferences = (): MobileImageDisplayPreference
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
     const layout: MobileImageLayout = ['masonry', 'portrait', 'square'].includes(saved.layout) ? saved.layout : DEFAULTS.layout;
     const columns: MobileImageColumns = saved.columns === 'auto' || [1, 2, 3].includes(saved.columns) ? saved.columns : DEFAULTS.columns;
-    const desktopColumns: DesktopImageColumns = saved.desktopColumns === 'auto' || [2, 3, 4, 5].includes(saved.desktopColumns) ? saved.desktopColumns : DEFAULTS.desktopColumns;
+    const desktopColumns: DesktopImageColumns = saved.desktopColumns === 'auto' || [1, 2, 3, 4, 5].includes(saved.desktopColumns) ? saved.desktopColumns : DEFAULTS.desktopColumns;
     return { layout, columns, desktopColumns };
   } catch {
     return DEFAULTS;
