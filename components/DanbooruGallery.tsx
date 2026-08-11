@@ -180,7 +180,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
 
           {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
           {loading && !items.length ? <div className="flex min-h-72 items-center justify-center text-sm text-gray-400">正在读取 Danbooru…</div> : items.length ? (
-            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid grid gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5`} style={mobileGalleryStyle(imageDisplay)}>
+            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
               {items.map(post => {
                 const title = post.tags.character[0] || post.tags.artist[0] || `#${post.id}`;
                 return <article key={post.id} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors dark:bg-gray-800 ${selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>

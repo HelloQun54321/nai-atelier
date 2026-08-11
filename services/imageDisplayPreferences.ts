@@ -45,6 +45,5 @@ export const useMobileImageDisplayPreferences = () => {
 export const mobileGalleryClassName = (preferences: MobileImageDisplayPreferences) =>
   `mobile-gallery mobile-gallery--${preferences.layout} ${preferences.columns === 'auto' ? 'mobile-gallery--auto' : ''}`;
 
-export const mobileGalleryStyle = (preferences: MobileImageDisplayPreferences) => ({
-  '--mobile-gallery-columns': preferences.columns === 'auto' ? 2 : preferences.columns,
-} as CSSProperties);
+export const mobileGalleryStyle = (preferences: MobileImageDisplayPreferences) =>
+  preferences.columns === 'auto' ? {} : ({ '--mobile-gallery-columns': preferences.columns } as CSSProperties);

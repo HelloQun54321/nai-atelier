@@ -1255,8 +1255,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                 {layoutMode === 'grid' ? (
                     /* --- GRID LAYOUT (Dynamic Columns using gridCols) --- */
                     <div
-                        className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid md:grid md:gap-4 md:pr-6`}
-                        style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }) }}
+                        className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid md:pr-6`}
+                        style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { '--mobile-gallery-columns': gridCols }) }}
                     >
                         {filteredArtists.map((artist, idx) => {
                             const isSelected = !!cart.find(c => c.name === artist.name);

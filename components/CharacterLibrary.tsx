@@ -451,7 +451,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
       <div ref={scrollRef} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6">
         {isLoading && <div className="absolute inset-x-0 top-3 z-20 flex justify-center"><span className="rounded-full bg-gray-900/80 px-4 py-2 text-xs text-white">正在加载角色目录…</span></div>}
-        <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-character-grid md:grid md:gap-4`} style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }) }}>
+        <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-character-grid`} style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { '--mobile-gallery-columns': gridColumns }) }}>
           {visibleCards.map(card => {
             const favorite = favorites.has(card.key);
             const generating = generatingKey === card.key;

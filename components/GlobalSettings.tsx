@@ -150,14 +150,14 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               <div><div className="mb-2 text-xs font-bold text-gray-500 dark:text-gray-400">主题</div><div className="grid grid-cols-3 gap-2">{([['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setThemeMode(value)} className={`mobile-touch rounded-xl border px-2 text-xs font-bold ${themeMode === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}</div></div>
               <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />安全模式</span><span>{safeMode ? '已开启' : '已关闭'}</span></button>
               <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
-                <div className="mb-2 text-xs font-bold text-gray-500 dark:text-gray-400">手机图片列表</div>
+                <div className="mb-2 text-xs font-bold text-gray-500 dark:text-gray-400">图片列表布局</div>
                 <div className="grid grid-cols-3 gap-2">
                   {([['masonry', '瀑布流'], ['portrait', '竖向卡片'], ['square', '方形']] as const).map(([layout, label]) => <button key={layout} type="button" onClick={() => { const next = { ...imageDisplay, layout: layout as MobileImageLayout }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch rounded-xl border px-2 text-xs font-bold ${imageDisplay.layout === layout ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}
                 </div>
                 <div className="mt-2 grid grid-cols-4 gap-2">
                   {([['auto', '自动'], [1, '1 张'], [2, '2 张'], [3, '3 张']] as const).map(([columns, label]) => <button key={columns} type="button" onClick={() => { const next = { ...imageDisplay, columns: columns as MobileImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch rounded-xl border px-1 text-xs font-bold ${imageDisplay.columns === columns ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}
                 </div>
-                <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">只影响手机图片列表；详情、下载和导入始终使用完整原图。</p>
+                <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">布局在所有图片列表全局生效（手机与桌面）。列数：移动端使用此设置，自动 = 手机 2 列/横屏 3 列；桌面端默认 4 列，角色与画师库可用工具栏滑块调整。详情、下载和导入始终使用完整原图。</p>
               </div>
             </div>}
           </section>
