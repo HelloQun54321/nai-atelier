@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { LocalHistoryDateRange, LocalHistoryPage, localHistory } from '../services/localHistory';
 import { db } from '../services/dbService';
 import { LocalGenItem, PromptChain, User } from '../types';
@@ -12,6 +12,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, ListChecks, LoaderCircle, RefreshCw, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { IconButton, ToolbarButton, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
@@ -64,6 +65,14 @@ const prewarmHistoryThumbnails = async (items: LocalGenItem[]) => {
 export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, notify, onNavigateToPlayground, onRefreshInspiration }) => {
     const confirmAction = useConfirmDialog();
     const imageDisplay = useMobileImageDisplayPreferences();
+    const masonryColumns = useMasonryColumnCount(imageDisplay);
+    // 与 CSS 768px 断点一致：手机端卡片底部有额外的时间文字行，计入预计高度
+    const [isMobileViewport, setIsMobileViewport] = useState(() => (typeof window === 'undefined' ? false : window.innerWidth < 768));
+    useEffect(() => {
+        const update = () => setIsMobileViewport(window.innerWidth < 768);
+        window.addEventListener('resize', update);
+        return () => window.removeEventListener('resize', update);
+    }, []);
     const [items, setItems] = useState<LocalGenItem[]>([]);
     const [lightbox, setLightbox] = useState<LocalGenItem | null>(null);
     const closeLightbox = useMobileHistoryLayer(Boolean(lightbox), () => setLightbox(null), 'history-detail');
@@ -769,6 +778,56 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     }, [items]);
     const selectionFavoritePending = Array.from(selectedIds).some(id => pendingFavoriteIds.has(id));
 
+    // 历史卡预计高度：图片区（列宽 / 生成参数宽高比）+ 边框 2px + 列间 12px 间距；手机端另计底部时间行。
+    const estimateHistoryCardHeight = useCallback(
+        (item: LocalGenItem, columnWidth: number) => {
+            const ratio = (item.params.width || 832) / (item.params.height || 1216);
+            const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
+            return imageHeight + (isMobileViewport ? 34 : 0) + 2 + 12;
+        },
+        [isMobileViewport],
+    );
+
+    const renderHistoryCard = (item: LocalGenItem) => (
+        <div
+            key={item.id}
+            className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border hover:border-indigo-500 transition-colors ${selectedIds.has(item.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
+            onPointerDown={() => {
+                longPressTriggeredRef.current = false;
+                longPressTimerRef.current = window.setTimeout(() => {
+                    longPressTriggeredRef.current = true;
+                    setSelectionMode(true);
+                    setSelectedIds(previous => new Set(previous).add(item.id));
+                }, 550);
+            }}
+            onPointerUp={() => { if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current); }}
+            onPointerCancel={() => { if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current); }}
+            onClick={() => {
+                if (longPressTriggeredRef.current) return;
+                if (selectionMode) setSelectedIds(previous => { const next = new Set(previous); next.has(item.id) ? next.delete(item.id) : next.add(item.id); return next; });
+                else setLightbox(item);
+            }}
+        >
+            <div className="mobile-gallery-frame md:aspect-square relative w-full overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': `${item.params.width || 832} / ${item.params.height || 1216}` } as React.CSSProperties}>
+              <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt={`生成于 ${new Date(item.createdAt).toLocaleString()} 的图片`} className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+              {selectionMode && <div className={`absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-sm font-bold shadow backdrop-blur transition ${selectedIds.has(item.id) ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/80 bg-black/35 text-transparent'}`}>{selectedIds.has(item.id) ? '✓' : ''}</div>}
+              {!selectionMode && <button type="button" onPointerDown={event => event.stopPropagation()} onClick={event => void handleFavorite(item, event)} disabled={pendingFavoriteIds.has(item.id)} title={item.isFavorite ? '取消收藏' : '收藏'} aria-label={item.isFavorite ? '取消收藏' : '收藏'} aria-pressed={Boolean(item.isFavorite)} className={`absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border shadow backdrop-blur transition ${item.isFavorite ? 'border-rose-400 bg-rose-500 text-white hover:bg-rose-400' : 'border-white/60 bg-black/45 text-white hover:bg-black/65'} disabled:cursor-wait disabled:opacity-70`}>
+                {pendingFavoriteIds.has(item.id) ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Heart className={`h-4 w-4 ${item.isFavorite ? 'fill-current' : ''}`} />}
+              </button>}
+              {!selectionMode && <div className="absolute right-2 top-12 hidden opacity-0 transition-opacity group-hover:opacity-100 md:block">
+                <button onClick={(e) => handleDelete(item.id, e)} className="rounded-full bg-red-500 p-1.5 text-white shadow hover:bg-red-600" aria-label="删除历史图片" title="删除">
+                    <Trash2 className="h-4 w-4" />
+                </button>
+              </div>}
+              <div className="absolute bottom-0 left-0 right-0 hidden p-2 bg-gradient-to-t from-black/80 to-transparent text-white text-[10px] md:block md:opacity-0 group-hover:opacity-100 transition-opacity truncate">
+                {new Date(item.createdAt).toLocaleString()}
+              </div>
+            </div>
+            <div className="truncate px-2 py-2 text-[11px] text-gray-600 dark:text-gray-300 md:hidden">{new Date(item.createdAt).toLocaleString()}</div>
+        </div>
+    );
+
     return (
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
             <WorkspaceToolbar>
@@ -908,47 +967,19 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                               <h2 className="text-sm font-bold text-gray-700 dark:text-gray-200">{group.label}</h2>
                               <span className="text-xs text-gray-400">{group.items.length} 张</span>
                             </div>
-                            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-history-grid`} style={mobileGalleryStyle(imageDisplay)}>
-                            {group.items.map(item => (
-                                <div
-                                    key={item.id}
-                                    className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border hover:border-indigo-500 transition-colors ${selectedIds.has(item.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
-                                    onPointerDown={() => {
-                                        longPressTriggeredRef.current = false;
-                                        longPressTimerRef.current = window.setTimeout(() => {
-                                            longPressTriggeredRef.current = true;
-                                            setSelectionMode(true);
-                                            setSelectedIds(previous => new Set(previous).add(item.id));
-                                        }, 550);
-                                    }}
-                                    onPointerUp={() => { if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current); }}
-                                    onPointerCancel={() => { if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current); }}
-                                    onClick={() => {
-                                        if (longPressTriggeredRef.current) return;
-                                        if (selectionMode) setSelectedIds(previous => { const next = new Set(previous); next.has(item.id) ? next.delete(item.id) : next.add(item.id); return next; });
-                                        else setLightbox(item);
-                                    }}
-                                >
-                                    <div className="mobile-gallery-frame md:aspect-square relative w-full overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': `${item.params.width || 832} / ${item.params.height || 1216}` } as React.CSSProperties}>
-                                      <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt={`生成于 ${new Date(item.createdAt).toLocaleString()} 的图片`} className="w-full h-full object-cover" />
-                                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-                                      {selectionMode && <div className={`absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-sm font-bold shadow backdrop-blur transition ${selectedIds.has(item.id) ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/80 bg-black/35 text-transparent'}`}>{selectedIds.has(item.id) ? '✓' : ''}</div>}
-                                      {!selectionMode && <button type="button" onPointerDown={event => event.stopPropagation()} onClick={event => void handleFavorite(item, event)} disabled={pendingFavoriteIds.has(item.id)} title={item.isFavorite ? '取消收藏' : '收藏'} aria-label={item.isFavorite ? '取消收藏' : '收藏'} aria-pressed={Boolean(item.isFavorite)} className={`absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border shadow backdrop-blur transition ${item.isFavorite ? 'border-rose-400 bg-rose-500 text-white hover:bg-rose-400' : 'border-white/60 bg-black/45 text-white hover:bg-black/65'} disabled:cursor-wait disabled:opacity-70`}>
-                                        {pendingFavoriteIds.has(item.id) ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Heart className={`h-4 w-4 ${item.isFavorite ? 'fill-current' : ''}`} />}
-                                      </button>}
-                                      {!selectionMode && <div className="absolute right-2 top-12 hidden opacity-0 transition-opacity group-hover:opacity-100 md:block">
-                                        <button onClick={(e) => handleDelete(item.id, e)} className="rounded-full bg-red-500 p-1.5 text-white shadow hover:bg-red-600" aria-label="删除历史图片" title="删除">
-                                            <Trash2 className="h-4 w-4" />
-                                        </button>
-                                      </div>}
-                                      <div className="absolute bottom-0 left-0 right-0 hidden p-2 bg-gradient-to-t from-black/80 to-transparent text-white text-[10px] md:block md:opacity-0 group-hover:opacity-100 transition-opacity truncate">
-                                        {new Date(item.createdAt).toLocaleString()}
-                                      </div>
-                                    </div>
-                                    <div className="truncate px-2 py-2 text-[11px] text-gray-600 dark:text-gray-300 md:hidden">{new Date(item.createdAt).toLocaleString()}</div>
-                                </div>
-                            ))}
-                            </div>
+                            {imageDisplay.layout === 'masonry' ? (
+                              <ShortestColumnMasonry
+                                items={group.items}
+                                columns={masonryColumns}
+                                getItemKey={item => item.id}
+                                estimateItemHeight={estimateHistoryCardHeight}
+                                renderItem={renderHistoryCard}
+                              />
+                            ) : (
+                              <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-history-grid`} style={mobileGalleryStyle(imageDisplay)}>
+                                {group.items.map(renderHistoryCard)}
+                              </div>
+                            )}
                           </section>)}
                         </div>
                         {selectionMode && <div className="mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><div className="mb-1 text-center text-xs font-bold dark:text-white">多选模式 · 已选 {selectedIds.size} 张</div><div className="grid grid-cols-3 gap-2"><button onClick={selectCurrentPage} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">全选</button><button onClick={invertCurrentPageSelection} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">反选</button><button onClick={exitSelectionMode} className="mobile-touch rounded-xl bg-gray-100 text-sm font-bold dark:bg-gray-800">退出</button><button onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-500 text-sm font-bold text-white disabled:opacity-40">收藏</button><button onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-50 text-sm font-bold text-rose-600 disabled:opacity-40 dark:bg-rose-950/40 dark:text-rose-300">取消收藏</button><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch rounded-xl bg-red-600 text-sm font-bold text-white disabled:opacity-40">删除</button></div></div>}
