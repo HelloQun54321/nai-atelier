@@ -134,14 +134,14 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             {settingsSections.map(item => {
               const SectionIcon = item.icon;
               const active = mobileSection === item.id;
-              return <button key={item.id} type="button" onClick={() => setMobileSection(item.id)} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${active ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:text-indigo-300 dark:ring-gray-700' : 'text-gray-600 hover:bg-white/70 dark:text-gray-300 dark:hover:bg-gray-800/60'}`}>
+              return <button key={item.id} type="button" onClick={() => { setMobileSection(item.id); if (!isMobile) document.getElementById(`settings-${item.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${active ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:text-indigo-300 dark:ring-gray-700' : 'text-gray-600 hover:bg-white/70 dark:text-gray-300 dark:hover:bg-gray-800/60'}`}>
                 <SectionIcon className="h-4.5 w-4.5 flex-none" />
                 <span className="min-w-0"><b className="block text-sm">{item.label}</b><span className="block truncate text-[10px] font-normal text-gray-400">{item.description}</span></span>
               </button>;
             })}
           </nav>
         <div className="min-w-0 flex-1 space-y-3 overflow-y-auto p-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:p-6">
-          <section className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${mobileSection === 'appearance' ? '' : 'md:hidden'}`}>
+          <section id={`settings-appearance`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'appearance' ? 'hidden' : ''}`}>
             <button type="button" onClick={() => isMobile && setMobileSection('appearance')} className="flex min-h-11 w-full items-center justify-between text-left">
               <div><h3 className="font-semibold text-gray-900 dark:text-white">外观与隐私</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">主题与图片安全显示状态：{safeMode ? '安全模式已开启' : isDark ? '深色' : '浅色'}</p></div>
               <ChevronDown className={`h-4 w-4 flex-none transition md:hidden ${mobileSection === 'appearance' ? 'rotate-180' : ''}`} />
@@ -157,11 +157,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <div className="mt-2 grid grid-cols-4 gap-2">
                   {([['auto', '自动'], [1, '1 张'], [2, '2 张'], [3, '3 张']] as const).map(([columns, label]) => <button key={columns} type="button" onClick={() => { const next = { ...imageDisplay, columns: columns as MobileImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch rounded-xl border px-1 text-xs font-bold ${imageDisplay.columns === columns ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}
                 </div>
-                <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">布局在所有图片列表全局生效（手机与桌面）。列数：移动端使用此设置，自动 = 手机 2 列/横屏 3 列；桌面端默认 4 列，角色与画师库可用工具栏滑块调整。详情、下载和导入始终使用完整原图。</p>
+                <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">布局在所有图片列表全局生效（手机与桌面）；列数仅作用于移动端，自动 = 手机 2 列/横屏 3 列。桌面端固定 4 列，角色与画师库可用工具栏滑块调整。详情、下载和导入始终使用完整原图。</p>
               </div>
             </div>}
           </section>
-          <section className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${mobileSection === 'novelai' ? '' : 'md:hidden'}`}>
+          <section id={`settings-novelai`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'novelai' ? 'hidden' : ''}`}>
             <button type="button" onClick={() => isMobile && setMobileSection('novelai')} className="flex min-h-11 w-full items-center justify-between text-left">
               <div>
               <h3 className="font-semibold text-gray-900 dark:text-white">NovelAI 连接</h3>
@@ -202,7 +202,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             </div></div>}
           </section>
 
-          <section className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${mobileSection === 'agent' ? '' : 'md:hidden'}`}>
+          <section id={`settings-agent`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'agent' ? 'hidden' : ''}`}>
             <button type="button" onClick={() => isMobile && setMobileSection('agent')} className="flex min-h-11 w-full items-center justify-between gap-4 text-left">
               <div><h3 className="font-semibold text-gray-900 dark:text-white">项目 Agent</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">让 DeepSeek、Gemini 或 Grok 查看历史图片、操作实验室并管理项目资料。</p></div>
               <ChevronDown className={`h-4 w-4 flex-none transition md:hidden ${mobileSection === 'agent' ? 'rotate-180' : ''}`} />
@@ -210,7 +210,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             {mobileSection === 'agent' && <div className="mt-3"><PromptAgentSettings notify={notify} /></div>}
           </section>
 
-          <section className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${mobileSection === 'anlas' ? '' : 'md:hidden'}`}>
+          <section id={`settings-anlas`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'anlas' ? 'hidden' : ''}`}>
             <button type="button" onClick={() => isMobile && setMobileSection('anlas')} className="flex min-h-11 w-full items-center justify-between text-left">
               <div><h3 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">当前剩余 <b className="text-indigo-600 dark:text-indigo-300">{anlasBudget.remaining}</b> 点，电脑与手机共用。</p></div>
               <ChevronDown className={`h-4 w-4 flex-none transition md:hidden ${mobileSection === 'anlas' ? 'rotate-180' : ''}`} />
@@ -224,7 +224,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             </div>}
           </section>
 
-          <section className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${mobileSection === 'tags' ? '' : 'md:hidden'}`}>
+          <section id={`settings-tags`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'tags' ? 'hidden' : ''}`}>
             <button type="button" onClick={() => isMobile && setMobileSection('tags')} className="flex min-h-11 w-full items-center justify-between gap-4 text-left">
               <div>
               <h3 className="font-semibold text-gray-900 dark:text-white">Tag 补全词库</h3>
@@ -234,7 +234,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             {mobileSection === 'tags' && <div className="mt-3 flex justify-start"><TagDictionaryUpdater notify={notify} /></div>}
           </section>
 
-          <section className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${mobileSection === 'cache' ? '' : 'md:hidden'}`}>
+          <section id={`settings-cache`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'cache' ? 'hidden' : ''}`}>
             <button type="button" onClick={() => isMobile && setMobileSection('cache')} className="flex min-h-11 w-full items-center justify-between text-left">
               <div>
               <h3 className="font-semibold text-gray-900 dark:text-white">手机图片缓存</h3>
@@ -275,7 +275,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             </div>}
           </section>
 
-          <section className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${mobileSection === 'about' ? '' : 'md:hidden'}`}>
+          <section id={`settings-about`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'about' ? 'hidden' : ''}`}>
             <div className="flex items-center justify-between gap-4">
               <div><h3 className="font-semibold text-gray-900 dark:text-white">关于</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">NaiPromptManager 个人维护版本</p></div>
               <span className="rounded-lg bg-gray-100 px-3 py-1.5 font-mono text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-300">v0.5.0</span>

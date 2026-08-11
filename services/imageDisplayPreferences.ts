@@ -45,5 +45,6 @@ export const useMobileImageDisplayPreferences = () => {
 export const mobileGalleryClassName = (preferences: MobileImageDisplayPreferences) =>
   `mobile-gallery mobile-gallery--${preferences.layout} ${preferences.columns === 'auto' ? 'mobile-gallery--auto' : ''}`;
 
+/** 列数只作用于移动端；auto 时不注入，由 CSS 自适应（手机 2 列/横屏 3 列/桌面 4 列）。 */
 export const mobileGalleryStyle = (preferences: MobileImageDisplayPreferences) =>
-  preferences.columns === 'auto' ? {} : ({ '--mobile-gallery-columns': preferences.columns } as CSSProperties);
+  preferences.columns === 'auto' ? {} : ({ '--mobile-gallery-cols-setting': preferences.columns } as CSSProperties);

@@ -462,11 +462,11 @@ body,
 
 /*
  * 图片列表布局（瀑布流/竖向/方形）在移动端与桌面端共用同一套展示偏好。
- * --mobile-gallery-columns 由各页面控制：移动端来自设置（1/2/3，auto 自适应），
- * 桌面端默认 4 列，角色/画师库可由工具栏滑块覆盖。
+ * 列数来源：移动端 --mobile-gallery-cols-setting（设置 1/2/3，未设置时 2 列）；
+ * 桌面端 --mobile-gallery-columns 由媒体查询定为 4，角色/画师库可由工具栏滑块内联覆盖。
  */
-.mobile-gallery { display: grid; grid-template-columns: repeat(var(--mobile-gallery-columns, 2), minmax(0, 1fr)); gap: .75rem; }
-.mobile-gallery--masonry { display: block; column-count: var(--mobile-gallery-columns, 2); column-gap: .75rem; }
+.mobile-gallery { display: grid; grid-template-columns: repeat(var(--mobile-gallery-columns, var(--mobile-gallery-cols-setting, 2)), minmax(0, 1fr)); gap: .75rem; }
+.mobile-gallery--masonry { display: block; column-count: var(--mobile-gallery-columns, var(--mobile-gallery-cols-setting, 2)); column-gap: .75rem; }
 .mobile-gallery--masonry > * { display: inline-flex; width: 100%; margin: 0 0 .75rem; break-inside: avoid; }
 .mobile-gallery--masonry .mobile-gallery-frame { aspect-ratio: var(--mobile-image-ratio, 2 / 3); }
 .mobile-gallery--portrait .mobile-gallery-frame { aspect-ratio: 2 / 3; }
