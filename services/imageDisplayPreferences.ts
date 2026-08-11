@@ -2,22 +2,25 @@ import { CSSProperties, useEffect, useState } from 'react';
 
 export type MobileImageLayout = 'masonry' | 'portrait' | 'square';
 export type MobileImageColumns = 'auto' | 1 | 2 | 3;
+export type DesktopImageColumns = 'auto' | 2 | 3 | 4 | 5;
 
 export interface MobileImageDisplayPreferences {
   layout: MobileImageLayout;
   columns: MobileImageColumns;
+  desktopColumns: DesktopImageColumns;
 }
 
 const STORAGE_KEY = 'nai_mobile_image_display';
 const CHANGE_EVENT = 'nai-mobile-image-display-change';
-const DEFAULTS: MobileImageDisplayPreferences = { layout: 'masonry', columns: 2 };
+const DEFAULTS: MobileImageDisplayPreferences = { layout: 'masonry', columns: 2, desktopColumns: 'auto' };
 
 export const getMobileImageDisplayPreferences = (): MobileImageDisplayPreferences => {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
     const layout: MobileImageLayout = ['masonry', 'portrait', 'square'].includes(saved.layout) ? saved.layout : DEFAULTS.layout;
     const columns: MobileImageColumns = saved.columns === 'auto' || [1, 2, 3].includes(saved.columns) ? saved.columns : DEFAULTS.columns;
-    return { layout, columns };
+    const desktopColumns: DesktopImageColumns = saved.desktopColumns === 'auto' || [2, 3, 4, 5].includes(saved.desktopColumns) ? saved.desktopColumns : DEFAULTS.desktopColumns;
+    return { layout, columns, desktopColumns };
   } catch {
     return DEFAULTS;
   }
@@ -45,6 +48,8 @@ export const useMobileImageDisplayPreferences = () => {
 export const mobileGalleryClassName = (preferences: MobileImageDisplayPreferences) =>
   `mobile-gallery mobile-gallery--${preferences.layout} ${preferences.columns === 'auto' ? 'mobile-gallery--auto' : ''}`;
 
-/** 列数只作用于移动端；auto 时不注入，由 CSS 自适应（手机 2 列/横屏 3 列/桌面 4 列）。 */
-export const mobileGalleryStyle = (preferences: MobileImageDisplayPreferences) =>
-  preferences.columns === 'auto' ? {} : ({ '--mobile-gallery-cols-setting': preferences.columns } as CSSProperties);
+/** 列数：移动端注入 --mobile-gallery-cols-setting（1/2/3），桌面端注入 --mobile-gallery-cols-desktop（2-5）；auto 不注入，由 CSS 自适应。 */
+export const mobileGalleryStyle = (preferences: MobileImageDisplayPreferences) => ({
+  ...(preferences.columns === 'auto' ? {} : { '--mobile-gallery-cols-setting': preferences.columns }),
+  ...(preferences.desktopColumns === 'auto' ? {} : { '--mobile-gallery-cols-desktop': preferences.desktopColumns }),
+} as CSSProperties);

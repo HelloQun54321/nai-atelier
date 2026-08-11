@@ -473,7 +473,15 @@ body,
 .mobile-gallery--square .mobile-gallery-frame { aspect-ratio: 1; }
 
 @media (min-width: 768px) {
-  .mobile-gallery { --mobile-gallery-columns: 4; }
+  .mobile-gallery { --mobile-gallery-columns: var(--mobile-gallery-cols-desktop, 4); }
+}
+
+@media (min-width: 1280px) {
+  .mobile-gallery { --mobile-gallery-columns: var(--mobile-gallery-cols-desktop, 5); }
+}
+
+@media (min-width: 1600px) {
+  .mobile-gallery { --mobile-gallery-columns: var(--mobile-gallery-cols-desktop, 6); }
 }
 
 @media (min-width: 600px) and (max-width: 767px) and (orientation: landscape) {

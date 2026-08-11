@@ -9,7 +9,7 @@ import {
 } from '../services/mobileImageCache';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
-import { getMobileImageDisplayPreferences, MobileImageColumns, MobileImageLayout, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { DesktopImageColumns, getMobileImageDisplayPreferences, MobileImageColumns, MobileImageLayout, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { anlasBudgetService, DEFAULT_ANLAS_BUDGET, useAnlasBudget } from '../services/anlasBudget';
 import { CLOUD_QUEUE_SERVICE_URL, getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 import { PromptAgentSettings } from './PromptAgentSettings';
@@ -157,7 +157,15 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <div className="mt-2 grid grid-cols-4 gap-2">
                   {([['auto', '自动'], [1, '1 张'], [2, '2 张'], [3, '3 张']] as const).map(([columns, label]) => <button key={columns} type="button" onClick={() => { const next = { ...imageDisplay, columns: columns as MobileImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch rounded-xl border px-1 text-xs font-bold ${imageDisplay.columns === columns ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}
                 </div>
-                <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">布局在所有图片列表全局生效（手机与桌面）；列数仅作用于移动端，自动 = 手机 2 列/横屏 3 列。桌面端固定 4 列，角色与画师库可用工具栏滑块调整。详情、下载和导入始终使用完整原图。</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="w-full text-xs font-bold text-gray-500 dark:text-gray-400 md:w-24">桌面端列数</span>
+                  <button type="button" onClick={() => { const next = { ...imageDisplay, desktopColumns: 'auto' as const }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch rounded-xl border px-3 text-xs font-bold ${imageDisplay.desktopColumns === 'auto' ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>自动</button>
+                  <div className="flex flex-1 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800 md:max-w-56">
+                    <input type="range" min={2} max={5} value={imageDisplay.desktopColumns === 'auto' ? 4 : imageDisplay.desktopColumns} onChange={event => { const next = { ...imageDisplay, desktopColumns: Number(event.target.value) as DesktopImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className="w-full accent-indigo-500" aria-label="桌面端列数" />
+                    <span className="w-10 flex-none text-right text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.desktopColumns === 'auto' ? '自适应' : `${imageDisplay.desktopColumns} 列`}</span>
+                  </div>
+                </div>
+                <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">布局在所有图片列表全局生效（手机与桌面）；移动端列数仅作用于手机（自动 = 手机 2 列/横屏 3 列）。桌面端：自动 = 按屏幕宽度 4-6 列，或拖动滑块固定 2-5 列；角色与画师库可用工具栏滑块单独调整并记住。详情、下载和导入始终使用完整原图。</p>
               </div>
             </div>}
           </section>

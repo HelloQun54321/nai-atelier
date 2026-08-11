@@ -546,7 +546,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             }
             if (patch.imageLayout || patch.imageColumns !== undefined) {
               const current = getMobileImageDisplayPreferences();
-              setMobileImageDisplayPreferences({ layout: patch.imageLayout || current.layout, columns: patch.imageColumns ?? current.columns });
+              setMobileImageDisplayPreferences({ layout: patch.imageLayout || current.layout, columns: patch.imageColumns ?? current.columns, desktopColumns: current.desktopColumns });
             }
             if (patch.mobileCacheLimit !== undefined) setMobileCacheLimitMb(patch.mobileCacheLimit);
             window.dispatchEvent(new CustomEvent('nai-agent-ui-preferences', { detail: patch }));

@@ -168,7 +168,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
 
     // View Settings
     // Grid: Columns (3-15)
-    const [gridCols, setGridCols] = useState(6);
+    const [gridCols, setGridCols] = useState(() => Number(localStorage.getItem('nai_artist_grid_columns')) || 6);
     const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
     const [showMobileTools, setShowMobileTools] = useState(false);
 
@@ -1009,7 +1009,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                 type="range"
                                 min="3" max="15" step="1"
                                 value={gridCols}
-                                onChange={(e) => setGridCols(parseInt(e.target.value))}
+                                onChange={(e) => { setGridCols(parseInt(e.target.value)); localStorage.setItem('nai_artist_grid_columns', e.target.value); }}
                                 className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-indigo-500"
                                 title="调整每行显示的列数 (3-15)"
                             />
