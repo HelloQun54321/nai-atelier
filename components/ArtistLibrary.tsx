@@ -12,7 +12,7 @@ import { createUuid } from '../services/id';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { Bot, ClipboardList, Clock3, Dice5, Download, Grid3X3, Heart, List, LoaderCircle, Menu, RefreshCw, Settings2 } from 'lucide-react';
-import { ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { IconButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DanbooruCover } from './DanbooruCover';
 import type { DanbooruCoverCandidate } from '../services/danbooruService';
 import { TagCoverActions } from './TagCoverActions';
@@ -976,13 +976,9 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                 <div className="workspace-toolbar hidden gap-2 w-full md:flex">
                     {/* Refresh locally persisted artists */}
                     {canManageArtists && (
-                        <button
-                            onClick={handleRefresh}
-                            className={`p-2 rounded-lg bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex-shrink-0`}
-                            title="刷新画师列表"
-                        >
-                            <RefreshCw className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} />
-                        </button>
+                        <IconButton label="刷新画师列表" onClick={handleRefresh} disabled={isLoading}>
+                            <RefreshCw className={isLoading ? 'animate-spin' : ''} />
+                        </IconButton>
                     )}
 
                     {/* Layout Toggle */}
@@ -1285,7 +1281,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                             return (
                                 <div
                                     key={artist.id}
-                                    className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-xl overflow-hidden border transition-[border-color,box-shadow,transform] cursor-pointer shadow-sm hover:shadow-lg ${isSelected ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500'}`}
+                                    className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden border transition-colors cursor-pointer ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}
                                     onClick={() => toggleCart(artist.name)}
                                 >
                                     <div className="mobile-gallery-frame md:aspect-[2/3] relative overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': '2 / 3' } as React.CSSProperties}>
@@ -1353,15 +1349,15 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                         </TagCoverActions>
 
                                         {isSelected && (
-                                            <div className="absolute inset-0 border-4 border-red-500/80 pointer-events-none">
-                                                <div className="absolute top-2 left-2 bg-red-500 text-white p-1 rounded-full shadow-lg">
+                                            <div className="absolute inset-0 border-4 border-indigo-500/80 pointer-events-none">
+                                                <div className="absolute top-2 left-2 bg-indigo-600 text-white p-1 rounded-full shadow-lg">
                                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg>
                                                 </div>
                                             </div>
                                         )}
                                     </div>
                                     <div className="p-2 md:p-3 bg-white dark:bg-gray-800 text-center border-t border-gray-100 dark:border-gray-700">
-                                        <div className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-red-500' : 'text-gray-700 dark:text-gray-300'}`}>{artist.name}</div>
+                                        <div className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{artist.name}</div>
                                         {artist.chineseName && <div className="mt-0.5 truncate text-[10px] text-gray-400" title={artist.chineseName}>{artist.chineseName}</div>}
                                         {typeof artist.postCount === 'number' && <div className="mt-0.5 text-[10px] font-mono text-orange-500/80" title="Danbooru 关联作品数">作品 {artist.postCount.toLocaleString('zh-CN')}</div>}
                                     </div>
@@ -1379,13 +1375,13 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                             return (
                                 <div
                                     key={artist.id}
-                                    className={`bg-white dark:bg-gray-800 rounded-xl border p-4 shadow-sm ${isSelected ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500' : 'border-gray-200 dark:border-gray-700'}`}
+                                    className={`bg-white dark:bg-gray-800 rounded-lg border p-4 ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
                                     onClick={() => toggleCart(artist.name)}
                                 >
                                     <div className="flex justify-between items-center mb-3">
                                         <div className="flex items-center gap-3">
                                             <h3
-                                                className={`font-bold text-lg md:text-xl cursor-pointer hover:underline ${isSelected ? 'text-red-500' : 'text-gray-900 dark:text-white'}`}
+                                                className={`font-bold text-lg md:text-xl cursor-pointer hover:underline ${isSelected ? 'text-indigo-600' : 'text-gray-900 dark:text-white'}`}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     toggleCart(artist.name);

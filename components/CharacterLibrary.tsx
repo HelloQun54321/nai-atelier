@@ -16,7 +16,7 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { Dice5, Menu, Plus, Settings2, Tag, UserRound } from 'lucide-react';
-import { ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DanbooruCover } from './DanbooruCover';
 import type { DanbooruCoverCandidate } from '../services/danbooruService';
 import { TagCoverActions } from './TagCoverActions';
@@ -406,8 +406,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
            <div className="relative ml-auto flex flex-none items-center justify-end gap-2">
              <ToolbarButton tone="primary" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4" />自定义角色</ToolbarButton>
              <ToolbarButton onClick={() => void drawGacha()} disabled={isGachaLoading}><Dice5 className="h-4 w-4" />{gachaCards ? '再抽一批' : '随机抽卡'}</ToolbarButton>
-             {gachaCards && <button onClick={() => setGachaCards(null)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:text-gray-200">返回目录</button>}
-             <button type="button" aria-label="抽卡设置" title="抽卡设置" onClick={() => setShowDesktopGachaSettings(value => !value)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><Settings2 className="h-4 w-4" /></button>
+             {gachaCards && <ToolbarButton onClick={() => setGachaCards(null)}>返回目录</ToolbarButton>}
+             <IconButton label="抽卡设置" onClick={() => setShowDesktopGachaSettings(value => !value)}><Settings2 /></IconButton>
              {showDesktopGachaSettings && <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-xl border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-800">
                <div className="mb-3 text-sm font-bold text-gray-800 dark:text-white">随机抽卡设置</div>
                <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">抽卡范围<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option></select></label>
@@ -454,7 +454,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             const favorite = favorites.has(card.key);
             const generating = generatingKey === card.key;
             return (
-              <article key={card.key} className="mobile-gallery-item group flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition hover:border-indigo-400 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800">
+              <article key={card.key} className="mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border border-gray-200 bg-white transition-colors hover:border-indigo-500 dark:border-gray-700 dark:bg-gray-800">
                 <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': '2 / 3' } as React.CSSProperties}>
                   {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} onCandidateChange={candidate => rememberCoverCandidate(card.key, candidate)} /> : card.previewImage ? <button className="h-full w-full" onClick={() => setLightbox(card)}><LazyImage src={card.previewImage} alt={card.name} /></button> : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
@@ -500,7 +500,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       </div>
 
        {lightbox?.previewImage && (
-         <div className="fixed inset-0 z-[1200] hidden items-center justify-center bg-black/90 p-4 backdrop-blur-sm md:flex" onClick={() => setLightbox(null)}>
+         <div className="ui-backdrop-enter fixed inset-0 z-[1200] hidden items-center justify-center bg-black/90 p-4 backdrop-blur-sm md:flex" onClick={() => setLightbox(null)}>
           <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" onClick={event => event.stopPropagation()} />
           <div className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded bg-black/65 px-4 py-2 text-center text-sm text-white">{lightbox.name}{lightbox.tagName ? ` · ${lightbox.tagName}` : ''}</div>
           <button onClick={() => setLightbox(null)} className="absolute right-5 top-5 text-3xl text-white">×</button>
@@ -525,8 +525,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
        </MobileDetailView>
 
       {showCreate && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setShowCreate(false)}>
-          <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-800" onClick={event => event.stopPropagation()}>
+        <div className="ui-backdrop-enter fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setShowCreate(false)}>
+          <div className="ui-modal-enter w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900" onClick={event => event.stopPropagation()}>
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">新建自定义还原角色</h2>
             <p className="mt-1 text-sm text-gray-500">适合 NovelAI 没有收录角色 Tag，需要手工组合外貌与服装的角色。</p>
             <input autoFocus value={newName} onChange={event => setNewName(event.target.value)} placeholder="角色名称，例如：穆宁雪" className="mt-5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />

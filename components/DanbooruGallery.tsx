@@ -183,7 +183,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid grid gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5`} style={mobileGalleryStyle(imageDisplay)}>
               {items.map(post => {
                 const title = post.tags.character[0] || post.tags.artist[0] || `#${post.id}`;
-                return <article key={post.id} className={`media-card group overflow-hidden rounded-2xl border bg-white dark:bg-gray-950 ${selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 dark:border-gray-800'}`}>
+                return <article key={post.id} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors dark:bg-gray-800 ${selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
                   <button type="button" onClick={() => setSelectedId(post.id)} className="block w-full text-left">
                     <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': '3 / 4' } as React.CSSProperties}>
                       <SmartImage src={post.sampleUrl} alt={title.replaceAll('_', ' ')} thumbnailVariant="thumb-640" />
