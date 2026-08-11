@@ -26,11 +26,12 @@ export interface DanbooruSearchResult {
   hasMore: boolean;
 }
 
-const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v8';
+const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v9';
 const COVER_CACHE_TTL = 14 * 24 * 60 * 60 * 1000;
 const COVER_CACHE_LIMIT = 150;
 const COVER_REQUEST_INTERVAL_MS = 300;
-const COVER_CANDIDATE_LIMIT = 24;
+// Keep the cached first screen compact. The cover component loads later pages on demand.
+const COVER_CACHE_CANDIDATE_LIMIT = 24;
 
 export interface DanbooruCoverCandidate {
   id: number;
@@ -43,6 +44,7 @@ export interface DanbooruCoverCandidate {
 export interface DanbooruCoverSet {
   representative: DanbooruCoverCandidate | null;
   candidates: DanbooruCoverCandidate[];
+  hasMore: boolean;
 }
 
 type StoredCover = DanbooruCoverSet & { updatedAt: number };
@@ -151,6 +153,12 @@ const toCoverCandidate = (post: DanbooruPost): DanbooruCoverCandidate => ({
   postUrl: post.postUrl,
 });
 
+const candidatePostsFor = (items: DanbooruPost[], normalizedTag: string, kind: 'artist' | 'character') => (
+  kind === 'character'
+    ? getCharacterCandidates(items, normalizedTag)
+    : items.filter(post => post.tags.artist.some(value => value.toLowerCase() === normalizedTag))
+);
+
 const getCharacterCandidates = (items: DanbooruPost[], normalizedTag: string) => {
   const exact = items.filter(post => post.tags.character.some(value => value.toLowerCase() === normalizedTag));
   const targetIsVariant = CHARACTER_VARIANT_NAME.test(normalizedTag);
@@ -196,11 +204,11 @@ const chooseCover = (items: DanbooruPost[], tag: string, kind: 'artist' | 'chara
 
 const getCoverSet = (tag: string, kind: 'artist' | 'character'): Promise<DanbooruCoverSet> => {
   const normalizedTag = tag.trim().toLowerCase().replaceAll(' ', '_');
-  if (!normalizedTag) return Promise.resolve({ representative: null, candidates: [] });
+  if (!normalizedTag) return Promise.resolve({ representative: null, candidates: [], hasMore: false });
   const key = `${kind}:${normalizedTag}`;
   const cached = readCoverCache()[key];
   if (cached && Date.now() - cached.updatedAt < COVER_CACHE_TTL) {
-    return Promise.resolve({ representative: cached.representative || null, candidates: cached.candidates || [] });
+    return Promise.resolve({ representative: cached.representative || null, candidates: cached.candidates || [], hasMore: Boolean(cached.hasMore) });
   }
   const pending = coverRequests.get(key);
   if (pending) return pending;
@@ -208,12 +216,11 @@ const getCoverSet = (tag: string, kind: 'artist' | 'character'): Promise<Danboor
   const request = scheduleCoverRequest(() => search({ query: `${normalizedTag} order:score`, limit: kind === 'character' ? 160 : 20 }))
     .then(result => {
       const representativePost = chooseCover(result.items, normalizedTag, kind);
-      const candidatePosts = kind === 'character'
-        ? getCharacterCandidates(result.items, normalizedTag)
-        : result.items.filter(post => post.tags.artist.some(value => value.toLowerCase() === normalizedTag));
+      const candidatePosts = candidatePostsFor(result.items, normalizedTag, kind);
       const coverSet: DanbooruCoverSet = {
         representative: representativePost ? toCoverCandidate(representativePost) : null,
-        candidates: [...candidatePosts].sort((left, right) => right.score - left.score).slice(0, COVER_CANDIDATE_LIMIT).map(toCoverCandidate),
+        candidates: [...candidatePosts].sort((left, right) => right.score - left.score).slice(0, COVER_CACHE_CANDIDATE_LIMIT).map(toCoverCandidate),
+        hasMore: result.hasMore,
       };
       readCoverCache()[key] = { ...coverSet, updatedAt: Date.now() };
       persistCoverCache();
@@ -224,6 +231,19 @@ const getCoverSet = (tag: string, kind: 'artist' | 'character'): Promise<Danboor
   return request;
 };
 
+/** Returns one source page of every eligible exact-tag result, ordered by score. */
+const getCoverCandidatePage = async (tag: string, kind: 'artist' | 'character', page: number) => {
+  const normalizedTag = tag.trim().toLowerCase().replaceAll(' ', '_');
+  if (!normalizedTag) return { candidates: [], hasMore: false };
+  const result = await scheduleCoverRequest(() => search({ query: `${normalizedTag} order:score`, page, limit: 200 }));
+  return {
+    candidates: candidatePostsFor(result.items, normalizedTag, kind)
+      .sort((left, right) => right.score - left.score)
+      .map(toCoverCandidate),
+    hasMore: result.hasMore,
+  };
+};
+
 const getCover = async (tag: string, kind: 'artist' | 'character') => (await getCoverSet(tag, kind)).representative;
 
 export const clearDanbooruCoverCache = () => {
@@ -231,4 +251,4 @@ export const clearDanbooruCoverCache = () => {
   localStorage.removeItem(COVER_CACHE_KEY);
 };
 
-export const danbooruService = { search, getCover, getCoverSet };
+export const danbooruService = { search, getCover, getCoverSet, getCoverCandidatePage };
