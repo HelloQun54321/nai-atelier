@@ -14,6 +14,7 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { Bot, ClipboardList, Clock3, Dice5, Download, Grid3X3, Heart, List, LoaderCircle, Menu, RefreshCw, Settings2 } from 'lucide-react';
 import { ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DanbooruCover } from './DanbooruCover';
+import type { DanbooruCoverCandidate } from '../services/danbooruService';
 
 interface CartItem {
     name: string;
@@ -397,6 +398,25 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         setIsLoading(true);
         await onRefresh();
         setIsLoading(false);
+    };
+
+    const setDanbooruCover = async (artist: Artist, candidate: DanbooruCoverCandidate) => {
+        try {
+            // The server downloads the chosen public image into project storage,
+            // so this remains the cover even if Danbooru's CDN later changes it.
+            await api.post('/artists', {
+                id: artist.id,
+                name: artist.name,
+                imageUrl: candidate.sampleUrl,
+                previewUrl: artist.previewUrl,
+                benchmarks: artist.benchmarks || [],
+            });
+            await onRefresh();
+            notify(`已将当前热门图设为“${artist.chineseName || artist.name}”的封面`);
+        } catch (error) {
+            notify(`设置封面失败：${error instanceof Error ? error.message : '未知错误'}`, 'error');
+            throw error;
+        }
     };
 
     const addToHistory = (text: string) => {
@@ -1263,7 +1283,15 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                     onClick={() => toggleCart(artist.name)}
                                 >
                                     <div className="mobile-gallery-frame md:aspect-[2/3] relative overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': '2 / 3' } as React.CSSProperties}>
-                                        {displayImg && !isBenchmarkMissing ? (
+                                        {viewMode === 'original' ? (
+                                            <DanbooruCover
+                                                tag={artist.name}
+                                                kind="artist"
+                                                alt={artist.chineseName || artist.name}
+                                                fixedSrc={displayImg}
+                                                onSetCover={candidate => setDanbooruCover(artist, candidate)}
+                                            />
+                                        ) : displayImg && !isBenchmarkMissing ? (
                                             <LazyImage src={displayImg} alt={artist.name} />
                                         ) : <DanbooruCover tag={artist.name} kind="artist" alt={artist.chineseName || artist.name} />}
                                         {(isTaskPending || isTaskRunning || isTaskFailed) && (

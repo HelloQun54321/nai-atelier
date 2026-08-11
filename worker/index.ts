@@ -4642,6 +4642,14 @@ export default {
                   const newUrl = await processImageUpload(env, updates.previewImage, 'covers', id, currentUser);
                   updates.previewImage = newUrl;
              } catch (e: any) { return error(e.message, 413); }
+        } else if (updates.previewImage && updates.previewImage.startsWith('http')) {
+             try {
+                  const previewSource = new URL(updates.previewImage);
+                  if (previewSource.protocol !== 'https:' || previewSource.hostname.toLowerCase() !== 'cdn.donmai.us') {
+                    return error('角色 Tag 外部封面仅允许 Danbooru 图片地址', 422);
+                  }
+                  updates.previewImage = await fetchAndUploadImage(env, updates.previewImage, 'covers', id, currentUser);
+             } catch (e: any) { return error(e.message, 422); }
         }
 
         const fields = []; const values = [];

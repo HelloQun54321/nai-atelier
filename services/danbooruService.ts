@@ -26,13 +26,28 @@ export interface DanbooruSearchResult {
   hasMore: boolean;
 }
 
-const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v7';
+const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v8';
 const COVER_CACHE_TTL = 14 * 24 * 60 * 60 * 1000;
-const COVER_CACHE_LIMIT = 600;
+const COVER_CACHE_LIMIT = 150;
 const COVER_REQUEST_INTERVAL_MS = 300;
-type StoredCover = { post: DanbooruPost | null; updatedAt: number };
+const COVER_CANDIDATE_LIMIT = 24;
+
+export interface DanbooruCoverCandidate {
+  id: number;
+  score: number;
+  previewUrl: string;
+  sampleUrl: string;
+  postUrl: string;
+}
+
+export interface DanbooruCoverSet {
+  representative: DanbooruCoverCandidate | null;
+  candidates: DanbooruCoverCandidate[];
+}
+
+type StoredCover = DanbooruCoverSet & { updatedAt: number };
 let coverCache: Record<string, StoredCover> | null = null;
-const coverRequests = new Map<string, Promise<DanbooruPost | null>>();
+const coverRequests = new Map<string, Promise<DanbooruCoverSet>>();
 let coverRequestQueue: Promise<void> = Promise.resolve();
 let nextCoverRequestAt = 0;
 
@@ -128,11 +143,16 @@ const CHARACTER_SIGNATURE_IGNORED_TAGS = new Set([
   'simple_background', 'white_background',
 ]);
 
-const chooseCover = (items: DanbooruPost[], tag: string, kind: 'artist' | 'character') => {
-  const normalizedTag = tag.toLowerCase().replaceAll(' ', '_');
-  const exact = items.filter(post => post.tags[kind].some(value => value.toLowerCase() === normalizedTag));
-  if (kind === 'artist') return exact[0] || null;
+const toCoverCandidate = (post: DanbooruPost): DanbooruCoverCandidate => ({
+  id: post.id,
+  score: post.score,
+  previewUrl: post.previewUrl,
+  sampleUrl: post.sampleUrl,
+  postUrl: post.postUrl,
+});
 
+const getCharacterCandidates = (items: DanbooruPost[], normalizedTag: string) => {
+  const exact = items.filter(post => post.tags.character.some(value => value.toLowerCase() === normalizedTag));
   const targetIsVariant = CHARACTER_VARIANT_NAME.test(normalizedTag);
   const representative = exact.filter(post => (
     post.tags.general.includes('solo')
@@ -144,7 +164,15 @@ const chooseCover = (items: DanbooruPost[], tag: string, kind: 'artist' | 'chara
     && !post.tags.character.some(value => value !== normalizedTag && CHARACTER_VARIANT_NAME.test(value))
   ));
   const canonical = representative.filter(post => post.tags.character.length === 1);
-  const candidates = canonical.length ? canonical : representative;
+  return canonical.length ? canonical : representative;
+};
+
+const chooseCover = (items: DanbooruPost[], tag: string, kind: 'artist' | 'character') => {
+  const normalizedTag = tag.toLowerCase().replaceAll(' ', '_');
+  const exact = items.filter(post => post.tags[kind].some(value => value.toLowerCase() === normalizedTag));
+  if (kind === 'artist') return exact[0] || null;
+
+  const candidates = getCharacterCandidates(items, normalizedTag);
   const tagFrequency = new Map<string, number>();
   for (const post of candidates) {
     for (const value of new Set(post.tags.general)) {
@@ -166,30 +194,41 @@ const chooseCover = (items: DanbooruPost[], tag: string, kind: 'artist' | 'chara
   return candidates.sort((left, right) => representativeScore(right) - representativeScore(left))[0] || null;
 };
 
-const getCover = (tag: string, kind: 'artist' | 'character'): Promise<DanbooruPost | null> => {
+const getCoverSet = (tag: string, kind: 'artist' | 'character'): Promise<DanbooruCoverSet> => {
   const normalizedTag = tag.trim().toLowerCase().replaceAll(' ', '_');
-  if (!normalizedTag) return Promise.resolve(null);
+  if (!normalizedTag) return Promise.resolve({ representative: null, candidates: [] });
   const key = `${kind}:${normalizedTag}`;
   const cached = readCoverCache()[key];
-  if (cached && Date.now() - cached.updatedAt < COVER_CACHE_TTL) return Promise.resolve(cached.post);
+  if (cached && Date.now() - cached.updatedAt < COVER_CACHE_TTL) {
+    return Promise.resolve({ representative: cached.representative || null, candidates: cached.candidates || [] });
+  }
   const pending = coverRequests.get(key);
   if (pending) return pending;
 
   const request = scheduleCoverRequest(() => search({ query: `${normalizedTag} order:score`, limit: kind === 'character' ? 160 : 20 }))
     .then(result => {
-      const post = chooseCover(result.items, normalizedTag, kind);
-      readCoverCache()[key] = { post, updatedAt: Date.now() };
+      const representativePost = chooseCover(result.items, normalizedTag, kind);
+      const candidatePosts = kind === 'character'
+        ? getCharacterCandidates(result.items, normalizedTag)
+        : result.items.filter(post => post.tags.artist.some(value => value.toLowerCase() === normalizedTag));
+      const coverSet: DanbooruCoverSet = {
+        representative: representativePost ? toCoverCandidate(representativePost) : null,
+        candidates: [...candidatePosts].sort((left, right) => right.score - left.score).slice(0, COVER_CANDIDATE_LIMIT).map(toCoverCandidate),
+      };
+      readCoverCache()[key] = { ...coverSet, updatedAt: Date.now() };
       persistCoverCache();
-      return post;
+      return coverSet;
     })
     .finally(() => coverRequests.delete(key));
   coverRequests.set(key, request);
   return request;
 };
 
+const getCover = async (tag: string, kind: 'artist' | 'character') => (await getCoverSet(tag, kind)).representative;
+
 export const clearDanbooruCoverCache = () => {
   coverCache = {};
   localStorage.removeItem(COVER_CACHE_KEY);
 };
 
-export const danbooruService = { search, getCover };
+export const danbooruService = { search, getCover, getCoverSet };

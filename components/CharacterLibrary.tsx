@@ -18,6 +18,7 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { Dice5, Heart, Menu, Plus, Settings2, Tag, UserRound } from 'lucide-react';
 import { ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DanbooruCover } from './DanbooruCover';
+import type { DanbooruCoverCandidate } from '../services/danbooruService';
 
 const CATALOG_MARKER = '__character_catalog__';
 const getDanbooruPostsUrl = (tagName: string) =>
@@ -297,6 +298,30 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     }
   };
 
+  const setDanbooruCover = async (card: CharacterCard, candidate: DanbooruCoverCandidate) => {
+    if (card.kind !== 'catalog' || !card.tagName) return;
+    try {
+      let chainId = card.chain?.id;
+      if (!chainId) {
+        chainId = await db.createChain(card.chinese || card.tagName, `角色 Tag：${card.tagName}`, undefined, 'character');
+        await db.updateChain(chainId, {
+          basePrompt: card.tagName,
+          negativePrompt: '',
+          tags: [CATALOG_MARKER],
+          variableValues: { subject: '' },
+          params: DEFAULT_PARAMS,
+        });
+      }
+      // The server copies this public Danbooru image into the project's own storage.
+      await db.updateChain(chainId, { previewImage: candidate.sampleUrl });
+      await onRefresh();
+      notify(`已将当前热门图设为“${card.name}”的封面`);
+    } catch (error) {
+      notify(`设置封面失败：${error instanceof Error ? error.message : '未知错误'}`, 'error');
+      throw error;
+    }
+  };
+
   const drawIndex = (total: number) => Math.random() < 0.7
     ? Math.floor(Math.random() * Math.min(total, 20_000))
     : Math.floor(Math.random() * total);
@@ -425,7 +450,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             return (
               <article key={card.key} className="mobile-gallery-item group flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition hover:border-indigo-400 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800">
                 <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': '2 / 3' } as React.CSSProperties}>
-                  {card.previewImage ? <button className="h-full w-full" onClick={() => setLightbox(card)}><LazyImage src={card.previewImage} alt={card.name} /></button> : card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} /> : (
+                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} onSetCover={candidate => setDanbooruCover(card, candidate)} /> : card.previewImage ? <button className="h-full w-full" onClick={() => setLightbox(card)}><LazyImage src={card.previewImage} alt={card.name} /></button> : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
                       {card.kind === 'catalog' ? <Tag className="h-8 w-8" /> : <UserRound className="h-8 w-8" />}
                       <span className="mt-2 text-[11px]">尚未生成本地预览</span>
