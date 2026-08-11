@@ -2,11 +2,14 @@ import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from 'react
 import { MobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 
 /**
- * ChainList 专用“最短列分配”瀑布流。
+ * 通用“最短列分配”瀑布流（画师串/角色串、生成历史共用）。
  *
  * 不再依赖 CSS `column-count` 的自动平衡：CSS Multi-column 在小数量、大比例差异的
  * 组合下会只使用前 N-1 列，把第 N 列留成整块空白。这里改为显式生成等宽列容器，
  * 逐张卡片放入当前预计高度最小的列，从根源上保证每一列都被使用。
+ *
+ * 布局保持 requestedColumns 条固定宽度轨道；只渲染 min(requestedColumns, items.length)
+ * 个非空列。数据少于列数时允许右侧轨道留空，以保持不同分组的卡片宽度一致。
  */
 
 /**
@@ -51,7 +54,8 @@ export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences
 /**
  * 按最短列分配卡片。保持 items 原有顺序，逐张放入当前预计高度最小的列；
  * 高度相同时取索引最小的列，保证最初的 N 张卡片自然从左到右各占一列。
- * 返回的列数为 min(columnCount, items.length)，不会生成空列。
+ * 返回 usedColumns = min(columnCount, items.length) 个非空列（不生成空列）；
+ * 网格轨道数与列宽由调用方按 requestedColumns 决定。
  */
 export const computeShortestColumnAssignment = <T,>(
   items: readonly T[],
@@ -77,7 +81,7 @@ export const computeShortestColumnAssignment = <T,>(
 interface ShortestColumnMasonryProps<T> {
   /** 已排好序的展示数据，布局层不重新筛选或排序。 */
   items: readonly T[];
-  /** 请求列数（窗口/断点解析结果），组件内会再与卡片数量取 min。 */
+  /** 请求列数（用户设置/窗口断点解析结果）：决定网格轨道数与列宽，不随卡片数量变化。 */
   columns: number;
   getItemKey: (item: T) => string;
   /** 卡片预计高度（px）。columnWidth 为当前列实际宽度。 */
@@ -115,22 +119,25 @@ export const ShortestColumnMasonry = <T,>({
     return () => observer.disconnect();
   }, []);
 
-  const effectiveColumns = Math.max(0, Math.min(columns, items.length));
+  // 请求列数：决定网格轨道数与列宽，防御 NaN/Infinity/<1 后至少为 1
+  const requestedColumns = Number.isFinite(columns) ? Math.max(1, Math.floor(columns)) : 1;
+  // 使用列数：实际需要放入内容的列数，只用于分列数组
+  const usedColumns = Math.min(requestedColumns, items.length);
+
+  // 列宽必须按 requestedColumns 计算：少图分组不能通过减少轨道数来放大卡片
   const columnWidth =
-    containerWidth > 0 && effectiveColumns > 0
-      ? (containerWidth - (effectiveColumns - 1) * gap) / effectiveColumns
-      : 0;
+    containerWidth > 0 ? (containerWidth - (requestedColumns - 1) * gap) / requestedColumns : 0;
 
   const layout = useMemo(() => {
-    if (effectiveColumns === 0 || columnWidth <= 0 || items.length === 0) return [] as T[][];
-    return computeShortestColumnAssignment(items, effectiveColumns, estimateItemHeight, columnWidth);
-  }, [items, effectiveColumns, estimateItemHeight, columnWidth]);
+    if (usedColumns === 0 || columnWidth <= 0 || items.length === 0) return [] as T[][];
+    return computeShortestColumnAssignment(items, usedColumns, estimateItemHeight, columnWidth);
+  }, [items, usedColumns, estimateItemHeight, columnWidth]);
 
   return (
     <div
       ref={containerRef}
       className={className ? `chain-masonry ${className}` : 'chain-masonry'}
-      style={{ gridTemplateColumns: `repeat(${effectiveColumns}, minmax(0, 1fr))`, gap: `${gap}px` }}
+      style={{ gridTemplateColumns: `repeat(${requestedColumns}, minmax(0, 1fr))`, gap: `${gap}px` }}
     >
       {layout.map((column, index) => (
         <div key={index} className="chain-masonry-column">
