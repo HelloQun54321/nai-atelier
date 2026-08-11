@@ -20,7 +20,7 @@ import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { estimateV45GenerationCost } from '../services/anlasBudget';
-import { ArrowLeft, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, Sparkles, UserRound, X } from 'lucide-react';
+import { ArrowLeft, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, UserRound, X } from 'lucide-react';
 
 const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
 
@@ -1405,34 +1405,23 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     {canEdit && (
                         <button
                             type="button"
-                            onClick={() => setTaggerOpen(true)}
-                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
-                            title="图片反推 Tag"
-                            aria-label="图片反推 Tag"
-                        >
-                            <ImagePlus className="h-[18px] w-[18px] md:h-5 md:w-5" />
-                        </button>
-                    )}
-                    {canEdit && (
-                        <button
-                            type="button"
-                            onClick={() => window.dispatchEvent(new CustomEvent('nai-open-prompt-agent', { detail: { chainId: chain.id } }))}
-                            className="mobile-touch hidden h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40 md:flex"
-                            title="AI 生图 Agent"
-                            aria-label="打开 AI 生图 Agent"
-                        >
-                            <Sparkles className="h-5 w-5" />
-                        </button>
-                    )}
-                    {canEdit && (
-                        <button
-                            type="button"
                             onClick={() => setShowImportPreset(true)}
                             className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
                             title="引用预设"
                             aria-label="引用预设"
                         >
                             <Quote className="h-[18px] w-[18px] md:h-5 md:w-5" />
+                        </button>
+                    )}
+                    {canEdit && (
+                        <button
+                            type="button"
+                            onClick={() => setTaggerOpen(true)}
+                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
+                            title="图片反推 Tag"
+                            aria-label="图片反推 Tag"
+                        >
+                            <ImagePlus className="h-[18px] w-[18px] md:h-5 md:w-5" />
                         </button>
                     )}
                     {/* Fork / Save to Library Button */}

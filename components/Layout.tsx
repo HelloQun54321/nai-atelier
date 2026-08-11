@@ -101,11 +101,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       { id: 'playground', label: '实验室', icon: icons.lab },
     ] },
     { label: '资源库', items: [
-      { id: 'characters', label: '角色库', icon: icons.character },
+      { id: 'characters', label: '角色 Tag', icon: icons.character },
       { id: 'library', label: '画师 Tag', icon: icons.artist },
       { id: 'aitag', label: 'AITag', icon: icons.tag },
       { id: 'danbooru', label: 'Danbooru', icon: icons.danbooru },
-      { id: 'inspiration', label: '灵感', icon: icons.inspiration },
+      { id: 'inspiration', label: '灵感库', icon: icons.inspiration },
     ] },
     { label: '记录', items: [
       { id: 'history', label: '历史', icon: icons.history },
