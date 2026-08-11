@@ -220,7 +220,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
         <div className="flex items-center justify-between border-b border-gray-200 bg-white/60 px-3 py-3 dark:border-gray-800 dark:bg-gray-900/40 md:px-5"><div><h1 className="text-base font-black text-gray-950 dark:text-white">{activeTitle}</h1><p className="mt-0.5 text-xs text-gray-400">{filtered.length} 条灵感 · {sort === 'created' ? '最近收藏' : sort === 'used' ? '最近使用' : sort === 'popular' ? '使用最多' : '评分最高'}</p></div>{(search || activeFilterCount > 0) && <button type="button" onClick={() => { setSearch(''); resetFilters(); }} className="mobile-touch rounded-lg px-2 text-xs font-bold text-indigo-600 dark:text-indigo-400">清除条件</button>}</div>
 
-        {filtered.length > 0 ? <div className={`${mobileGalleryClassName(imageDisplay)} p-3 md:p-5`} style={mobileGalleryStyle(imageDisplay, filtered.length)}>
+        {filtered.length > 0 ? <div className={`${mobileGalleryClassName(imageDisplay)} p-3 md:p-5`} style={mobileGalleryStyle(imageDisplay)}>
           {filtered.map(item => {
             const SourceIcon = sourceIcon(item.sourceType); const selected = selectedIds.has(item.id);
             return <MediaCardShell key={item.id} selected={selected} className="group relative flex flex-col">

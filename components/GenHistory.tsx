@@ -908,7 +908,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                               <h2 className="text-sm font-bold text-gray-700 dark:text-gray-200">{group.label}</h2>
                               <span className="text-xs text-gray-400">{group.items.length} 张</span>
                             </div>
-                            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-history-grid`} style={mobileGalleryStyle(imageDisplay, group.items.length)}>
+                            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-history-grid`} style={mobileGalleryStyle(imageDisplay)}>
                             {group.items.map(item => (
                                 <div
                                     key={item.id}

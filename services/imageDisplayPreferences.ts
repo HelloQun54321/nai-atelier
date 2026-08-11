@@ -48,13 +48,8 @@ export const useMobileImageDisplayPreferences = () => {
 export const mobileGalleryClassName = (preferences: MobileImageDisplayPreferences) =>
   `mobile-gallery mobile-gallery--${preferences.layout} ${preferences.columns === 'auto' ? 'mobile-gallery--auto' : ''}`;
 
-/**
- * 列数：移动端注入 --mobile-gallery-cols-setting（1/2/3），桌面端注入 --mobile-gallery-cols-desktop（2-5）；
- * auto 不注入，由 CSS 自适应。actualCount 为当前可见卡片数：传入后通过 --mobile-gallery-cols-cap
- * 把实际列数封顶为 max(1, min(设定列数, 卡片数))，避免卡片少时（如收藏筛选）出现整列空白。
- */
-export const mobileGalleryStyle = (preferences: MobileImageDisplayPreferences, actualCount?: number) => ({
+/** 列数：移动端注入 --mobile-gallery-cols-setting（1/2/3），桌面端注入 --mobile-gallery-cols-desktop（2-5）；auto 不注入，由 CSS 自适应。 */
+export const mobileGalleryStyle = (preferences: MobileImageDisplayPreferences) => ({
   ...(preferences.columns === 'auto' ? {} : { '--mobile-gallery-cols-setting': preferences.columns }),
   ...(preferences.desktopColumns === 'auto' ? {} : { '--mobile-gallery-cols-desktop': preferences.desktopColumns }),
-  ...(actualCount && actualCount > 0 ? { '--mobile-gallery-cols-cap': actualCount } : {}),
 } as CSSProperties);

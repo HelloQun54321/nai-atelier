@@ -975,7 +975,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
               <div className="text-sm">{cacheNeedsMoreData ? '本地没有这一页，且当前无法联网获取' : '没有匹配结果'}</div>
             </div>
           ) : (
-            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-aitag-grid`} style={mobileGalleryStyle(imageDisplay, visibleItems.length)}>
+            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-aitag-grid`} style={mobileGalleryStyle(imageDisplay)}>
               {visibleItems.map(work => {
                 const type = getAitagType(work);
                 const isSelected = selectedId === work.id;
