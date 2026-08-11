@@ -973,13 +973,21 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                 </div>
                 {(isProcessing || taskQueue.length > 0) && <button onClick={() => setShowLogs(true)} className="mobile-touch flex items-center justify-between rounded-xl bg-indigo-50 px-3 text-xs font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 md:hidden"><span>画师预览任务</span><span>等待 {taskQueue.length}{failedTasks.length ? ` · 失败 ${failedTasks.length}` : ''}</span></button>}
 
-                <div className="workspace-toolbar hidden gap-2 w-full md:flex">
-                    {/* Refresh locally persisted artists */}
-                    {canManageArtists && (
-                        <IconButton label="刷新画师列表" onClick={handleRefresh} disabled={isLoading}>
-                            <RefreshCw className={isLoading ? 'animate-spin' : ''} />
-                        </IconButton>
-                    )}
+                <div className="workspace-toolbar hidden items-center gap-2 md:flex">
+                    {/* Primary search */}
+                    <div className="relative min-w-0 flex-1">
+                        <ToolbarSearch
+                            type="text"
+                            placeholder="搜索全部画师 Tag（支持中文）..."
+                            className="pr-12"
+                            containerClassName="md:max-w-none!"
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                        />
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">
+                            {isCatalogLoading ? <span className="inline-block h-3 w-3 animate-spin rounded-full border border-gray-400 border-t-transparent" /> : filteredArtists.length.toLocaleString('zh-CN')}
+                        </div>
+                    </div>
 
                     {/* Layout Toggle */}
                     <div className="flex flex-none items-center gap-1">
@@ -1000,7 +1008,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     </div>
 
                     {/* Slider for Grid/List */}
-                    <div className="flex items-center gap-2 flex-1 md:flex-none md:w-36 px-2 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-200 dark:border-gray-800">
+                    <div className="flex items-center gap-2 flex-none md:w-36 px-2 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-200 dark:border-gray-800">
                         <span className="text-xs text-gray-400 font-mono">
                             {layoutMode === 'grid' ? `列:${gridCols}` : `宽:${listImgWidth}`}
                         </span>
@@ -1025,70 +1033,19 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                         )}
                     </div>
 
-                    {/* Search */}
-                    <div className="relative w-[26rem] flex-none">
-                        <ToolbarSearch
-                            type="text"
-                            placeholder="搜索全部画师 Tag（支持中文）..."
-                            className="pr-12"
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                        />
-                        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">
-                            {isCatalogLoading ? <span className="inline-block h-3 w-3 animate-spin rounded-full border border-gray-400 border-t-transparent" /> : filteredArtists.length.toLocaleString('zh-CN')}
-                        </div>
-                    </div>
+                    {/* Refresh locally persisted artists */}
+                    {canManageArtists && (
+                        <IconButton label="刷新画师列表" onClick={handleRefresh} disabled={isLoading}>
+                            <RefreshCw className={isLoading ? 'animate-spin' : ''} />
+                        </IconButton>
+                    )}
                 </div>
 
-                <div className="hidden min-w-0 items-center justify-between gap-2 md:flex">
-                    <div className="hidden min-w-0 truncate text-xs text-gray-500 dark:text-gray-400 2xl:block" title="画师名称来自每日更新的中英对照 Tag 词库；预览图保存在本地">
+                <div className="hidden min-w-0 items-center gap-2 md:flex">
+                    <div className="hidden min-w-0 truncate text-xs text-gray-400 dark:text-gray-500 2xl:block" title="画师名称来自每日更新的中英对照 Tag 词库；预览图保存在本地">
                         {searchTerm.trim() ? '搜索结果' : gachaArtists ? '抽卡结果' : '当前显示'} {filteredArtists.length.toLocaleString('zh-CN')}
                         {' · '}完整目录 {artistCatalogCount.toLocaleString('zh-CN')}
                         {' · '}本地预览 {artistsData?.length || 0}
-                    </div>
-                    <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-900">
-                        <select
-                            value={gachaMode}
-                            onChange={event => setGachaMode(event.target.value as ArtistGachaMode)}
-                            className="rounded-md bg-transparent px-1.5 py-1 text-xs text-gray-600 outline-none dark:text-gray-300"
-                            aria-label="抽卡模式"
-                            title="选择画师抽卡模式"
-                        >
-                            <option value="mixed">惊喜混合</option>
-                            <option value="uniform">完全随机</option>
-                            <option value="popular">热门画师</option>
-                        </select>
-                        <select
-                            value={gachaCount}
-                            onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)}
-                            className="rounded-md bg-transparent px-1 py-1 text-xs text-gray-600 outline-none dark:text-gray-300"
-                            aria-label="抽卡数量"
-                            title="选择每批抽取数量"
-                        >
-                            <option value={6}>6 位</option>
-                            <option value={12}>12 位</option>
-                            <option value={24}>24 位</option>
-                        </select>
-                        <button
-                            type="button"
-                            onClick={() => void drawGacha()}
-                            disabled={isGachaLoading || artistCatalogCount <= 0}
-                            className="flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:cursor-wait disabled:opacity-60"
-                            title="从完整画师目录随机抽取，最近五批尽量不重复"
-                        >
-                            {isGachaLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Dice5 className="h-3.5 w-3.5" />}
-                            {gachaArtists ? '再抽一批' : '随机抽卡'}
-                        </button>
-                        {gachaArtists && (
-                            <button
-                                type="button"
-                                onClick={returnToCatalog}
-                                className="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800"
-                                title="返回抽卡前的目录位置"
-                            >
-                                返回目录
-                            </button>
-                        )}
                     </div>
                     <select
                         value={artistSort}
@@ -1146,8 +1103,55 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                         )}
                     </div>
 
+                    {/* Gacha + Actions (right cluster) */}
+                    <div className="ml-auto flex items-center gap-2">
+                        <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-900">
+                            <select
+                                value={gachaMode}
+                                onChange={event => setGachaMode(event.target.value as ArtistGachaMode)}
+                                className="rounded-md bg-transparent px-1.5 py-1 text-xs text-gray-600 outline-none dark:text-gray-300"
+                                aria-label="抽卡模式"
+                                title="选择画师抽卡模式"
+                            >
+                                <option value="mixed">惊喜混合</option>
+                                <option value="uniform">完全随机</option>
+                                <option value="popular">热门画师</option>
+                            </select>
+                            <select
+                                value={gachaCount}
+                                onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)}
+                                className="rounded-md bg-transparent px-1 py-1 text-xs text-gray-600 outline-none dark:text-gray-300"
+                                aria-label="抽卡数量"
+                                title="选择每批抽取数量"
+                            >
+                                <option value={6}>6 位</option>
+                                <option value={12}>12 位</option>
+                                <option value={24}>24 位</option>
+                            </select>
+                            <button
+                                type="button"
+                                onClick={() => void drawGacha()}
+                                disabled={isGachaLoading || artistCatalogCount <= 0}
+                                className="flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:cursor-wait disabled:opacity-60"
+                                title="从完整画师目录随机抽取，最近五批尽量不重复"
+                            >
+                                {isGachaLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Dice5 className="h-3.5 w-3.5" />}
+                                {gachaArtists ? '再抽一批' : '随机抽卡'}
+                            </button>
+                            {gachaArtists && (
+                                <button
+                                    type="button"
+                                    onClick={returnToCatalog}
+                                    className="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800"
+                                    title="返回抽卡前的目录位置"
+                                >
+                                    返回目录
+                                </button>
+                            )}
+                        </div>
+
                     {/* Settings Group */}
-                    <div className="flex gap-2 items-center ml-auto">
+                    <div className="flex gap-2 items-center">
                         {/* Auto-Fill Button - Only show for admins */}
                         {isAdmin && (layoutMode === 'list' || viewMode === 'benchmark') && apiKey && (
                             <button
@@ -1217,6 +1221,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                         >
                             <Heart className={`h-4 w-4 ${showFavOnly ? 'fill-current' : ''}`} />
                         </button>
+                    </div>
                     </div>
                 </div>
             </WorkspaceToolbar>

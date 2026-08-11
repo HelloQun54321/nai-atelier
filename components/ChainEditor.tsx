@@ -9,6 +9,7 @@ import { api } from '../services/api';
 import { db } from '../services/dbService';
 import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
 import { ChainEditorParams } from './ChainEditorParams';
+import { isInternalChainTag } from './DesignSystem';
 import { ChainEditorPreview } from './ChainEditorPreview';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { ImageTaggerPanel } from './ImageTaggerPanel';
@@ -1964,7 +1965,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                               const filteredForTags = allChains.filter(c => (importTab === 'character' ? c.type === 'character' : (c.type === 'style' || !c.type)));
                               const allModalTags = Array.from(
                                 new Set(
-                                  filteredForTags.flatMap(chain => chain.tags || [])
+                                  filteredForTags.flatMap(chain => chain.tags || []).filter(tag => !isInternalChainTag(tag))
                                 )
                               ).sort();
 

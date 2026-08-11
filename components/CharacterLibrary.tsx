@@ -421,12 +421,12 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
           <select value={sort} disabled={Boolean(gachaCards)} onChange={event => setSort(event.target.value as CharacterDictionarySort)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white">
             <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">{searchTerm.trim() ? '相关性优先 · 名称 A → Z' : '名称 A → Z'}</option><option value="name-desc">{searchTerm.trim() ? '相关性优先 · 名称 Z → A' : '名称 Z → A'}</option>
           </select>
-           <div className="hidden items-center whitespace-nowrap rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-300 2xl:flex">
-             显示 {visibleCards.length.toLocaleString('zh-CN')} · 目录 {catalogTotal.toLocaleString('zh-CN')} · 自定义 {customChains.length}
-           </div>
            <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2 dark:border-gray-800 dark:bg-gray-900/50">
              <span className="text-xs text-gray-400">列数</span>
              <input type="range" min="3" max="10" value={gridColumns} onChange={event => { const value = Number(event.target.value); setGridColumns(value); localStorage.setItem('nai_character_grid_columns', String(value)); }} className="w-24 flex-none" />
+           </div>
+           <div className="ml-auto hidden items-center whitespace-nowrap text-xs text-gray-400 dark:text-gray-500 2xl:flex">
+             显示 {visibleCards.length.toLocaleString('zh-CN')} · 目录 {catalogTotal.toLocaleString('zh-CN')} · 自定义 {customChains.length}
            </div>
          </div>
        </WorkspaceToolbar>

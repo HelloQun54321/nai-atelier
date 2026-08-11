@@ -6,7 +6,7 @@ import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { SmartImage } from './SmartImage';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { Copy, Heart, Menu, Plus, RefreshCw, Trash2 } from 'lucide-react';
-import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isInternalChainTag } from './DesignSystem';
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -206,14 +206,17 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     setNewDesc('');
   };
 
-  // Memoize allTags extraction
+  // Memoize allTags extraction (only tags of the chains shown in this view, hiding internal markers)
   const allTags = useMemo(() => {
     return Array.from(
       new Set(
-        chains.flatMap(chain => chain.tags || [])
+        chains
+          .filter(c => c.type === type || (!c.type && type === 'style'))
+          .flatMap(chain => chain.tags || [])
+          .filter(tag => !isInternalChainTag(tag))
       )
     ).sort();
-  }, [chains]);
+  }, [chains, type]);
 
   // Filter chains by Type, search term, favorites, and selected tags
   const filteredChains = useMemo(() => {
@@ -261,9 +264,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
       <div className="mx-auto flex min-h-0 w-full max-w-[1920px] flex-1 flex-col">
         <WorkspaceToolbar>
-          <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={`搜索${title}`} containerClassName="md:w-[22rem] md:flex-none" />
+          <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={`搜索${title}`} containerClassName="md:w-[24rem] md:flex-none" />
           <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
-            {allTags.length > 0 && <div className="flex max-w-56 flex-nowrap gap-1 overflow-x-auto">{allTags.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`h-8 whitespace-nowrap rounded-full px-2.5 text-xs font-medium transition ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'}`}>{tag}</button>)}</div>}
             <select value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className="ml-auto h-10 w-36 rounded-xl border border-gray-200 bg-white px-2 text-xs text-gray-600 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option></select>
             <IconButton label="仅显示收藏" onClick={() => setFavOnly(value => !value)} className={favOnly ? '!border-indigo-200 !bg-indigo-50 !text-indigo-600 dark:!bg-indigo-950/40' : ''}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} /></IconButton>
             <IconButton label="刷新列表" onClick={onRefresh} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
@@ -272,6 +274,13 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           <MobileIconButton label="筛选与排序" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden"><Menu className="h-5 w-5" /></MobileIconButton>
           {!isGuest && <MobileIconButton label={createLabel} onClick={() => setIsModalOpen(true)} className="bg-indigo-600 text-white md:hidden"><Plus className="h-5 w-5" /></MobileIconButton>}
         </WorkspaceToolbar>
+
+        {allTags.length > 0 && (
+          <div className="hidden items-center gap-1.5 overflow-x-auto border-b border-gray-200 bg-gray-50/70 px-3 py-2 md:flex md:px-5 dark:border-gray-800 dark:bg-gray-900/50">
+            <span className="flex-none text-xs font-medium text-gray-400 dark:text-gray-500">标签筛选</span>
+            {allTags.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`h-7 flex-none whitespace-nowrap rounded-full px-2.5 text-xs font-medium transition ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{tag}</button>)}
+          </div>
+        )}
 
         <MobileBottomSheet open={showMobileFilters} title="筛选与排序" onClose={() => setShowMobileFilters(false)}>
           <div className="space-y-5">

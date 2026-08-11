@@ -1,6 +1,14 @@
 import React from 'react';
 import { Search } from 'lucide-react';
 
+/**
+ * 内部技术标记：双下划线约定（如 __character_catalog__）或来源/类型标记（NAI、aitag），
+ * 仅用于程序内部归类，不应面向用户展示。
+ */
+const INTERNAL_TAG_NAMES: Record<string, true> = { nai: true, aitag: true };
+export const isInternalChainTag = (tag: string): boolean =>
+  (tag.startsWith('__') && tag.endsWith('__')) || INTERNAL_TAG_NAMES[tag.toLowerCase()] === true;
+
 export const WorkspaceToolbar: React.FC<{
   children: React.ReactNode;
   className?: string;
