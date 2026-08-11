@@ -15,6 +15,7 @@ import { Bot, ClipboardList, Clock3, Dice5, Download, Grid3X3, Heart, List, Load
 import { ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DanbooruCover } from './DanbooruCover';
 import type { DanbooruCoverCandidate } from '../services/danbooruService';
+import { TagCoverActions } from './TagCoverActions';
 
 interface CartItem {
     name: string;
@@ -120,6 +121,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     const [searchTerm, setSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
     const [favorites, setFavorites] = useState<Set<string>>(new Set());
+    const [coverCandidates, setCoverCandidates] = useState<Record<string, DanbooruCoverCandidate | null>>({});
     const [showFavOnly, setShowFavOnly] = useState(false);
     const [usePrefix, setUsePrefix] = useState(true);
     const [lightboxState, setLightboxState] = useState<{ artistIdx: number, slotIdx: number } | null>(null);
@@ -419,6 +421,10 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         }
     };
 
+    const rememberCoverCandidate = useCallback((artistId: string, candidate: DanbooruCoverCandidate | null) => {
+        setCoverCandidates(previous => previous[artistId]?.id === candidate?.id ? previous : { ...previous, [artistId]: candidate });
+    }, []);
+
     const addToHistory = (text: string) => {
         const newEntry = { text, time: new Date().toLocaleTimeString() };
         const newHistory = [newEntry, ...history.filter(h => h.text !== text)].slice(30);
@@ -426,8 +432,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         localStorage.setItem('nai_copy_history', JSON.stringify(newHistory));
     };
 
-    const toggleFav = (name: string, e: React.MouseEvent) => {
-        e.stopPropagation();
+    const toggleFav = (name: string, e?: React.MouseEvent) => {
+        e?.stopPropagation();
         const newFav = new Set(favorites);
         if (newFav.has(name)) newFav.delete(name);
         else newFav.add(name);
@@ -1289,7 +1295,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                                 kind="artist"
                                                 alt={artist.chineseName || artist.name}
                                                 fixedSrc={displayImg}
-                                                onSetCover={candidate => setDanbooruCover(artist, candidate)}
+                                                onCandidateChange={candidate => rememberCoverCandidate(artist.id, candidate)}
                                             />
                                         ) : displayImg && !isBenchmarkMissing ? (
                                             <LazyImage src={displayImg} alt={artist.name} />
@@ -1306,10 +1312,12 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                             </div>
                                         )}
                                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors pointer-events-none" />
-                                        <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                            <button onClick={(e) => toggleFav(artist.name, e)} className={`p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm ${isFav ? 'text-yellow-500' : 'text-gray-600 dark:text-white'}`}>
-                                                <svg className="w-4 h-4" fill={isFav ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.563.044.8.77.38 1.178l-4.244 4.134a.563.563 0 00-.153.476l1.24 5.376c.13.565-.487 1.01-.967.756L12 18.232l-4.894 3.08c-.48.254-1.097-.19-.967-.756l1.24-5.376a.563.563 0 00-.153-.476L2.985 10.575c-.42-.408-.183-1.134.38-1.178l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" /></svg>
-                                            </button>
+                                        <TagCoverActions
+                                            favorite={isFav}
+                                            onToggleFavorite={() => toggleFav(artist.name)}
+                                            candidate={viewMode === 'original' ? coverCandidates[artist.id] : null}
+                                            onSetCover={viewMode === 'original' ? candidate => setDanbooruCover(artist, candidate) : undefined}
+                                        >
                                             <a href={`https://danbooru.donmai.us/posts?tags=${artist.name}`} target="_blank" rel="noreferrer" className="hidden md:block p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm text-blue-500 dark:text-blue-300 hover:text-blue-600 pointer-events-auto">
                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                             </a>
@@ -1342,7 +1350,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                                     </button>
                                                 </>
                                             )}
-                                        </div>
+                                        </TagCoverActions>
 
                                         {isSelected && (
                                             <div className="absolute inset-0 border-4 border-red-500/80 pointer-events-none">

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, ImageIcon, Pin } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ImageIcon } from 'lucide-react';
 import { DanbooruCoverCandidate, DanbooruCoverSet, danbooruService } from '../services/danbooruService';
 import { SmartImage } from './SmartImage';
 
@@ -8,15 +8,14 @@ interface DanbooruCoverProps {
   kind: 'artist' | 'character';
   alt: string;
   fixedSrc?: string;
-  onSetCover?: (candidate: DanbooruCoverCandidate) => Promise<void> | void;
+  onCandidateChange?: (candidate: DanbooruCoverCandidate | null) => void;
 }
 
-export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fixedSrc = '', onSetCover }) => {
+export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fixedSrc = '', onCandidateChange }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const [activated, setActivated] = useState(false);
   const [coverSet, setCoverSet] = useState<DanbooruCoverSet | null | undefined>(undefined);
   const [candidateIndex, setCandidateIndex] = useState<number | null>(fixedSrc ? null : 0);
-  const [isSaving, setIsSaving] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [nextSourcePage, setNextSourcePage] = useState(1);
 
@@ -77,7 +76,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
   const currentCandidate = candidateIndex === null ? null : candidates[candidateIndex];
   const displayedSrc = currentCandidate?.sampleUrl || fixedSrc || coverSet?.representative?.sampleUrl || '';
   const canBrowse = candidates.length > 0;
-  const canSetCover = Boolean(currentCandidate && onSetCover);
+  useEffect(() => { onCandidateChange?.(currentCandidate || null); }, [currentCandidate?.id, onCandidateChange]);
   const loadNextCandidatePage = async () => {
     if (!coverSet?.hasMore || isLoadingMore) return false;
     setIsLoadingMore(true);
@@ -125,23 +124,11 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
       if (found) setCandidateIndex(index => index === candidateIndex ? index + 1 : index);
     });
   };
-  const saveCover = async () => {
-    if (!currentCandidate || !onSetCover || isSaving) return;
-    setIsSaving(true);
-    try {
-      await onSetCover(currentCandidate);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   return <div ref={rootRef} className="absolute inset-0">
     {displayedSrc ? <>
       <SmartImage src={displayedSrc} alt={alt} thumbnailVariant="thumb-640" />
       <span className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-1 text-[9px] font-bold text-white backdrop-blur">{fixedSrc && candidateIndex === null ? '已保存封面' : 'Danbooru'}</span>
-      {candidateIndex === null && fixedSrc && <span className="pointer-events-none absolute right-2 top-9 z-10 rounded-full bg-indigo-600/90 p-1.5 text-white shadow" title="当前固定封面"><Pin className="h-3.5 w-3.5" /></span>}
       {canBrowse && <button type="button" disabled={candidateIndex === null || candidateIndex === 0} onClick={event => { event.stopPropagation(); moveCandidate(-1); }} className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-60" title="上一张" aria-label="上一张"><ChevronLeft className="h-4 w-4" /></button>}
-      {canSetCover && <button type="button" disabled={isSaving} onClick={event => { event.stopPropagation(); void saveCover(); }} className="absolute right-2 top-9 z-10 rounded-full bg-indigo-600/90 p-1.5 text-white shadow backdrop-blur hover:bg-indigo-500 disabled:opacity-60" title="设为固定封面" aria-label="设为固定封面"><Pin className="h-3.5 w-3.5" /></button>}
       {canBrowse && <button type="button" disabled={isLoadingMore || (candidateIndex !== null && candidateIndex >= candidates.length - 1 && !coverSet?.hasMore)} onClick={event => { event.stopPropagation(); moveCandidate(1); }} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-35" title="下一张" aria-label="下一张"><ChevronRight className="h-4 w-4" /></button>}
     </> : <div className="absolute inset-0 flex flex-col items-center justify-center px-3 text-center text-gray-400">
       <ImageIcon className={`h-7 w-7 ${coverSet === undefined ? 'animate-pulse' : ''}`} />

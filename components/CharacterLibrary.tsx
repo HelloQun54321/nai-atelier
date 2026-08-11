@@ -15,10 +15,11 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
-import { Dice5, Heart, Menu, Plus, Settings2, Tag, UserRound } from 'lucide-react';
+import { Dice5, Menu, Plus, Settings2, Tag, UserRound } from 'lucide-react';
 import { ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DanbooruCover } from './DanbooruCover';
 import type { DanbooruCoverCandidate } from '../services/danbooruService';
+import { TagCoverActions } from './TagCoverActions';
 
 const CATALOG_MARKER = '__character_catalog__';
 const getDanbooruPostsUrl = (tagName: string) =>
@@ -91,6 +92,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     try { return new Set(JSON.parse(localStorage.getItem('nai_character_favorites') || '[]')); }
     catch { return new Set(); }
   });
+  const [coverCandidates, setCoverCandidates] = useState<Record<string, DanbooruCoverCandidate | null>>({});
   const [gachaMode, setGachaMode] = useState<GachaMode>(() => {
     const saved = localStorage.getItem('nai_character_gacha_mode');
     return saved === 'catalog' || saved === 'custom' ? saved : 'mixed';
@@ -243,6 +245,10 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       return next;
     });
   };
+
+  const rememberCoverCandidate = useCallback((cardKey: string, candidate: DanbooruCoverCandidate | null) => {
+    setCoverCandidates(previous => previous[cardKey]?.id === candidate?.id ? previous : { ...previous, [cardKey]: candidate });
+  }, []);
 
   const copyCharacter = async (card: CharacterCard) => {
     const text = card.kind === 'catalog'
@@ -450,7 +456,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             return (
               <article key={card.key} className="mobile-gallery-item group flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition hover:border-indigo-400 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800">
                 <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': '2 / 3' } as React.CSSProperties}>
-                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} onSetCover={candidate => setDanbooruCover(card, candidate)} /> : card.previewImage ? <button className="h-full w-full" onClick={() => setLightbox(card)}><LazyImage src={card.previewImage} alt={card.name} /></button> : (
+                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} onCandidateChange={candidate => rememberCoverCandidate(card.key, candidate)} /> : card.previewImage ? <button className="h-full w-full" onClick={() => setLightbox(card)}><LazyImage src={card.previewImage} alt={card.name} /></button> : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
                       {card.kind === 'catalog' ? <Tag className="h-8 w-8" /> : <UserRound className="h-8 w-8" />}
                       <span className="mt-2 text-[11px]">尚未生成本地预览</span>
@@ -458,9 +464,12 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                     </div>
                   )}
                   <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[10px] font-bold text-white shadow backdrop-blur">{card.kind === 'catalog' ? '角色 Tag' : '自定义还原'}</span>
-                   <button onClick={() => toggleFavorite(card)} className={`mobile-touch absolute right-1 top-1 rounded-full bg-black/55 p-1.5 ${favorite ? 'text-rose-400' : 'text-white'}`} aria-label="收藏">
-                    <Heart className={`h-4 w-4 ${favorite ? 'fill-current' : ''}`} />
-                  </button>
+                  <TagCoverActions
+                    favorite={favorite}
+                    onToggleFavorite={() => toggleFavorite(card)}
+                    candidate={card.kind === 'catalog' ? coverCandidates[card.key] : null}
+                    onSetCover={card.kind === 'catalog' ? candidate => setDanbooruCover(card, candidate) : undefined}
+                  />
                   {card.previewImage && <button disabled={generating} onClick={() => void generatePreview(card)} className="absolute bottom-2 right-2 rounded bg-black/60 px-2 py-1 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:opacity-40">{generating ? '生成中…' : '重新生成'}</button>}
                 </div>
                 <div className="p-3">
