@@ -140,7 +140,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </button>;
             })}
           </nav>
-        <div className="min-w-0 flex-1 space-y-3 overflow-y-auto p-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:grid md:grid-cols-2 md:content-start md:items-start md:gap-4 md:space-y-0 md:p-6">
+        <div className="min-w-0 flex-1 space-y-3 overflow-y-auto p-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:p-6">
           <section id={`settings-appearance`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'appearance' ? 'hidden' : ''}`}>
             <button type="button" onClick={() => isMobile && setMobileSection('appearance')} className="flex min-h-11 w-full items-center justify-between text-left">
               <div><h3 className="font-semibold text-gray-900 dark:text-white">外观与隐私</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">主题与图片安全显示状态：{safeMode ? '安全模式已开启' : isDark ? '深色' : '浅色'}</p></div>
