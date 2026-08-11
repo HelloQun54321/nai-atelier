@@ -4753,7 +4753,7 @@ export default {
         // Process image URL - handle both Base64 and external URL
         let imageUrl = body.imageUrl;
         if (imageUrl && imageUrl.startsWith('data:')) {
-            imageUrl = await processImageUpload(env, imageUrl, 'artists', id);
+            imageUrl = await processImageUpload(env, imageUrl, 'artists', id, currentUser);
         } else if (imageUrl && imageUrl.startsWith('http')) {
             // Fetch external image URL and store in R2
             imageUrl = await fetchAndUploadImage(env, imageUrl, 'artists', id, currentUser);

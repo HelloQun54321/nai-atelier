@@ -4,6 +4,12 @@
 
 ## 2026-08-12
 
+### 角色/画师 Tag 图钉设封面不再 403
+
+- 图钉保存改为复用本机媒体网关链路：先经 `/api/media?variant=original` 读取 Danbooru 原图（不再让 Worker 直连 cdn.donmai.us，上游对 Worker 出口返回 403），校验来源域名、响应类型与 12MB 上限后转成 data URL 提交，由 Worker 现有上传流程写入 R2，数据库只保存 `/api/assets/...` 地址。
+- 角色 Tag 改为图片读取成功后才创建/更新角色记录，读取失败不再留下空记录；画师 Tag 保留原有 `id/name/previewUrl/benchmarks`，画师 data URL 上传分支补上与角色一致的配额校验。
+- 新增 `services/danbooruCoverImport.ts` 统一导入函数，严格校验 `https://cdn.donmai.us` 精确主机名；保存期间图钉自动禁用防重复提交。
+
 ### 历史图片按文件真实尺寸显示与入库
 
 - 历史页卡片读取图片加载后的真实宽高比纠正错误的 `params.width/height`：异常记录（如测试写入的 `832×1216` 竖参数、实际 `1216×832` 横图）加载完成后自动恢复横图容器，不再左右裁切；最短列高度估算与卡片 `aspect-ratio` 统一走同一比例函数。

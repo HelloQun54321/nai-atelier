@@ -20,6 +20,7 @@ import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './De
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
 import type { DanbooruCoverCandidate } from '../services/danbooruService';
+import { importDanbooruCoverAsDataUrl } from '../services/danbooruCoverImport';
 import { TagCoverActions } from './TagCoverActions';
 
 const CATALOG_MARKER = '__character_catalog__';
@@ -361,6 +362,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const setDanbooruCover = async (card: CharacterCard, candidate: DanbooruCoverCandidate) => {
     if (card.kind !== 'catalog' || !card.tagName) return;
     try {
+      // 先通过本机媒体网关读取原图；失败时不创建/修改任何记录
+      const coverDataUrl = await importDanbooruCoverAsDataUrl(candidate.sampleUrl);
       let chainId = card.chain?.id;
       if (!chainId) {
         chainId = await db.createChain(card.chinese || card.tagName, `角色 Tag：${card.tagName}`, undefined, 'character');
@@ -372,8 +375,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
           params: DEFAULT_PARAMS,
         });
       }
-      // The server copies this public Danbooru image into the project's own storage.
-      await db.updateChain(chainId, { previewImage: candidate.sampleUrl });
+      // Worker 将 data URL 图片复制进项目自己的存储，数据库只保存 /api/assets/covers/... 地址
+      await db.updateChain(chainId, { previewImage: coverDataUrl });
       await onRefresh();
       notify(`已将当前热门图设为“${card.name}”的封面`);
     } catch (error) {

@@ -972,7 +972,7 @@ const requestWorkerBuffer = (source, req, workerPort) => new Promise((resolve, r
   upstream.end();
 });
 
-const requestRemoteBuffer = async (source, remoteFetch = fetch) => {
+export const requestRemoteBuffer = async (source, remoteFetch = fetch) => {
   let current = source;
   for (let redirects = 0; redirects < 4; redirects++) {
     const url = new URL(current);

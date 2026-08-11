@@ -12,6 +12,7 @@ import {
   estimateNovelAiGenerationCost,
   normalizeVibeStrengths,
   parseInvalidVibeCacheKeys,
+  requestRemoteBuffer,
   selectPreciseReferenceCanvas,
   CloudQueueCoordinator,
   fetchNovelAiGeneration,
@@ -823,4 +824,38 @@ test('image dimensions: zero and oversized dimensions are rejected', () => {
 
 test('image dimensions: unknown format is rejected', () => {
   assert.throws(() => readImageDimensions(buildPng(100, 100), 'gif'), /不支持的图片格式/);
+});
+
+// ---------- Danbooru 封面导入链路（媒体网关侧） ----------
+
+test('media gateway allows cdn.donmai.us sources and rejects other hosts', () => {
+  assert.deepEqual(getValidatedSource('https://cdn.donmai.us/sample/abc.webp'), {
+    type: 'remote',
+    source: 'https://cdn.donmai.us/sample/abc.webp',
+  });
+  assert.throws(() => getValidatedSource('http://cdn.donmai.us/sample.webp'), /not allowed/);
+  assert.throws(() => getValidatedSource('https://cdn.donmai.us.evil.example/sample.webp'), /not allowed/);
+  assert.throws(() => getValidatedSource('https://example.com/sample.webp'), /not allowed/);
+});
+
+test('requestRemoteBuffer sends image Accept header and returns upstream original bytes', async () => {
+  const calls = [];
+  const remoteFetch = async (url, opts) => {
+    calls.push({ url: url.toString(), headers: opts.headers });
+    return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200, headers: { 'content-type': 'image/webp' } });
+  };
+  const result = await requestRemoteBuffer('https://cdn.donmai.us/sample.webp', remoteFetch);
+  assert.equal(result.status, 200);
+  assert.deepEqual([...result.buffer], [1, 2, 3, 4]);
+  assert.equal(calls[0].headers.accept, 'image/*');
+  assert.match(calls[0].headers['user-agent'], /MediaGateway/);
+});
+
+test('requestRemoteBuffer never treats 403, non-image or oversized responses as images', async () => {
+  const forbidden = await requestRemoteBuffer('https://cdn.donmai.us/x.webp', async () => new Response('denied', { status: 403, headers: { 'content-type': 'text/plain' } }));
+  assert.equal(forbidden.status, 403);
+  assert.equal(forbidden.buffer.length, 0);
+  await assert.rejects(() => requestRemoteBuffer('https://cdn.donmai.us/x.webp', async () => new Response('<html>', { status: 200, headers: { 'content-type': 'text/html' } })), /not an image/);
+  await assert.rejects(() => requestRemoteBuffer('https://cdn.donmai.us/x.webp', async () => new Response('x', { status: 200, headers: { 'content-type': 'image/png', 'content-length': String(31 * 1024 * 1024) } })), /too large/);
+  await assert.rejects(() => requestRemoteBuffer('https://evil.example/x.webp', async () => new Response('x')), /not allowed/);
 });

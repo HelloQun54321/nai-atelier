@@ -16,6 +16,7 @@ import { IconButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
 import type { DanbooruCoverCandidate } from '../services/danbooruService';
+import { importDanbooruCoverAsDataUrl } from '../services/danbooruCoverImport';
 import { TagCoverActions } from './TagCoverActions';
 
 interface CartItem {
@@ -405,12 +406,12 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
 
     const setDanbooruCover = async (artist: Artist, candidate: DanbooruCoverCandidate) => {
         try {
-            // The server downloads the chosen public image into project storage,
-            // so this remains the cover even if Danbooru's CDN later changes it.
+            // 先通过本机媒体网关读取原图，再提交 data URL；Worker 只负责存储不再直连 Danbooru CDN
+            const coverDataUrl = await importDanbooruCoverAsDataUrl(candidate.sampleUrl);
             await api.post('/artists', {
                 id: artist.id,
                 name: artist.name,
-                imageUrl: candidate.sampleUrl,
+                imageUrl: coverDataUrl,
                 previewUrl: artist.previewUrl,
                 benchmarks: artist.benchmarks || [],
             });
