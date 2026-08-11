@@ -17,6 +17,7 @@ import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileU
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { Dice5, Menu, Plus, Settings2, Tag, UserRound } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
 import type { DanbooruCoverCandidate } from '../services/danbooruService';
 import { TagCoverActions } from './TagCoverActions';
@@ -393,6 +394,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
          <div className="flex gap-2 md:hidden">
            <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品或 Tag" />
            <MobileIconButton label="筛选和抽卡设置" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><Menu className="h-5 w-5" /></MobileIconButton>
+           <ImageTaggerAction notify={notify} />
            <MobileIconButton label={gachaCards ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} className="bg-indigo-600 text-white"><Dice5 className="h-5 w-5" /></MobileIconButton>
          </div>
          <div className="workspace-page-heading hidden min-w-0 items-center gap-2 md:flex">
@@ -408,6 +410,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              <ToolbarButton onClick={() => void drawGacha()} disabled={isGachaLoading}><Dice5 className="h-4 w-4" />{gachaCards ? '再抽一批' : '随机抽卡'}</ToolbarButton>
              {gachaCards && <ToolbarButton onClick={() => setGachaCards(null)}>返回目录</ToolbarButton>}
              <IconButton label="抽卡设置" onClick={() => setShowDesktopGachaSettings(value => !value)}><Settings2 /></IconButton>
+             <ImageTaggerAction notify={notify} />
              {showDesktopGachaSettings && <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
                <div className="mb-3 text-sm font-bold text-gray-800 dark:text-white">随机抽卡设置</div>
                <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">抽卡范围<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option></select></label>

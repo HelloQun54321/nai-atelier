@@ -20,7 +20,7 @@ import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { estimateV45GenerationCost } from '../services/anlasBudget';
-import { ArrowLeft, Palette, Pencil, Quote, RotateCcw, Save, Sparkles, UserRound, X } from 'lucide-react';
+import { ArrowLeft, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, Sparkles, UserRound, X } from 'lucide-react';
 
 const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
 
@@ -211,6 +211,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [isImportDragActive, setIsImportDragActive] = useState(false);
     const [showJsonPasteModal, setShowJsonPasteModal] = useState(false);
     const [jsonPasteText, setJsonPasteText] = useState('');
+    const [taggerOpen, setTaggerOpen] = useState(false);
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
     const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<PromptAgentDraft | null>(null);
     const editorRevisionRef = useRef(0);
@@ -1404,6 +1405,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     {canEdit && (
                         <button
                             type="button"
+                            onClick={() => setTaggerOpen(true)}
+                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
+                            title="图片反推 Tag"
+                            aria-label="图片反推 Tag"
+                        >
+                            <ImagePlus className="h-[18px] w-[18px] md:h-5 md:w-5" />
+                        </button>
+                    )}
+                    {canEdit && (
+                        <button
+                            type="button"
                             onClick={() => window.dispatchEvent(new CustomEvent('nai-open-prompt-agent', { detail: { chainId: chain.id } }))}
                             className="mobile-touch hidden h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40 md:flex"
                             title="AI 生图 Agent"
@@ -1467,6 +1479,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 canUndo={Boolean(agentUndoSnapshot)}
                 onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次 Agent 修改'); } }}
             />
+            <ImageTaggerPanel
+                open={taggerOpen}
+                onClose={() => setTaggerOpen(false)}
+                notify={notify}
+                onInsert={(tags) => {
+                    setSubjectPrompt(current => [current.trim(), tags].filter(Boolean).join(', '));
+                    markPresetSectionModified('subject');
+                    markChange();
+                    notify(`已追加 ${tags.split(',').length} 个识别 Tag`);
+                }}
+            />
             <nav className="grid h-10 grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
                 {([['global', '全局'], ['character', '角色'], ['params', '参数']] as const).map(([value, label]) => <button key={value} onClick={() => setMobileEditorTab(value)} className={`relative min-w-0 text-sm font-bold ${mobileEditorTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>{label}{mobileEditorTab === value && <span className="absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-indigo-500" />}</button>)}
             </nav>
@@ -1520,7 +1543,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 4H7a2 2 0 01-2-2V6a2 2 0 012-2h5l5 5v9a2 2 0 01-2 2z" /></svg>
                                                 粘贴
                                             </button>
-                                            {chain.id === 'playground' && <ImageTaggerPanel notify={notify} onInsert={(tags) => { setSubjectPrompt(current => [current.trim(), tags].filter(Boolean).join(', ')); markPresetSectionModified('subject'); markChange(); }} />}
                                         </div>
                                     )}
                                 </div>

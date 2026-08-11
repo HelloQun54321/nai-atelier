@@ -14,6 +14,7 @@ import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataServi
 import { NAIParams, User } from '../types';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { ImageTaggerAction } from './ImageTaggerPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { OriginalImage, SmartImage } from './SmartImage';
 
@@ -171,6 +172,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
           <ToolbarButton type="submit" tone="primary" disabled={loading}><Search />搜索</ToolbarButton>
         </form>
         <IconButton label="刷新" onClick={() => void load(query, page)} disabled={loading}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton>
+        <ImageTaggerAction notify={notify} />
       </WorkspaceToolbar>
 
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>

@@ -8,6 +8,7 @@ import { createUuid } from '../services/id';
 import { normalizeInspirationTags, sourceLabel } from '../services/inspirationUtils';
 import { useConfirmDialog } from './ConfirmDialog';
 import { IconButton, MediaCardShell, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { ImageTaggerAction } from './ImageTaggerPanel';
 import { SmartImage } from './SmartImage';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { InspirationDetail } from './inspiration/InspirationDetail';
@@ -180,6 +181,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       <ToolbarButton onClick={() => setSelectedIds(selectedIds.size ? new Set() : new Set(filtered.filter(item => canEditItem(item, currentUser)).map(item => item.id)))} tone={selectedIds.size ? 'primary' : 'neutral'} className="hidden md:inline-flex"><CheckSquare />{selectedIds.size ? `${selectedIds.size} 项` : '选择'}</ToolbarButton>
       <div className="hidden flex-1 md:block" />
       <IconButton label="刷新灵感库" disabled={busy === 'refresh'} onClick={() => void refreshAll()}><RefreshCw className={busy === 'refresh' ? 'animate-spin' : ''} /></IconButton>
+      <ImageTaggerAction notify={notify} />
       <IconButton label="加入灵感" tone="primary" onClick={() => setUploadOpen(true)} className="md:hidden"><Plus /></IconButton>
       <ToolbarButton tone="primary" onClick={() => setUploadOpen(true)} className="hidden md:inline-flex"><Plus />加入灵感</ToolbarButton>
       {desktopFilters && <div className="absolute right-4 top-[calc(100%+8px)] z-50 hidden w-[520px] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-900 md:block"><div className="mb-3 flex items-center justify-between"><div><h2 className="text-sm font-bold text-gray-900 dark:text-white">筛选灵感</h2><p className="mt-0.5 text-[11px] text-gray-400">按分类、灵感板、标签、评分和使用情况组合筛选</p></div>{activeFilterCount > 0 && <button type="button" onClick={resetFilters} className="text-xs font-bold text-indigo-600 dark:text-indigo-400">重置</button>}</div>{renderFilterControls()}</div>}
