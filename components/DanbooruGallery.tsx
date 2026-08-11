@@ -14,6 +14,7 @@ import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataServi
 import { NAIParams, User } from '../types';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { useMobileHistoryLayer } from './MobileUI';
 import { OriginalImage, SmartImage } from './SmartImage';
 
 interface DanbooruGalleryProps {
@@ -78,6 +79,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   const loadedRef = useRef(false);
 
   const selected = useMemo(() => items.find(item => item.id === selectedId) || null, [items, selectedId]);
+  const closeMobileDetail = useMobileHistoryLayer(Boolean(selected), () => setSelectedId(null), 'danbooru-detail');
 
   const load = async (nextQuery = query, nextPage = page) => {
     setLoading(true);
@@ -171,7 +173,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
         <IconButton label="刷新" onClick={() => void load(query, page)} disabled={loading}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton>
       </WorkspaceToolbar>
 
-      <div className="aitag-split grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_460px]">
+      <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main ref={scrollRef} className={`${selected ? 'hidden xl:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
           <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
             <span>{query === 'order:rank' ? '热门普通级作品' : `检索：${query.replaceAll('_', ' ')}`}</span>
@@ -205,10 +207,10 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
           </div>
         </main>
 
-        <aside className={`${selected ? 'flex' : 'hidden xl:flex'} fixed inset-0 z-[1050] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 xl:static xl:z-auto xl:border-l`}>
+        <aside className={`aitag-detail-panel ${selected ? 'aitag-detail-panel--open flex' : 'aitag-detail-panel--closed hidden'} fixed inset-0 z-[1050] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 xl:static xl:z-auto xl:border-l`}>
           <div className="flex h-14 flex-none items-center justify-between border-b border-gray-200 px-3 dark:border-gray-800">
             <div className="flex min-w-0 items-center gap-2">
-              <button type="button" onClick={() => setSelectedId(null)} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 xl:hidden" aria-label="返回"><ArrowLeft className="h-5 w-5" /></button>
+              <button type="button" onClick={closeMobileDetail} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 xl:hidden" aria-label="返回"><ArrowLeft className="h-5 w-5" /></button>
               <div className="min-w-0"><p className="truncate text-sm font-bold">{selected ? `Danbooru #${selected.id}` : '作品详情'}</p>{selected && <p className="text-[10px] text-gray-500">{selected.width}×{selected.height} · {selected.fileExt.toUpperCase()}</p>}</div>
             </div>
             <button type="button" onClick={() => setSelectedId(null)} className="hidden h-9 w-9 items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 xl:flex" aria-label="关闭"><X className="h-4 w-4" /></button>
