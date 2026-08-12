@@ -1,5 +1,4 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { spawn as nodeSpawn } from 'node:child_process';
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { createServer, request as httpRequest } from 'node:http';
 import { connect as connectSocket } from 'node:net';
@@ -1096,11 +1095,7 @@ export const handlePixivGalleryRequest = async (req, res, url, pixivGallery, pix
     if (!isPixivConnectionMutationAllowed(req)) {
       return sendJson(res, 403, { error: '请在运行 NPM 的电脑上登录；登录后手机可浏览', code: 'PIXIV_CONNECT_LOCAL_ONLY' });
     }
-    let body = {};
-    try { body = JSON.parse((await readRequestBody(req, 1024)).toString('utf8') || '{}'); } catch {
-      return sendJson(res, 400, { error: '请求体不是有效 JSON', code: 'PIXIV_INVALID_BODY' });
-    }
-    return sendJson(res, 200, await pixivWebLogin.start({ automaticCallback: body.callbackBridge === true }));
+    return sendJson(res, 200, await pixivWebLogin.start());
   }
   if (url.pathname === '/api/pixiv/login/status') {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -1118,20 +1113,6 @@ export const handlePixivGalleryRequest = async (req, res, url, pixivGallery, pix
       return sendJson(res, 400, { error: '请求体不是有效 JSON', code: 'PIXIV_INVALID_BODY' });
     }
     return sendJson(res, 200, await pixivWebLogin.complete(body.id, body.callbackUrl));
-  }
-  if (url.pathname === '/api/pixiv/login/helper') {
-    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
-    if (!isPixivConnectionMutationAllowed(req)) {
-      return sendJson(res, 403, { error: '请在运行 NPM 的电脑上安装登录助手', code: 'PIXIV_CONNECT_LOCAL_ONLY' });
-    }
-    const helperPath = resolve(process.cwd(), 'browser-extension', 'npm-pixiv-login-bridge');
-    const explorer = nodeSpawn('explorer.exe', [helperPath], { detached: true, stdio: 'ignore', windowsHide: true });
-    explorer.once?.('error', () => {});
-    explorer.unref?.();
-    const extensionsPage = nodeSpawn('rundll32.exe', ['url.dll,FileProtocolHandler', 'edge://extensions/'], { detached: true, stdio: 'ignore', windowsHide: true });
-    extensionsPage.once?.('error', () => {});
-    extensionsPage.unref?.();
-    return sendJson(res, 200, { opened: true, helperPath });
   }
   if (url.pathname === '/api/pixiv/login') {
     if (req.method !== 'DELETE') return sendJson(res, 405, { error: 'Method not allowed' });

@@ -1,5 +1,7 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   PIXIV_APP_CLIENT_ID,
   PIXIV_APP_CLIENT_SECRET,
@@ -17,6 +19,7 @@ export const PIXIV_LOGIN_REDIRECT_URI = PIXIV_CALLBACK_URL;
 export const PIXIV_LOGIN_SESSION_TTL_MS = 5 * 60 * 1000;
 export const MAX_PIXIV_CALLBACK_URL_LENGTH = 4096;
 export const PIXIV_LOGIN_ID_MAX_LENGTH = 64;
+const moduleDir = dirname(fileURLToPath(import.meta.url));
 
 export const PIXIV_LOGIN_STATES = Object.freeze(['starting', 'awaiting-user', 'exchanging', 'connected', 'failed', 'canceled', 'timed-out']);
 export const PIXIV_LOGIN_ACTIVE_STATES = new Set(['starting', 'awaiting-user', 'exchanging']);
@@ -180,6 +183,72 @@ export const launchInDefaultBrowser = (url, { spawn = nodeSpawn, platform = proc
   if (!child.once) done();
 });
 
+export const startPixivCallbackWatcher = ({
+  onCallback,
+  spawn = nodeSpawn,
+  platform = process.platform,
+  scriptPath = resolve(moduleDir, 'pixiv-edge-callback-watcher.ps1'),
+} = {}) => new Promise((resolveWatcher, rejectWatcher) => {
+  if (platform !== 'win32') {
+    rejectWatcher(pixivLoginError('当前系统不支持自动捕获 Pixiv 登录结果', 'PIXIV_CALLBACK_WATCHER_UNAVAILABLE', 501));
+    return;
+  }
+  let child;
+  try {
+    child = spawn('powershell.exe', [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-WindowStyle', 'Hidden',
+      '-ExecutionPolicy', 'Bypass',
+      '-File', scriptPath,
+    ], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    rejectWatcher(pixivLoginError('无法启动 Pixiv 登录结果监听', 'PIXIV_CALLBACK_WATCHER_UNAVAILABLE', 500));
+    return;
+  }
+  let ready = false;
+  let readyTimer = null;
+  let buffer = '';
+  child.stdout?.setEncoding?.('utf8');
+  child.stdout?.on?.('data', chunk => {
+    buffer = `${buffer}${String(chunk)}`.slice(-MAX_PIXIV_CALLBACK_URL_LENGTH * 2);
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      const callbackUrl = line.trim();
+      if (callbackUrl === 'NPM_PIXIV_WATCHER_READY') {
+        if (!ready) {
+          ready = true;
+          if (readyTimer) clearTimeout(readyTimer);
+          resolveWatcher(child);
+        }
+        continue;
+      }
+      if (parsePixivCallbackUrl(callbackUrl)) void onCallback?.(callbackUrl);
+    }
+  });
+  child.once?.('error', () => {
+    if (!ready) rejectWatcher(pixivLoginError('无法启动 Pixiv 登录结果监听', 'PIXIV_CALLBACK_WATCHER_UNAVAILABLE', 500));
+  });
+  child.once?.('spawn', () => {
+    readyTimer = setTimeout(() => {
+      if (ready) return;
+      stopPixivCallbackWatcher(child);
+      rejectWatcher(pixivLoginError('Pixiv 登录结果监听未能就绪', 'PIXIV_CALLBACK_WATCHER_UNAVAILABLE', 500));
+    }, 5000);
+    readyTimer.unref?.();
+  });
+  child.once?.('exit', () => {
+    if (!ready) rejectWatcher(pixivLoginError('Pixiv 登录结果监听未能启动', 'PIXIV_CALLBACK_WATCHER_UNAVAILABLE', 500));
+  });
+});
+
+const stopPixivCallbackWatcher = child => {
+  if (!child || child.exitCode !== null || child.killed) return;
+  try { child.kill(); } catch { /* 已退出 */ }
+};
+
 export class PixivWebLoginOrchestrator {
   constructor({
     fetch: requestFetch = globalThis.fetch,
@@ -189,6 +258,7 @@ export class PixivWebLoginOrchestrator {
     onTokens,
     getGeneration,
     ttlMs = PIXIV_LOGIN_SESSION_TTL_MS,
+    startWatcher = startPixivCallbackWatcher,
   } = {}) {
     this.requestFetch = requestFetch;
     this.clock = clock;
@@ -197,10 +267,11 @@ export class PixivWebLoginOrchestrator {
     this.onTokens = onTokens || null;
     this.getGeneration = getGeneration || null;
     this.ttlMs = ttlMs;
+    this.startWatcher = startWatcher;
     this.active = null;
   }
 
-  async start({ automaticCallback = false } = {}) {
+  async start() {
     if (this.active && PIXIV_LOGIN_ACTIVE_STATES.has(this.active.state)) {
       throw pixivLoginError('已有进行中的 Pixiv 登录', 'PIXIV_LOGIN_ACTIVE', 409);
     }
@@ -214,16 +285,29 @@ export class PixivWebLoginOrchestrator {
       expiresAt: now + this.ttlMs,
       verifier: pkce.verifier,
       expectedGeneration: this.getGeneration ? await this.getGeneration() : null,
-      automaticCallback: automaticCallback === true,
+      automaticCallback: false,
       settled: false,
       timer: null,
     };
     this.active = session;
     try {
+      try {
+        session.watcher = await this.startWatcher({
+          onCallback: callbackUrl => void this.complete(session.id, callbackUrl).catch(() => {}),
+        });
+        session.automaticCallback = true;
+        session.watcher.once?.('exit', code => {
+          if (code === 0 || this.active !== session || !PIXIV_LOGIN_ACTIVE_STATES.has(session.state)) return;
+          session.automaticCallback = false;
+          session.message = '自动识别暂时不可用；登录后请粘贴 Pixiv 白页地址';
+        });
+      } catch {
+        session.automaticCallback = false;
+      }
       await this.launchBrowser(buildPixivLoginUrl({ codeChallenge: pkce.challenge }));
       session.state = 'awaiting-user';
       session.message = session.automaticCallback
-        ? '请在默认浏览器继续使用账号，Edge 登录助手会自动完成连接'
+        ? '请在默认浏览器继续使用账号，NPM 会自动识别登录结果'
         : '登录完成后会出现 Pixiv 白页，请粘贴 callback 地址';
       session.timer = setTimeout(() => void this.finish(session, 'timed-out', '登录超时，请重试'), Math.max(1, session.expiresAt - this.clock()));
       session.timer.unref?.();
@@ -283,6 +367,8 @@ export class PixivWebLoginOrchestrator {
     session.state = state;
     session.message = message;
     session.verifier = undefined;
+    stopPixivCallbackWatcher(session.watcher);
+    session.watcher = null;
     return serializePixivLoginState(session);
   }
 

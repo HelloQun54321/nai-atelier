@@ -87,8 +87,6 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   const [loginMessage, setLoginMessage] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
   const [callbackUrl, setCallbackUrl] = useState('');
-  const [callbackBridgeReady, setCallbackBridgeReady] = useState(false);
-  const [helperBusy, setHelperBusy] = useState(false);
   const [lanMode, setLanMode] = useState(false);
   const loadedRef = useRef(false);
   const feedRequestRef = useRef(0);
@@ -180,11 +178,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     setLoginMessage('');
     setCallbackUrl('');
     try {
-      const session = await pixivService.startPixivLogin(callbackBridgeReady);
+      const session = await pixivService.startPixivLogin();
       window.sessionStorage.setItem(PIXIV_LOGIN_SESSION_KEY, session.id);
-      if (callbackBridgeReady) {
-        window.postMessage({ source: 'npm-pixiv-gallery', type: 'set-session', id: session.id }, window.location.origin);
-      }
       applyLoginSession(session);
       if (isActiveLoginState(session.state)) startLoginPolling(session.id);
     } catch (startError) {
@@ -248,31 +243,6 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     }
   };
 
-  const handleOpenLoginHelper = async () => {
-    if (helperBusy) return;
-    setHelperBusy(true);
-    setLoginMessage('');
-    try {
-      const result = await pixivService.openPixivLoginHelper();
-      await navigator.clipboard?.writeText(result.helperPath).catch(() => {});
-      setLoginMessage('已打开 Edge 扩展页和助手文件夹。开启“开发人员模式”→“加载解压缩的扩展”，选择刚打开的文件夹；路径也已复制。');
-    } catch (helperError) {
-      setLoginMessage(helperError instanceof Error ? helperError.message : '无法打开登录助手目录');
-    } finally {
-      setHelperBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    const onBridgeMessage = (event: MessageEvent) => {
-      if (event.source !== window || event.origin !== window.location.origin) return;
-      if (event.data?.source === 'npm-pixiv-callback-bridge' && event.data?.type === 'ready') setCallbackBridgeReady(true);
-    };
-    window.addEventListener('message', onBridgeMessage);
-    window.postMessage({ source: 'npm-pixiv-gallery', type: 'probe' }, window.location.origin);
-    return () => window.removeEventListener('message', onBridgeMessage);
-  }, []);
-
   useEffect(() => {
     if (active) {
       void refreshStatus();
@@ -280,14 +250,13 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       const savedId = window.sessionStorage.getItem(PIXIV_LOGIN_SESSION_KEY);
       if (savedId) {
         applyLoginSession({ id: savedId, state: 'awaiting-user', message: '正在等待登录…', expiresAt: Date.now() + 5 * 60 * 1000 });
-        if (callbackBridgeReady) window.postMessage({ source: 'npm-pixiv-gallery', type: 'set-session', id: savedId }, window.location.origin);
         startLoginPolling(savedId);
       }
     } else {
       clearLoginPoll();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, callbackBridgeReady]);
+  }, [active]);
 
   useEffect(() => () => { clearLoginPoll(); }, []);
 
@@ -483,14 +452,6 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             <h2 className="text-center text-base font-black text-gray-800 dark:text-gray-100">Pixiv 图库</h2>
             <p className="mb-4 mt-1 text-center text-xs leading-relaxed text-gray-500">使用你平时的默认浏览器打开 Pixiv，保留已有的 Google、Pixiv 登录状态；账号密码只输入 Pixiv 官方页面。</p>
 
-            {!callbackBridgeReady && !activeLogin && !lanMode && (
-              <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-                <div className="font-bold">首次使用：安装 Edge 登录助手</div>
-                <div className="mt-1">Pixiv 桌面登录会停在官方白页；助手只捕获该官方 callback，不读取密码、Cookie 或浏览记录。安装一次后可自动完成。</div>
-                <ToolbarButton type="button" className="mt-2 w-full" disabled={helperBusy} onClick={() => void handleOpenLoginHelper()}><ExternalLink />{helperBusy ? '正在打开…' : '打开安装位置'}</ToolbarButton>
-              </div>
-            )}
-
             {lanMode ? (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">请在运行 NPM 的电脑上登录；登录后手机可浏览</div>
             ) : (
@@ -505,10 +466,10 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                   {activeLogin.automaticCallback ? (
                     <>
                       <div className="font-bold">请在默认浏览器点击“继续使用此账号”</div>
-                      <div className="mt-1">登录后的 Pixiv 白页会被助手自动捕获，并自动返回 NPM。</div>
+                      <div className="mt-1">登录完成后保持白页片刻，NPM 会自动识别并完成连接。</div>
                     </>
                   ) : (
-                    <div>{activeLogin.message || '未检测到 Edge 登录助手'}</div>
+                    <div>{activeLogin.message || '当前无法自动识别登录结果'}</div>
                   )}
                 </div>
                 {!activeLogin.automaticCallback && (

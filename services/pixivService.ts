@@ -116,11 +116,8 @@ export const pixivService = {
   disconnect: async (): Promise<{ connected: boolean }> =>
     requestJson('/connect', { method: 'DELETE' }),
 
-  startPixivLogin: async (callbackBridge = false): Promise<PixivLoginStatus> =>
-    requestJson('/login/start', { method: 'POST', body: JSON.stringify({ callbackBridge }) }),
-
-  openPixivLoginHelper: async (): Promise<{ opened: boolean; helperPath: string }> =>
-    requestJson('/login/helper', { method: 'POST' }),
+  startPixivLogin: async (): Promise<PixivLoginStatus> =>
+    requestJson('/login/start', { method: 'POST' }),
 
   getPixivLoginStatus: async (id: string): Promise<PixivLoginStatus> =>
     requestJson(`/login/status?id=${encodeURIComponent(id)}`),

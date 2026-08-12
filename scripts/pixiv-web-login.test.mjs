@@ -10,6 +10,7 @@ import {
   parsePixivCallbackUrl,
   PixivWebLoginOrchestrator,
   serializePixivLoginState,
+  startPixivCallbackWatcher,
 } from './pixiv-web-login.mjs';
 import { PIXIV_HASH_SECRET } from './pixiv-local.mjs';
 
@@ -20,6 +21,12 @@ const makeChild = () => {
   child.unref = () => {};
   return child;
 };
+
+const makeWatcher = () => ({
+  exitCode: null,
+  killed: false,
+  kill() { this.killed = true; },
+});
 
 const waitFor = async (predicate, timeoutMs = 1000) => {
   const deadline = Date.now() + timeoutMs;
@@ -97,8 +104,9 @@ test('编排器使用默认浏览器并通过粘贴回调完成登录', async ()
     },
     onTokens: async tokens => { saved = tokens; },
     getGeneration: () => 4,
+    startWatcher: async () => { throw new Error('not available'); },
   });
-  const started = await orchestrator.start({ automaticCallback: false });
+  const started = await orchestrator.start();
   assert.equal(started.state, 'awaiting-user');
   assert.equal(launched.length, 1);
   assert.ok(!/remote-debugging|user-data-dir|headless/i.test(launched[0]));
@@ -117,6 +125,7 @@ test('无效回调不会结束会话，仍可重新粘贴正确地址', async ()
   const orchestrator = new PixivWebLoginOrchestrator({
     launchBrowser: async () => {},
     exchange: async () => ({ refreshToken: 'refresh-token-test-123456', accessToken: 'access-token-test' }),
+    startWatcher: async () => { throw new Error('not available'); },
   });
   const started = await orchestrator.start();
   await assert.rejects(() => orchestrator.complete(started.id, 'https://evil.example/?code=x'), error => error.code === 'PIXIV_LOGIN_CALLBACK_INVALID');
@@ -125,19 +134,22 @@ test('无效回调不会结束会话，仍可重新粘贴正确地址', async ()
   assert.equal(completed.state, 'connected');
 });
 
-test('安装回调桥时公开状态标记为自动完成', async () => {
+test('Windows 回调监听启动成功时公开状态标记为自动完成', async () => {
+  const watcher = makeWatcher();
   const orchestrator = new PixivWebLoginOrchestrator({
     launchBrowser: async () => {},
     exchange: async () => ({ refreshToken: 'refresh-token-test-123456', accessToken: 'access-token-test' }),
+    startWatcher: async () => watcher,
   });
-  const started = await orchestrator.start({ automaticCallback: true });
+  const started = await orchestrator.start();
   assert.equal(started.automaticCallback, true);
   const completed = await orchestrator.complete(started.id, CALLBACK);
   assert.equal(completed.state, 'connected');
+  assert.equal(watcher.killed, true);
 });
 
 test('同一时刻只允许一个会话，取消后可重开', async () => {
-  const orchestrator = new PixivWebLoginOrchestrator({ launchBrowser: async () => {} });
+  const orchestrator = new PixivWebLoginOrchestrator({ launchBrowser: async () => {}, startWatcher: async () => makeWatcher() });
   const first = await orchestrator.start();
   await assert.rejects(() => orchestrator.start(), error => error.code === 'PIXIV_LOGIN_ACTIVE');
   assert.equal((await orchestrator.cancel(first.id)).state, 'canceled');
@@ -145,7 +157,7 @@ test('同一时刻只允许一个会话，取消后可重开', async () => {
 });
 
 test('超时清除 PKCE 并返回安全公开状态', async () => {
-  const orchestrator = new PixivWebLoginOrchestrator({ launchBrowser: async () => {}, ttlMs: 30 });
+  const orchestrator = new PixivWebLoginOrchestrator({ launchBrowser: async () => {}, ttlMs: 30, startWatcher: async () => makeWatcher() });
   const started = await orchestrator.start();
   const final = await waitFor(() => {
     const state = orchestrator.status(started.id);
@@ -156,42 +168,32 @@ test('超时清除 PKCE 并返回安全公开状态', async () => {
   assert.equal(orchestrator.active.verifier, undefined);
 });
 
-test('Edge 登录助手捕获官方 callback 并立即交给本机 NPM', async () => {
-  const originalFetch = globalThis.fetch;
-  let onMessage;
-  let onBeforeNavigate;
-  let stored = {};
-  let posted = null;
-  let redirected = null;
-  globalThis.chrome = {
-    runtime: { onMessage: { addListener: listener => { onMessage = listener; } } },
-    storage: { session: {
-      set: async value => { stored = { ...stored, ...value }; },
-      get: async key => ({ [key]: stored[key] }),
-      remove: async key => { delete stored[key]; },
-    } },
-    webNavigation: { onBeforeNavigate: { addListener: listener => { onBeforeNavigate = listener; } } },
-    tabs: { update: async (tabId, update) => { redirected = { tabId, ...update }; } },
-  };
-  globalThis.fetch = async (url, init) => {
-    posted = { url, init, body: JSON.parse(init.body) };
-    return { ok: true };
-  };
-  await import(`../browser-extension/npm-pixiv-login-bridge/background.js?test=${Date.now()}`);
-  onMessage({ type: 'set-session', id: 'session_12345678', origin: 'http://localhost:3000' });
+test('Windows 地址栏监听只转交 Pixiv 官方 callback', async () => {
+  const calls = [];
+  const callbacks = [];
+  const watcherPromise = startPixivCallbackWatcher({
+    platform: 'win32',
+    scriptPath: 'D:\\NPM\\scripts\\pixiv-edge-callback-watcher.ps1',
+    onCallback: value => callbacks.push(value),
+    spawn: (command, args, options) => {
+      calls.push({ command, args, options });
+      const child = makeChild();
+      child.exitCode = null;
+      child.killed = false;
+      child.kill = () => { child.killed = true; };
+      child.stdout = new EventEmitter();
+      child.stdout.setEncoding = () => {};
+      queueMicrotask(() => child.emit('spawn'));
+      queueMicrotask(() => child.stdout.emit('data', 'NPM_PIXIV_WATCHER_READY\n'));
+      queueMicrotask(() => child.stdout.emit('data', 'https://evil.example/?code=nope\n'));
+      queueMicrotask(() => child.stdout.emit('data', `${CALLBACK}\n`));
+      return child;
+    },
+  });
+  await watcherPromise;
   await new Promise(resolve => setTimeout(resolve, 0));
-  await onBeforeNavigate({
-    frameId: 0,
-    tabId: 17,
-    url: 'https://app-api.pixiv.net/web/v1/users/auth/pixiv/callback?state=x&code=bridge-code-123',
-  });
-  assert.equal(posted.url, 'http://localhost:3000/api/pixiv/login/complete');
-  assert.deepEqual(posted.body, {
-    id: 'session_12345678',
-    callbackUrl: 'https://app-api.pixiv.net/web/v1/users/auth/pixiv/callback?state=x&code=bridge-code-123',
-  });
-  assert.deepEqual(redirected, { tabId: 17, url: 'http://localhost:3000/?pixiv=connected' });
-  assert.equal(stored.pixivLoginSession, undefined);
-  delete globalThis.chrome;
-  globalThis.fetch = originalFetch;
+  assert.equal(calls[0].command, 'powershell.exe');
+  assert.ok(calls[0].args.includes('D:\\NPM\\scripts\\pixiv-edge-callback-watcher.ps1'));
+  assert.equal(calls[0].options.windowsHide, true);
+  assert.deepEqual(callbacks, [CALLBACK]);
 });
