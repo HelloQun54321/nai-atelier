@@ -10,6 +10,7 @@ import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { PromptAgentService } from './prompt-agent.mjs';
 import { StChatu8Bridge } from './st-chatu8-bridge.mjs';
 import { ImageTaggerService } from './image-tagger.mjs';
+import { PIXIV_IMAGE_HOST, PIXIV_REFERER, PixivGalleryService } from './pixiv-local.mjs';
 
 const CACHE_VERSION = 'v1';
 const HISTORY_THUMBNAIL_CACHE_VERSION = 'v2';
@@ -234,6 +235,7 @@ const isLoopbackIp = value => {
   const ip = normalizeIp(value).toLowerCase();
   return ip === '::1' || ip === 'localhost' || /^127\./.test(ip);
 };
+export const isPixivConnectionMutationAllowed = req => isLoopbackIp(req?.socket?.remoteAddress);
 const isLoopbackHost = host => {
   const value = String(host || '').toLowerCase();
   const hostname = value.startsWith('[') ? value.slice(1, value.indexOf(']')) : value.split(':')[0];
@@ -909,7 +911,9 @@ export const getValidatedSource = value => {
   if (stChatu8History) return { type: 'st-chatu8-history', source, externalId: stChatu8History[1].toLowerCase() };
   let url;
   try { url = new URL(source); } catch { throw new Error('Unsupported image source'); }
-  if (url.protocol !== 'https:' || !ALLOWED_REMOTE_HOSTS.has(url.hostname.toLowerCase())) throw new Error('Remote image host is not allowed');
+  const host = url.hostname.toLowerCase();
+  // i.pximg.net 只在本机 media gateway 白名单内，worker 的 MEDIA_REMOTE_HOSTS 不包含它。
+  if (url.protocol !== 'https:' || (url.port && url.port !== '443') || !(ALLOWED_REMOTE_HOSTS.has(host) || host === PIXIV_IMAGE_HOST)) throw new Error('Remote image host is not allowed');
   return { type: 'remote', source: url.toString() };
 };
 
@@ -976,11 +980,15 @@ export const requestRemoteBuffer = async (source, remoteFetch = fetch) => {
   let current = source;
   for (let redirects = 0; redirects < 4; redirects++) {
     const url = new URL(current);
-    if (url.protocol !== 'https:' || !ALLOWED_REMOTE_HOSTS.has(url.hostname.toLowerCase())) throw new Error('Remote image redirect is not allowed');
+    const host = url.hostname.toLowerCase();
+    if (url.protocol !== 'https:' || (url.port && url.port !== '443') || !(ALLOWED_REMOTE_HOSTS.has(host) || host === PIXIV_IMAGE_HOST)) throw new Error('Remote image redirect is not allowed');
+    const headers = { accept: 'image/*', 'user-agent': 'NaiPromptManager-MediaGateway/1.0' };
+    // Pixiv 图片必须携带官方 Referer，否则上游返回 403。
+    if (host === PIXIV_IMAGE_HOST) headers.referer = PIXIV_REFERER;
     const response = await remoteFetch(url, {
       redirect: 'manual',
       signal: AbortSignal.timeout(20_000),
-      headers: { accept: 'image/*', 'user-agent': 'NaiPromptManager-MediaGateway/1.0' },
+      headers,
     });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get('location');
@@ -1074,6 +1082,39 @@ const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remoteFetch
       error: `电脑无法连接 Danbooru：${error?.cause?.message || error?.message || '未知错误'}`,
     });
   }
+};
+
+const handlePixivGalleryRequest = async (req, res, url, pixivGallery) => {
+  if (url.pathname === '/api/pixiv/status') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    return sendJson(res, 200, pixivGallery.status());
+  }
+  if (url.pathname === '/api/pixiv/connect') {
+    if (!isPixivConnectionMutationAllowed(req)) {
+      return sendJson(res, 403, { error: 'Pixiv 连接信息只能在本机电脑上修改', code: 'PIXIV_CONNECT_LOCAL_ONLY' });
+    }
+    if (req.method === 'POST') {
+      let body = {};
+      try { body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}'); } catch {
+        return sendJson(res, 400, { error: '请求体不是有效 JSON', code: 'PIXIV_INVALID_BODY' });
+      }
+      return sendJson(res, 200, await pixivGallery.connect(body.refreshToken || body.refresh_token));
+    }
+    if (req.method === 'DELETE') {
+      return sendJson(res, 200, await pixivGallery.disconnect());
+    }
+    return sendJson(res, 405, { error: 'Method not allowed' });
+  }
+  if (url.pathname === '/api/pixiv/feed') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    const result = await pixivGallery.feed({
+      mode: url.searchParams.get('mode'),
+      cursor: url.searchParams.get('cursor'),
+      params: Object.fromEntries(url.searchParams),
+    });
+    return sendJson(res, 200, result);
+  }
+  return sendJson(res, 404, { error: 'Pixiv 接口不存在', code: 'PIXIV_NOT_FOUND' });
 };
 
 class ThumbnailCache {
@@ -1230,7 +1271,7 @@ const proxyRequest = (req, res, workerPort) => {
   req.pipe(upstream);
 };
 
-export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSecret = '', outboundProxyUrl = '' } = {}) {
+export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSecret = '', outboundProxyUrl = '', pixivFetch, pixivTokenDir } = {}) {
   const proxyAgent = outboundProxyUrl ? new ProxyAgent(outboundProxyUrl) : null;
   const remoteFetch = (url, options = {}) => undiciFetch(url, { ...options, ...(proxyAgent ? { dispatcher: proxyAgent } : {}) });
   const cloudQueue = new CloudQueueCoordinator(remoteFetch);
@@ -1243,9 +1284,16 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
     requestWorkerJson: (path, options) => requestWorkerJson(path, internalWorkerRequest, workerPort, options),
     requestWorkerBuffer: path => requestWorkerBuffer(path, internalWorkerRequest, workerPort),
   });
+  // Pixiv 图库只在本机 media gateway 提供：worker 部署不含任何 Pixiv 逻辑，
+  // /api/pixiv 在 Cloudflare 上必然 401/404（fail closed）。
+  const pixivGallery = new PixivGalleryService({
+    fetch: pixivFetch || remoteFetch,
+    tokenDir: pixivTokenDir || join(process.cwd(), 'local-data'),
+  });
   await cache.init();
   await promptAgent.init();
   await stChatu8Bridge.init();
+  await pixivGallery.init();
   await recoverPendingVibeEncodings(workerPort);
   stChatu8Bridge.startHistorySync();
 
@@ -1588,6 +1636,16 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         return sendJson(res, Number(error.status) || 500, { error: error.message || '图片反推 Tag 失败' });
       }
     }
+    if (url.pathname.startsWith('/api/pixiv/')) {
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      try {
+        return await handlePixivGalleryRequest(req, res, url, pixivGallery);
+      } catch (error) {
+        const payload = { error: error.message || 'Pixiv 请求失败', code: error.code || 'PIXIV_ERROR' };
+        if (error.upstreamStatus) payload.upstreamStatus = Number(error.upstreamStatus);
+        return sendJson(res, Number(error.status) || 502, payload);
+      }
+    }
     if (url.pathname === '/__internal/aitag-fetch') return handleAitagRemoteRequest(req, res, url, lanSecret, remoteFetch);
     if (url.pathname === '/__internal/danbooru-fetch') return handleDanbooruRemoteRequest(req, res, url, lanSecret, remoteFetch);
     if (url.pathname === '/api/generate') return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, cloudQueuePreferences, remoteFetch);
@@ -1669,7 +1727,17 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         : requestRemoteBuffer(validated.source, remoteFetch);
 
       if (variant === 'original') {
-        if (validated.type === 'local' || validated.type === 'remote') {
+        let isPixivOriginal = false;
+        if (validated.type === 'remote') {
+          try {
+            const originalUrl = new URL(validated.source);
+            isPixivOriginal = originalUrl.protocol === 'https:'
+              && (!originalUrl.port || originalUrl.port === '443')
+              && originalUrl.hostname.toLowerCase() === PIXIV_IMAGE_HOST;
+          } catch {}
+        }
+        // Pixiv 原图不能 302 直出（浏览器不会带官方 Referer），由网关带 Referer 代理。
+        if (validated.type === 'local' || (validated.type === 'remote' && !isPixivOriginal)) {
           const location = validated.type === 'local'
             ? new URL(validated.source, `http://${req.headers.host || 'localhost'}`).toString()
             : validated.source;

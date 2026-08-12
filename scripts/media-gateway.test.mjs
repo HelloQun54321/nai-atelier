@@ -17,6 +17,7 @@ import {
   CloudQueueCoordinator,
   fetchNovelAiGeneration,
   getValidatedSource,
+  isPixivConnectionMutationAllowed,
   selectThumbnailConcurrency,
 } from './media-gateway.mjs';
 import { PromptAgentService, calculateAgentContextBudget, customProviderRuntime, detectModelCapabilities, estimateContextTokens, parseTranslationResponse, parseWebSearchResponse, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
@@ -836,6 +837,48 @@ test('media gateway allows cdn.donmai.us sources and rejects other hosts', () =>
   assert.throws(() => getValidatedSource('http://cdn.donmai.us/sample.webp'), /not allowed/);
   assert.throws(() => getValidatedSource('https://cdn.donmai.us.evil.example/sample.webp'), /not allowed/);
   assert.throws(() => getValidatedSource('https://example.com/sample.webp'), /not allowed/);
+});
+
+test('media gateway allows i.pximg.net sources only through the local whitelist', () => {
+  assert.deepEqual(getValidatedSource('https://i.pximg.net/img-master/img/2024/01/01/00/00/00/123_p0_master1200.jpg'), {
+    type: 'remote',
+    source: 'https://i.pximg.net/img-master/img/2024/01/01/00/00/00/123_p0_master1200.jpg',
+  });
+  assert.throws(() => getValidatedSource('http://i.pximg.net/x.jpg'), /not allowed/);
+  assert.throws(() => getValidatedSource('https://i.pximg.net:444/x.jpg'), /not allowed/);
+  assert.throws(() => getValidatedSource('https://i.pximg.net.evil.example/x.jpg'), /not allowed/);
+});
+
+test('Pixiv connection credentials can only be changed from loopback', () => {
+  assert.equal(isPixivConnectionMutationAllowed({ socket: { remoteAddress: '127.0.0.1' } }), true);
+  assert.equal(isPixivConnectionMutationAllowed({ socket: { remoteAddress: '::ffff:127.0.0.1' } }), true);
+  assert.equal(isPixivConnectionMutationAllowed({ socket: { remoteAddress: '192.168.1.50' } }), false);
+  assert.equal(isPixivConnectionMutationAllowed({ socket: { remoteAddress: '10.0.0.8' } }), false);
+});
+
+test('requestRemoteBuffer sends the Pixiv Referer for i.pximg.net and keeps it across redirects', async () => {
+  const calls = [];
+  const remoteFetch = async (url, opts) => {
+    calls.push({ url: url.toString(), referer: opts.headers.referer });
+    if (calls.length === 1) {
+      return new Response(null, { status: 302, headers: { location: 'https://i.pximg.net/img-master/img/2024/01/01/00/00/00/123_p0_master1200.jpg?x=1' } });
+    }
+    return new Response(new Uint8Array([9, 8, 7]), { status: 200, headers: { 'content-type': 'image/jpeg' } });
+  };
+  const result = await requestRemoteBuffer('https://i.pximg.net/img-master/img/2024/01/01/00/00/00/123_p0_master1200.jpg', remoteFetch);
+  assert.equal(result.status, 200);
+  assert.equal(calls.length, 2);
+  for (const call of calls) assert.equal(call.referer, 'https://www.pixiv.net/');
+  assert.deepEqual([...result.buffer], [9, 8, 7]);
+});
+
+test('requestRemoteBuffer never sends a Referer for non-Pixiv hosts', async () => {
+  const referers = [];
+  await requestRemoteBuffer('https://cdn.donmai.us/sample.webp', async (url, opts) => {
+    referers.push(opts.headers.referer);
+    return new Response(new Uint8Array([1]), { status: 200, headers: { 'content-type': 'image/webp' } });
+  });
+  assert.equal(referers[0], undefined);
 });
 
 test('requestRemoteBuffer sends image Accept header and returns upstream original bytes', async () => {

@@ -4,6 +4,24 @@
 
 ## 2026-08-12
 
+### Pixiv 图库前端（本机版）
+
+- 新增 Pixiv 图库前端（`services/pixivService.ts` + `components/PixivGallery.tsx`）：连接管理（refresh token 仅以加密形式保存在本机 `local-data`，页面内只在临时 state 持有、操作完成后立即清空）、推荐/标签搜索/日周月榜单/画师作品浏览、`nextCursor` 加载更多。
+- 作品详情支持多页切换、打开 Pixiv 原站、当前页导入实验室、保存到灵感库；ugoira 动图作品提示仅展示首帧；点击标签可直接按该标签搜索。
+- Pixiv 图片统一经本机媒体网关代理（`i.pximg.net` 必须携带官方 Referer，浏览器直连会 403）：卡片缩略图走现有 SmartImage/移动端缓存链路，详情原图与灵感库保存（转 data URL）走 `/api/media` 本地代理。
+- Pixiv 内容按后端接口原样透传 `x_restrict`，不做年龄分级过滤，也不提供年龄开关（与后端策略一致）。
+- 桌面侧栏与移动端资源库新增「Pixiv」入口；Pixiv 仅在本机媒体网关可用，Cloudflare Worker 部署不含 Pixiv 逻辑，`/api/pixiv` 在云端失败关闭（fail closed）。
+
+### Pixiv 内置图库：后端与安全基础
+
+- 新增 `scripts/pixiv-local.mjs`：Pixiv App API 严格允许列表（仅 `app-api.pixiv.net` 的 `GET /v1/illust/recommended`、`/v1/search/illust`、`/v1/illust/ranking`、`/v1/user/illusts`、`/v1/illust/detail`），`next_url` 分页游标仍须通过同一 host/path/method 白名单；Pixiv 响应规范化为统一卡片结构，年龄分级 `x_restrict` 原样透传，不做任何过滤或开关。
+- refresh token 与 access token 只在本机 `local-data` 中以独立密钥 AES-256-GCM 加密保存（`pixiv.key` / `pixiv-tokens.json`），原子写入并尽量 `0600`；刷新单飞，401 最多重试一次，新 refresh_token 非空才覆盖旧值；任何响应、错误与日志都不携带 token。
+- OAuth 刷新请求对齐 Pixiv iOS App 客户端格式（`X-Client-Time` / `X-Client-Hash` / App headers，并兼容嵌套 token 响应）；连接时先验证 refresh token，失败恢复原连接。令牌写入使用代际保护，断开或重新连接后，旧的并发刷新结果不能把 token 写回来；损坏的密钥文件直接失败，不会被静默覆盖。
+- 本机 media gateway 新增 `/api/pixiv/status`、`POST/DELETE /api/pixiv/connect`、`/api/pixiv/feed`（mode=recommended/search/day/week/month/user/detail + cursor），沿用现有局域网访问控制；部署到 Cloudflare 的 Worker 不含任何 Pixiv 逻辑，`/api/pixiv` 在云端必然不可用（fail closed）。
+- 局域网设备可在通过 NPM 访问校验后浏览 Pixiv 图库，但 refresh token 的连接与断开操作仅允许在运行 NPM 的本机电脑执行。
+- `/api/media` 仅在本机 gateway 白名单放行 `i.pximg.net`，抓取时自动携带 `Referer: https://www.pixiv.net/`（含重定向与 original 原图代理）；Worker 的 `MEDIA_REMOTE_HOSTS` 保持不含 `i.pximg.net`。
+- 新增 `scripts/pixiv-local.test.mjs` 并挂入 `npm run test:gateway`：覆盖 host/path/method 白名单、cursor 清洗与回传、token 不回显与加密落盘、pximg Referer、断开状态、单飞刷新与 401 重试一次，全部使用 mock fetch，无需真实 token。
+
 ### 角色/画师 Tag 图钉设封面不再 403
 
 - 图钉保存改为复用本机媒体网关链路：先经 `/api/media?variant=original` 读取 Danbooru 原图（不再让 Worker 直连 cdn.donmai.us，上游对 Worker 出口返回 403），校验来源域名、响应类型与 12MB 上限后转成 data URL 提交，由 Worker 现有上传流程写入 R2，数据库只保存 `/api/assets/...` 地址。

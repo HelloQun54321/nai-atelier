@@ -13,9 +13,10 @@ const InspirationGallery = lazy(() => import('./components/InspirationGallery').
 const GenHistory = lazy(() => import('./components/GenHistory').then(module => ({ default: module.GenHistory })));
 const AitagGallery = lazy(() => import('./components/AitagGallery').then(module => ({ default: module.AitagGallery })));
 const DanbooruGallery = lazy(() => import('./components/DanbooruGallery').then(module => ({ default: module.DanbooruGallery })));
+const PixivGallery = lazy(() => import('./components/PixivGallery').then(module => ({ default: module.PixivGallery })));
 const CharacterLibrary = lazy(() => import('./components/CharacterLibrary').then(module => ({ default: module.CharacterLibrary })));
 
-type ViewState = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'inspiration' | 'history' | 'playground';
+type ViewState = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'inspiration' | 'history' | 'playground';
 type KeepAliveView = Exclude<ViewState, 'edit'>;
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
@@ -88,7 +89,7 @@ const App = () => {
     };
     const navigate = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      if (['list', 'characters', 'library', 'aitag', 'danbooru', 'inspiration', 'history', 'playground'].includes(detail.view)) void handleNavigate(detail.view, detail.id);
+      if (['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'inspiration', 'history', 'playground'].includes(detail.view)) void handleNavigate(detail.view, detail.id);
     };
     window.addEventListener('nai-agent-ui-preferences', applyPreferences);
     window.addEventListener('nai-agent-navigate', navigate);
@@ -465,6 +466,14 @@ const App = () => {
       case 'danbooru':
         return <DanbooruGallery
           active={view === 'danbooru'}
+          currentUser={currentUser}
+          notify={notify}
+          onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
+          onRefreshInspiration={() => loadInspirations(true)}
+        />;
+      case 'pixiv':
+        return <PixivGallery
+          active={view === 'pixiv'}
           currentUser={currentUser}
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}

@@ -65,6 +65,19 @@ export const ToolbarButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElemen
   );
 };
 
+export const ToolbarLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+  tone?: 'neutral' | 'primary';
+}> = ({ tone = 'neutral', className = '', children, ...props }) => {
+  const toneClass = tone === 'primary'
+    ? 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500'
+    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white';
+  return (
+    <a className={`inline-flex h-10 flex-none items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0 ${toneClass} ${className}`} {...props}>
+      {children}
+    </a>
+  );
+};
+
 export const MediaCardShell: React.FC<React.HTMLAttributes<HTMLElement> & {
   as?: 'article' | 'div';
   selected?: boolean;
