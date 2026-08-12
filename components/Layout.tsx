@@ -107,6 +107,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       { id: 'library', label: '画师 Tag', icon: icons.artist },
       { id: 'aitag', label: 'AITag', icon: icons.tag },
       { id: 'danbooru', label: 'Danbooru', icon: icons.danbooru },
+      { id: 'pixiv', label: 'Pixiv', icon: icons.pixiv },
       { id: 'inspiration', label: '灵感库', icon: icons.inspiration },
     ] },
     { label: '记录', items: [
