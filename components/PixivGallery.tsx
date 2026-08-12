@@ -86,6 +86,9 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   const [loginSession, setLoginSession] = useState<PixivLoginStatus | null>(null);
   const [loginMessage, setLoginMessage] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
+  const [callbackUrl, setCallbackUrl] = useState('');
+  const [callbackBridgeReady, setCallbackBridgeReady] = useState(false);
+  const [helperBusy, setHelperBusy] = useState(false);
   const [lanMode, setLanMode] = useState(false);
   const loadedRef = useRef(false);
   const feedRequestRef = useRef(0);
@@ -175,9 +178,13 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     if (loginBusy || lanMode || isActiveLoginState(loginSessionRef.current?.state)) return;
     setLoginBusy(true);
     setLoginMessage('');
+    setCallbackUrl('');
     try {
-      const session = await pixivService.startPixivLogin();
+      const session = await pixivService.startPixivLogin(callbackBridgeReady);
       window.sessionStorage.setItem(PIXIV_LOGIN_SESSION_KEY, session.id);
+      if (callbackBridgeReady) {
+        window.postMessage({ source: 'npm-pixiv-gallery', type: 'set-session', id: session.id }, window.location.origin);
+      }
       applyLoginSession(session);
       if (isActiveLoginState(session.state)) startLoginPolling(session.id);
     } catch (startError) {
@@ -188,6 +195,36 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       } else {
         setLoginMessage(startError instanceof Error ? startError.message : '登录启动失败');
       }
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
+  const handleCompleteLogin = async (event: FormEvent) => {
+    event.preventDefault();
+    const session = loginSessionRef.current;
+    const value = callbackUrl.trim();
+    if (!session || !value || loginBusy) return;
+    setLoginBusy(true);
+    setLoginMessage('');
+    try {
+      const completed = await pixivService.completePixivLogin(session.id, value);
+      if (completed.state !== 'connected') {
+        applyLoginSession(completed);
+        return;
+      }
+      clearLoginPoll();
+      window.sessionStorage.removeItem(PIXIV_LOGIN_SESSION_KEY);
+      loginSessionRef.current = null;
+      setLoginSession(null);
+      setCallbackUrl('');
+      loadedRef.current = false;
+      setItems([]);
+      setNextCursor(null);
+      await refreshStatus();
+      notify('Pixiv 登录成功');
+    } catch (completeError) {
+      setLoginMessage(completeError instanceof Error ? completeError.message : '无法完成 Pixiv 登录');
     } finally {
       setLoginBusy(false);
     }
@@ -211,6 +248,31 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     }
   };
 
+  const handleOpenLoginHelper = async () => {
+    if (helperBusy) return;
+    setHelperBusy(true);
+    setLoginMessage('');
+    try {
+      const result = await pixivService.openPixivLoginHelper();
+      await navigator.clipboard?.writeText(result.helperPath).catch(() => {});
+      setLoginMessage('已打开 Edge 扩展页和助手文件夹。开启“开发人员模式”→“加载解压缩的扩展”，选择刚打开的文件夹；路径也已复制。');
+    } catch (helperError) {
+      setLoginMessage(helperError instanceof Error ? helperError.message : '无法打开登录助手目录');
+    } finally {
+      setHelperBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    const onBridgeMessage = (event: MessageEvent) => {
+      if (event.source !== window || event.origin !== window.location.origin) return;
+      if (event.data?.source === 'npm-pixiv-callback-bridge' && event.data?.type === 'ready') setCallbackBridgeReady(true);
+    };
+    window.addEventListener('message', onBridgeMessage);
+    window.postMessage({ source: 'npm-pixiv-gallery', type: 'probe' }, window.location.origin);
+    return () => window.removeEventListener('message', onBridgeMessage);
+  }, []);
+
   useEffect(() => {
     if (active) {
       void refreshStatus();
@@ -218,13 +280,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       const savedId = window.sessionStorage.getItem(PIXIV_LOGIN_SESSION_KEY);
       if (savedId) {
         applyLoginSession({ id: savedId, state: 'awaiting-user', message: '正在等待登录…', expiresAt: Date.now() + 5 * 60 * 1000 });
+        if (callbackBridgeReady) window.postMessage({ source: 'npm-pixiv-gallery', type: 'set-session', id: savedId }, window.location.origin);
         startLoginPolling(savedId);
       }
     } else {
       clearLoginPoll();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
+  }, [active, callbackBridgeReady]);
 
   useEffect(() => () => { clearLoginPoll(); }, []);
 
@@ -418,21 +481,50 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
               <KeyRound className="h-6 w-6" aria-hidden="true" />
             </div>
             <h2 className="text-center text-base font-black text-gray-800 dark:text-gray-100">Pixiv 图库</h2>
-            <p className="mb-4 mt-1 text-center text-xs leading-relaxed text-gray-500">在本机浏览器打开官方 Pixiv 登录页，登录后自动进入图库并加载推荐；账号密码只输入 Pixiv 官方页面。</p>
+            <p className="mb-4 mt-1 text-center text-xs leading-relaxed text-gray-500">使用你平时的默认浏览器打开 Pixiv，保留已有的 Google、Pixiv 登录状态；账号密码只输入 Pixiv 官方页面。</p>
+
+            {!callbackBridgeReady && !activeLogin && !lanMode && (
+              <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+                <div className="font-bold">首次使用：安装 Edge 登录助手</div>
+                <div className="mt-1">Pixiv 桌面登录会停在官方白页；助手只捕获该官方 callback，不读取密码、Cookie 或浏览记录。安装一次后可自动完成。</div>
+                <ToolbarButton type="button" className="mt-2 w-full" disabled={helperBusy} onClick={() => void handleOpenLoginHelper()}><ExternalLink />{helperBusy ? '正在打开…' : '打开安装位置'}</ToolbarButton>
+              </div>
+            )}
 
             {lanMode ? (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">请在运行 NPM 的电脑上登录；登录后手机可浏览</div>
             ) : (
               <ToolbarButton type="button" tone="primary" className="h-12 w-full text-base" disabled={waiting} onClick={() => void handleStartLogin()}>
-                {waiting ? <><RefreshCw className="animate-spin" />等待登录…</> : <><LogIn />登录 Pixiv</>}
+                {waiting ? <><RefreshCw className="animate-spin" />等待完成…</> : <><LogIn />在默认浏览器登录</>}
               </ToolbarButton>
             )}
 
             {activeLogin && (
               <div className="mt-3 space-y-2">
                 <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] leading-relaxed text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300">
-                  {activeLogin.message || '请在打开的 Pixiv 窗口中完成登录'}
+                  {activeLogin.automaticCallback ? (
+                    <>
+                      <div className="font-bold">请在默认浏览器点击“继续使用此账号”</div>
+                      <div className="mt-1">登录后的 Pixiv 白页会被助手自动捕获，并自动返回 NPM。</div>
+                    </>
+                  ) : (
+                    <div>{activeLogin.message || '未检测到 Edge 登录助手'}</div>
+                  )}
                 </div>
+                {!activeLogin.automaticCallback && (
+                  <form onSubmit={handleCompleteLogin} className="space-y-2">
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      value={callbackUrl}
+                      onChange={event => setCallbackUrl(event.target.value)}
+                      placeholder="备用：粘贴官方 callback 地址"
+                      aria-label="Pixiv 登录完成地址"
+                      className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-xs text-gray-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:focus:border-indigo-500 dark:focus:bg-gray-900"
+                    />
+                    <ToolbarButton type="submit" tone="primary" className="w-full" disabled={!callbackUrl.trim() || loginBusy}><LogIn />完成连接</ToolbarButton>
+                  </form>
+                )}
                 <ToolbarButton type="button" tone="danger" className="w-full" disabled={loginBusy} onClick={() => void handleCancelLogin()}><X />取消登录</ToolbarButton>
               </div>
             )}

@@ -70,6 +70,7 @@ export interface PixivLoginStatus {
   message: string;
   expiresAt: number;
   connected?: boolean;
+  automaticCallback?: boolean;
 }
 
 export interface PixivLoginError extends Error {
@@ -115,11 +116,21 @@ export const pixivService = {
   disconnect: async (): Promise<{ connected: boolean }> =>
     requestJson('/connect', { method: 'DELETE' }),
 
-  startPixivLogin: async (): Promise<PixivLoginStatus> =>
-    requestJson('/login/start', { method: 'POST' }),
+  startPixivLogin: async (callbackBridge = false): Promise<PixivLoginStatus> =>
+    requestJson('/login/start', { method: 'POST', body: JSON.stringify({ callbackBridge }) }),
+
+  openPixivLoginHelper: async (): Promise<{ opened: boolean; helperPath: string }> =>
+    requestJson('/login/helper', { method: 'POST' }),
 
   getPixivLoginStatus: async (id: string): Promise<PixivLoginStatus> =>
     requestJson(`/login/status?id=${encodeURIComponent(id)}`),
+
+  completePixivLogin: async (id: string, callbackUrl: string): Promise<PixivLoginStatus> =>
+    requestJson('/login/complete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id, callbackUrl }),
+    }),
 
   cancelPixivLogin: async (id: string): Promise<PixivLoginStatus> =>
     requestJson(`/login?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
