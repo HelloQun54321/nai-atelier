@@ -4,6 +4,11 @@
 
 ## 2026-08-12
 
+### Pixiv 推荐无限加载 + 全部图库滚动自动加载
+
+- **Pixiv 推荐模式无法翻页修复**：Pixiv recommended 接口的 `next_url` 携带逐页累积的 `viewed[]` 去重列表，URL 随翻页无限增长（实测 2293+ 字符），超过游标 2048 字符上限后被白名单整条丢弃，导致推荐流永远只有第一页。清洗时改为裁剪最早的 `viewed`（保留最近 60 条）并重排索引从 0 连续编号（Pixiv 对不连续索引返回 400），翻页不再有上限；真实账号验证 6+ 页连续翻页。
+- **图库滚动自动加载**：Pixiv 图库改为滚动接近底部自动加载下一页（IntersectionObserver sentinel，按钮保留作兜底）；Danbooru/AITag/历史页滚动到底自动翻页（保留原分页器）；画师串列表滚动自动追加分批渲染。画师/角色资料库此前已有 sentinel 自动加载，保持一致。浏览器端到端验证：Pixiv 推荐流连续滚动 430→855+ 件持续增长。
+
 ### Pixiv 登录适配 custom scheme 回调 + 安全模式模糊残留修复
 
 - **Pixiv 登录流程适配**：Pixiv 已将登录成功回调从 HTTPS callback 白页改为 `pixiv://account/login?code=…` custom scheme（桌面浏览器未注册协议时登录会卡在空白页，地址栏监听也抓不到）。新增 `pixiv://` URL 协议注册（`HKCU\Software\Classes\pixiv`，登录时幂等注册、失败自动降级）与 `scripts/pixiv-scheme-handler.mjs`：Windows 把 scheme 跳转交给本机 node 脚本，解析官方 code 后经 `POST /api/pixiv/login/complete` 完成登录；`parsePixivCallbackUrl` 同时接受 HTTPS callback 与 `pixiv://account/login`，`complete` 允许省略会话 id（协议处理器无 id 场景），手动粘贴两种地址均可用。已用真实已登录 Edge 账号端到端验证：断开→重连→图库全流程正常，token 仍仅加密落盘 `local-data/pixiv-tokens.json`。

@@ -79,14 +79,37 @@ export const classifyPixivApiTarget = value => {
   return method ? { url, host: PIXIV_API_HOST, pathname: url.pathname, method } : null;
 };
 
-export const sanitizePixivNextUrl = value => {
+/** recommended 的 next_url 会携带逐页累积的 viewed[] 去重列表，URL 随翻页无限增长；
+ *  超过 MAX_CURSOR_LENGTH 会被丢弃导致无法继续翻页。清洗时保留最近部分 viewed，
+ *  牺牲少量去重精度换取可无限翻页。 */
+export const PIXIV_VIEWED_KEEP_MAX = 60;
+const VIEWED_KEY_PATTERN = /^viewed\[\d+\]$/;
+
+export const sanitizePixivNextUrl = (value, { maxLength = MAX_CURSOR_LENGTH, viewedKeepMax = PIXIV_VIEWED_KEEP_MAX } = {}) => {
   const target = classifyPixivApiTarget(value);
   if (!target) return null;
   for (const key of [...target.url.searchParams.keys()]) {
     if (target.url.searchParams.get(key) === '') target.url.searchParams.delete(key);
   }
-  const cleaned = target.url.toString();
-  return cleaned.length <= MAX_CURSOR_LENGTH ? cleaned : null;
+  let cleaned = target.url.toString();
+  if (cleaned.length > maxLength) {
+    const viewedEntries = [...target.url.searchParams.keys()]
+      .filter(key => VIEWED_KEY_PATTERN.test(key))
+      .map(key => [Number(key.slice(7, -1)), target.url.searchParams.get(key)])
+      .sort((a, b) => a[0] - b[0]);
+    const dropCount = Math.max(0, viewedEntries.length - viewedKeepMax);
+    if (dropCount > 0) {
+      for (const key of [...target.url.searchParams.keys()]) {
+        if (VIEWED_KEY_PATTERN.test(key)) target.url.searchParams.delete(key);
+      }
+      // Pixiv 要求 viewed[] 索引从 0 连续编号，裁剪后必须重排。
+      viewedEntries.slice(dropCount).forEach(([, id], index) => {
+        if (id) target.url.searchParams.set(`viewed[${index}]`, id);
+      });
+    }
+    cleaned = target.url.toString();
+  }
+  return cleaned.length <= maxLength ? cleaned : null;
 };
 
 // ---- Pixiv 响应规范化（年龄分级不做过滤，原样透传 x_restrict） ----

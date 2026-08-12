@@ -1,5 +1,5 @@
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PromptChain, ChainType } from '../types';
 import { useConfirmDialog } from './ConfirmDialog';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
@@ -260,6 +260,21 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, selectedTags, sortOption]);
   const visibleChains = filteredChains.slice(0, visibleCount);
 
+  // 滚动接近列表底部自动追加一批；按钮保留作兜底。
+  const chainScrollRef = useRef<HTMLDivElement>(null);
+  const chainLoadSentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const sentinel = chainLoadSentinelRef.current;
+    const root = chainScrollRef.current;
+    if (!sentinel || !root || visibleCount >= filteredChains.length) return;
+    if (!('IntersectionObserver' in window)) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0]?.isIntersecting) setVisibleCount(count => count + RENDER_BATCH_SIZE);
+    }, { root, rootMargin: '600px 0px' });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [filteredChains.length, visibleCount]);
+
   // 卡片预计高度：图片区（列宽 / 实际宽高比）+ 48px 标题区 + 上下边框。previewRatios 更新后自动重算分列。
   const estimateChainCardHeight = useCallback(
     (chain: PromptChain, columnWidth: number) => {
@@ -380,7 +395,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           </div>
         </MobileBottomSheet>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-3 md:p-5">
+        <div ref={chainScrollRef} className="min-h-0 flex-1 overflow-y-auto p-3 md:p-5">
           {filteredChains.length === 0 ? (
             <div className="text-center py-20 bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700">
               <p className="text-gray-500 text-lg mb-4">暂无数据</p>
@@ -402,7 +417,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                 {visibleChains.map(renderChainCard)}
               </div>
             )}
-            {visibleCount < filteredChains.length && <div className="flex justify-center py-6"><button type="button" onClick={() => setVisibleCount(count => count + RENDER_BATCH_SIZE)} className="mobile-touch rounded-xl border border-gray-300 bg-white px-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">加载更多（{filteredChains.length - visibleCount}）</button></div>}
+            {visibleCount < filteredChains.length && <div className="flex justify-center py-6"><button type="button" onClick={() => setVisibleCount(count => count + RENDER_BATCH_SIZE)} className="mobile-touch rounded-xl border border-gray-300 bg-white px-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">加载更多（{filteredChains.length - visibleCount}）</button><div ref={chainLoadSentinelRef} className="h-4 w-full max-w-40" aria-hidden="true" /></div>}
             </>
           )}
         </div>

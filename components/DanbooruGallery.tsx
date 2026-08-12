@@ -107,6 +107,22 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     if (active && !loadedRef.current) void load('order:rank', 1);
   }, [active]);
 
+  // 滚动接近列表底部自动翻下一页；按钮保留作兜底。
+  const autoPageSentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const sentinel = autoPageSentinelRef.current;
+    const root = scrollRef.current;
+    if (!sentinel || !root || !hasMore || loading) return;
+    if (!('IntersectionObserver' in window)) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0]?.isIntersecting) void load(query, page + 1);
+    }, { root, rootMargin: '600px 0px' });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+    // load 闭包随 query/page 重建，无需列入依赖。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMore, loading, page, query]);
+
   const submitSearch = async (event?: FormEvent) => {
     event?.preventDefault();
     try {
@@ -206,6 +222,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             <ToolbarButton disabled={loading || page <= 1} onClick={() => void load(query, page - 1)}><ChevronLeft />上一页</ToolbarButton>
             <span className="text-xs font-bold text-gray-500">{page}</span>
             <ToolbarButton disabled={loading || !hasMore} onClick={() => void load(query, page + 1)}>下一页<ChevronRight /></ToolbarButton>
+            <div ref={autoPageSentinelRef} className="h-4 w-full max-w-40" aria-hidden="true" />
           </div>
         </main>
 

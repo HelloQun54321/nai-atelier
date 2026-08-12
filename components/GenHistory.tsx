@@ -320,6 +320,23 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
     refreshPageRef.current = goToPage;
 
+    // 滚动接近列表底部自动翻下一页；分页器保留作兜底/跳页。
+    const historyScrollRef = useRef<HTMLDivElement>(null);
+    const historyPageSentinelRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const sentinel = historyPageSentinelRef.current;
+        const root = historyScrollRef.current;
+        if (!sentinel || !root || isLoading || currentPage >= totalPages) return;
+        if (!('IntersectionObserver' in window)) return;
+        const observer = new IntersectionObserver(entries => {
+            if (entries[0]?.isIntersecting) void goToPage(currentPage + 1);
+        }, { root, rootMargin: '600px 0px' });
+        observer.observe(sentinel);
+        return () => observer.disconnect();
+        // goToPage 闭包随 currentPage/isLoading 重建，无需列入依赖。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentPage, isLoading, totalPages]);
+
     const applyDateFilter = (next: { from: string; to: string }) => {
         const from = next.from ? new Date(`${next.from}T00:00:00`).getTime() : undefined;
         const to = next.to ? new Date(`${next.to}T23:59:59.999`).getTime() : undefined;
@@ -955,7 +972,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 </div>
             </MobileBottomSheet>
 
-            <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-20">
+            <div ref={historyScrollRef} className="flex-1 overflow-y-auto p-4 md:p-6 pb-20">
                 {selectionMode && <div className="mb-5 hidden items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 dark:border-indigo-900/60 dark:bg-indigo-950/30 md:flex">
                     <span className="mr-auto text-sm font-bold text-indigo-700 dark:text-indigo-200">多选模式 · 已选 {selectedIds.size} 张</span>
                     <button type="button" onClick={selectCurrentPage} className="rounded-lg px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 dark:text-indigo-200 dark:hover:bg-indigo-900/50">全选本页</button>
@@ -1004,7 +1021,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                         
                         {/* 底部分页信息 */}
                         <div className="mt-12 md:mt-16">
-                            {totalCount > 0 && <div className="mx-auto mb-4 grid max-w-sm grid-cols-[2.75rem_1fr_2.75rem] items-center gap-2">
+                            {totalCount > 0 && <>
+                                <div className="mx-auto mb-4 grid max-w-sm grid-cols-[2.75rem_1fr_2.75rem] items-center gap-2">
                                 <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1 || isLoading} aria-label="上一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">‹</button>
                                 <button onClick={() => setShowPageMenu(true)} className="mobile-touch rounded-lg text-sm font-bold text-indigo-600 dark:text-indigo-300 md:hidden">{currentPage} / {totalPages}</button>
                                 <form onSubmit={submitDesktopPageJump} className="hidden items-center justify-center gap-1.5 md:flex">
@@ -1012,7 +1030,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                     <span className="text-sm font-bold text-indigo-600 dark:text-indigo-300">/ {totalPages}</span>
                                 </form>
                                 <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || isLoading} aria-label="下一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">›</button>
-                            </div>}
+                            </div>
+                            <div ref={historyPageSentinelRef} className="h-4 w-full max-w-40 mx-auto" aria-hidden="true" />
+                            </>}
                             <div className="flex flex-col items-center justify-center py-6">
                                 {isLoading ? (
                                     <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />加载中...</div>

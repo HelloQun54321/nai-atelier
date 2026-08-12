@@ -82,7 +82,32 @@ test('Pixiv next_url cursor is cleaned and re-validated against host/path/method
   assert.equal(sanitizePixivNextUrl('https://i.pximg.net/v1/illust/recommended?offset=30'), null);
   assert.equal(sanitizePixivNextUrl('https://app-api.pixiv.net/v1/illust/foo?offset=30'), null);
   assert.equal(sanitizePixivNextUrl('https://app-api.pixiv.net/v1/search/user?offset=30'), null);
-  assert.equal(sanitizePixivNextUrl(`https://app-api.pixiv.net/v1/illust/ranking?x=${'a'.repeat(3000)}`), null);
+  assert.equal(sanitizePixivNextUrl('https://app-api.pixiv.net/v1/illust/ranking?x='.concat('a'.repeat(3000))), null);
+});
+
+test('Pixiv recommended 超长 next_url 裁剪 viewed 列表后仍可翻页', () => {
+  // recommended 的 next_url 携带逐页累积 viewed[]，随翻页无限增长；超过长度上限时应
+  // 裁剪掉最早的 viewed（保留最近部分）并重排索引为 0 起连续，而不是整个丢弃。
+  const viewed = Array.from({ length: 200 }, (_, index) => `viewed[${index}]=${100000000 + index}`);
+  const base = 'https://app-api.pixiv.net/v1/illust/recommended?min_bookmark_id_for_recent_illust=38306879721&max_bookmark_id_for_recommend=35633142820&offset=0&include_ranking_illusts=false&include_privacy_policy=false';
+  const long = `${base}&${viewed.join('&')}`;
+  assert.ok(long.length > 3000);
+  const cleaned = sanitizePixivNextUrl(long);
+  assert.ok(cleaned);
+  assert.ok(cleaned.length <= 2048, `cleaned length ${cleaned.length}`);
+  const parsed = new URL(cleaned);
+  const viewedKeys = [...parsed.searchParams.keys()].filter(key => key.startsWith('viewed['));
+  assert.ok(viewedKeys.length > 0);
+  const indexes = viewedKeys.map(key => Number(key.slice(7, -1)));
+  // 索引必须从 0 连续编号，否则 Pixiv 返回 400。
+  assert.deepEqual(indexes, indexes.map((_, index) => index));
+  // 保留的是最近（索引最大）的部分。
+  assert.equal(parsed.searchParams.get('viewed[0]'), String(100000000 + 200 - viewedKeys.length));
+  // 清洗结果可再次通过清洗（幂等）。
+  assert.equal(sanitizePixivNextUrl(cleaned), cleaned);
+  // viewed 数量适中时不做裁剪。
+  const short = `${base}&viewed[0]=100000000&viewed[1]=100000001`;
+  assert.equal(sanitizePixivNextUrl(short), short);
 });
 
 // ---------- 响应规范化（年龄分级原样透传） ----------
