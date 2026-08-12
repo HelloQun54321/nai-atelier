@@ -62,6 +62,20 @@ export interface PixivFeedResult {
   fetchedAt: number;
 }
 
+export type PixivLoginState = 'starting' | 'awaiting-user' | 'exchanging' | 'connected' | 'failed' | 'canceled' | 'timed-out';
+
+export interface PixivLoginStatus {
+  id: string;
+  state: PixivLoginState;
+  message: string;
+  expiresAt: number;
+  connected?: boolean;
+}
+
+export interface PixivLoginError extends Error {
+  code?: string;
+}
+
 const API_BASE = '/api/pixiv';
 
 const requestJson = async (path: string, init?: RequestInit) => {
@@ -77,13 +91,17 @@ const requestJson = async (path: string, init?: RequestInit) => {
   if (!response.ok) {
     const text = await response.text().catch(() => '');
     let message = text;
+    let code = '';
     try {
       const payload = JSON.parse(text || '{}');
       if (payload?.error) message = payload.error;
+      if (payload?.code) code = payload.code;
     } catch {
       // 保留原始文本作为错误信息
     }
-    throw new Error(message || 'Pixiv 请求失败');
+    const error = new Error(message || 'Pixiv 请求失败') as PixivLoginError;
+    if (code) error.code = code;
+    throw error;
   }
   return response.json();
 };
@@ -96,6 +114,15 @@ export const pixivService = {
 
   disconnect: async (): Promise<{ connected: boolean }> =>
     requestJson('/connect', { method: 'DELETE' }),
+
+  startPixivLogin: async (): Promise<PixivLoginStatus> =>
+    requestJson('/login/start', { method: 'POST' }),
+
+  getPixivLoginStatus: async (id: string): Promise<PixivLoginStatus> =>
+    requestJson(`/login/status?id=${encodeURIComponent(id)}`),
+
+  cancelPixivLogin: async (id: string): Promise<PixivLoginStatus> =>
+    requestJson(`/login?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   feed: async (mode: PixivFeedMode, options: { cursor?: string; params?: PixivFeedParams } = {}): Promise<PixivFeedResult> => {
     const query = new URLSearchParams({ mode });

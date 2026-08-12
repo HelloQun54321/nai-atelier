@@ -1,5 +1,5 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, CircleUserRound, ExternalLink, FlaskConical, Heart, KeyRound, RefreshCw, Search, Unplug, X } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, CircleUserRound, ExternalLink, FlaskConical, Heart, KeyRound, LogIn, RefreshCw, Search, Unplug, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { createUuid } from '../services/id';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
@@ -10,6 +10,9 @@ import { useMobileHistoryLayer } from './MobileUI';
 import { SmartImage } from './SmartImage';
 import {
   PixivConnectionStatus,
+  PixivLoginError,
+  PixivLoginState,
+  PixivLoginStatus,
   PixivFeedMode,
   PixivIllust,
   buildPixivMediaUrl,
@@ -52,6 +55,11 @@ const feedTabs: { id: PixivFeedMode; label: string }[] = [
   { id: 'search', label: '搜索' },
 ];
 
+const PIXIV_LOGIN_ACTIVE = new Set<PixivLoginState>(['starting', 'awaiting-user', 'exchanging']);
+const PIXIV_LOGIN_TERMINAL = new Set<PixivLoginState>(['connected', 'failed', 'canceled', 'timed-out']);
+const PIXIV_LOGIN_SESSION_KEY = 'pixiv-login-session-id';
+const isActiveLoginState = (state?: PixivLoginState) => Boolean(state && PIXIV_LOGIN_ACTIVE.has(state));
+
 const formatCount = (value: number) => new Intl.NumberFormat('zh-CN', {
   notation: Math.abs(value) >= 10000 ? 'compact' : 'standard',
   maximumFractionDigits: 1,
@@ -75,8 +83,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   const [loadingMore, setLoadingMore] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [loginSession, setLoginSession] = useState<PixivLoginStatus | null>(null);
+  const [loginMessage, setLoginMessage] = useState('');
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [lanMode, setLanMode] = useState(false);
   const loadedRef = useRef(false);
   const feedRequestRef = useRef(0);
+  const loginSessionRef = useRef<PixivLoginStatus | null>(null);
+  const loginPollRef = useRef<number | null>(null);
 
   const selected = useMemo(() => items.find(item => item.id === selectedId) || null, [items, selectedId]);
   const closeMobileDetail = useMobileHistoryLayer(Boolean(selected), () => setSelectedId(null), 'pixiv-detail');
@@ -93,10 +107,126 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     }
   };
 
+  const clearLoginPoll = () => {
+    if (loginPollRef.current !== null) {
+      window.clearInterval(loginPollRef.current);
+      loginPollRef.current = null;
+    }
+  };
+
+  const applyLoginSession = (next: PixivLoginStatus | null) => {
+    loginSessionRef.current = next;
+    setLoginSession(next);
+    if (!next) return;
+    if (next.state === 'connected') {
+      window.sessionStorage.removeItem(PIXIV_LOGIN_SESSION_KEY);
+      return;
+    }
+    if (PIXIV_LOGIN_TERMINAL.has(next.state)) {
+      window.sessionStorage.removeItem(PIXIV_LOGIN_SESSION_KEY);
+      clearLoginPoll();
+      setLoginMessage(next.message || (next.state === 'canceled' ? '已取消登录' : next.state === 'timed-out' ? '登录超时，请重试' : '登录失败，请重试'));
+    }
+  };
+
+  const pollLogin = async (sessionId: string) => {
+    try {
+      const next = await pixivService.getPixivLoginStatus(sessionId);
+      if (next.state === 'connected') {
+        clearLoginPoll();
+        window.sessionStorage.removeItem(PIXIV_LOGIN_SESSION_KEY);
+        loginSessionRef.current = null;
+        setLoginSession(null);
+        setLoginMessage('');
+        loadedRef.current = false;
+        setItems([]);
+        setNextCursor(null);
+        await refreshStatus();
+        void loadFeed('recommended', {});
+        notify('Pixiv 登录成功');
+      } else {
+        applyLoginSession(next);
+      }
+    } catch (pollError) {
+      clearLoginPoll();
+      setLoginMessage(pollError instanceof Error ? pollError.message : '无法读取登录状态');
+    }
+  };
+
+  const startLoginPolling = (sessionId: string) => {
+    clearLoginPoll();
+    loginPollRef.current = window.setInterval(() => {
+      void pollLogin(sessionId);
+    }, 1000);
+  };
+
+  const detectLanMode = async () => {
+    try {
+      const response = await fetch('/api/lan/status', { cache: 'no-store' });
+      if (!response.ok) return;
+      const result = await response.json() as { required?: boolean };
+      setLanMode(result.required === true);
+    } catch {
+      // 本机访问时不需要局域网密码，保持默认
+    }
+  };
+
+  const handleStartLogin = async () => {
+    if (loginBusy || lanMode || isActiveLoginState(loginSessionRef.current?.state)) return;
+    setLoginBusy(true);
+    setLoginMessage('');
+    try {
+      const session = await pixivService.startPixivLogin();
+      window.sessionStorage.setItem(PIXIV_LOGIN_SESSION_KEY, session.id);
+      applyLoginSession(session);
+      if (isActiveLoginState(session.state)) startLoginPolling(session.id);
+    } catch (startError) {
+      const code = (startError as PixivLoginError).code;
+      if (code === 'PIXIV_CONNECT_LOCAL_ONLY') {
+        setLanMode(true);
+        setLoginMessage('请在运行 NPM 的电脑上登录；登录后手机可浏览');
+      } else {
+        setLoginMessage(startError instanceof Error ? startError.message : '登录启动失败');
+      }
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
+  const handleCancelLogin = async () => {
+    const session = loginSessionRef.current;
+    if (!session || loginBusy) return;
+    clearLoginPoll();
+    setLoginMessage('');
+    try {
+      applyLoginSession(await pixivService.cancelPixivLogin(session.id));
+    } catch (cancelError) {
+      const code = (cancelError as PixivLoginError).code;
+      if (code === 'PIXIV_CONNECT_LOCAL_ONLY') {
+        setLanMode(true);
+        setLoginMessage('请在运行 NPM 的电脑上登录；登录后手机可浏览');
+      } else {
+        setLoginMessage(cancelError instanceof Error ? cancelError.message : '取消失败，请稍后重试');
+      }
+    }
+  };
+
   useEffect(() => {
-    if (active) void refreshStatus();
+    if (active) {
+      void refreshStatus();
+      void detectLanMode();
+      const savedId = window.sessionStorage.getItem(PIXIV_LOGIN_SESSION_KEY);
+      if (savedId) {
+        applyLoginSession({ id: savedId, state: 'awaiting-user', message: '正在等待登录…', expiresAt: Date.now() + 5 * 60 * 1000 });
+        startLoginPolling(savedId);
+      }
+    } else {
+      clearLoginPoll();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
+
+  useEffect(() => () => { clearLoginPoll(); }, []);
 
   const loadFeed = async (nextMode: PixivFeedMode, options: { cursor?: string; word?: string; user?: { id: string; name: string } } = {}) => {
     const requestId = ++feedRequestRef.current;
@@ -274,6 +404,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       : feedTabs.find(tab => tab.id === mode)?.label || 'Pixiv';
 
   if (!connected) {
+    const activeLogin = loginSession && isActiveLoginState(loginSession.state) ? loginSession : null;
+    const waiting = Boolean(activeLogin) || loginBusy;
     return (
       <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
         <WorkspaceToolbar>
@@ -281,25 +413,51 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
           <IconButton label="重新检查连接状态" onClick={() => void refreshStatus()}><RefreshCw /></IconButton>
         </WorkspaceToolbar>
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto p-6">
-          <form onSubmit={handleConnect} className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-            <div className="mb-1 flex items-center gap-2">
-              <KeyRound className="h-4 w-4 text-indigo-500" aria-hidden="true" />
-              <h2 className="text-sm font-black text-gray-800 dark:text-gray-100">连接 Pixiv</h2>
+          <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300">
+              <KeyRound className="h-6 w-6" aria-hidden="true" />
             </div>
-            <p className="mb-4 text-xs leading-relaxed text-gray-500">输入 Pixiv App 的 refresh token。Token 仅以加密形式保存在本机 local-data，页面只在内存中临时持有，操作完成后立即清空。</p>
-            <label className="mb-1 block text-[11px] font-bold text-gray-500 dark:text-gray-400" htmlFor="pixiv-refresh-token">Refresh token</label>
-            <input
-              id="pixiv-refresh-token"
-              type="password"
-              autoComplete="off"
-              value={refreshToken}
-              onChange={event => setRefreshToken(event.target.value)}
-              placeholder="粘贴 refresh token"
-              className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:focus:border-indigo-500 dark:focus:bg-gray-900"
-            />
-            <ToolbarButton type="submit" tone="primary" disabled={connecting} className="mt-3 w-full"><KeyRound />{connecting ? '连接中…' : '连接'}</ToolbarButton>
-            {statusError && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{statusError}</div>}
-          </form>
+            <h2 className="text-center text-base font-black text-gray-800 dark:text-gray-100">Pixiv 图库</h2>
+            <p className="mb-4 mt-1 text-center text-xs leading-relaxed text-gray-500">在本机浏览器打开官方 Pixiv 登录页，登录后自动进入图库并加载推荐；账号密码只输入 Pixiv 官方页面。</p>
+
+            {lanMode ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">请在运行 NPM 的电脑上登录；登录后手机可浏览</div>
+            ) : (
+              <ToolbarButton type="button" tone="primary" className="h-12 w-full text-base" disabled={waiting} onClick={() => void handleStartLogin()}>
+                {waiting ? <><RefreshCw className="animate-spin" />等待登录…</> : <><LogIn />登录 Pixiv</>}
+              </ToolbarButton>
+            )}
+
+            {activeLogin && (
+              <div className="mt-3 space-y-2">
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] leading-relaxed text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300">
+                  {activeLogin.message || '请在打开的 Pixiv 窗口中完成登录'}
+                </div>
+                <ToolbarButton type="button" tone="danger" className="w-full" disabled={loginBusy} onClick={() => void handleCancelLogin()}><X />取消登录</ToolbarButton>
+              </div>
+            )}
+
+            {loginMessage && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] leading-relaxed text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{loginMessage}</div>}
+            {statusError && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] leading-relaxed text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{statusError}</div>}
+
+            <details className="mt-4 rounded-xl border border-gray-200 dark:border-gray-700">
+              <summary className="cursor-pointer select-none rounded-xl px-3 py-2 text-[11px] font-bold text-gray-500 hover:text-indigo-600 dark:text-gray-400">高级：手动连接</summary>
+              <form onSubmit={handleConnect} className="border-t border-gray-100 p-3 dark:border-gray-800">
+                <p className="mb-3 text-[11px] leading-relaxed text-gray-500">备用方式：粘贴 Pixiv App 的 refresh token。Token 仅以加密形式保存在本机 local-data，操作完成后立即清空。</p>
+                <label className="mb-1 block text-[11px] font-bold text-gray-500 dark:text-gray-400" htmlFor="pixiv-refresh-token">Refresh token</label>
+                <input
+                  id="pixiv-refresh-token"
+                  type="password"
+                  autoComplete="off"
+                  value={refreshToken}
+                  onChange={event => setRefreshToken(event.target.value)}
+                  placeholder="粘贴 refresh token"
+                  className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:focus:border-indigo-500 dark:focus:bg-gray-900"
+                />
+                <ToolbarButton type="submit" tone="primary" disabled={connecting} className="mt-3 w-full"><KeyRound />{connecting ? '连接中…' : '连接'}</ToolbarButton>
+              </form>
+            </details>
+          </div>
           <p className="mt-4 max-w-sm text-center text-[11px] leading-relaxed text-gray-400">Pixiv 图库仅在本机媒体网关可用；推荐、搜索与榜单接口返回的内容原样展示，不做年龄分级过滤。</p>
         </div>
       </div>

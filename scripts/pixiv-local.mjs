@@ -477,6 +477,27 @@ export class PixivGalleryService {
     return { connected: false };
   }
 
+  /** 网页登录成功后写令牌：沿用 generation 防竞态并清空 feed 缓存，旧会话不得覆盖。 */
+  async importWebLoginTokens(tokens, { expectedGeneration } = {}) {
+    if (expectedGeneration === undefined) {
+      throw pixivError('Pixiv 连接状态已改变', 'PIXIV_TOKEN_STATE_CHANGED', 409);
+    }
+    const normalized = {
+      refreshToken: String(tokens?.refreshToken || '').trim(),
+      accessToken: String(tokens?.accessToken || '').trim(),
+      accessTokenExpiresAt: Number(tokens?.accessTokenExpiresAt) || 0,
+      updatedAt: Date.now(),
+    };
+    if (normalized.refreshToken.length < MIN_REFRESH_TOKEN_LENGTH
+      || normalized.refreshToken.length > MAX_REFRESH_TOKEN_LENGTH
+      || !normalized.accessToken) {
+      throw pixivError('Pixiv 网页登录返回的令牌无效', 'PIXIV_LOGIN_TOKENS_INVALID', 502);
+    }
+    await this.store.save(normalized, { expectedGeneration });
+    this.feedCache.clear();
+    return { connected: true };
+  }
+
   async feed({ mode, cursor, params = {} } = {}) {
     const selectedMode = String(mode || '').trim();
     if (!PIXIV_FEED_MODES.has(selectedMode)) throw pixivError('不支持的 Pixiv feed 模式', 'PIXIV_INVALID_MODE', 400);

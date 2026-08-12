@@ -11,6 +11,7 @@ import { PromptAgentService } from './prompt-agent.mjs';
 import { StChatu8Bridge } from './st-chatu8-bridge.mjs';
 import { ImageTaggerService } from './image-tagger.mjs';
 import { PIXIV_IMAGE_HOST, PIXIV_REFERER, PixivGalleryService } from './pixiv-local.mjs';
+import { PixivWebLoginOrchestrator } from './pixiv-web-login.mjs';
 
 const CACHE_VERSION = 'v1';
 const HISTORY_THUMBNAIL_CACHE_VERSION = 'v2';
@@ -1084,10 +1085,30 @@ const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remoteFetch
   }
 };
 
-const handlePixivGalleryRequest = async (req, res, url, pixivGallery) => {
+export const handlePixivGalleryRequest = async (req, res, url, pixivGallery, pixivWebLogin) => {
   if (url.pathname === '/api/pixiv/status') {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
     return sendJson(res, 200, pixivGallery.status());
+  }
+  if (url.pathname === '/api/pixiv/login/start') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    if (!isPixivConnectionMutationAllowed(req)) {
+      return sendJson(res, 403, { error: '请在运行 NPM 的电脑上登录；登录后手机可浏览', code: 'PIXIV_CONNECT_LOCAL_ONLY' });
+    }
+    return sendJson(res, 200, await pixivWebLogin.start());
+  }
+  if (url.pathname === '/api/pixiv/login/status') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    const state = pixivWebLogin.status(url.searchParams.get('id'));
+    if (!state) return sendJson(res, 404, { error: '登录会话不存在', code: 'PIXIV_LOGIN_NOT_FOUND' });
+    return sendJson(res, 200, state);
+  }
+  if (url.pathname === '/api/pixiv/login') {
+    if (req.method !== 'DELETE') return sendJson(res, 405, { error: 'Method not allowed' });
+    if (!isPixivConnectionMutationAllowed(req)) {
+      return sendJson(res, 403, { error: '请在运行 NPM 的电脑上登录；登录后手机可浏览', code: 'PIXIV_CONNECT_LOCAL_ONLY' });
+    }
+    return sendJson(res, 200, await pixivWebLogin.cancel(url.searchParams.get('id')));
   }
   if (url.pathname === '/api/pixiv/connect') {
     if (!isPixivConnectionMutationAllowed(req)) {
@@ -1271,7 +1292,7 @@ const proxyRequest = (req, res, workerPort) => {
   req.pipe(upstream);
 };
 
-export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSecret = '', outboundProxyUrl = '', pixivFetch, pixivTokenDir } = {}) {
+export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSecret = '', outboundProxyUrl = '', pixivFetch, pixivTokenDir, pixivWebLogin } = {}) {
   const proxyAgent = outboundProxyUrl ? new ProxyAgent(outboundProxyUrl) : null;
   const remoteFetch = (url, options = {}) => undiciFetch(url, { ...options, ...(proxyAgent ? { dispatcher: proxyAgent } : {}) });
   const cloudQueue = new CloudQueueCoordinator(remoteFetch);
@@ -1289,6 +1310,13 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
   const pixivGallery = new PixivGalleryService({
     fetch: pixivFetch || remoteFetch,
     tokenDir: pixivTokenDir || join(process.cwd(), 'local-data'),
+  });
+  // 网页登录编排器：成功令牌经 generation 防竞态写入并清 feed 缓存；gateway 退出也清理。
+  const webLoginOrchestrator = pixivWebLogin || new PixivWebLoginOrchestrator({
+    getGeneration: () => pixivGallery.store.generation,
+    onTokens: async (tokens, session) => {
+      await pixivGallery.importWebLoginTokens(tokens, { expectedGeneration: session.expectedGeneration });
+    },
   });
   await cache.init();
   await promptAgent.init();
@@ -1639,7 +1667,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
     if (url.pathname.startsWith('/api/pixiv/')) {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       try {
-        return await handlePixivGalleryRequest(req, res, url, pixivGallery);
+        return await handlePixivGalleryRequest(req, res, url, pixivGallery, webLoginOrchestrator);
       } catch (error) {
         const payload = { error: error.message || 'Pixiv 请求失败', code: error.code || 'PIXIV_ERROR' };
         if (error.upstreamStatus) payload.upstreamStatus = Number(error.upstreamStatus);
@@ -1780,7 +1808,10 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
       sendJson(res, Number(error.status) || 502, { error: error.message || 'Image processing failed' });
     }
   });
-  server.on('close', () => { proxyAgent?.close().catch(() => {}); });
+  server.on('close', () => {
+    proxyAgent?.close().catch(() => {});
+    void webLoginOrchestrator.shutdown?.();
+  });
 
   server.on('upgrade', (req, socket, head) => {
     const upstream = connectSocket(workerPort, '127.0.0.1', () => {
