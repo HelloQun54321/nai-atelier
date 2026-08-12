@@ -122,9 +122,19 @@ export const getPixivCurrentPageUrl = (illust: PixivIllust, pageIndex = 0): stri
   return pages[index] || illust.urls.original || '';
 };
 
+/** 详情/卡片的渐进预览源：优先 Pixiv large，其次 medium，最后回退当前页原图（由网关缩放）。 */
+export const getPixivPreviewUrl = (illust: PixivIllust, pageIndex = 0): string => {
+  if (pageIndex === 0) return illust.urls.large || illust.urls.medium || getPixivCurrentPageUrl(illust, 0);
+  return getPixivCurrentPageUrl(illust, pageIndex) || illust.urls.large || illust.urls.medium || '';
+};
+
 /** 通过本机 /api/media 代理构建展示用媒体 URL（i.pximg.net 必须由网关携带官方 Referer 抓取）。 */
 export const buildPixivMediaUrl = (illust: PixivIllust, pageIndex = 0, variant: MediaVariant = 'original'): string =>
   buildMediaUrl(getPixivCurrentPageUrl(illust, pageIndex), variant);
+
+/** 通过本机 /api/media 构建预览媒体 URL：large/medium 清晰源经网关缩放，适合详情先出图。 */
+export const buildPixivPreviewMediaUrl = (illust: PixivIllust, pageIndex = 0, variant: MediaVariant = 'thumb-960'): string =>
+  buildMediaUrl(getPixivPreviewUrl(illust, pageIndex), variant);
 
 /** 移动端缓存链路：允许 i.pximg.net 走本地媒体代理（缩略图/原图均可）。 */
 export const getPixivCachedDisplayUrl = (source: string): string => getMobileOriginalUrl(source);

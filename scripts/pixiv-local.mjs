@@ -29,6 +29,35 @@ const MAX_CURSOR_LENGTH = 2048;
 const MIN_REFRESH_TOKEN_LENGTH = 16;
 const MAX_REFRESH_TOKEN_LENGTH = 2048;
 
+// feed 缓存：短 TTL + 有界 LRU；token 连接/断开/切换时必须清空，防止跨账号串数据。
+export const PIXIV_FEED_CACHE_TTL_MS = 30_000;
+export const PIXIV_FEED_CACHE_MAX_ENTRIES = 128;
+// GET 429 退避：最多重试 1 次，尊重 Retry-After 且封顶 5 秒，无 Retry-After 时用带抖动的小退避。
+export const PIXIV_RETRY_AFTER_MAX_MS = 5_000;
+export const PIXIV_RATE_LIMIT_BACKOFF_MIN_MS = 500;
+export const PIXIV_RATE_LIMIT_BACKOFF_MAX_MS = 1_500;
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+/** 解析 429 重试等待时间：Retry-After 秒数/HTTP 日期优先，封顶 5 秒；缺省用注入值或抖动退避。 */
+export const resolvePixivRetryDelayMs = (retryAfterValue, fallbackMs) => {
+  const raw = String(retryAfterValue ?? '').trim();
+  if (raw) {
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds)) {
+      return Math.min(Math.max(0, Math.round(seconds * 1000)), PIXIV_RETRY_AFTER_MAX_MS);
+    }
+    const dateMs = Date.parse(raw);
+    if (Number.isFinite(dateMs)) {
+      return Math.min(Math.max(0, dateMs - Date.now()), PIXIV_RETRY_AFTER_MAX_MS);
+    }
+  }
+  if (fallbackMs !== undefined) {
+    return Math.min(Math.max(0, Math.round(Number(fallbackMs) || 0)), PIXIV_RETRY_AFTER_MAX_MS);
+  }
+  return Math.floor(PIXIV_RATE_LIMIT_BACKOFF_MIN_MS + Math.random() * (PIXIV_RATE_LIMIT_BACKOFF_MAX_MS - PIXIV_RATE_LIMIT_BACKOFF_MIN_MS));
+};
+
 const pixivError = (message, code, status = 502, extra = {}) => Object.assign(new Error(message), { code, status, ...extra });
 
 const redactSensitive = (value, secrets = []) => {
@@ -218,7 +247,7 @@ export class PixivTokenStore {
 // ---- OAuth 刷新客户端（单飞刷新、401 最多重试一次、不泄露 token） ----
 
 export class PixivOAuthClient {
-  constructor({ fetch: requestFetch = globalThis.fetch, tokenUrl = PIXIV_OAUTH_TOKEN_URL, clientId = PIXIV_APP_CLIENT_ID, clientSecret = PIXIV_APP_CLIENT_SECRET, store, timeoutMs = 30_000 } = {}) {
+  constructor({ fetch: requestFetch = globalThis.fetch, tokenUrl = PIXIV_OAUTH_TOKEN_URL, clientId = PIXIV_APP_CLIENT_ID, clientSecret = PIXIV_APP_CLIENT_SECRET, store, timeoutMs = 30_000, retryDelayMs } = {}) {
     if (!store) throw new Error('PixivOAuthClient requires a token store');
     this.requestFetch = requestFetch;
     this.tokenUrl = tokenUrl;
@@ -226,6 +255,8 @@ export class PixivOAuthClient {
     this.clientSecret = clientSecret;
     this.store = store;
     this.timeoutMs = timeoutMs;
+    // 测试可注入固定退避；缺省无 Retry-After 时使用带抖动的退避。
+    this.retryDelayMs = retryDelayMs;
     this.refreshPromise = null;
     this.refreshCount = 0;
   }
@@ -334,6 +365,12 @@ export class PixivOAuthClient {
       await this.refresh();
       return this.requestOnce(target, { ...options, _pixivRetried: true });
     }
+    if (response.status === 429 && method === 'GET' && !options._pixivRateRetried) {
+      const retryAfter = response.headers?.get?.('retry-after') ?? null;
+      const delayMs = resolvePixivRetryDelayMs(retryAfter, this.retryDelayMs);
+      await sleep(delayMs);
+      return this.requestOnce(target, { ...options, _pixivRateRetried: true });
+    }
     const text = await response.text().catch(() => '');
     let payload = null;
     try { payload = JSON.parse(text || '{}'); } catch { payload = null; }
@@ -346,12 +383,58 @@ export class PixivOAuthClient {
   }
 }
 
+// ---- feed 有界 LRU 缓存（短 TTL + 并发单飞） ----
+
+export class FeedCache {
+  constructor({ ttlMs = PIXIV_FEED_CACHE_TTL_MS, maxEntries = PIXIV_FEED_CACHE_MAX_ENTRIES } = {}) {
+    this.ttlMs = ttlMs;
+    this.maxEntries = maxEntries;
+    this.entries = new Map();
+    this.inFlight = new Map();
+  }
+
+  get size() {
+    return this.entries.size;
+  }
+
+  get(key) {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    if (entry.expiresAt <= Date.now()) {
+      this.entries.delete(key);
+      return undefined;
+    }
+    // Map 按插入序维护，命中后重插以刷新 LRU 位置。
+    this.entries.delete(key);
+    this.entries.set(key, entry);
+    return entry.value;
+  }
+
+  put(key, value) {
+    if (this.entries.has(key)) this.entries.delete(key);
+    this.entries.set(key, { value, expiresAt: Date.now() + this.ttlMs });
+    while (this.entries.size > this.maxEntries) {
+      const oldestKey = this.entries.keys().next().value;
+      if (oldestKey === undefined) break;
+      this.entries.delete(oldestKey);
+    }
+  }
+
+  clear() {
+    this.entries.clear();
+    // Token 切换时不能让新账号复用旧账号仍在进行中的同 URL 请求。
+    // 旧 Promise 可以自行结束；其 finally 有 identity guard，不会误删后续的新请求。
+    this.inFlight.clear();
+  }
+}
+
 // ---- 图库服务：连接/断开/feed，供本机网关使用 ----
 
 export class PixivGalleryService {
-  constructor({ fetch: requestFetch = globalThis.fetch, tokenDir, clientId, clientSecret, store, oauth } = {}) {
+  constructor({ fetch: requestFetch = globalThis.fetch, tokenDir, clientId, clientSecret, store, oauth, feedCacheTtlMs, feedCacheMaxEntries } = {}) {
     this.store = store || new PixivTokenStore({ dir: tokenDir });
     this.oauth = oauth || new PixivOAuthClient({ fetch: requestFetch, store: this.store, clientId, clientSecret });
+    this.feedCache = new FeedCache({ ttlMs: feedCacheTtlMs, maxEntries: feedCacheMaxEntries });
   }
 
   async init() {
@@ -369,10 +452,13 @@ export class PixivGalleryService {
     }
     if (this.oauth.refreshPromise) await this.oauth.refreshPromise.catch(() => {});
     const previous = this.store.tokens ? { ...this.store.tokens } : null;
+    // 从连接流程开始就隔离旧账号数据，而不是等 token 刷新完成后才清理。
+    this.feedCache.clear();
     await this.store.save({ refreshToken: token, accessToken: '', accessTokenExpiresAt: 0, updatedAt: Date.now() });
     const tentativeGeneration = this.store.generation;
     try {
       await this.oauth.refresh();
+      this.feedCache.clear();
       return { connected: true };
     } catch (error) {
       try {
@@ -387,6 +473,7 @@ export class PixivGalleryService {
 
   async disconnect() {
     await this.store.clear();
+    this.feedCache.clear();
     return { connected: false };
   }
 
@@ -400,10 +487,34 @@ export class PixivGalleryService {
     } else {
       target = this.buildFeedUrl(selectedMode, params);
     }
+    return this.fetchFeedCached(selectedMode, target);
+  }
+
+  /** 相同 feed（同一 target URL，即 mode+cursor+params 的规范化结果）短 TTL 缓存 + 并发单飞。 */
+  async fetchFeedCached(mode, target) {
+    const cached = this.feedCache.get(target);
+    if (cached) return cached;
+    const inFlight = this.feedCache.inFlight.get(target);
+    if (inFlight) return inFlight;
+    // 请求期间的 token 切换（connect/disconnect 都会推进 generation）不得把旧账号结果写回缓存。
+    const generation = this.store.generation;
+    const pending = this.loadFeedFromApi(mode, target)
+      .then(result => {
+        if (this.store.generation === generation) this.feedCache.put(target, result);
+        return result;
+      })
+      .finally(() => {
+        if (this.feedCache.inFlight.get(target) === pending) this.feedCache.inFlight.delete(target);
+      });
+    this.feedCache.inFlight.set(target, pending);
+    return pending;
+  }
+
+  async loadFeedFromApi(mode, target) {
     const payload = await this.oauth.request(target, { method: 'GET' });
-    const normalized = normalizePixivResponse(payload, selectedMode);
+    const normalized = normalizePixivResponse(payload, mode);
     return {
-      mode: selectedMode,
+      mode,
       items: normalized.items,
       nextUrl: normalized.nextUrl,
       nextCursor: normalized.nextUrl,

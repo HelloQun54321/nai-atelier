@@ -7,12 +7,13 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { NAIParams, User } from '../types';
 import { IconButton, MediaCardShell, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { useMobileHistoryLayer } from './MobileUI';
-import { OriginalImage, SmartImage } from './SmartImage';
+import { SmartImage } from './SmartImage';
 import {
   PixivConnectionStatus,
   PixivFeedMode,
   PixivIllust,
   buildPixivMediaUrl,
+  buildPixivPreviewMediaUrl,
   getPixivCurrentPageUrl,
   importPixivImageAsDataUrl,
   pixivArtworkUrl,
@@ -339,7 +340,13 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 return <MediaCardShell key={illust.id} selected={selectedId === illust.id} className="mobile-gallery-item group relative flex-col">
                   <button type="button" onClick={() => openDetail(illust)} className="block w-full text-left">
                     <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': '3 / 4' } as React.CSSProperties}>
-                      <SmartImage src={illust.urls.thumb} alt={title} thumbnailVariant="thumb-640" />
+                      <SmartImage
+                        src={illust.urls.thumb}
+                        alt={title}
+                        thumbnailVariant="thumb-640"
+                        upgradeSrc={illust.urls.medium || illust.urls.large}
+                        upgradeVariant="thumb-960"
+                      />
                       <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-[10px] text-white">
                         <span>♥ {formatCount(illust.totalBookmarks)}</span>
                         {illust.pageCount > 1 && <span>{illust.pageCount} 页</span>}
@@ -375,7 +382,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
             {selected ? <div className="space-y-4">
               <div className="overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">
-                <OriginalImage src={buildPixivMediaUrl(selected, selectedPage, 'original')} alt={`${selected.title} 第 ${selectedPage + 1} 页`} className="max-h-[62vh] w-full object-contain" />
+                <SmartImage
+                  eager
+                  src={buildPixivPreviewMediaUrl(selected, selectedPage)}
+                  upgradeSrc={buildPixivMediaUrl(selected, selectedPage, 'original')}
+                  upgradeVariant="original"
+                  alt={`${selected.title} 第 ${selectedPage + 1} 页`}
+                  className="max-h-[62vh] w-full object-contain"
+                />
               </div>
               {currentPageCount > 1 && (
                 <div className="flex items-center justify-center gap-3">

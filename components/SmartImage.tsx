@@ -20,6 +20,9 @@ interface SmartImageProps {
   alt: string;
   eager?: boolean;
   thumbnailVariant?: Exclude<MediaVariant, 'original'>;
+  /** 渐进升级：低清 src 先显示，卡片接近/进入视口（或 eager 详情）后叠加更清晰源，加载完成淡入、失败静默保留低清。 */
+  upgradeSrc?: string;
+  upgradeVariant?: MediaVariant;
   className?: string;
   containerClassName?: string;
   onError?: () => void;
@@ -41,6 +44,8 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   alt,
   eager = false,
   thumbnailVariant,
+  upgradeSrc,
+  upgradeVariant,
   className = 'h-full w-full object-cover',
   containerClassName = 'relative h-full w-full overflow-hidden bg-gray-200 dark:bg-gray-900',
   onError,
@@ -56,6 +61,10 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   const [failed, setFailed] = useState(false);
   const [useOriginal, setUseOriginal] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
+  const [upgradeActivatedSrc, setUpgradeActivatedSrc] = useState('');
+  const [upgradeDisplaySrc, setUpgradeDisplaySrc] = useState('');
+  const [upgradeLoaded, setUpgradeLoaded] = useState(false);
+  const [upgradeFailed, setUpgradeFailed] = useState(false);
 
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
 
@@ -99,6 +108,32 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   const activated = viewActive && (eager || activatedSrc === src);
   const pixelWidth = measuredWidth * Math.max(1, window.devicePixelRatio || 1);
   const variant = thumbnailVariant ?? selectThumbnailVariant(pixelWidth);
+  const upgradeTarget = upgradeSrc && upgradeSrc !== src ? upgradeSrc : undefined;
+
+  useEffect(() => {
+    setUpgradeActivatedSrc('');
+    setUpgradeDisplaySrc('');
+    setUpgradeLoaded(false);
+    setUpgradeFailed(false);
+    if (!viewActive || !upgradeTarget) return;
+    const node = containerRef.current;
+    if (!node || eager || !('IntersectionObserver' in window)) {
+      setUpgradeActivatedSrc(upgradeTarget);
+      return;
+    }
+    const root = findScrollRoot(node);
+    // 升级源只在卡片接近/进入视口时触发，避免与低清首屏同时抢带宽。
+    const upgradeDistance = Math.max(root?.clientHeight ? Math.round(root.clientHeight * 0.2) : 0, 160);
+    const observer = new IntersectionObserver(entries => {
+      if (!entries[0]?.isIntersecting) return;
+      setUpgradeActivatedSrc(upgradeTarget);
+      observer.disconnect();
+    }, { root, rootMargin: `${upgradeDistance}px 0px` });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [eager, retryToken, src, upgradeTarget, viewActive]);
+
+  const upgradeActivated = viewActive && Boolean(upgradeTarget) && (eager || upgradeActivatedSrc === upgradeTarget);
 
   useEffect(() => {
     if (!activated || !src) {
@@ -130,6 +165,36 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     };
   }, [activated, src, useOriginal, variant]);
 
+  useEffect(() => {
+    if (!upgradeActivated || !upgradeTarget) {
+      setUpgradeDisplaySrc('');
+      return;
+    }
+    setUpgradeLoaded(false);
+    setUpgradeFailed(false);
+    if (!canUseMediaGateway(upgradeTarget)) {
+      setUpgradeDisplaySrc(upgradeTarget);
+      return;
+    }
+    const upgradeUrl = buildMediaUrl(upgradeTarget, upgradeVariant ?? 'thumb-960');
+    if (!isMobileViewport()) {
+      setUpgradeDisplaySrc(upgradeUrl);
+      return;
+    }
+    const resource = acquireMobileThumbnailUrl(upgradeUrl);
+    let active = true;
+    resource.promise.then(objectUrl => {
+      if (active) setUpgradeDisplaySrc(objectUrl);
+    }).catch(() => {
+      // 移动端缓存失败时回退到网关 URL，不再尝试直连远程源。
+      if (active) setUpgradeDisplaySrc(upgradeUrl);
+    });
+    return () => {
+      active = false;
+      resource.release();
+    };
+  }, [upgradeActivated, upgradeTarget, upgradeVariant]);
+
   const handleImageError = () => {
     if (!useOriginal && canUseMediaGateway(src)) {
       setUseOriginal(true);
@@ -153,8 +218,20 @@ export const SmartImage: React.FC<SmartImageProps> = ({
           fetchPriority={eager ? 'high' : 'auto'}
         />
       )}
-      {activated && !loaded && !failed && <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400"><span className="animate-pulse">加载中…</span></div>}
-      {activated && failed && (
+      {upgradeActivated && upgradeDisplaySrc && !upgradeFailed && (
+        <img
+          src={upgradeDisplaySrc}
+          alt={alt}
+          aria-hidden="true"
+          className={`${className} absolute inset-0 pointer-events-none transition-opacity duration-300 ${upgradeLoaded ? 'opacity-100' : 'opacity-0'}`}
+          onLoad={event => { setUpgradeLoaded(true); }}
+          onError={() => setUpgradeFailed(true)}
+          decoding="async"
+          loading={eager ? 'eager' : 'lazy'}
+        />
+      )}
+      {activated && !loaded && !failed && !upgradeLoaded && <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400"><span className="animate-pulse">加载中…</span></div>}
+      {activated && failed && !upgradeLoaded && (
         <button
           type="button"
           className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-transparent px-2 text-[10px] text-gray-500 dark:text-gray-400"

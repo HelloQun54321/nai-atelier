@@ -4,14 +4,17 @@ import { createHash } from 'node:crypto';
 import { readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  FeedCache,
   PIXIV_ALLOWED_API_PATHS,
   PIXIV_HASH_SECRET,
   PIXIV_OAUTH_TOKEN_URL,
+  PIXIV_RETRY_AFTER_MAX_MS,
   classifyPixivApiTarget,
   normalizePixivResponse,
   PixivGalleryService,
   PixivOAuthClient,
   PixivTokenStore,
+  resolvePixivRetryDelayMs,
   sanitizePixivNextUrl,
 } from './pixiv-local.mjs';
 import { createMediaGateway } from './media-gateway.mjs';
@@ -25,6 +28,18 @@ const makeTokenDir = async () => {
   const dir = join(process.cwd(), 'local-data', `pixiv-test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   return dir;
 };
+
+const makeConnectedStore = async (dir, { refreshToken = 'rt-cache-test-123456', accessToken = 'at-cache-test-123456' } = {}) => {
+  const store = new PixivTokenStore({ dir });
+  await store.init();
+  await store.save({ refreshToken, accessToken, accessTokenExpiresAt: Date.now() + 3600_000, updatedAt: 1 });
+  return store;
+};
+
+const feedResponse = (id, title = 'x', nextUrl = null) => jsonResponse({
+  illusts: [{ id, title, user: { id: 'u', name: 'n' } }],
+  next_url: nextUrl,
+});
 
 // ---------- host / path / method 允许列表 ----------
 
@@ -127,6 +142,278 @@ test('Pixiv feed builds whitelisted API URLs per mode', () => {
   assert.throws(() => service.buildFeedUrl('user', {}), error => error.code === 'PIXIV_INVALID_PARAMS');
   assert.throws(() => service.buildFeedUrl('detail', {}), error => error.code === 'PIXIV_INVALID_PARAMS');
   assert.throws(() => service.buildFeedUrl('bogus', {}), error => error.code === 'PIXIV_INVALID_MODE');
+});
+
+// ---------- feed 缓存（TTL + LRU + 单飞 + 防串号） ----------
+
+test('Pixiv feed cache serves repeated identical feeds from one upstream call', async () => {
+  const dir = await makeTokenDir();
+  try {
+    const store = await makeConnectedStore(dir);
+    let apiCalls = 0;
+    const client = new PixivOAuthClient({
+      store,
+      fetch: async () => {
+        apiCalls += 1;
+        return feedResponse(21, 'cached');
+      },
+    });
+    const service = new PixivGalleryService({ store, oauth: client });
+    const first = await service.feed({ mode: 'recommended' });
+    const second = await service.feed({ mode: 'recommended' });
+    assert.equal(apiCalls, 1);
+    assert.equal(first.items[0].id, '21');
+    assert.deepEqual(second, first);
+    assert.equal(second.fetchedAt, first.fetchedAt);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Pixiv feed cache single-flights concurrent identical feed requests', async () => {
+  const dir = await makeTokenDir();
+  try {
+    const store = await makeConnectedStore(dir);
+    let apiCalls = 0;
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const client = new PixivOAuthClient({
+      store,
+      fetch: async () => {
+        apiCalls += 1;
+        await gate;
+        return feedResponse(22, 'single-flight');
+      },
+    });
+    const service = new PixivGalleryService({ store, oauth: client });
+    const pending = [service.feed({ mode: 'recommended' }), service.feed({ mode: 'recommended' })];
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(apiCalls, 1);
+    release();
+    const [first, second] = await Promise.all(pending);
+    assert.equal(apiCalls, 1);
+    assert.deepEqual(first, second);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Pixiv feed cache expires after TTL and evicts least-recently-used entries', async () => {
+  const dir = await makeTokenDir();
+  try {
+    const store = await makeConnectedStore(dir);
+    let apiCalls = 0;
+    const client = new PixivOAuthClient({
+      store,
+      fetch: async (url) => {
+        apiCalls += 1;
+        const search = new URL(url).searchParams;
+        return feedResponse(apiCalls, search.get('mode') || 'recommended');
+      },
+    });
+    const service = new PixivGalleryService({ store, oauth: client, feedCacheTtlMs: 40, feedCacheMaxEntries: 2 });
+    await service.feed({ mode: 'day' });
+    await service.feed({ mode: 'week' });
+    await service.feed({ mode: 'month' });
+    assert.equal(apiCalls, 3); // month 插入后 day 被 LRU 逐出
+    await service.feed({ mode: 'day' });
+    assert.equal(apiCalls, 4); // day 已逐出 → 重新请求
+    await service.feed({ mode: 'month' });
+    assert.equal(apiCalls, 4); // month 仍在缓存
+    await new Promise(resolve => setTimeout(resolve, 60));
+    await service.feed({ mode: 'month' });
+    assert.equal(apiCalls, 5); // month 已过期 → 重新请求
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Pixiv feed cache is cleared on connect switch and disconnect to prevent cross-account leakage', async () => {
+  const dir = await makeTokenDir();
+  try {
+    const store = new PixivTokenStore({ dir });
+    await store.init();
+    let apiCalls = 0;
+    const client = new PixivOAuthClient({
+      store,
+      fetch: async (url, options) => {
+        if (url === PIXIV_OAUTH_TOKEN_URL) {
+          const body = new URLSearchParams(options.body);
+          const token = body.get('refresh_token');
+          return jsonResponse({ access_token: `at-${token}`, refresh_token: token, expires_in: 3600 });
+        }
+        apiCalls += 1;
+        return feedResponse(apiCalls, 'account');
+      },
+    });
+    const service = new PixivGalleryService({ store, oauth: client });
+    await service.connect('rt-account-a-123456');
+    await service.feed({ mode: 'recommended' });
+    assert.equal(apiCalls, 1);
+    await service.feed({ mode: 'recommended' });
+    assert.equal(apiCalls, 1); // 命中缓存
+    await service.connect('rt-account-b-123456');
+    await service.feed({ mode: 'recommended' });
+    assert.equal(apiCalls, 2); // 切换账号 → 缓存清空
+    await service.disconnect();
+    await service.connect('rt-account-a-123456');
+    await service.feed({ mode: 'recommended' });
+    assert.equal(apiCalls, 3); // 断开 → 缓存清空
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Pixiv feed in flight during a token switch is not cached for the new account', async () => {
+  const dir = await makeTokenDir();
+  try {
+    const store = new PixivTokenStore({ dir });
+    await store.init();
+    let apiCalls = 0;
+    let releaseFeed;
+    let markFeedStarted;
+    const feedStarted = new Promise(resolve => { markFeedStarted = resolve; });
+    const client = new PixivOAuthClient({
+      store,
+      fetch: async (url, options) => {
+        if (url === PIXIV_OAUTH_TOKEN_URL) {
+          const body = new URLSearchParams(options.body);
+          const token = body.get('refresh_token');
+          return jsonResponse({ access_token: `at-${token}`, refresh_token: token, expires_in: 3600 });
+        }
+        apiCalls += 1;
+        if (apiCalls === 1) {
+          markFeedStarted();
+          await new Promise(resolve => { releaseFeed = resolve; });
+        }
+        return feedResponse(apiCalls, 'account');
+      },
+    });
+    const service = new PixivGalleryService({ store, oauth: client });
+    await service.connect('rt-account-a-123456');
+    const pendingFeed = service.feed({ mode: 'recommended' });
+    await feedStarted;
+    await service.connect('rt-account-b-123456');
+    releaseFeed();
+    await pendingFeed;
+    // 旧账号请求已完成，但新账号下的相同 feed 必须重新请求，不能命中旧账号缓存。
+    await service.feed({ mode: 'recommended' });
+    assert.equal(apiCalls, 2);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('FeedCache LRU keeps at most maxEntries entries and clears on demand', () => {
+  const cache = new FeedCache({ ttlMs: 60_000, maxEntries: 2 });
+  cache.put('a', 1);
+  cache.put('b', 2);
+  cache.put('c', 3);
+  assert.equal(cache.size, 2);
+  assert.equal(cache.get('a'), undefined); // a 被逐出
+  assert.equal(cache.get('b'), 2);
+  assert.equal(cache.get('c'), 3);
+  cache.clear();
+  assert.equal(cache.size, 0);
+  assert.equal(cache.get('b'), undefined);
+});
+
+test('FeedCache clear also detaches old in-flight requests during an account switch', () => {
+  const cache = new FeedCache();
+  const oldRequest = Promise.resolve('old-account');
+  cache.inFlight.set('same-feed-url', oldRequest);
+  cache.clear();
+  assert.equal(cache.inFlight.has('same-feed-url'), false);
+});
+
+// ---------- GET 429 退避（最多 1 次、尊重 Retry-After、封顶、无无限重试） ----------
+
+test('Pixiv retry delay parsing respects Retry-After and caps the wait', () => {
+  assert.equal(resolvePixivRetryDelayMs('0', 0), 0);
+  assert.equal(resolvePixivRetryDelayMs('2', 0), 2_000);
+  assert.equal(resolvePixivRetryDelayMs('99999', 0), PIXIV_RETRY_AFTER_MAX_MS);
+  assert.equal(resolvePixivRetryDelayMs(null, 123), 123);
+  assert.equal(resolvePixivRetryDelayMs('', 123), 123);
+  assert.equal(resolvePixivRetryDelayMs('not-a-date', 123), 123);
+  const jittered = resolvePixivRetryDelayMs(null, undefined);
+  assert.ok(jittered >= 500 && jittered <= 1_500, `jittered delay out of range: ${jittered}`);
+  const future = new Date(Date.now() + 60_000).toUTCString();
+  assert.equal(resolvePixivRetryDelayMs(future, 0), PIXIV_RETRY_AFTER_MAX_MS);
+});
+
+test('Pixiv GET 429 retries at most once and succeeds', async () => {
+  const dir = await makeTokenDir();
+  try {
+    const store = await makeConnectedStore(dir);
+    let apiCalls = 0;
+    const client = new PixivOAuthClient({
+      store,
+      retryDelayMs: 0,
+      fetch: async () => {
+        apiCalls += 1;
+        if (apiCalls === 1) return jsonResponse({ error: { message: 'rate limited' } }, 429);
+        return feedResponse(31, 'after-429');
+      },
+    });
+    const payload = await client.request('https://app-api.pixiv.net/v1/illust/recommended');
+    assert.equal(apiCalls, 2);
+    assert.equal(payload.illusts[0].id, 31);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Pixiv GET stops after consecutive 429 responses', async () => {
+  const dir = await makeTokenDir();
+  try {
+    const store = await makeConnectedStore(dir);
+    let apiCalls = 0;
+    const client = new PixivOAuthClient({
+      store,
+      retryDelayMs: 0,
+      fetch: async () => {
+        apiCalls += 1;
+        return jsonResponse({ error: { message: 'rate limited' } }, 429);
+      },
+    });
+    await assert.rejects(
+      () => client.request('https://app-api.pixiv.net/v1/illust/recommended'),
+      error => error.code === 'PIXIV_API_ERROR' && error.upstreamStatus === 429,
+    );
+    assert.equal(apiCalls, 2);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Pixiv GET 429 respects Retry-After when present', async () => {
+  const dir = await makeTokenDir();
+  try {
+    const store = await makeConnectedStore(dir);
+    let apiCalls = 0;
+    let firstAt = 0;
+    const client = new PixivOAuthClient({
+      store,
+      retryDelayMs: 0,
+      fetch: async () => {
+        apiCalls += 1;
+        if (apiCalls === 1) {
+          firstAt = Date.now();
+          return new Response(JSON.stringify({ error: { message: 'rate limited' } }), {
+            status: 429,
+            headers: { 'content-type': 'application/json', 'retry-after': '1' },
+          });
+        }
+        return feedResponse(32, 'after-retry-after');
+      },
+    });
+    const payload = await client.request('https://app-api.pixiv.net/v1/illust/recommended');
+    assert.equal(apiCalls, 2);
+    assert.ok(Date.now() - firstAt >= 900, 'retry should wait for Retry-After');
+    assert.equal(payload.illusts[0].id, 32);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 // ---------- 本机 AES-256-GCM token 存储 ----------
