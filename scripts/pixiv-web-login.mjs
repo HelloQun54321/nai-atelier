@@ -1,7 +1,8 @@
-import { spawn as nodeSpawn } from 'node:child_process';
+import { execFile as nodeExecFile, spawn as nodeSpawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import {
   PIXIV_APP_CLIENT_ID,
   PIXIV_APP_CLIENT_SECRET,
@@ -19,7 +20,39 @@ export const PIXIV_LOGIN_REDIRECT_URI = PIXIV_CALLBACK_URL;
 export const PIXIV_LOGIN_SESSION_TTL_MS = 5 * 60 * 1000;
 export const MAX_PIXIV_CALLBACK_URL_LENGTH = 4096;
 export const PIXIV_LOGIN_ID_MAX_LENGTH = 64;
+export const PIXIV_SCHEME_NAME = 'pixiv';
+export const PIXIV_SCHEME_HANDLER_SCRIPT = 'pixiv-scheme-handler.mjs';
 const moduleDir = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * 注册 pixiv:// URL 协议 → 本机 NPM 登录回调处理器（仅 Windows，HKCU 无需管理员）。
+ * Pixiv 登录成功后通过 pixiv://account/login?code=… 回调（custom scheme 流程，
+ * 旧流程为 app-api.pixiv.net HTTPS callback 白页）；未注册协议时浏览器无法处理，
+ * 登录会卡在空白页。注册幂等，失败返回 false 且不阻断登录（退回地址栏监听/手动粘贴）。
+ */
+export const ensurePixivSchemeHandler = async ({
+  execFile = promisify(nodeExecFile),
+  platform = process.platform,
+  nodePath = process.execPath,
+} = {}) => {
+  if (platform !== 'win32') return false;
+  const scriptPath = resolve(moduleDir, PIXIV_SCHEME_HANDLER_SCRIPT);
+  const command = `"${nodePath}" "${scriptPath}" "%1"`;
+  const schemeKey = `HKCU\\Software\\Classes\\${PIXIV_SCHEME_NAME}`;
+  const commands = [
+    ['add', schemeKey, '/f', '/ve', '/d', 'URL:Pixiv Login Protocol'],
+    ['add', schemeKey, '/f', '/v', 'URL Protocol', '/d', 'pixiv'],
+    ['add', `${schemeKey}\\shell\\open\\command`, '/f', '/ve', '/d', command],
+  ];
+  try {
+    for (const args of commands) {
+      await execFile('reg.exe', args, { windowsHide: true });
+    }
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 export const PIXIV_LOGIN_STATES = Object.freeze(['starting', 'awaiting-user', 'exchanging', 'connected', 'failed', 'canceled', 'timed-out']);
 export const PIXIV_LOGIN_ACTIVE_STATES = new Set(['starting', 'awaiting-user', 'exchanging']);
@@ -52,16 +85,20 @@ export const buildPixivLoginUrl = ({ codeChallenge, client = 'pixiv-android' } =
   return `${PIXIV_LOGIN_URL_BASE}?${query.toString()}`;
 };
 
+/** Pixiv 登录成功后的两种回调载体：
+ *  1. 官方 HTTPS callback 白页（旧流程）：https://app-api.pixiv.net/web/v1/users/auth/pixiv/callback?code=…
+ *  2. custom scheme（Pixiv 新流程，pixiv 客户端/已注册处理器的桌面环境）：pixiv://account/login?code=…
+ *  两者都只提取 code，且只接受 pixiv 官方来源。 */
 export const parsePixivCallbackUrl = (value, { maxLength = MAX_PIXIV_CALLBACK_URL_LENGTH } = {}) => {
   const raw = String(value || '').trim();
   if (!raw || raw.length > maxLength) return null;
   let url;
   try { url = new URL(raw); } catch { return null; }
   if (url.username || url.password) return null;
-  const officialHttps = url.protocol === 'https:'
-    && url.host === 'app-api.pixiv.net'
-    && url.pathname === '/web/v1/users/auth/pixiv/callback';
-  if (!officialHttps) return null;
+  const official = url.protocol === 'https:'
+    ? url.host === 'app-api.pixiv.net' && url.pathname === '/web/v1/users/auth/pixiv/callback'
+    : url.protocol === 'pixiv:' && url.host === 'account' && url.pathname === '/login';
+  if (!official) return null;
   const code = String(url.searchParams.get('code') || '');
   if (!code || code.length > 1024) return null;
   return { code };
@@ -259,6 +296,7 @@ export class PixivWebLoginOrchestrator {
     getGeneration,
     ttlMs = PIXIV_LOGIN_SESSION_TTL_MS,
     startWatcher = startPixivCallbackWatcher,
+    ensureSchemeHandler = ensurePixivSchemeHandler,
   } = {}) {
     this.requestFetch = requestFetch;
     this.clock = clock;
@@ -268,6 +306,7 @@ export class PixivWebLoginOrchestrator {
     this.getGeneration = getGeneration || null;
     this.ttlMs = ttlMs;
     this.startWatcher = startWatcher;
+    this.ensureSchemeHandler = ensureSchemeHandler;
     this.active = null;
   }
 
@@ -291,6 +330,11 @@ export class PixivWebLoginOrchestrator {
     };
     this.active = session;
     try {
+      try {
+        session.schemeHandler = await this.ensureSchemeHandler();
+      } catch {
+        session.schemeHandler = false;
+      }
       try {
         session.watcher = await this.startWatcher({
           onCallback: callbackUrl => void this.complete(session.id, callbackUrl).catch(() => {}),
@@ -325,7 +369,12 @@ export class PixivWebLoginOrchestrator {
 
   async complete(id, callbackUrl) {
     const session = this.active;
-    if (!session || session.id !== String(id || '') || !PIXIV_LOGIN_ACTIVE_STATES.has(session.state)) {
+    const requestedId = String(id || '');
+    if (requestedId.length > PIXIV_LOGIN_ID_MAX_LENGTH) {
+      throw pixivLoginError('登录会话不存在或已结束', 'PIXIV_LOGIN_NOT_FOUND', 404);
+    }
+    // 协议处理器拿不到会话 id 时允许省略；显式 id 必须与当前会话一致。
+    if (!session || (requestedId && session.id !== requestedId) || !PIXIV_LOGIN_ACTIVE_STATES.has(session.state)) {
       throw pixivLoginError('登录会话不存在或已结束', 'PIXIV_LOGIN_NOT_FOUND', 404);
     }
     const parsed = parsePixivCallbackUrl(callbackUrl);

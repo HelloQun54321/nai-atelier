@@ -4,6 +4,11 @@
 
 ## 2026-08-12
 
+### Pixiv 登录适配 custom scheme 回调 + 安全模式模糊残留修复
+
+- **Pixiv 登录流程适配**：Pixiv 已将登录成功回调从 HTTPS callback 白页改为 `pixiv://account/login?code=…` custom scheme（桌面浏览器未注册协议时登录会卡在空白页，地址栏监听也抓不到）。新增 `pixiv://` URL 协议注册（`HKCU\Software\Classes\pixiv`，登录时幂等注册、失败自动降级）与 `scripts/pixiv-scheme-handler.mjs`：Windows 把 scheme 跳转交给本机 node 脚本，解析官方 code 后经 `POST /api/pixiv/login/complete` 完成登录；`parsePixivCallbackUrl` 同时接受 HTTPS callback 与 `pixiv://account/login`，`complete` 允许省略会话 id（协议处理器无 id 场景），手动粘贴两种地址均可用。已用真实已登录 Edge 账号端到端验证：断开→重连→图库全流程正常，token 仍仅加密落盘 `local-data/pixiv-tokens.json`。
+- **安全模式模糊残留修复**：点击图片时只给命中的一张 `<img>` 打 `data-safe-revealed`，而 SmartImage 在同一容器内渲染主图 + 渐进升级高清叠加图（CSS 按单图判断遮挡），导致叠加图残留模糊。点击解除时改为同容器内所有 `img` 整组解除，详情大图与卡片图一致生效。
+
 ### Pixiv 图库前端（本机版）
 
 - 新增 Pixiv 图库前端（`services/pixivService.ts` + `components/PixivGallery.tsx`）：连接管理（refresh token 仅以加密形式保存在本机 `local-data`，页面内只在临时 state 持有、操作完成后立即清空）、推荐/标签搜索/日周月榜单/画师作品浏览、`nextCursor` 加载更多。

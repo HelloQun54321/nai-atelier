@@ -269,7 +269,16 @@ const App = () => {
 
     event.preventDefault();
     event.stopPropagation();
-    image.dataset.safeRevealed = 'true';
+    // SmartImage 会在同一容器内渲染主图 + 渐进升级高清叠加图，CSS 对每张 img
+    // 独立判断 data-safe-revealed；只标记一张会导致叠加图残留模糊，必须整组解除。
+    const images = [image];
+    if (image.parentElement) {
+      images.push(...Array.from(image.parentElement.querySelectorAll<HTMLImageElement>('img')));
+    }
+    for (const candidate of new Set(images)) {
+      if (candidate.dataset.safeModeIgnore === 'true') continue;
+      candidate.dataset.safeRevealed = 'true';
+    }
   };
 
   const keepViewMounted = (targetView: ViewState) => {

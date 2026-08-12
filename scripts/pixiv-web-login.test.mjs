@@ -6,6 +6,7 @@ import {
   buildPixivLoginUrl,
   buildTokenExchangeRequest,
   createPkcePair,
+  ensurePixivSchemeHandler,
   launchInDefaultBrowser,
   parsePixivCallbackUrl,
   PixivWebLoginOrchestrator,
@@ -15,6 +16,10 @@ import {
 import { PIXIV_HASH_SECRET } from './pixiv-local.mjs';
 
 const CALLBACK = 'https://app-api.pixiv.net/web/v1/users/auth/pixiv/callback?code=test-code-123';
+const PIXIV_SCHEME_CALLBACK = 'pixiv://account/login?code=scheme-code-456&via=login';
+
+/** 测试环境不写注册表：统一注入 no-op 协议注册。 */
+const noSchemeHandler = async () => false;
 
 const makeChild = () => {
   const child = new EventEmitter();
@@ -48,9 +53,11 @@ test('PKCE 与登录 URL 使用官方 S256 流程', () => {
   assert.equal(url.searchParams.get('client'), 'pixiv-android');
 });
 
-test('回调只接受 Pixiv 官方 HTTPS callback', () => {
+test('回调只接受 Pixiv 官方 HTTPS callback 与 pixiv:// scheme', () => {
   assert.deepEqual(parsePixivCallbackUrl(CALLBACK), { code: 'test-code-123' });
-  assert.equal(parsePixivCallbackUrl('pixiv://account/login?code=abc123&via=login'), null);
+  assert.deepEqual(parsePixivCallbackUrl('pixiv://account/login?code=abc123&via=login'), { code: 'abc123' });
+  assert.equal(parsePixivCallbackUrl('pixiv://evil.example/login?code=abc'), null);
+  assert.equal(parsePixivCallbackUrl('pixiv://account/login'), null);
   assert.equal(parsePixivCallbackUrl('https://evil.example/callback?code=abc'), null);
   assert.equal(parsePixivCallbackUrl('http://app-api.pixiv.net/web/v1/users/auth/pixiv/callback?code=abc'), null);
   assert.equal(parsePixivCallbackUrl('https://app-api.pixiv.net/web/v1/users/auth/pixiv/callback'), null);
@@ -97,6 +104,7 @@ test('编排器使用默认浏览器并通过粘贴回调完成登录', async ()
   const exchanged = [];
   let saved = null;
   const orchestrator = new PixivWebLoginOrchestrator({
+    ensureSchemeHandler: noSchemeHandler,
     launchBrowser: async url => { launched.push(url); },
     exchange: async input => {
       exchanged.push(input);
@@ -123,6 +131,7 @@ test('编排器使用默认浏览器并通过粘贴回调完成登录', async ()
 
 test('无效回调不会结束会话，仍可重新粘贴正确地址', async () => {
   const orchestrator = new PixivWebLoginOrchestrator({
+    ensureSchemeHandler: noSchemeHandler,
     launchBrowser: async () => {},
     exchange: async () => ({ refreshToken: 'refresh-token-test-123456', accessToken: 'access-token-test' }),
     startWatcher: async () => { throw new Error('not available'); },
@@ -137,6 +146,7 @@ test('无效回调不会结束会话，仍可重新粘贴正确地址', async ()
 test('Windows 回调监听启动成功时公开状态标记为自动完成', async () => {
   const watcher = makeWatcher();
   const orchestrator = new PixivWebLoginOrchestrator({
+    ensureSchemeHandler: noSchemeHandler,
     launchBrowser: async () => {},
     exchange: async () => ({ refreshToken: 'refresh-token-test-123456', accessToken: 'access-token-test' }),
     startWatcher: async () => watcher,
@@ -149,7 +159,8 @@ test('Windows 回调监听启动成功时公开状态标记为自动完成', asy
 });
 
 test('同一时刻只允许一个会话，取消后可重开', async () => {
-  const orchestrator = new PixivWebLoginOrchestrator({ launchBrowser: async () => {}, startWatcher: async () => makeWatcher() });
+  const orchestrator = new PixivWebLoginOrchestrator({
+    ensureSchemeHandler: noSchemeHandler, launchBrowser: async () => {}, startWatcher: async () => makeWatcher() });
   const first = await orchestrator.start();
   await assert.rejects(() => orchestrator.start(), error => error.code === 'PIXIV_LOGIN_ACTIVE');
   assert.equal((await orchestrator.cancel(first.id)).state, 'canceled');
@@ -157,7 +168,8 @@ test('同一时刻只允许一个会话，取消后可重开', async () => {
 });
 
 test('超时清除 PKCE 并返回安全公开状态', async () => {
-  const orchestrator = new PixivWebLoginOrchestrator({ launchBrowser: async () => {}, ttlMs: 30, startWatcher: async () => makeWatcher() });
+  const orchestrator = new PixivWebLoginOrchestrator({
+    ensureSchemeHandler: noSchemeHandler, launchBrowser: async () => {}, ttlMs: 30, startWatcher: async () => makeWatcher() });
   const started = await orchestrator.start();
   const final = await waitFor(() => {
     const state = orchestrator.status(started.id);
@@ -196,4 +208,64 @@ test('Windows 地址栏监听只转交 Pixiv 官方 callback', async () => {
   assert.ok(calls[0].args.includes('D:\\NPM\\scripts\\pixiv-edge-callback-watcher.ps1'));
   assert.equal(calls[0].options.windowsHide, true);
   assert.deepEqual(callbacks, [CALLBACK]);
+});
+
+test('pixiv:// scheme 回调与 HTTPS callback 等效完成登录', async () => {
+  const exchanged = [];
+  const orchestrator = new PixivWebLoginOrchestrator({
+    ensureSchemeHandler: noSchemeHandler,
+    launchBrowser: async () => {},
+    exchange: async input => {
+      exchanged.push(input);
+      return { refreshToken: 'refresh-token-test-123456', accessToken: 'access-token-test', accessTokenExpiresAt: Date.now() + 3600000 };
+    },
+    startWatcher: async () => makeWatcher(),
+  });
+  const started = await orchestrator.start();
+  const completed = await orchestrator.complete(started.id, PIXIV_SCHEME_CALLBACK);
+  assert.equal(completed.state, 'connected');
+  assert.equal(exchanged[0].code, 'scheme-code-456');
+  const publicText = JSON.stringify(completed);
+  assert.ok(!publicText.includes('scheme-code'));
+});
+
+test('complete 可省略会话 id（协议处理器场景）', async () => {
+  const orchestrator = new PixivWebLoginOrchestrator({
+    ensureSchemeHandler: noSchemeHandler,
+    launchBrowser: async () => {},
+    exchange: async () => ({ refreshToken: 'refresh-token-test-123456', accessToken: 'access-token-test' }),
+    startWatcher: async () => makeWatcher(),
+  });
+  const started = await orchestrator.start();
+  const completed = await orchestrator.complete(undefined, PIXIV_SCHEME_CALLBACK);
+  assert.equal(completed.state, 'connected');
+  assert.equal(orchestrator.status(started.id).state, 'connected');
+  await assert.rejects(() => orchestrator.complete('wrong-id', PIXIV_SCHEME_CALLBACK), error => error.code === 'PIXIV_LOGIN_NOT_FOUND');
+});
+
+test('ensurePixivSchemeHandler 注册 pixiv 协议并幂等', async () => {
+  const calls = [];
+  const execFile = async (command, args) => { calls.push({ command, args }); return ''; };
+  const ok = await ensurePixivSchemeHandler({ execFile, platform: 'win32', nodePath: 'C:\\node\\node.exe' });
+  assert.equal(ok, true);
+  const first = calls[0];
+  assert.equal(first.command, 'reg.exe');
+  assert.deepEqual(first.args.slice(0, 2), ['add', 'HKCU\\Software\\Classes\\pixiv']);
+  assert.ok(first.args.includes('/ve'));
+  const urlProtocol = calls.find(call => call.args.includes('/v'));
+  assert.ok(urlProtocol);
+  assert.ok(urlProtocol.args.includes('URL Protocol'));
+  const commandEntry = calls.find(call => call.args[1].endsWith('\\shell\\open\\command'));
+  assert.ok(commandEntry);
+  const commandIndex = commandEntry.args.indexOf('/d');
+  assert.match(commandEntry.args[commandIndex + 1], /^"C:\\node\\node\.exe" ".*pixiv-scheme-handler\.mjs" "%1"$/);
+  const okAgain = await ensurePixivSchemeHandler({ execFile, platform: 'win32', nodePath: 'C:\\node\\node.exe' });
+  assert.equal(okAgain, true);
+  assert.equal(calls.length, 6);
+});
+
+test('ensurePixivSchemeHandler 非 Windows 返回 false 且失败不抛出', async () => {
+  const execFile = async () => { throw new Error('no reg'); };
+  assert.equal(await ensurePixivSchemeHandler({ execFile, platform: 'linux' }), false);
+  assert.equal(await ensurePixivSchemeHandler({ execFile, platform: 'win32', nodePath: 'C:\\node\\node.exe' }), false);
 });
