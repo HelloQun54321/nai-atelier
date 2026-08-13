@@ -28,6 +28,8 @@ interface DanbooruGalleryProps {
 }
 
 const PAGE_SIZE = 40;
+/** 追加式自动加载的软上限：超过后停止自动追加，按钮可继续手动加载。 */
+const DANBOORU_APPEND_LIMIT = 800;
 const defaultParams: NAIParams = {
   width: 832,
   height: 1216,
@@ -79,6 +81,11 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const loadedRef = useRef(false);
+  // 追加模式状态：当前查询/页码的同步镜像（防并发与跳页竞态）。
+  const queryRef = useRef(query);
+  const pageRef = useRef(page);
+  const appendingRef = useRef(false);
+  const lastAppendAtRef = useRef(0);
 
   const selected = useMemo(() => items.find(item => item.id === selectedId) || null, [items, selectedId]);
   const closeMobileDetail = useMobileHistoryLayer(Boolean(selected), () => setSelectedId(null), 'danbooru-detail');
@@ -92,6 +99,8 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       setHasMore(result.hasMore);
       setQuery(result.query);
       setPage(result.page);
+      queryRef.current = result.query;
+      pageRef.current = result.page;
       setSelectedId(current => result.items.some(item => item.id === current) ? current : null);
       loadedRef.current = true;
       requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; });
@@ -104,27 +113,52 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     }
   };
 
+  // 自动加载：把下一页内容追加到当前列表下方（连续滚动、无切页感）。
+  // 与 Pixiv/历史页一致；软上限后停止自动追加，按钮可继续手动加载。
+  const appendNextPage = async (force = false) => {
+    if (appendingRef.current || loading) return;
+    if (!force && items.length >= DANBOORU_APPEND_LIMIT) return;
+    const beforePage = pageRef.current;
+    const beforeQuery = queryRef.current;
+    appendingRef.current = true;
+    try {
+      const result = await danbooruService.search({ query: beforeQuery, page: beforePage + 1, limit: PAGE_SIZE });
+      // 加载期间用户搜索/跳页：丢弃本次结果，避免拼接到错误列表上。
+      if (pageRef.current !== beforePage || queryRef.current !== beforeQuery) return;
+      setItems(previous => [...previous, ...result.items]);
+      setHasMore(result.hasMore);
+      setPage(result.page);
+      pageRef.current = result.page;
+    } catch (appendError) {
+      const message = appendError instanceof Error ? appendError.message : 'Danbooru 加载失败';
+      notify(message, 'error');
+    } finally {
+      appendingRef.current = false;
+    }
+  };
+
   useEffect(() => {
     if (active && !loadedRef.current) void load('order:rank', 1);
   }, [active]);
 
-  // 滚动接近列表底部自动翻下一页；按钮保留作兜底。
-  // 用 scroll 事件触发（整页替换模式：IO sentinel 在内容高度不足时会连环翻页）。
+  // 滚动接近列表底部自动加载下一页（追加模式）；分页器按钮保留作兜底/跳页。
+  // 内容不足一屏时不触发；追加后冷却 1.5s，图片加载引起的布局事件不会连发。
   useEffect(() => {
     const node = scrollRef.current;
-    if (!node || !hasMore || loading) return;
+    if (!node || !hasMore || loading || items.length >= DANBOORU_APPEND_LIMIT) return;
     const onScroll = () => {
-      // 内容不足一屏（图片未加载时卡片可能很矮）时任何滚动都会触发翻页，先排除。
+      if (Date.now() - lastAppendAtRef.current < 1500) return;
       if (node.scrollHeight - node.clientHeight <= 80) return;
       if (node.scrollTop + node.clientHeight >= node.scrollHeight - 200) {
-        void load(query, page + 1);
+        lastAppendAtRef.current = Date.now();
+        void appendNextPage();
       }
     };
     node.addEventListener('scroll', onScroll, { passive: true });
     return () => node.removeEventListener('scroll', onScroll);
-    // load 闭包随 query/page 重建，无需列入依赖。
+    // appendNextPage 闭包随 items/page 重建，无需列入依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMore, loading, page, query]);
+  }, [hasMore, items.length, loading]);
 
   const submitSearch = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -224,7 +258,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
         <main ref={scrollRef} className={`${selected ? 'hidden xl:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
           <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
             <span>{query === 'order:rank' ? '热门普通级作品' : `检索：${query.replaceAll('_', ' ')}`}</span>
-            <span>仅显示 General · 第 {page} 页</span>
+            <span>仅显示 General · 已加载 {items.length} 件{hasMore ? ' · 滚动继续加载' : ' · 已全部加载'}</span>
           </div>
 
           {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
@@ -244,10 +278,15 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             )
           ) : !loading && <div className="flex min-h-72 flex-col items-center justify-center text-center text-sm text-gray-500"><p className="font-bold">没有找到普通级图片</p><p className="mt-1 text-xs">请检查 Tag 拼写，或减少检索条件。</p></div>}
 
-          <div className="mt-5 flex items-center justify-center gap-3 pb-4">
-            <ToolbarButton disabled={loading || page <= 1} onClick={() => void load(query, page - 1)}><ChevronLeft />上一页</ToolbarButton>
-            <span className="text-xs font-bold text-gray-500">{page}</span>
-            <ToolbarButton disabled={loading || !hasMore} onClick={() => void load(query, page + 1)}>下一页<ChevronRight /></ToolbarButton>
+          <div className="mt-5 flex flex-col items-center gap-3 pb-4">
+            {items.length >= DANBOORU_APPEND_LIMIT && hasMore && (
+              <ToolbarButton onClick={() => void appendNextPage(true)}><RefreshCw className={appendingRef.current ? 'animate-spin' : ''} />已加载 {DANBOORU_APPEND_LIMIT} 件 · 继续加载更多</ToolbarButton>
+            )}
+            <div className="flex items-center justify-center gap-3">
+              <ToolbarButton disabled={loading || page <= 1} onClick={() => void load(query, page - 1)}><ChevronLeft />上一页</ToolbarButton>
+              <span className="text-xs font-bold text-gray-500">{page}</span>
+              <ToolbarButton disabled={loading || !hasMore} onClick={() => void load(query, page + 1)}>下一页<ChevronRight /></ToolbarButton>
+            </div>
           </div>
         </main>
 

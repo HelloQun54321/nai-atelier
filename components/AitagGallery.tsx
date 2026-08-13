@@ -36,6 +36,8 @@ interface AitagGalleryProps {
 
 const PAGE_SIZE = 60;
 const FIRST_IMAGE_IDLE_DELAYS_MS = [1500, 3000, 6000];
+/** 追加式自动加载的软上限：超过后停止自动追加，按钮可继续手动加载。 */
+const AITAG_APPEND_LIMIT = 800;
 
 const formatCount = (value?: number) => {
   const count = Number(value || 0);
@@ -403,23 +405,39 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     if (detailScrollRef.current) detailScrollRef.current.scrollTop = 0;
   };
 
-  // 滚动接近列表底部自动翻下一页（行为等同点击“下一页”）；分页器保留作兜底/跳页。
-  // 用 scroll 事件触发（整页替换模式：IO sentinel 在内容高度不足时会连环翻页）。
+  // 滚动接近列表底部自动加载下一页（追加模式，连续滚动无切页感）；分页器保留作兜底/跳页。
+  // 内容不足一屏时不触发；追加后冷却 1.5s；达到软上限后停止自动追加。
+  const appendingRef = useRef(false);
+  const lastAppendAtRef = useRef(0);
+  const querySignatureRef = useRef('');
+  const getQuerySignature = () => `${q}|${prompt}|${sort}|${aiType}|${rankMonth}|${cacheFilter}`;
+  const appendNextPage = async (force = false) => {
+    if (appendingRef.current || isLoading) return;
+    if (!force && visibleItems.length >= AITAG_APPEND_LIMIT) return;
+    appendingRef.current = true;
+    try {
+      await loadWorks(page + 1, { append: true, silent: true });
+    } finally {
+      appendingRef.current = false;
+    }
+  };
   useEffect(() => {
     const node = mainScrollRef.current;
-    if (!node || !hasNextPage || isLoading) return;
+    if (!node || !hasNextPage || isLoading || visibleItems.length >= AITAG_APPEND_LIMIT) return;
     const onScroll = () => {
-      // 内容不足一屏时任何滚动都会触发翻页，先排除。
+      if (Date.now() - lastAppendAtRef.current < 1500) return;
+      // 内容不足一屏（图片未加载时卡片可能很矮）时任何滚动都会触发翻页，先排除。
       if (node.scrollHeight - node.clientHeight <= 80) return;
       if (node.scrollTop + node.clientHeight >= node.scrollHeight - 200) {
-        void loadWorks(page + 1, { resetScroll: true });
+        lastAppendAtRef.current = Date.now();
+        void appendNextPage();
       }
     };
     node.addEventListener('scroll', onScroll, { passive: true });
     return () => node.removeEventListener('scroll', onScroll);
-    // loadWorks 闭包随 page/hasNextPage/isLoading 重建，无需列入依赖。
+    // appendNextPage/loadWorks 闭包随 page/hasNextPage/isLoading/items 重建，无需列入依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasNextPage, isLoading, page]);
+  }, [hasNextPage, isLoading, visibleItems.length]);
 
   const loadWorks = async (
     targetPage = page,
@@ -430,8 +448,15 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       rankMonthOverride?: string;
       cacheFilterOverride?: AitagCacheFilter;
       silent?: boolean;
+      /** 追加模式：下一页内容接到当前列表下方（连续滚动），不替换不回顶。 */
+      append?: boolean;
     } = {}
   ) => {
+    const isAppend = options.append === true;
+    if (isAppend) {
+      const signature = getQuerySignature();
+      if (querySignatureRef.current !== signature) return;
+    }
     const targetAiType = options.aiTypeOverride || aiType;
     const targetSort = options.sortOverride || sort;
     const targetRankMonth = options.rankMonthOverride || rankMonth;
@@ -487,10 +512,13 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       const nextStatus = data.status || null;
       const nextError = offline ? 'aitag.win 暂时不可用，正在使用本地缓存' : null;
 
+      // 追加期间用户搜索/筛选/跳页（querySignature 已变化）：丢弃本次结果，避免拼接到错误列表上。
+      if (isAppend && querySignatureRef.current !== getQuerySignature()) return;
+
       hasLoadedRef.current = true;
       aitagPageCache = {
         ...aitagPageCache,
-        items: nextItems,
+        items: isAppend ? [...aitagPageCache.items, ...nextItems] : nextItems,
         total: nextTotal,
         page: nextPage,
         error: nextError,
@@ -499,7 +527,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         isOfflineCache: offline,
       };
 
-      setItems(nextItems);
+      if (!isAppend) querySignatureRef.current = getQuerySignature();
+      setItems(previous => (isAppend ? [...previous, ...nextItems] : nextItems));
       setTotal(nextTotal);
       setPage(nextPage);
       setCacheStatus(nextStatus);
@@ -1055,7 +1084,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           <ToolbarSearch value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') handleSearch(); }} placeholder="Prompt" containerClassName="w-[18rem] flex-none" />
           <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} className={showDesktopFilters ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600' : ''}><Filter className="h-4 w-4" />筛选</ToolbarButton>
           <ToolbarButton tone="primary" onClick={handleSearch} disabled={isLoading}><Search className="h-4 w-4" />搜索</ToolbarButton>
-          <div className="ml-auto hidden items-center gap-2 text-xs text-gray-500 xl:flex"><span>{page} / {totalPages} 页</span><span>{formatCount(total)} 条</span></div>
+          <div className="ml-auto hidden items-center gap-2 text-xs text-gray-500 xl:flex"><span>已加载 {formatCount(visibleItems.length)} 条</span><span>共 {formatCount(total)} 条</span></div>
           <IconButton label="刷新" onClick={() => loadWorks(page, { resetScroll: true })} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
           <ImageTaggerAction notify={notify} />
         </div>
@@ -1079,7 +1108,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             <label className="text-sm font-bold dark:text-white">排序<select value={sort} onChange={event => handleSortChange(event.target.value as AitagSort)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-700 dark:bg-gray-800"><option value="new">最新</option><option value="monthly">月榜</option></select></label>
             <label className="text-sm font-bold dark:text-white">月份<select value={sort === 'monthly' ? rankMonth : ''} disabled={sort !== 'monthly'} onChange={event => handleRankMonthChange(event.target.value)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800"><option value="current">当前月份</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">更早</option></select></label>
           </div>
-          <div className="rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">第 {page} / {totalPages} 页 · 共 {formatCount(total)} 条</div>
+          <div className="rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">已加载 {formatCount(visibleItems.length)} 条 · 共 {formatCount(total)} 条</div>
         </div>
       </MobileBottomSheet>
 
@@ -1123,7 +1152,13 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             )
           )}
 
-          <div className="flex justify-center items-center gap-2 py-6">
+          <div className="flex flex-col items-center gap-2 py-6">
+            {visibleItems.length >= AITAG_APPEND_LIMIT && hasNextPage && (
+              <button type="button" onClick={() => void appendNextPage(true)} disabled={isLoading} className="mobile-touch px-4 py-2 rounded-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm font-bold text-gray-600 dark:text-gray-300">
+                已加载 {AITAG_APPEND_LIMIT} 条 · 继续加载更多
+              </button>
+            )}
+            <div className="flex justify-center items-center gap-2">
             <button
               onClick={() => loadWorks(Math.max(1, page - 1), { resetScroll: true })}
               disabled={isLoading || page <= 1}
@@ -1177,6 +1212,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             >
               下一页
             </button>
+            </div>
           </div>
           <div className="flex justify-center pb-6 -mt-3">
             <div className="flex flex-wrap justify-center items-center gap-x-4 gap-y-1 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 py-2 text-xs text-gray-600 dark:text-gray-300">
