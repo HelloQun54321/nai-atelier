@@ -113,7 +113,9 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     const node = scrollRef.current;
     if (!node || !hasMore || loading) return;
     const onScroll = () => {
-      if (node.scrollTop + node.clientHeight >= node.scrollHeight - 400) {
+      // 内容不足一屏（图片未加载时卡片可能很矮）时任何滚动都会触发翻页，先排除。
+      if (node.scrollHeight - node.clientHeight <= 80) return;
+      if (node.scrollTop + node.clientHeight >= node.scrollHeight - 200) {
         void load(query, page + 1);
       }
     };

@@ -320,26 +320,60 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
     refreshPageRef.current = goToPage;
 
-    // 滚动接近列表底部自动翻下一页；分页器保留作兜底/跳页。
-    // 用 scroll 事件（而非 IntersectionObserver sentinel）触发：整页替换模式下
-    // sentinel 在图片未加载、内容高度不足时永远可见，会形成连环翻页死循环。
-    // 用户滚动触发后回顶，滚动事件链随即断开，循环不可能自维持。
+    // 自动翻页：把下一页内容追加到当前列表下方（与分页器跳页的整页替换不同）。
+    // 追加模式不回顶、不替换，最新图始终留在列表顶部；用 ref 防并发与跳页竞态。
+    const appendingRef = useRef(false);
+    const appendNextPage = async () => {
+        if (appendingRef.current || currentPageRef.current >= totalPages) return;
+        appendingRef.current = true;
+        try {
+            const beforePage = currentPageRef.current;
+            const queryKey = getHistoryQueryKey();
+            const next = beforePage + 1;
+            const { items: data } = await getPageData(next);
+            // 加载期间用户跳页/筛选：丢弃本次结果，避免拼接到错误列表上。
+            if (currentPageRef.current !== beforePage || getHistoryQueryKey() !== queryKey) return;
+            const targetPage = Math.min(next, totalPages);
+            if (targetPage !== next) return;
+            currentPageRef.current = targetPage;
+            setItems(previous => [...previous, ...data]);
+            setCurrentPage(targetPage);
+            const nextCache = { ...pageCacheRef.current, [targetPage]: data };
+            setCacheState(nextCache);
+            trimCacheAroundPage(targetPage, totalPages, nextCache);
+            if (targetPage < totalPages) {
+                void preloadPage(targetPage + 1, totalPages, targetPage);
+            }
+        } catch (e) {
+            console.error('追加页面失败:', e);
+            notify('加载失败，请重试', 'error');
+        } finally {
+            appendingRef.current = false;
+        }
+    };
+
+    // 滚动接近列表底部自动加载下一页（追加模式，滚动连续、最新图不消失）；
+    // 分页器保留作兜底/跳页。内容不足一屏时不自动加载，避免任何滚动都触发；
+    // 追加后冷却 1.5s：图片加载引起的布局变化/滚动锚定会派发额外 scroll 事件，
+    // 不加冷却会在一次触底后连续追加多页。
     const historyScrollRef = useRef<HTMLDivElement>(null);
+    const lastAppendAtRef = useRef(0);
     useEffect(() => {
         const node = historyScrollRef.current;
-        if (!node || isLoading || currentPage >= totalPages) return;
+        if (!node) return;
         const onScroll = () => {
-            if (node.scrollTop + node.clientHeight >= node.scrollHeight - 400) {
-                void goToPage(currentPage + 1).then(() => {
-                    node.scrollTo({ top: 0 });
-                });
+            if (Date.now() - lastAppendAtRef.current < 1500) return;
+            if (node.scrollHeight - node.clientHeight <= 120) return;
+            if (node.scrollTop + node.clientHeight >= node.scrollHeight - 120) {
+                lastAppendAtRef.current = Date.now();
+                void appendNextPage();
             }
         };
         node.addEventListener('scroll', onScroll, { passive: true });
         return () => node.removeEventListener('scroll', onScroll);
-        // goToPage 闭包随 currentPage/isLoading 重建，无需列入依赖。
+        // appendNextPage 闭包随 currentPage/totalPages 重建，无需列入依赖。
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPage, isLoading, totalPages]);
+    }, [currentPage, totalPages]);
 
     const applyDateFilter = (next: { from: string; to: string }) => {
         const from = next.from ? new Date(`${next.from}T00:00:00`).getTime() : undefined;

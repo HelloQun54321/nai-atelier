@@ -294,7 +294,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     const node = mainScrollRef.current;
     if (!node || !hasNextPage || isLoading) return;
     const onScroll = () => {
-      if (node.scrollTop + node.clientHeight >= node.scrollHeight - 400) {
+      // 内容不足一屏时任何滚动都会触发翻页，先排除。
+      if (node.scrollHeight - node.clientHeight <= 80) return;
+      if (node.scrollTop + node.clientHeight >= node.scrollHeight - 200) {
         void loadWorks(page + 1, { resetScroll: true });
       }
     };
