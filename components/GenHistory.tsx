@@ -1060,14 +1060,13 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                         {/* 底部分页信息 */}
                         <div className="mt-12 md:mt-16">
                             {totalCount > 0 && <>
-                                <div className="mx-auto mb-4 grid max-w-sm grid-cols-[2.75rem_1fr_2.75rem] items-center gap-2">
-                                <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1 || isLoading} aria-label="上一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">‹</button>
-                                <button onClick={() => setShowPageMenu(true)} className="mobile-touch rounded-lg text-sm font-bold text-indigo-600 dark:text-indigo-300 md:hidden">{currentPage} / {totalPages}</button>
+                                <div className="mx-auto mb-4 flex max-w-sm items-center justify-center gap-2">
+                                <button onClick={() => setShowPageMenu(true)} className="mobile-touch rounded-lg text-sm font-bold text-indigo-600 dark:text-indigo-300 md:hidden">第 {currentPage} / {totalPages} 页 · 点击跳转</button>
                                 <form onSubmit={submitDesktopPageJump} className="hidden items-center justify-center gap-1.5 md:flex">
+                                    <span className="text-sm text-gray-500">滚动浏览 · 跳到第</span>
                                     <input type="number" min="1" max={totalPages} value={desktopJumpPage} onChange={event => setDesktopJumpPage(event.target.value)} onFocus={event => event.currentTarget.select()} aria-label="输入页码跳转" className="h-10 w-16 rounded-lg border border-indigo-200 bg-white px-2 text-center text-sm font-bold text-indigo-600 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 dark:border-indigo-900/60 dark:bg-gray-800 dark:text-indigo-300" />
-                                    <span className="text-sm font-bold text-indigo-600 dark:text-indigo-300">/ {totalPages}</span>
+                                    <span className="text-sm font-bold text-indigo-600 dark:text-indigo-300">/ {totalPages} 页</span>
                                 </form>
-                                <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || isLoading} aria-label="下一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">›</button>
                             </div>
                             </>}
                             <div className="flex flex-col items-center justify-center py-6">

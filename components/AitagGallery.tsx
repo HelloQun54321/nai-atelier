@@ -1158,60 +1158,48 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                 已加载 {AITAG_APPEND_LIMIT} 条 · 继续加载更多
               </button>
             )}
-            <div className="flex justify-center items-center gap-2">
-            <button
-              onClick={() => loadWorks(Math.max(1, page - 1), { resetScroll: true })}
-              disabled={isLoading || page <= 1}
-              className="mobile-touch px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm disabled:opacity-50"
-            >
-              上一页
-            </button>
-            {isPageInputOpen ? (
-              <input
-                type="number"
-                min={1}
-                max={totalPages}
-                value={pageInputValue}
-                autoFocus
-                onFocus={e => e.currentTarget.select()}
-                onChange={e => setPageInputValue(e.target.value)}
-                onBlur={submitPageInput}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    e.currentTarget.blur();
-                  }
-                  if (e.key === 'Escape') {
-                    e.preventDefault();
-                    cancelPageInputRef.current = true;
-                    e.currentTarget.blur();
-                  }
-                }}
-                disabled={isLoading}
-                className="w-24 px-2 py-2 rounded border border-indigo-400 dark:border-indigo-500 bg-white dark:bg-gray-900 text-center text-sm text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  cancelPageInputRef.current = false;
-                  setPageInputValue(String(page));
-                  setIsPageInputOpen(true);
-                }}
-                disabled={isLoading}
-                title="点击输入页码跳转"
-                className="mobile-touch min-w-24 px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-500 dark:text-gray-400 hover:border-indigo-400 hover:text-indigo-500 disabled:opacity-50"
-              >
-                {page} / {totalPages}
-              </button>
-            )}
-            <button
-              onClick={() => loadWorks(page + 1, { resetScroll: true })}
-              disabled={isLoading || !hasNextPage}
-              className="mobile-touch px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm disabled:opacity-50"
-            >
-              下一页
-            </button>
+            <div className="flex justify-center items-center gap-2 text-xs text-gray-500">
+              <span>已加载 {formatCount(visibleItems.length)} 条 / 共 {formatCount(total)} 条 · 滚动浏览，可跳转</span>
+              {isPageInputOpen ? (
+                <input
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  value={pageInputValue}
+                  autoFocus
+                  onFocus={e => e.currentTarget.select()}
+                  onChange={e => setPageInputValue(e.target.value)}
+                  onBlur={submitPageInput}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      e.currentTarget.blur();
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      cancelPageInputRef.current = true;
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  disabled={isLoading}
+                  aria-label="输入页码跳转"
+                  className="w-20 px-2 py-2 rounded border border-indigo-400 dark:border-indigo-500 bg-white dark:bg-gray-900 text-center text-sm text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    cancelPageInputRef.current = false;
+                    setPageInputValue(String(page));
+                    setIsPageInputOpen(true);
+                  }}
+                  disabled={isLoading}
+                  title="点击输入页码跳转"
+                  className="mobile-touch min-w-24 px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-500 dark:text-gray-400 hover:border-indigo-400 hover:text-indigo-500 disabled:opacity-50"
+                >
+                  跳到第 {page} 页
+                </button>
+              )}
             </div>
           </div>
           <div className="flex justify-center pb-6 -mt-3">

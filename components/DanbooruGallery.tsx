@@ -1,5 +1,5 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, Copy, ExternalLink, FlaskConical, Heart, RefreshCw, Search, X } from 'lucide-react';
+import { ArrowLeft, Copy, ExternalLink, FlaskConical, Heart, RefreshCw, Search, X } from 'lucide-react';
 import {
   DanbooruPost,
   DanbooruTagCategory,
@@ -80,6 +80,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [pageInput, setPageInput] = useState('');
   const loadedRef = useRef(false);
   // 追加模式状态：当前查询/页码的同步镜像（防并发与跳页竞态）。
   const queryRef = useRef(query);
@@ -168,6 +169,18 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     } catch (searchError) {
       notify(searchError instanceof Error ? searchError.message : '无法识别这个 Tag', 'error');
     }
+  };
+
+  // 页码跳转（显式跳页工具）：替换为第 N 页，此后滚动从该页继续追加。
+  const submitPageJump = (event?: FormEvent) => {
+    event?.preventDefault();
+    const value = Number(pageInput);
+    if (!Number.isFinite(value) || value < 1) {
+      notify('请输入有效页码', 'error');
+      return;
+    }
+    setPageInput('');
+    void load(query, Math.floor(value));
   };
 
   // 瀑布流（masonry 布局时）：真实宽高比完整显示，最短列分配互相补齐。
@@ -282,11 +295,20 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             {items.length >= DANBOORU_APPEND_LIMIT && hasMore && (
               <ToolbarButton onClick={() => void appendNextPage(true)}><RefreshCw className={appendingRef.current ? 'animate-spin' : ''} />已加载 {DANBOORU_APPEND_LIMIT} 件 · 继续加载更多</ToolbarButton>
             )}
-            <div className="flex items-center justify-center gap-3">
-              <ToolbarButton disabled={loading || page <= 1} onClick={() => void load(query, page - 1)}><ChevronLeft />上一页</ToolbarButton>
-              <span className="text-xs font-bold text-gray-500">{page}</span>
-              <ToolbarButton disabled={loading || !hasMore} onClick={() => void load(query, page + 1)}>下一页<ChevronRight /></ToolbarButton>
-            </div>
+            <form onSubmit={submitPageJump} className="flex items-center gap-2 text-xs text-gray-500">
+              <span>滚动浏览 · 跳到第</span>
+              <input
+                type="number"
+                min={1}
+                value={pageInput}
+                onChange={event => setPageInput(event.target.value)}
+                onFocus={event => event.currentTarget.select()}
+                aria-label="输入页码跳转"
+                className="h-9 w-16 rounded-lg border border-indigo-200 bg-white px-2 text-center text-sm font-bold text-indigo-600 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 dark:border-indigo-900/60 dark:bg-gray-800 dark:text-indigo-300"
+              />
+              <span>页</span>
+              <ToolbarButton type="submit" disabled={loading}>跳转</ToolbarButton>
+            </form>
           </div>
         </main>
 
