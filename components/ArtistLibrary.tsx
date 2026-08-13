@@ -11,6 +11,7 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { ShortestColumnMasonry } from './ShortestColumnMasonry';
 import { Bot, ClipboardList, Clock3, Dice5, Download, Grid3X3, Heart, List, LoaderCircle, Menu, RefreshCw, Settings2 } from 'lucide-react';
 import { IconButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
@@ -120,6 +121,109 @@ type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
 
 export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRefresh, notify, currentUser }) => {
     const imageDisplay = useMobileImageDisplayPreferences();
+    // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
+    const [artistRatios, setArtistRatios] = useState<Record<number, number>>({});
+    const estimateArtistCardHeight = React.useCallback((artist: (typeof filteredArtists)[number], columnWidth: number) => {
+      const ratio = artistRatios[artist.id] || 2 / 3;
+      const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
+      return imageHeight + 78; // 名称 + 中文名 + 作品数文本区
+    }, [artistRatios]);
+    const renderArtistCard = (artist: (typeof filteredArtists)[number]) => {
+                            const isSelected = !!cart.find(c => c.name === artist.name);
+                            const isFav = favorites.has(artist.name);
+                            let displayImg = artist.imageUrl || artist.benchmarks?.[0] || artist.previewUrl || '';
+                            let isBenchmarkMissing = false;
+
+                            if (viewMode === 'benchmark') {
+                                if (artist.benchmarks && artist.benchmarks[activeSlot]) {
+                                    displayImg = artist.benchmarks[activeSlot];
+                                } else if (activeSlot === 0 && artist.previewUrl) {
+                                    displayImg = artist.previewUrl;
+                                } else {
+                                    isBenchmarkMissing = true;
+                                }
+                            }
+
+                            const isTaskPending = taskQueue.some(t => t.artistId === artist.id);
+                            const isTaskRunning = currentTask?.artistId === artist.id;
+                            const isTaskFailed = failedTasks.some(t => t.artistId === artist.id);
+
+                            return (
+                                <div
+                                    key={artist.id}
+                                    className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden border transition-colors cursor-pointer ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}
+                                    onClick={() => toggleCart(artist.name)}
+                                >
+                                    <div className="mobile-gallery-frame md:aspect-[2/3] relative overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': artistRatios[artist.id] ? `${Math.round(artistRatios[artist.id] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
+                                        {viewMode === 'original' ? (
+                                            <DanbooruCover
+                                                tag={artist.name}
+                                                kind="artist"
+                                                alt={artist.chineseName || artist.name}
+                                                fixedSrc={displayImg}
+                                                onCandidateChange={candidate => rememberCoverCandidate(artist.id, candidate)}
+                                                onImageLoad={(width, height) => { const r = width / Math.max(1, height); if (Number.isFinite(r) && r > 0) setArtistRatios(previous => (previous[artist.id] === r ? previous : { ...previous, [artist.id]: r })); }}
+                                            />
+                                        ) : displayImg && !isBenchmarkMissing ? (
+                                            <LazyImage src={displayImg} alt={artist.name} onLoad={event => { const img = event.currentTarget; if (img.naturalWidth > 0 && img.naturalHeight > 0) { const r = img.naturalWidth / img.naturalHeight; if (Number.isFinite(r) && r > 0) setArtistRatios(previous => (previous[artist.id] === r ? previous : { ...previous, [artist.id]: r })); } }} />
+                                        ) : <DanbooruCover tag={artist.name} kind="artist" alt={artist.chineseName || artist.name} />}
+                                        {(isTaskPending || isTaskRunning || isTaskFailed) && (
+                                            <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center z-10">
+                                                {isTaskRunning ? (
+                                                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-white"></div>
+                                                ) : isTaskFailed ? (
+                                                    <div className="text-white text-xs font-bold bg-red-500 px-2 py-1 rounded">Failed</div>
+                                                ) : (
+                                                    <div className="text-white text-xs font-bold bg-indigo-500 px-2 py-1 rounded">Queue</div>
+                                                )}
+                                            </div>
+                                        )}
+                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors pointer-events-none" />
+                                        <TagCoverActions
+                                            favorite={isFav}
+                                            onToggleFavorite={() => toggleFav(artist.name)}
+                                            candidate={viewMode === 'original' ? coverCandidates[artist.id] : null}
+                                            onSetCover={viewMode === 'original' ? candidate => setDanbooruCover(artist, candidate) : undefined}
+                                            pinPlacement="bottom-right"
+                                        >
+                                            {isAdmin && viewMode === 'benchmark' && apiKey && (
+                                                <>
+                                                    <button
+                                                        onClick={(e) => queueGeneration(artist, [activeSlot], e)}
+                                                        className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm pointer-events-auto text-purple-600 hover:text-purple-500"
+                                                        title={`生成当前组 (Slot ${activeSlot + 1})`}
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => queueGeneration(artist, config.slots.map((_, i) => i), e)}
+                                                        className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm pointer-events-auto text-green-600 hover:text-green-500"
+                                                        title={`一键生成全部 ${config.slots.length} 组`}
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z" /></svg>
+                                                    </button>
+                                                </>
+                                            )}
+                                        </TagCoverActions>
+
+                                        {isSelected && (
+                                            <div className="absolute inset-0 border-4 border-indigo-500/80 pointer-events-none">
+                                                <div className="absolute top-2 left-2 bg-indigo-600 text-white p-1 rounded-full shadow-lg">
+                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="p-2 md:p-3 bg-white dark:bg-gray-800 text-center border-t border-gray-100 dark:border-gray-700">
+                                        <div className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{artist.name}</div>
+                                        {artist.chineseName && <div className="mt-0.5 truncate text-[10px] text-gray-400" title={artist.chineseName}>{artist.chineseName}</div>}
+                                        {typeof artist.postCount === 'number' && <div className="mt-0.5 text-[10px] font-mono text-gray-500" title="Danbooru 关联作品数">作品 {artist.postCount.toLocaleString('zh-CN')}</div>}
+                                    </div>
+                                </div>
+                            )
+                        
+    };
+
     const [searchTerm, setSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
     const [favorites, setFavorites] = useState<Set<string>>(new Set());
@@ -1263,104 +1367,22 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
 
                 {layoutMode === 'grid' ? (
                     /* --- GRID LAYOUT (Dynamic Columns using gridCols) --- */
+                    imageDisplay.layout === 'masonry' ? (
+                    <ShortestColumnMasonry
+                        items={filteredArtists}
+                        columns={gridCols}
+                        getItemKey={artist => String(artist.id)}
+                        estimateItemHeight={estimateArtistCardHeight}
+                        renderItem={renderArtistCard}
+                    />
+                ) : (
                     <div
                         className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid md:pr-6`}
                         style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { '--mobile-gallery-columns': gridCols }) }}
                     >
-                        {filteredArtists.map((artist, idx) => {
-                            const isSelected = !!cart.find(c => c.name === artist.name);
-                            const isFav = favorites.has(artist.name);
-                            let displayImg = artist.imageUrl || artist.benchmarks?.[0] || artist.previewUrl || '';
-                            let isBenchmarkMissing = false;
-
-                            if (viewMode === 'benchmark') {
-                                if (artist.benchmarks && artist.benchmarks[activeSlot]) {
-                                    displayImg = artist.benchmarks[activeSlot];
-                                } else if (activeSlot === 0 && artist.previewUrl) {
-                                    displayImg = artist.previewUrl;
-                                } else {
-                                    isBenchmarkMissing = true;
-                                }
-                            }
-
-                            const isTaskPending = taskQueue.some(t => t.artistId === artist.id);
-                            const isTaskRunning = currentTask?.artistId === artist.id;
-                            const isTaskFailed = failedTasks.some(t => t.artistId === artist.id);
-
-                            return (
-                                <div
-                                    key={artist.id}
-                                    className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden border transition-colors cursor-pointer ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}
-                                    onClick={() => toggleCart(artist.name)}
-                                >
-                                    <div className="mobile-gallery-frame md:aspect-[2/3] relative overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': '2 / 3' } as React.CSSProperties}>
-                                        {viewMode === 'original' ? (
-                                            <DanbooruCover
-                                                tag={artist.name}
-                                                kind="artist"
-                                                alt={artist.chineseName || artist.name}
-                                                fixedSrc={displayImg}
-                                                onCandidateChange={candidate => rememberCoverCandidate(artist.id, candidate)}
-                                            />
-                                        ) : displayImg && !isBenchmarkMissing ? (
-                                            <LazyImage src={displayImg} alt={artist.name} />
-                                        ) : <DanbooruCover tag={artist.name} kind="artist" alt={artist.chineseName || artist.name} />}
-                                        {(isTaskPending || isTaskRunning || isTaskFailed) && (
-                                            <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center z-10">
-                                                {isTaskRunning ? (
-                                                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-white"></div>
-                                                ) : isTaskFailed ? (
-                                                    <div className="text-white text-xs font-bold bg-red-500 px-2 py-1 rounded">Failed</div>
-                                                ) : (
-                                                    <div className="text-white text-xs font-bold bg-indigo-500 px-2 py-1 rounded">Queue</div>
-                                                )}
-                                            </div>
-                                        )}
-                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors pointer-events-none" />
-                                        <TagCoverActions
-                                            favorite={isFav}
-                                            onToggleFavorite={() => toggleFav(artist.name)}
-                                            candidate={viewMode === 'original' ? coverCandidates[artist.id] : null}
-                                            onSetCover={viewMode === 'original' ? candidate => setDanbooruCover(artist, candidate) : undefined}
-                                            pinPlacement="bottom-right"
-                                        >
-                                            {isAdmin && viewMode === 'benchmark' && apiKey && (
-                                                <>
-                                                    <button
-                                                        onClick={(e) => queueGeneration(artist, [activeSlot], e)}
-                                                        className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm pointer-events-auto text-purple-600 hover:text-purple-500"
-                                                        title={`生成当前组 (Slot ${activeSlot + 1})`}
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                                                    </button>
-                                                    <button
-                                                        onClick={(e) => queueGeneration(artist, config.slots.map((_, i) => i), e)}
-                                                        className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm pointer-events-auto text-green-600 hover:text-green-500"
-                                                        title={`一键生成全部 ${config.slots.length} 组`}
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z" /></svg>
-                                                    </button>
-                                                </>
-                                            )}
-                                        </TagCoverActions>
-
-                                        {isSelected && (
-                                            <div className="absolute inset-0 border-4 border-indigo-500/80 pointer-events-none">
-                                                <div className="absolute top-2 left-2 bg-indigo-600 text-white p-1 rounded-full shadow-lg">
-                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="p-2 md:p-3 bg-white dark:bg-gray-800 text-center border-t border-gray-100 dark:border-gray-700">
-                                        <div className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{artist.name}</div>
-                                        {artist.chineseName && <div className="mt-0.5 truncate text-[10px] text-gray-400" title={artist.chineseName}>{artist.chineseName}</div>}
-                                        {typeof artist.postCount === 'number' && <div className="mt-0.5 text-[10px] font-mono text-gray-500" title="Danbooru 关联作品数">作品 {artist.postCount.toLocaleString('zh-CN')}</div>}
-                                    </div>
-                                </div>
-                            )
-                        })}
+                        {filteredArtists.map(renderArtistCard)}
                     </div>
+                    )
                 ) : (
                     /* --- EXPANDED LIST LAYOUT --- */
                     <div className="flex flex-col gap-4 md:pr-6">

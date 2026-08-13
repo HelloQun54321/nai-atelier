@@ -7,6 +7,7 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { NAIParams, User } from '../types';
 import { IconButton, MediaCardShell, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { useMobileHistoryLayer } from './MobileUI';
+import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { SmartImage } from './SmartImage';
 import {
   PixivConnectionStatus,
@@ -361,6 +362,45 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     setSelectedPage(0);
   };
 
+  // 瀑布流（masonry 布局时）：图片按真实宽高比完整显示，最短列分配互相补齐。
+  const masonryColumns = useMasonryColumnCount(imageDisplay);
+  const getIllustRatio = (illust: PixivIllust) => {
+    const ratio = Number(illust.width) / Math.max(1, Number(illust.height) || 1);
+    return Number.isFinite(ratio) && ratio > 0 ? ratio : 0.75;
+  };
+  const estimatePixivCardHeight = React.useCallback((illust: PixivIllust, columnWidth: number) => {
+    const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, getIllustRatio(illust));
+    return imageHeight + 52; // 标题 + 作者文本区
+  }, []);
+  const renderPixivCard = (illust: PixivIllust) => {
+    const title = illust.title || `Pixiv #${illust.id}`;
+    const ratio = `${illust.width || 3} / ${illust.height || 4}`;
+    // 缩略图源优先 large（真实比例）：Pixiv 的 square 缩略图是方形裁切版，
+    // 在真实比例 frame 里会显示不全；large 经网关缩放后保持完整比例。
+    const previewSrc = illust.urls.large || illust.urls.medium || illust.urls.thumb;
+    return <MediaCardShell key={illust.id} selected={selectedId === illust.id} className="mobile-gallery-item group relative flex-col">
+      <button type="button" onClick={() => openDetail(illust)} className="block w-full text-left">
+        <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}>
+          <SmartImage
+            src={previewSrc}
+            alt={title}
+            thumbnailVariant="thumb-640"
+            upgradeSrc={illust.urls.original}
+            upgradeVariant="original"
+          />
+          <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-[10px] text-white">
+            <span>♥ {formatCount(illust.totalBookmarks)}</span>
+            {illust.pageCount > 1 && <span>{illust.pageCount} 页</span>}
+          </div>
+        </div>
+        <div className="p-2.5">
+          <p className="truncate text-xs font-bold">{title}</p>
+          <p className="mt-1 truncate text-[10px] text-gray-500">{illust.user.name || `Pixiv #${illust.id}`}</p>
+        </div>
+      </button>
+    </MediaCardShell>;
+  };
+
   const handleConnect = async (event: FormEvent) => {
     event.preventDefault();
     if (!refreshToken.trim()) {
@@ -561,32 +601,19 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
 
           {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
           {loading && !items.length ? <div className="flex min-h-72 items-center justify-center text-sm text-gray-400">正在读取 Pixiv…</div> : items.length ? (
+            imageDisplay.layout === 'masonry' ? (
+              <ShortestColumnMasonry
+                items={items}
+                columns={masonryColumns}
+                getItemKey={illust => illust.id}
+                estimateItemHeight={estimatePixivCardHeight}
+                renderItem={renderPixivCard}
+              />
+            ) : (
             <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
-              {items.map(illust => {
-                const title = illust.title || `Pixiv #${illust.id}`;
-                return <MediaCardShell key={illust.id} selected={selectedId === illust.id} className="mobile-gallery-item group relative flex-col">
-                  <button type="button" onClick={() => openDetail(illust)} className="block w-full text-left">
-                    <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': '3 / 4' } as React.CSSProperties}>
-                      <SmartImage
-                        src={illust.urls.thumb}
-                        alt={title}
-                        thumbnailVariant="thumb-640"
-                        upgradeSrc={illust.urls.medium || illust.urls.large}
-                        upgradeVariant="thumb-960"
-                      />
-                      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-[10px] text-white">
-                        <span>♥ {formatCount(illust.totalBookmarks)}</span>
-                        {illust.pageCount > 1 && <span>{illust.pageCount} 页</span>}
-                      </div>
-                    </div>
-                    <div className="p-2.5">
-                      <p className="truncate text-xs font-bold">{title}</p>
-                      <p className="mt-1 truncate text-[10px] text-gray-500">{illust.user.name || `Pixiv #${illust.id}`}</p>
-                    </div>
-                  </button>
-                </MediaCardShell>;
-              })}
+              {items.map(renderPixivCard)}
             </div>
+            )
           ) : !loading && <div className="flex min-h-72 flex-col items-center justify-center text-center text-sm text-gray-500"><p className="font-bold">没有找到作品</p><p className="mt-1 text-xs">请尝试其他关键词或榜单。</p></div>}
 
           {nextCursor && <div className="mt-5 flex items-center justify-center gap-3 pb-4">

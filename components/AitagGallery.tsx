@@ -17,6 +17,7 @@ import { db } from '../services/dbService';
 import { IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../services/metadataService';
 import { NAIParams, PromptChain, User } from '../types';
 import { OriginalImage, SmartImage } from './SmartImage';
+import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './MobileUI';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
@@ -126,7 +127,7 @@ const buildPreviewDetail = (work: AitagWorkSummary): AitagWorkDetail | null => {
   };
 };
 
-const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDetail }> = ({ work, detail }) => {
+const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDetail; onImageLoad?: (width: number, height: number) => void }> = ({ work, detail, onImageLoad }) => {
   const candidates = uniqueUrls([
     work.localFirstImageUrl || '',
     work.local_cover_url || '',
@@ -154,6 +155,12 @@ const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDe
       src={src}
       alt=""
       className="w-full h-full object-cover"
+      onLoad={event => {
+        const image = event.currentTarget;
+        if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+          onImageLoad?.(image.naturalWidth, image.naturalHeight);
+        }
+      }}
       onError={() => {
         setIndex(current => Math.min(current + 1, candidates.length));
       }}
@@ -255,6 +262,114 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const visibleItems = items;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasNextPage = page < totalPages;
+
+  // 瀑布流（masonry 布局时）：图片加载后按真实宽高比完整显示，最短列分配互相补齐。
+  const [aitagRatios, setAitagRatios] = useState<Record<number, number>>({});
+  const masonryColumns = useMasonryColumnCount(imageDisplay);
+  const estimateAitagCardHeight = React.useCallback((work: AitagWorkSummary, columnWidth: number) => {
+    const ratio = aitagRatios[work.id] || 1;
+    const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
+    return imageHeight + 74; // 标题 + 收藏 + 元信息文本区
+  }, [aitagRatios]);
+  const renderAitagCard = (work: AitagWorkSummary) => {
+    const type = getAitagType(work);
+    const isSelected = selectedId === work.id;
+    const isFavorite = isAitagFavorite(work);
+    const detail = details[work.id];
+    const imageCount = getAitagWorkImageCount(work, detail);
+    const cacheLevel = getAitagCardCacheLevel(work, detail);
+    const cardTone = cacheLevel === 'full'
+      ? {
+          card: 'bg-emerald-50/80 dark:bg-emerald-950/35',
+          border: 'border-emerald-200 dark:border-emerald-800/80 hover:border-emerald-400 dark:hover:border-emerald-500',
+          image: 'bg-emerald-100 dark:bg-emerald-950',
+          marker: 'bg-emerald-500',
+        }
+      : cacheLevel === 'first-image'
+        ? {
+            card: 'bg-sky-50/70 dark:bg-sky-950/30',
+            border: 'border-sky-200 dark:border-sky-800/75 hover:border-sky-400 dark:hover:border-sky-500',
+            image: 'bg-sky-100 dark:bg-sky-950',
+            marker: 'bg-sky-500',
+          }
+        : {
+            card: 'bg-white dark:bg-gray-950',
+            border: 'border-gray-200 dark:border-gray-800 hover:border-indigo-400',
+            image: 'bg-gray-100 dark:bg-gray-800',
+            marker: 'bg-transparent',
+          };
+    const measuredRatio = aitagRatios[work.id];
+    const ratioStyle = measuredRatio ? `${Math.round(measuredRatio * 1000)} / 1000` : '1';
+    return (
+      <div
+        key={work.id}
+        role="button"
+        tabIndex={0}
+        onClick={() => loadDetail(work)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') {
+            loadDetail(work);
+          }
+        }}
+        className={`mobile-gallery-item group relative text-left rounded-lg overflow-hidden border transition-colors flex flex-col ${cardTone.card} ${
+          isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/30' : cardTone.border
+        }`}
+      >
+        <div className={`mobile-gallery-frame md:aspect-square relative overflow-hidden ${cardTone.image}`} style={{ '--mobile-image-ratio': ratioStyle } as React.CSSProperties}>
+          <AitagPreviewImage
+            work={work}
+            detail={details[work.id]}
+            onImageLoad={(width, height) => {
+              const ratio = width / Math.max(1, height);
+              if (Number.isFinite(ratio) && ratio > 0 && aitagRatios[work.id] !== ratio) {
+                setAitagRatios(previous => (previous[work.id] === ratio ? previous : { ...previous, [work.id]: ratio }));
+              }
+            }}
+          />
+          <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 text-white text-[10px] font-bold">
+            {type || 'AI'}
+          </div>
+          <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/70 text-white text-[10px]">
+            {imageCount}P
+          </div>
+        </div>
+        <div className="p-3 flex-1">
+          <div className="flex items-center gap-2">
+            <div className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate min-w-0 flex-1" title={work.title}>
+              {work.title || `#${work.id}`}
+            </div>
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                toggleFavorite(work);
+              }}
+              onKeyDown={e => {
+                e.stopPropagation();
+              }}
+              title={isFavorite ? '取消收藏' : '收藏'}
+              aria-label={isFavorite ? '取消收藏' : '收藏'}
+              className={`flex-shrink-0 w-8 h-8 rounded-full border flex items-center justify-center shadow transition-colors ${
+                isFavorite
+                  ? 'border-rose-400 bg-rose-500 text-white hover:bg-rose-400'
+                  : 'border-white/60 bg-black/30 text-gray-500 dark:text-white/85 hover:bg-black/45 hover:text-gray-800 dark:hover:text-white'
+              }`}
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20.8 4.6c-1.7-1.7-4.5-1.7-6.2 0L12 7.2 9.4 4.6c-1.7-1.7-4.5-1.7-6.2 0s-1.7 4.5 0 6.2L12 19.6l8.8-8.8c1.7-1.7 1.7-4.5 0-6.2z" />
+              </svg>
+            </button>
+          </div>
+          <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400 overflow-hidden">
+            <span className="truncate">#{work.id}</span>
+            <span className="whitespace-nowrap">阅 {formatCount(work.total_view)}</span>
+            <span className="whitespace-nowrap">藏 {formatCount(work.total_bookmarks)}</span>
+          </div>
+        </div>
+        <div className={`h-1 ${cardTone.marker}`} />
+      </div>
+    );
+  };
   const cacheNeedsMoreData = isOfflineCache && visibleItems.length === 0;
   const isAitagConnected = !isOfflineCache && !error;
   const hasPendingFirstImageCache = visibleItems.some(needsFirstImageCacheRefresh);
@@ -993,97 +1108,19 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
               <div className="text-sm">{cacheNeedsMoreData ? '本地没有这一页，且当前无法联网获取' : '没有匹配结果'}</div>
             </div>
           ) : (
+            imageDisplay.layout === 'masonry' ? (
+              <ShortestColumnMasonry
+                items={visibleItems}
+                columns={masonryColumns}
+                getItemKey={work => String(work.id)}
+                estimateItemHeight={estimateAitagCardHeight}
+                renderItem={renderAitagCard}
+              />
+            ) : (
             <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-aitag-grid`} style={mobileGalleryStyle(imageDisplay)}>
-              {visibleItems.map(work => {
-                const type = getAitagType(work);
-                const isSelected = selectedId === work.id;
-                const isFavorite = isAitagFavorite(work);
-                const detail = details[work.id];
-                const imageCount = getAitagWorkImageCount(work, detail);
-                const cacheLevel = getAitagCardCacheLevel(work, detail);
-                const cardTone = cacheLevel === 'full'
-                  ? {
-                      card: 'bg-emerald-50/80 dark:bg-emerald-950/35',
-                      border: 'border-emerald-200 dark:border-emerald-800/80 hover:border-emerald-400 dark:hover:border-emerald-500',
-                      image: 'bg-emerald-100 dark:bg-emerald-950',
-                      marker: 'bg-emerald-500',
-                    }
-                  : cacheLevel === 'first-image'
-                    ? {
-                        card: 'bg-sky-50/70 dark:bg-sky-950/30',
-                        border: 'border-sky-200 dark:border-sky-800/75 hover:border-sky-400 dark:hover:border-sky-500',
-                        image: 'bg-sky-100 dark:bg-sky-950',
-                        marker: 'bg-sky-500',
-                      }
-                    : {
-                        card: 'bg-white dark:bg-gray-950',
-                        border: 'border-gray-200 dark:border-gray-800 hover:border-indigo-400',
-                        image: 'bg-gray-100 dark:bg-gray-800',
-                        marker: 'bg-transparent',
-                      };
-
-                return (
-                  <div
-                    key={work.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => loadDetail(work)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        loadDetail(work);
-                      }
-                    }}
-                    className={`mobile-gallery-item group relative text-left rounded-lg overflow-hidden border transition-colors flex flex-col h-full ${cardTone.card} ${
-                      isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/30' : cardTone.border
-                    }`}
-                  >
-                    <div className={`mobile-gallery-frame md:aspect-square relative overflow-hidden ${cardTone.image}`} style={{ '--mobile-image-ratio': '1' } as React.CSSProperties}>
-                      <AitagPreviewImage work={work} detail={details[work.id]} />
-                      <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 text-white text-[10px] font-bold">
-                        {type || 'AI'}
-                      </div>
-                      <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/70 text-white text-[10px]">
-                        {imageCount}P
-                      </div>
-                    </div>
-                    <div className="p-3 flex-1">
-                      <div className="flex items-center gap-2">
-                        <div className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate min-w-0 flex-1" title={work.title}>
-                          {work.title || `#${work.id}`}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={e => {
-                            e.stopPropagation();
-                            toggleFavorite(work);
-                          }}
-                          onKeyDown={e => {
-                            e.stopPropagation();
-                          }}
-                          title={isFavorite ? '取消收藏' : '收藏'}
-                          aria-label={isFavorite ? '取消收藏' : '收藏'}
-                          className={`flex-shrink-0 w-8 h-8 rounded-full border flex items-center justify-center shadow transition-colors ${
-                            isFavorite
-                              ? 'border-rose-400 bg-rose-500 text-white hover:bg-rose-400'
-                              : 'border-white/60 bg-black/30 text-gray-500 dark:text-white/85 hover:bg-black/45 hover:text-gray-800 dark:hover:text-white'
-                          }`}
-                        >
-                          <svg width="17" height="17" viewBox="0 0 24 24" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M20.8 4.6c-1.7-1.7-4.5-1.7-6.2 0L12 7.2 9.4 4.6c-1.7-1.7-4.5-1.7-6.2 0s-1.7 4.5 0 6.2L12 19.6l8.8-8.8c1.7-1.7 1.7-4.5 0-6.2z" />
-                          </svg>
-                        </button>
-                      </div>
-                      <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400 overflow-hidden">
-                        <span className="truncate">#{work.id}</span>
-                        <span className="whitespace-nowrap">阅 {formatCount(work.total_view)}</span>
-                        <span className="whitespace-nowrap">藏 {formatCount(work.total_bookmarks)}</span>
-                      </div>
-                    </div>
-                    <div className={`h-1 ${cardTone.marker}`} />
-                  </div>
-                );
-              })}
+              {visibleItems.map(renderAitagCard)}
             </div>
+            )
           )}
 
           <div className="flex justify-center items-center gap-2 py-6">

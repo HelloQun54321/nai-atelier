@@ -16,6 +16,7 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { useMobileHistoryLayer } from './MobileUI';
+import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { OriginalImage, SmartImage } from './SmartImage';
 
 interface DanbooruGalleryProps {
@@ -135,6 +136,32 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     }
   };
 
+  // 瀑布流（masonry 布局时）：真实宽高比完整显示，最短列分配互相补齐。
+  const masonryColumns = useMasonryColumnCount(imageDisplay);
+  const getPostRatio = (post: DanbooruPost) => {
+    const ratio = Number(post.width) / Math.max(1, Number(post.height) || 1);
+    return Number.isFinite(ratio) && ratio > 0 ? ratio : 0.75;
+  };
+  const estimateDanbooruCardHeight = React.useCallback((post: DanbooruPost, columnWidth: number) => {
+    const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, getPostRatio(post));
+    return imageHeight + 52; // 标题 + 作者文本区
+  }, []);
+  const renderDanbooruCard = (post: DanbooruPost) => {
+    const title = post.tags.character[0] || post.tags.artist[0] || `#${post.id}`;
+    const ratio = `${post.width || 3} / ${post.height || 4}`;
+    return <article key={post.id} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors dark:bg-gray-800 ${selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
+      <button type="button" onClick={() => setSelectedId(post.id)} className="block w-full text-left">
+        <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}>
+          <SmartImage src={post.sampleUrl} alt={title.replaceAll('_', ' ')} thumbnailVariant="thumb-640" />
+          <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-[10px] text-white">
+            <span>♥ {formatCount(post.favCount)}</span><span>▲ {formatCount(post.score)}</span>
+          </div>
+        </div>
+        <div className="p-2.5"><p className="truncate text-xs font-bold">{title.replaceAll('_', ' ')}</p><p className="mt-1 truncate text-[10px] text-gray-500">{post.tags.artist.slice(0, 2).join(', ').replaceAll('_', ' ') || `Danbooru #${post.id}`}</p></div>
+      </button>
+    </article>;
+  };
+
   const importToPlayground = (post: DanbooruPost) => {
     const prompt = danbooruPromptTags(post);
     const pending: PendingImportData = { prompt, negativePrompt: '', params: defaultParams, mode: 'append-prompt' };
@@ -202,22 +229,19 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
 
           {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
           {loading && !items.length ? <div className="flex min-h-72 items-center justify-center text-sm text-gray-400">正在读取 Danbooru…</div> : items.length ? (
+            imageDisplay.layout === 'masonry' ? (
+              <ShortestColumnMasonry
+                items={items}
+                columns={masonryColumns}
+                getItemKey={post => String(post.id)}
+                estimateItemHeight={estimateDanbooruCardHeight}
+                renderItem={renderDanbooruCard}
+              />
+            ) : (
             <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
-              {items.map(post => {
-                const title = post.tags.character[0] || post.tags.artist[0] || `#${post.id}`;
-                return <article key={post.id} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors dark:bg-gray-800 ${selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
-                  <button type="button" onClick={() => setSelectedId(post.id)} className="block w-full text-left">
-                    <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': '3 / 4' } as React.CSSProperties}>
-                      <SmartImage src={post.sampleUrl} alt={title.replaceAll('_', ' ')} thumbnailVariant="thumb-640" />
-                      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-[10px] text-white">
-                        <span>♥ {formatCount(post.favCount)}</span><span>▲ {formatCount(post.score)}</span>
-                      </div>
-                    </div>
-                    <div className="p-2.5"><p className="truncate text-xs font-bold">{title.replaceAll('_', ' ')}</p><p className="mt-1 truncate text-[10px] text-gray-500">{post.tags.artist.slice(0, 2).join(', ').replaceAll('_', ' ') || `Danbooru #${post.id}`}</p></div>
-                  </button>
-                </article>;
-              })}
+              {items.map(renderDanbooruCard)}
             </div>
+            )
           ) : !loading && <div className="flex min-h-72 flex-col items-center justify-center text-center text-sm text-gray-500"><p className="font-bold">没有找到普通级图片</p><p className="mt-1 text-xs">请检查 Tag 拼写，或减少检索条件。</p></div>}
 
           <div className="mt-5 flex items-center justify-center gap-3 pb-4">

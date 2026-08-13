@@ -15,6 +15,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { ShortestColumnMasonry } from './ShortestColumnMasonry';
 import { Check, Dice5, Menu, Plus, Settings2, Tag, UserRound } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
@@ -75,6 +76,57 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   notify,
 }) => {
   const imageDisplay = useMobileImageDisplayPreferences();
+    // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
+    const [cardRatios, setCardRatios] = useState<Record<string, number>>({});
+    const estimateCharacterCardHeight = React.useCallback((card: CharacterCard, columnWidth: number) => {
+      const ratio = cardRatios[card.key] || 2 / 3;
+      const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
+      return imageHeight + 82; // 名称 + tagName/描述文本区
+    }, [cardRatios]);
+    const renderCharacterCard = (card: CharacterCard) => {
+            const favorite = favorites.has(card.key);
+            const generating = generatingKey === card.key;
+            const selected = selectedKeys.has(card.key);
+            const showPin = card.kind === 'catalog' && Boolean(coverCandidates[card.key]);
+            return (
+              <article key={card.key} onClick={() => toggleSelect(card)} aria-pressed={selected} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors cursor-pointer dark:bg-gray-800 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-500 dark:border-gray-700'}`}>
+                <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': cardRatios[card.key] ? `${Math.round(cardRatios[card.key] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
+                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} onCandidateChange={candidate => rememberCoverCandidate(card.key, candidate)} onImageLoad={(width, height) => { const r = width / Math.max(1, height); if (Number.isFinite(r) && r > 0) setCardRatios(previous => (previous[card.key] === r ? previous : { ...previous, [card.key]: r })); }} /> : card.previewImage ? <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} onLoad={event => { const img = event.currentTarget; if (img.naturalWidth > 0 && img.naturalHeight > 0) { const r = img.naturalWidth / img.naturalHeight; if (Number.isFinite(r) && r > 0) setCardRatios(previous => (previous[card.key] === r ? previous : { ...previous, [card.key]: r })); } }} /></button> : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
+                      {card.kind === 'catalog' ? <Tag className="h-8 w-8" /> : <UserRound className="h-8 w-8" />}
+                      <span className="mt-2 text-[11px]">尚未生成本地预览</span>
+                      <button disabled={!apiKey || generating} onClick={event => { event.stopPropagation(); void generatePreview(card); }} className="mt-3 rounded bg-indigo-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40">{generating ? '生成中…' : '生成预览'}</button>
+                    </div>
+                  )}
+                  <TagCoverActions
+                    favorite={favorite}
+                    onToggleFavorite={() => toggleFavorite(card)}
+                    candidate={card.kind === 'catalog' ? coverCandidates[card.key] : null}
+                    onSetCover={card.kind === 'catalog' ? candidate => setDanbooruCover(card, candidate) : undefined}
+                    pinPlacement="bottom-right"
+                  />
+                  {card.previewImage && <button disabled={generating} onClick={event => { event.stopPropagation(); void generatePreview(card); }} className={`absolute bottom-2 rounded bg-black/60 px-2 py-1 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:opacity-40 ${showPin ? 'right-12' : 'right-2'}`}>{generating ? '生成中…' : '重新生成'}</button>}
+                  {selected && (
+                    <div className="pointer-events-none absolute inset-0 z-10 border-4 border-indigo-500/80">
+                      <div className="absolute left-2 top-2 rounded-full bg-indigo-600 p-1 text-white shadow-lg"><Check className="h-3 w-3" strokeWidth={4} /></div>
+                    </div>
+                  )}
+                </div>
+                <div className="p-3">
+                  <h2 className="truncate text-sm font-bold text-gray-900 dark:text-white" title={card.name}>{card.name}</h2>
+                  {card.kind === 'catalog' ? <>
+                    <div className="mt-0.5 truncate font-mono text-[10px] text-gray-400" title={card.tagName}>{card.tagName}</div>
+                    <div className="mt-1 flex items-center justify-between gap-1 text-[10px]">
+                      <span className="text-gray-500">作品 {(card.postCount || 0).toLocaleString('zh-CN')}</span>
+                      {card.matchReason && <span className="truncate rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 dark:bg-gray-700 dark:text-gray-300" title={`匹配：${card.matchReason}`}>匹配：{card.matchReason}</span>}
+                    </div>
+                  </> : <div className="mt-1 truncate text-[10px] text-gray-400">{card.chain?.description || '手工组合外貌与服装提示词'}</div>}
+                </div>
+              </article>
+            );
+          
+    };
+
   const confirmAction = useConfirmDialog();
   const [tab, setTab] = useState<CharacterTab>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -517,50 +569,19 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
       <div ref={scrollRef} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
         {isLoading && <div className="absolute inset-x-0 top-3 z-20 flex justify-center"><span className="rounded-full bg-gray-900/80 px-4 py-2 text-xs text-white">正在加载角色目录…</span></div>}
+        {imageDisplay.layout === 'masonry' ? (
+          <ShortestColumnMasonry
+            items={visibleCards}
+            columns={gridColumns}
+            getItemKey={card => card.key}
+            estimateItemHeight={estimateCharacterCardHeight}
+            renderItem={renderCharacterCard}
+          />
+        ) : (
         <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-character-grid`} style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { '--mobile-gallery-columns': gridColumns }) }}>
-          {visibleCards.map(card => {
-            const favorite = favorites.has(card.key);
-            const generating = generatingKey === card.key;
-            const selected = selectedKeys.has(card.key);
-            const showPin = card.kind === 'catalog' && Boolean(coverCandidates[card.key]);
-            return (
-              <article key={card.key} onClick={() => toggleSelect(card)} aria-pressed={selected} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors cursor-pointer dark:bg-gray-800 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-500 dark:border-gray-700'}`}>
-                <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': '2 / 3' } as React.CSSProperties}>
-                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} onCandidateChange={candidate => rememberCoverCandidate(card.key, candidate)} /> : card.previewImage ? <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} /></button> : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
-                      {card.kind === 'catalog' ? <Tag className="h-8 w-8" /> : <UserRound className="h-8 w-8" />}
-                      <span className="mt-2 text-[11px]">尚未生成本地预览</span>
-                      <button disabled={!apiKey || generating} onClick={event => { event.stopPropagation(); void generatePreview(card); }} className="mt-3 rounded bg-indigo-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40">{generating ? '生成中…' : '生成预览'}</button>
-                    </div>
-                  )}
-                  <TagCoverActions
-                    favorite={favorite}
-                    onToggleFavorite={() => toggleFavorite(card)}
-                    candidate={card.kind === 'catalog' ? coverCandidates[card.key] : null}
-                    onSetCover={card.kind === 'catalog' ? candidate => setDanbooruCover(card, candidate) : undefined}
-                    pinPlacement="bottom-right"
-                  />
-                  {card.previewImage && <button disabled={generating} onClick={event => { event.stopPropagation(); void generatePreview(card); }} className={`absolute bottom-2 rounded bg-black/60 px-2 py-1 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:opacity-40 ${showPin ? 'right-12' : 'right-2'}`}>{generating ? '生成中…' : '重新生成'}</button>}
-                  {selected && (
-                    <div className="pointer-events-none absolute inset-0 z-10 border-4 border-indigo-500/80">
-                      <div className="absolute left-2 top-2 rounded-full bg-indigo-600 p-1 text-white shadow-lg"><Check className="h-3 w-3" strokeWidth={4} /></div>
-                    </div>
-                  )}
-                </div>
-                <div className="p-3">
-                  <h2 className="truncate text-sm font-bold text-gray-900 dark:text-white" title={card.name}>{card.name}</h2>
-                  {card.kind === 'catalog' ? <>
-                    <div className="mt-0.5 truncate font-mono text-[10px] text-gray-400" title={card.tagName}>{card.tagName}</div>
-                    <div className="mt-1 flex items-center justify-between gap-1 text-[10px]">
-                      <span className="text-gray-500">作品 {(card.postCount || 0).toLocaleString('zh-CN')}</span>
-                      {card.matchReason && <span className="truncate rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 dark:bg-gray-700 dark:text-gray-300" title={`匹配：${card.matchReason}`}>匹配：{card.matchReason}</span>}
-                    </div>
-                  </> : <div className="mt-1 truncate text-[10px] text-gray-400">{card.chain?.description || '手工组合外貌与服装提示词'}</div>}
-                </div>
-              </article>
-            );
-          })}
+          {visibleCards.map(renderCharacterCard)}
         </div>
+        )}
 
         {!searchTerm.trim() && !gachaCards && tab !== 'custom' && tab !== 'favorites' && (
           <div ref={sentinelRef} className="flex min-h-20 items-center justify-center py-6 text-sm text-gray-400">

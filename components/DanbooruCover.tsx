@@ -9,9 +9,11 @@ interface DanbooruCoverProps {
   alt: string;
   fixedSrc?: string;
   onCandidateChange?: (candidate: DanbooruCoverCandidate | null) => void;
+  /** 封面图片加载完成后上报自然宽高（瀑布流按真实比例排布用）。 */
+  onImageLoad?: (width: number, height: number) => void;
 }
 
-export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fixedSrc = '', onCandidateChange }) => {
+export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fixedSrc = '', onCandidateChange, onImageLoad }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const [activated, setActivated] = useState(false);
   const [coverSet, setCoverSet] = useState<DanbooruCoverSet | null | undefined>(undefined);
@@ -126,7 +128,12 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
   };
   return <div ref={rootRef} className="absolute inset-0">
     {displayedSrc ? <>
-      <SmartImage src={displayedSrc} alt={alt} thumbnailVariant="thumb-640" />
+      <SmartImage src={displayedSrc} alt={alt} thumbnailVariant="thumb-640" onLoad={event => {
+        const image = event.currentTarget;
+        if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+          onImageLoad?.(image.naturalWidth, image.naturalHeight);
+        }
+      }} />
       <span className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-1 text-[9px] font-bold text-white backdrop-blur">{fixedSrc && candidateIndex === null ? '已保存封面' : 'Danbooru'}</span>
       {canBrowse && <button type="button" disabled={candidateIndex === null || candidateIndex === 0} onClick={event => { event.stopPropagation(); moveCandidate(-1); }} className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-60" title="上一张" aria-label="上一张"><ChevronLeft className="h-4 w-4" /></button>}
       {canBrowse && <button type="button" disabled={isLoadingMore || (candidateIndex !== null && candidateIndex >= candidates.length - 1 && !coverSet?.hasMore)} onClick={event => { event.stopPropagation(); moveCandidate(1); }} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-35" title="下一张" aria-label="下一张"><ChevronRight className="h-4 w-4" /></button>}
