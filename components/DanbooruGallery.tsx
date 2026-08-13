@@ -108,17 +108,17 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   }, [active]);
 
   // 滚动接近列表底部自动翻下一页；按钮保留作兜底。
-  const autoPageSentinelRef = useRef<HTMLDivElement>(null);
+  // 用 scroll 事件触发（整页替换模式：IO sentinel 在内容高度不足时会连环翻页）。
   useEffect(() => {
-    const sentinel = autoPageSentinelRef.current;
-    const root = scrollRef.current;
-    if (!sentinel || !root || !hasMore || loading) return;
-    if (!('IntersectionObserver' in window)) return;
-    const observer = new IntersectionObserver(entries => {
-      if (entries[0]?.isIntersecting) void load(query, page + 1);
-    }, { root, rootMargin: '600px 0px' });
-    observer.observe(sentinel);
-    return () => observer.disconnect();
+    const node = scrollRef.current;
+    if (!node || !hasMore || loading) return;
+    const onScroll = () => {
+      if (node.scrollTop + node.clientHeight >= node.scrollHeight - 400) {
+        void load(query, page + 1);
+      }
+    };
+    node.addEventListener('scroll', onScroll, { passive: true });
+    return () => node.removeEventListener('scroll', onScroll);
     // load 闭包随 query/page 重建，无需列入依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasMore, loading, page, query]);
@@ -222,7 +222,6 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             <ToolbarButton disabled={loading || page <= 1} onClick={() => void load(query, page - 1)}><ChevronLeft />上一页</ToolbarButton>
             <span className="text-xs font-bold text-gray-500">{page}</span>
             <ToolbarButton disabled={loading || !hasMore} onClick={() => void load(query, page + 1)}>下一页<ChevronRight /></ToolbarButton>
-            <div ref={autoPageSentinelRef} className="h-4 w-full max-w-40" aria-hidden="true" />
           </div>
         </main>
 

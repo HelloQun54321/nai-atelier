@@ -289,17 +289,17 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   };
 
   // 滚动接近列表底部自动翻下一页（行为等同点击“下一页”）；分页器保留作兜底/跳页。
-  const autoPageSentinelRef = useRef<HTMLDivElement>(null);
+  // 用 scroll 事件触发（整页替换模式：IO sentinel 在内容高度不足时会连环翻页）。
   useEffect(() => {
-    const sentinel = autoPageSentinelRef.current;
-    const root = mainScrollRef.current;
-    if (!sentinel || !root || !hasNextPage || isLoading) return;
-    if (!('IntersectionObserver' in window)) return;
-    const observer = new IntersectionObserver(entries => {
-      if (entries[0]?.isIntersecting) void loadWorks(page + 1, { resetScroll: true });
-    }, { root, rootMargin: '600px 0px' });
-    observer.observe(sentinel);
-    return () => observer.disconnect();
+    const node = mainScrollRef.current;
+    if (!node || !hasNextPage || isLoading) return;
+    const onScroll = () => {
+      if (node.scrollTop + node.clientHeight >= node.scrollHeight - 400) {
+        void loadWorks(page + 1, { resetScroll: true });
+      }
+    };
+    node.addEventListener('scroll', onScroll, { passive: true });
+    return () => node.removeEventListener('scroll', onScroll);
     // loadWorks 闭包随 page/hasNextPage/isLoading 重建，无需列入依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasNextPage, isLoading, page]);
@@ -1138,7 +1138,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             >
               下一页
             </button>
-            <div ref={autoPageSentinelRef} className="h-4 w-full max-w-40" aria-hidden="true" />
           </div>
           <div className="flex justify-center pb-6 -mt-3">
             <div className="flex flex-wrap justify-center items-center gap-x-4 gap-y-1 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 py-2 text-xs text-gray-600 dark:text-gray-300">

@@ -321,18 +321,22 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     refreshPageRef.current = goToPage;
 
     // 滚动接近列表底部自动翻下一页；分页器保留作兜底/跳页。
+    // 用 scroll 事件（而非 IntersectionObserver sentinel）触发：整页替换模式下
+    // sentinel 在图片未加载、内容高度不足时永远可见，会形成连环翻页死循环。
+    // 用户滚动触发后回顶，滚动事件链随即断开，循环不可能自维持。
     const historyScrollRef = useRef<HTMLDivElement>(null);
-    const historyPageSentinelRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
-        const sentinel = historyPageSentinelRef.current;
-        const root = historyScrollRef.current;
-        if (!sentinel || !root || isLoading || currentPage >= totalPages) return;
-        if (!('IntersectionObserver' in window)) return;
-        const observer = new IntersectionObserver(entries => {
-            if (entries[0]?.isIntersecting) void goToPage(currentPage + 1);
-        }, { root, rootMargin: '600px 0px' });
-        observer.observe(sentinel);
-        return () => observer.disconnect();
+        const node = historyScrollRef.current;
+        if (!node || isLoading || currentPage >= totalPages) return;
+        const onScroll = () => {
+            if (node.scrollTop + node.clientHeight >= node.scrollHeight - 400) {
+                void goToPage(currentPage + 1).then(() => {
+                    node.scrollTo({ top: 0 });
+                });
+            }
+        };
+        node.addEventListener('scroll', onScroll, { passive: true });
+        return () => node.removeEventListener('scroll', onScroll);
         // goToPage 闭包随 currentPage/isLoading 重建，无需列入依赖。
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPage, isLoading, totalPages]);
@@ -1031,7 +1035,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                 </form>
                                 <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || isLoading} aria-label="下一页" className="mobile-touch rounded-full text-2xl text-gray-500 disabled:opacity-30 dark:text-gray-300">›</button>
                             </div>
-                            <div ref={historyPageSentinelRef} className="h-4 w-full max-w-40 mx-auto" aria-hidden="true" />
                             </>}
                             <div className="flex flex-col items-center justify-center py-6">
                                 {isLoading ? (
