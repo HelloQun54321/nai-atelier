@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ImagePlus, LoaderCircle, SlidersHorizontal, X } from 'lucide-react';
 import { ImageTaggerResult, imageTaggerService } from '../services/imageTaggerService';
+import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
 import { IconButton } from './DesignSystem';
 import { MobileIconButton } from './MobileUI';
 
@@ -11,11 +12,25 @@ interface ImageTaggerPanelProps {
   notify: (message: string, type?: 'success' | 'error') => void;
   /** 底部按钮文案，{count} 会被替换为选中 Tag 数量 */
   actionLabel?: string;
+  /** 打开面板时自动加载该图片（网络图直接反推，无需先下载到本地）。 */
+  imageUrl?: string;
 }
 
 const percent = (value: number) => `${Math.round(value * 100)}%`;
 
-export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClose, onInsert, notify, actionLabel }) => {
+/** 送往实验室时使用的默认参数基底（与图库导入一致）。 */
+const TAGGER_DEFAULT_PARAMS: PendingImportData['params'] = {
+  width: 832,
+  height: 1216,
+  steps: 28,
+  scale: 7,
+  sampler: 'k_euler_ancestral',
+  seed: undefined,
+  qualityToggle: true,
+  ucPreset: 4,
+};
+
+export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClose, onInsert, notify, actionLabel, imageUrl }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
@@ -31,6 +46,44 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
     if (!open) return;
     imageTaggerService.getStatus().then(status => setDownloaded(status.downloaded)).catch(() => setDownloaded(null));
   }, [open]);
+
+  // 打开面板时若提供了 imageUrl（图库“反推此图”），自动抓取并识别，无需手动选文件。
+  useEffect(() => {
+    if (!open || !imageUrl) return;
+    let active = true;
+    const load = async () => {
+      setBusy(true);
+      setResult(null);
+      setSelected(new Set());
+      try {
+        const response = await fetch(imageUrl);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const blob = await response.blob();
+        if (!active) return;
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(blob.type)) {
+          notify('该图片不是 PNG/JPEG/WebP，无法直接反推', 'error');
+          return;
+        }
+        if (preview) URL.revokeObjectURL(preview);
+        const nextFile = new File([blob], 'tagger-image', { type: blob.type });
+        setFile(nextFile);
+        setPreview(URL.createObjectURL(blob));
+        const next = await imageTaggerService.tagFile(nextFile, { threshold, characterThreshold });
+        if (!active) return;
+        setResult(next);
+        setSelected(new Set(next.tags.map(item => item.name)));
+        setDownloaded(true);
+      } catch {
+        if (active) notify('无法直接读取这张图片，请先保存到本地再反推', 'error');
+      } finally {
+        if (active) setBusy(false);
+      }
+    };
+    void load();
+    return () => { active = false; };
+    // 面板重新打开同一 URL 时无需重复识别；imageUrl 变化才重新加载。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, imageUrl]);
 
   const run = async (nextFile = file) => {
     if (!nextFile || busy) return;
@@ -74,6 +127,20 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
     onClose();
   };
 
+  // 把选中 Tag 直接送往实验室（追加到主体提示词），并自动跳转；任何页面可用。
+  const sendToLab = () => {
+    if (!selected.size) return;
+    const tags = visibleTags.filter(item => selected.has(item.name)).map(item => item.name.replaceAll('_', ' ')).join(', ');
+    try {
+      const pending: PendingImportData = { prompt: tags, negativePrompt: '', params: { ...TAGGER_DEFAULT_PARAMS }, mode: 'append-prompt' };
+      sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(pending));
+      onClose();
+      window.dispatchEvent(new CustomEvent('nai-agent-navigate', { detail: { view: 'playground' } }));
+    } catch {
+      notify('送往实验室失败，请重试', 'error');
+    }
+  };
+
   if (!open) return null;
 
   return <div className="fixed inset-0 z-[1800] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
@@ -111,7 +178,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
           </div>}
         </section>
       </div>
-      <footer className="flex flex-none items-center justify-between gap-3 border-t border-gray-200 p-3 dark:border-gray-800"><p className="hidden text-[10px] text-gray-500 sm:block">模型文件保存在 local-cache，不会进入 Git。</p><button type="button" disabled={!selected.size || busy} onClick={insert} className="mobile-touch ml-auto rounded-xl bg-violet-600 px-5 text-sm font-bold text-white disabled:opacity-40">{(actionLabel ?? '追加 {count} 个 Tag 到主体').replace('{count}', String(selected.size))}</button></footer>
+      <footer className="flex flex-none items-center justify-between gap-3 border-t border-gray-200 p-3 dark:border-gray-800"><p className="hidden text-[10px] text-gray-500 sm:block">模型文件保存在 local-cache，不会进入 Git。</p><div className="ml-auto flex items-center gap-2"><button type="button" disabled={!selected.size || busy} onClick={sendToLab} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-40">送往实验室</button><button type="button" disabled={!selected.size || busy} onClick={insert} className="mobile-touch rounded-xl bg-violet-600 px-5 text-sm font-bold text-white disabled:opacity-40">{(actionLabel ?? '追加 {count} 个 Tag 到主体').replace('{count}', String(selected.size))}</button></div></footer>
     </div>
   </div>;
 };
@@ -123,10 +190,12 @@ interface ImageTaggerActionProps {
   /** 底部按钮文案，{count} 会被替换为选中 Tag 数量 */
   actionLabel?: string;
   className?: string;
+  /** 打开面板时自动加载该图片（图库“反推此图”入口）。 */
+  imageUrl?: string;
 }
 
 /** 全局右上角“图片反推 Tag”入口：桌面用 DesignSystem 图标按钮、手机用移动图标按钮，共用同一个面板。 */
-export const ImageTaggerAction: React.FC<ImageTaggerActionProps> = ({ notify, onInsert, actionLabel, className = '' }) => {
+export const ImageTaggerAction: React.FC<ImageTaggerActionProps> = ({ notify, onInsert, actionLabel, className = '', imageUrl }) => {
   const [open, setOpen] = useState(false);
   const handleInsert = onInsert ?? ((tags: string) => {
     void navigator.clipboard.writeText(tags).then(
@@ -137,6 +206,6 @@ export const ImageTaggerAction: React.FC<ImageTaggerActionProps> = ({ notify, on
   return <>
     <IconButton label="图片反推 Tag" onClick={() => setOpen(true)} className={`max-md:hidden ${className}`}><ImagePlus className="h-4 w-4" /></IconButton>
     <MobileIconButton label="图片反推 Tag" onClick={() => setOpen(true)} className={`border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden ${className}`}><ImagePlus className="h-5 w-5" /></MobileIconButton>
-    {open && <ImageTaggerPanel open={open} onClose={() => setOpen(false)} onInsert={handleInsert} notify={notify} actionLabel={actionLabel ?? (onInsert ? '追加 {count} 个 Tag 到主体' : '复制 {count} 个 Tag')} />}
+    {open && <ImageTaggerPanel open={open} onClose={() => setOpen(false)} onInsert={handleInsert} notify={notify} actionLabel={actionLabel ?? (onInsert ? '追加 {count} 个 Tag 到主体' : '复制 {count} 个 Tag')} imageUrl={imageUrl} />}
   </>;
 };

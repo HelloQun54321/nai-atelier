@@ -7,6 +7,7 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { NAIParams, User } from '../types';
 import { IconButton, MediaCardShell, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { useMobileHistoryLayer } from './MobileUI';
+import { ImageTaggerAction } from './ImageTaggerPanel';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { SmartImage } from './SmartImage';
 import {
@@ -664,6 +665,10 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 <ToolbarButton disabled={saving} onClick={() => void saveToInspiration(selected)}><Heart />{saving ? '保存中…' : '加入灵感'}</ToolbarButton>
                 <ToolbarButton onClick={() => openAuthorWorks(selected.user.id, selected.user.name)}><CircleUserRound />作者作品</ToolbarButton>
                 <ToolbarLink href={pixivArtworkUrl(selected)} target="_blank" rel="noreferrer"><ExternalLink />打开 Pixiv</ToolbarLink>
+              </div>
+              <div className="flex items-center gap-2">
+                <ImageTaggerAction notify={notify} imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} actionLabel="复制 {count} 个 Tag" />
+                <span className="text-[11px] text-gray-500">反推当前页图片（本地识别）</span>
               </div>
               {selected.tags.length > 0 && <section>
                 <h3 className="mb-2 text-xs font-black text-gray-700 dark:text-gray-200">标签 · {selected.tags.length}</h3>

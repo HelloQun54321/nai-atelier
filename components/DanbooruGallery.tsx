@@ -18,6 +18,7 @@ import { ImageTaggerAction } from './ImageTaggerPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { OriginalImage, SmartImage } from './SmartImage';
+import { buildMediaUrl } from '../services/mobileImageCache';
 
 interface DanbooruGalleryProps {
   active: boolean;
@@ -329,6 +330,10 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
                 <ToolbarButton disabled={saving} onClick={() => void saveToInspiration(selected)}><Heart />{saving ? '保存中…' : '加入灵感'}</ToolbarButton>
                 <ToolbarButton onClick={() => void copyPrompt(selected)}><Copy />复制生图 Tag</ToolbarButton>
                 <a href={selected.postUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><ExternalLink className="h-4 w-4" />查看原帖</a>
+              </div>
+              <div className="flex items-center gap-2">
+                <ImageTaggerAction notify={notify} imageUrl={buildMediaUrl(selected.sampleUrl, 'original')} actionLabel="复制 {count} 个 Tag" />
+                <span className="text-[11px] text-gray-500">反推当前图片（本地识别）</span>
               </div>
               <button type="button" onClick={() => void copyAll(selected)} className="text-xs font-bold text-indigo-600 hover:text-indigo-500 dark:text-indigo-300">复制包含元数据的全部 Tag</button>
               {(Object.keys(categoryLabels) as DanbooruTagCategory[]).map(category => selected.tags[category].length > 0 && <section key={category}>

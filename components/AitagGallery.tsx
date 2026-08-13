@@ -24,6 +24,7 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { ArrowLeft, Filter, Menu, RefreshCw, Search, X } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
+import { buildMediaUrl } from '../services/mobileImageCache';
 
 interface AitagGalleryProps {
   active: boolean;
@@ -1308,6 +1309,12 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3h6m-5 0v5.5L4.8 18.1A2 2 0 006.55 21h10.9a2 2 0 001.75-2.9L14 8.5V3m-4 10h4" />
                                 </svg>
                               </button>
+                              <ImageTaggerAction
+                                notify={notify}
+                                imageUrl={image.local_image_url || buildMediaUrl(buildAitagImageUrl(image), 'original')}
+                                actionLabel="复制 {count} 个 Tag"
+                                className="!w-10 !h-10"
+                              />
                             </div>
                           </div>
                           <div className="text-xs font-mono text-gray-700 dark:text-gray-300 leading-relaxed bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded p-2 max-h-28 overflow-y-auto custom-scrollbar break-words">
