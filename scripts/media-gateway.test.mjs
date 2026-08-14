@@ -941,3 +941,24 @@ test('缩略图预热器：去重入队、并发消化、已缓存跳过', async
   const full = createThumbnailPreWarmer({ cache, loadOriginal: async () => {}, concurrency: 1, maxPending: 2 });
   assert.equal(full.enqueue(['x1', 'x2', 'x3', 'x4']), 2);
 });
+
+test('预热器 pinned 任务不截断来源 URL', async () => {
+  const received = [];
+  const cache = {
+    has: () => false,
+    isPinned: () => false,
+    get: async (source, variant, loadOriginal, opts) => { received.push({ source, variant, pinned: opts?.pinned }); return { buffer: Buffer.from('x') }; },
+  };
+  const prewarmer = createThumbnailPreWarmer({ cache, loadOriginal: async () => {}, concurrency: 4 });
+  const src = 'https://cdn.donmai.us/sample/ab/cd/abcdef0123456789.webp';
+  prewarmer.enqueue([src], { pinned: true });
+  const deadline = Date.now() + 2000;
+  while (prewarmer.pendingCount > 0 && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.ok(received.length >= 1, 'pinned 任务应执行');
+  for (const item of received) {
+    assert.equal(item.source, src, 'source 不得被截断');
+    assert.equal(item.pinned, true);
+  }
+});

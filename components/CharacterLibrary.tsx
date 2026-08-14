@@ -20,6 +20,7 @@ import { Check, Dice5, Menu, Plus, Settings2, Tag, UserRound } from 'lucide-reac
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
+import { danbooruService } from '../services/danbooruService';
 import type { DanbooruCoverCandidate } from '../services/danbooruService';
 import { importDanbooruCoverAsDataUrl } from '../services/danbooruCoverImport';
 import { TagCoverActions } from './TagCoverActions';
@@ -291,6 +292,29 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     if (tab === 'favorites') cards = [...custom, ...catalog].filter(card => favorites.has(card.key));
     return cards;
   }, [catalogToCard, customChains, customToCard, favorites, gachaCards, loadedCatalog, searchResults, searchTerm, tab]);
+
+  // 目录预取：当前页可见目录角色（前 40 个）的封面候选提前请求并固定保存（pin），
+  // 滚动/浏览时封面秒出；getCoverSet 自带 14 天缓存与 300ms 串行限流，不重复打 Danbooru API。
+  const coverPrewarmedRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (gachaCards || tab === 'custom' || tab === 'favorites') return;
+    const targets = visibleCards
+      .filter(card => card.kind === 'catalog' && card.tagName && !coverPrewarmedRef.current.has(card.key))
+      .slice(0, 40);
+    if (!targets.length) return;
+    for (const card of targets) {
+      coverPrewarmedRef.current.add(card.key);
+      void danbooruService.getCoverSet(card.tagName, 'character').then(set => {
+        const src = set.representative?.sampleUrl || set.candidates?.[0]?.sampleUrl;
+        if (!src) return;
+        fetch('/api/media/prewarm', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sources: [src], pin: true }),
+        }).catch(() => {});
+      }).catch(() => {});
+    }
+  }, [gachaCards, tab, visibleCards]);
 
   const toggleFavorite = (card: CharacterCard) => {
     setFavorites(previous => {

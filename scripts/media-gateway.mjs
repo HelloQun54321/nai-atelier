@@ -910,6 +910,8 @@ const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, vibeId, 
 const PREWARM_VARIANTS = ['thumb-320'];
 const PREWARM_CONCURRENCY = 4;
 const PREWARM_MAX_PENDING = 300;
+/** 队列内部分辨“固定保留”任务的内部后缀（URL 之外的哨兵，不参与网络请求）。 */
+const PIN_SUFFIX = '\u0001pin';
 
 export const createThumbnailPreWarmer = ({
   cache,
@@ -927,8 +929,10 @@ export const createThumbnailPreWarmer = ({
       if (next.done) break;
       pending.delete(next.value);
       running += 1;
+      const pinned = next.value.endsWith(PIN_SUFFIX);
+      const source = pinned ? next.value.slice(0, -PIN_SUFFIX.length) : next.value;
       Promise.allSettled(
-        PREWARM_VARIANTS.map(variant => cache.get(next.value, variant, loadOriginal).catch(() => {})),
+        PREWARM_VARIANTS.map(variant => cache.get(source, variant, loadOriginal, { pinned }).catch(() => {})),
       ).finally(() => {
         running -= 1;
         if (drainTimer) {
@@ -940,14 +944,19 @@ export const createThumbnailPreWarmer = ({
     }
   };
   return {
-    /** 把一批来源加入预热队列（跳过已缓存/已在队列）；返回新加入数量。 */
-    enqueue(sources) {
+    /** 把一批来源加入预热队列（跳过已缓存/已在队列）；返回新加入数量。
+     *  pinned=true 时跳过条件改为“已缓存且已固定保留”，并以此生成（封面图持久本地化）。 */
+    enqueue(sources, { pinned = false } = {}) {
       let added = 0;
       for (const source of sources) {
+        const queuedKey = pinned ? `${source}${PIN_SUFFIX}` : source;
         if (pending.size + added > maxPending) break;
-        if (PREWARM_VARIANTS.every(variant => cache.has(source, variant))) continue;
-        if (pending.has(source)) continue;
-        pending.add(source);
+        const skip = pinned
+          ? PREWARM_VARIANTS.every(variant => cache.isPinned(source, variant))
+          : PREWARM_VARIANTS.every(variant => cache.has(source, variant));
+        if (skip) continue;
+        if (pending.has(queuedKey)) continue;
+        pending.add(queuedKey);
         added += 1;
       }
       if (added) pump();
@@ -1290,6 +1299,11 @@ class ThumbnailCache {
 
   has(source, variant) {
     return Boolean(this.entries[this.keyFor(source, variant)]);
+  }
+
+  /** 该缩略图是否已标记为固定保留（封面图）。 */
+  isPinned(source, variant) {
+    return this.entries[this.keyFor(source, variant)]?.pinned === true;
   }
 
   async put(source, variant, buffer, { pinned = false } = {}) {
@@ -1833,7 +1847,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
             if (validated.type === 'remote') sources.push(validated.source);
           } catch { /* 非法来源跳过 */ }
         }
-        const queued = thumbnailPreWarmer.enqueue(sources);
+        const queued = thumbnailPreWarmer.enqueue(sources, { pinned: body.pin === true });
         return sendJson(res, 200, { queued, pending: thumbnailPreWarmer.pendingCount });
       } catch (error) {
         return sendJson(res, 400, { error: error.message || 'Invalid prewarm request' });

@@ -17,6 +17,7 @@ import { IconButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
 import type { DanbooruCoverCandidate } from '../services/danbooruService';
+import { danbooruService } from '../services/danbooruService';
 import { importDanbooruCoverAsDataUrl } from '../services/danbooruCoverImport';
 import { TagCoverActions } from './TagCoverActions';
 
@@ -635,6 +636,29 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
             return true;
         });
     }, [availableArtists, showFavOnly, favorites, searchTerm]);
+
+    // 目录预取：当前页可见画师（前 40 个）的封面候选提前请求并固定保存（pin），
+    // 滚动/浏览时封面秒出；getCoverSet 自带 14 天缓存与 300ms 串行限流，不重复打 Danbooru API。
+    const coverPrewarmedRef = useRef(new Set<string>());
+    useEffect(() => {
+        if (gachaArtists) return;
+        const targets = filteredArtists
+            .filter(artist => !coverPrewarmedRef.current.has(artist.name))
+            .slice(0, 40);
+        if (!targets.length) return;
+        for (const artist of targets) {
+            coverPrewarmedRef.current.add(artist.name);
+            void danbooruService.getCoverSet(artist.name, 'artist').then(set => {
+                const src = set.representative?.sampleUrl || set.candidates?.[0]?.sampleUrl;
+                if (!src) return;
+                fetch('/api/media/prewarm', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ sources: [src], pin: true }),
+                }).catch(() => {});
+            }).catch(() => {});
+        }
+    }, [filteredArtists, gachaArtists]);
 
     // --- New Features Logic ---
 
