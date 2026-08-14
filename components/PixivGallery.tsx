@@ -347,7 +347,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     if (!('IntersectionObserver' in window)) return;
     const observer = new IntersectionObserver(entries => {
       if (entries[0]?.isIntersecting) loadMore();
-    }, { root, rootMargin: '600px 0px' });
+    }, { root, rootMargin: '1200px 0px' });
     observer.observe(sentinel);
     return () => observer.disconnect();
     // loadMore 的闭包随 nextCursor/loadingMore/mode/searchInput 重建，无需列入依赖。

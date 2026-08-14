@@ -430,7 +430,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     if (!('IntersectionObserver' in window)) return;
     const observer = new IntersectionObserver(entries => {
       if (entries[0]?.isIntersecting) void appendNextPage();
-    }, { root, rootMargin: '600px 0px' });
+    }, { root, rootMargin: '1200px 0px' });
     observer.observe(sentinel);
     return () => observer.disconnect();
     // appendNextPage/loadWorks 闭包随 visibleItems.length 重建，无需列入依赖。

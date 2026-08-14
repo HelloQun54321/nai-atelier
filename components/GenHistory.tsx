@@ -364,7 +364,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         if (!('IntersectionObserver' in window)) return;
         const observer = new IntersectionObserver(entries => {
             if (entries[0]?.isIntersecting) void appendNextPage();
-        }, { root, rootMargin: '600px 0px' });
+        }, { root, rootMargin: '1200px 0px' });
         observer.observe(sentinel);
         return () => observer.disconnect();
         // appendNextPage 闭包随 currentPage/isLoading 重建，无需列入依赖。
