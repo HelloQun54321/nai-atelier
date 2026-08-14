@@ -904,9 +904,11 @@ const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, vibeId, 
 };
 
 /** 图库浏览预热：feed/search 返回后，后台按低优先级把该批缩略图抓好写进磁盘缓存，
- *  用户滚动到对应图片时直接缓存命中（~3ms），消除首次抓取（0.8-3s）的等待。 */
-const PREWARM_VARIANTS = ['thumb-320', 'thumb-640'];
-const PREWARM_CONCURRENCY = 3;
+ *  用户滚动到对应图片时直接缓存命中（~3ms），消除首次抓取（0.8-3s）的等待。
+ *  只预热桌面/常见布局实际使用的 thumb-320：高分屏所需的 640/960 按需首抓后同样入缓存，
+ *  避免一半预热工作量生成用不到的档位。 */
+const PREWARM_VARIANTS = ['thumb-320'];
+const PREWARM_CONCURRENCY = 4;
 const PREWARM_MAX_PENDING = 300;
 
 export const createThumbnailPreWarmer = ({
@@ -943,7 +945,7 @@ export const createThumbnailPreWarmer = ({
       let added = 0;
       for (const source of sources) {
         if (pending.size + added > maxPending) break;
-        if (cache.has(source, PREWARM_VARIANTS[0]) && cache.has(source, PREWARM_VARIANTS[1])) continue;
+        if (PREWARM_VARIANTS.every(variant => cache.has(source, variant))) continue;
         if (pending.has(source)) continue;
         pending.add(source);
         added += 1;

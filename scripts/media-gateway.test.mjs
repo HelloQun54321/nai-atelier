@@ -933,8 +933,8 @@ test('缩略图预热器：去重入队、并发消化、已缓存跳过', async
     await new Promise(resolve => setTimeout(resolve, 20));
   }
   assert.equal(prewarmer.pendingCount, 0);
-  assert.equal(generated.size, 6); // 3 sources × 2 variants
-  assert.equal(loadCalls, 6);      // 每个 variant 各一次；真实缓存内部对同一 source 单飞抓取
+  assert.equal(generated.size, 3); // 3 sources × 1 variant（仅预热主用 thumb-320）
+  assert.equal(loadCalls, 3);      // 每个 source 抓取一次；真实缓存内部对同一 source 单飞
   // 全部缓存后再次入队返回 0
   assert.equal(prewarmer.enqueue(['a', 'b', 'c', 'd']), 1);
   // 队列上限
