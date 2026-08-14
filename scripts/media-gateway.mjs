@@ -1266,7 +1266,11 @@ class ThumbnailCache {
   async prune() {
     let total = Object.values(this.entries).reduce((sum, entry) => sum + Number(entry.size || 0), 0);
     if (total <= CACHE_LIMIT) return;
-    const oldest = Object.entries(this.entries).sort((a, b) => Number(a[1].accessedAt || 0) - Number(b[1].accessedAt || 0));
+    // 只淘汰普通（非固定）缩略图；pinned 封面图（画师/角色 Tag 当前封面）永久保留，
+    // 不受 1GB 容量限制影响。
+    const oldest = Object.entries(this.entries)
+      .filter(([, entry]) => !entry.pinned)
+      .sort((a, b) => Number(a[1].accessedAt || 0) - Number(b[1].accessedAt || 0));
     for (const [key, entry] of oldest) {
       await unlink(join(CACHE_DIR, entry.file)).catch(() => {});
       total -= Number(entry.size || 0);
@@ -1288,26 +1292,30 @@ class ThumbnailCache {
     return Boolean(this.entries[this.keyFor(source, variant)]);
   }
 
-  async put(source, variant, buffer) {
+  async put(source, variant, buffer, { pinned = false } = {}) {
     const key = this.keyFor(source, variant);
     const file = `${key}.webp`;
     const temp = join(CACHE_DIR, `${key}.${process.pid}.${Date.now()}.tmp`);
     await writeFile(temp, buffer);
     await rename(temp, join(CACHE_DIR, file));
-    this.entries[key] = { file, size: buffer.length, accessedAt: Date.now(), source, variant };
+    this.entries[key] = { file, size: buffer.length, accessedAt: Date.now(), source, variant, pinned };
     this.scheduleIndexWrite();
     await this.prune();
     return { etag: `"nai-${key}"` };
   }
 
-  async get(source, variant, loadOriginal) {
+  async get(source, variant, loadOriginal, { pinned = false } = {}) {
     const key = this.keyFor(source, variant);
     const existing = this.entries[key];
     if (existing) {
       try {
         const buffer = await readFile(join(CACHE_DIR, existing.file));
         existing.accessedAt = Date.now();
-        this.scheduleIndexWrite();
+        // 请求标记为固定保留时升级该条目的 pinned 状态（封面图不再被 LRU 淘汰）。
+        if (pinned && !existing.pinned) {
+          existing.pinned = true;
+          this.scheduleIndexWrite();
+        }
         return { buffer, etag: `"nai-${key}"` };
       } catch { delete this.entries[key]; }
     }
@@ -1334,7 +1342,7 @@ class ThumbnailCache {
       const temp = join(CACHE_DIR, `${key}.${process.pid}.${Date.now()}.tmp`);
       await writeFile(temp, output);
       await rename(temp, join(CACHE_DIR, file));
-      this.entries[key] = { file, size: output.length, accessedAt: Date.now(), source, variant };
+      this.entries[key] = { file, size: output.length, accessedAt: Date.now(), source, variant, pinned };
       this.scheduleIndexWrite();
       await this.prune();
       return { buffer: output, etag: `"nai-${key}"` };
@@ -1882,7 +1890,9 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         return res.end(original.buffer);
       }
 
-      const thumbnail = await cache.get(validated.source, variant, loadOriginal);
+      // pin=1 表示固定保留（画师/角色封面缩略图），不参与 LRU 淘汰。
+      const pinned = url.searchParams.get('pin') === '1';
+      const thumbnail = await cache.get(validated.source, variant, loadOriginal, { pinned });
       if (req.headers['if-none-match'] === thumbnail.etag) {
         res.writeHead(304, {
           ETag: thumbnail.etag,

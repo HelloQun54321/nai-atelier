@@ -138,7 +138,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
   };
   return <div ref={rootRef} className="absolute inset-0">
     {displayedSrc ? <>
-      <SmartImage src={displayedSrc} alt={alt} onLoad={event => {
+      <SmartImage src={displayedSrc} alt={alt} pin onLoad={event => {
         const image = event.currentTarget;
         if (image.naturalWidth > 0 && image.naturalHeight > 0) {
           onImageLoad?.(image.naturalWidth, image.naturalHeight);

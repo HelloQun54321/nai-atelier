@@ -23,6 +23,8 @@ interface SmartImageProps {
   /** 渐进升级：低清 src 先显示，卡片接近/进入视口（或 eager 详情）后叠加更清晰源，加载完成淡入、失败静默保留低清。 */
   upgradeSrc?: string;
   upgradeVariant?: MediaVariant;
+  /** 请求缩略图时附加 pin=1：网关将该图标记为固定保留，不参与 LRU 淘汰（封面图持久本地化）。 */
+  pin?: boolean;
   className?: string;
   containerClassName?: string;
   onError?: () => void;
@@ -50,6 +52,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   containerClassName = 'relative h-full w-full overflow-hidden bg-gray-200 dark:bg-gray-900',
   onError,
   onLoad,
+  pin = false,
 }) => {
   const viewActive = useContext(ImageActivityContext);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -149,11 +152,12 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     }
 
     const thumbnailUrl = buildMediaUrl(src, variant);
+    const displayUrl = pin && thumbnailUrl.startsWith('/api/media') ? `${thumbnailUrl}&pin=1` : thumbnailUrl;
     if (!isMobileViewport()) {
-      setDisplaySrc(thumbnailUrl);
+      setDisplaySrc(displayUrl);
       return;
     }
-    const resource = acquireMobileThumbnailUrl(thumbnailUrl);
+    const resource = acquireMobileThumbnailUrl(displayUrl);
     let active = true;
     resource.promise.then(objectUrl => {
       if (active) setDisplaySrc(objectUrl);
@@ -164,7 +168,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
       active = false;
       resource.release();
     };
-  }, [activated, src, useOriginal, variant]);
+  }, [activated, pin, src, useOriginal, variant]);
 
   useEffect(() => {
     if (!upgradeActivated || !upgradeTarget) {
