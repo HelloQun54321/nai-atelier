@@ -165,7 +165,8 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     const onScroll = () => {
       if (Date.now() - lastAppendAtRef.current < 1500) return;
       if (node.scrollHeight - node.clientHeight <= 80) return;
-      if (node.scrollTop + node.clientHeight >= node.scrollHeight - 200) {
+      // 距底部约一屏就触发追加（1000px），滚动到达时新页已就位；冷却防连发。
+      if (node.scrollTop + node.clientHeight >= node.scrollHeight - 1000) {
         lastAppendAtRef.current = Date.now();
         void appendNextPage();
       }

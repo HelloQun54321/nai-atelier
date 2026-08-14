@@ -429,7 +429,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       if (Date.now() - lastAppendAtRef.current < 1500) return;
       // 内容不足一屏（图片未加载时卡片可能很矮）时任何滚动都会触发翻页，先排除。
       if (node.scrollHeight - node.clientHeight <= 80) return;
-      if (node.scrollTop + node.clientHeight >= node.scrollHeight - 200) {
+      // 距底部约一屏就触发追加（1000px），滚动到达时新页已就位；冷却防连发。
+      if (node.scrollTop + node.clientHeight >= node.scrollHeight - 1000) {
         lastAppendAtRef.current = Date.now();
         void appendNextPage();
       }
