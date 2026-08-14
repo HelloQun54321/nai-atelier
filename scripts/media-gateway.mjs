@@ -903,8 +903,59 @@ const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, vibeId, 
   }
 };
 
-export const getValidatedSource = value => {
-  const source = String(value || '');
+/** 图库浏览预热：feed/search 返回后，后台按低优先级把该批缩略图抓好写进磁盘缓存，
+ *  用户滚动到对应图片时直接缓存命中（~3ms），消除首次抓取（0.8-3s）的等待。 */
+const PREWARM_VARIANTS = ['thumb-320', 'thumb-640'];
+const PREWARM_CONCURRENCY = 3;
+const PREWARM_MAX_PENDING = 300;
+
+export const createThumbnailPreWarmer = ({
+  cache,
+  loadOriginal,
+  concurrency = PREWARM_CONCURRENCY,
+  maxPending = PREWARM_MAX_PENDING,
+} = {}) => {
+  const pending = new Set();
+  let running = 0;
+  let drainTimer = null;
+  // 即时调度：占用一个并发槽立即启动一个任务，完成后再补，无需定时器轮询限速。
+  const pump = () => {
+    while (running < concurrency && pending.size > 0) {
+      const next = pending.values().next();
+      if (next.done) break;
+      pending.delete(next.value);
+      running += 1;
+      Promise.allSettled(
+        PREWARM_VARIANTS.map(variant => cache.get(next.value, variant, loadOriginal).catch(() => {})),
+      ).finally(() => {
+        running -= 1;
+        if (drainTimer) {
+          clearTimeout(drainTimer);
+          drainTimer = null;
+        }
+        pump();
+      });
+    }
+  };
+  return {
+    /** 把一批来源加入预热队列（跳过已缓存/已在队列）；返回新加入数量。 */
+    enqueue(sources) {
+      let added = 0;
+      for (const source of sources) {
+        if (pending.size + added > maxPending) break;
+        if (cache.has(source, PREWARM_VARIANTS[0]) && cache.has(source, PREWARM_VARIANTS[1])) continue;
+        if (pending.has(source)) continue;
+        pending.add(source);
+        added += 1;
+      }
+      if (added) pump();
+      return added;
+    },
+    get pendingCount() { return pending.size; },
+  };
+};
+
+export const getValidatedSource = value => {  const source = String(value || '');
   if (!source || source.length > SOURCE_LIMIT || /[\r\n]/.test(source)) throw new Error('Invalid image source');
   if (source.startsWith('/api/assets/')) return { type: 'local', source };
   if (/^\/api\/(?:local-history\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail))(?:\?.*)?$/.test(source)) return { type: 'local', source };
@@ -1085,7 +1136,7 @@ const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remoteFetch
   }
 };
 
-export const handlePixivGalleryRequest = async (req, res, url, pixivGallery, pixivWebLogin) => {
+export const handlePixivGalleryRequest = async (req, res, url, pixivGallery, pixivWebLogin, prewarmer) => {
   if (url.pathname === '/api/pixiv/status') {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
     return sendJson(res, 200, pixivGallery.status());
@@ -1144,6 +1195,13 @@ export const handlePixivGalleryRequest = async (req, res, url, pixivGallery, pix
       cursor: url.searchParams.get('cursor'),
       params: Object.fromEntries(url.searchParams),
     });
+    // 后台预热该批缩略图：滚动时缓存命中，不再等待首次抓取。
+    if (prewarmer && Array.isArray(result.items)) {
+      const sources = result.items
+        .map(item => item.urls?.large || item.urls?.medium || item.urls?.thumb || '')
+        .filter(Boolean);
+      prewarmer.enqueue(sources);
+    }
     return sendJson(res, 200, result);
   }
   return sendJson(res, 404, { error: 'Pixiv 接口不存在', code: 'PIXIV_NOT_FOUND' });
@@ -1310,6 +1368,11 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
   const imageTagger = new ImageTaggerService(remoteFetch);
   const cloudQueuePreferences = await loadCloudQueuePreferences();
   const cache = new ThumbnailCache();
+  // 图库浏览预热：feed/搜索返回后后台抓取缩略图写盘，滚动时缓存命中秒出。
+  const thumbnailPreWarmer = createThumbnailPreWarmer({
+    cache,
+    loadOriginal: source => requestRemoteBuffer(source, remoteFetch),
+  });
   const promptAgent = new PromptAgentService({ lanSecret, outboundProxyUrl });
   const stChatu8Bridge = new StChatu8Bridge({
     projectRoot: process.cwd(),
@@ -1678,7 +1741,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
     if (url.pathname.startsWith('/api/pixiv/')) {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       try {
-        return await handlePixivGalleryRequest(req, res, url, pixivGallery, webLoginOrchestrator);
+        return await handlePixivGalleryRequest(req, res, url, pixivGallery, webLoginOrchestrator, thumbnailPreWarmer);
       } catch (error) {
         const payload = { error: error.message || 'Pixiv 请求失败', code: error.code || 'PIXIV_ERROR' };
         if (error.upstreamStatus) payload.upstreamStatus = Number(error.upstreamStatus);
@@ -1745,6 +1808,25 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         return sendJson(res, 200, { cached: true, etag: cached.etag, bytes: thumbnail.length });
       } catch (error) {
         return sendJson(res, Number(error.status) || 500, { error: error.message || 'Unable to cache thumbnail' });
+      }
+    }
+    if (url.pathname === '/api/media/prewarm') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      try {
+        const body = JSON.parse((await readRequestBody(req, 64 * 1024)).toString('utf8') || '{}');
+        const rawSources = Array.isArray(body.sources) ? body.sources.slice(0, 120) : [];
+        const sources = [];
+        for (const value of rawSources) {
+          try {
+            const validated = getValidatedSource(value);
+            if (validated.type === 'remote') sources.push(validated.source);
+          } catch { /* 非法来源跳过 */ }
+        }
+        const queued = thumbnailPreWarmer.enqueue(sources);
+        return sendJson(res, 200, { queued, pending: thumbnailPreWarmer.pendingCount });
+      } catch (error) {
+        return sendJson(res, 400, { error: error.message || 'Invalid prewarm request' });
       }
     }
     if (url.pathname !== '/api/media') return proxyRequest(req, res, workerPort);

@@ -105,6 +105,13 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       pageRef.current = result.page;
       setSelectedId(current => result.items.some(item => item.id === current) ? current : null);
       loadedRef.current = true;
+      // 后台预热该批缩略图：滚动时缓存命中，不再等待首次抓取。
+      const sources = result.items.map(item => item.sampleUrl).filter(Boolean);
+      fetch('/api/media/prewarm', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sources }),
+      }).catch(() => {});
       requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : 'Danbooru 查询失败';

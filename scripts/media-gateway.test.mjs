@@ -5,6 +5,7 @@ import {
   buildCachedVibeReferences,
   buildPreciseReferenceParameters,
   clearPreciseReferenceParameters,
+  createThumbnailPreWarmer,
   generateWithVibeCacheRetry,
   getVibeCacheSecretKey,
   classifyAitagRemoteTarget,
@@ -901,4 +902,42 @@ test('requestRemoteBuffer never treats 403, non-image or oversized responses as 
   await assert.rejects(() => requestRemoteBuffer('https://cdn.donmai.us/x.webp', async () => new Response('<html>', { status: 200, headers: { 'content-type': 'text/html' } })), /not an image/);
   await assert.rejects(() => requestRemoteBuffer('https://cdn.donmai.us/x.webp', async () => new Response('x', { status: 200, headers: { 'content-type': 'image/png', 'content-length': String(31 * 1024 * 1024) } })), /too large/);
   await assert.rejects(() => requestRemoteBuffer('https://evil.example/x.webp', async () => new Response('x')), /not allowed/);
+});
+
+test('缩略图预热器：去重入队、并发消化、已缓存跳过', async () => {
+  const generated = new Set();
+  let loadCalls = 0;
+  const cache = {
+    has: (source, variant) => generated.has(`${source}|${variant}`),
+    get: async (source, variant, loadOriginal) => {
+      const key = `${source}|${variant}`;
+      if (!generated.has(key)) {
+        generated.add(key);
+        await loadOriginal();
+      }
+      return { buffer: Buffer.from('x'), etag: `"${key}"` };
+    },
+  };
+  const prewarmer = createThumbnailPreWarmer({ cache, loadOriginal: async () => { loadCalls += 1; }, concurrency: 2, maxPending: 10 });
+
+  // 去重：同一 source 只入队一次；加入 2 个
+  assert.equal(prewarmer.enqueue(['a', 'a', 'b', 'c']), 3);
+  assert.ok(prewarmer.pendingCount <= 3, 'pump 同步消费,队列余量 <= 3');
+  // 已入队的重复提交不再增加
+  assert.equal(prewarmer.enqueue(['b']), 0);
+  assert.ok(prewarmer.pendingCount <= 3);
+
+  // 等待队列消化完成（两个 variant 都生成）
+  const deadline = Date.now() + 2000;
+  while (prewarmer.pendingCount > 0 && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.equal(prewarmer.pendingCount, 0);
+  assert.equal(generated.size, 6); // 3 sources × 2 variants
+  assert.equal(loadCalls, 6);      // 每个 variant 各一次；真实缓存内部对同一 source 单飞抓取
+  // 全部缓存后再次入队返回 0
+  assert.equal(prewarmer.enqueue(['a', 'b', 'c', 'd']), 1);
+  // 队列上限
+  const full = createThumbnailPreWarmer({ cache, loadOriginal: async () => {}, concurrency: 1, maxPending: 2 });
+  assert.equal(full.enqueue(['x1', 'x2', 'x3', 'x4']), 2);
 });
