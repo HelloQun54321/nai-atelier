@@ -352,29 +352,24 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         }
     };
 
-    // 滚动接近列表底部自动加载下一页（追加模式，滚动连续、最新图不消失）；
-    // 分页器保留作兜底/跳页。内容不足一屏时不自动加载，避免任何滚动都触发；
-    // 追加后冷却 1.5s：图片加载引起的布局变化/滚动锚定会派发额外 scroll 事件，
-    // 不加冷却会在一次触底后连续追加多页。
+    // 滚动接近列表底部自动加载下一页（追加模式，与 Pixiv 相同的哨兵机制）：
+    // 追加完成后若哨兵仍在视口（用户停在底部/快速滚动）会立即再触发，
+    // 实现不间断连续加载；内容增长使哨兵移出视口后自然停止。
     const historyScrollRef = useRef<HTMLDivElement>(null);
-    const lastAppendAtRef = useRef(0);
+    const historyPageSentinelRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
-        const node = historyScrollRef.current;
-        if (!node) return;
-        const onScroll = () => {
-            if (Date.now() - lastAppendAtRef.current < 1500) return;
-            if (node.scrollHeight - node.clientHeight <= 120) return;
-            // 距底部约一屏就触发追加（1000px），滚动到达时新页已就位；冷却防连发。
-            if (node.scrollTop + node.clientHeight >= node.scrollHeight - 1000) {
-                lastAppendAtRef.current = Date.now();
-                void appendNextPage();
-            }
-        };
-        node.addEventListener('scroll', onScroll, { passive: true });
-        return () => node.removeEventListener('scroll', onScroll);
-        // appendNextPage 闭包随 currentPage/totalPages 重建，无需列入依赖。
+        const sentinel = historyPageSentinelRef.current;
+        const root = historyScrollRef.current;
+        if (!sentinel || !root || isLoading || currentPage >= totalPages) return;
+        if (!('IntersectionObserver' in window)) return;
+        const observer = new IntersectionObserver(entries => {
+            if (entries[0]?.isIntersecting) void appendNextPage();
+        }, { root, rootMargin: '600px 0px' });
+        observer.observe(sentinel);
+        return () => observer.disconnect();
+        // appendNextPage 闭包随 currentPage/isLoading 重建，无需列入依赖。
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPage, totalPages]);
+    }, [currentPage, isLoading, totalPages]);
 
     const applyDateFilter = (next: { from: string; to: string }) => {
         const from = next.from ? new Date(`${next.from}T00:00:00`).getTime() : undefined;
@@ -1069,6 +1064,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                     <span className="text-sm font-bold text-indigo-600 dark:text-indigo-300">/ {totalPages} 页</span>
                                 </form>
                             </div>
+                            <div ref={historyPageSentinelRef} className="h-1 w-full" aria-hidden="true" />
                             </>}
                             <div className="flex flex-col items-center justify-center py-6">
                                 {isLoading ? (

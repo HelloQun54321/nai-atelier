@@ -87,7 +87,6 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   const queryRef = useRef(query);
   const pageRef = useRef(page);
   const appendingRef = useRef(false);
-  const lastAppendAtRef = useRef(0);
 
   const selected = useMemo(() => items.find(item => item.id === selectedId) || null, [items, selectedId]);
   const closeMobileDetail = useMobileHistoryLayer(Boolean(selected), () => setSelectedId(null), 'danbooru-detail');
@@ -157,23 +156,21 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     if (active && !loadedRef.current) void load('order:rank', 1);
   }, [active]);
 
-  // 滚动接近列表底部自动加载下一页（追加模式）；分页器按钮保留作兜底/跳页。
-  // 内容不足一屏时不触发；追加后冷却 1.5s，图片加载引起的布局事件不会连发。
+  // 滚动接近列表底部自动加载下一页（追加模式，与 Pixiv 相同的哨兵机制）：
+  // 追加完成后若哨兵仍在视口（用户停在底部/快速滚动）会立即再触发，
+  // 实现不间断连续加载；内容增长使哨兵移出视口后自然停止。
+  const appendSentinelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const node = scrollRef.current;
-    if (!node || !hasMore || loading || items.length >= DANBOORU_APPEND_LIMIT) return;
-    const onScroll = () => {
-      if (Date.now() - lastAppendAtRef.current < 1500) return;
-      if (node.scrollHeight - node.clientHeight <= 80) return;
-      // 距底部约一屏就触发追加（1000px），滚动到达时新页已就位；冷却防连发。
-      if (node.scrollTop + node.clientHeight >= node.scrollHeight - 1000) {
-        lastAppendAtRef.current = Date.now();
-        void appendNextPage();
-      }
-    };
-    node.addEventListener('scroll', onScroll, { passive: true });
-    return () => node.removeEventListener('scroll', onScroll);
-    // appendNextPage 闭包随 items/page 重建，无需列入依赖。
+    const sentinel = appendSentinelRef.current;
+    const root = scrollRef.current;
+    if (!sentinel || !root || !hasMore || loading || items.length >= DANBOORU_APPEND_LIMIT) return;
+    if (!('IntersectionObserver' in window)) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0]?.isIntersecting) void appendNextPage();
+    }, { root, rootMargin: '600px 0px' });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+    // appendNextPage 闭包随 items.length 重建，无需列入依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasMore, items.length, loading]);
 
@@ -308,6 +305,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
           ) : !loading && <div className="flex min-h-72 flex-col items-center justify-center text-center text-sm text-gray-500"><p className="font-bold">没有找到普通级图片</p><p className="mt-1 text-xs">请检查 Tag 拼写，或减少检索条件。</p></div>}
 
           <div className="mt-5 flex flex-col items-center gap-3 pb-4">
+            <div ref={appendSentinelRef} className="h-1 w-full" aria-hidden="true" />
             {items.length >= DANBOORU_APPEND_LIMIT && hasMore && (
               <ToolbarButton onClick={() => void appendNextPage(true)}><RefreshCw className={appendingRef.current ? 'animate-spin' : ''} />已加载 {DANBOORU_APPEND_LIMIT} 件 · 继续加载更多</ToolbarButton>
             )}

@@ -406,10 +406,11 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     if (detailScrollRef.current) detailScrollRef.current.scrollTop = 0;
   };
 
-  // 滚动接近列表底部自动加载下一页（追加模式，连续滚动无切页感）；分页器保留作兜底/跳页。
-  // 内容不足一屏时不触发；追加后冷却 1.5s；达到软上限后停止自动追加。
+  // 滚动接近列表底部自动加载下一页（追加模式，与 Pixiv 相同的哨兵机制）：
+  // 追加完成后若哨兵仍在视口（用户停在底部/快速滚动）会立即再触发，
+  // 实现不间断连续加载；内容增长使哨兵移出视口后自然停止。
   const appendingRef = useRef(false);
-  const lastAppendAtRef = useRef(0);
+  const appendSentinelRef = useRef<HTMLDivElement>(null);
   const querySignatureRef = useRef('');
   const getQuerySignature = () => `${q}|${prompt}|${sort}|${aiType}|${rankMonth}|${cacheFilter}`;
   const appendNextPage = async (force = false) => {
@@ -423,21 +424,16 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     }
   };
   useEffect(() => {
-    const node = mainScrollRef.current;
-    if (!node || !hasNextPage || isLoading || visibleItems.length >= AITAG_APPEND_LIMIT) return;
-    const onScroll = () => {
-      if (Date.now() - lastAppendAtRef.current < 1500) return;
-      // 内容不足一屏（图片未加载时卡片可能很矮）时任何滚动都会触发翻页，先排除。
-      if (node.scrollHeight - node.clientHeight <= 80) return;
-      // 距底部约一屏就触发追加（1000px），滚动到达时新页已就位；冷却防连发。
-      if (node.scrollTop + node.clientHeight >= node.scrollHeight - 1000) {
-        lastAppendAtRef.current = Date.now();
-        void appendNextPage();
-      }
-    };
-    node.addEventListener('scroll', onScroll, { passive: true });
-    return () => node.removeEventListener('scroll', onScroll);
-    // appendNextPage/loadWorks 闭包随 page/hasNextPage/isLoading/items 重建，无需列入依赖。
+    const sentinel = appendSentinelRef.current;
+    const root = mainScrollRef.current;
+    if (!sentinel || !root || !hasNextPage || isLoading || visibleItems.length >= AITAG_APPEND_LIMIT) return;
+    if (!('IntersectionObserver' in window)) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0]?.isIntersecting) void appendNextPage();
+    }, { root, rootMargin: '600px 0px' });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+    // appendNextPage/loadWorks 闭包随 visibleItems.length 重建，无需列入依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasNextPage, isLoading, visibleItems.length]);
 
@@ -1155,6 +1151,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           )}
 
           <div className="flex flex-col items-center gap-2 py-6">
+            <div ref={appendSentinelRef} className="h-1 w-full" aria-hidden="true" />
             {visibleItems.length >= AITAG_APPEND_LIMIT && hasNextPage && (
               <button type="button" onClick={() => void appendNextPage(true)} disabled={isLoading} className="mobile-touch px-4 py-2 rounded-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm font-bold text-gray-600 dark:text-gray-300">
                 已加载 {AITAG_APPEND_LIMIT} 条 · 继续加载更多
