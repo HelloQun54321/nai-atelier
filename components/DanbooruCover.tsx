@@ -79,6 +79,16 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
   const displayedSrc = currentCandidate?.sampleUrl || fixedSrc || coverSet?.representative?.sampleUrl || '';
   const canBrowse = candidates.length > 0;
   useEffect(() => { onCandidateChange?.(currentCandidate || null); }, [currentCandidate?.id, onCandidateChange]);
+  // 拿到候选集后预热前几张封面：首张显示命中缓存，点“下一张”也顺滑（与直接加载单飞，不重复抓取）。
+  useEffect(() => {
+    const sources = (coverSet?.candidates || []).slice(0, 3).map(candidate => candidate.sampleUrl).filter(Boolean);
+    if (!sources.length) return;
+    fetch('/api/media/prewarm', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sources }),
+    }).catch(() => {});
+  }, [coverSet]);
   const loadNextCandidatePage = async () => {
     if (!coverSet?.hasMore || isLoadingMore) return false;
     setIsLoadingMore(true);

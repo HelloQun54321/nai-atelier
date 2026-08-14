@@ -92,6 +92,17 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   const selected = useMemo(() => items.find(item => item.id === selectedId) || null, [items, selectedId]);
   const closeMobileDetail = useMobileHistoryLayer(Boolean(selected), () => setSelectedId(null), 'danbooru-detail');
 
+  // 后台预热该批缩略图：滚动时缓存命中，不再等待首次抓取。
+  const prewarmSources = (sources: string[]) => {
+    const valid = sources.filter(Boolean);
+    if (!valid.length) return;
+    fetch('/api/media/prewarm', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sources: valid }),
+    }).catch(() => {});
+  };
+
   const load = async (nextQuery = query, nextPage = page) => {
     setLoading(true);
     setError('');
@@ -105,13 +116,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       pageRef.current = result.page;
       setSelectedId(current => result.items.some(item => item.id === current) ? current : null);
       loadedRef.current = true;
-      // 后台预热该批缩略图：滚动时缓存命中，不再等待首次抓取。
-      const sources = result.items.map(item => item.sampleUrl).filter(Boolean);
-      fetch('/api/media/prewarm', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sources }),
-      }).catch(() => {});
+      prewarmSources(result.items.map(item => item.sampleUrl));
       requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : 'Danbooru 查询失败';
@@ -138,6 +143,8 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       setHasMore(result.hasMore);
       setPage(result.page);
       pageRef.current = result.page;
+      // 追加页同样预热：否则滚到新页时每张图都要首次抓取，出现“断一下”。
+      prewarmSources(result.items.map(item => item.sampleUrl));
     } catch (appendError) {
       const message = appendError instanceof Error ? appendError.message : 'Danbooru 加载失败';
       notify(message, 'error');
