@@ -397,7 +397,9 @@ const normalizeDanbooruQuery = (value: string | null) => {
   if (!query) return 'order:rank';
   const tokens = query.split(' ').filter(Boolean);
   if (tokens.length > 2) throw Object.assign(new Error('Danbooru 匿名检索一次最多支持两个 Tag，请用逗号分隔并减少条件'), { status: 400 });
-  if (tokens.some(token => !/^[a-z0-9_:.()'!+\-/]+$/i.test(token))) {
+  // 允许 Unicode 字母数字（中文等语言的 tag/别名可直接查询），仍拒绝空白、引号、
+  // 斜杠等符号类注入。
+  if (tokens.some(token => !/^[\p{L}\p{N}_:.()'!+\-/]+$/u.test(token))) {
     throw Object.assign(new Error('Danbooru 查询中包含不支持的字符'), { status: 400 });
   }
   return tokens.join(' ');

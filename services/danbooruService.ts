@@ -89,8 +89,11 @@ const normalizeSingleTag = async (rawValue: string) => {
 
   const normalized = normalizeTagQuery(value);
   const matches = await searchTagDictionary(value, 12).catch(() => []);
+  // 精确匹配优先；否则取最相关结果作为翻译（worker 只接受 ASCII tag，
+  // 原样返回中文会导致请求 400、搜索无声失败）。
   const exact = matches.find(item => normalizeTagQuery(item.chinese) === normalized || normalizeTagQuery(item.name) === normalized);
-  return (exact?.name || normalized).replaceAll(' ', '_');
+  const best = exact || matches[0];
+  return (best?.name || normalized).replaceAll(' ', '_');
 };
 
 /** Search accepts one or two comma-separated tags. Spaces inside one tag are normalized to underscores. */
