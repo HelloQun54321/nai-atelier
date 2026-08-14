@@ -921,7 +921,6 @@ export const createThumbnailPreWarmer = ({
 } = {}) => {
   const pending = new Set();
   let running = 0;
-  let drainTimer = null;
   // 即时调度：占用一个并发槽立即启动一个任务，完成后再补，无需定时器轮询限速。
   const pump = () => {
     while (running < concurrency && pending.size > 0) {
@@ -935,10 +934,6 @@ export const createThumbnailPreWarmer = ({
         PREWARM_VARIANTS.map(variant => cache.get(source, variant, loadOriginal, { pinned }).catch(() => {})),
       ).finally(() => {
         running -= 1;
-        if (drainTimer) {
-          clearTimeout(drainTimer);
-          drainTimer = null;
-        }
         pump();
       });
     }
