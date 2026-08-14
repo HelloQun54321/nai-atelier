@@ -200,7 +200,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     return <article key={post.id} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors dark:bg-gray-800 ${selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
       <button type="button" onClick={() => setSelectedId(post.id)} className="block w-full text-left">
         <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}>
-          <SmartImage src={post.sampleUrl} alt={title.replaceAll('_', ' ')} thumbnailVariant="thumb-640" />
+          <SmartImage src={post.sampleUrl} alt={title.replaceAll('_', ' ')} />
           <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-[10px] text-white">
             <span>♥ {formatCount(post.favCount)}</span><span>▲ {formatCount(post.score)}</span>
           </div>

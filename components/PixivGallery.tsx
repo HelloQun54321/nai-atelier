@@ -385,7 +385,6 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
           <SmartImage
             src={previewSrc}
             alt={title}
-            thumbnailVariant="thumb-640"
             upgradeSrc={illust.urls.original}
             upgradeVariant="original"
           />

@@ -95,7 +95,8 @@ export const SmartImage: React.FC<SmartImageProps> = ({
       return;
     }
     const root = findScrollRoot(node);
-    const preloadDistance = Math.max(root?.clientHeight || window.innerHeight, 600);
+    // 提前约两屏预取缩略图：滚动到达时图已加载，避免“滚到哪卡到哪”。
+    const preloadDistance = Math.max(root?.clientHeight || window.innerHeight, 1200);
     const observer = new IntersectionObserver(entries => {
       if (!entries[0]?.isIntersecting) return;
       setActivatedSrc(src);
@@ -230,7 +231,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
           loading={eager ? 'eager' : 'lazy'}
         />
       )}
-      {activated && !loaded && !failed && !upgradeLoaded && <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400"><span className="animate-pulse">加载中…</span></div>}
+      {activated && !loaded && !failed && !upgradeLoaded && <div className="smart-image-shimmer absolute inset-0 flex items-center justify-center text-xs text-gray-400"><span className="animate-pulse">加载中…</span></div>}
       {activated && failed && !upgradeLoaded && (
         <button
           type="button"
