@@ -9,7 +9,7 @@ import {
   selectThumbnailVariant,
 } from '../services/mobileImageCache';
 
-const ImageActivityContext = createContext(true);
+export const ImageActivityContext = createContext(true);
 
 export const ImageActivityProvider: React.FC<React.PropsWithChildren<{ active: boolean }>> = ({ active, children }) => (
   <ImageActivityContext.Provider value={active}>{children}</ImageActivityContext.Provider>

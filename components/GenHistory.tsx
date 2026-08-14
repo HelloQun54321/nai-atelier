@@ -1,5 +1,5 @@
 
-import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
+import React, { useCallback, useContext, useMemo, useState, useEffect, useRef } from 'react';
 import { LocalHistoryDateRange, LocalHistoryPage, localHistory } from '../services/localHistory';
 import { db } from '../services/dbService';
 import { LocalGenItem, PromptChain, User } from '../types';
@@ -9,7 +9,7 @@ import { extractMetadata, IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../se
 import { compilePrompt } from '../services/promptUtils';
 import { ParamsViewer } from './ParamsViewer';
 import { useConfirmDialog } from './ConfirmDialog';
-import { OriginalImage, SmartImage } from './SmartImage';
+import { ImageActivityContext, OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
@@ -408,6 +408,17 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     useEffect(() => {
         setDesktopJumpPage(String(currentPage));
     }, [currentPage]);
+
+    // keep-alive 下组件只在首次挂载时加载一次：若当时数据源短暂异常（返回 0 条），
+    // 页面会一直停留在空态直到手动刷新。视图重新激活且当前数据为空时自动重载。
+    const viewActive = useContext(ImageActivityContext);
+    const prevViewActiveRef = useRef(false);
+    useEffect(() => {
+        if (viewActive && !prevViewActiveRef.current && totalCount === 0) {
+            void refreshPageRef.current(1, true);
+        }
+        prevViewActiveRef.current = viewActive;
+    }, [totalCount, viewActive]);
 
     useEffect(() => {
         const unsubscribe = localHistory.subscribe(change => {
