@@ -4563,10 +4563,10 @@ export default {
         }
         const data = chainsResult.results.map((c: any) => ({
           id: c.id, userId: c.user_id, username: c.username, type: c.type || 'style', name: c.name, description: c.description,
-          tags: JSON.parse(c.tags || '[]'), previewImage: c.preview_image, base_prompt: c.base_prompt, // raw DB column needed? No, mapping below
+          tags: parseStoredJson(c.tags, []), previewImage: c.preview_image, base_prompt: c.base_prompt, // raw DB column needed? No, mapping below
           basePrompt: c.base_prompt,
-          negativePrompt: c.negative_prompt, modules: JSON.parse(c.modules || '[]'), params: JSON.parse(c.params || '{}'),
-          variableValues: JSON.parse(c.variable_values || '{}'), guestHidden: c.guest_hidden === 1, createdAt: c.created_at, updatedAt: c.updated_at
+          negativePrompt: c.negative_prompt, modules: parseStoredJson(c.modules, []), params: parseStoredJson(c.params, {}),
+          variableValues: parseStoredJson(c.variable_values, {}), guestHidden: c.guest_hidden === 1, createdAt: c.created_at, updatedAt: c.updated_at
         }));
         return json(data);
       }
@@ -4751,7 +4751,7 @@ export default {
       // Artists (Updated with Deletion Logic)
       if (path === '/api/artists' && method === 'GET') {
          const res = await db.prepare('SELECT * FROM artists ORDER BY name ASC').all();
-         return json(res.results.map((a: any) => ({ id: a.id, name: a.name, imageUrl: a.image_url, previewUrl: a.preview_url, benchmarks: a.benchmarks ? JSON.parse(a.benchmarks) : [] })));
+         return json(res.results.map((a: any) => ({ id: a.id, name: a.name, imageUrl: a.image_url, previewUrl: a.preview_url, benchmarks: parseStoredJson(a.benchmarks, []) })));
       }
       if (path === '/api/artists' && method === 'POST') {
         // 使用统一的角色策略检查画师管理权限（admin + vip）
@@ -4833,8 +4833,9 @@ export default {
             await deleteR2File(env, artist.image_url);
             if (artist.preview_url) await deleteR2File(env, artist.preview_url);
             if (artist.benchmarks) {
-                const bms = JSON.parse(artist.benchmarks);
-                for (const url of bms) {
+                // benchmarks 列损坏时回退为空数组，保证画师条目本身仍能删除
+                const bms = parseStoredJson(artist.benchmarks, []);
+                for (const url of Array.isArray(bms) ? bms : []) {
                     if (url) await deleteR2File(env, url);
                 }
             }
@@ -4851,7 +4852,7 @@ export default {
           metadata: {
             name: artist?.name,
             hadPreviewUrl: Boolean(artist?.preview_url),
-            benchmarkCount: artist?.benchmarks ? JSON.parse(artist.benchmarks).filter(Boolean).length : 0,
+            benchmarkCount: parseStoredJson(artist?.benchmarks, []).filter(Boolean).length,
           },
         });
         return json({ success: true });
@@ -5061,7 +5062,10 @@ export default {
       return env.ASSETS.fetch(request);
 
     } catch (e: any) {
-      return error(e.message, 500);
+      // 原始异常（D1/R2 报错可能含内部细节）只进服务端日志，客户端统一收简短文案；
+      // 带业务语义的校验错误在各路由内就地捕获并返回对应状态码，不会走到这里。
+      console.error('worker request failed:', path, method, e);
+      return error('请求处理失败，请查看本地服务日志', 500);
     }
   }
 };

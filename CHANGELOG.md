@@ -4,6 +4,11 @@
 
 ## 2026-08-16
 
+### 修复：worker 兜底错误透传与库内 JSON 列裸解析
+
+- 兜底 catch 此前把 `e.message` 原样返回客户端，D1/R2 内部报错细节（SQL 片段、内部路径）会直接暴露；现在完整异常进服务端 console.error，客户端统一收到简短文案。带业务语义的校验错误本就在各路由内就地捕获返回 4xx，不受影响。
+- chains/artists 的 GET 与 DELETE 路径对 tags/modules/params/variableValues/benchmarks 等库内 JSON 列直接 `JSON.parse`：一条脏数据就让整个列表接口 500，或让画师条目因 benchmarks 列损坏而**无法删除**。统一改用已有的 `parseStoredJson` 安全助手，损坏列回退为空值。
+
 ### 修复：画师基准图生成队列卸载/暂停后仍启动新任务
 
 - 队列处理 effect 的 `processNext` 此前无生命周期控制：离开画师库页面后队列会继续启动新的 NovelAI 生成（持续扣费），节流等待期间点"暂停"也无法阻止旧闭包继续开工。现在节流等待结束、真正调用生成接口前检查存活与暂停标记（暂停用 ref 感知，避开旧闭包读到过期 state），命中即复位 isProcessing 并停止；已付费的进行中任务仍允许完成并落库，不浪费额度。
