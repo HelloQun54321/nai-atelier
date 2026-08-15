@@ -1,7 +1,7 @@
 {
   "name": "nai-prompt-manager",
   "private": true,
-  "version": "0.79.21",
+  "version": "0.79.22",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -24,7 +24,6 @@
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.81.1",
     "@earendil-works/pi-ai": "^0.81.1",
-    "bcryptjs": "^2.4.3",
     "jszip": "^3.10.1",
     "lucide-react": "^1.27.0",
     "onnxruntime-node": "1.21.1",
@@ -37,7 +36,6 @@
     "@cloudflare/workers-types": "^4.20250214.0",
     "@tailwindcss/vite": "^4.0.0",
     "@testing-library/react": "^16.3.2",
-    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
