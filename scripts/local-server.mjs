@@ -259,6 +259,14 @@ async function startServer() {
   ];
   
   const tagUpdateServer = startTagUpdateServer();
+  // Tag 数据不再随仓库分发（上游未声明许可）：缺失时提示用户自行安装。
+  try {
+    if (!existsSync('public/tag-data/manifest.json')) {
+      const notice = '\x1b[33m未检测到 Tag 词库数据（public/tag-data）\x1b[0m\n'
+        + '\x1b[33m  Tag 自动补全、画师/角色目录将不可用。请运行 npm run update:tags 下载并生成（数据来自 ffdkj 的中英 Tag 数据库，仅本地使用）。\x1b[0m';
+      console.log(notice);
+    }
+  } catch { /* 检测失败不阻断启动 */ }
   // Launch Wrangler's actual CLI process directly. The old cmd -> .cmd wrapper
   // chain left Miniflare descendants behind when startup failed on Windows.
   const wranglerCli = 'node_modules/wrangler/wrangler-dist/cli.js';

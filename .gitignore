@@ -38,3 +38,4 @@ local-cache/
 .wrangler/
 
 docs/db-field-addition-guide.md
+public/tag-data/
