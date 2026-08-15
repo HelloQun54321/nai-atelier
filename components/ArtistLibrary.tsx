@@ -410,7 +410,10 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                 catalogPageCountRef.current = result.pageCount;
                 setHasMoreCatalog(result.pageCount > 1);
             })
-            .catch(error => console.warn('Artist tag catalog is unavailable:', error))
+            .catch(error => {
+                console.warn('Artist tag catalog is unavailable:', error);
+                notify('画师 Tag 目录加载失败：请先在“全局设置 → Tag 词库”中安装/更新词库数据', 'error');
+            })
             .finally(() => {
                 if (!cancelled && generation === catalogLoadGenerationRef.current) {
                     catalogPageLoadingRef.current = false;
