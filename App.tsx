@@ -300,9 +300,17 @@ const App = () => {
     }
   };
 
+  // keep-alive 视图按最近使用保留最多 4 个：全部 9 个视图都是重型图库，
+  // 只挂载不卸载会让内存随访问过的页面数单调增长；访问时提升到队尾，
+  // 超出上限时淘汰最久未用的（当前正在展示的视图总是队尾，不会被淘汰）。
+  const KEEP_ALIVE_LIMIT = 4;
   const keepViewMounted = (targetView: ViewState) => {
     if (!isKeepAliveView(targetView)) return;
-    setMountedViews(prev => prev.includes(targetView) ? prev : [...prev, targetView]);
+    setMountedViews(prev => {
+      const withoutTarget = prev.filter(v => v !== targetView);
+      const next = [...withoutTarget, targetView];
+      return next.length > KEEP_ALIVE_LIMIT ? next.slice(next.length - KEEP_ALIVE_LIMIT) : next;
+    });
   };
 
   const ensurePlayground = () => {
