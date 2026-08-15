@@ -221,6 +221,13 @@ flowchart LR
 
 项目可以与本机 `D:\SillyTavern` 中的 [st-chatu8](https://github.com/damoshen123/st-chatu8) 配套使用。SillyTavern 侧安装独立的 `npm-bridge` 扩展，NaiPromptManager 侧由电脑图片网关提供受限桥接接口；两边启动后自动同步，也可在 SillyTavern 的扩展设置中点击“立即同步”。
 
+#### 实现参考与兼容声明
+
+- **Precise Reference（角色参考）**与**永久 Vibe 数据流**的实现参考了 NovelAI 官方文档、官网请求协议以及 [st-chatu8](https://github.com/damoshen123/st-chatu8) 的可读实现，据此确认官方请求结构（如 `reference_image_multiple_cached`）与费用规则。
+- **多人拼车公共队列**使用与 st-chatu8 一致的 NovelAI Key SHA-256 指纹协议，双方客户端可进入同一条公共队列互操作。
+- **Vibe 内容去重**兼容 st-chatu8 对 Base64 文本哈希与官方兼容导出器字节哈希的差异，统一以图片字节哈希为规范键。
+- 上述参考与兼容均为协议层面的实现借鉴，不包含 st-chatu8 的代码或数据；具体同步接口由本项目的 `scripts/st-chatu8-bridge.mjs` 独立实现。
+
 ### 同步内容与方向
 
 | 数据 | 方向 | 规则 |
@@ -709,6 +716,8 @@ NaiPromptManager/
 
 ### 第三方数据与资源
 
+- 互通与协议参考：[st-chatu8](https://github.com/damoshen123/st-chatu8)（NovelAI 扩展，Precise Reference / Vibe 数据流与拼车队列指纹协议实现参考；仅协议层借鉴，不含其代码）
+- 互通平台：[SillyTavern](https://github.com/SillyTavern/SillyTavern)（本项目的 st-chatu8 互通以其扩展平台为载体，扩展侧 `npm-bridge` 安装于 SillyTavern）
 - Tag 中文数据：[ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)
 - NovelAI Tag 与模型说明：[NovelAI Documentation](https://docs.novelai.net/)
 - AITag 作品与元数据：[aitag.win](https://aitag.win/)
