@@ -21,6 +21,7 @@ import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMa
 import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './MobileUI';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { useStaleGuard } from './useStaleGuard';
 import { ArrowLeft, Filter, Menu, RefreshCw, Search, X } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
@@ -414,9 +415,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const querySignatureRef = useRef('');
   // 每次 loadWorks 递增的序号：非追加路径（搜索/筛选/跳页）此前无竞态守卫，慢的旧响应
   // 会覆盖新结果并污染模块级 aitagPageCache；卸载后迟到的响应同样不该再写。
-  const loadSeqRef = useRef(0);
-  const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  const loadGuard = useStaleGuard();
   const getQuerySignature = () => `${q}|${prompt}|${sort}|${aiType}|${rankMonth}|${cacheFilter}`;
   const appendNextPage = async (force = false) => {
     if (appendingRef.current || isLoading) return;
@@ -460,7 +459,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       const signature = getQuerySignature();
       if (querySignatureRef.current !== signature) return;
     }
-    const mySeq = ++loadSeqRef.current;
+    const mySeq = loadGuard.begin();
     const targetAiType = options.aiTypeOverride || aiType;
     const targetSort = options.sortOverride || sort;
     const targetRankMonth = options.rankMonthOverride || rankMonth;
@@ -510,7 +509,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       }
 
       // 等待期间用户又触发了新的加载，或组件已卸载：丢弃过期结果，不写状态也不污染模块级缓存
-      if (!mountedRef.current || loadSeqRef.current !== mySeq) return;
+      if (!loadGuard.isCurrent(mySeq)) return;
 
       const nextItems = Array.isArray(data.items) ? data.items : [];
       const reportedTotal = Number(data.total || 0);
@@ -543,7 +542,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       setError(nextError);
       if (options.resetScroll) resetScrollPositions();
     } catch (e: any) {
-      if (!mountedRef.current || loadSeqRef.current !== mySeq) return;
+      if (!loadGuard.isCurrent(mySeq)) return;
       const nextError = e.message || '本地没有这一页，且当前无法联网获取';
       aitagPageCache = { ...aitagPageCache, error: nextError };
       setError(nextError);

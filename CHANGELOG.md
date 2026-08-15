@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 修复：Danbooru 图库搜索竞态守卫（抽出共享 useStaleGuard hook）
+
+- `DanbooruGallery.load` 是四个图库中唯一没有竞态守卫的加载路径：快速连续搜索/跳页时较慢的旧响应会覆盖新结果。把此前为 AitagGallery 写的守卫模式抽成共享 `useStaleGuard` hook（begin 取序号 / isCurrent 判有效），两个图库统一接入，并配 renderHook 回归测试（新加载使旧序号失效、卸载后全部失效）。引入 @testing-library/react + jsdom 为后续组件测试铺路。
+
 ### 工程化：引入 vitest 并补 services 层单元测试
 
 - 新增 vitest（node 环境纯逻辑测试）与 `npm test` 命令，pre-commit 钩子同步纳入。首批 27 个用例覆盖 services 层纯逻辑：灵感标签工具（含 sourceLabel 的 pixiv 回归）、Prompt 编译顺序（基础→前置模块→主体→后置模块、激活开关、逗号清理）、AITag 元数据解析（JSON 数组容错、图片地址组装优先级）。前端与 TS 侧此前零测试设施。

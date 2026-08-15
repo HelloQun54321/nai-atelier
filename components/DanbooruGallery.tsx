@@ -13,6 +13,7 @@ import { createUuid } from '../services/id';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
 import { NAIParams, User } from '../types';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { useStaleGuard } from './useStaleGuard';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { useMobileHistoryLayer } from './MobileUI';
@@ -87,6 +88,9 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   const queryRef = useRef(query);
   const pageRef = useRef(page);
   const appendingRef = useRef(false);
+  // 非追加 load 的竞态守卫：快速连续搜索/跳页时，慢的旧响应会覆盖新结果——
+  // 迟到的响应一律丢弃（组件卸载后同样不再写状态）。
+  const loadGuard = useStaleGuard();
 
   const selected = useMemo(() => items.find(item => item.id === selectedId) || null, [items, selectedId]);
   const closeMobileDetail = useMobileHistoryLayer(Boolean(selected), () => setSelectedId(null), 'danbooru-detail');
@@ -103,10 +107,12 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   };
 
   const load = async (nextQuery = query, nextPage = page) => {
+    const mySeq = loadGuard.begin();
     setLoading(true);
     setError('');
     try {
       const result = await danbooruService.search({ query: nextQuery, page: nextPage, limit: PAGE_SIZE });
+      if (!loadGuard.isCurrent(mySeq)) return;
       setItems(result.items);
       setHasMore(result.hasMore);
       setQuery(result.query);
@@ -118,6 +124,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       prewarmSources(result.items.map(item => item.sampleUrl));
       requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; });
     } catch (loadError) {
+      if (!loadGuard.isCurrent(mySeq)) return;
       const message = loadError instanceof Error ? loadError.message : 'Danbooru 查询失败';
       setError(message);
       notify(message, 'error');

@@ -1,7 +1,7 @@
 {
   "name": "nai-prompt-manager",
   "private": true,
-  "version": "0.79.17",
+  "version": "0.79.18",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -36,6 +36,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250214.0",
     "@tailwindcss/vite": "^4.0.0",
+    "@testing-library/react": "^16.3.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
@@ -45,6 +46,7 @@
     "esbuild": "^0.25.0",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^5.2.0",
+    "jsdom": "^26.1.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.67.0",
