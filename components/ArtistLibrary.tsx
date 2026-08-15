@@ -319,6 +319,12 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     const [failedTasks, setFailedTasks] = useState<GenTask[]>([]); // New: Failed Queue
     const [isProcessing, setIsProcessing] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
+    // 队列生命周期：卸载后不再启动新任务（进行中的生成允许完成并落库，避免浪费已扣费额度）；
+    // 暂停需要用 ref 才能在节流等待结束时被旧闭包感知。
+    const queueAliveRef = useRef(true);
+    const isPausedRef = useRef(false);
+    useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
+    useEffect(() => () => { queueAliveRef.current = false; }, []);
     const [currentTask, setCurrentTask] = useState<GenTask | null>(null);
 
     // Logs System
@@ -821,6 +827,12 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
             // Use configured interval, default to 2000ms if missing
             const delay = config.interval && config.interval > 500 ? config.interval : 2000;
             await new Promise(res => setTimeout(res, delay));
+
+            // 等待期间组件已卸载或队列被暂停：不再启动新的生成
+            if (!queueAliveRef.current || isPausedRef.current) {
+                setIsProcessing(false);
+                return;
+            }
 
             const task = taskQueue[0];
             setCurrentTask(task);
