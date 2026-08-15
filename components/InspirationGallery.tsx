@@ -74,8 +74,27 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     return Array.from(tagCounts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 80);
   }, [items]);
 
+  // 搜索防抖：击键不再即时触发对全量 items 的过滤重算
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search), 250);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  // 侧栏来源计数与板名查找：避免每次渲染 O(来源数×items) 与每卡 O(boards)
+  const sourceCounts = useMemo(() => {
+    const result: Record<string, number> = {};
+    items.forEach(item => {
+      if (item.archived) return;
+      const key = item.sourceType || 'other';
+      result[key] = (result[key] || 0) + 1;
+    });
+    return result;
+  }, [items]);
+  const boardNameById = useMemo(() => new Map(boards.map(board => [board.id, board.name])), [boards]);
+
   const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const query = debouncedSearch.trim().toLowerCase();
     return items.filter(item => {
       if (collection === 'archived') { if (!item.archived) return false; } else if (item.archived) return false;
       if (collection === 'unorganized' && (item.boardId || (item.tags || []).length || item.notes)) return false;
@@ -94,7 +113,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       if (sort === 'rating') return (b.rating || 0) - (a.rating || 0);
       return b.createdAt - a.createdAt;
     });
-  }, [items, collection, boardId, tagFilter, ratingFilter, search, sort]);
+  }, [items, collection, boardId, tagFilter, ratingFilter, debouncedSearch, sort]);
 
   const setUploadValue = <K extends keyof UploadDraft>(key: K, value: UploadDraft[K]) => setUploadDraft(previous => ({ ...previous, [key]: value }));
   const refreshAll = async () => { setBusy('refresh'); try { await Promise.all([onRefresh(), loadBoards()]); } finally { setBusy(''); } };
@@ -205,7 +224,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         </div>
 
         <div className="mb-2 mt-6 px-2 text-[11px] font-black uppercase tracking-widest text-gray-400">来源</div>
-        <div className="space-y-1">{(['history', 'aitag', 'upload', 'agent', 'other'] as InspirationSourceType[]).map(source => { const SourceIcon = sourceIcon(source); return <CollectionButton key={source} active={collection === `source:${source}`} count={items.filter(item => !item.archived && (item.sourceType || 'other') === source).length} icon={<SourceIcon />} label={sourceLabel(source)} onClick={() => { setCollection(`source:${source}`); setBoardId(''); }} />; })}</div>
+        <div className="space-y-1">{(['history', 'aitag', 'upload', 'agent', 'other'] as InspirationSourceType[]).map(source => { const SourceIcon = sourceIcon(source); return <CollectionButton key={source} active={collection === `source:${source}`} count={sourceCounts[source] || 0} icon={<SourceIcon />} label={sourceLabel(source)} onClick={() => { setCollection(`source:${source}`); setBoardId(''); }} />; })}</div>
       </aside>
 
       <main className="min-w-0 flex-1 overflow-y-auto">
@@ -230,7 +249,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
                 <button type="button" onClick={() => toggleSelected(item.id)} className={`absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border backdrop-blur ${item.isPinned ? 'top-11' : ''} ${selected ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/50 bg-black/35 text-white opacity-100 md:opacity-0 md:group-hover:opacity-100'}`} aria-label="选择灵感">{selected ? <Check className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}</button>
                 {item.archived && <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/45"><span className="rounded-full bg-black/70 px-3 py-1.5 text-xs font-bold text-white">已归档</span></div>}
               </div>
-              <button type="button" onClick={() => setDetail(item)} className="min-w-0 flex-1 p-3 text-left"><div className="flex items-start gap-2"><h3 className="min-w-0 flex-1 truncate text-sm font-black text-gray-950 dark:text-white">{item.title}</h3>{(item.rating || 0) > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-amber-500"><Star className="h-3 w-3 fill-current" />{item.rating}</span>}</div>{item.notes ? <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-gray-500 dark:text-gray-400">{item.notes}</p> : <p className="mt-1 truncate font-mono text-[10px] text-gray-400">{item.prompt || '尚未填写 Prompt'}</p>}{(item.tags || []).length > 0 && <div className="mt-2 flex gap-1 overflow-hidden">{item.tags?.slice(0, 3).map(tag => <span key={tag} className="max-w-24 truncate rounded-md bg-gray-100 px-1.5 py-0.5 text-[9px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">#{tag}</span>)}{(item.tags?.length || 0) > 3 && <span className="text-[9px] text-gray-400">+{(item.tags?.length || 0) - 3}</span>}</div>}<div className="mt-2 flex items-center justify-between text-[10px] text-gray-400"><span>{boards.find(board => board.id === item.boardId)?.name || '未整理'}</span><span>使用 {item.useCount || 0} 次</span></div></button>
+              <button type="button" onClick={() => setDetail(item)} className="min-w-0 flex-1 p-3 text-left"><div className="flex items-start gap-2"><h3 className="min-w-0 flex-1 truncate text-sm font-black text-gray-950 dark:text-white">{item.title}</h3>{(item.rating || 0) > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-amber-500"><Star className="h-3 w-3 fill-current" />{item.rating}</span>}</div>{item.notes ? <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-gray-500 dark:text-gray-400">{item.notes}</p> : <p className="mt-1 truncate font-mono text-[10px] text-gray-400">{item.prompt || '尚未填写 Prompt'}</p>}{(item.tags || []).length > 0 && <div className="mt-2 flex gap-1 overflow-hidden">{item.tags?.slice(0, 3).map(tag => <span key={tag} className="max-w-24 truncate rounded-md bg-gray-100 px-1.5 py-0.5 text-[9px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">#{tag}</span>)}{(item.tags?.length || 0) > 3 && <span className="text-[9px] text-gray-400">+{(item.tags?.length || 0) - 3}</span>}</div>}<div className="mt-2 flex items-center justify-between text-[10px] text-gray-400"><span>{boardNameById.get(item.boardId || '') || '未整理'}</span><span>使用 {item.useCount || 0} 次</span></div></button>
             </MediaCardShell>;
           })}
         </div> : <div className="flex min-h-[45vh] flex-col items-center justify-center px-6 text-center"><div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-indigo-50 text-indigo-500 dark:bg-indigo-950/40"><Sparkles className="h-8 w-8" /></div><h3 className="mt-4 text-lg font-black text-gray-900 dark:text-white">这里还没有匹配的灵感</h3><p className="mt-2 max-w-sm text-sm text-gray-500">从生成历史快速收藏，再在这里补充板、标签和备注；也可以直接上传参考图。</p><button type="button" onClick={() => setUploadOpen(true)} className="mt-5 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white">加入第一条灵感</button></div>}

@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 优化：灵感页搜索防抖与派生计算 memo
+
+- 搜索框此前每击键一次就对全量 items 做一次含 prompt/notes 大文本拼接的过滤重算，现在 250ms 防抖；侧栏来源计数从"每次渲染 × 每来源遍历全表"改为一次 useMemo 聚合；每张卡片的板名查找从 O(boards) 的 find 改为预构建的 Map。大库（几百上千条）下筛选与勾选操作的重渲染成本显著下降。
+
 ### 优化：灵感卡片缩略图管道修真 + 加载策略修正
 
 - 排查发现灵感卡片的"thumb-320"完全空转：`/api/inspirations/{id}/image` 不在客户端 canUseMediaGateway、网关 getValidatedSource、worker MEDIA_INTERNAL_SOURCE 三处内部路径白名单里，历史收藏类灵感的卡片一直在直拉 R2 完整原图。现在三处白名单同步放行（附回归测试），卡片真正走网关缩略图，详情页仍看原图。
