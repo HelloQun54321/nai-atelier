@@ -113,7 +113,7 @@ export const parseNovelAIMetadata = (
 
     let prompt: string = rawMetadata;
     let negative: string = '';
-    let newParams: NAIParams = { ...defaultParams };
+    const newParams: NAIParams = { ...defaultParams };
 
     // ---- 格式分流 ----
     if (rawMetadata.trim().startsWith('{')) {

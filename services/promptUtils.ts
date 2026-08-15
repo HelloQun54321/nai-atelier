@@ -26,7 +26,7 @@ export const compilePrompt = (
   subjectPrompt: string = '',
   activeModulesOnly: boolean = true
 ): string => {
-  let promptParts: string[] = [];
+  const promptParts: string[] = [];
 
   // 1. Add Base Prompt
   if (chain.basePrompt && chain.basePrompt.trim()) {

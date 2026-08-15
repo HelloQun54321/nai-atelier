@@ -26,7 +26,7 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   let finalNegative = negative;
   const presetId = params.ucPreset ?? 0;
   if (presetId !== 4) { // 4 is 'None'
-    // @ts-ignore - Index access is safe here as UI restricts values
+    // @ts-expect-error - Index access is safe here as UI restricts values
     const presetString = NAI_UC_PRESETS[presetId];
     if (presetString) {
       finalNegative = presetString + finalNegative;

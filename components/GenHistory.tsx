@@ -217,8 +217,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             return inflight;
         }
 
-        let request: Promise<LocalHistoryPage>;
-        request = localHistory.getPage(page - 1, PAGE_SIZE, dateRangeRef.current, includeCount)
+        // then/catch 回调执行时 const 已完成赋值，自引用比较安全
+        const request: Promise<LocalHistoryPage> = localHistory.getPage(page - 1, PAGE_SIZE, dateRangeRef.current, includeCount)
             .then(data => {
                 if (inflightPagesRef.current[cacheKey] === request) {
                     delete inflightPagesRef.current[cacheKey];

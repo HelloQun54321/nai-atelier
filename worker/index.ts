@@ -4773,7 +4773,7 @@ export default {
         }
 
         // Process benchmarks - handle both Base64 and external URLs
-        let benchmarks = body.benchmarks || [];
+        const benchmarks = body.benchmarks || [];
         if (Array.isArray(benchmarks)) {
             for (let i = 0; i < benchmarks.length; i++) {
                 if (benchmarks[i] && benchmarks[i].startsWith('data:')) {

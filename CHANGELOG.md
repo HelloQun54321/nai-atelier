@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 工程化：引入 ESLint 质量门禁
+
+- 新增 ESLint 9 扁平配置（typescript-eslint 推荐 + react-hooks 规则）与 `npm run lint` 命令：**0 错误**，327 个警告（约 287 处 any、27 处 hooks 依赖告警）作为后续逐步收敛的清单。规则取向：只开正确性检查、不管风格——与本库 `cond && effect()` 惯用写法和不用的对齐参数兼容。顺手清理：`.wrangler` 构建缓存纳入忽略、4 处 prefer-const、1 处 @ts-ignore 改 @ts-expect-error、历史页缓存请求的自引用 let 改 const。
+
 ### 工程化：TypeScript 开启 strict 模式
 
 - 全项目类型检查从宽松切换到 `strict: true`。迁移中共修复 19 处类型错误，其中包含一个真实潜伏 bug：灵感来源标签映射表缺少 `pixiv` 键（Pixiv 来源的灵感标签会显示为 undefined）。其余为索引类型声明错误、死默认值、可空参数收紧与隐式 any 标注。
