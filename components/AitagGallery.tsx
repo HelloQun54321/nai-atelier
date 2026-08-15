@@ -22,8 +22,9 @@ import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './Mo
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { ArrowLeft, Filter, Menu, RefreshCw, Search, X } from 'lucide-react';
-import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { ExternalLink, Filter, FlaskConical, Menu, Package, RefreshCw, Search, Star } from 'lucide-react';
+import { IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { DetailSidePanel } from './DetailPanel';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { buildMediaUrl } from '../services/mobileImageCache';
 
@@ -1150,7 +1151,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         <main
           ref={mainScrollRef}
           onScroll={cacheScrollPositions}
-          className="min-h-0 overflow-y-auto p-4 md:p-6"
+          className={`${selectedWork ? 'hidden xl:block' : 'block'} min-h-0 overflow-y-auto p-4 md:p-6`}
         >
           {error && (
             <div className={`mb-4 rounded border px-4 py-3 text-sm ${
@@ -1246,56 +1247,38 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           </div>
         </main>
 
-        <aside className={`aitag-detail-panel ${selectedWork ? 'aitag-detail-panel--open flex md:flex' : 'aitag-detail-panel--closed hidden md:hidden'} fixed inset-0 z-[1050] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:static md:z-auto md:border-t xl:border-l xl:border-t-0`}>
-          <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-            <div className="flex min-w-0 items-center gap-1">
-              <MobileIconButton label="返回作品列表" onClick={closeMobileDetail} className="aitag-detail-back md:hidden"><ArrowLeft className="h-5 w-5" /></MobileIconButton>
-              <div className="min-w-0">
-              <div className="font-bold text-gray-900 dark:text-white truncate max-w-[300px]">
-                {selectedWork?.title || '作品详情'}
-              </div>
-              {selectedWork && (
-                <div className="text-xs text-gray-500 mt-0.5">#{selectedWork.id} · {getAitagType(selectedWork)}</div>
-              )}
-              </div>
+        <DetailSidePanel
+          open={Boolean(selectedWork)}
+          title={selectedWork?.title || '作品详情'}
+          subInfo={selectedWork ? `#${selectedWork.id} · ${getAitagType(selectedWork)}` : undefined}
+          onBack={closeMobileDetail}
+          onClose={() => setSelectedId(null)}
+          bodyRef={detailScrollRef}
+          onBodyScroll={cacheScrollPositions}
+        >
+          {!selectedWork ? (
+            <div className="h-full flex items-center justify-center text-sm text-gray-400 text-center px-6">
+              选择左侧作品后，这里会显示所有图片和操作按钮
             </div>
-            {selectedWork && (
-              <div className="flex items-center gap-2">
-                <a href={getAitagUrl(selectedWork)} target="_blank" rel="noreferrer" className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 text-xs hover:bg-gray-200 dark:hover:bg-gray-700">
-                  aitag
-                </a>
-                <a href={getPixivUrl(selectedWork)} target="_blank" rel="noreferrer" className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 text-xs hover:bg-gray-200 dark:hover:bg-gray-700">
-                  Pixiv
-                </a>
-                <button type="button" onClick={() => setSelectedId(null)} className="hidden h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200 md:flex" aria-label="关闭作品详情" title="关闭作品详情"><X className="h-4 w-4" /></button>
+          ) : isDetailLoading && !selectedDetail ? (
+            <div className="h-full flex items-center justify-center text-sm text-gray-400">加载详情中...</div>
+          ) : selectedDetail ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-2">
+                <ToolbarLink href={getAitagUrl(selectedWork)} target="_blank" rel="noreferrer"><ExternalLink />aitag 原页</ToolbarLink>
+                <ToolbarLink href={getPixivUrl(selectedWork)} target="_blank" rel="noreferrer"><ExternalLink />Pixiv 原页</ToolbarLink>
               </div>
-            )}
-          </div>
-
-          <div
-            ref={detailScrollRef}
-            onScroll={cacheScrollPositions}
-            className="flex-1 min-h-0 overflow-y-auto p-4"
-          >
-            {!selectedWork ? (
-              <div className="h-full flex items-center justify-center text-sm text-gray-400 text-center px-6">
-                选择左侧作品后，这里会显示所有图片和操作按钮
-              </div>
-            ) : isDetailLoading && !selectedDetail ? (
-              <div className="h-full flex items-center justify-center text-sm text-gray-400">加载详情中...</div>
-            ) : selectedDetail ? (
-              <div className="space-y-4">
-                {selectedDetail.images
-                  .slice()
-                  .sort((a, b) => a.file_name.localeCompare(b.file_name, undefined, { numeric: true }))
-                  .map((image, index) => {
+              {selectedDetail.images
+                .slice()
+                .sort((a, b) => a.file_name.localeCompare(b.file_name, undefined, { numeric: true }))
+                .map((image, index) => {
                     const promptText = extractAitagPrompt(image);
                     const generationLabels = getAitagGenerationLabels(image);
                     const modelLabel = getAitagModelLabel(image);
 
                     return (
-                      <div key={image.id || `${image.work_id}-${image.file_name}`} className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-hidden">
-                        <OriginalImage src={buildAitagImageUrl(image)} alt="" className="w-full max-h-[520px] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
+                      <div key={image.id || `${image.work_id}-${image.file_name}`} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-hidden">
+                        <OriginalImage src={buildAitagImageUrl(image)} alt="" className="w-full max-h-[62vh] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
                         <div className="p-3 space-y-3">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0 space-y-1.5">
@@ -1312,37 +1295,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                                 P{index + 1}{modelLabel ? ` · ${modelLabel}` : ''}
                               </div>
                             </div>
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => saveAsArtistChain(image, index)}
-                                title="保存到画师串"
-                                aria-label="保存到画师串"
-                                className="w-10 h-10 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center shadow transition-colors"
-                              >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                                </svg>
-                              </button>
-                              <button
-                                onClick={() => saveToInspiration(image, index)}
-                                title="加入灵感库"
-                                aria-label="加入灵感库"
-                                className="w-10 h-10 rounded-lg bg-amber-500 hover:bg-amber-400 text-white flex items-center justify-center shadow transition-colors"
-                              >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.957a1 1 0 00.95.69h4.16c.969 0 1.371 1.24.588 1.81l-3.365 2.444a1 1 0 00-.364 1.118l1.285 3.956c.3.922-.755 1.688-1.539 1.118l-3.365-2.444a1 1 0 00-1.176 0L8.046 18.02c-.784.57-1.838-.196-1.539-1.118l1.285-3.956a1 1 0 00-.364-1.118L4.063 9.384c-.783-.57-.38-1.81.588-1.81h4.16a1 1 0 00.95-.69l1.286-3.957z" />
-                                </svg>
-                              </button>
-                              <button
-                                onClick={() => importToPlayground(image)}
-                                title="导入实验室"
-                                aria-label="导入实验室"
-                                className="w-10 h-10 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shadow transition-colors"
-                              >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3h6m-5 0v5.5L4.8 18.1A2 2 0 006.55 21h10.9a2 2 0 001.75-2.9L14 8.5V3m-4 10h4" />
-                                </svg>
-                              </button>
+                            <div className="flex flex-none gap-2">
+                              <IconButton label="保存到画师串" onClick={() => saveAsArtistChain(image, index)}><Package /></IconButton>
+                              <IconButton label="加入灵感库" tone="favorite" onClick={() => saveToInspiration(image, index)}><Star /></IconButton>
+                              <IconButton label="导入实验室" tone="primary" onClick={() => importToPlayground(image)}><FlaskConical /></IconButton>
                               <ImageTaggerAction
                                 notify={notify}
                                 imageUrl={image.local_image_url || buildMediaUrl(buildAitagImageUrl(image), 'original')}
@@ -1358,17 +1314,16 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                       </div>
                     );
                   })}
-                {selectedDetail.isPreviewOnly && (
-                  <div className="rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30 px-3 py-2 text-xs text-sky-700 dark:text-sky-200">
-                    已显示本地首图，正在加载完整作品组...
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-sm text-gray-400">详情加载失败</div>
-            )}
-          </div>
-        </aside>
+              {selectedDetail.isPreviewOnly && (
+                <div className="rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30 px-3 py-2 text-xs text-sky-700 dark:text-sky-200">
+                  已显示本地首图，正在加载完整作品组...
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-sm text-gray-400">详情加载失败</div>
+          )}
+        </DetailSidePanel>
       </div>
     </div>
   );

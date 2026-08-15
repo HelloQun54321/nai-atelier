@@ -1,5 +1,5 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Copy, ExternalLink, FlaskConical, Heart, RefreshCw, Search, X } from 'lucide-react';
+import { Copy, ExternalLink, FlaskConical, Heart, RefreshCw, Search } from 'lucide-react';
 import {
   DanbooruPost,
   DanbooruTagCategory,
@@ -14,7 +14,8 @@ import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataServi
 import { NAIParams, User } from '../types';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
@@ -360,36 +361,34 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
           </div>
         </main>
 
-        <aside className={`aitag-detail-panel ${selected ? 'aitag-detail-panel--open flex' : 'aitag-detail-panel--closed hidden'} fixed inset-0 z-[1050] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 xl:static xl:z-auto xl:border-l`}>
-          <div className="flex h-14 flex-none items-center justify-between border-b border-gray-200 px-3 dark:border-gray-800">
-            <div className="flex min-w-0 items-center gap-2">
-              <button type="button" onClick={closeMobileDetail} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 xl:hidden" aria-label="返回"><ArrowLeft className="h-5 w-5" /></button>
-              <div className="min-w-0"><p className="truncate text-sm font-bold">{selected ? `Danbooru #${selected.id}` : '作品详情'}</p>{selected && <p className="text-[10px] text-gray-500">{selected.width}×{selected.height} · {selected.fileExt.toUpperCase()}</p>}</div>
+        <DetailSidePanel
+          open={Boolean(selected)}
+          title={selected ? `Danbooru #${selected.id}` : '作品详情'}
+          subInfo={selected ? `${selected.width}×${selected.height} · ${selected.fileExt.toUpperCase()}` : undefined}
+          onBack={closeMobileDetail}
+          onClose={() => setSelectedId(null)}
+        >
+          {selected ? <div className="space-y-4">
+            <DetailImageStage>
+              <OriginalImage src={selected.sampleUrl} alt={`Danbooru #${selected.id}`} className="max-h-[62vh] w-full object-contain" />
+            </DetailImageStage>
+            <div className="grid grid-cols-2 gap-2">
+              <ToolbarButton tone="primary" onClick={() => importToPlayground(selected)}><FlaskConical />导入实验室</ToolbarButton>
+              <ToolbarButton disabled={saving} onClick={() => void saveToInspiration(selected)}><Heart />{saving ? '保存中…' : '加入灵感'}</ToolbarButton>
+              <ToolbarButton onClick={() => void copyPrompt(selected)}><Copy />复制生图 Tag</ToolbarButton>
+              <ToolbarLink href={selected.postUrl} target="_blank" rel="noreferrer"><ExternalLink />查看原帖</ToolbarLink>
             </div>
-            <button type="button" onClick={() => setSelectedId(null)} className="hidden h-9 w-9 items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 xl:flex" aria-label="关闭"><X className="h-4 w-4" /></button>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            {selected ? <div className="space-y-4">
-              <div className="overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30"><OriginalImage src={selected.sampleUrl} alt={`Danbooru #${selected.id}`} className="max-h-[62vh] w-full object-contain" /></div>
-              <div className="grid grid-cols-2 gap-2">
-                <ToolbarButton tone="primary" onClick={() => importToPlayground(selected)}><FlaskConical />导入实验室</ToolbarButton>
-                <ToolbarButton disabled={saving} onClick={() => void saveToInspiration(selected)}><Heart />{saving ? '保存中…' : '加入灵感'}</ToolbarButton>
-                <ToolbarButton onClick={() => void copyPrompt(selected)}><Copy />复制生图 Tag</ToolbarButton>
-                <a href={selected.postUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><ExternalLink className="h-4 w-4" />查看原帖</a>
-              </div>
-              <div className="flex items-center gap-2">
-                <ImageTaggerAction notify={notify} imageUrl={buildMediaUrl(selected.sampleUrl, 'original')} actionLabel="复制 {count} 个 Tag" />
-                <span className="text-[11px] text-gray-500">反推当前图片（本地识别）</span>
-              </div>
-              <button type="button" onClick={() => void copyAll(selected)} className="text-xs font-bold text-indigo-600 hover:text-indigo-500 dark:text-indigo-300">复制包含元数据的全部 Tag</button>
-              {(Object.keys(categoryLabels) as DanbooruTagCategory[]).map(category => selected.tags[category].length > 0 && <section key={category}>
-                <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-black text-gray-700 dark:text-gray-200">{categoryLabels[category]} · {selected.tags[category].length}</h3><button type="button" onClick={() => void copyText(selected.tags[category].join(', ')).then(() => notify(`已复制${categoryLabels[category]} Tag`))} className="text-[10px] text-gray-500 hover:text-indigo-500">复制</button></div>
-                <div className="flex flex-wrap gap-1.5">{selected.tags[category].map(tag => <button key={tag} type="button" onClick={() => { setInput(tag.replaceAll('_', ' ')); void load(`${tag} order:score`, 1); }} className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] text-gray-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">{tag.replaceAll('_', ' ')}</button>)}</div>
-              </section>)}
-            </div> : <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">选择一张作品后查看图片、Tag 和导入操作。</div>}
-          </div>
-        </aside>
+            <div className="flex items-center gap-2">
+              <ImageTaggerAction notify={notify} imageUrl={buildMediaUrl(selected.sampleUrl, 'original')} actionLabel="复制 {count} 个 Tag" />
+              <span className="text-[11px] text-gray-500">反推当前图片（本地识别）</span>
+            </div>
+            <button type="button" onClick={() => void copyAll(selected)} className="text-xs font-bold text-indigo-600 hover:text-indigo-500 dark:text-indigo-300">复制包含元数据的全部 Tag</button>
+            {(Object.keys(categoryLabels) as DanbooruTagCategory[]).map(category => selected.tags[category].length > 0 && <section key={category}>
+              <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-black text-gray-700 dark:text-gray-200">{categoryLabels[category]} · {selected.tags[category].length}</h3><button type="button" onClick={() => void copyText(selected.tags[category].join(', ')).then(() => notify(`已复制${categoryLabels[category]} Tag`))} className="text-[10px] text-gray-500 hover:text-indigo-500">复制</button></div>
+              <TagChipGroup chips={selected.tags[category].map(tag => ({ label: tag.replaceAll('_', ' '), onClick: () => { setInput(tag.replaceAll('_', ' ')); void load(`${tag} order:score`, 1); } }))} />
+            </section>)}
+          </div> : <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">选择一张作品后查看图片、Tag 和导入操作。</div>}
+        </DetailSidePanel>
       </div>
     </div>
   );

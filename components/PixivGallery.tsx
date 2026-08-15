@@ -1,11 +1,12 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, CircleUserRound, ExternalLink, FlaskConical, Heart, KeyRound, LogIn, RefreshCw, Search, Unplug, X } from 'lucide-react';
+import { CircleUserRound, ExternalLink, FlaskConical, Heart, KeyRound, LogIn, RefreshCw, Search, Unplug, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { createUuid } from '../services/id';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { NAIParams, User } from '../types';
 import { IconButton, MediaCardShell, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
@@ -650,60 +651,46 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
           </div>}
         </main>
 
-        <aside className={`aitag-detail-panel ${selected ? 'aitag-detail-panel--open flex' : 'aitag-detail-panel--closed hidden'} fixed inset-0 z-[1050] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 xl:static xl:z-auto xl:border-l`}>
-          <div className="flex h-14 flex-none items-center justify-between border-b border-gray-200 px-3 dark:border-gray-800">
-            <div className="flex min-w-0 items-center gap-2">
-              <IconButton label="返回" onClick={closeMobileDetail} className="mobile-touch xl:hidden"><ArrowLeft /></IconButton>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold">{selected ? selected.title : '作品详情'}</p>
-                {selected && <p className="truncate text-[10px] text-gray-500">Pixiv #{selected.id} · {selected.width}×{selected.height} · {currentPageCount} 页</p>}
-              </div>
+        <DetailSidePanel
+          open={Boolean(selected)}
+          title={selected ? selected.title : '作品详情'}
+          subInfo={selected ? `Pixiv #${selected.id} · ${selected.width}×${selected.height} · ${currentPageCount} 页` : undefined}
+          onBack={closeMobileDetail}
+          onClose={() => setSelectedId(null)}
+        >
+          {selected ? <div className="space-y-4">
+            <DetailImageStage pager={{ page: selectedPage, count: currentPageCount, onPrev: () => setSelectedPage(value => Math.max(0, value - 1)), onNext: () => setSelectedPage(value => Math.min(currentPageCount - 1, value + 1)) }}>
+              <SmartImage
+                eager
+                src={buildPixivPreviewMediaUrl(selected, selectedPage)}
+                upgradeSrc={buildPixivMediaUrl(selected, selectedPage, 'original')}
+                upgradeVariant="original"
+                alt={`${selected.title} 第 ${selectedPage + 1} 页`}
+                className="max-h-[62vh] w-full object-contain"
+              />
+            </DetailImageStage>
+            {selected.type === 'ugoira' && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">动图（ugoira）：这里展示首帧，动画请到 Pixiv 查看。</div>}
+            <div className="flex items-center justify-between text-[11px] text-gray-500">
+              <span>♥ {formatCount(selected.totalBookmarks)}</span>
+              <span>浏览 {formatCount(selected.totalViews)}</span>
+              <span>{selected.user.name}</span>
             </div>
-            <IconButton label="关闭" onClick={() => setSelectedId(null)} className="hidden xl:inline-flex"><X /></IconButton>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            {selected ? <div className="space-y-4">
-              <div className="overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">
-                <SmartImage
-                  eager
-                  src={buildPixivPreviewMediaUrl(selected, selectedPage)}
-                  upgradeSrc={buildPixivMediaUrl(selected, selectedPage, 'original')}
-                  upgradeVariant="original"
-                  alt={`${selected.title} 第 ${selectedPage + 1} 页`}
-                  className="max-h-[62vh] w-full object-contain"
-                />
-              </div>
-              {currentPageCount > 1 && (
-                <div className="flex items-center justify-center gap-3">
-                  <IconButton label="上一页" disabled={selectedPage <= 0} onClick={() => setSelectedPage(value => Math.max(0, value - 1))}><ChevronLeft /></IconButton>
-                  <span className="text-xs font-bold text-gray-500">{selectedPage + 1} / {currentPageCount}</span>
-                  <IconButton label="下一页" disabled={selectedPage >= currentPageCount - 1} onClick={() => setSelectedPage(value => Math.min(currentPageCount - 1, value + 1))}><ChevronRight /></IconButton>
-                </div>
-              )}
-              {selected.type === 'ugoira' && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">动图（ugoira）：这里展示首帧，动画请到 Pixiv 查看。</div>}
-              <div className="flex items-center justify-between text-[11px] text-gray-500">
-                <span>♥ {formatCount(selected.totalBookmarks)}</span>
-                <span>浏览 {formatCount(selected.totalViews)}</span>
-                <span>{selected.user.name}</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <ToolbarButton tone="primary" onClick={() => importToPlayground(selected)}><FlaskConical />导入实验室</ToolbarButton>
-                <ToolbarButton disabled={saving} onClick={() => void saveToInspiration(selected)}><Heart />{saving ? '保存中…' : '加入灵感'}</ToolbarButton>
-                <ToolbarButton onClick={() => openAuthorWorks(selected.user.id, selected.user.name)}><CircleUserRound />作者作品</ToolbarButton>
-                <ToolbarLink href={pixivArtworkUrl(selected)} target="_blank" rel="noreferrer"><ExternalLink />打开 Pixiv</ToolbarLink>
-              </div>
-              <div className="flex items-center gap-2">
-                <ImageTaggerAction notify={notify} imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} actionLabel="复制 {count} 个 Tag" />
-                <span className="text-[11px] text-gray-500">反推当前页图片（本地识别）</span>
-              </div>
-              {selected.tags.length > 0 && <section>
-                <h3 className="mb-2 text-xs font-black text-gray-700 dark:text-gray-200">标签 · {selected.tags.length}</h3>
-                <div className="flex flex-wrap gap-1.5">{selected.tags.map(tag => <button key={tag} type="button" onClick={() => { setSearchInput(tag); void loadFeed('search', { word: tag }); }} className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] text-gray-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">{tag}</button>)}</div>
-              </section>}
-            </div> : <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">选择一张作品后查看图片、分页和导入操作。</div>}
-          </div>
-        </aside>
+            <div className="grid grid-cols-2 gap-2">
+              <ToolbarButton tone="primary" onClick={() => importToPlayground(selected)}><FlaskConical />导入实验室</ToolbarButton>
+              <ToolbarButton disabled={saving} onClick={() => void saveToInspiration(selected)}><Heart />{saving ? '保存中…' : '加入灵感'}</ToolbarButton>
+              <ToolbarButton onClick={() => openAuthorWorks(selected.user.id, selected.user.name)}><CircleUserRound />作者作品</ToolbarButton>
+              <ToolbarLink href={pixivArtworkUrl(selected)} target="_blank" rel="noreferrer"><ExternalLink />打开 Pixiv</ToolbarLink>
+            </div>
+            <div className="flex items-center gap-2">
+              <ImageTaggerAction notify={notify} imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} actionLabel="复制 {count} 个 Tag" />
+              <span className="text-[11px] text-gray-500">反推当前页图片（本地识别）</span>
+            </div>
+            {selected.tags.length > 0 && <section>
+              <h3 className="mb-2 text-xs font-black text-gray-700 dark:text-gray-200">标签 · {selected.tags.length}</h3>
+              <TagChipGroup chips={selected.tags.map(tag => ({ label: tag, onClick: () => { setSearchInput(tag); void loadFeed('search', { word: tag }); } }))} />
+            </section>}
+          </div> : <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">选择一张作品后查看图片、分页和导入操作。</div>}
+        </DetailSidePanel>
       </div>
     </div>
   );

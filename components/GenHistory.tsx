@@ -14,7 +14,7 @@ import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, ListChecks, LoaderCircle, RefreshCw, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
-import { IconButton, ToolbarButton, WorkspaceToolbar } from './DesignSystem';
+import { IconButton, ToolbarButton, ToolbarLink, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 
@@ -1124,14 +1124,10 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
                             <div className="border-t border-gray-200 dark:border-gray-800 pt-4 mt-4 space-y-3 flex-shrink-0">
                                 {/* 导入到编辑器 */}
-                                <button
-                                    onClick={handleImportToEditor}
-                                    disabled={isPreparingImport}
-                                className="w-full flex items-center justify-center gap-2 rounded-lg bg-indigo-600 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:cursor-wait disabled:opacity-60"
-                                >
-                                    <Save className="h-4 w-4" />
+                                <ToolbarButton tone="primary" className="w-full" onClick={handleImportToEditor} disabled={isPreparingImport}>
+                                    <Save />
                                     {isPreparingImport ? '正在读取元数据...' : '导入到编辑器'}
-                                </button>
+                                </ToolbarButton>
 
                                 <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
                                     <label className="block text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-2">加入灵感库</label>
@@ -1143,24 +1139,16 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                             value={publishTitle}
                                             onChange={e => setPublishTitle(e.target.value)}
                                         />
-                                        <button
-                                            onClick={handlePublish}
-                                            disabled={isPublishing}
-                                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-sm font-bold whitespace-nowrap disabled:opacity-50 transition-colors shadow-sm"
-                                        >
+                                        <ToolbarButton tone="primary" onClick={handlePublish} disabled={isPublishing} className="whitespace-nowrap">
                                             {isPublishing ? '整理中' : '加入'}
-                                        </button>
+                                        </ToolbarButton>
                                     </div>
                                 </div>
-                                <a
-                                    href={lightbox.imageUrl}
-                                    download={getDownloadFilename()}
-                                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-gray-800 hover:bg-gray-700 dark:bg-white dark:hover:bg-gray-100 text-white dark:text-gray-900 rounded-lg text-sm font-bold transition-colors shadow-lg"
-                                >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                <ToolbarLink href={lightbox.imageUrl} download={getDownloadFilename()} className="w-full">
+                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                     下载原图
-                                </a>
-                                <button onClick={event => void handleDelete(lightbox.id, event)} className="mobile-touch w-full rounded-lg bg-red-50 text-sm font-bold text-red-600 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400 md:hidden">删除这张历史图片</button>
+                                </ToolbarLink>
+                                <ToolbarButton tone="danger" className="mobile-touch w-full md:hidden" onClick={event => void handleDelete(lightbox.id, event)}>删除这张历史图片</ToolbarButton>
                             </div>
                         </div>
                     </div>
