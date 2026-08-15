@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 重构：删除 worker 中的 no-op 审计日志体系（-597 行）
+
+- `writeSystemLog`/`incrementDailyStat`/`logAccess` 函数体开头即 return（多用户时代的审计日志在个人模式被有意禁用），但 43 个调用点仍在每次请求时 eagerly 构造 metadata 对象——纯浪费且严重误导维护者（看起来有审计，实际什么都不记）。本次删除全部调用点与函数定义及其专属助手（truncateLogString/sanitizeLogValue/stringifyLogMetadata/getClientIp/isMissingLogSchemaError/LOG_STRING_LIMIT），行为完全不变。
+
 ### 修复：pinned 封面缓存无总量上限，超限后反噬普通缩略图缓存
 
 - 固定封面（画师/角色 Tag 封面 pin 标记）此前不设上限：pinned 累计超过 1GB 后，LRU 淘汰的 900MB 目标永不达成，每轮都会清空全部普通缩略图（图库滚动体验退化），磁盘占用仍持续增长。现在 pinned 设 256MB 上限：超过时先按"最久未访问"淘汰固定封面到 200MB 以内再走常规淘汰，并输出告警日志。正常画师/角色数量级（每张数十 KB）远达不到该上限，行为不变。

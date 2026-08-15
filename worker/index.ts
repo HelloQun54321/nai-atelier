@@ -114,7 +114,6 @@ const AITAG_CACHE_DELAY_MAX_MS = 1200;
 const AITAG_CONFIG_VERSION = '260528a';
 const DANBOORU_BASE_URL = 'https://safebooru.donmai.us';
 const DANBOORU_MAX_PAGE_SIZE = 200;
-const LOG_STRING_LIMIT = 600;
 const LAN_ACCESS_COOKIE = 'nai_lan_access';
 const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const lanAccessAttempts = new Map<string, { failures: number; blockedUntil: number }>();
@@ -2057,61 +2056,6 @@ function isMissingColumnError(e: any): boolean {
   return msg.includes('no column named') || msg.includes('no such column');
 }
 
-function isMissingLogSchemaError(e: any): boolean {
-  if (!e || !e.message) return false;
-  const msg = e.message;
-  return isMissingColumnError(e) || msg.includes('no such table');
-}
-
-function getClientIp(request: Request) {
-  return request.headers.get('CF-Connecting-IP') ||
-         request.headers.get('X-Forwarded-For') ||
-         'unknown';
-}
-
-function truncateLogString(value: string) {
-  if (value.startsWith('data:image/')) {
-    return `[image data uri, ${value.length} chars]`;
-  }
-  if (value.length <= LOG_STRING_LIMIT) return value;
-  return `${value.slice(0, LOG_STRING_LIMIT)}... (${value.length} chars)`;
-}
-
-function sanitizeLogValue(value: any, depth = 0): any {
-  if (value === null || value === undefined) return value;
-  if (typeof value === 'string') return truncateLogString(value);
-  if (typeof value === 'number' || typeof value === 'boolean') return value;
-  if (depth >= 4) return '[depth limit]';
-  if (Array.isArray(value)) {
-    const mapped = value.slice(0, 30).map(item => sanitizeLogValue(item, depth + 1));
-    return value.length > 30 ? [...mapped, `[${value.length - 30} more items]`] : mapped;
-  }
-  if (typeof value === 'object') {
-    const result: Record<string, any> = {};
-    const entries = Object.entries(value).slice(0, 60);
-    for (const [key, item] of entries) {
-      if (/password|passcode|authorization|api[_-]?key|token|cookie|session/i.test(key)) {
-        result[key] = '[redacted]';
-      } else {
-        result[key] = sanitizeLogValue(item, depth + 1);
-      }
-    }
-    const totalKeys = Object.keys(value).length;
-    if (totalKeys > entries.length) result._truncatedKeys = totalKeys - entries.length;
-    return result;
-  }
-  return String(value);
-}
-
-function stringifyLogMetadata(metadata: any) {
-  if (metadata === undefined) return null;
-  try {
-    return JSON.stringify(sanitizeLogValue(metadata));
-  } catch {
-    return JSON.stringify({ value: '[unserializable]' });
-  }
-}
-
 async function ensureAccessLogsSchema(db: D1Database) {
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS access_logs (
@@ -2154,116 +2098,6 @@ async function ensureAccessLogsSchema(db: D1Database) {
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_access_logs_role ON access_logs(role)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_access_logs_category ON access_logs(category)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_access_logs_status ON access_logs(status)').run();
-}
-
-async function writeSystemLog(
-  db: D1Database,
-  options: {
-    user?: {id?: string, username?: string, role?: string} | null;
-    request: Request;
-    action: string;
-    category: string;
-    status?: 'success' | 'error' | 'warning';
-    resourceType?: string;
-    resourceId?: string | number | null;
-    message?: string;
-    metadata?: any;
-    durationMs?: number;
-  }
-) {
-  // Persistent audit logging is intentionally disabled in personal mode.
-  void db;
-  void options;
-  return;
-
-  const ip = options.request.headers.get('CF-Connecting-IP') ||
-             options.request.headers.get('X-Forwarded-For') ||
-             'unknown';
-  const userAgent = options.request.headers.get('User-Agent') || 'unknown';
-  const url = new URL(options.request.url);
-  const values = [
-    options.user?.id || 'anonymous',
-    options.user?.username || 'anonymous',
-    options.user?.role || 'anonymous',
-    ip,
-    userAgent.slice(0, 200),
-    options.action.slice(0, 120),
-    options.category.slice(0, 80),
-    options.status || 'success',
-    options.request.method,
-    url.pathname,
-    options.resourceType || null,
-    options.resourceId === undefined || options.resourceId === null ? null : String(options.resourceId).slice(0, 160),
-    options.message ? truncateLogString(options.message as string) : null,
-    stringifyLogMetadata(options.metadata),
-    options.durationMs ?? null,
-    Date.now(),
-  ];
-
-  try {
-    await db.prepare(
-      `INSERT INTO access_logs (
-        user_id, username, role, ip, user_agent, action, category, status, method, path,
-        resource_type, resource_id, message, metadata, duration_ms, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(...values).run();
-  } catch (e) {
-    if (isMissingLogSchemaError(e)) {
-      try {
-        await ensureAccessLogsSchema(db);
-        await db.prepare(
-          `INSERT INTO access_logs (
-            user_id, username, role, ip, user_agent, action, category, status, method, path,
-            resource_type, resource_id, message, metadata, duration_ms, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        ).bind(...values).run();
-        return;
-      } catch (retryError) {
-        console.error('Failed to log access after schema repair:', retryError);
-        return;
-      }
-    }
-    console.error('Failed to log access:', e);
-  }
-}
-
-// Helper: 记录登录日志
-async function logAccess(
-  db: D1Database,
-  user: {id: string, username: string, role: string},
-  request: Request,
-  action: string,
-  metadata?: any
-) {
-  await writeSystemLog(db, {
-    user,
-    request,
-    action,
-    category: 'auth',
-    status: 'success',
-    resourceType: 'session',
-    resourceId: user.id,
-    message: action === 'guest_login' ? '游客登录成功' : '用户登录成功',
-    metadata,
-  });
-}
-
-// Helper: 更新每日统计
-async function incrementDailyStat(db: D1Database, field: string) {
-  // Usage statistics are part of the removed multi-user logging system.
-  void db;
-  void field;
-  return;
-
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  try {
-    await db.prepare(`
-      INSERT INTO daily_stats (date, ${field}) VALUES (?, 1)
-      ON CONFLICT(date) DO UPDATE SET ${field} = ${field} + 1
-    `).bind(today).run();
-  } catch (e) {
-    console.error('Failed to update daily stat:', e);
-  }
 }
 
 // Helper: Delete File from R2
@@ -2719,24 +2553,12 @@ export default {
           if (!guestUser) { await initDB(); guestUser = await db.prepare('SELECT * FROM users WHERE role = ?').bind('guest').first<{id: string, username: string, role: string, password: string}>(); }
           if (!guestUser) return error('System Error', 500);
           if (passcode !== guestUser.password) {
-            await writeSystemLog(db, {
-              user: { id: guestUser.id, username: guestUser.username, role: 'guest' },
-              request,
-              action: 'guest_login_failed',
-              category: 'auth',
-              status: 'error',
-              resourceType: 'session',
-              message: '游客口令错误',
-              metadata: { ip: getClientIp(request) },
-            });
             return error('访问口令错误', 401);
           }
           const sessionId = crypto.randomUUID();
           const expiresAt = Date.now() + 86400000;
           await db.prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)').bind(sessionId, guestUser.id, expiresAt).run();
           // 记录登录日志和每日统计
-          await logAccess(db, { id: guestUser.id, username: guestUser.username, role: 'guest' }, request, 'guest_login', { expiresAt });
-          await incrementDailyStat(db, 'guest_logins');
           return json({ success: true, user: { id: guestUser.id, username: guestUser.username, role: 'guest', storageUsage: 0 } }, 200, { 'Set-Cookie': `session_id=${sessionId}; Expires=${new Date(expiresAt).toUTCString()}; Path=/; SameSite=Lax; HttpOnly` });
       }
 
@@ -2745,42 +2567,14 @@ export default {
           try { await db.prepare('SELECT 1 FROM users').first(); } catch(e) { await initDB(); }
           const user = await db.prepare('SELECT * FROM users WHERE username = ?').bind(username).first<{id: string, role: string, storage_usage: number, password: string}>();
           if (!user) {
-            await writeSystemLog(db, {
-              request,
-              action: 'login_failed',
-              category: 'auth',
-              status: 'error',
-              resourceType: 'session',
-              message: '用户名不存在或密码错误',
-              metadata: { username },
-            });
             return error('用户名或密码错误', 401);
           }
           if (user.role === 'guest') {
-            await writeSystemLog(db, {
-              user: { id: user.id, username, role: user.role },
-              request,
-              action: 'login_failed',
-              category: 'auth',
-              status: 'error',
-              resourceType: 'session',
-              message: '游客账号尝试账号登录入口',
-            });
             return error('Invalid login method', 401);
           }
           let isValid = await bcrypt.compare(password, user.password);
           if (!isValid && user.password === password) { isValid = true; const newHash = await bcrypt.hash(password, 10); await db.prepare('UPDATE users SET password = ? WHERE id = ?').bind(newHash, user.id).run(); }
           if (!isValid) {
-            await writeSystemLog(db, {
-              user: { id: user.id, username, role: user.role },
-              request,
-              action: 'login_failed',
-              category: 'auth',
-              status: 'error',
-              resourceType: 'session',
-              message: '密码错误',
-              metadata: { username },
-            });
             return error('用户名或密码错误', 401);
           }
           const sessionId = crypto.randomUUID();
@@ -2789,8 +2583,6 @@ export default {
           // 更新最后登录时间
           await db.prepare('UPDATE users SET last_login = ? WHERE id = ?').bind(Date.now(), user.id).run();
           // 记录登录日志和每日统计
-          await logAccess(db, { id: user.id, username, role: user.role }, request, 'login');
-          await incrementDailyStat(db, 'user_logins');
           return json({ success: true, user: { id: user.id, username, role: user.role, storageUsage: user.storage_usage || 0 } }, 200, { 'Set-Cookie': `session_id=${sessionId}; Expires=${new Date(expiresAt).toUTCString()}; Path=/; SameSite=Lax; HttpOnly` });
       }
 
@@ -2805,16 +2597,6 @@ export default {
             `).bind(cookies['session_id']).first<{id: string, username: string, role: string}>();
             await db.prepare('DELETE FROM sessions WHERE id = ?').bind(cookies['session_id']).run();
           }
-          await writeSystemLog(db, {
-            user: logoutUser,
-            request,
-            action: 'logout',
-            category: 'auth',
-            status: 'success',
-            resourceType: 'session',
-            resourceId: logoutUser?.id,
-            message: logoutUser ? '退出登录' : '退出登录：未找到有效会话',
-          });
           return json({ success: true }, 200, { 'Set-Cookie': `session_id=; Max-Age=0; Path=/; SameSite=Lax; HttpOnly` });
       }
 
@@ -3748,17 +3530,6 @@ export default {
         const item = (await getCachedAitagWorksByIds(db, [workId], sourceSort))[0];
         if (!item) return error('Aitag work not found in local cache', 404);
 
-        await writeSystemLog(db, {
-          user: currentUser,
-          request,
-          action: isFavorite ? 'aitag_favorite_add' : 'aitag_favorite_remove',
-          category: 'aitag',
-          status: 'success',
-          resourceType: 'aitag_work',
-          resourceId: String(workId),
-          message: isFavorite ? 'aitag work favorited' : 'aitag work unfavorited',
-          metadata: { sort, timeRange },
-        });
 
         return json({ item, isFavorite });
       }
@@ -3779,15 +3550,6 @@ export default {
           paused: false,
         });
         const status = await runAitagIndexBatch(env, db, { sort, timeRange, aiType, maxPages: AITAG_CACHE_BATCH_PAGES });
-        await writeSystemLog(db, {
-          user: currentUser,
-          request,
-          action: 'aitag_cache_index',
-          category: 'aitag',
-          resourceType: 'aitag_cache',
-          message: `aitag 缓存索引推进到第 ${status.currentPage} 页`,
-          metadata: { sort, timeRange, aiType, targetPages, status: status.status, worksCount: status.worksCount },
-        });
         return json(status);
       }
 
@@ -3853,41 +3615,12 @@ export default {
           const firstImageTask = cacheAitagFirstImagesForWorks(env, db, normalized.items, sourceSort)
             .catch(e => console.error('Aitag first image cache task failed', e));
           if (ctx?.waitUntil) ctx.waitUntil(firstImageTask);
-          await writeSystemLog(db, {
-            user: currentUser,
-            request,
-            action: 'aitag_search',
-            category: 'aitag',
-            status: 'success',
-            resourceType: 'aitag_search',
-            message: 'aitag search fetched and cached',
-            metadata: {
-              page: url.searchParams.get('page'),
-              pageSize: url.searchParams.get('page_size'),
-              q: sourceUrl.searchParams.get('q'),
-              prompt: url.searchParams.get('prompt'),
-              sort: url.searchParams.get('sort'),
-              timeRange,
-              aiType,
-            },
-            durationMs: Date.now() - startedAt,
-          });
           return json({
             ...responsePayload,
             status: await getAitagCacheStatus(db, sort, timeRange, aiType),
             source: 'remote',
           }, 200, { 'Cache-Control': 'no-store' });
         } catch (e: any) {
-          await writeSystemLog(db, {
-            user: currentUser,
-            request,
-            action: 'aitag_search',
-            category: 'aitag',
-            status: 'error',
-            resourceType: 'aitag_search',
-            message: e.message || 'aitag 搜索异常',
-            durationMs: Date.now() - startedAt,
-          });
           throw e;
         }
       }
@@ -3903,113 +3636,26 @@ export default {
           if (cached) {
             const cacheInfo = getAitagDetailCacheInfo(cached);
             if (!cacheInfo.hasFullyCachedImages) {
-              const upgradeTask = cacheAitagDetail(env, db, cached)
-                .then(() => writeSystemLog(db, {
-                  user: currentUser,
-                  request,
-                  action: 'aitag_work_detail_background_upgrade',
-                  category: 'aitag',
-                  resourceType: 'aitag_work',
-                  resourceId: workId,
-                  message: 'aitag cached work detail image upgrade scheduled in background',
-                  durationMs: Date.now() - startedAt,
-                }))
-                .catch(e => writeSystemLog(db, {
-                  user: currentUser,
-                  request,
-                  action: 'aitag_work_detail_background_upgrade',
-                  category: 'aitag',
-                  status: 'error',
-                  resourceType: 'aitag_work',
-                  resourceId: workId,
-                  message: e?.message || 'aitag cached work detail background image upgrade failed',
-                  durationMs: Date.now() - startedAt,
-                }));
+              const upgradeTask = cacheAitagDetail(env, db, cached);
               if (ctx?.waitUntil) ctx.waitUntil(upgradeTask);
               else upgradeTask.catch(console.error);
             }
-            await writeSystemLog(db, {
-              user: currentUser,
-              request,
-              action: 'aitag_work_detail_cached',
-              category: 'aitag',
-              resourceType: 'aitag_work',
-              resourceId: workId,
-              message: cacheInfo.hasFullyCachedImages
-                ? 'aitag work detail loaded from complete local cache'
-                : 'aitag work detail loaded from local cache with background image upgrade',
-              durationMs: Date.now() - startedAt,
-            });
             return json(cached, 200, { 'Cache-Control': 'no-store' });
           }
 
           const detail = await fetchAitagJson(target, env);
           const cachedDetail = await cacheAitagDetailFirstImageOnly(env, db, detail);
-          const backgroundCacheTask = cacheAitagDetail(env, db, cachedDetail)
-            .then(() => writeSystemLog(db, {
-              user: currentUser,
-              request,
-              action: 'aitag_work_detail_background_full_cache',
-              category: 'aitag',
-              resourceType: 'aitag_work',
-              resourceId: workId,
-              message: 'aitag work detail remaining images cached in background',
-              durationMs: Date.now() - startedAt,
-            }))
-            .catch(e => writeSystemLog(db, {
-              user: currentUser,
-              request,
-              action: 'aitag_work_detail_background_full_cache',
-              category: 'aitag',
-              status: 'error',
-              resourceType: 'aitag_work',
-              resourceId: workId,
-              message: e?.message || 'aitag work detail background full image cache failed',
-              durationMs: Date.now() - startedAt,
-            }));
+          const backgroundCacheTask = cacheAitagDetail(env, db, cachedDetail);
           if (ctx?.waitUntil) ctx.waitUntil(backgroundCacheTask);
           else backgroundCacheTask.catch(console.error);
-          await writeSystemLog(db, {
-            user: currentUser,
-            request,
-            action: 'aitag_work_detail',
-            category: 'aitag',
-            status: 'success',
-            resourceType: 'aitag_work',
-            resourceId: workId,
-            message: 'aitag work detail fetched with first image cached; full image cache scheduled',
-            durationMs: Date.now() - startedAt,
-          });
           return json(cachedDetail, 200, { 'Cache-Control': 'no-store' });
         } catch (e: any) {
-          await writeSystemLog(db, {
-            user: currentUser,
-            request,
-            action: 'aitag_work_detail',
-            category: 'aitag',
-            status: 'error',
-            resourceType: 'aitag_work',
-            resourceId: workId,
-            message: e.message || '读取 aitag 作品详情异常',
-            durationMs: Date.now() - startedAt,
-          });
           throw e;
         }
       }
 
       if (path === '/api/client-logs' && method === 'POST') {
         const body = await request.json() as any;
-        await writeSystemLog(db, {
-          user: currentUser,
-          request,
-          action: String(body.action || 'client_event'),
-          category: String(body.category || 'client'),
-          status: body.status === 'error' || body.status === 'warning' ? body.status : 'success',
-          resourceType: body.resourceType,
-          resourceId: body.resourceId,
-          message: body.message,
-          metadata: body.metadata,
-        });
         return json({ success: true });
       }
 
@@ -4018,21 +3664,6 @@ export default {
           if (currentUser.role !== 'admin') return error('Forbidden', 403);
           const { config } = await request.json() as any;
           await db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').bind('benchmark_config', JSON.stringify(config)).run();
-          await writeSystemLog(db, {
-            user: currentUser,
-            request,
-            action: 'benchmark_config_update',
-            category: 'settings',
-            resourceType: 'benchmark_config',
-            message: '更新画师库基准测试配置',
-            metadata: {
-              slots: Array.isArray(config?.slots) ? config.slots.length : 0,
-              interval: config?.interval,
-              steps: config?.steps,
-              scale: config?.scale,
-              hasNegative: Boolean(config?.negative),
-            },
-          });
           return json({ success: true });
       }
 
@@ -4047,15 +3678,6 @@ export default {
           if (currentUser.role !== 'admin') return error('Forbidden', 403);
           const { passcode } = await request.json() as any;
           await db.prepare('UPDATE users SET password = ? WHERE role = ?').bind(passcode, 'guest').run();
-          await writeSystemLog(db, {
-            user: currentUser,
-            request,
-            action: 'guest_passcode_update',
-            category: 'user',
-            resourceType: 'guest_setting',
-            message: '更新游客访问口令',
-            metadata: { passcodeLength: typeof passcode === 'string' ? passcode.length : 0 },
-          });
           return json({ success: true });
       }
 
@@ -4204,14 +3826,6 @@ export default {
           await ensureAccessLogsSchema(db);
           const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
           await db.prepare('DELETE FROM access_logs WHERE created_at < ?').bind(thirtyDaysAgo).run();
-          await writeSystemLog(db, {
-            user: currentUser,
-            request,
-            action: 'logs_clear_old',
-            category: 'system',
-            resourceType: 'access_logs',
-            message: '清理 30 天前系统日志',
-          });
           return json({ success: true });
       }
 
@@ -4234,46 +3848,14 @@ export default {
           characters: Array.isArray(body?.parameters?.v4_prompt?.caption?.char_captions) ? body.parameters.v4_prompt.caption.char_captions.length : 0,
         };
         if (!clientAuth) {
-          await writeSystemLog(db, {
-            user: currentUser,
-            request,
-            action: 'generate_image',
-            category: 'generation',
-            status: 'error',
-            resourceType: 'nai_generation',
-            message: '生图失败：缺少 NovelAI API Key',
-            metadata: generationMeta,
-            durationMs: Date.now() - startedAt,
-          });
           return error('Missing API Key', 401);
         }
         const naiRes = await fetch("https://image.novelai.net/ai/generate-image", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": clientAuth }, body: JSON.stringify(body) });
         if (!naiRes.ok) {
           const errText = await naiRes.text();
-          await writeSystemLog(db, {
-            user: currentUser,
-            request,
-            action: 'generate_image',
-            category: 'generation',
-            status: 'error',
-            resourceType: 'nai_generation',
-            message: `生图失败：NovelAI HTTP ${naiRes.status}`,
-            metadata: { ...generationMeta, response: errText },
-            durationMs: Date.now() - startedAt,
-          });
           return error(errText, naiRes.status);
         }
         const blob = await naiRes.blob();
-        await writeSystemLog(db, {
-          user: currentUser,
-          request,
-          action: 'generate_image',
-          category: 'generation',
-          resourceType: 'nai_generation',
-          message: 'NovelAI 生图成功',
-          metadata: { ...generationMeta, bytes: blob.size },
-          durationMs: Date.now() - startedAt,
-        });
         return new Response(blob, { headers: { ...corsHeaders, 'Content-Type': 'application/zip' } });
       }
 
@@ -4281,15 +3863,6 @@ export default {
       if (path === '/api/upload' && method === 'POST') {
           if (!env.BUCKET) return error('R2 Bucket not configured', 503);
           if (currentUser.role === 'guest') {
-            await writeSystemLog(db, {
-              user: currentUser,
-              request,
-              action: 'upload_file_denied',
-              category: 'upload',
-              status: 'warning',
-              resourceType: 'file',
-              message: '游客尝试上传文件',
-            });
             return error('Guests cannot upload files', 403);
           }
           const formData = await request.formData();
@@ -4304,31 +3877,11 @@ export default {
               const currentUsage = currentUser.storage_usage || 0;
               const maxStorage = currentUser.max_storage || ROLE_POLICY.getDefaultQuota(currentUser.role) || 314572800;
               if (currentUsage + fileSize > maxStorage) {
-                await writeSystemLog(db, {
-                  user: currentUser,
-                  request,
-                  action: 'upload_file_denied',
-                  category: 'upload',
-                  status: 'warning',
-                  resourceType: 'file',
-                  message: '上传失败：存储配额不足',
-                  metadata: { folder, fileName: file.name, fileSize, currentUsage, maxStorage },
-                });
                 return error(`Storage quota exceeded`, 413);
               }
           }
           await env.BUCKET.put(filename, file.stream(), { httpMetadata: { contentType: file.type } });
           await db.prepare('UPDATE users SET storage_usage = COALESCE(storage_usage, 0) + ? WHERE id = ?').bind(fileSize, currentUser.id).run();
-          await writeSystemLog(db, {
-            user: currentUser,
-            request,
-            action: 'upload_file',
-            category: 'upload',
-            resourceType: 'file',
-            resourceId: filename,
-            message: `上传文件到 ${folder}`,
-            metadata: { folder, fileName: file.name, fileSize, contentType: file.type, url: `/api/assets/${filename}` },
-          });
           return json({ url: `/api/assets/${filename}`, size: fileSize });
       }
 
@@ -4350,16 +3903,6 @@ export default {
               const userId = crypto.randomUUID();
               await db.prepare('INSERT INTO users (id, username, password, role, created_at, storage_usage, max_storage) VALUES (?, ?, ?, ?, ?, 0, ?)')
                   .bind(userId, username, hashedPassword, role, Date.now(), defaultQuota).run();
-              await writeSystemLog(db, {
-                user: currentUser,
-                request,
-                action: 'user_create',
-                category: 'user',
-                resourceType: 'user',
-                resourceId: userId,
-                message: `创建用户：${username}`,
-                metadata: { username, role, maxStorage: defaultQuota },
-              });
               return json({ success: true });
           } catch(e) {
               return error('Username exists', 409);
@@ -4371,16 +3914,6 @@ export default {
           const { password } = await request.json() as any;
           const hashedPassword = await bcrypt.hash(password, 10);
           await db.prepare('UPDATE users SET password = ? WHERE id = ?').bind(hashedPassword, currentUser.id).run();
-          await writeSystemLog(db, {
-            user: currentUser,
-            request,
-            action: 'password_update',
-            category: 'user',
-            resourceType: 'user',
-            resourceId: currentUser.id,
-            message: '修改当前用户密码',
-            metadata: { passwordLength: typeof password === 'string' ? password.length : 0 },
-          });
           return json({ success: true });
       }
       if (path === '/api/users' && method === 'GET') {
@@ -4424,16 +3957,6 @@ export default {
          if (id === currentUser.id) return error('Cannot delete self', 400);
          const targetUser = await db.prepare('SELECT username, role FROM users WHERE id = ?').bind(id).first<{username: string, role: string}>();
          await db.prepare('DELETE FROM users WHERE id = ?').bind(id).run();
-         await writeSystemLog(db, {
-           user: currentUser,
-           request,
-           action: 'user_delete',
-           category: 'user',
-           resourceType: 'user',
-           resourceId: id,
-           message: targetUser ? `删除用户：${targetUser.username}` : '删除用户',
-           metadata: targetUser,
-         });
          return json({ success: true });
       }
       // 更新用户最大配额
@@ -4470,16 +3993,6 @@ export default {
            return error('Failed to update quota', 500);
          }
 
-         await writeSystemLog(db, {
-           user: currentUser,
-           request,
-           action: 'user_quota_update',
-           category: 'user',
-           resourceType: 'user',
-           resourceId: userId,
-           message: '更新用户存储配额',
-           metadata: { maxStorage },
-         });
 
          return json({ success: true });
       }
@@ -4510,30 +4023,10 @@ export default {
          if (resetQuota) {
            const defaultQuota = ROLE_POLICY.getDefaultQuota(role);
            await db.prepare('UPDATE users SET role = ?, max_storage = ? WHERE id = ?').bind(role, defaultQuota, userId).run();
-           await writeSystemLog(db, {
-             user: currentUser,
-             request,
-             action: 'user_role_update',
-             category: 'user',
-             resourceType: 'user',
-             resourceId: userId,
-             message: `更新用户角色：${targetUser.role} -> ${role}`,
-             metadata: { oldRole: targetUser.role, newRole: role, resetQuota: true, maxStorage: defaultQuota },
-           });
            return json({ success: true, role, maxStorage: defaultQuota });
          } else {
            // 仅更新角色，保留现有配额
            await db.prepare('UPDATE users SET role = ? WHERE id = ?').bind(role, userId).run();
-           await writeSystemLog(db, {
-             user: currentUser,
-             request,
-             action: 'user_role_update',
-             category: 'user',
-             resourceType: 'user',
-             resourceId: userId,
-             message: `更新用户角色：${targetUser.role} -> ${role}`,
-             metadata: { oldRole: targetUser.role, newRole: role, resetQuota: false, maxStorage: targetUser.max_storage },
-           });
            return json({ success: true, role, maxStorage: targetUser.max_storage });
          }
       }
@@ -4586,39 +4079,11 @@ export default {
         }
         try {
           await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, body.name, body.description, tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', body.params ? JSON.stringify(body.params) : '{}', body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, Date.now(), Date.now()).run();
-          await writeSystemLog(db, {
-            user: currentUser,
-            request,
-            action: 'chain_create',
-            category: 'chain',
-            resourceType: type === 'character' ? 'character_chain' : 'style_chain',
-            resourceId: id,
-            message: `创建${type === 'character' ? '角色串' : '画师串'}：${body.name || id}`,
-            metadata: {
-              name: body.name,
-              type,
-              tagCount: Array.isArray(body.tags) ? body.tags.length : 0,
-              moduleCount: Array.isArray(body.modules) ? body.modules.length : 0,
-              promptLength: typeof body.basePrompt === 'string' ? body.basePrompt.length : 0,
-              negativeLength: typeof body.negativePrompt === 'string' ? body.negativePrompt.length : 0,
-              guestHidden: Boolean(body.guestHidden),
-            },
-          });
           return json({ id });
         } catch (e: any) {
           if (isMissingColumnError(e)) {
             await initDB();
             await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, body.name, body.description, tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', body.params ? JSON.stringify(body.params) : '{}', body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, Date.now(), Date.now()).run();
-            await writeSystemLog(db, {
-              user: currentUser,
-              request,
-              action: 'chain_create',
-              category: 'chain',
-              resourceType: type === 'character' ? 'character_chain' : 'style_chain',
-              resourceId: id,
-              message: `创建${type === 'character' ? '角色串' : '画师串'}：${body.name || id}`,
-              metadata: { name: body.name, type, repairedSchema: true },
-            });
             return json({ id });
           }
           throw e;
@@ -4704,25 +4169,6 @@ export default {
         if (updates.previewImage !== undefined && chain.preview_image && chain.preview_image !== updates.previewImage) {
           await deleteR2File(env, chain.preview_image);
         }
-        await writeSystemLog(db, {
-          user: currentUser,
-          request,
-          action: 'chain_update',
-          category: 'chain',
-          resourceType: (chain.type || updates.type) === 'character' ? 'character_chain' : 'style_chain',
-          resourceId: id,
-          message: `更新${(chain.type || updates.type) === 'character' ? '角色串' : '画师串'}：${updates.name || chain.name || id}`,
-          metadata: {
-            fields: Object.keys(updates),
-            name: updates.name || chain.name,
-            promptLength: typeof updates.basePrompt === 'string' ? updates.basePrompt.length : undefined,
-            negativeLength: typeof updates.negativePrompt === 'string' ? updates.negativePrompt.length : undefined,
-            moduleCount: Array.isArray(updates.modules) ? updates.modules.length : undefined,
-            tagCount: Array.isArray(updates.tags) ? updates.tags.length : undefined,
-            hasPreviewImage: updates.previewImage !== undefined,
-            guestHidden: updates.guestHidden,
-          },
-        });
         return json({ success: true });
       }
       if (chainIdMatch && method === 'DELETE') {
@@ -4734,16 +4180,6 @@ export default {
             // Delete Cover
             if (chain.preview_image) await deleteR2File(env, chain.preview_image);
             await db.prepare('DELETE FROM chains WHERE id = ?').bind(id).run();
-            await writeSystemLog(db, {
-              user: currentUser,
-              request,
-              action: 'chain_delete',
-              category: 'chain',
-              resourceType: chain.type === 'character' ? 'character_chain' : 'style_chain',
-              resourceId: id,
-              message: `删除${chain.type === 'character' ? '角色串' : '画师串'}：${chain.name || id}`,
-              metadata: { name: chain.name, type: chain.type, hadPreviewImage: Boolean(chain.preview_image) },
-            });
         }
         return json({ success: true });
       }
@@ -4805,22 +4241,6 @@ export default {
         for (const oldUrl of new Set(previousAssets)) {
           if (!retainedAssets.has(oldUrl)) await deleteR2File(env, oldUrl);
         }
-        await writeSystemLog(db, {
-          user: currentUser,
-          request,
-          action: existing ? 'artist_update' : 'artist_create',
-          category: 'artist',
-          resourceType: 'artist',
-          resourceId: id,
-          message: `${existing ? '更新' : '创建'}画师库条目：${sanitizedName || id}`,
-          metadata: {
-            name: sanitizedName,
-            previousName: existing?.name,
-            benchmarkCount: Array.isArray(benchmarks) ? benchmarks.length : 0,
-            hasPreviewUrl: Boolean(previewUrl),
-            imageChanged: !existing || existing.image_url !== imageUrl,
-          },
-        });
         return json({ success: true, benchmarks });
       }
       if (path.startsWith('/api/artists/') && method === 'DELETE') {
@@ -4841,20 +4261,6 @@ export default {
             }
         }
         await db.prepare('DELETE FROM artists WHERE id = ?').bind(id).run();
-        await writeSystemLog(db, {
-          user: currentUser,
-          request,
-          action: 'artist_delete',
-          category: 'artist',
-          resourceType: 'artist',
-          resourceId: id,
-          message: artist ? `删除画师库条目：${artist.name || id}` : '删除画师库条目',
-          metadata: {
-            name: artist?.name,
-            hadPreviewUrl: Boolean(artist?.preview_url),
-            benchmarkCount: parseStoredJson(artist?.benchmarks, []).filter(Boolean).length,
-          },
-        });
         return json({ success: true });
       }
 
@@ -4995,7 +4401,6 @@ export default {
             body.lastUsedAt || null, Number(body.useCount || 0), body.parentId || null, JSON.stringify(body.analysis || {}), now, Number(body.updatedAt || now),
           ).run();
         const row = await db.prepare('SELECT * FROM inspirations WHERE id = ?').bind(id).first<any>();
-        await writeSystemLog(db, { user: currentUser, request, action: 'inspiration_save', category: 'inspiration', resourceType: 'inspiration', resourceId: id, message: `保存灵感：${body.title || id}`, metadata: { sourceType: body.sourceType, sourceId: body.sourceId, tags: body.tags, boardId: body.boardId } });
         return json({ success: true, id, item: mapInspirationRow(row) });
       }
       if (path === '/api/inspirations/bulk-update' && method === 'POST') {
