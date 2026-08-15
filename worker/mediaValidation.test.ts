@@ -5,6 +5,7 @@ describe('validateMediaSource 内部路径', () => {
   it('白名单内的 /api/ 路径识别为内部来源', () => {
     expect(validateMediaSource('/api/assets/covers/a_b.webp')).toEqual({ source: '/api/assets/covers/a_b.webp', internal: true });
     expect(validateMediaSource('/api/local-history/abc123/image')).toEqual({ source: '/api/local-history/abc123/image', internal: true });
+    expect(validateMediaSource('/api/inspirations/ins-1/image')).toEqual({ source: '/api/inspirations/ins-1/image', internal: true });
     expect(validateMediaSource('/api/vibes/v1/image')).toEqual({ source: '/api/vibes/v1/image', internal: true });
     expect(validateMediaSource('/api/character-references/c1/thumbnail')).toEqual({ source: '/api/character-references/c1/thumbnail', internal: true });
     const hex64 = 'a'.repeat(64);

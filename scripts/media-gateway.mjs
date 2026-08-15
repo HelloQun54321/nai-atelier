@@ -975,7 +975,7 @@ export const createThumbnailPreWarmer = ({
 export const getValidatedSource = value => {  const source = String(value || '');
   if (!source || source.length > SOURCE_LIMIT || /[\r\n]/.test(source)) throw new Error('Invalid image source');
   if (source.startsWith('/api/assets/')) return { type: 'local', source };
-  if (/^\/api\/(?:local-history\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail))(?:\?.*)?$/.test(source)) return { type: 'local', source };
+  if (/^\/api\/(?:local-history\/[^/]+\/image|inspirations\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail))(?:\?.*)?$/.test(source)) return { type: 'local', source };
   const stChatu8History = source.match(/^\/api\/integrations\/st-chatu8\/history\/([a-f0-9]{64})\/image$/i);
   if (stChatu8History) return { type: 'st-chatu8-history', source, externalId: stChatu8History[1].toLowerCase() };
   let url;

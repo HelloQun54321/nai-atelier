@@ -6,7 +6,7 @@ export const MEDIA_VARIANTS = new Set(['thumb-160', 'thumb-240', 'thumb-320', 't
 
 export const MEDIA_REMOTE_HOSTS = new Set(SHARED_REMOTE_HOSTS);
 
-export const MEDIA_INTERNAL_SOURCE = /^\/api\/(?:assets\/.+|local-history\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail)|integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image)(?:\?.*)?$/i;
+export const MEDIA_INTERNAL_SOURCE = /^\/api\/(?:assets\/.+|local-history\/[^/]+\/image|inspirations\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail)|integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image)(?:\?.*)?$/i;
 
 export const validateMediaSource = (value: string | null) => {
   const source = String(value || '');

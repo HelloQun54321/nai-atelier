@@ -4,6 +4,12 @@
 
 ## 2026-08-16
 
+### 优化：灵感卡片缩略图管道修真 + 加载策略修正
+
+- 排查发现灵感卡片的"thumb-320"完全空转：`/api/inspirations/{id}/image` 不在客户端 canUseMediaGateway、网关 getValidatedSource、worker MEDIA_INTERNAL_SOURCE 三处内部路径白名单里，历史收藏类灵感的卡片一直在直拉 R2 完整原图。现在三处白名单同步放行（附回归测试），卡片真正走网关缩略图，详情页仍看原图。
+- 卡片去掉 `eager`：此前所有过滤命中的卡片挂载即并发请求，SmartImage 的懒激活与两屏预取被短路；现在与其它图库一致。
+- 列表容器补上遗漏的 `workspace-card-grid`（content-visibility），视口外卡片不再立即布局绘制——其它六个图库都有，唯独灵感库漏了。
+
 ### 重构：图库详情页设计语言统一（共享 DetailSidePanel 组件族）
 
 - 此前五个页面的作品详情各有一套：断点分裂（Pixiv/Danbooru 在 xl 切侧栏、AITag 在 md 就切——768~1280px 平板区间出现"列表+详情上下堆叠"的畸形中间态、历史页/灵感详情又是另外两套）、按钮三套语言（共享 ToolbarButton / 手写原生 button / AITag 手写 40×40 彩色实心钮）、头部与图片容器高度单位（h-14 vs 自适应、62vh vs 固定 520px）各自为政。
