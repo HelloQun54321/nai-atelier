@@ -76,6 +76,39 @@ export const extractMetadata = async (file: File): Promise<string | null> => {
 // ========== 核心解析纯函数 ==========
 
 /**
+ * 从 JSON 文本中提取元数据原始字符串（ChainEditor 导入用）。
+ * 优先级：Comment 为对象 → 序列化返回；Comment 为字符串 → 直接返回；
+ * 本身就是生成参数 JSON（prompt/steps/v4_prompt/uc）→ 整体返回；
+ * Description 字段 → 返回；都不是 → 原样返回（可能本身是纯文本元数据）。
+ */
+export const extractRawMetadataFromJsonText = (jsonText: string): string => {
+    try {
+        const json = JSON.parse(jsonText);
+        const comment = json.Comment ?? json.comment;
+
+        if (comment && typeof comment === 'object') {
+            return JSON.stringify(comment);
+        }
+
+        if (typeof comment === 'string' && comment.trim()) {
+            return comment;
+        }
+
+        if (json.prompt || json.steps || json.v4_prompt || json.uc) {
+            return JSON.stringify(json);
+        }
+
+        if (typeof json.Description === 'string' && json.Description.trim()) {
+            return json.Description;
+        }
+    } catch {
+        // 非 JSON：原样返回，交给后续的纯文本元数据解析
+    }
+
+    return jsonText;
+};
+
+/**
  * 将 NovelAI 元数据原始字符串解析为结构化对象
  *
  * 支持两种输入格式：

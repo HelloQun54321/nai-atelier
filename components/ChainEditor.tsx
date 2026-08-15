@@ -7,7 +7,7 @@ import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus'
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
 import { db } from '../services/dbService';
-import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
+import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData, extractRawMetadataFromJsonText } from '../services/metadataService';
 import { ChainEditorParams } from './ChainEditorParams';
 import { isInternalChainTag } from './DesignSystem';
 import { ChainEditorPreview } from './ChainEditorPreview';
@@ -708,33 +708,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             return new File([file], file.name, { type: 'application/json' });
         }
         return file;
-    };
-
-    const extractRawMetadataFromJsonText = (jsonText: string) => {
-        try {
-            const json = JSON.parse(jsonText);
-            const comment = json.Comment ?? json.comment;
-
-            if (comment && typeof comment === 'object') {
-                return JSON.stringify(comment);
-            }
-
-            if (typeof comment === 'string' && comment.trim()) {
-                return comment;
-            }
-
-            if (json.prompt || json.steps || json.v4_prompt || json.uc) {
-                return JSON.stringify(json);
-            }
-
-            if (typeof json.Description === 'string' && json.Description.trim()) {
-                return json.Description;
-            }
-        } catch {
-            // If the file is a plain metadata string saved as .json, try parsing it directly below.
-        }
-
-        return jsonText;
     };
 
     const extractRawMetadataFromJson = async (file: File) => {

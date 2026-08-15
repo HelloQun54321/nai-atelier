@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 重构：JSON 元数据提取纯函数从 ChainEditor 抽到 metadataService（首片拆分）
+
+- `extractRawMetadataFromJsonText`（Comment 对象/字符串、生成参数 JSON、Description、纯文本五级回退）从 2196 行的 ChainEditor 组件迁到 services/metadataService.ts，与 parseNovelAIMetadata 同处一层，并补 7 个回退分支的单元测试。这是巨石组件拆分计划的第一片：先抽纯逻辑、可测试的部分。
+
 ### 加固：R2 key 净化与 LAN 限流 IP 信任顺序
 
 - `/api/upload` 的 folder 与扩展名、外链转存的资产 id 此前都直接拼进 R2 key，客户端可注入 `/`、`..` 等字符写出任意前缀的 key（如伪装成 `local-history/` 路径样式）。现在统一净化为单段安全字符（字母数字与 `_-`）。
