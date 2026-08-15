@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 修复：Pixiv 令牌原子写入在 Windows 偶发 EPERM
+
+- `writeAtomic` 的 rename 在 Windows 上会被杀毒/索引器短暂锁定刚写入的临时文件而偶发 EPERM/EBUSY（曾导致单测间歇性失败、拦截提交）。现在带 25ms 递增退避重试最多 5 次，仍失败才抛出。
+
 ### 重构：worker 图片来源校验抽为可测模块并补 8 组用例
 
 - `validateMediaSource` 与 MEDIA_VARIANTS/REMOTE_HOSTS/INTERNAL_SOURCE 常量从 5000 行的 worker/index.ts 抽到独立 `worker/mediaValidation.ts`（esbuild 打包验证通过），新增 10 个单元测试覆盖：内部路径白名单（assets/local-history/vibes/character-references/st-chatu8）、远程图 https+主机白名单+凭据拒绝、大小写归一、空值/超长/换行/垃圾输入。这是 worker 侧第一批单元测试。

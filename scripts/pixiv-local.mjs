@@ -180,7 +180,20 @@ export class PixivTokenStore {
     await mkdir(dirname(file), { recursive: true, mode: 0o700 });
     const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
     await writeFile(temporary, content, { encoding: 'utf8', mode: 0o600 });
-    await rename(temporary, file);
+    // Windows 上杀毒/索引器可能短暂锁定刚写入的临时文件，rename 报 EPERM/EBUSY；
+    // 短退避重试即可恢复，避免单测与真实写入偶发失败。
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await rename(temporary, file);
+        return;
+      } catch (error) {
+        if ((error?.code === 'EPERM' || error?.code === 'EBUSY') && attempt < 5) {
+          await new Promise(resolve => setTimeout(resolve, 25 * (attempt + 1)));
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 
   async loadKey() {
