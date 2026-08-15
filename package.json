@@ -1,7 +1,7 @@
 {
   "name": "nai-prompt-manager",
   "private": true,
-  "version": "0.79.11",
+  "version": "0.79.12",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,7 @@
     "build:worker": "esbuild worker/index.ts --bundle --format=esm --outfile=dist/_worker.js --platform=browser",
     "test:gateway": "node --test scripts/media-gateway.test.mjs scripts/st-chatu8-bridge.test.mjs scripts/pixiv-local.test.mjs scripts/pixiv-web-login.test.mjs",
     "lint": "eslint .",
+    "prepare": "node scripts/install-git-hooks.mjs",
     "update:tags": "node --no-warnings scripts/update-tag-dictionary.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && npx wrangler pages project create nai-prompt-manager --production-branch main || true && npx wrangler pages deploy dist --project-name=nai-prompt-manager --commit-message=deploy",

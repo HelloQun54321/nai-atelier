@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 工程化：pre-commit 质量门禁钩子
+
+- 新增 `scripts/install-git-hooks.mjs`（经 npm `prepare` 在 install 时自动装配）：每次 git commit 前自动跑 eslint（0 错误才放行）、`tsc -b` 类型检查与单元测试，任一失败即阻止提交——此前所有检查全靠手跑，坏代码可以畅通进入 main。
+
 ### 工程化：引入 ESLint 质量门禁
 
 - 新增 ESLint 9 扁平配置（typescript-eslint 推荐 + react-hooks 规则）与 `npm run lint` 命令：**0 错误**，327 个警告（约 287 处 any、27 处 hooks 依赖告警）作为后续逐步收敛的清单。规则取向：只开正确性检查、不管风格——与本库 `cond && effect()` 惯用写法和不用的对齐参数兼容。顺手清理：`.wrangler` 构建缓存纳入忽略、4 处 prefer-const、1 处 @ts-ignore 改 @ts-expect-error、历史页缓存请求的自引用 let 改 const。
