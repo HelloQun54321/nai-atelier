@@ -953,9 +953,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         processNext();
     }, [taskQueue, isProcessing, isPaused, apiKey, config, artistsData, availableArtists, onRefresh, notify]);
 
-    // (The rest of the file remains unchanged, omitted for brevity as per instructions to only include changes if possible, but minimal diff implies keeping context if necessary. I'll include the rest to be safe and runnable)
-    // ... (Code for queueGeneration, retryFailedTasks, queueMissingGenerations, lightbox logic, etc.)
-
     // Add tasks to queue
     const queueGeneration = (artist: Artist, slots: number[], e: React.MouseEvent) => {
         e.stopPropagation();
