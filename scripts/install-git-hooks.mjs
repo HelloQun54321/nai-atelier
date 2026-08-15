@@ -22,7 +22,13 @@ echo "[pre-commit] TypeScript 类型检查..."
 npx tsc -b || exit 1
 
 echo "[pre-commit] 单元测试..."
-npm run --silent test:gateway || exit 1
+out=$(mktemp) || exit 1
+if ! npm run --silent test:gateway >"$out" 2>&1; then
+  tail -40 "$out"
+  rm -f "$out"
+  exit 1
+fi
+rm -f "$out"
 
 echo "[pre-commit] 全部通过"
 `;
