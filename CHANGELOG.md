@@ -4,6 +4,12 @@
 
 ## 2026-08-16
 
+### 修复：App 主流程错误处理裸奔（加载失败无感知、失败后永久卡加载态）
+
+- `loadArtists`/`loadInspirations` 此前无 catch，切换到画师库/灵感页时若请求失败会成为 unhandled rejection，用户毫无感知；现在失败会 console.error 并弹错误提示。
+- `refreshData` 的 catch 此前只识别"Database not configured"，其余错误被静默吞掉；现在其他错误也会提示。
+- 创建、Fork、更新、删除画师串五个操作此前无 try/finally：数据库一旦抛错，`setLoading(true)` 之后永远无法复位，界面永久卡在加载态且导航不会发生；现在失败提示 + finally 复位加载态。
+
 ### 修复：画师库启动时裸 JSON.parse 可能整页白屏
 
 - `nai_fav_artists`（收藏）与 `nai_copy_history`（复制历史）两处 localStorage 读取直接 `JSON.parse` 无保护，缓存一旦损坏（该 key 会被 Agent 面板并发写入，概率真实存在）画师库 useEffect 即抛错白屏。现与同文件已有的安全版本对齐：try/catch 回退为空，并用 `Array.isArray` 挡住"合法 JSON 但不是数组"的情况（`new Set(5)` 同样会抛 TypeError）。

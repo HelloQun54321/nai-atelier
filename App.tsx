@@ -112,6 +112,9 @@ const App = () => {
     } catch (e: any) {
       if (e.message && e.message.includes('Database not configured')) {
         setDbConfigError(true);
+      } else {
+        console.error('加载画师串列表失败', e);
+        notify('画师串列表加载失败，请稍后重试', 'error');
       }
     } finally {
       setLoading(false);
@@ -120,16 +123,26 @@ const App = () => {
 
   const loadArtists = async (force = false) => {
     if (!force && artistsCache && Date.now() - lastArtistFetch < CACHE_TTL) return;
-    const data = await db.getAllArtists();
-    setArtistsCache(data.sort((a, b) => a.name.localeCompare(b.name)));
-    setLastArtistFetch(Date.now());
+    try {
+      const data = await db.getAllArtists();
+      setArtistsCache(data.sort((a, b) => a.name.localeCompare(b.name)));
+      setLastArtistFetch(Date.now());
+    } catch (e) {
+      console.error('加载画师库失败', e);
+      notify('画师库加载失败，请稍后重试', 'error');
+    }
   };
 
   const loadInspirations = async (force = false) => {
     if (!force && inspirationsCache && Date.now() - lastInspirationFetch < CACHE_TTL) return;
-    const data = await db.getAllInspirations();
-    setInspirationsCache(data);
-    setLastInspirationFetch(Date.now());
+    try {
+      const data = await db.getAllInspirations();
+      setInspirationsCache(data);
+      setLastInspirationFetch(Date.now());
+    } catch (e) {
+      console.error('加载灵感库失败', e);
+      notify('灵感库加载失败，请稍后重试', 'error');
+    }
   };
 
   useEffect(() => {
@@ -359,43 +372,71 @@ const App = () => {
 
   const handleCreateChain = async (name: string, desc: string, type: ChainType) => {
     setLoading(true);
-    const newId = await db.createChain(name, desc, undefined, type);
-    await refreshData(true);
-    setLoading(false);
-    handleNavigate('edit', newId);
+    try {
+      const newId = await db.createChain(name, desc, undefined, type);
+      await refreshData(true);
+      handleNavigate('edit', newId);
+    } catch (e) {
+      console.error('创建画师串失败', e);
+      notify('创建失败，请稍后重试', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleForkChain = async (chain: PromptChain, targetType?: ChainType) => {
     const finalType = targetType || chain.type;
     const name = chain.name + (chain.id === 'playground' ? '' : ' (Fork)');
-    await db.createChain(name, chain.description, chain, finalType); // Persist type on fork
-    notify('Fork 成功！已保存到您的列表');
-    await refreshData(true);
-    // Return to appropriate list based on type
-    const targetView = finalType === 'character' ? 'characters' : 'list';
-    setView(targetView);
-    keepViewMounted(targetView);
+    try {
+      await db.createChain(name, chain.description, chain, finalType); // Persist type on fork
+      notify('Fork 成功！已保存到您的列表');
+      await refreshData(true);
+      // Return to appropriate list based on type
+      const targetView = finalType === 'character' ? 'characters' : 'list';
+      setView(targetView);
+      keepViewMounted(targetView);
+    } catch (e) {
+      console.error('Fork 画师串失败', e);
+      notify('Fork 失败，请稍后重试', 'error');
+    }
   };
 
   const handleUpdateChain = async (id: string, updates: Partial<PromptChain>) => {
-    await db.updateChain(id, updates);
-    await refreshData(true);
+    try {
+      await db.updateChain(id, updates);
+      await refreshData(true);
+    } catch (e) {
+      console.error('保存画师串失败', e);
+      notify('保存失败，请稍后重试', 'error');
+    }
   };
 
   const handleCreateChainFromAitag = async (chain: PromptChain) => {
     setLoading(true);
-    const newId = await db.createChain(chain.name, chain.description, chain, 'style');
-    await refreshData(true);
-    setLoading(false);
-    handleNavigate('edit', newId);
+    try {
+      const newId = await db.createChain(chain.name, chain.description, chain, 'style');
+      await refreshData(true);
+      handleNavigate('edit', newId);
+    } catch (e) {
+      console.error('从 AITag 创建画师串失败', e);
+      notify('创建失败，请稍后重试', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
     setLoading(true);
-    await db.deleteChain(id);
-    await refreshData(true);
-    // Stay on current list view
-    setLoading(false);
+    try {
+      await db.deleteChain(id);
+      await refreshData(true);
+    } catch (e) {
+      console.error('删除画师串失败', e);
+      notify('删除失败，请稍后重试', 'error');
+    } finally {
+      // Stay on current list view
+      setLoading(false);
+    }
   };
 
   const getSelectedChain = () => chains.find(c => c.id === selectedId);
