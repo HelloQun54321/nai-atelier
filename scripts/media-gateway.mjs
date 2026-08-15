@@ -1213,9 +1213,10 @@ export const handlePixivGalleryRequest = async (req, res, url, pixivGallery, pix
       params: Object.fromEntries(url.searchParams),
     });
     // 后台预热该批缩略图：滚动时缓存命中，不再等待首次抓取。
+    // 取源顺序必须与卡片请求一致（medium 优先），否则预热缓存键 miss。
     if (prewarmer && Array.isArray(result.items)) {
       const sources = result.items
-        .map(item => item.urls?.large || item.urls?.medium || item.urls?.thumb || '')
+        .map(item => item.urls?.medium || item.urls?.large || item.urls?.thumb || '')
         .filter(Boolean);
       prewarmer.enqueue(sources);
     }

@@ -404,17 +404,17 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   const renderPixivCard = (illust: PixivIllust) => {
     const title = illust.title || `Pixiv #${illust.id}`;
     const ratio = `${illust.width || 3} / ${illust.height || 4}`;
-    // 缩略图源优先 large（真实比例）：Pixiv 的 square 缩略图是方形裁切版，
-    // 在真实比例 frame 里会显示不全；large 经网关缩放后保持完整比例。
-    const previewSrc = illust.urls.large || illust.urls.medium || illust.urls.thumb;
+    // 缩略图源优先 medium（540px，保持真实比例）：卡片显示宽度约 320px，
+    // medium 仍是缩小显示不损清晰度，而 large（~1200px master，单张 0.3-1.5MB）
+    // 会让每张封面的上游流量放大 5-10 倍。square 档是方形裁切版，仅作最后回退。
+    // 原图不在卡片上升级加载——点开详情才加载原图（详情页自带 preview→original 链）。
+    const previewSrc = illust.urls.medium || illust.urls.large || illust.urls.thumb;
     return <MediaCardShell key={illust.id} selected={selectedId === illust.id} className="mobile-gallery-item group relative flex-col">
       <button type="button" onClick={() => openDetail(illust)} className="block w-full text-left">
         <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}>
           <SmartImage
             src={previewSrc}
             alt={title}
-            upgradeSrc={illust.urls.original}
-            upgradeVariant="original"
           />
           <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-[10px] text-white">
             <span>♥ {formatCount(illust.totalBookmarks)}</span>
