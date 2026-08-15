@@ -6,6 +6,7 @@ import {
   getMobileOriginalUrl,
   isMobileViewport,
   type MediaVariant,
+  ratchetVariantWidth,
   selectThumbnailVariant,
 } from '../services/mobileImageCache';
 
@@ -111,7 +112,11 @@ export const SmartImage: React.FC<SmartImageProps> = ({
 
   const activated = viewActive && (eager || activatedSrc === src);
   const pixelWidth = measuredWidth * Math.max(1, window.devicePixelRatio || 1);
-  const variant = thumbnailVariant ?? selectThumbnailVariant(pixelWidth);
+  // 档位棘轮（只升不降）：详情侧栏打开会挤压卡片、移动端详情会整栏隐藏（宽度归零），
+  // 若档位随之降档，全部卡片的缓存键跳变、整列表重新请求并闪占位。
+  const variantFloorRef = useRef(0);
+  variantFloorRef.current = ratchetVariantWidth(variantFloorRef.current, pixelWidth);
+  const variant = thumbnailVariant ?? selectThumbnailVariant(variantFloorRef.current);
   const upgradeTarget = upgradeSrc && upgradeSrc !== src ? upgradeSrc : undefined;
 
   useEffect(() => {

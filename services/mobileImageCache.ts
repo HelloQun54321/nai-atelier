@@ -382,6 +382,18 @@ export const selectThumbnailVariant = (width: number): Exclude<MediaVariant, 'or
   return 'thumb-960';
 };
 
+/** 当前像素宽对应的档位数值（160/240/320/480/640/960）。 */
+export const thumbnailVariantWidth = (width: number): number =>
+  Number(selectThumbnailVariant(width).replace('thumb-', ''));
+
+/**
+ * 缩略图档位棘轮：只升不降。详情侧栏打开/关闭会临时挤压或隐藏卡片，
+ * 若档位随之跳变，每张图的缓存键都会改变、整列表重新请求并闪占位；
+ * 真实的窗口/布局放大仍会升到更高档。
+ */
+export const ratchetVariantWidth = (floor: number, width: number): number =>
+  Math.max(floor, thumbnailVariantWidth(width));
+
 export const buildMediaUrl = (source: string, variant: MediaVariant) => `/api/media?source=${encodeURIComponent(source)}&variant=${variant}`;
 
 export const getMobileOriginalUrl = (source: string) => {
