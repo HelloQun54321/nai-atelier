@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 修复：/api/admin/stats 查询已被移除的 daily_stats 表导致必然 500
+
+- 该端点查询的 `daily_stats` 表会被 `removeLegacyLoggingStorage` 一次性 DROP 且从不重建（`ensureAccessLogsSchema` 只重建 `access_logs`），个人模式下访问必返 500；且全项目无任何前端调用方，属多用户时代遗留。与 `/api/admin/logs` 等同类处理：纳入个人模式 410 禁用清单。
+
 ### 版本号机制：按提交历史校正到 0.79.0，并建立自动递增规则
 
 - 按提交历史推断校正版本：0.5.0 自 2026-07-14 独立维护首次提交设定后从未变动，期间已积累 74 个 `feat:` 提交；按"feat = minor 递增"规则回溯，版本校正为 **0.79.0**。

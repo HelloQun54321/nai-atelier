@@ -2819,6 +2819,7 @@ export default {
 
       if (
         path.startsWith('/api/users') ||
+        path.startsWith('/api/admin/stats') ||
         path.startsWith('/api/admin/guest-setting') ||
         path.startsWith('/api/admin/logs') ||
         path.startsWith('/api/admin/clear-logs') ||
