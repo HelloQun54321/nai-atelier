@@ -2504,22 +2504,32 @@ export default {
     }
 
     if (path === '/api/media') {
-      return handleMediaRequest(request, env, url);
+      try {
+        return await handleMediaRequest(request, env, url);
+      } catch (e) {
+        console.error('media proxy failed', e);
+        return error('Failed to load media', 500);
+      }
     }
 
     // --- R2 Asset Proxy Route (LAN sessions are checked above) ---
     if (path.startsWith('/api/assets/') && method === 'GET') {
         if (!env.BUCKET) return error('Bucket not configured', 503);
-        const rawKey = path.replace('/api/assets/', '');
-        const key = decodeURIComponent(rawKey);
-        const object = await env.BUCKET.get(key);
-        if (!object) return error('File not found', 404);
-        const headers = new Headers();
-        object.writeHttpMetadata(headers);
-        headers.set('etag', object.httpEtag);
-        headers.set('Cache-Control', 'private, max-age=31536000, immutable');
-        headers.set('Access-Control-Allow-Origin', '*'); 
-        return new Response(object.body, { headers });
+        try {
+          const rawKey = path.replace('/api/assets/', '');
+          const key = decodeURIComponent(rawKey);
+          const object = await env.BUCKET.get(key);
+          if (!object) return error('File not found', 404);
+          const headers = new Headers();
+          object.writeHttpMetadata(headers);
+          headers.set('etag', object.httpEtag);
+          headers.set('Cache-Control', 'private, max-age=31536000, immutable');
+          headers.set('Access-Control-Allow-Origin', '*');
+          return new Response(object.body, { headers });
+        } catch (e) {
+          console.error('asset proxy failed', e);
+          return error('Failed to load asset', 500);
+        }
     }
 
     if (!path.startsWith('/api/')) {

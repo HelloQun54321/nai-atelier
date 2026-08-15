@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 修复：/api/media 与 /api/assets 代理缺少异常兜底
+
+- 两段路由在主 try 之外执行：`/api/assets` 的 `decodeURIComponent` 遇到畸形编码（如孤立的 `%`）或 R2 读取抛错时会变成未捕获异常，客户端拿到 workerd 泛型 500 而非 JSON。现在两段都有 try/catch，返回结构化错误并 console.error 记录原始异常。
+
 ### 修复：/api/admin/stats 查询已被移除的 daily_stats 表导致必然 500
 
 - 该端点查询的 `daily_stats` 表会被 `removeLegacyLoggingStorage` 一次性 DROP 且从不重建（`ensureAccessLogsSchema` 只重建 `access_logs`），个人模式下访问必返 500；且全项目无任何前端调用方，属多用户时代遗留。与 `/api/admin/logs` 等同类处理：纳入个人模式 410 禁用清单。
