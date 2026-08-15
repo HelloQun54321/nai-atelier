@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 工程化：schema.sql 与运行时真源对齐
+
+- 旧 schema.sql 已严重脱节（缺 base_prompt/subject_prompt/modules 等 6 列、缺 settings/vibe/aitag 等多张表）且开头是具破坏性的 `DROP TABLE`、无任何执行管道引用——照它建库必翻车。重写为 worker 内嵌 INIT_SQL 的镜像快照：12 张表全部 `CREATE TABLE IF NOT EXISTS`，附 initDB 自愈补列清单与延迟建表说明，头部明确"运行时真源在 worker、此文件仅作人读参考"。
+
 ### 工程化：pre-commit 质量门禁钩子
 
 - 新增 `scripts/install-git-hooks.mjs`（经 npm `prepare` 在 install 时自动装配）：每次 git commit 前自动跑 eslint（0 错误才放行）、`tsc -b` 类型检查与单元测试，任一失败即阻止提交——此前所有检查全靠手跑，坏代码可以畅通进入 main。
