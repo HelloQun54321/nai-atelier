@@ -375,7 +375,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             position: m.position || 'post'
         })));
         setParams({
-            width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: undefined,
+            // width/height/steps/scale/sampler 在 NAIParams 中为必填，chain.params 展开后必然覆盖，不再写死默认值
+            seed: undefined,
             qualityToggle: true, ucPreset: 4, characters: [],
             useCoords: chain.params?.useCoords ?? false,
             variety: chain.params?.variety ?? false,

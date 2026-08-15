@@ -160,7 +160,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
       return;
     }
     const usableEncodings = asset.encodings.filter(item => item.model === 'nai-diffusion-4-5-full');
-    let encoding = usableEncodings.find(item => Math.abs(item.informationExtracted - 1) < 0.001) || usableEncodings[0];
+    let encoding: typeof usableEncodings[number] | undefined = usableEncodings.find(item => Math.abs(item.informationExtracted - 1) < 0.001) || usableEncodings[0];
     if (!encoding) encoding = await encode(asset, 1) || undefined;
     if (!encoding) return;
     updateVibes({

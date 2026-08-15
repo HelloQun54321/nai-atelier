@@ -304,7 +304,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     if (!targets.length) return;
     for (const card of targets) {
       coverPrewarmedRef.current.add(card.key);
-      void danbooruService.getCoverSet(card.tagName, 'character').then(set => {
+      // 上方 filter 已保证 catalog 卡片带有 tagName
+      void danbooruService.getCoverSet(card.tagName!, 'character').then(set => {
         const src = set.representative?.sampleUrl || set.candidates?.[0]?.sampleUrl;
         if (!src) return;
         fetch('/api/media/prewarm', {

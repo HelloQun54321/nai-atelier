@@ -428,7 +428,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             inflightPagesRef.current = {};
             setLightbox(current => {
                 if (change.type === 'clear' || change.type === 'cleanup' || (change.type === 'delete' && current?.id === change.id)) return null;
-                if (change.type === 'favorite' && current?.id === change.id && typeof change.favorite === 'boolean') {
+                if (change.type === 'favorite' && current && current.id === change.id && typeof change.favorite === 'boolean') {
                     const updated = { ...current, isFavorite: change.favorite };
                     if (change.favorite) updated.favoriteAt = Date.now();
                     else delete updated.favoriteAt;

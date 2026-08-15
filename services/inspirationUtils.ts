@@ -11,7 +11,7 @@ export const normalizeInspirationTags = (tags: string[]) => Array.from(new Set(
 )).slice(0, 80);
 
 export const sourceLabel = (source?: InspirationSourceType) => ({
-  history: '生成历史', aitag: 'AITag', danbooru: 'Danbooru', upload: '手动上传', agent: '项目 Agent', other: '其他来源',
+  history: '生成历史', aitag: 'AITag', danbooru: 'Danbooru', pixiv: 'Pixiv', upload: '手动上传', agent: '项目 Agent', other: '其他来源',
 }[source || 'other']);
 
 export const suggestInspirationTags = (item: Pick<Inspiration, 'prompt' | 'params' | 'sourceType' | 'tags'>) => {

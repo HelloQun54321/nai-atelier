@@ -123,7 +123,7 @@ type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
 export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRefresh, notify, currentUser }) => {
     const imageDisplay = useMobileImageDisplayPreferences();
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
-    const [artistRatios, setArtistRatios] = useState<Record<number, number>>({});
+    const [artistRatios, setArtistRatios] = useState<Record<string, number>>({});
     const estimateArtistCardHeight = React.useCallback((artist: (typeof filteredArtists)[number], columnWidth: number) => {
       const ratio = artistRatios[artist.id] || 2 / 3;
       const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);

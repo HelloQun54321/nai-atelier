@@ -2194,7 +2194,7 @@ async function writeSystemLog(
     url.pathname,
     options.resourceType || null,
     options.resourceId === undefined || options.resourceId === null ? null : String(options.resourceId).slice(0, 160),
-    options.message ? truncateLogString(options.message) : null,
+    options.message ? truncateLogString(options.message as string) : null,
     stringifyLogMetadata(options.metadata),
     options.durationMs ?? null,
     Date.now(),
@@ -4579,7 +4579,7 @@ export default {
         // Sanitize and validate tags
         let tags = '[]';
         if (Array.isArray(body.tags)) {
-          const sanitizedTags = body.tags
+          const sanitizedTags = (body.tags as unknown[])
             .map(tag => typeof tag === 'string' ? tag.trim().substring(0, 50) : '')
             .filter(tag => tag.length > 0);
           tags = JSON.stringify(sanitizedTags);
