@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 重构：worker 图片来源校验抽为可测模块并补 8 组用例
+
+- `validateMediaSource` 与 MEDIA_VARIANTS/REMOTE_HOSTS/INTERNAL_SOURCE 常量从 5000 行的 worker/index.ts 抽到独立 `worker/mediaValidation.ts`（esbuild 打包验证通过），新增 10 个单元测试覆盖：内部路径白名单（assets/local-history/vibes/character-references/st-chatu8）、远程图 https+主机白名单+凭据拒绝、大小写归一、空值/超长/换行/垃圾输入。这是 worker 侧第一批单元测试。
+
 ### 修复：Danbooru 图库搜索竞态守卫（抽出共享 useStaleGuard hook）
 
 - `DanbooruGallery.load` 是四个图库中唯一没有竞态守卫的加载路径：快速连续搜索/跳页时较慢的旧响应会覆盖新结果。把此前为 AitagGallery 写的守卫模式抽成共享 `useStaleGuard` hook（begin 取序号 / isCurrent 判有效），两个图库统一接入，并配 renderHook 回归测试（新加载使旧序号失效、卸载后全部失效）。引入 @testing-library/react + jsdom 为后续组件测试铺路。

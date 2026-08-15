@@ -1,6 +1,7 @@
 
 import bcrypt from 'bcryptjs';
 import { readImageDimensions } from './imageDimensions.mjs';
+import { MEDIA_VARIANTS, validateMediaSource } from './mediaValidation';
 
 // Add missing D1 type definitions locally
 interface D1Result<T = unknown> {
@@ -118,9 +119,6 @@ const LAN_ACCESS_COOKIE = 'nai_lan_access';
 const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const lanAccessAttempts = new Map<string, { failures: number; blockedUntil: number }>();
 const MAX_MANAGED_IMAGE_BYTES = 12 * 1024 * 1024;
-const MEDIA_VARIANTS = new Set(['thumb-160', 'thumb-240', 'thumb-320', 'thumb-480', 'thumb-640', 'thumb-960', 'original']);
-const MEDIA_REMOTE_HOSTS = new Set(['ai-img.10118899.xyz', 'aitag.win', 'cdn.donmai.us']);
-const MEDIA_INTERNAL_SOURCE = /^\/api\/(?:assets\/.+|local-history\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail)|integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image)(?:\?.*)?$/i;
 
 const isLoopbackHostname = (hostname: string) => {
   const normalized = hostname.replace(/^\[|\]$/g, '').toLowerCase();
@@ -178,17 +176,6 @@ const getLanAttemptKey = (request: Request) =>
   'lan-device';
 
 const lanAccessRequired = () => json({ error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' }, 401);
-
-const validateMediaSource = (value: string | null) => {
-  const source = String(value || '');
-  if (!source || source.length > 2048 || /[\r\n]/.test(source)) throw new Error('Invalid image source');
-  if (MEDIA_INTERNAL_SOURCE.test(source)) return { source, internal: true };
-  const target = new URL(source);
-  if (target.protocol !== 'https:' || target.username || target.password || !MEDIA_REMOTE_HOSTS.has(target.hostname.toLowerCase())) {
-    throw new Error('Remote image host is not allowed');
-  }
-  return { source: target.toString(), internal: false };
-};
 
 const handleMediaRequest = async (request: Request, env: Env, url: URL) => {
   if (request.method !== 'GET') return error('Method not allowed', 405);
