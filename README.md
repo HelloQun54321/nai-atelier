@@ -11,67 +11,53 @@
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
   [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](./LICENSE)
 
-  基于 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 深度改造，现作为独立个人版本维护。
-
-  [项目定位](#-项目定位) · [相对原版的改造](#-相对原项目的主要改造) · [功能地图](#-功能地图) · [SillyTavern 互通](#-sillytavern--st-chatu8-互通) · [手机局域网](#-手机局域网访问) · [手机 UI](#-手机-ui-设计) · [数据备份](#-备份与恢复) · [更新日志](./CHANGELOG.md)
+  [项目定位](#-项目定位) · [核心能力](#-核心能力总览) · [功能地图](#-功能地图) · [SillyTavern 互通](#-sillytavern--st-chatu8-互通) · [手机局域网](#-手机局域网访问) · [手机 UI](#-手机-ui-设计) · [数据备份](#-备份与恢复) · [更新日志](./CHANGELOG.md)
 </div>
 
 ---
 
 ## 🧭 项目定位
 
-NaiPromptManager 是一套运行在个人电脑上的 NovelAI 创作管理工具。它不是单纯的 Prompt 输入框，也不再是面向公开部署的多用户网站，而是围绕长期个人使用建立的完整工作流：
+NaiPromptManager 是一套运行在个人电脑上的 NovelAI 创作管理工具。它不是单纯的 Prompt 输入框，而是围绕长期个人使用建立的完整工作流：
 
 > **收集画师与角色 → 组合 Prompt → 调用 NovelAI → 保存原图和参数 → 整理历史与灵感 → 在电脑和手机之间继续使用。**
 
-当前版本的三个核心原则：
+当前版本的四个核心原则：
 
 | 原则 | 含义 |
 | --- | --- |
 | 🖥️ **电脑是数据主机** | 原图、数据库、历史、画师串和角色资料都以电脑为准 |
 | 🏠 **只服务个人与家庭局域网** | 电脑本机免密，手机使用四位密码，不开放公网 |
-| 🧩 **功能围绕创作工作流组织** | 画师、角色、Tag、Danbooru、AITag、实验室、历史和灵感可以互相导入与复用 |
-
-### 与原项目的关系
-
-- 本项目最初基于 `kirafishy/NaiPromptManager` 改造。
-- 当前 Git 历史以本项目的 `main` 为准，不再与原仓库保持远程关联。
-- README 和许可证中保留原项目来源说明。
-- 原项目与当前版本均遵循 [MIT License](./LICENSE)。
-- 当前版本以个人私有使用为主，不计划作为公开服务运营。
+| 🧩 **功能围绕创作工作流组织** | 画师、角色、Tag、Pixiv、Danbooru、AITag、实验室、历史和灵感可以互相导入与复用 |
+| 📚 **资料库可自生长** | 画师目录、角色目录、灵感库都由使用过程持续沉淀，不再依赖外部静态数据 |
 
 ---
 
-## 🔄 相对原项目的主要改造
+## ⚙️ 核心能力总览
 
-### 改造总览
+| 能力 | 说明 |
+| --- | --- |
+| 🔑 免账号启动 | 无账号体系，启动后直接使用，数据全部落在本机 `local-data` |
+| 🕘 生图历史 | 生成原图与完整参数保存在电脑本地 D1 + R2，浏览器清空后仍保留，按追加式瀑布流连续浏览 |
+| 📱 手机访问 | 家庭局域网、四位密码、30 天授权、独立手机 UI，图片经电脑缩略图网关 |
+| 🌐 外部图库三件套 | **Pixiv**（原站全量作品、榜单、画师主页）、**Danbooru**（通用级素材与 Tag 参考）、**AITag**（AI 作品与生成参数），统一瀑布流浏览与一键导入 |
+| 🔐 Pixiv 网页登录 | 适配 Pixiv 官方 OAuth 流程（含新版 `pixiv://` 回调），登录后 refresh token 加密保存本机，浏览器与图库全链路可用 |
+| 🧰 图片反推 Tag | 本地 WD Tagger 模型识别，图库任意图片一键反推，结果可复制或直接送往实验室 |
+| 📚 Tag 与资料库 | 31 万余条中英 Tag 本地分片、约 14.6 万画师 Tag、约 9.9 万官方角色 Tag，中文搜索与自维护目录 |
+| 🎨 封面体系 | 画师/角色封面从 Danbooru 候选图选取、图钉固定保存；封面缩略图固定本地保留，不受缓存上限淘汰 |
+| ⚡ 图库加载优化 | 缩略图后台预热（滚动即缓存命中）、固定封面本地持久化、瀑布流真实比例显示、提前两屏预取 |
+| 🌌 Vibe Transfer | 付费编码一次、本地永久保存、1～4 个组合、官方文件导入导出 |
+| 🧬 Precise Reference | 电脑保存参考原图、三种官方参考类型、最多 4 张并准确计算费用 |
+| 🚦 拼车公共队列 | 与 st-chatu8 按相同 Key 指纹协调生图顺序，减少共享账号并发错误 |
+| 🔗 SillyTavern 互通 | 与 st-chatu8 同步画师串、封面、Vibe 和组合，并接入其原图历史 |
+| 🛡️ 安全模式 | 全局图片遮挡，点击显示、离开重模糊（SmartImage 多层图整组解除） |
+| ✦ 项目 Agent | 用 DeepSeek、Gemini、Grok 等模型查看历史图片并操作资料库、设置、实验室与生图流程 |
 
-| 方面 | 原项目方向 | 当前个人版本 |
-| --- | --- | --- |
-| 身份体系 | 账号、游客、角色和权限 | 删除整套账号机制，启动后直接使用 |
-| 系统日志 | 面向多人运营的访问与使用记录 | 删除后台日志功能，减少无关维护 |
-| 数据保存 | 面向 Cloudflare D1 / R2 部署 | 保留兼容结构，但所有重要数据落在本机 `local-data` |
-| 生成历史 | 浏览器 IndexedDB | 迁移到电脑本地 D1 + R2，浏览器清空后仍保留 |
-| 手机访问 | 普通网页适配 | 家庭局域网、四位密码、30 天授权、独立手机 UI |
-| 图片传输 | 手机重复加载原图 | 电脑生成 WebP 缩略图，手机详情才读取原图 |
-| NovelAI 网络 | 当前浏览器直接请求 | 手机请求经电脑转发，可使用电脑系统 VPN |
-| Tag 补全 | 有限或零散的 Tag 数据 | 31 万余条中英 Tag、本地分片、中文搜索与在线更新 |
-| 画师资料 | 依赖第三方静态画师仓库 | 约 14.6 万画师 Tag，自维护目录、热度、抽卡、按需生成预览 |
-| 角色资料 | 简单角色串 | 约 9.9 万官方角色 Tag + 自定义外貌还原角色 |
-| AITag | 无完整资料工作流 | 远程检索、本地索引、离线缓存、参数识别与三向导入 |
-| Danbooru | 无内置浏览与封面回填 | 通用级图片检索、中文 Tag 匹配、目录按需封面与实验室导入 |
-| Vibe Transfer | 无永久 Vibe 资料库 | 付费编码一次、本地永久保存、1～4 个组合、官方文件导入导出 |
-| Precise Reference | 无本地角色参考资料库 | 电脑保存参考原图、三种官方参考类型、最多 4 张并准确计算费用 |
-| SillyTavern 互通 | 两套资料和历史彼此隔离 | 与 st-chatu8 同步画师串、封面、Vibe 和组合，并接入其原图历史 |
-| 手机交互 | 桌面布局缩小 | 独立导航、全屏详情、底部抽屉、触控和安全区适配 |
-| 图片隐私 | 无统一隐藏机制 | 全局安全模式，点击显示、离开重模糊 |
-| 确认交互 | 浏览器原生弹窗 | 统一为项目风格确认面板 |
-
-### 改造后的整体结构
+### 整体结构
 
 ```mermaid
 flowchart LR
-    A["画师 Tag / 角色库 / AITag"] --> B["画师串与预设"]
+    A["画师 Tag / 角色库 / AITag / Pixiv / Danbooru"] --> B["画师串与预设"]
     V["永久 Vibe 资料库"] --> C["生图实验室"]
     P["Precise Reference 资料库"] --> C
     A --> C["生图实验室"]
@@ -94,6 +80,7 @@ flowchart LR
 | 🖌️ **画师 Tag** | 搜索、排序、收藏、抽卡和生成画师基准图 | 画师组合、实验室 |
 | 🗃️ **AITag** | 检索外部 AI 作品，缓存图片与元数据 | 实验室、画师串、灵感 |
 | 🖼️ **Danbooru** | 检索通用级图片与分类 Tag，补全画师和角色预览 | 实验室、灵感 |
+| 🎌 **Pixiv** | 原站全量作品：推荐、日/周/月榜、标签搜索、画师作品 | 实验室、灵感、反推 |
 | 💡 **灵感** | 保存值得复用的图片、Prompt 和参数 | 实验室 |
 | 🧪 **实验室** | 组合提示词、引用预设、生成与预览 | 历史、画师串、下载 |
 | ✦ **项目 Agent** | 用 DeepSeek、Gemini、Grok 等模型查看历史图片并操作资料库、设置、实验室与生图流程 | 整个项目 |
@@ -418,6 +405,18 @@ Danbooru 页面连接 `safebooru.donmai.us`，只展示其通用级作品，并�
 
 实验室的图片导入栏可以选择 PNG、JPEG 或 WebP，让电脑本地反推 Danbooru 风格 Tag。首次使用会下载约 379 MB 的 `SmilingWolf/wd-vit-tagger-v3` 模型到被 Git 忽略的 `local-cache/models`，以后直接复用；图片只在自己的电脑上用 CPU 推理，不上传给第三方识图服务。结果可以调整通用 Tag 与角色 Tag 阈值、按置信度筛选，再追加到实验室主体 Prompt。
 
+- **图库一键反推**：Pixiv、Danbooru、AITag 详情里的任意图片都可以直接反推（经本机媒体网关读取，无需先下载到本地）。
+- **送往实验室**：任何页面反推完成后，选中 Tag 可一键写入实验室主体 Prompt 并自动跳转。
+
+### Pixiv 图库：原站全量作品浏览
+
+Pixiv 页面连接 Pixiv 官方 App API，提供推荐、日榜、周榜、月榜、标签搜索与画师作品浏览，作品详情可切换多页、查看标签与画师、跳转原站。
+
+- **登录**：在默认浏览器（推荐 Edge 等已登录账号的浏览器）完成 Pixiv 官方 OAuth 登录，NPM 自动捕获新版 `pixiv://` 回调并换取令牌；refresh token 以独立密钥 AES-256-GCM 加密保存在本机 `local-data`，重启免登录，断开后重新登录即可。
+- **瀑布流浏览**：卡片按作品真实宽高比显示、零裁剪，滚动接近底部自动连续追加，支持游标无限翻页（推荐流的 `viewed[]` 去重列表自动裁剪，翻页不设上限）；分页器保留为显式跳转工具（游标 API 无页码概念，仅搜索类不可跳页）。
+- **导入与沉淀**：详情可直接导入实验室、加入灵感库、进入该作者全部作品、打开 Pixiv 原站；任意图片可一键反推 Tag。
+- **图片来源**：所有图片经本机媒体网关抓取（自动携带官方 Referer），缩略图后台预热并写入磁盘缓存，浏览时缓存命中秒出；图片受全局安全模式控制。
+
 ---
 
 ## 📱 手机局域网访问
@@ -544,12 +543,12 @@ flowchart TD
 
 ### 缩略图网关
 
-- 列表根据卡片尺寸请求 320px 或 640px WebP。
-- WebP 质量为 72，保持比例并自动纠正方向。
+- 列表根据卡片实际列宽自动请求 320px 或 640px WebP，保持比例并自动纠正方向。
 - 原图不迁移、不重编码，不损失 NovelAI PNG 元数据。
-- 电脑缩略图缓存上限 1 GB，超过后按最近最少使用清理到约 900 MB。
+- 电脑缩略图缓存上限 1 GB，超过后按最近最少使用清理到约 900 MB；**画师/角色封面缩略图标记为固定保留，不参与清理**。
 - 手机小图缓存默认上限 100 MB，超过后清理到约 90 MB。
 - 远程 AITag 大图先由电脑获取和缩小，手机列表不直接下载全部远程原图。
+- **后台预热**：Pixiv / Danbooru 图库每页返回后，网关在后台按低并发把该批缩略图抓好写入磁盘缓存，滚动浏览时直接命中（毫秒级）；画师/角色目录打开时自动预取当前页封面候选并固定保存。
 
 ---
 
@@ -702,8 +701,8 @@ NaiPromptManager/
 
 ### 项目来源
 
-- 原项目：[kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager)
-- 当前版本：在原项目基础上独立维护，不保持 Git 远程关系
+- 本项目最初基于 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 改造，后作为独立项目维护，不保持 Git 远程关系。
+- 当前版本围绕个人长期使用、本地数据安全、手机局域网与 NovelAI 创作效率持续演进，新增 Pixiv 图库、外部图库统一浏览、图片反推、封面固定与加载优化等能力。
 - 开源协议：[MIT License](./LICENSE)
 
 ### 第三方数据与资源
@@ -711,13 +710,14 @@ NaiPromptManager/
 - Tag 中文数据：[ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)
 - NovelAI Tag 与模型说明：[NovelAI Documentation](https://docs.novelai.net/)
 - AITag 作品与元数据：[aitag.win](https://aitag.win/)
+- Pixiv 作品与图片：[Pixiv](https://www.pixiv.net/)（图片权利归各自作者或权利人所有，仅经本机网关按官方规则抓取）
 - Danbooru 数据与图片：[Danbooru / Safebooru](https://safebooru.donmai.us/)（图片权利归各自作者或权利人所有）
 - 图片反推 Tag 模型：[SmilingWolf/wd-vit-tagger-v3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3)（Apache-2.0）
 - 本地 ONNX 推理：[microsoft/onnxruntime](https://github.com/microsoft/onnxruntime)（MIT）
 - 预处理与推理实现参考：[pythongosssss/ComfyUI-WD14-Tagger](https://github.com/pythongosssss/ComfyUI-WD14-Tagger)（MIT）
 - 应用图标：Microsoft Fluent Emoji，详见 [第三方资源说明](./docs/THIRD_PARTY_ASSETS.md)
 
-感谢原项目作者提供的基础实现。当前版本的目标不是替代原项目，而是围绕个人长期使用、本地数据安全、手机局域网和 NovelAI 创作效率持续改造。
+感谢原项目作者提供的基础实现。
 
 ---
 
