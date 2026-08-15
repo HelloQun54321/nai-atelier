@@ -1,7 +1,7 @@
 {
   "name": "nai-prompt-manager",
   "private": true,
-  "version": "0.79.16",
+  "version": "0.79.17",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,7 @@
     "build:worker": "esbuild worker/index.ts --bundle --format=esm --outfile=dist/_worker.js --platform=browser",
     "test:gateway": "node --test scripts/media-gateway.test.mjs scripts/st-chatu8-bridge.test.mjs scripts/pixiv-local.test.mjs scripts/pixiv-web-login.test.mjs",
     "lint": "eslint .",
+    "test": "vitest run",
     "prepare": "node scripts/install-git-hooks.mjs",
     "update:tags": "node --no-warnings scripts/update-tag-dictionary.mjs",
     "preview": "vite preview",
@@ -48,6 +49,7 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.67.0",
     "vite": "^6.4.1",
+    "vitest": "^3.2.7",
     "wrangler": "^4.81.1"
   }
 }
