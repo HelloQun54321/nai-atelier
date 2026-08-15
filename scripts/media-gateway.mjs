@@ -10,6 +10,7 @@ import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { PromptAgentService } from './prompt-agent.mjs';
 import { StChatu8Bridge } from './st-chatu8-bridge.mjs';
 import { ImageTaggerService } from './image-tagger.mjs';
+import { MEDIA_REMOTE_HOSTS, LAN_ACCESS_COOKIE } from '../worker/sharedWhitelist.mjs';
 import { PIXIV_IMAGE_HOST, PIXIV_REFERER, PixivGalleryService } from './pixiv-local.mjs';
 import { PixivWebLoginOrchestrator } from './pixiv-web-login.mjs';
 
@@ -37,7 +38,9 @@ const CLOUD_QUEUE_URL = 'https://st-chatu-novelai-queue.hf.space';
 const CLOUD_QUEUE_POLL_INTERVAL = 1000;
 const CLOUD_QUEUE_MAX_FAILURES = 3;
 const CLOUD_QUEUE_STATUS_TTL = 5 * 60 * 1000;
-const ALLOWED_REMOTE_HOSTS = new Set(['ai-img.10118899.xyz', 'aitag.win', 'cdn.donmai.us']);
+// 与 worker 共享的基础白名单（单一来源 worker/sharedWhitelist.mjs）；
+// 网关额外允许 i.pximg.net，见 getValidatedSource 内注释。
+const ALLOWED_REMOTE_HOSTS = new Set(MEDIA_REMOTE_HOSTS);
 const ALLOWED_AITAG_API_PATHS = [
   /^\/api\/config$/,
   /^\/api\/ai_works_search$/,
@@ -264,7 +267,7 @@ const getForwardHost = req => {
 const hasValidLanCookie = (req, secret) => {
   if (isLoopbackIp(req.socket.remoteAddress)) return true;
   if (!secret) return false;
-  const token = parseCookies(req.headers.cookie).nai_lan_access;
+  const token = parseCookies(req.headers.cookie)[LAN_ACCESS_COOKIE];
   const parts = String(token || '').split('.');
   if (parts.length !== 3) return false;
   const [expiresAt, nonce, signature] = parts;

@@ -1,6 +1,7 @@
 
 import { readImageDimensions } from './imageDimensions.mjs';
 import { MEDIA_VARIANTS, validateMediaSource } from './mediaValidation';
+import { LAN_ACCESS_COOKIE } from './sharedWhitelist.mjs';
 
 // Add missing D1 type definitions locally
 interface D1Result<T = unknown> {
@@ -114,7 +115,6 @@ const AITAG_CACHE_DELAY_MAX_MS = 1200;
 const AITAG_CONFIG_VERSION = '260528a';
 const DANBOORU_BASE_URL = 'https://safebooru.donmai.us';
 const DANBOORU_MAX_PAGE_SIZE = 200;
-const LAN_ACCESS_COOKIE = 'nai_lan_access';
 const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const lanAccessAttempts = new Map<string, { failures: number; blockedUntil: number }>();
 const MAX_MANAGED_IMAGE_BYTES = 12 * 1024 * 1024;

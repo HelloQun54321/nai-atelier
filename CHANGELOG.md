@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 重构：worker 与本机网关的图片白名单/LAN cookie 收敛为单一来源
+
+- 远程图主机白名单与 LAN 访问 cookie 名此前在 worker（TS/WebCrypto）与 media-gateway（Node/node:crypto）各维护一份，"改一漏一"会直接断图或断鉴权。现在两边都从 `worker/sharedWhitelist.mjs` 导入（沿用 imageDimensions.mjs 的跨运行时共享先例）；网关刻意多出的 i.pximg.net 与 443 端口校验保持不变，注释明确标注这是有意不对称。
+
 ### 重构：删除 worker 中个人模式下不可达的多用户死代码（-840 行）
 
 - bcrypt 登录体系（/api/auth/login、guest-login、logout、第二处 auth/me、getSessionUser 会话中间件）、/api/users 全套 CRUD（建号/改密/配额/角色，位于 410 禁用门之后永不可达）、initDB 里的 admin_996 / nai_guest_123 默认弱口令播种——全部删除，`bcryptjs` 依赖随之移除，worker 打包体积 251.6KB → 195.1KB。这些代码此前给维护者"存在账号体系"的错觉，且默认弱口令在关闭个人模式开关后会复活。会话/用户表保留在 schema 中以兼容既有数据库，不做迁移。
