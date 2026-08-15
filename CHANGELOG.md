@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 文档：LICENSE 补回原作者版权署名
+
+- MIT 要求再分发时保留原项目的版权声明；本仓库 fork 自 kirafishy/NaiPromptManager，版权行改为 "Copyright (c) 2026 kirafishy and NaiPromptManager contributors"，为独立开源做好许可合规。（顺带：prompt-agent 的会话原子写入在 Windows 上遇到与 pixiv 令牌同款的偶发 EPERM，补上同样的退避重试，消除提交门禁的间歇性拦截。）
+
 ### 优化：worker 灵感接口——schema 自愈进程级只跑一次、批量操作单往返
 
 - `ensureInspirationSchema` 此前在每个灵感请求前都执行约 20 条 DDL（1 建表 + 16 补列 + 3 索引），本地长期运行的服务重复执行纯属浪费；现在进程内只跑一次（DDL 本身幂等，冷启动仍会自愈）。

@@ -77,7 +77,20 @@ const atomicJsonWrite = async (file, value) => {
   await mkdir(dirname(file), { recursive: true });
   const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
   await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-  await rename(temporary, file);
+  // Windows 上杀毒/索引器可能短暂锁定刚写入的临时文件，rename 偶发 EPERM/EBUSY；
+  // 与 pixiv-local.mjs 的 writeAtomic 同款退避重试。
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rename(temporary, file);
+      return;
+    } catch (error) {
+      if ((error?.code === 'EPERM' || error?.code === 'EBUSY') && attempt < 5) {
+        await new Promise(resolve => setTimeout(resolve, 25 * (attempt + 1)));
+        continue;
+      }
+      throw error;
+    }
+  }
 };
 
 const decodeHtml = value => String(value || '')
