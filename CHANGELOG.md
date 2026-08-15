@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 修复：画师库启动时裸 JSON.parse 可能整页白屏
+
+- `nai_fav_artists`（收藏）与 `nai_copy_history`（复制历史）两处 localStorage 读取直接 `JSON.parse` 无保护，缓存一旦损坏（该 key 会被 Agent 面板并发写入，概率真实存在）画师库 useEffect 即抛错白屏。现与同文件已有的安全版本对齐：try/catch 回退为空，并用 `Array.isArray` 挡住"合法 JSON 但不是数组"的情况（`new Set(5)` 同样会抛 TypeError）。
+
 ### 修复：/api/media 与 /api/assets 代理缺少异常兜底
 
 - 两段路由在主 try 之外执行：`/api/assets` 的 `decodeURIComponent` 遇到畸形编码（如孤立的 `%`）或 R2 读取抛错时会变成未捕获异常，客户端拿到 workerd 泛型 500 而非 JSON。现在两段都有 try/catch，返回结构化错误并 console.error 记录原始异常。

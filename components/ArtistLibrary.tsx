@@ -327,14 +327,25 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
 
     // Load data & Config
     useEffect(() => {
+        // localStorage 可能被并发写入损坏（如 Agent 面板写 nai_fav_artists），解析失败时回退为空
         const savedFav = localStorage.getItem('nai_fav_artists');
-        if (savedFav) setFavorites(new Set(JSON.parse(savedFav)));
+        if (savedFav) {
+            try {
+                const parsed = JSON.parse(savedFav);
+                setFavorites(new Set(Array.isArray(parsed) ? parsed : []));
+            } catch { setFavorites(new Set()); }
+        }
 
         const savedPrefix = localStorage.getItem('nai_use_prefix');
         if (savedPrefix !== null) setUsePrefix(savedPrefix === 'true');
 
         const savedHistory = localStorage.getItem('nai_copy_history');
-        if (savedHistory) setHistory(JSON.parse(savedHistory));
+        if (savedHistory) {
+            try {
+                const parsed = JSON.parse(savedHistory);
+                setHistory(Array.isArray(parsed) ? parsed : []);
+            } catch { setHistory([]); }
+        }
 
         // Load Config from Server (Public)
         db.getBenchmarkConfig().then(cfg => {
