@@ -1,7 +1,7 @@
 {
   "name": "nai-prompt-manager",
   "private": true,
-  "version": "0.79.28",
+  "version": "0.79.29",
   "type": "module",
   "scripts": {
     "dev": "vite",

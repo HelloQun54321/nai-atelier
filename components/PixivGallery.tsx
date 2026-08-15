@@ -262,6 +262,31 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
 
   useEffect(() => () => { clearLoginPoll(); }, []);
 
+  // 下一页 feed 投机预取：当前页稳定后用 nextCursor 后台请求下一页（网关对 feed
+  // 响应自动预热缩略图，等于 JSON 和图片一起备好）；点"加载更多"/触底时直接消费。
+  const nextFeedPrefetchRef = useRef<{ mode: PixivFeedMode; cursor: string; promise: Promise<Awaited<ReturnType<typeof pixivService.feed>> | null> } | null>(null);
+
+  const scheduleFeedPrefetch = (feedMode: PixivFeedMode, cursor: string | null | undefined, word: string, userId?: string) => {
+    if (!cursor) return;
+    const existing = nextFeedPrefetchRef.current;
+    if (existing && existing.mode === feedMode && existing.cursor === cursor) return;
+    const params: Record<string, string> = {};
+    if (feedMode === 'search' && word) params.word = word;
+    if (feedMode === 'user' && userId) params.user_id = userId;
+    nextFeedPrefetchRef.current = {
+      mode: feedMode,
+      cursor,
+      promise: pixivService.feed(feedMode, { cursor, params }).catch(() => null),
+    };
+  };
+
+  const consumeFeedPrefetch = (feedMode: PixivFeedMode, cursor: string) => {
+    const prefetch = nextFeedPrefetchRef.current;
+    if (!prefetch || prefetch.mode !== feedMode || prefetch.cursor !== cursor) return null;
+    nextFeedPrefetchRef.current = null;
+    return prefetch.promise;
+  };
+
   const loadFeed = async (nextMode: PixivFeedMode, options: { cursor?: string; word?: string; user?: { id: string; name: string } } = {}) => {
     const requestId = ++feedRequestRef.current;
     if (options.cursor) {
@@ -274,11 +299,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       const params: Record<string, string> = {};
       if (nextMode === 'search') params.word = options.word || searchInput;
       if (nextMode === 'user' && options.user) params.user_id = options.user.id;
-      const result = await pixivService.feed(nextMode, { cursor: options.cursor, params });
+      // 命中投机预取（同模式同游标）直接消费；预取失败（null）回退正常请求
+      const prefetched = options.cursor ? await consumeFeedPrefetch(nextMode, options.cursor) : null;
+      const result = prefetched || await pixivService.feed(nextMode, { cursor: options.cursor, params });
       if (requestId !== feedRequestRef.current) return;
       setMode(nextMode);
       setItems(previous => (options.cursor ? [...previous, ...result.items] : result.items));
       setNextCursor(result.nextCursor);
+      scheduleFeedPrefetch(nextMode, result.nextCursor, options.word || searchInput, options.user?.id);
       if (!options.cursor) setUserContext(options.user || null);
       loadedRef.current = true;
       if (!options.cursor) {
