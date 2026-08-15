@@ -1639,7 +1639,11 @@ const INIT_SQL = `
   );
 `;
 
+// 进程内标记：DDL 幂等但昂贵（1 CREATE TABLE + 16 ALTER + 3 INDEX），
+// 同一实例只在首个请求跑一次，不再每个灵感请求都重复约 20 条语句。
+let inspirationSchemaEnsured = false;
 async function ensureInspirationSchema(db: D1Database) {
+  if (inspirationSchemaEnsured) return;
   await db.prepare(`CREATE TABLE IF NOT EXISTS inspiration_boards (
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
     color TEXT DEFAULT '#6366f1', sort_order INTEGER NOT NULL DEFAULT 0,
@@ -1668,6 +1672,28 @@ async function ensureInspirationSchema(db: D1Database) {
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_inspirations_board ON inspirations(user_id, board_id, archived, is_pinned, created_at DESC)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_inspirations_source ON inspirations(user_id, source_type, source_id)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_inspiration_boards_sort ON inspiration_boards(user_id, sort_order, created_at)').run();
+  inspirationSchemaEnsured = true;
+}
+
+/** 构建灵感字段更新的 SET 子句与绑定值；无任何可更新字段时返回 null。 */
+function buildInspirationSetStatements(updates: any): { assignments: string[]; values: any[] } | null {
+  const assignments: string[] = [];
+  const values: any[] = [];
+  const stringFields: Record<string, string> = {
+    title: 'title', prompt: 'prompt', negativePrompt: 'negative_prompt', boardId: 'board_id', notes: 'notes',
+    sourceType: 'source_type', sourceId: 'source_id', sourceUrl: 'source_url', parentId: 'parent_id',
+  };
+  for (const [key, column] of Object.entries(stringFields)) {
+    if (updates[key] !== undefined) { assignments.push(`${column} = ?`); values.push(updates[key] || null); }
+  }
+  if (updates.tags !== undefined) { assignments.push('tags = ?'); values.push(JSON.stringify(Array.isArray(updates.tags) ? updates.tags.slice(0, 80) : [])); }
+  if (updates.params !== undefined) { assignments.push('params = ?'); values.push(updates.params ? JSON.stringify(updates.params) : null); }
+  if (updates.analysis !== undefined) { assignments.push('analysis = ?'); values.push(JSON.stringify(updates.analysis || {})); }
+  if (updates.rating !== undefined) { assignments.push('rating = ?'); values.push(Math.max(0, Math.min(5, Math.floor(Number(updates.rating) || 0)))); }
+  if (updates.isPinned !== undefined) { assignments.push('is_pinned = ?'); values.push(updates.isPinned ? 1 : 0); }
+  if (updates.archived !== undefined) { assignments.push('archived = ?'); values.push(updates.archived ? 1 : 0); }
+  if (!assignments.length) return null;
+  return { assignments, values };
 }
 
 async function ensureLocalHistorySchema(db: D1Database) {
@@ -4056,24 +4082,10 @@ export default {
       }
 
       const updateInspirationFields = async (id: string, updates: any) => {
-        const statements: Array<{sql: string; value: any}> = [];
-        const stringFields: Record<string, string> = {
-          title: 'title', prompt: 'prompt', negativePrompt: 'negative_prompt', boardId: 'board_id', notes: 'notes',
-          sourceType: 'source_type', sourceId: 'source_id', sourceUrl: 'source_url', parentId: 'parent_id',
-        };
-        for (const [key, column] of Object.entries(stringFields)) {
-          if (updates[key] !== undefined) statements.push({ sql: `${column} = ?`, value: updates[key] || null });
-        }
-        if (updates.tags !== undefined) statements.push({ sql: 'tags = ?', value: JSON.stringify(Array.isArray(updates.tags) ? updates.tags.slice(0, 80) : []) });
-        if (updates.params !== undefined) statements.push({ sql: 'params = ?', value: updates.params ? JSON.stringify(updates.params) : null });
-        if (updates.analysis !== undefined) statements.push({ sql: 'analysis = ?', value: JSON.stringify(updates.analysis || {}) });
-        if (updates.rating !== undefined) statements.push({ sql: 'rating = ?', value: Math.max(0, Math.min(5, Math.floor(Number(updates.rating) || 0))) });
-        if (updates.isPinned !== undefined) statements.push({ sql: 'is_pinned = ?', value: updates.isPinned ? 1 : 0 });
-        if (updates.archived !== undefined) statements.push({ sql: 'archived = ?', value: updates.archived ? 1 : 0 });
-        if (!statements.length) return 0;
-        statements.push({ sql: 'updated_at = ?', value: Date.now() });
-        const result = await db.prepare(`UPDATE inspirations SET ${statements.map(item => item.sql).join(', ')} WHERE id = ? AND user_id = ?`)
-          .bind(...statements.map(item => item.value), id, currentUser.id).run();
+        const built = buildInspirationSetStatements(updates);
+        if (!built) return 0;
+        const result = await db.prepare(`UPDATE inspirations SET ${built.assignments.join(', ')}, updated_at = ? WHERE id = ? AND user_id = ?`)
+          .bind(...built.values, Date.now(), id, currentUser.id).run();
         return Number(result.meta?.changes || 0);
       };
 
@@ -4149,23 +4161,33 @@ export default {
         if (currentUser.role === 'guest') return error('Forbidden', 403);
         const body = await request.json() as any;
         const ids = Array.from(new Set((Array.isArray(body.ids) ? body.ids : []).slice(0, 500).map((id: any) => String(id)).filter(Boolean))) as string[];
-        let updatedCount = 0;
-        for (const id of ids) updatedCount += await updateInspirationFields(id, body.updates || {});
+        // 同一组字段更新 N 条：一次构建 SET 子句，db.batch 单往返执行，替代 N 次串行 UPDATE
+        const updates = body.updates || {};
+        const built = buildInspirationSetStatements(updates);
+        if (!built || !ids.length) return json({ success: true, updatedCount: 0 });
+        const results = await db.batch(ids.map(id =>
+          db.prepare(`UPDATE inspirations SET ${built.assignments.join(', ')}, updated_at = ? WHERE id = ? AND user_id = ?`)
+            .bind(...built.values, Date.now(), id, currentUser.id)));
+        const updatedCount = results.reduce((sum, result) => sum + Number((result.meta as any)?.changes || 0), 0);
         return json({ success: true, updatedCount });
       }
       if (path === '/api/inspirations/bulk-delete' && method === 'POST') {
         if (currentUser.role === 'guest') return error('Forbidden', 403);
         const body = await request.json() as any;
         const ids = Array.from(new Set((Array.isArray(body.ids) ? body.ids : []).slice(0, 500).map((id: any) => String(id)).filter(Boolean))) as string[];
-        let deletedCount = 0;
-        for (const id of ids) {
-          const item = await db.prepare('SELECT * FROM inspirations WHERE id = ?').bind(id).first<any>();
-          if (!item || (currentUser.role !== 'admin' && item.user_id !== currentUser.id)) continue;
-          await db.prepare('DELETE FROM inspirations WHERE id = ?').bind(id).run();
-          await deleteInspirationAsset(item);
-          deletedCount++;
+        // 分块 IN 查询（D1 单查询绑定参数上限）+ 批量 DELETE，替代 N 次 SELECT + N 次 DELETE 的串行往返
+        const rows: any[] = [];
+        for (let index = 0; index < ids.length; index += 90) {
+          const chunk = ids.slice(index, index + 90);
+          const found = await db.prepare(`SELECT * FROM inspirations WHERE id IN (${chunk.map(() => '?').join(',')})`).bind(...chunk).all<any>();
+          rows.push(...found.results);
         }
-        return json({ success: true, deletedCount });
+        const valid = rows.filter(item => currentUser.role === 'admin' || item.user_id === currentUser.id);
+        if (valid.length) {
+          await db.batch(valid.map(item => db.prepare('DELETE FROM inspirations WHERE id = ?').bind(item.id)));
+          for (const item of valid) await deleteInspirationAsset(item);
+        }
+        return json({ success: true, deletedCount: valid.length });
       }
       const inspirationUseMatch = path.match(/^\/api\/inspirations\/([^/]+)\/use$/);
       if (inspirationUseMatch && method === 'POST') {
