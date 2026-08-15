@@ -44,7 +44,10 @@ export const useMobileHistoryLayer = (open: boolean, onClose: () => void, prefix
   onCloseRef.current = onClose;
 
   useEffect(() => {
-    if (!open || typeof window === 'undefined' || !window.matchMedia('(max-width: 767px)').matches) return;
+    // 覆盖层区间注册返回关闭：图库详情在 xl(1280px) 以下都是全屏覆盖，历史页/灵感详情
+    // 的模态在平板上同样存在——此前只在 <768px 注册，平板（768~1279px）按返回键
+    // 会直接退出整个页面而不是关闭详情层。
+    if (!open || typeof window === 'undefined' || !window.matchMedia('(max-width: 1279px)').matches) return;
     const marker = markerRef.current;
     if (window.history.state?.__naiMobileLayer !== marker) {
       window.history.pushState({ ...(window.history.state || {}), __naiMobileLayer: marker }, '');
