@@ -21,6 +21,11 @@ const VIBE_RECOVERY_DIR = join(process.cwd(), 'local-data', 'vibe-recovery');
 const CLOUD_QUEUE_CONFIG_FILE = join(process.cwd(), 'local-data', 'cloud-queue.json');
 const CACHE_LIMIT = 1024 * 1024 * 1024;
 const CACHE_PRUNE_TARGET = 900 * 1024 * 1024;
+// pinned 封面缓存总量上限：封面单张数十 KB，正常画师/角色数量级远达不到；
+// 一旦超过（如目录被批量刷新）按最久未访问淘汰，避免 pinned 无界增长
+// 反噬普通缩略图缓存（prune 目标永不达成）和磁盘占用。
+const PIN_CACHE_LIMIT = 256 * 1024 * 1024;
+const PIN_CACHE_TARGET = 200 * 1024 * 1024;
 const SOURCE_LIMIT = 2048;
 const INPUT_LIMIT = 30 * 1024 * 1024;
 const GENERATION_REQUEST_LIMIT = 20 * 1024 * 1024;
@@ -1268,6 +1273,22 @@ class ThumbnailCache {
   }
 
   async prune() {
+    // 先约束 pinned 总量：超过上限时按最久未访问淘汰固定封面
+    let pinnedTotal = Object.values(this.entries).reduce((sum, entry) => entry.pinned ? sum + Number(entry.size || 0) : sum, 0);
+    if (pinnedTotal > PIN_CACHE_LIMIT) {
+      const pinnedOldest = Object.entries(this.entries)
+        .filter(([, entry]) => entry.pinned)
+        .sort((a, b) => Number(a[1].accessedAt || 0) - Number(b[1].accessedAt || 0));
+      for (const [key, entry] of pinnedOldest) {
+        await unlink(join(CACHE_DIR, entry.file)).catch(() => {});
+        pinnedTotal -= Number(entry.size || 0);
+        delete this.entries[key];
+        if (pinnedTotal <= PIN_CACHE_TARGET) break;
+      }
+      console.warn(`[cache] pinned 封面缓存超过 ${PIN_CACHE_LIMIT >> 20}MB 上限，已按最久未访问淘汰到 ${PIN_CACHE_TARGET >> 20}MB 以内`);
+      this.scheduleIndexWrite();
+    }
+
     let total = Object.values(this.entries).reduce((sum, entry) => sum + Number(entry.size || 0), 0);
     if (total <= CACHE_LIMIT) return;
     // 只淘汰普通（非固定）缩略图；pinned 封面图（画师/角色 Tag 当前封面）永久保留，

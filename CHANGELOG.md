@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 修复：pinned 封面缓存无总量上限，超限后反噬普通缩略图缓存
+
+- 固定封面（画师/角色 Tag 封面 pin 标记）此前不设上限：pinned 累计超过 1GB 后，LRU 淘汰的 900MB 目标永不达成，每轮都会清空全部普通缩略图（图库滚动体验退化），磁盘占用仍持续增长。现在 pinned 设 256MB 上限：超过时先按"最久未访问"淘汰固定封面到 200MB 以内再走常规淘汰，并输出告警日志。正常画师/角色数量级（每张数十 KB）远达不到该上限，行为不变。
+
 ### 工程化：schema.sql 与运行时真源对齐
 
 - 旧 schema.sql 已严重脱节（缺 base_prompt/subject_prompt/modules 等 6 列、缺 settings/vibe/aitag 等多张表）且开头是具破坏性的 `DROP TABLE`、无任何执行管道引用——照它建库必翻车。重写为 worker 内嵌 INIT_SQL 的镜像快照：12 张表全部 `CREATE TABLE IF NOT EXISTS`，附 initDB 自愈补列清单与延迟建表说明，头部明确"运行时真源在 worker、此文件仅作人读参考"。
