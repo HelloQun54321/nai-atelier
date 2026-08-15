@@ -12,6 +12,8 @@
   [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](./LICENSE)
 
   [项目定位](#-项目定位) · [核心能力](#-核心能力总览) · [功能地图](#-功能地图) · [SillyTavern 互通](#-sillytavern--st-chatu8-互通) · [手机局域网](#-手机局域网访问) · [手机 UI](#-手机-ui-设计) · [数据备份](#-备份与恢复) · [更新日志](./CHANGELOG.md)
+
+  > 基于 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 的个人独立维护版，面向本地单人使用；原项目见上方链接。
 </div>
 
 ---
