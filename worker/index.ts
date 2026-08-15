@@ -165,11 +165,12 @@ const hasValidLanAccess = async (request: Request, secret: string) => {
 };
 
 const getLanAttemptKey = (request: Request) =>
-  // This header is overwritten by the local media gateway from its socket.
-  // Do not use an arbitrary client-supplied X-Forwarded-For value as the
-  // primary key for a security rate limit.
-  request.headers.get('X-Nai-Client-IP') ||
+  // CF-Connecting-IP 由 Cloudflare 边缘写入、客户端不可伪造，部署在 CF 上时优先采用；
+  // X-Nai-Client-IP 在本地形态下由 media gateway 用 socket 地址覆写（同样可信），
+  // 但在 CF 形态下客户端可伪造，故排在 CF-Connecting-IP 之后。
+  // 不要把任意客户端提供的 X-Forwarded-For 当作限流主键。
   request.headers.get('CF-Connecting-IP') ||
+  request.headers.get('X-Nai-Client-IP') ||
   request.headers.get('X-Forwarded-For')?.split(',').at(-1)?.trim() ||
   request.headers.get('User-Agent') ||
   'lan-device';
@@ -2242,8 +2243,9 @@ async function fetchAndUploadImage(
         const bytes = await readLimitedImageBody(response);
         const fileSize = bytes.byteLength;
         
-        // Generate filename
-        const filename = `${folder}/${id}_${Date.now()}.${ext}`;
+        // Generate filename（id 来自请求体，净化为单段安全字符，防止拼接出任意前缀的 R2 key）
+        const safeId = String(id).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'asset';
+        const filename = `${folder}/${safeId}_${Date.now()}.${ext}`;
 
         if (user && user.role !== 'admin') {
             const currentUsage = user.storage_usage || 0;
@@ -3751,8 +3753,9 @@ export default {
           const formData = await request.formData();
           const file = formData.get('file');
           if (!file || !(file instanceof File)) return error('Invalid file', 400);
-          const folder = formData.get('folder') as string || 'misc';
-          const ext = file.name.split('.').pop() || 'png';
+          // folder/ext 净化为单段安全字符：两者都来自客户端，直接拼接可写出任意前缀的 R2 key
+          const folder = String(formData.get('folder') || 'misc').replace(/[^a-zA-Z0-9_-]/g, '') || 'misc';
+          const ext = String(file.name.split('.').pop() || 'png').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || 'bin';
           const filename = `${folder}/${currentUser.id}_${Date.now()}.${ext}`;
           const fileSize = file.size;
           // 使用统一的角色策略检查存储配额

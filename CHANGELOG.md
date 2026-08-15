@@ -4,6 +4,11 @@
 
 ## 2026-08-16
 
+### 加固：R2 key 净化与 LAN 限流 IP 信任顺序
+
+- `/api/upload` 的 folder 与扩展名、外链转存的资产 id 此前都直接拼进 R2 key，客户端可注入 `/`、`..` 等字符写出任意前缀的 key（如伪装成 `local-history/` 路径样式）。现在统一净化为单段安全字符（字母数字与 `_-`）。
+- LAN 密码 5 次锁定用的 IP 主键改为 `CF-Connecting-IP` 优先（Cloudflare 边缘写入、不可伪造），`X-Nai-Client-IP` 退居其次——本地形态下它由网关从 socket 覆写仍然可信，但公网部署形态下客户端可伪造并轮换取值绕过锁定。本项目声明只跑局域网，此项为部署形态变化时的兜底。
+
 ### 重构：worker 与本机网关的图片白名单/LAN cookie 收敛为单一来源
 
 - 远程图主机白名单与 LAN 访问 cookie 名此前在 worker（TS/WebCrypto）与 media-gateway（Node/node:crypto）各维护一份，"改一漏一"会直接断图或断鉴权。现在两边都从 `worker/sharedWhitelist.mjs` 导入（沿用 imageDimensions.mjs 的跨运行时共享先例）；网关刻意多出的 i.pximg.net 与 443 端口校验保持不变，注释明确标注这是有意不对称。
