@@ -91,6 +91,29 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   // 非追加 load 的竞态守卫：快速连续搜索/跳页时，慢的旧响应会覆盖新结果——
   // 迟到的响应一律丢弃（组件卸载后同样不再写状态）。
   const loadGuard = useStaleGuard();
+  // 下一页投机预取：当前页稳定后后台取下一页 JSON 并立即预热其缩略图，
+  // 哨兵触底时直接消费预取结果，把"取 JSON → 再抓图"的串行等待从滚动路径上移走。
+  const nextPagePrefetchRef = useRef<{ query: string; page: number; promise: Promise<Awaited<ReturnType<typeof danbooruService.search>> | null> } | null>(null);
+
+  const scheduleNextPagePrefetch = (query: string, page: number, hasMore: boolean) => {
+    if (!hasMore) return;
+    const existing = nextPagePrefetchRef.current;
+    if (existing && existing.query === query && existing.page === page + 1) return;
+    const promise = danbooruService.search({ query, page: page + 1, limit: PAGE_SIZE })
+      .then(result => {
+        prewarmSources(result.items.map(item => item.sampleUrl));
+        return result;
+      })
+      .catch(() => null);
+    nextPagePrefetchRef.current = { query, page: page + 1, promise };
+  };
+
+  const consumeNextPagePrefetch = (query: string, page: number) => {
+    const prefetch = nextPagePrefetchRef.current;
+    if (!prefetch || prefetch.query !== query || prefetch.page !== page) return null;
+    nextPagePrefetchRef.current = null;
+    return prefetch.promise;
+  };
 
   const selected = useMemo(() => items.find(item => item.id === selectedId) || null, [items, selectedId]);
   const closeMobileDetail = useMobileHistoryLayer(Boolean(selected), () => setSelectedId(null), 'danbooru-detail');
@@ -122,6 +145,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       setSelectedId(current => result.items.some(item => item.id === current) ? current : null);
       loadedRef.current = true;
       prewarmSources(result.items.map(item => item.sampleUrl));
+      scheduleNextPagePrefetch(result.query, result.page, result.hasMore);
       requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; });
     } catch (loadError) {
       if (!loadGuard.isCurrent(mySeq)) return;
@@ -142,7 +166,9 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     const beforeQuery = queryRef.current;
     appendingRef.current = true;
     try {
-      const result = await danbooruService.search({ query: beforeQuery, page: beforePage + 1, limit: PAGE_SIZE });
+      // 优先消费投机预取的下一页（预取失败则回退正常请求）
+      const prefetched = await consumeNextPagePrefetch(beforeQuery, beforePage + 1);
+      const result = prefetched || await danbooruService.search({ query: beforeQuery, page: beforePage + 1, limit: PAGE_SIZE });
       // 加载期间用户搜索/跳页：丢弃本次结果，避免拼接到错误列表上。
       if (pageRef.current !== beforePage || queryRef.current !== beforeQuery) return;
       setItems(previous => [...previous, ...result.items]);
@@ -151,6 +177,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       pageRef.current = result.page;
       // 追加页同样预热：否则滚到新页时每张图都要首次抓取，出现“断一下”。
       prewarmSources(result.items.map(item => item.sampleUrl));
+      scheduleNextPagePrefetch(beforeQuery, result.page, result.hasMore);
     } catch (appendError) {
       const message = appendError instanceof Error ? appendError.message : 'Danbooru 加载失败';
       notify(message, 'error');

@@ -416,6 +416,12 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   // 每次 loadWorks 递增的序号：非追加路径（搜索/筛选/跳页）此前无竞态守卫，慢的旧响应
   // 会覆盖新结果并污染模块级 aitagPageCache；卸载后迟到的响应同样不该再写。
   const loadGuard = useStaleGuard();
+  // 下一页投机预取：当前页稳定后后台请求下一页，哨兵触底追加时直接消费，
+  // 把 JSON 往返从滚动路径上移走。签名与页码都匹配才可消费，过期预取自然作废。
+  const prefetchedPageRef = useRef<{ signature: string; page: number; promise: Promise<any> } | null>(null);
+
+  const buildPrefetchSignature = (sort: string, aiType: string, rankMonthValue: string, cacheFilterValue: string) =>
+    `${q}|${prompt}|${sort}|${aiType}|${rankMonthValue}|${cacheFilterValue}`;
   const getQuerySignature = () => `${q}|${prompt}|${sort}|${aiType}|${rankMonth}|${cacheFilter}`;
   const appendNextPage = async (force = false) => {
     if (appendingRef.current || isLoading) return;
@@ -465,14 +471,22 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     const targetRankMonth = options.rankMonthOverride || rankMonth;
     const targetTimeRange = getAitagTimeRange(targetSort, targetRankMonth);
     const targetCacheFilter = options.cacheFilterOverride || cacheFilter;
+    const prefetchSignature = buildPrefetchSignature(targetSort, targetAiType, targetRankMonth, targetCacheFilter);
     if (!options.silent) setIsLoading(true);
     aitagPageCache = { ...aitagPageCache, error: null };
     setError(null);
     try {
       let data;
       let offline = false;
-      try {
-        if (targetCacheFilter === 'all') {
+      // 命中投机预取（同签名同页）则直接消费；预取失败（null）回退正常请求
+      const prefetched = prefetchedPageRef.current;
+      if (prefetched && prefetched.signature === prefetchSignature && prefetched.page === targetPage) {
+        prefetchedPageRef.current = null;
+        data = await prefetched.promise;
+      }
+      if (!data) {
+        try {
+          if (targetCacheFilter === 'all') {
           data = await aitagService.search({
             page: targetPage,
             pageSize: PAGE_SIZE,
@@ -506,6 +520,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           timeRange: targetTimeRange,
         });
         offline = true;
+        }
       }
 
       // 等待期间用户又触发了新的加载，或组件已卸载：丢弃过期结果，不写状态也不污染模块级缓存
@@ -541,6 +556,18 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       setIsOfflineCache(offline);
       setError(nextError);
       if (options.resetScroll) resetScrollPositions();
+
+      // 当前页稳定后后台预取下一页：追加触底时直接消费，省掉 JSON 往返等待
+      if (nextItems.length > 0) {
+        const fetchPrefetchPage = (pageNumber: number) => targetCacheFilter === 'all'
+          ? aitagService.search({ page: pageNumber, pageSize: PAGE_SIZE, q, prompt, sort: targetSort, aiType: targetAiType, timeRange: targetTimeRange })
+          : aitagService.searchCache({ page: pageNumber, pageSize: PAGE_SIZE, q, prompt, sort: targetSort, aiType: targetAiType, cacheFilter: targetCacheFilter, timeRange: targetTimeRange });
+        prefetchedPageRef.current = {
+          signature: prefetchSignature,
+          page: nextPage + 1,
+          promise: fetchPrefetchPage(nextPage + 1).catch(() => null),
+        };
+      }
     } catch (e: any) {
       if (!loadGuard.isCurrent(mySeq)) return;
       const nextError = e.message || '本地没有这一页，且当前无法联网获取';
