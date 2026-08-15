@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 修复：连续提示时新 toast 被旧计时器提前清掉
+
+- `notify` 每次都新起一个 3 秒 `setTimeout` 且不保存句柄：连续两次提示时，前一个计时器到点会把后一个新 toast 提前清掉。现在先 clear 旧句柄再挂新计时器，提示总是完整显示 3 秒。
+
 ### 修复：App 主流程错误处理裸奔（加载失败无感知、失败后永久卡加载态）
 
 - `loadArtists`/`loadInspirations` 此前无 catch，切换到画师库/灵感页时若请求失败会成为 unhandled rejection，用户毫无感知；现在失败会 console.error 并弹错误提示。

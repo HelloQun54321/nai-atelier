@@ -1,5 +1,5 @@
 
-import React, { lazy, startTransition, Suspense, useState, useEffect } from 'react';
+import React, { lazy, startTransition, Suspense, useState, useEffect, useRef } from 'react';
 import { Layout } from './components/Layout';
 import { ChainList } from './components/ChainList';
 import { useConfirmDialog } from './components/ConfirmDialog';
@@ -65,9 +65,15 @@ const App = () => {
   // Toast State
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
+  // 连续 notify 时旧计时器会把新 toast 提前清掉，先清旧再挂新
+  const toastTimerRef = useRef<number | null>(null);
   const notify = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 3000);
   };
 
   // Personal mode enters directly without a login session.
