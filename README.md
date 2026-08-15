@@ -291,7 +291,7 @@ NaiPromptManager 独有的新画师串可以先同步到 st-chatu8；一旦进�
 
 ### Tag 自动补全与中文词库
 
-项目内置 31 万余条本地 Tag 数据：
+项目内置 31 万余条本地 Tag 数据（中英对照与画师/角色目录源自 [ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table) 的 tag.sqlite，NovelAI 专属 Tag 来自官方列表；详见[来源与许可](#-来源与许可)）：
 
 - Danbooru 中英对照 Tag
 - NovelAI V4.5 专属 Tag
@@ -716,9 +716,13 @@ NaiPromptManager/
 
 ### 第三方数据与资源
 
-- 互通与协议参考：[st-chatu8](https://github.com/damoshen123/st-chatu8)（NovelAI 扩展，Precise Reference / Vibe 数据流与拼车队列指纹协议实现参考；仅协议层借鉴，不含其代码）
-- 互通平台：[SillyTavern](https://github.com/SillyTavern/SillyTavern)（本项目的 st-chatu8 互通以其扩展平台为载体，扩展侧 `npm-bridge` 安装于 SillyTavern）
-- Tag 中文数据：[ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)
+- **Tag 中英词典、画师目录与角色目录**：[ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)
+  - 项目的 Tag 自动补全词库、约 14.6 万画师 Tag 目录、约 9.9 万官方角色 Tag 目录均由该项目的 `tag.sqlite` 数据库生成（`scripts/update-tag-dictionary.mjs` 下载并转换）。
+  - 该上游项目**未在仓库中声明开源许可**；本项目仅将数据用于个人本地使用，不随源码重新分发其数据库文件。
+- **NovelAI 特殊 Tag（风格年份等）**：来自 NovelAI 官方 Tag 列表 `data/novelai-v45-tags.json`（项目内文件）。
+- **互通与协议参考**：[st-chatu8](https://github.com/damoshen123/st-chatu8)（NovelAI 扩展，Precise Reference / Vibe 数据流与拼车队列指纹协议实现参考；仅协议层借鉴，不含其代码）
+- **互通平台**：[SillyTavern](https://github.com/SillyTavern/SillyTavern)（本项目的 st-chatu8 互通以其扩展平台为载体，扩展侧 `npm-bridge` 安装于 SillyTavern）
+- NovelAI Tag 与模型说明：[NovelAI Documentation](https://docs.novelai.net/)
 - NovelAI Tag 与模型说明：[NovelAI Documentation](https://docs.novelai.net/)
 - AITag 作品与元数据：[aitag.win](https://aitag.win/)
 - Pixiv 作品与图片：[Pixiv](https://www.pixiv.net/)（图片权利归各自作者或权利人所有，仅经本机网关按官方规则抓取）
