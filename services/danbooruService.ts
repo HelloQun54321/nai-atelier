@@ -29,7 +29,11 @@ export interface DanbooruSearchResult {
 const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v9';
 const COVER_CACHE_TTL = 14 * 24 * 60 * 60 * 1000;
 const COVER_CACHE_LIMIT = 150;
-const COVER_REQUEST_INTERVAL_MS = 300;
+// 候选枚举调度：最多 3 并发 + 100ms 启动间隔（有效速率 ~6/s，低于 Danbooru
+// 匿名 ~10/s 限制）；429 时整体退避 2s。此前是严格串行 + 300ms 间隔，
+// 40 个画师的封面要 12s 才能枚举完。
+const COVER_REQUEST_CONCURRENCY = 3;
+const COVER_REQUEST_INTERVAL_MS = 100;
 // Keep the cached first screen compact. The cover component loads later pages on demand.
 const COVER_CACHE_CANDIDATE_LIMIT = 24;
 
@@ -50,17 +54,31 @@ export interface DanbooruCoverSet {
 type StoredCover = DanbooruCoverSet & { updatedAt: number };
 let coverCache: Record<string, StoredCover> | null = null;
 const coverRequests = new Map<string, Promise<DanbooruCoverSet>>();
-let coverRequestQueue: Promise<void> = Promise.resolve();
+let coverInFlight = 0;
+const coverWaiters: Array<() => void> = [];
 let nextCoverRequestAt = 0;
 
 const scheduleCoverRequest = <T>(request: () => Promise<T>): Promise<T> => {
-  const start = coverRequestQueue.then(async () => {
-    const delay = Math.max(0, nextCoverRequestAt - Date.now());
-    if (delay) await new Promise(resolve => window.setTimeout(resolve, delay));
+  const acquire = async () => {
+    while (coverInFlight >= COVER_REQUEST_CONCURRENCY) {
+      await new Promise<void>(resolve => coverWaiters.push(resolve));
+    }
+    coverInFlight++;
+    const wait = Math.max(0, nextCoverRequestAt - Date.now());
+    if (wait) await new Promise(resolve => window.setTimeout(resolve, wait));
     nextCoverRequestAt = Date.now() + COVER_REQUEST_INTERVAL_MS;
-  });
-  coverRequestQueue = start.catch(() => undefined);
-  return start.then(request);
+  };
+  return acquire().then(() =>
+    request().catch(error => {
+      if (/429/.test(String((error as Error)?.message || error))) {
+        nextCoverRequestAt = Math.max(nextCoverRequestAt, Date.now() + 2000);
+      }
+      throw error;
+    }).finally(() => {
+      coverInFlight--;
+      coverWaiters.shift()?.();
+    })
+  );
 };
 
 const readCoverCache = () => {
