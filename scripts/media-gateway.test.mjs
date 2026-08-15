@@ -583,11 +583,11 @@ test('media thumbnails accept project and st-chatu8 history sources without open
 
 test('thumbnail generation concurrency scales conservatively with CPU and memory', () => {
   const gib = 1024 ** 3;
-  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 4, totalMemoryBytes: 8 * gib }), 2);
-  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 8, totalMemoryBytes: 16 * gib }), 4);
-  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 12, totalMemoryBytes: 16 * gib }), 8);
-  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 16, totalMemoryBytes: 32 * gib }), 12);
-  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 16, totalMemoryBytes: 8 * gib }), 2);
+  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 4, totalMemoryBytes: 8 * gib }), 4);
+  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 8, totalMemoryBytes: 16 * gib }), 8);
+  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 12, totalMemoryBytes: 16 * gib }), 12);
+  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 16, totalMemoryBytes: 32 * gib }), 16);
+  assert.equal(selectThumbnailConcurrency({ logicalProcessors: 16, totalMemoryBytes: 8 * gib }), 4);
 });
 
 test('Vibe strengths are only scaled when their sum exceeds one', () => {

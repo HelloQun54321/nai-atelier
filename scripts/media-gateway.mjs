@@ -61,10 +61,13 @@ export const selectThumbnailConcurrency = ({
   totalMemoryBytes = totalmem(),
 } = {}) => {
   const memoryGb = totalMemoryBytes / (1024 ** 3);
-  if (logicalProcessors >= 16 && memoryGb >= 24) return 12;
-  if (logicalProcessors >= 12 && memoryGb >= 16) return 8;
-  if (logicalProcessors >= 8 && memoryGb >= 12) return 4;
-  return 2;
+  // 档位按"网络抓取为瓶颈"标定：远端图片单张 0.8-3s 纯 I/O 等待，sharp 缩放
+  // （≤960px webp，effort 3-4）每张仅几十毫秒，按 CPU 保守分档会卡错资源，
+  // 一页 40 张图在 4 并发下要 10s+ 才能填满。CPU 占用仍受档位上限约束。
+  if (logicalProcessors >= 16 && memoryGb >= 24) return 16;
+  if (logicalProcessors >= 12 && memoryGb >= 16) return 12;
+  if (logicalProcessors >= 8 && memoryGb >= 12) return 8;
+  return 4;
 };
 
 const THUMBNAIL_JOB_CONCURRENCY = selectThumbnailConcurrency();
@@ -916,7 +919,7 @@ const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, vibeId, 
  *  只预热桌面/常见布局实际使用的 thumb-320：高分屏所需的 640/960 按需首抓后同样入缓存，
  *  避免一半预热工作量生成用不到的档位。 */
 const PREWARM_VARIANTS = ['thumb-320'];
-const PREWARM_CONCURRENCY = 4;
+const PREWARM_CONCURRENCY = 6;
 const PREWARM_MAX_PENDING = 300;
 /** 队列内部分辨“固定保留”任务的内部后缀（URL 之外的哨兵，不参与网络请求）。 */
 const PIN_SUFFIX = '\u0001pin';

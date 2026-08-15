@@ -4,6 +4,10 @@
 
 ## 2026-08-16
 
+### 优化：网关缩略图并发提档（12/8/4/2 → 16/12/8/4，预热 4 → 6）
+
+- 远端图单张抓取 0.8-3s 是纯网络等待，sharp 缩放每张仅几十毫秒——原档位按 CPU/内存保守标定，卡错了瓶颈资源：中档机器 4 并发填满一页 40 张要 10s+。新档位仍按机器级别约束 CPU，但允许更高的并行抓取；后台预热并发 4 → 6。同机器下图库首屏与追加页的填图速度约提升一倍。
+
 ### 重构：JSON 元数据提取纯函数从 ChainEditor 抽到 metadataService（首片拆分）
 
 - `extractRawMetadataFromJsonText`（Comment 对象/字符串、生成参数 JSON、Description、纯文本五级回退）从 2196 行的 ChainEditor 组件迁到 services/metadataService.ts，与 parseNovelAIMetadata 同处一层，并补 7 个回退分支的单元测试。这是巨石组件拆分计划的第一片：先抽纯逻辑、可测试的部分。
