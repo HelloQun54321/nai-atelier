@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
 import {
   clearMobileThumbnailCache,
@@ -13,19 +13,29 @@ import { DesktopImageColumns, getMobileImageDisplayPreferences, MobileImageColum
 import { anlasBudgetService, DEFAULT_ANLAS_BUDGET, useAnlasBudget } from '../services/anlasBudget';
 import { CLOUD_QUEUE_SERVICE_URL, getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 import { PromptAgentSettings } from './PromptAgentSettings';
-import { ArrowLeft, Bot, BookOpen, ChevronRight, Coins, Info, KeyRound, Palette, Shield, Smartphone, X } from 'lucide-react';
+import { ArrowLeft, Bot, BookOpen, ChevronRight, Database, ExternalLink, KeyRound, Palette, RefreshCw, Server, Shield, Smartphone, X } from 'lucide-react';
 
-type SettingsSection = 'appearance' | 'novelai' | 'agent' | 'anlas' | 'tags' | 'cache' | 'about';
+type SettingsSection = 'appearance' | 'novelai' | 'agent' | 'maintenance';
 type SettingsPage = 'home' | SettingsSection;
 
+interface LocalMaintenanceStatus {
+  gatewayReady: boolean;
+  workerReady: boolean;
+  thumbnailCache: {
+    count: number;
+    bytes: number;
+    pinnedCount: number;
+    pinnedBytes: number;
+    limitBytes: number;
+    pinnedLimitBytes: number;
+  };
+}
+
 const settingsSections: Array<{ id: SettingsSection; label: string; description: string; icon: React.ComponentType<{ className?: string }> }> = [
-  { id: 'appearance', label: '外观与隐私', description: '主题、安全模式与图片布局', icon: Palette },
-  { id: 'novelai', label: 'NovelAI', description: '连接密钥与多人队列', icon: KeyRound },
+  { id: 'appearance', label: '界面与内容显示', description: '主题、安全模式与图片布局', icon: Palette },
+  { id: 'novelai', label: 'NovelAI 与 Anlas', description: '连接、队列与本地预算', icon: KeyRound },
   { id: 'agent', label: '项目 Agent', description: '模型、权限与服务商', icon: Bot },
-  { id: 'anlas', label: 'Anlas 点数', description: '本地预算与扣费记录', icon: Coins },
-  { id: 'tags', label: 'Tag 词库', description: '词库来源与更新', icon: BookOpen },
-  { id: 'cache', label: '手机缓存', description: '小图缓存容量', icon: Smartphone },
-  { id: 'about', label: '关于', description: '版本与项目信息', icon: Info },
+  { id: 'maintenance', label: '数据与维护', description: '词库、缓存、备份与服务状态', icon: Database },
 ];
 
 interface GlobalSettingsProps {
@@ -54,6 +64,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [activeSection, setActiveSection] = useState<SettingsPage>('home');
   const anlasBudget = useAnlasBudget();
   const [anlasInput, setAnlasInput] = useState(String(DEFAULT_ANLAS_BUDGET));
+  const [maintenanceStatus, setMaintenanceStatus] = useState<LocalMaintenanceStatus | null>(null);
+  const [maintenanceStatusError, setMaintenanceStatusError] = useState('');
+  const [maintenanceStatusLoading, setMaintenanceStatusLoading] = useState(false);
   const requestClose = useMobileHistoryLayer(open, onClose, 'settings');
 
   useEffect(() => {
@@ -89,6 +102,26 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     window.addEventListener('nai-mobile-cache-changed', refresh);
     return () => window.removeEventListener('nai-mobile-cache-changed', refresh);
   }, [open]);
+
+  const refreshMaintenanceStatus = useCallback(async () => {
+    setMaintenanceStatusLoading(true);
+    setMaintenanceStatusError('');
+    try {
+      const response = await fetch('/api/local-maintenance/status', { cache: 'no-store' });
+      const payload = await response.json().catch(() => null) as LocalMaintenanceStatus & { error?: string } | null;
+      if (!response.ok || !payload) throw new Error(payload?.error || '无法读取本地服务状态');
+      setMaintenanceStatus(payload);
+    } catch (error) {
+      setMaintenanceStatusError(error instanceof Error ? error.message : '无法读取本地服务状态');
+    } finally {
+      setMaintenanceStatusLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open || activeSection !== 'maintenance') return;
+    void refreshMaintenanceStatus();
+  }, [open, activeSection, refreshMaintenanceStatus]);
 
   const broadcastApiKey = (value: string) => {
     window.dispatchEvent(new CustomEvent<string>('nai-api-key-changed', { detail: value }));
@@ -163,7 +196,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           <div className={activeSection === 'home' ? 'hidden' : 'space-y-3'}>
           <section id={`settings-appearance`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'appearance' ? 'hidden' : ''}`}>
             <div className="flex min-h-11 w-full items-center justify-between text-left">
-              <div><h3 className="font-semibold text-gray-900 dark:text-white">外观与隐私</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">主题与图片安全显示状态：{safeMode ? '安全模式已开启' : isDark ? '深色' : '浅色'}</p></div>
+              <div><h3 className="font-semibold text-gray-900 dark:text-white">界面与内容显示</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">主题与图片安全显示状态：{safeMode ? '安全模式已开启' : isDark ? '深色' : '浅色'}</p></div>
             </div>
             {activeSection === 'appearance' && <div className="mt-3 space-y-3">
               <div><div className="mb-2 text-xs font-bold text-gray-500 dark:text-gray-400">主题</div><div className="grid grid-cols-3 gap-2">{([['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setThemeMode(value)} className={`mobile-touch md:h-10 rounded-xl border px-2 text-xs font-bold ${themeMode === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}</div></div>
@@ -231,6 +264,14 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <div className="break-all text-[10px] leading-4 text-gray-400">公共服务：{CLOUD_QUEUE_SERVICE_URL}</div>
                 <p className="text-[11px] leading-5 text-amber-600 dark:text-amber-400">仅发送 Key 的 SHA-256 指纹、任务标识和个性语；Prompt、图片、原始 Key 不会发送给队列服务。队列不可用时本次生成会停止，不会静默绕过。</p>
               </div>}
+            </div>
+            <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
+              <div><h4 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">当前剩余 <b className="text-indigo-600 dark:text-indigo-300">{anlasBudget.remaining}</b> 点，电脑与手机共用。</p></div>
+              <div className="mt-3 flex gap-2">
+                <input type="number" min="0" step="1" value={anlasInput} onChange={event => setAnlasInput(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-lg font-black tabular-nums outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900" aria-label="可支配 Anlas 点数" />
+                <button type="button" onClick={async () => { const next = await anlasBudgetService.set(Number(anlasInput)); setAnlasInput(String(next.remaining)); notify('Anlas 预算已更新'); }} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white">保存</button>
+              </div>
+              <div className="mt-2 flex items-start justify-between gap-3 text-[11px] leading-5 text-gray-500 dark:text-gray-400"><p>这是本地预算，不是 NovelAI 官网实时余额。默认按 Opus 每月 10000 点由 6 人均分后取整为 1666；生图和永久 Vibe 成功后按官方规则扣减，失败、导入或重复编码不扣。</p><button type="button" onClick={async () => { const next = await anlasBudgetService.set(DEFAULT_ANLAS_BUDGET); setAnlasInput(String(next.remaining)); }} className="flex-shrink-0 font-bold text-indigo-600 dark:text-indigo-300">恢复 1666</button></div>
             </div></div>}
           </section>
 
@@ -241,75 +282,24 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             {activeSection === 'agent' && <div className="mt-3"><PromptAgentSettings notify={notify} /></div>}
           </section>
 
-          <section id={`settings-anlas`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'anlas' ? 'hidden' : ''}`}>
-            <div className="flex min-h-11 w-full items-center justify-between text-left">
-              <div><h3 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">当前剩余 <b className="text-indigo-600 dark:text-indigo-300">{anlasBudget.remaining}</b> 点，电脑与手机共用。</p></div>
+          <section id="settings-maintenance" className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'maintenance' ? 'hidden' : ''}`}>
+            <div className="flex min-h-11 items-center justify-between gap-4 text-left">
+              <div><h3 className="font-semibold text-gray-900 dark:text-white">数据与维护</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">词库、缓存、备份与本地服务状态。</p></div>
+              <button type="button" onClick={() => void refreshMaintenanceStatus()} disabled={maintenanceStatusLoading} className="mobile-touch flex flex-none items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" title="刷新本地服务状态"><RefreshCw className={`h-3.5 w-3.5 ${maintenanceStatusLoading ? 'animate-spin' : ''}`} />刷新</button>
             </div>
-            {activeSection === 'anlas' && <div className="mt-3">
-              <div className="flex gap-2">
-                <input type="number" min="0" step="1" value={anlasInput} onChange={event => setAnlasInput(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-lg font-black tabular-nums outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900" aria-label="可支配 Anlas 点数" />
-                <button type="button" onClick={async () => { const next = await anlasBudgetService.set(Number(anlasInput)); setAnlasInput(String(next.remaining)); notify('Anlas 预算已更新'); }} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white">保存</button>
-              </div>
-              <div className="mt-2 flex items-start justify-between gap-3 text-[11px] leading-5 text-gray-500 dark:text-gray-400"><p>这是本地预算，不是 NovelAI 官网实时余额。默认按 Opus 每月 10000 点由 6 人均分后取整为 1666；生图和永久 Vibe 成功后按官方规则扣减，失败、导入或重复编码不扣。</p><button type="button" onClick={async () => { const next = await anlasBudgetService.set(DEFAULT_ANLAS_BUDGET); setAnlasInput(String(next.remaining)); }} className="flex-shrink-0 font-bold text-indigo-600 dark:text-indigo-300">恢复 1666</button></div>
+            {activeSection === 'maintenance' && <div className="mt-4 space-y-5">
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">Tag 补全词库</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">查看版本、数量并检查中英 Tag 数据更新。</p></div><BookOpen className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3"><TagDictionaryUpdater notify={notify} /></div></div>
+
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">手机图片缓存</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">仅保存列表小图；清除后可重新生成，不会影响原图、历史或电脑数据。</p></div><Smartphone className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 grid grid-cols-4 gap-2">{[0, 25, 50, 100].map(value => <button key={value} type="button" onClick={() => { setMobileCacheLimitMb(value); setMobileCacheStats(getMobileCacheStats()); }} className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${getMobileCacheLimitMb() === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'}`}>{value === 0 ? '关闭' : `${value} MB`}</button>)}</div><div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs dark:bg-gray-800/70"><span className="text-gray-500 dark:text-gray-400">已缓存 {mobileCacheStats.count} 张 · {(mobileCacheStats.bytes / 1024 / 1024).toFixed(1)} MB / {mobileCacheStats.limitMb} MB</span><button type="button" onClick={async () => { if (!await confirmAction({ title: '清空手机小图缓存？', message: '只会清除可重新生成的缩略图，不会影响原图、历史或任何本地数据。', confirmLabel: '清空缓存', tone: 'danger' })) return; await clearMobileThumbnailCache(); setMobileCacheStats(getMobileCacheStats()); notify('手机小图缓存已清空'); }} className="flex-shrink-0 font-medium text-red-500 hover:text-red-600">清空缓存</button></div></div>
+
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">电脑缩略图缓存</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">位于 <code>local-cache/thumbnails</code>，仅保存可重建的小图；普通缓存自动控制在 1 GB 内，固定封面另有 256 MB 上限。</p></div><Database className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs text-gray-500 dark:bg-gray-800/70 dark:text-gray-400">{maintenanceStatus ? <>已缓存 {maintenanceStatus.thumbnailCache.count} 张 · {(maintenanceStatus.thumbnailCache.bytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.limitBytes / 1024 / 1024).toFixed(0)} MB<br />固定封面 {maintenanceStatus.thumbnailCache.pinnedCount} 张 · {(maintenanceStatus.thumbnailCache.pinnedBytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.pinnedLimitBytes / 1024 / 1024).toFixed(0)} MB</> : '等待读取本地缓存状态…'}</div></div>
+
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">本地服务状态</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">状态来自当前运行的媒体网关与核心页面服务；手机访问时也会经过同一套验证。</p></div><Server className="h-4 w-4 flex-none text-indigo-500" /></div>{maintenanceStatusError ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2.5 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">{maintenanceStatusError}</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2"><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.gatewayReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>媒体网关：{maintenanceStatus?.gatewayReady ? '可用' : '正在检查'}</div><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.workerReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : maintenanceStatus ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>核心页面服务：{maintenanceStatus?.workerReady ? '可用' : maintenanceStatus ? '未就绪' : '正在检查'}</div></div>}</div>
+
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><h4 className="font-semibold text-gray-900 dark:text-white">重要数据备份</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">请完整复制 <code>local-data</code>：其中包含数据库、R2 原图、历史、局域网认证和 Agent 的加密凭据。<code>local-cache</code>、手机小图缓存和 GitHub 仓库都不能代替这份备份。</p></div>
+
+              <div className="flex items-center justify-between gap-4"><div><h4 className="font-semibold text-gray-900 dark:text-white">关于 NAI Atelier</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">个人维护版本 · v{__APP_VERSION__}</p></div><a href="https://github.com/HelloQun54321/nai-atelier" target="_blank" rel="noreferrer" className="mobile-touch flex flex-none items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-2 text-xs font-bold text-white transition hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"><ExternalLink className="h-3.5 w-3.5" />打开 GitHub</a></div>
             </div>}
-          </section>
-
-          <section id={`settings-tags`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'tags' ? 'hidden' : ''}`}>
-            <div className="flex min-h-11 w-full items-center justify-between gap-4 text-left">
-              <div>
-              <h3 className="font-semibold text-gray-900 dark:text-white">Tag 补全词库</h3>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">查看版本、数量并检查中英 Tag 数据更新。</p>
-              </div>
-            </div>
-            {activeSection === 'tags' && <div className="mt-3 flex justify-start"><TagDictionaryUpdater notify={notify} /></div>}
-          </section>
-
-          <section id={`settings-cache`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'cache' ? 'hidden' : ''}`}>
-            <div className="flex min-h-11 w-full items-center justify-between text-left">
-              <div>
-              <h3 className="font-semibold text-gray-900 dark:text-white">手机图片缓存</h3>
-              <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">仅保存列表小图，原图和历史数据仍只保存在电脑。缓存被清除后可以重新生成。</p>
-              </div>
-            </div>
-            {activeSection === 'cache' && <div>
-            <div className="mt-4 grid grid-cols-4 gap-2">
-              {[0, 25, 50, 100].map(value => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => {
-                    setMobileCacheLimitMb(value);
-                    setMobileCacheStats(getMobileCacheStats());
-                  }}
-                  className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${getMobileCacheLimitMb() === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'}`}
-                >
-                  {value === 0 ? '关闭' : `${value} MB`}
-                </button>
-              ))}
-            </div>
-            <div className="mt-4 flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs dark:bg-gray-800/70">
-              <span className="text-gray-500 dark:text-gray-400">已缓存 {mobileCacheStats.count} 张 · {(mobileCacheStats.bytes / 1024 / 1024).toFixed(1)} MB / {mobileCacheStats.limitMb} MB</span>
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!await confirmAction({ title: '清空手机小图缓存？', message: '只会清除可重新生成的缩略图，不会影响原图、历史或任何本地数据。', confirmLabel: '清空缓存', tone: 'danger' })) return;
-                  await clearMobileThumbnailCache();
-                  setMobileCacheStats(getMobileCacheStats());
-                  notify('手机小图缓存已清空');
-                }}
-                className="flex-shrink-0 font-medium text-red-500 hover:text-red-600"
-              >
-                清空缓存
-              </button>
-            </div>
-            </div>}
-          </section>
-
-          <section id={`settings-about`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'about' ? 'hidden' : ''}`}>
-            <div className="flex items-center justify-between gap-4">
-              <div><h3 className="font-semibold text-gray-900 dark:text-white">关于</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">NAI Atelier 个人维护版本</p></div>
-              <span className="rounded-lg bg-gray-100 px-3 py-1.5 font-mono text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-300">v{__APP_VERSION__}</span>
-            </div>
           </section>
           </div>
         </div>

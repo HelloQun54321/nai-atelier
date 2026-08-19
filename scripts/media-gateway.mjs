@@ -1324,6 +1324,26 @@ class ThumbnailCache {
     return Boolean(this.entries[this.keyFor(source, variant)]);
   }
 
+  stats() {
+    return Object.values(this.entries).reduce((summary, entry) => {
+      const size = Math.max(0, Number(entry?.size || 0));
+      summary.count += 1;
+      summary.bytes += size;
+      if (entry?.pinned) {
+        summary.pinnedCount += 1;
+        summary.pinnedBytes += size;
+      }
+      return summary;
+    }, {
+      count: 0,
+      bytes: 0,
+      pinnedCount: 0,
+      pinnedBytes: 0,
+      limitBytes: CACHE_LIMIT,
+      pinnedLimitBytes: PIN_CACHE_LIMIT,
+    });
+  }
+
   /** 该缩略图是否已标记为固定保留（封面图）。 */
   isPinned(source, variant) {
     return this.entries[this.keyFor(source, variant)]?.pinned === true;
@@ -1784,6 +1804,18 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
       } catch (error) {
         return sendJson(res, Number(error.status) || 500, { error: error.message || '图片反推 Tag 失败' });
       }
+    }
+    if (url.pathname === '/api/local-maintenance/status') {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      let workerReady = false;
+      try {
+        const workerStatus = await requestWorkerJson('/api/lan/status', req, workerPort);
+        workerReady = typeof workerStatus?.authorized === 'boolean';
+      } catch {
+        // 媒体网关仍可回应时，向设置页如实报告核心 Worker 未就绪。
+      }
+      return sendJson(res, 200, { gatewayReady: true, workerReady, thumbnailCache: cache.stats() });
     }
     if (url.pathname.startsWith('/api/pixiv/')) {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });

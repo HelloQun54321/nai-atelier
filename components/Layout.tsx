@@ -27,7 +27,7 @@ const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module =
 
 type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'inspiration' | 'history' | 'playground';
 type ThemeMode = 'light' | 'dark' | 'system';
-type SettingsSection = 'home' | 'appearance' | 'novelai' | 'agent' | 'anlas' | 'tags' | 'cache' | 'about';
+type SettingsSection = 'home' | 'appearance' | 'novelai' | 'agent' | 'maintenance';
 
 interface LayoutProps {
   children: ReactNode;
@@ -119,7 +119,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   useEffect(() => {
     const openSettings = (event: Event) => {
       const section = (event as CustomEvent<{ section?: SettingsSection }>).detail?.section;
-      if (section && ['appearance', 'novelai', 'agent', 'anlas', 'tags', 'cache', 'about'].includes(section)) setSettingsSection(section);
+      if (section && ['appearance', 'novelai', 'agent', 'maintenance'].includes(section)) setSettingsSection(section);
       else setSettingsSection('home');
       setShowSettings(true);
     };
