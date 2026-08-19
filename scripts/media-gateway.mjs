@@ -361,7 +361,11 @@ const requestWorkerJson = (path, req, workerPort, { method = 'GET', body } = {})
 const requestTagDictionaryControl = method => new Promise((resolve, reject) => {
   const upstream = httpRequest({
     hostname: '127.0.0.1', port: 3002, path: '/tag-dictionary', method,
-    headers: { accept: 'application/json', 'x-nai-local-control': 'true' },
+    headers: {
+      accept: 'application/json',
+      origin: 'http://localhost:3000',
+      'x-nai-local-control': 'true',
+    },
   }, async upstreamRes => {
     const chunks = [];
     for await (const chunk of upstreamRes) chunks.push(chunk);
@@ -1816,6 +1820,15 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         // 媒体网关仍可回应时，向设置页如实报告核心 Worker 未就绪。
       }
       return sendJson(res, 200, { gatewayReady: true, workerReady, thumbnailCache: cache.stats() });
+    }
+    if (url.pathname === '/api/tag-dictionary') {
+      if (req.method !== 'GET' && req.method !== 'POST') return sendJson(res, 405, { error: '仅支持 GET 或 POST 请求' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      try {
+        return sendJson(res, 200, await requestTagDictionaryControl(req.method));
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 503, { error: error.message || 'Tag 词库服务不可用' });
+      }
     }
     if (url.pathname.startsWith('/api/pixiv/')) {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });

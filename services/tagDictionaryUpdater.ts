@@ -14,13 +14,12 @@ export interface TagUpdateStatus {
   };
 }
 
-const CONTROL_URL = 'http://127.0.0.1:3002/tag-dictionary';
+const CONTROL_URL = '/api/tag-dictionary';
 
 const request = async (method: 'GET' | 'POST'): Promise<TagUpdateStatus> => {
   const response = await fetch(CONTROL_URL, {
     method,
     cache: 'no-store',
-    headers: { 'X-Nai-Local-Control': 'true' }
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || `Tag 更新服务请求失败：${response.status}`);
