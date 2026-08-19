@@ -25,7 +25,7 @@ export const PIXIV_SCHEME_HANDLER_SCRIPT = 'pixiv-scheme-handler.mjs';
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 
 /**
- * 注册 pixiv:// URL 协议 → 本机 NPM 登录回调处理器（仅 Windows，HKCU 无需管理员）。
+ * 注册 pixiv:// URL 协议 → 本机 NaiStudio 登录回调处理器（仅 Windows，HKCU 无需管理员）。
  * Pixiv 登录成功后通过 pixiv://account/login?code=… 回调（custom scheme 流程，
  * 旧流程为 app-api.pixiv.net HTTPS callback 白页）；未注册协议时浏览器无法处理，
  * 登录会卡在空白页。注册幂等，失败返回 false 且不阻断登录（退回地址栏监听/手动粘贴）。
@@ -351,7 +351,7 @@ export class PixivWebLoginOrchestrator {
       await this.launchBrowser(buildPixivLoginUrl({ codeChallenge: pkce.challenge }));
       session.state = 'awaiting-user';
       session.message = session.automaticCallback
-        ? '请在默认浏览器继续使用账号，NPM 会自动识别登录结果'
+        ? '请在默认浏览器继续使用账号，NaiStudio 会自动识别登录结果'
         : '登录完成后会出现 Pixiv 白页，请粘贴 callback 地址';
       session.timer = setTimeout(() => void this.finish(session, 'timed-out', '登录超时，请重试'), Math.max(1, session.expiresAt - this.clock()));
       session.timer.unref?.();

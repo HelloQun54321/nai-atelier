@@ -335,7 +335,7 @@ const requestWorkerJson = (path, req, workerPort, { method = 'GET', body } = {})
     hostname: '127.0.0.1', port: workerPort, path, method,
     headers: {
       accept: 'application/json', 'content-type': 'application/json', cookie: req.headers.cookie || '',
-      host: getForwardHost(req), 'user-agent': req.headers['user-agent'] || 'NaiPromptManager-MediaGateway',
+      host: getForwardHost(req), 'user-agent': req.headers['user-agent'] || 'NaiStudio-MediaGateway',
       'x-forwarded-for': normalizeIp(req.socket.remoteAddress),
       'x-nai-client-ip': normalizeIp(req.socket.remoteAddress),
       ...(payload ? { 'content-length': payload.length } : {}),
@@ -1016,7 +1016,7 @@ const requestWorkerBuffer = (source, req, workerPort) => new Promise((resolve, r
       accept: 'image/*',
       cookie: req.headers.cookie || '',
       host: getForwardHost(req),
-      'user-agent': req.headers['user-agent'] || 'NaiPromptManager-MediaGateway',
+      'user-agent': req.headers['user-agent'] || 'NaiStudio-MediaGateway',
       'x-forwarded-for': normalizeIp(req.socket.remoteAddress),
       'x-nai-client-ip': normalizeIp(req.socket.remoteAddress),
     },
@@ -1051,7 +1051,7 @@ export const requestRemoteBuffer = async (source, remoteFetch = fetch) => {
     const url = new URL(current);
     const host = url.hostname.toLowerCase();
     if (url.protocol !== 'https:' || (url.port && url.port !== '443') || !(ALLOWED_REMOTE_HOSTS.has(host) || host === PIXIV_IMAGE_HOST)) throw new Error('Remote image redirect is not allowed');
-    const headers = { accept: 'image/*', 'user-agent': 'NaiPromptManager-MediaGateway/1.0' };
+    const headers = { accept: 'image/*', 'user-agent': 'NaiStudio-MediaGateway/1.0' };
     // Pixiv 图片必须携带官方 Referer，否则上游返回 403。
     if (host === PIXIV_IMAGE_HOST) headers.referer = PIXIV_REFERER;
     const response = await remoteFetch(url, {
@@ -1093,7 +1093,7 @@ const handleAitagRemoteRequest = async (req, res, url, lanSecret, remoteFetch) =
       signal: AbortSignal.timeout(30_000),
       headers: {
         accept: isJsonApi ? 'application/json' : 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-        'user-agent': 'NaiPromptManager-Qun/0.5 (+local personal use)',
+        'user-agent': 'NaiStudio-Qun/0.5 (+local personal use)',
       },
     });
     const contentType = response.headers.get('content-type') || '';
@@ -1132,7 +1132,7 @@ const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remoteFetch
       signal: AbortSignal.timeout(30_000),
       headers: {
         accept: 'application/json',
-        'user-agent': 'NaiPromptManager/0.5 (+local personal use)',
+        'user-agent': 'NaiStudio/0.5 (+local personal use)',
       },
     });
     const contentType = response.headers.get('content-type') || '';
@@ -1161,7 +1161,7 @@ export const handlePixivGalleryRequest = async (req, res, url, pixivGallery, pix
   if (url.pathname === '/api/pixiv/login/start') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
     if (!isPixivConnectionMutationAllowed(req)) {
-      return sendJson(res, 403, { error: '请在运行 NPM 的电脑上登录；登录后手机可浏览', code: 'PIXIV_CONNECT_LOCAL_ONLY' });
+      return sendJson(res, 403, { error: '请在运行 NaiStudio 的电脑上登录；登录后手机可浏览', code: 'PIXIV_CONNECT_LOCAL_ONLY' });
     }
     return sendJson(res, 200, await pixivWebLogin.start());
   }
@@ -1174,7 +1174,7 @@ export const handlePixivGalleryRequest = async (req, res, url, pixivGallery, pix
   if (url.pathname === '/api/pixiv/login/complete') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
     if (!isPixivConnectionMutationAllowed(req)) {
-      return sendJson(res, 403, { error: '请在运行 NPM 的电脑上完成登录', code: 'PIXIV_CONNECT_LOCAL_ONLY' });
+      return sendJson(res, 403, { error: '请在运行 NaiStudio 的电脑上完成登录', code: 'PIXIV_CONNECT_LOCAL_ONLY' });
     }
     let body = {};
     try { body = JSON.parse((await readRequestBody(req, 8192)).toString('utf8') || '{}'); } catch {
@@ -1185,7 +1185,7 @@ export const handlePixivGalleryRequest = async (req, res, url, pixivGallery, pix
   if (url.pathname === '/api/pixiv/login') {
     if (req.method !== 'DELETE') return sendJson(res, 405, { error: 'Method not allowed' });
     if (!isPixivConnectionMutationAllowed(req)) {
-      return sendJson(res, 403, { error: '请在运行 NPM 的电脑上登录；登录后手机可浏览', code: 'PIXIV_CONNECT_LOCAL_ONLY' });
+      return sendJson(res, 403, { error: '请在运行 NaiStudio 的电脑上登录；登录后手机可浏览', code: 'PIXIV_CONNECT_LOCAL_ONLY' });
     }
     return sendJson(res, 200, await pixivWebLogin.cancel(url.searchParams.get('id')));
   }
@@ -1980,5 +1980,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     workerPort: Number(process.env.NAI_WORKER_PORT || 3001),
     lanSecret: process.env.NAI_LAN_SECRET || '',
   });
-  console.log(`NaiPromptManager media gateway listening on ${server.address().port}`);
+  console.log(`NaiStudio media gateway listening on ${server.address().port}`);
 }

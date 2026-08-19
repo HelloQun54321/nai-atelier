@@ -2,7 +2,7 @@
 set -e
 
 echo ""
-echo "=== NaiPromptManager 本地部署 ==="
+echo "=== NaiStudio 本地部署 ==="
 echo ""
 
 # Termux 环境检测与依赖安装

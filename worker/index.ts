@@ -229,7 +229,7 @@ async function proxyAitagJson(targetUrl: URL): Promise<Response> {
   const response = await fetch(targetUrl.toString(), {
     headers: {
       'Accept': 'application/json',
-      'User-Agent': 'NaiPromptManager-Qun/0.5 (+local personal use)',
+      'User-Agent': 'NaiStudio-Qun/0.5 (+local personal use)',
     },
   });
 
@@ -291,7 +291,7 @@ async function fetchAitagJson(targetUrl: URL, env?: Env): Promise<any> {
   const response = await fetch(localFetch.url, {
     headers: {
       'Accept': 'application/json',
-      'User-Agent': 'NaiPromptManager-Qun/0.5 (+local personal use)',
+      'User-Agent': 'NaiStudio-Qun/0.5 (+local personal use)',
       ...localFetch.headers,
     },
   });
@@ -333,7 +333,7 @@ async function fetchDanbooruJson(target: URL, env?: Env) {
   const response = await fetch(localFetch.url, {
     headers: {
       Accept: 'application/json',
-      'User-Agent': 'NaiPromptManager/0.5 (+local personal use)',
+      'User-Agent': 'NaiStudio/0.5 (+local personal use)',
       ...localFetch.headers,
     },
     signal: AbortSignal.timeout(30_000),
@@ -634,7 +634,7 @@ async function fetchAitagImageToBucket(env: Env, image: any, options: { workId: 
     const response = await fetch(localFetch.url, {
       headers: {
         'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-        'User-Agent': 'NaiPromptManager-Qun/0.5 (+local personal use)',
+        'User-Agent': 'NaiStudio-Qun/0.5 (+local personal use)',
         ...localFetch.headers,
       },
     });
@@ -2809,7 +2809,7 @@ export default {
           if (!/^[a-f0-9]{64}$/.test(declaredSourceHash)) return error('Vibe 文件缺少有效的图片标识', 400);
           if (actualSourceHash && declaredSourceHash !== actualSourceHash) {
             // st-chatu8 and some official-compatible exporters hash the Base64 text,
-            // while NaiPromptManager hashes the decoded image bytes. Accept both,
+            // while NaiStudio hashes the decoded image bytes. Accept both,
             // then keep the byte hash as the canonical deduplication key.
             const rawImage = String(document.image).replace(/^data:image\/[^;]+;base64,/i, '');
             const textHashes = new Set([

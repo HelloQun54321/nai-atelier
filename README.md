@@ -1,11 +1,11 @@
 <div align="center">
-  <img src="./public/artist-palette-3d.png" width="104" alt="NaiPromptManager 调色盘图标" />
+  <img src="./public/artist-palette-3d.png" width="104" alt="NaiStudio 调色盘图标" />
 
-  # NaiPromptManager
+  # NaiStudio
 
-  **面向 NovelAI 的个人本地提示词、角色、画师与图片工作台**
+  **面向 NovelAI 的个人本地创作工作台**
 
-  [![Version](https://img.shields.io/badge/version-0.79.37-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.79.38-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -13,14 +13,14 @@
 
   [项目定位](#-项目定位) · [核心能力](#-核心能力总览) · [功能地图](#-功能地图) · [SillyTavern 互通](#-sillytavern--st-chatu8-互通) · [手机局域网](#-手机局域网访问) · [手机 UI](#-手机-ui-设计) · [数据备份](#-备份与恢复) · [更新日志](./CHANGELOG.md)
 
-  > 基于 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 的个人独立维护版，面向本地单人使用；原项目见上方链接。
+  > NaiStudio 基于 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 二次开发并独立维护，面向本地单人使用；原项目见上方链接。
 </div>
 
 ---
 
 ## 🧭 项目定位
 
-NaiPromptManager 是一套运行在个人电脑上的 NovelAI 创作管理工具。它不是单纯的 Prompt 输入框，而是围绕长期个人使用建立的完整工作流：
+NaiStudio 是一套运行在个人电脑上的 NovelAI 创作工作台。它不是单纯的 Prompt 输入框，而是围绕长期个人使用建立的完整工作流：
 
 > **收集画师与角色 → 组合 Prompt → 调用 NovelAI → 保存原图和参数 → 整理历史与灵感 → 在电脑和手机之间继续使用。**
 
@@ -155,7 +155,7 @@ flowchart LR
 - 删除、清空、Vibe 编码和其他付费/危险操作采用真正的确认握手：Agent 会暂停在工具调用处，只有用户确认并且项目操作成功后才会继续，不会提前把“请求确认”当成“已经完成”。
 - 用户消息支持编辑并从该处重新执行，最后一条回答支持重新生成；所有消息均可复制。每轮实验室修改前仍保存完整快照，面板内可以“撤销本次”。
 - 对话记录与会话元数据保存在电脑，重启或从手机访问后仍能继续；旧版按画师串保存的单会话会在首次打开新工作台时自动迁入。
-- Agent 只有 NaiPromptManager 提供的结构化业务工具，没有电脑文件、命令行、系统进程或浏览器权限；联网能力分成 `web_search` 与 `read_web_page`，网页读取仅接受本轮搜索结果中的公网 HTTPS 链接，并阻止本机、局域网、保留网段、自定义端口和非文本响应。所有项目读取继续受四位局域网认证保护。
+- Agent 只有 NaiStudio 提供的结构化业务工具，没有电脑文件、命令行、系统进程或浏览器权限；联网能力分成 `web_search` 与 `read_web_page`，网页读取仅接受本轮搜索结果中的公网 HTTPS 链接，并阻止本机、局域网、保留网段、自定义端口和非文本响应。所有项目读取继续受四位局域网认证保护。
 - 普通编辑会直接应用；删除、清空历史、付费 Vibe 编码和 NovelAI 生图必须经过项目内确认面板。预计消耗 Anlas 的操作在确认前不会提交。
 - Agent回答支持安全的 Markdown 排版；工具过程收在当前回答下方，不再生成遮挡内容的独立状态气泡。流式输出默认跟随底部，用户向上查看时会暂停并提供“回到底部”；关闭面板不会擅自终止正在进行的任务。
 - 支持在输入框直接附加最多 4 张 PNG/JPEG/WebP/GIF 图片；可在设置中单独选择视觉模型。主模型本身支持识图时直接输入图片，选择不同的视觉模型时先由专用模型生成受限的视觉观察，再交给主模型推理和调用工具。图片不写入会话持久记录，电脑服务负责处理，手机不保存原图。
@@ -173,7 +173,7 @@ flowchart LR
 - LLM API Key 使用 AES-256-GCM 加密保存在电脑 `local-data`，独立随机密钥位于 `local-data/prompt-agent.key`，重设四位局域网密码不会再使模型凭据失效；旧凭据会在首次启动时自动迁移，无法解密时设置页会明确提醒重新登录。密钥不会写入浏览器存储，也不会回传给手机。模型服务自身可能按其官方规则收取文本模型费用，这与 NovelAI Anlas 相互独立。
 - 自定义模型接口支持安全的附加请求头（如 `HTTP-Referer`）；`Authorization`、`Cookie`、`X-API-Key` 等敏感鉴权头必须继续通过加密的 API Key 输入框配置，避免明文混入普通接口设置。
 
-项目只使用 `@earendil-works/pi-agent-core` 与 `@earendil-works/pi-ai`，没有接入可操作文件和终端的 Coding Agent。这里的“全项目控制”是指 NaiPromptManager 内部业务数据、页面、设置和创作流程，不是控制Windows；配置层复现 pi 官方的供应商登录、模型选择和退出层级，并转换为适合本项目桌面与手机的网页界面。
+项目只使用 `@earendil-works/pi-agent-core` 与 `@earendil-works/pi-ai`，没有接入可操作文件和终端的 Coding Agent。这里的“全项目控制”是指 NaiStudio 内部业务数据、页面、设置和创作流程，不是控制Windows；配置层复现 pi 官方的供应商登录、模型选择和退出层级，并转换为适合本项目桌面与手机的网页界面。
 
 ### 永久 Vibe Transfer：编码一次，长期复用
 
@@ -219,7 +219,7 @@ flowchart LR
 
 ### 🔗 SillyTavern / st-chatu8 互通
 
-项目可以与本机 `D:\SillyTavern` 中的 [st-chatu8](https://github.com/damoshen123/st-chatu8) 配套使用。SillyTavern 侧安装独立的 `npm-bridge` 扩展，NaiPromptManager 侧由电脑图片网关提供受限桥接接口；两边启动后自动同步，也可在 SillyTavern 的扩展设置中点击“立即同步”。
+项目可以与本机 `D:\SillyTavern` 中的 [st-chatu8](https://github.com/damoshen123/st-chatu8) 配套使用。SillyTavern 侧安装独立的 `npm-bridge` 扩展，NaiStudio 侧由电脑图片网关提供受限桥接接口；两边启动后自动同步，也可在 SillyTavern 的扩展设置中点击“立即同步”。
 
 #### 实现参考与兼容声明
 
@@ -238,12 +238,12 @@ flowchart LR
 | Vibe 组合 | 双向 | 使用 st-chatu8 的组合结构作为权威来源 |
 | 生图历史 | st-chatu8 → 本项目 | 只索引原图，不导入 `thumbnail_path` 缩略图 |
 
-NaiPromptManager 独有的新画师串可以先同步到 st-chatu8；一旦进入 st-chatu8，后续修改和冲突判断都以 st-chatu8 数据为准。这样在 SillyTavern 聊天生图和本项目实验室之间切换时，不需要手工复制画师串或 Vibe。
+NaiStudio 独有的新画师串可以先同步到 st-chatu8；一旦进入 st-chatu8，后续修改和冲突判断都以 st-chatu8 数据为准。这样在 SillyTavern 聊天生图和本项目实验室之间切换时，不需要手工复制画师串或 Vibe。
 
 ### 图片与磁盘策略
 
-- st-chatu8 历史图片不会复制进 NaiPromptManager，而是由桥接层记录原文件位置，避免再占用约 11 GB 磁盘。
-- NaiPromptManager 历史页只展示 st-chatu8 的原图记录；st-chatu8 自己生成的缩略图不会作为另一条历史混入。
+- st-chatu8 历史图片不会复制进 NaiStudio，而是由桥接层记录原文件位置，避免再占用约 11 GB 磁盘。
+- NaiStudio 历史页只展示 st-chatu8 的原图记录；st-chatu8 自己生成的缩略图不会作为另一条历史混入。
 - 画师串封面会作为资料本身同步，两边都能正常显示；重复同步会复用既有封面，不会持续产生重复文件。
 - Vibe 使用图片内容哈希去重，可以识别 st-chatu8 与官方兼容文件对同一图片采用不同 ID 的情况。
 
@@ -421,7 +421,7 @@ Danbooru 页面连接 `safebooru.donmai.us`，只展示其通用级作品，并�
 
 Pixiv 页面连接 Pixiv 官方 App API，提供推荐、日榜、周榜、月榜、标签搜索与画师作品浏览，作品详情可切换多页、查看标签与画师、跳转原站。
 
-- **登录**：在默认浏览器（推荐 Edge 等已登录账号的浏览器）完成 Pixiv 官方 OAuth 登录，NPM 自动捕获新版 `pixiv://` 回调并换取令牌；refresh token 以独立密钥 AES-256-GCM 加密保存在本机 `local-data`，重启免登录，断开后重新登录即可。
+- **登录**：在默认浏览器（推荐 Edge 等已登录账号的浏览器）完成 Pixiv 官方 OAuth 登录，NaiStudio 自动捕获新版 `pixiv://` 回调并换取令牌；refresh token 以独立密钥 AES-256-GCM 加密保存在本机 `local-data`，重启免登录，断开后重新登录即可。
 - **瀑布流浏览**：卡片按作品真实宽高比显示、零裁剪，滚动接近底部自动连续追加，支持游标无限翻页（推荐流的 `viewed[]` 去重列表自动裁剪，翻页不设上限）；分页器保留为显式跳转工具（游标 API 无页码概念，仅搜索类不可跳页）。
 - **导入与沉淀**：详情可直接导入实验室、加入灵感库、进入该作者全部作品、打开 Pixiv 原站；任意图片可一键反推 Tag。
 - **图片来源**：所有图片经本机媒体网关抓取（自动携带官方 Referer），缩略图后台预热并写入磁盘缓存，浏览时缓存命中秒出；图片受全局安全模式控制。
@@ -622,7 +622,7 @@ D:\NaiPromptManager\local-data
 
 ### Windows 桌面启动器
 
-双击桌面的 `NaiPromptManager` 调色盘快捷方式即可。
+双击桌面的 `NaiStudio` 调色盘快捷方式即可。
 
 启动器会：
 
@@ -680,7 +680,7 @@ git diff --check
 ### 重要目录
 
 ```text
-NaiPromptManager/
+NaiStudio/
 ├─ components/          React 页面与交互组件
 ├─ services/            API、历史、元数据、AITag 与图片缓存服务
 ├─ worker/              本地 Worker、D1/R2、局域网和 AITag 缓存接口
@@ -710,7 +710,7 @@ NaiPromptManager/
 
 ### 项目来源
 
-- 本项目最初基于 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 改造，后作为独立项目维护，不保持 Git 远程关系。
+- NaiStudio 最初基于 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 改造，后作为独立项目维护，不保持 Git 远程关系。
 - 当前版本围绕个人长期使用、本地数据安全、手机局域网与 NovelAI 创作效率持续演进，新增 Pixiv 图库、外部图库统一浏览、图片反推、封面固定与加载优化等能力。
 - 开源协议：[MIT License](./LICENSE)
 

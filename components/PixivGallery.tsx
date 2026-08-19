@@ -189,7 +189,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       const code = (startError as PixivLoginError).code;
       if (code === 'PIXIV_CONNECT_LOCAL_ONLY') {
         setLanMode(true);
-        setLoginMessage('请在运行 NPM 的电脑上登录；登录后手机可浏览');
+        setLoginMessage('请在运行 NaiStudio 的电脑上登录；登录后手机可浏览');
       } else {
         setLoginMessage(startError instanceof Error ? startError.message : '登录启动失败');
       }
@@ -239,7 +239,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       const code = (cancelError as PixivLoginError).code;
       if (code === 'PIXIV_CONNECT_LOCAL_ONLY') {
         setLanMode(true);
-        setLoginMessage('请在运行 NPM 的电脑上登录；登录后手机可浏览');
+        setLoginMessage('请在运行 NaiStudio 的电脑上登录；登录后手机可浏览');
       } else {
         setLoginMessage(cancelError instanceof Error ? cancelError.message : '取消失败，请稍后重试');
       }
@@ -538,7 +538,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             <p className="mb-4 mt-1 text-center text-xs leading-relaxed text-gray-500">使用你平时的默认浏览器打开 Pixiv，保留已有的 Google、Pixiv 登录状态；账号密码只输入 Pixiv 官方页面。</p>
 
             {lanMode ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">请在运行 NPM 的电脑上登录；登录后手机可浏览</div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">请在运行 NaiStudio 的电脑上登录；登录后手机可浏览</div>
             ) : (
               <ToolbarButton type="button" tone="primary" className="h-12 w-full text-base" disabled={waiting} onClick={() => void handleStartLogin()}>
                 {waiting ? <><RefreshCw className="animate-spin" />等待完成…</> : <><LogIn />在默认浏览器登录</>}
@@ -551,7 +551,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                   {activeLogin.automaticCallback ? (
                     <>
                       <div className="font-bold">请在默认浏览器点击“继续使用此账号”</div>
-                      <div className="mt-1">登录完成后保持白页片刻，NPM 会自动识别并完成连接。</div>
+                      <div className="mt-1">登录完成后保持白页片刻，NaiStudio 会自动识别并完成连接。</div>
                     </>
                   ) : (
                     <div>{activeLogin.message || '当前无法自动识别登录结果'}</div>

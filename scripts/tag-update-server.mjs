@@ -148,7 +148,7 @@ export function startTagUpdateServer() {
       return writeJson(response, 204, {}, allowedOrigin);
     }
     if (!allowedOrigin || request.headers['x-nai-local-control'] !== 'true') {
-      return writeJson(response, 403, { error: '仅允许本地 NaiPromptManager 页面访问' });
+      return writeJson(response, 403, { error: '仅允许本地 NaiStudio 页面访问' });
     }
     if (url.pathname !== '/tag-dictionary') {
       return writeJson(response, 404, { error: 'Not Found' }, allowedOrigin);

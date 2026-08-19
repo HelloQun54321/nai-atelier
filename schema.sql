@@ -1,4 +1,4 @@
--- NaiPromptManager 数据库结构参考快照（勿手工执行）
+-- NaiStudio 数据库结构参考快照（勿手工执行）
 --
 -- 运行时真源是 worker/index.ts 内嵌的 INIT_SQL 与 initDB/ensure* 自愈逻辑：worker 每次启动
 -- 会自动建表、补列，本文件仅作为人读的结构参考，由开发者在改动 INIT_SQL 时同步更新。
