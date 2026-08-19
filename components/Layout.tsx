@@ -21,12 +21,12 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useAnlasBudget } from '../services/anlasBudget';
+import { AppearancePreferences, ThemeMode } from '../services/appearancePreferences';
 import { CloudQueueStatus } from './CloudQueueStatus';
 
 const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module => ({ default: module.GlobalSettings })));
 
 type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'inspiration' | 'history' | 'playground';
-type ThemeMode = 'light' | 'dark' | 'system';
 type SettingsSection = 'home' | 'appearance' | 'novelai' | 'agent' | 'maintenance';
 
 interface LayoutProps {
@@ -37,6 +37,8 @@ interface LayoutProps {
   isDark: boolean;
   themeMode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
+  appearancePreferences: AppearancePreferences;
+  setAppearancePreferences: React.Dispatch<React.SetStateAction<AppearancePreferences>>;
   safeMode: boolean;
   toggleSafeMode: () => void;
   toast?: { message: string, type: 'success' | 'error' } | null;
@@ -82,7 +84,7 @@ const readMobileAgentDock = (): MobileAgentDock => {
   return { side: 'left', y: 0.82 };
 };
 
-export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentView, activeView = currentView, isDark, themeMode, setThemeMode, safeMode, toggleSafeMode, toast, hideNav, notify, onOpenAgent }) => {
+export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentView, activeView = currentView, isDark, themeMode, setThemeMode, appearancePreferences, setAppearancePreferences, safeMode, toggleSafeMode, toast, hideNav, notify, onOpenAgent }) => {
   const anlasBudget = useAnlasBudget();
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('home');
@@ -292,7 +294,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       {toast && <div className="fixed left-1/2 top-4 z-[2200] w-[90%] -translate-x-1/2 text-center md:top-6 md:w-auto"><div className={`flex items-center justify-center gap-2 rounded-xl px-5 py-3 shadow-xl ${toast.type === 'error' ? 'bg-red-500 text-white' : 'bg-gray-800 text-white dark:bg-white dark:text-gray-900'}`}>{toast.type === 'error' ? <XCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}<span className="text-sm font-medium">{toast.message}</span></div></div>}
       <CloudQueueStatus hidden={Boolean(hideNav)} />
 
-      <aside style={{ width: sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth }} className={`relative hidden flex-shrink-0 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:flex ${isSidebarResizing ? '' : 'transition-[width] duration-200'}`}>
+      <aside style={{ width: sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth }} className={`app-sidebar relative hidden flex-shrink-0 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:flex ${isSidebarResizing ? '' : 'transition-[width] duration-200'}`}>
         <div className={`flex h-16 flex-none items-center border-b border-gray-200 dark:border-gray-800 ${sidebarCollapsed ? 'justify-center gap-1 px-2' : 'gap-2 px-3'}`}>
           <img src="/artist-palette-3d.png" alt="" className={`${sidebarCollapsed ? 'h-6 w-6' : 'h-7 w-7'} flex-none object-contain`} data-safe-mode-ignore="true" aria-hidden="true" />
           {!sidebarCollapsed && <span className="min-w-0 flex-1 truncate text-sm font-bold tracking-wide text-gray-800 dark:text-gray-200">NAI Atelier</span>}
@@ -327,7 +329,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         <button type="button" aria-label="调整侧边栏宽度" title="拖动调整宽度；双击恢复默认" onPointerDown={startSidebarResize} onDoubleClick={() => { setSidebarCollapsed(false); setSidebarWidth(SIDEBAR_DEFAULT_WIDTH); localStorage.setItem('nai_sidebar_width', String(SIDEBAR_DEFAULT_WIDTH)); }} className="group absolute -right-1 top-0 bottom-0 z-30 hidden w-2 cursor-col-resize outline-none md:block"><span className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors ${isSidebarResizing ? 'bg-indigo-500' : 'bg-transparent group-hover:bg-indigo-400'}`} /></button>
       </aside>
 
-      <main ref={workspaceRef} className={`workspace-container relative flex min-w-0 flex-1 flex-col overflow-hidden bg-white transition-colors duration-300 dark:bg-gray-900 ${hideNav ? 'pb-0' : 'pb-[calc(4.25rem+env(safe-area-inset-bottom))]'} md:pb-0`}>{children}</main>
+      <main ref={workspaceRef} className={`app-workspace workspace-container relative flex min-w-0 flex-1 flex-col overflow-hidden bg-white transition-colors duration-300 dark:bg-gray-900 ${hideNav ? 'pb-0' : 'pb-[calc(4.25rem+env(safe-area-inset-bottom))]'} md:pb-0`}>{children}</main>
 
       {!showResources && !showSettings && <button
         type="button"
@@ -345,7 +347,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
 
       {!hideNav && <>
         {showResources && <div className="fixed inset-0 z-[60] bg-black/35 backdrop-blur-[2px] md:hidden" onClick={() => setShowResources(false)}><div className="absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-900" onClick={event => event.stopPropagation()}><div className="mb-2 flex items-center justify-between px-2"><span className="text-sm font-bold">资源库</span><button onClick={() => setShowResources(false)} className="mobile-touch flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800" aria-label="关闭资源库菜单"><X className="h-[18px] w-[18px]" /></button></div><div className="grid grid-cols-2 gap-2">{resourceItems.map(item => { const ResourceIcon = item.icon; return <button key={item.id} onClick={() => navigateMobile(item.id)} className={`flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-2xl ${activeView === item.id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><span className="flex h-6 w-6 items-center justify-center"><ResourceIcon className="h-[18px] w-[18px]" strokeWidth={1.8} /></span><span className="text-[11px] font-medium leading-none">{item.label}</span></button>; })}</div></div></div>}
-        <div className="fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] items-start border-t border-gray-200 bg-white/95 px-1 pt-1.5 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 md:hidden">
+        <div className="app-mobile-nav fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] items-start border-t border-gray-200 bg-white/95 px-1 pt-1.5 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 md:hidden">
           <MobileNavButton label="画师串" active={activeView === 'list'} icon={icons.list} onClick={() => navigateMobile('list')} />
           <MobileNavButton label="资源库" active={resourceActive || showResources} icon={icons.resources} onClick={() => setShowResources(value => !value)} />
           <MobileNavButton label="实验室" active={activeView === 'playground'} icon={icons.lab} onClick={() => navigateMobile('playground')} />
@@ -354,7 +356,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         </div>
       </>}
 
-      {showSettings && <React.Suspense fallback={null}><GlobalSettings open onClose={() => setShowSettings(false)} initialSection={settingsSection} notify={notify} isDark={isDark} themeMode={themeMode} setThemeMode={setThemeMode} safeMode={safeMode} toggleSafeMode={toggleSafeMode} /></React.Suspense>}
+      {showSettings && <React.Suspense fallback={null}><GlobalSettings open onClose={() => setShowSettings(false)} initialSection={settingsSection} notify={notify} isDark={isDark} themeMode={themeMode} setThemeMode={setThemeMode} appearancePreferences={appearancePreferences} setAppearancePreferences={setAppearancePreferences} safeMode={safeMode} toggleSafeMode={toggleSafeMode} /></React.Suspense>}
     </div>
   );
 };

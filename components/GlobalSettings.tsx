@@ -13,7 +13,17 @@ import { DesktopImageColumns, getMobileImageDisplayPreferences, MobileImageColum
 import { anlasBudgetService, DEFAULT_ANLAS_BUDGET, useAnlasBudget } from '../services/anlasBudget';
 import { CLOUD_QUEUE_SERVICE_URL, getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 import { PromptAgentSettings } from './PromptAgentSettings';
-import { ArrowLeft, Bot, ChevronRight, Database, ExternalLink, KeyRound, Palette, RefreshCw, Server, Shield, Smartphone, X } from 'lucide-react';
+import {
+  AppearancePreferences,
+  CornerStyle,
+  DEFAULT_APPEARANCE_PREFERENCES,
+  FontScale,
+  InterfaceDensity,
+  MotionStyle,
+  SurfaceStyle,
+  ThemeMode,
+} from '../services/appearancePreferences';
+import { ArrowLeft, Bot, Check, ChevronRight, Database, ExternalLink, KeyRound, Monitor, Moon, Palette, RefreshCw, RotateCcw, Server, Shield, SlidersHorizontal, Smartphone, Sun, X } from 'lucide-react';
 
 type SettingsSection = 'appearance' | 'novelai' | 'agent' | 'maintenance';
 type SettingsPage = 'home' | SettingsSection;
@@ -44,15 +54,52 @@ interface GlobalSettingsProps {
   initialSection?: SettingsPage;
   notify: (message: string, type?: 'success' | 'error') => void;
   isDark: boolean;
-  themeMode: 'light' | 'dark' | 'system';
-  setThemeMode: (mode: 'light' | 'dark' | 'system') => void;
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
+  appearancePreferences: AppearancePreferences;
+  setAppearancePreferences: React.Dispatch<React.SetStateAction<AppearancePreferences>>;
   safeMode: boolean;
   toggleSafeMode: () => void;
 }
 
+interface AppearanceOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+const AppearanceOptionGroup: React.FC<{
+  value: string;
+  options: AppearanceOption[];
+  onChange: (value: string) => void;
+}> = ({ value, options, onChange }) => (
+  <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+    {options.map(option => (
+      <button
+        key={option.value}
+        type="button"
+        onClick={() => onChange(option.value)}
+        className={`mobile-touch min-w-0 rounded-xl border px-2 py-2 text-center transition md:min-h-10 ${value === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500/15 dark:bg-indigo-500/10 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-600'}`}
+      >
+        <span className="block truncate text-xs font-bold">{option.label}</span>
+        {option.description && <span className="mt-0.5 block truncate text-[10px] font-normal opacity-65">{option.description}</span>}
+      </button>
+    ))}
+  </div>
+);
+
+const ACCENT_PRESETS = [
+  { color: '#6366f1', label: '靛蓝' },
+  { color: '#8b5cf6', label: '紫罗兰' },
+  { color: '#0ea5e9', label: '晴空' },
+  { color: '#14b8a6', label: '青绿' },
+  { color: '#e11d48', label: '绯红' },
+  { color: '#d97706', label: '琥珀' },
+] as const;
+
 const readApiKey = () => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '';
 
-export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, initialSection = 'home', notify, isDark, themeMode, setThemeMode, safeMode, toggleSafeMode }) => {
+export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, initialSection = 'home', notify, isDark, themeMode, setThemeMode, appearancePreferences, setAppearancePreferences, safeMode, toggleSafeMode }) => {
   const confirmAction = useConfirmDialog();
   const [apiKey, setApiKey] = useState(readApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(() => localStorage.getItem('nai_api_key') !== null);
@@ -148,13 +195,24 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     void setCloudQueuePreferences(next).then(setCloudQueue).catch(() => notify('保存公共队列设置失败', 'error'));
   };
 
+  const updateAppearance = (patch: Partial<AppearancePreferences>) => {
+    setAppearancePreferences(current => ({ ...current, ...patch }));
+  };
+
+  const resetThemeCustomization = () => {
+    setAppearancePreferences({
+      ...DEFAULT_APPEARANCE_PREFERENCES,
+      themeMode,
+    });
+  };
+
   if (!open) return null;
 
   const activeSectionMeta = activeSection === 'home' ? null : settingsSections.find(section => section.id === activeSection);
 
   return (
     <div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-center justify-center bg-black/55 p-0 md:p-4" onMouseDown={requestClose}>
-      <div className="ui-modal-enter flex h-[100dvh] max-h-none w-full max-w-none flex-col overflow-hidden border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 md:h-[82vh] md:max-h-[860px] md:max-w-6xl md:rounded-2xl md:border" onMouseDown={event => event.stopPropagation()}>
+      <div className="settings-dialog ui-modal-enter flex h-[100dvh] max-h-none w-full max-w-none flex-col overflow-hidden border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 md:h-[82vh] md:max-h-[860px] md:max-w-6xl md:rounded-2xl md:border" onMouseDown={event => event.stopPropagation()}>
         <div className="flex min-h-[calc(3.5rem+env(safe-area-inset-top))] items-center justify-between border-b border-gray-200 px-3 pt-[env(safe-area-inset-top)] dark:border-gray-800 md:min-h-0 md:px-5 md:py-4 md:pt-4">
           <div className="flex min-w-0 items-center gap-2">
             {activeSectionMeta && <button type="button" onClick={() => setActiveSection('home')} className="mobile-touch flex flex-none items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300 md:hidden" aria-label="返回设置分类" title="返回设置分类"><ArrowLeft className="h-[18px] w-[18px]" /></button>}
@@ -169,7 +227,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
         </div>
 
         <div className="flex min-h-0 flex-1">
-          <nav className="hidden w-64 flex-none border-r border-gray-200 bg-gray-50/70 p-3 dark:border-gray-800 dark:bg-gray-950/40 md:flex md:flex-col md:gap-1">
+          <nav className="settings-navigation hidden w-64 flex-none border-r border-gray-200 bg-gray-50/70 p-3 dark:border-gray-800 dark:bg-gray-950/40 md:flex md:flex-col md:gap-1">
             {settingsSections.map(item => {
               const SectionIcon = item.icon;
               const active = activeSection === item.id;
@@ -196,7 +254,45 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           <div className={activeSection === 'home' ? 'hidden' : 'space-y-3'}>
           <section id={`settings-appearance`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'appearance' ? 'hidden' : ''}`}>
             {activeSection === 'appearance' && <div className="space-y-3">
-              <div><div className="mb-2 text-xs font-bold text-gray-500 dark:text-gray-400">主题</div><div className="grid grid-cols-3 gap-2">{([['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setThemeMode(value)} className={`mobile-touch md:h-10 rounded-xl border px-2 text-xs font-bold ${themeMode === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}</div></div>
+              <div>
+                <div className="mb-2 flex items-end justify-between gap-3"><div><div className="text-xs font-bold text-gray-700 dark:text-gray-200">设计主题</div><p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">主题决定整套界面的设计语言；明暗模式独立配合。</p></div><span className="flex-none text-[10px] font-medium text-gray-400">1 个可用主题</span></div>
+                <button type="button" aria-pressed="true" className="atelier-theme-card group relative w-full overflow-hidden rounded-2xl border border-indigo-400/70 bg-gray-50 p-3 text-left ring-2 ring-indigo-500/10 dark:bg-gray-950">
+                  <span className="absolute right-3 top-3 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-white"><Check className="h-3 w-3" /></span>
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className="atelier-theme-preview grid h-20 w-28 flex-none grid-cols-[1.8rem_1fr] overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-sm dark:border-gray-700 dark:bg-gray-900" aria-hidden="true"><span className="border-r border-gray-200 bg-gray-950 p-1 dark:border-gray-700"><span className="mt-1 block h-1 w-3 rounded-full bg-indigo-400" /><span className="mt-2 block h-1 w-4 rounded-full bg-gray-600" /><span className="mt-1 block h-1 w-4 rounded-full bg-gray-700" /></span><span className="p-1.5"><span className="block h-2 w-8 rounded bg-indigo-500/70" /><span className="mt-1.5 block h-5 rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800" /><span className="mt-1.5 grid grid-cols-2 gap-1"><span className="h-7 rounded bg-gray-200 dark:bg-gray-800" /><span className="h-7 rounded bg-gray-200 dark:bg-gray-800" /></span></span></span>
+                    <span className="min-w-0"><b className="block text-sm text-gray-900 dark:text-white">NAI Atelier</b><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">安静的创作工作台、克制分层与作品优先的现代工坊语言。</span><span className="mt-1 block text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">当前：{isDark ? '黑夜版本' : '白天版本'}</span></span>
+                  </span>
+                </button>
+              </div>
+
+              <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
+                <div className="mb-2 text-xs font-bold text-gray-700 dark:text-gray-200">明暗模式</div>
+                <div className="grid grid-cols-3 gap-2">
+                  {([{ value: 'system', label: '跟随系统', icon: Monitor }, { value: 'light', label: '白天', icon: Sun }, { value: 'dark', label: '黑夜', icon: Moon }] as const).map(option => { const ModeIcon = option.icon; return <button key={option.value} type="button" onClick={() => setThemeMode(option.value)} className={`mobile-touch flex min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2 text-xs font-bold transition md:h-10 ${themeMode === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}><ModeIcon className="h-3.5 w-3.5 flex-none" /><span className="truncate">{option.label}</span></button>; })}
+                </div>
+              </div>
+
+              <div className="appearance-control-panel rounded-2xl border border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35">
+                <div className="mb-3 flex items-center gap-2"><SlidersHorizontal className="h-4 w-4 text-indigo-500" /><div><h4 className="text-xs font-bold text-gray-800 dark:text-gray-100">个性化</h4><p className="text-[10px] text-gray-500 dark:text-gray-400">修改只覆盖当前主题的默认值。</p></div></div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between"><span className="text-[11px] font-bold text-gray-600 dark:text-gray-300">强调色</span><span className="font-mono text-[10px] uppercase text-gray-400">{appearancePreferences.accentColor}</span></div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {ACCENT_PRESETS.map(preset => <button key={preset.color} type="button" onClick={() => updateAppearance({ accentColor: preset.color })} aria-label={`强调色：${preset.label}`} title={preset.label} className={`relative h-8 w-8 rounded-full border-2 transition hover:scale-105 ${appearancePreferences.accentColor === preset.color ? 'border-gray-900 ring-2 ring-gray-900/15 dark:border-white dark:ring-white/20' : 'border-white shadow-sm dark:border-gray-700'}`} style={{ backgroundColor: preset.color }}>{appearancePreferences.accentColor === preset.color && <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white drop-shadow" />}</button>)}
+                    <label className="relative flex h-8 min-w-24 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-gray-300 bg-white px-2 text-[10px] font-bold text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"><Palette className="h-3.5 w-3.5" />自定义<input type="color" value={appearancePreferences.accentColor} onChange={event => updateAppearance({ accentColor: event.target.value })} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label="自定义强调色" /></label>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                  <div><div className="mb-2 text-[11px] font-bold text-gray-600 dark:text-gray-300">界面密度</div><AppearanceOptionGroup value={appearancePreferences.density} onChange={value => updateAppearance({ density: value as InterfaceDensity })} options={[{ value: 'comfortable', label: '舒展' }, { value: 'standard', label: '标准' }, { value: 'compact', label: '紧凑' }]} /></div>
+                  <div><div className="mb-2 text-[11px] font-bold text-gray-600 dark:text-gray-300">圆角语言</div><AppearanceOptionGroup value={appearancePreferences.corners} onChange={value => updateAppearance({ corners: value as CornerStyle })} options={[{ value: 'soft', label: '柔和' }, { value: 'standard', label: '标准' }, { value: 'sharp', label: '锐利' }]} /></div>
+                  <div><div className="mb-2 text-[11px] font-bold text-gray-600 dark:text-gray-300">表面材质</div><AppearanceOptionGroup value={appearancePreferences.surfaces} onChange={value => updateAppearance({ surfaces: value as SurfaceStyle })} options={[{ value: 'solid', label: '实色', description: '主题默认' }, { value: 'translucent', label: '透光', description: '轻微模糊' }]} /></div>
+                  <div><div className="mb-2 text-[11px] font-bold text-gray-600 dark:text-gray-300">字号</div><AppearanceOptionGroup value={appearancePreferences.fontScale} onChange={value => updateAppearance({ fontScale: value as FontScale })} options={[{ value: 'small', label: '偏小' }, { value: 'standard', label: '标准' }, { value: 'large', label: '偏大' }]} /></div>
+                  <div className="lg:col-span-2"><div className="mb-2 text-[11px] font-bold text-gray-600 dark:text-gray-300">动效</div><AppearanceOptionGroup value={appearancePreferences.motion} onChange={value => updateAppearance({ motion: value as MotionStyle })} options={[{ value: 'full', label: '完整' }, { value: 'reduced', label: '减少' }, { value: 'off', label: '关闭' }]} /></div>
+                </div>
+
+                <button type="button" onClick={resetThemeCustomization} className="mobile-touch mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"><RotateCcw className="h-3.5 w-3.5" />恢复 NAI Atelier 默认外观</button>
+              </div>
               <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />安全模式</span><span>{safeMode ? '已开启' : '已关闭'}</span></button>
               <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
                 <div className="mb-2 text-xs font-bold text-gray-500 dark:text-gray-400">图片列表布局</div>

@@ -1,10 +1,17 @@
 
-import React, { lazy, startTransition, Suspense, useState, useEffect, useRef } from 'react';
+import React, { lazy, startTransition, Suspense, useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Layout } from './components/Layout';
 import { ChainList } from './components/ChainList';
 import { useConfirmDialog } from './components/ConfirmDialog';
 import { ImageActivityProvider } from './components/SmartImage';
 import { db } from './services/dbService';
+import {
+  applyAppearancePreferences,
+  AppearancePreferences,
+  loadAppearancePreferences,
+  saveAppearancePreferences,
+  ThemeMode,
+} from './services/appearancePreferences';
 import { PromptChain, User, Artist, Inspiration, ChainType } from './types';
 
 const ChainEditor = lazy(() => import('./components/ChainEditor').then(module => ({ default: module.ChainEditor })));
@@ -53,11 +60,10 @@ const App = () => {
   // Personal-mode owner loaded from the local service.
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
-  // Theme State
-  const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'system'>(() => {
-    const saved = localStorage.getItem('nai_theme');
-    return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system';
-  });
+  // 设计主题、明暗模式和个性化覆盖统一由外观偏好管理。
+  const [appearancePreferences, setAppearancePreferences] = useState<AppearancePreferences>(loadAppearancePreferences);
+  const themeMode = appearancePreferences.themeMode;
+  const setThemeMode = (mode: ThemeMode) => setAppearancePreferences(current => ({ ...current, themeMode: mode }));
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const isDark = themeMode === 'dark' || (themeMode === 'system' && systemDark);
   const [safeMode, setSafeMode] = useState(() => localStorage.getItem('nai_safe_mode') === 'true');
@@ -168,14 +174,10 @@ const App = () => {
     return () => query.removeEventListener('change', update);
   }, []);
 
-  useEffect(() => {
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    localStorage.setItem('nai_theme', themeMode);
-  }, [isDark, themeMode]);
+  useLayoutEffect(() => {
+    applyAppearancePreferences(appearancePreferences, isDark);
+    saveAppearancePreferences(appearancePreferences);
+  }, [appearancePreferences, isDark]);
 
   useEffect(() => {
     const onTheme = (event: Event) => setThemeMode((event as CustomEvent<'light' | 'dark' | 'system'>).detail);
@@ -187,8 +189,6 @@ const App = () => {
       window.removeEventListener('nai-agent-safe-mode-change', onSafeMode);
     };
   }, []);
-
-  const toggleTheme = () => setThemeMode(isDark ? 'light' : 'dark');
 
   const resetRevealedImages = () => {
     document.querySelectorAll<HTMLImageElement>('img[data-safe-revealed="true"]').forEach(image => {
@@ -620,6 +620,8 @@ const App = () => {
         isDark={isDark}
         themeMode={themeMode}
         setThemeMode={setThemeMode}
+        appearancePreferences={appearancePreferences}
+        setAppearancePreferences={setAppearancePreferences}
         safeMode={safeMode}
         toggleSafeMode={toggleSafeMode}
         toast={toast}
