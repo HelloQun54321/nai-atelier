@@ -13,7 +13,7 @@ const TRANSLATION_DATABASE_URL = process.env.NAI_TAG_DATABASE_URL
 const TRANSLATION_DATABASE_FALLBACK_URL = process.env.NAI_TAG_DATABASE_FALLBACK_URL
   || 'https://cdn.jsdelivr.net/gh/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table@main/tag.sqlite';
 const TRANSLATION_PROJECT_URL = 'https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table';
-const USER_AGENT = 'NaiStudio/0.5.0 (private local tag dictionary updater)';
+const USER_AGENT = 'NAI-Atelier/0.5.0 (private local tag dictionary updater)';
 const CHARACTER_SEARCH_SHARD_COUNT = 128;
 
 const categoryNames = {

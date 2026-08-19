@@ -1,8 +1,13 @@
 # 更新日志
 
-这里记录 NaiStudio 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
+这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-20
+
+### 维护：正式名称确定为 NAI Atelier
+
+- `NAI` 作为 NovelAI 的常用简称统一使用全大写，`Atelier` 与其以空格分隔，正式名称定为 NAI Atelier；GitHub 仓库与 npm 包标识同步使用 `nai-atelier`。
+- 界面、浏览器标题、启动器、项目元数据、网络 User-Agent、Agent 身份与 README 全部采用新名称；桌面快捷方式同步更名。上游来源说明、MIT 原作者 kirafishy 的版权署名、现有本地目录、Cloudflare 项目名与 st-chatu8 桥接标识保持不变。
 
 ### 维护：产品更名为 NaiStudio
 

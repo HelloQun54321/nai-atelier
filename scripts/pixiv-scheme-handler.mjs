@@ -4,7 +4,7 @@
  *
  * Pixiv 登录成功后通过 pixiv://account/login?code=… 回调（custom scheme 流程）。
  * 本脚本由注册表命令启动（node pixiv-scheme-handler.mjs "%1"），
- * 解析 code 后立即转交本机 NaiStudio 网关 /api/pixiv/login/complete 完成登录。
+ * 解析 code 后立即转交本机 NAI Atelier 网关 /api/pixiv/login/complete 完成登录。
  *
  * 安全与可靠性约定：
  * - 只接受 pixiv://account/login 官方来源，只转发 code，不落盘、不打印任何内容。

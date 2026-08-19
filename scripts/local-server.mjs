@@ -184,7 +184,7 @@ async function reuseExistingServer() {
     const response = await fetch(`${LOCAL_URL}/api/lan/status`, { cache: 'no-store', signal: AbortSignal.timeout(2000) });
     const payload = await response.json().catch(() => null);
     if (!response.ok || typeof payload?.authorized !== 'boolean') return false;
-    console.log('\x1b[33mNaiStudio 已经在运行，直接打开现有页面。\x1b[0m');
+    console.log('\x1b[33mNAI Atelier 已经在运行，直接打开现有页面。\x1b[0m');
     if (process.env.NAI_NO_BROWSER !== '1') openBrowser(DISPLAY_URL);
     return true;
   } catch {
@@ -315,7 +315,7 @@ async function startServer() {
   }
 }
 
-console.log('\x1b[36m=== NaiStudio 本地部署 ===\x1b[0m');
+console.log('\x1b[36m=== NAI Atelier 本地部署 ===\x1b[0m');
 
 if (await reuseExistingServer()) process.exit(0);
 ensureDependencies();

@@ -4,7 +4,7 @@
 
 ## 项目概览
 
-- NaiStudio：本地个人 NovelAI 创作工作台。React 19 + TypeScript + Vite + Tailwind 4 前端，Cloudflare Worker 后端（`worker/`），数据落本地 D1 + R2。
+- NAI Atelier：本地个人 NovelAI 创作工坊。React 19 + TypeScript + Vite + Tailwind 4 前端，Cloudflare Worker 后端（`worker/`），数据落本地 D1 + R2。
 - 领域知识与完整功能说明见 `README.md`；NovelAI 接口说明见 `NOVELAI_API_DOCS.md`；历史变更见 `CHANGELOG.md`。
 
 ## 常用命令

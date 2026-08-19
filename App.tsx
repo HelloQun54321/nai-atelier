@@ -465,7 +465,7 @@ const App = () => {
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 font-sans dark:text-white">
         <div className="text-center">
           <h2 className="text-2xl font-bold mb-2">本地服务未连接</h2>
-          <p>请使用桌面的 NaiStudio 启动脚本运行本地服务。</p>
+          <p>请使用桌面的 NAI Atelier 启动脚本运行本地服务。</p>
           <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded">刷新</button>
         </div>
       </div>

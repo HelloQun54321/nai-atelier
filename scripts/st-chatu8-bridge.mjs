@@ -332,7 +332,7 @@ export class StChatu8Bridge {
       if (stHash !== npmHash || previewChanged) {
         const body = artistToChainBody(artist, chain);
         // A missing st-chatu8 preview means "no preview supplied", not
-        // "delete the NaiStudio cover". Only replace a cover when the
+        // "delete the NAI Atelier cover". Only replace a cover when the
         // authoritative side actually provides image data.
         if (artist.previewPath) body.previewImage = await this.readStPreviewData(artist.previewPath);
         await this.requestWorkerJson(`/api/chains/${encodeURIComponent(chain.id)}`, { method: 'PUT', body });

@@ -25,7 +25,7 @@ const downloadFile = async (url, destination, minimumBytes, remoteFetch) => {
   const response = await remoteFetch(url, {
     redirect: 'follow',
     signal: AbortSignal.timeout(20 * 60 * 1000),
-    headers: { 'user-agent': 'NaiStudio/0.5 (+local image tagging)' },
+    headers: { 'user-agent': 'NAI-Atelier/0.5 (+local image tagging)' },
   });
   if (!response.ok || !response.body) throw new Error(`模型下载失败 (${response.status})`);
   await pipeline(Readable.fromWeb(response.body), createWriteStream(temporary));

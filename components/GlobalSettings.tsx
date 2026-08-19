@@ -290,7 +290,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
           <section id={`settings-about`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'about' ? 'hidden' : ''}`}>
             <div className="flex items-center justify-between gap-4">
-              <div><h3 className="font-semibold text-gray-900 dark:text-white">关于</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">NaiStudio 个人维护版本</p></div>
+              <div><h3 className="font-semibold text-gray-900 dark:text-white">关于</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">NAI Atelier 个人维护版本</p></div>
               <span className="rounded-lg bg-gray-100 px-3 py-1.5 font-mono text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-300">v{__APP_VERSION__}</span>
             </div>
           </section>

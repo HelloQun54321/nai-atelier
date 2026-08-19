@@ -104,7 +104,7 @@ export const LanAccessGate: React.FC<LanAccessGateProps> = ({ children }) => {
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-2xl font-black shadow-lg">N</div>
           <div>
             <h1 className="text-xl font-bold">局域网访问</h1>
-            <p className="mt-0.5 text-xs text-slate-400">NaiStudio · 电脑端数据</p>
+            <p className="mt-0.5 text-xs text-slate-400">NAI Atelier · 电脑端数据</p>
           </div>
         </div>
 
