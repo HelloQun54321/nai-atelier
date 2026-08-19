@@ -27,6 +27,7 @@ const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module =
 
 type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'inspiration' | 'history' | 'playground';
 type ThemeMode = 'light' | 'dark' | 'system';
+type SettingsSection = 'home' | 'appearance' | 'novelai' | 'agent' | 'anlas' | 'tags' | 'cache' | 'about';
 
 interface LayoutProps {
   children: ReactNode;
@@ -84,7 +85,7 @@ const readMobileAgentDock = (): MobileAgentDock => {
 export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentView, activeView = currentView, isDark, themeMode, setThemeMode, safeMode, toggleSafeMode, toast, hideNav, notify, onOpenAgent }) => {
   const anlasBudget = useAnlasBudget();
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<'appearance' | 'novelai' | 'agent' | 'anlas' | 'tags' | 'cache' | 'about'>('appearance');
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('home');
   const [showResources, setShowResources] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('nai_sidebar_collapsed') === 'true');
   const [sidebarWidth, setSidebarWidth] = useState(() => clampSidebarWidth(Number(localStorage.getItem('nai_sidebar_width')) || SIDEBAR_DEFAULT_WIDTH));
@@ -117,8 +118,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
 
   useEffect(() => {
     const openSettings = (event: Event) => {
-      const section = (event as CustomEvent<{ section?: typeof settingsSection }>).detail?.section;
+      const section = (event as CustomEvent<{ section?: SettingsSection }>).detail?.section;
       if (section && ['appearance', 'novelai', 'agent', 'anlas', 'tags', 'cache', 'about'].includes(section)) setSettingsSection(section);
+      else setSettingsSection('home');
       setShowSettings(true);
     };
     window.addEventListener('nai-open-global-settings', openSettings);
@@ -318,7 +320,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50/70 dark:border-gray-800 dark:bg-gray-900/70">
             <div role="status" title={sidebarCollapsed ? `Anlas 预算：${anlasBudget.loading ? '加载中' : anlasBudget.remaining}` : undefined} aria-label={`Anlas 预算 ${anlasBudget.loading ? '加载中' : anlasBudget.remaining}`} className={`flex h-11 w-full cursor-default select-none items-center border-b border-gray-200 text-indigo-600 dark:border-gray-800 dark:text-indigo-300 ${sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'}`}><span className="flex items-center"><Gem className="h-4 w-4" />{!sidebarCollapsed && <span className="ml-2 text-xs font-medium text-gray-600 dark:text-gray-300">Anlas</span>}</span>{!sidebarCollapsed && <span className="text-sm font-black tabular-nums">{anlasBudget.loading ? '…' : anlasBudget.remaining}</span>}</div>
             <button type="button" onClick={toggleSafeMode} title={sidebarCollapsed ? `安全模式：${safeMode ? '开' : '关'}` : undefined} aria-label={`安全模式：${safeMode ? '开' : '关'}`} aria-pressed={safeMode} className={`relative flex h-11 w-full items-center border-b border-gray-200 text-gray-500 outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 ${sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'}`}><span className="flex items-center"><span className="relative"><ShieldCheck className={`h-5 w-5 ${safeMode ? 'text-emerald-600 dark:text-emerald-400' : ''}`} />{sidebarCollapsed && safeMode && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full border border-white bg-emerald-500 dark:border-gray-900" />}</span>{!sidebarCollapsed && <span className="ml-2 text-xs font-medium">安全模式</span>}</span>{!sidebarCollapsed && <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeMode ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeMode ? 'translate-x-5' : 'translate-x-0'}`} /></span>}</button>
-            <button type="button" onClick={() => { setSettingsSection('appearance'); setShowSettings(true); }} title={sidebarCollapsed ? '全局设置' : undefined} aria-label="全局设置" className={`flex h-11 w-full items-center text-gray-500 outline-none transition hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'}`}><Settings className="h-5 w-5 flex-none" />{!sidebarCollapsed && <span className="ml-2 text-xs font-medium">全局设置</span>}</button>
+            <button type="button" onClick={() => { setSettingsSection('home'); setShowSettings(true); }} title={sidebarCollapsed ? '全局设置' : undefined} aria-label="全局设置" className={`flex h-11 w-full items-center text-gray-500 outline-none transition hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'}`}><Settings className="h-5 w-5 flex-none" />{!sidebarCollapsed && <span className="ml-2 text-xs font-medium">全局设置</span>}</button>
           </div>
         </div>
 
@@ -348,7 +350,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
           <MobileNavButton label="资源库" active={resourceActive || showResources} icon={icons.resources} onClick={() => setShowResources(value => !value)} />
           <MobileNavButton label="实验室" active={activeView === 'playground'} icon={icons.lab} onClick={() => navigateMobile('playground')} />
           <MobileNavButton label="历史" active={activeView === 'history'} icon={icons.history} onClick={() => navigateMobile('history')} />
-          <MobileNavButton label="设置" active={showSettings} icon={icons.settings} onClick={() => { setSettingsSection('appearance'); setShowSettings(true); }} />
+          <MobileNavButton label="设置" active={showSettings} icon={icons.settings} onClick={() => { setSettingsSection('home'); setShowSettings(true); }} />
         </div>
       </>}
 

@@ -13,9 +13,10 @@ import { DesktopImageColumns, getMobileImageDisplayPreferences, MobileImageColum
 import { anlasBudgetService, DEFAULT_ANLAS_BUDGET, useAnlasBudget } from '../services/anlasBudget';
 import { CLOUD_QUEUE_SERVICE_URL, getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 import { PromptAgentSettings } from './PromptAgentSettings';
-import { Bot, BookOpen, ChevronDown, Coins, Info, KeyRound, Palette, Shield, Smartphone, X } from 'lucide-react';
+import { ArrowLeft, Bot, BookOpen, ChevronRight, Coins, Info, KeyRound, Palette, Shield, Smartphone, X } from 'lucide-react';
 
 type SettingsSection = 'appearance' | 'novelai' | 'agent' | 'anlas' | 'tags' | 'cache' | 'about';
+type SettingsPage = 'home' | SettingsSection;
 
 const settingsSections: Array<{ id: SettingsSection; label: string; description: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: 'appearance', label: '外观与隐私', description: '主题、安全模式与图片布局', icon: Palette },
@@ -30,7 +31,7 @@ const settingsSections: Array<{ id: SettingsSection; label: string; description:
 interface GlobalSettingsProps {
   open: boolean;
   onClose: () => void;
-  initialSection?: SettingsSection;
+  initialSection?: SettingsPage;
   notify: (message: string, type?: 'success' | 'error') => void;
   isDark: boolean;
   themeMode: 'light' | 'dark' | 'system';
@@ -41,7 +42,7 @@ interface GlobalSettingsProps {
 
 const readApiKey = () => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '';
 
-export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, initialSection = 'appearance', notify, isDark, themeMode, setThemeMode, safeMode, toggleSafeMode }) => {
+export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, initialSection = 'home', notify, isDark, themeMode, setThemeMode, safeMode, toggleSafeMode }) => {
   const confirmAction = useConfirmDialog();
   const [apiKey, setApiKey] = useState(readApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(() => localStorage.getItem('nai_api_key') !== null);
@@ -50,7 +51,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [mobileCacheStats, setMobileCacheStats] = useState(getMobileCacheStats);
   const [imageDisplay, setImageDisplay] = useState(getMobileImageDisplayPreferences);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
-  const [mobileSection, setMobileSection] = useState<SettingsSection>('appearance');
+  const [activeSection, setActiveSection] = useState<SettingsPage>('home');
   const anlasBudget = useAnlasBudget();
   const [anlasInput, setAnlasInput] = useState(String(DEFAULT_ANLAS_BUDGET));
   const requestClose = useMobileHistoryLayer(open, onClose, 'settings');
@@ -64,11 +65,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
   useEffect(() => {
     if (!open) return;
-    setMobileSection(initialSection);
+    setActiveSection(initialSection === 'home' ? (isMobile ? 'home' : 'appearance') : initialSection);
     setApiKey(readApiKey());
     setRememberApiKey(localStorage.getItem('nai_api_key') !== null);
     void getCloudQueuePreferences().then(setCloudQueue).catch(() => notify('读取公共队列设置失败', 'error'));
-  }, [open, initialSection]);
+  }, [open, initialSection, isMobile]);
 
   useEffect(() => { setAnlasInput(String(anlasBudget.remaining)); }, [anlasBudget.remaining]);
 
@@ -116,13 +117,18 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
   if (!open) return null;
 
+  const activeSectionMeta = activeSection === 'home' ? null : settingsSections.find(section => section.id === activeSection);
+
   return (
     <div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-center justify-center bg-black/55 p-0 md:p-4" onMouseDown={requestClose}>
       <div className="ui-modal-enter flex h-[100dvh] max-h-none w-full max-w-none flex-col overflow-hidden border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 md:h-[82vh] md:max-h-[860px] md:max-w-6xl md:rounded-2xl md:border" onMouseDown={event => event.stopPropagation()}>
         <div className="flex min-h-[calc(3.5rem+env(safe-area-inset-top))] items-center justify-between border-b border-gray-200 px-3 pt-[env(safe-area-inset-top)] dark:border-gray-800 md:min-h-0 md:px-5 md:py-4 md:pt-4">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white">全局设置</h2>
-            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">连接信息和本地数据维护</p>
+          <div className="flex min-w-0 items-center gap-2">
+            {activeSectionMeta && <button type="button" onClick={() => setActiveSection('home')} className="mobile-touch flex flex-none items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300 md:hidden" aria-label="返回设置分类" title="返回设置分类"><ArrowLeft className="h-[18px] w-[18px]" /></button>}
+            <div className="min-w-0">
+              <h2 className="truncate text-lg font-bold text-gray-900 dark:text-white">{activeSectionMeta?.label || '全局设置'}</h2>
+              <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">{activeSectionMeta?.description || '连接信息和本地数据维护'}</p>
+            </div>
           </div>
           <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="关闭全局设置">
             <X className="h-[18px] w-[18px]" />
@@ -133,20 +139,33 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           <nav className="hidden w-64 flex-none border-r border-gray-200 bg-gray-50/70 p-3 dark:border-gray-800 dark:bg-gray-950/40 md:flex md:flex-col md:gap-1">
             {settingsSections.map(item => {
               const SectionIcon = item.icon;
-              const active = mobileSection === item.id;
-              return <button key={item.id} type="button" onClick={() => { setMobileSection(item.id); if (!isMobile) document.getElementById(`settings-${item.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${active ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:text-indigo-300 dark:ring-gray-700' : 'text-gray-600 hover:bg-white/70 dark:text-gray-300 dark:hover:bg-gray-800/60'}`}>
+              const active = activeSection === item.id;
+              return <button key={item.id} type="button" onClick={() => setActiveSection(item.id)} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${active ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:text-indigo-300 dark:ring-gray-700' : 'text-gray-600 hover:bg-white/70 dark:text-gray-300 dark:hover:bg-gray-800/60'}`}>
                 <SectionIcon className="h-4.5 w-4.5 flex-none" />
                 <span className="min-w-0"><b className="block text-sm">{item.label}</b><span className="block truncate text-[10px] font-normal text-gray-400">{item.description}</span></span>
               </button>;
             })}
           </nav>
-        <div className="min-w-0 flex-1 space-y-3 overflow-y-auto p-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:p-6">
-          <section id={`settings-appearance`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'appearance' ? 'hidden' : ''}`}>
-            <button type="button" onClick={() => isMobile && setMobileSection('appearance')} className="flex min-h-11 w-full items-center justify-between text-left">
+        <div className="min-w-0 flex-1 overflow-y-auto p-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:p-6">
+          {activeSection === 'home' && <section className="mx-auto max-w-3xl md:hidden">
+            <div className="mb-5"><h3 className="text-base font-bold text-gray-900 dark:text-white">选择设置分类</h3><p className="mt-1 text-sm text-gray-500 dark:text-gray-400">每个分类在独立页面中打开，修改会按原有方式即时保存。</p></div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {settingsSections.map(item => {
+                const SectionIcon = item.icon;
+                return <button key={item.id} type="button" onClick={() => setActiveSection(item.id)} className="flex min-h-24 items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/20">
+                  <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300"><SectionIcon className="h-5 w-5" /></span>
+                  <span className="min-w-0 flex-1"><b className="block text-sm text-gray-900 dark:text-white">{item.label}</b><span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{item.description}</span></span>
+                  <ChevronRight className="h-4 w-4 flex-none text-gray-400" />
+                </button>;
+              })}
+            </div>
+          </section>}
+          <div className={activeSection === 'home' ? 'hidden' : 'space-y-3'}>
+          <section id={`settings-appearance`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'appearance' ? 'hidden' : ''}`}>
+            <div className="flex min-h-11 w-full items-center justify-between text-left">
               <div><h3 className="font-semibold text-gray-900 dark:text-white">外观与隐私</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">主题与图片安全显示状态：{safeMode ? '安全模式已开启' : isDark ? '深色' : '浅色'}</p></div>
-              <ChevronDown className={`h-4 w-4 flex-none transition md:hidden ${mobileSection === 'appearance' ? 'rotate-180' : ''}`} />
-            </button>
-            {mobileSection === 'appearance' && <div className="mt-3 space-y-3">
+            </div>
+            {activeSection === 'appearance' && <div className="mt-3 space-y-3">
               <div><div className="mb-2 text-xs font-bold text-gray-500 dark:text-gray-400">主题</div><div className="grid grid-cols-3 gap-2">{([['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setThemeMode(value)} className={`mobile-touch md:h-10 rounded-xl border px-2 text-xs font-bold ${themeMode === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}</div></div>
               <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />安全模式</span><span>{safeMode ? '已开启' : '已关闭'}</span></button>
               <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
@@ -174,14 +193,14 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </div>
             </div>}
           </section>
-          <section id={`settings-novelai`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'novelai' ? 'hidden' : ''}`}>
-            <button type="button" onClick={() => isMobile && setMobileSection('novelai')} className="flex min-h-11 w-full items-center justify-between text-left">
+          <section id={`settings-novelai`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'novelai' ? 'hidden' : ''}`}>
+            <div className="flex min-h-11 w-full items-center justify-between text-left">
               <div>
               <h3 className="font-semibold text-gray-900 dark:text-white">NovelAI 连接</h3>
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">生图实验室和画师预览生成共用同一个 API Key。</p>
-              </div><ChevronDown className={`h-4 w-4 flex-none transition md:hidden ${mobileSection === 'novelai' ? 'rotate-180' : ''}`} />
-            </button>
-            {mobileSection === 'novelai' && <div className="mt-3">
+              </div>
+            </div>
+            {activeSection === 'novelai' && <div className="mt-3">
             <div className="flex gap-2">
               <input
                 type={showApiKey ? 'text' : 'password'}
@@ -215,20 +234,18 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             </div></div>}
           </section>
 
-          <section id={`settings-agent`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'agent' ? 'hidden' : ''}`}>
-            <button type="button" onClick={() => isMobile && setMobileSection('agent')} className="flex min-h-11 w-full items-center justify-between gap-4 text-left">
+          <section id={`settings-agent`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'agent' ? 'hidden' : ''}`}>
+            <div className="flex min-h-11 w-full items-center justify-between gap-4 text-left">
               <div><h3 className="font-semibold text-gray-900 dark:text-white">项目 Agent</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">让 DeepSeek、Gemini 或 Grok 查看历史图片、操作实验室并管理项目资料。</p></div>
-              <ChevronDown className={`h-4 w-4 flex-none transition md:hidden ${mobileSection === 'agent' ? 'rotate-180' : ''}`} />
-            </button>
-            {mobileSection === 'agent' && <div className="mt-3"><PromptAgentSettings notify={notify} /></div>}
+            </div>
+            {activeSection === 'agent' && <div className="mt-3"><PromptAgentSettings notify={notify} /></div>}
           </section>
 
-          <section id={`settings-anlas`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'anlas' ? 'hidden' : ''}`}>
-            <button type="button" onClick={() => isMobile && setMobileSection('anlas')} className="flex min-h-11 w-full items-center justify-between text-left">
+          <section id={`settings-anlas`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'anlas' ? 'hidden' : ''}`}>
+            <div className="flex min-h-11 w-full items-center justify-between text-left">
               <div><h3 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">当前剩余 <b className="text-indigo-600 dark:text-indigo-300">{anlasBudget.remaining}</b> 点，电脑与手机共用。</p></div>
-              <ChevronDown className={`h-4 w-4 flex-none transition md:hidden ${mobileSection === 'anlas' ? 'rotate-180' : ''}`} />
-            </button>
-            {mobileSection === 'anlas' && <div className="mt-3">
+            </div>
+            {activeSection === 'anlas' && <div className="mt-3">
               <div className="flex gap-2">
                 <input type="number" min="0" step="1" value={anlasInput} onChange={event => setAnlasInput(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-lg font-black tabular-nums outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900" aria-label="可支配 Anlas 点数" />
                 <button type="button" onClick={async () => { const next = await anlasBudgetService.set(Number(anlasInput)); setAnlasInput(String(next.remaining)); notify('Anlas 预算已更新'); }} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white">保存</button>
@@ -237,24 +254,24 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             </div>}
           </section>
 
-          <section id={`settings-tags`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'tags' ? 'hidden' : ''}`}>
-            <button type="button" onClick={() => isMobile && setMobileSection('tags')} className="flex min-h-11 w-full items-center justify-between gap-4 text-left">
+          <section id={`settings-tags`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'tags' ? 'hidden' : ''}`}>
+            <div className="flex min-h-11 w-full items-center justify-between gap-4 text-left">
               <div>
               <h3 className="font-semibold text-gray-900 dark:text-white">Tag 补全词库</h3>
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">查看版本、数量并检查中英 Tag 数据更新。</p>
-              </div><ChevronDown className={`h-4 w-4 flex-none transition md:hidden ${mobileSection === 'tags' ? 'rotate-180' : ''}`} />
-            </button>
-            {mobileSection === 'tags' && <div className="mt-3 flex justify-start"><TagDictionaryUpdater notify={notify} /></div>}
+              </div>
+            </div>
+            {activeSection === 'tags' && <div className="mt-3 flex justify-start"><TagDictionaryUpdater notify={notify} /></div>}
           </section>
 
-          <section id={`settings-cache`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'cache' ? 'hidden' : ''}`}>
-            <button type="button" onClick={() => isMobile && setMobileSection('cache')} className="flex min-h-11 w-full items-center justify-between text-left">
+          <section id={`settings-cache`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'cache' ? 'hidden' : ''}`}>
+            <div className="flex min-h-11 w-full items-center justify-between text-left">
               <div>
               <h3 className="font-semibold text-gray-900 dark:text-white">手机图片缓存</h3>
               <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">仅保存列表小图，原图和历史数据仍只保存在电脑。缓存被清除后可以重新生成。</p>
-              </div><ChevronDown className={`h-4 w-4 flex-none transition md:hidden ${mobileSection === 'cache' ? 'rotate-180' : ''}`} />
-            </button>
-            {mobileSection === 'cache' && <div>
+              </div>
+            </div>
+            {activeSection === 'cache' && <div>
             <div className="mt-4 grid grid-cols-4 gap-2">
               {[0, 25, 50, 100].map(value => (
                 <button
@@ -288,12 +305,13 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             </div>}
           </section>
 
-          <section id={`settings-about`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${isMobile && mobileSection !== 'about' ? 'hidden' : ''}`}>
+          <section id={`settings-about`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'about' ? 'hidden' : ''}`}>
             <div className="flex items-center justify-between gap-4">
               <div><h3 className="font-semibold text-gray-900 dark:text-white">关于</h3><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">NAI Atelier 个人维护版本</p></div>
               <span className="rounded-lg bg-gray-100 px-3 py-1.5 font-mono text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-300">v{__APP_VERSION__}</span>
             </div>
           </section>
+          </div>
         </div>
         </div>
       </div>
