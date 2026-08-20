@@ -152,6 +152,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                             return (
                                 <div
                                     key={artist.id}
+                                    data-safe-mode-work="true"
                                     className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden border transition-colors cursor-pointer ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}
                                     onClick={() => toggleCart(artist.name)}
                                 >
@@ -216,8 +217,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                         )}
                                     </div>
                                     <div className="p-2 md:p-3 bg-white dark:bg-gray-800 text-center border-t border-gray-100 dark:border-gray-700">
-                                        <div className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{artist.name}</div>
-                                        {artist.chineseName && <div className="mt-0.5 truncate text-[10px] text-gray-400" title={artist.chineseName}>{artist.chineseName}</div>}
+                                        <div data-safe-mode-title="true" className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{artist.name}</div>
+                                        {artist.chineseName && <div data-safe-mode-title="true" className="mt-0.5 truncate text-[10px] text-gray-400" title={artist.chineseName}>{artist.chineseName}</div>}
                                         {typeof artist.postCount === 'number' && <div className="mt-0.5 text-[10px] font-mono text-gray-500" title="Danbooru 关联作品数">作品 {artist.postCount.toLocaleString('zh-CN')}</div>}
                                     </div>
                                 </div>
@@ -1440,12 +1441,14 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                             return (
                                 <div
                                     key={artist.id}
+                                    data-safe-mode-work="true"
                                     className={`bg-white dark:bg-gray-800 rounded-lg border p-4 ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
                                     onClick={() => toggleCart(artist.name)}
                                 >
                                     <div className="flex justify-between items-center mb-3">
                                         <div className="flex items-center gap-3">
                                             <h3
+                                                data-safe-mode-title="true"
                                                 className={`font-bold text-lg md:text-xl cursor-pointer hover:underline ${isSelected ? 'text-indigo-600' : 'text-gray-900 dark:text-white'}`}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -1454,7 +1457,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                             >
                                                 {artist.name}
                                             </h3>
-                                            {artist.chineseName && <span className="text-sm text-gray-400">{artist.chineseName}</span>}
+                                            {artist.chineseName && <span data-safe-mode-title="true" className="text-sm text-gray-400">{artist.chineseName}</span>}
                                             {typeof artist.postCount === 'number' && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-mono text-gray-600 dark:bg-gray-800 dark:text-gray-300">作品 {artist.postCount.toLocaleString('zh-CN')}</span>}
                                             <button onClick={(e) => toggleFav(artist.name, e)} className={`${isFav ? 'text-yellow-500' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}>
                                                 <svg className="w-5 h-5" fill={isFav ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.563.044.8.77.38 1.178l-4.244 4.134a.563.563 0 00-.153.476l1.24 5.376c.13.565-.487 1.01-.967.756L12 18.232l-4.894 3.08c-.48.254-1.097-.19-.967-.756l1.24-5.376a.563.563 0 00-.153-.476L2.985 10.575c-.42-.408-.183-1.134.38-1.178l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" /></svg>

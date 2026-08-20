@@ -1,11 +1,13 @@
+import { execFile as nodeExecFile } from 'node:child_process';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rename, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { createServer, request as httpRequest } from 'node:http';
 import { connect as connectSocket } from 'node:net';
-import { availableParallelism, totalmem } from 'node:os';
+import { availableParallelism, tmpdir, totalmem } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { PromptAgentService } from './prompt-agent.mjs';
 import { StChatu8Bridge } from './st-chatu8-bridge.mjs';
@@ -55,6 +57,12 @@ const THUMB_WIDTHS = new Map([
   ['thumb-640', 640],
   ['thumb-960', 960],
 ]);
+const execFile = promisify(nodeExecFile);
+const AITAG_BROWSER_HEADERS = {
+  accept: 'application/json, text/plain, */*',
+  referer: 'https://aitag.win/',
+  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+};
 
 export const selectThumbnailConcurrency = ({
   logicalProcessors = availableParallelism(),
@@ -1094,6 +1102,68 @@ export const requestRemoteBuffer = async (source, remoteFetch = fetch) => {
   throw new Error('Too many image redirects');
 };
 
+const requestAitagWithCurl = async (target, targetType) => {
+  const tempDirectory = await mkdtemp(join(tmpdir(), 'nai-aitag-'));
+  const outputPath = join(tempDirectory, 'response.bin');
+  const accept = targetType === 'json'
+    ? AITAG_BROWSER_HEADERS.accept
+    : 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8';
+
+  try {
+    const command = process.platform === 'win32' ? 'curl.exe' : 'curl';
+    const { stdout } = await execFile(command, [
+      '--silent',
+      '--show-error',
+      '--connect-timeout', '10',
+      '--max-time', '30',
+      '--max-filesize', String(INPUT_LIMIT),
+      '--proto', '=https',
+      '--output', outputPath,
+      '--write-out', '%{http_code}\n%{content_type}',
+      '--header', `Accept: ${accept}`,
+      '--header', `Referer: ${AITAG_BROWSER_HEADERS.referer}`,
+      '--header', `User-Agent: ${AITAG_BROWSER_HEADERS['user-agent']}`,
+      target.toString(),
+    ], { windowsHide: true, timeout: 35_000, maxBuffer: 64 * 1024 });
+    const [statusText, contentType = ''] = String(stdout).trim().split(/\r?\n/, 2);
+    const status = Number(statusText);
+    if (!Number.isInteger(status) || status < 100 || status > 599) throw new Error('AITag curl returned an invalid status');
+    const body = await readFile(outputPath);
+    if (body.length > INPUT_LIMIT) throw new Error('AITag response is too large');
+    return new Response(body, {
+      status,
+      headers: {
+        'content-type': contentType || (targetType === 'json' ? 'application/json' : 'application/octet-stream'),
+        'content-length': String(body.length),
+      },
+    });
+  } finally {
+    await unlink(outputPath).catch(() => {});
+    await rmdir(tempDirectory).catch(() => {});
+  }
+};
+
+export const fetchAitagRemoteResponse = async (target, targetType, remoteFetch, curlFetch = requestAitagWithCurl) => {
+  const headers = {
+    ...AITAG_BROWSER_HEADERS,
+    accept: targetType === 'json'
+      ? AITAG_BROWSER_HEADERS.accept
+      : 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+  };
+
+  if (targetType === 'json') {
+    try {
+      return await curlFetch(target, targetType);
+    } catch {
+      return remoteFetch(target, { redirect: 'manual', signal: AbortSignal.timeout(30_000), headers });
+    }
+  }
+
+  const response = await remoteFetch(target, { redirect: 'manual', signal: AbortSignal.timeout(30_000), headers });
+  if (response.status !== 403) return response;
+  return curlFetch(target, targetType);
+};
+
 const handleAitagRemoteRequest = async (req, res, url, lanSecret, remoteFetch) => {
   const suppliedSecret = String(req.headers['x-nai-internal-secret'] || '');
   const expected = Buffer.from(lanSecret);
@@ -1109,14 +1179,7 @@ const handleAitagRemoteRequest = async (req, res, url, lanSecret, remoteFetch) =
     if (!targetType) return sendJson(res, 400, { error: 'Invalid AITag target' });
     const isJsonApi = targetType === 'json';
     const isImage = targetType === 'image';
-    const response = await remoteFetch(target, {
-      redirect: 'manual',
-      signal: AbortSignal.timeout(30_000),
-      headers: {
-        accept: isJsonApi ? 'application/json' : 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-        'user-agent': 'NAI-Atelier-Qun/0.5 (+local personal use)',
-      },
-    });
+    const response = await fetchAitagRemoteResponse(target, targetType, remoteFetch);
     const contentType = response.headers.get('content-type') || '';
     const body = await readLimitedResponse(response);
     if (isJsonApi && body.length > 16 * 1024 * 1024) return sendJson(res, 502, { error: 'AITag response is too large' });

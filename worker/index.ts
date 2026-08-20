@@ -228,8 +228,9 @@ const clampInt = (value: string | null, fallback: number, min: number, max: numb
 async function proxyAitagJson(targetUrl: URL): Promise<Response> {
   const response = await fetch(targetUrl.toString(), {
     headers: {
-      'Accept': 'application/json',
-      'User-Agent': 'NAI-Atelier-Qun/0.5 (+local personal use)',
+      'Accept': 'application/json, text/plain, */*',
+      'Referer': `${AITAG_BASE_URL}/`,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
     },
   });
 
@@ -290,8 +291,9 @@ async function fetchAitagJson(targetUrl: URL, env?: Env): Promise<any> {
   const localFetch = buildLocalAitagFetch(targetUrl.toString(), env);
   const response = await fetch(localFetch.url, {
     headers: {
-      'Accept': 'application/json',
-      'User-Agent': 'NAI-Atelier-Qun/0.5 (+local personal use)',
+      'Accept': 'application/json, text/plain, */*',
+      'Referer': `${AITAG_BASE_URL}/`,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
       ...localFetch.headers,
     },
   });
@@ -634,7 +636,8 @@ async function fetchAitagImageToBucket(env: Env, image: any, options: { workId: 
     const response = await fetch(localFetch.url, {
       headers: {
         'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-        'User-Agent': 'NAI-Atelier-Qun/0.5 (+local personal use)',
+        'Referer': `${AITAG_BASE_URL}/`,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
         ...localFetch.headers,
       },
     });

@@ -11,6 +11,7 @@ import {
   classifyAitagRemoteTarget,
   classifyDanbooruRemoteTarget,
   estimateNovelAiGenerationCost,
+  fetchAitagRemoteResponse,
   normalizeVibeStrengths,
   parseInvalidVibeCacheKeys,
   requestRemoteBuffer,
@@ -585,6 +586,23 @@ test('AITag computer proxy only accepts known API and image targets', () => {
   assert.equal(classifyAitagRemoteTarget('https://aitag.win/admin'), null);
   assert.equal(classifyAitagRemoteTarget('https://example.com/api/work/1'), null);
   assert.equal(classifyAitagRemoteTarget('file:///etc/passwd'), null);
+});
+
+test('AITag JSON proxy uses the curl transport before Node fetch', async () => {
+  let nodeFetchCalls = 0;
+  const response = await fetchAitagRemoteResponse(
+    new URL('https://aitag.win/api/ai_works_search?page=1'),
+    'json',
+    async () => {
+      nodeFetchCalls++;
+      return new Response('<html>challenge</html>', { status: 403, headers: { 'content-type': 'text/html' } });
+    },
+    async () => new Response('{"items":[]}', { status: 200, headers: { 'content-type': 'application/json' } }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(nodeFetchCalls, 0);
+  assert.equal(await response.json().then(payload => payload.items.length), 0);
 });
 
 test('Danbooru computer proxy only accepts the Safebooru posts API', () => {

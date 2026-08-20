@@ -90,7 +90,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             const selected = selectedKeys.has(card.key);
             const showPin = card.kind === 'catalog' && Boolean(coverCandidates[card.key]);
             return (
-              <article key={card.key} onClick={() => toggleSelect(card)} aria-pressed={selected} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors cursor-pointer dark:bg-gray-800 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-500 dark:border-gray-700'}`}>
+              <article key={card.key} data-safe-mode-work="true" onClick={() => toggleSelect(card)} aria-pressed={selected} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors cursor-pointer dark:bg-gray-800 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-500 dark:border-gray-700'}`}>
                 <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': cardRatios[card.key] ? `${Math.round(cardRatios[card.key] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
                   {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} onCandidateChange={candidate => rememberCoverCandidate(card.key, candidate)} onImageLoad={(width, height) => { const r = width / Math.max(1, height); if (Number.isFinite(r) && r > 0) setCardRatios(previous => (previous[card.key] === r ? previous : { ...previous, [card.key]: r })); }} /> : card.previewImage ? <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} onLoad={event => { const img = event.currentTarget; if (img.naturalWidth > 0 && img.naturalHeight > 0) { const r = img.naturalWidth / img.naturalHeight; if (Number.isFinite(r) && r > 0) setCardRatios(previous => (previous[card.key] === r ? previous : { ...previous, [card.key]: r })); } }} /></button> : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
@@ -114,9 +114,9 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                   )}
                 </div>
                 <div className="p-3">
-                  <h2 className="truncate text-sm font-bold text-gray-900 dark:text-white" title={card.name}>{card.name}</h2>
+                  <h2 data-safe-mode-title="true" className="truncate text-sm font-bold text-gray-900 dark:text-white" title={card.name}>{card.name}</h2>
                   {card.kind === 'catalog' ? <>
-                    <div className="mt-0.5 truncate font-mono text-[10px] text-gray-400" title={card.tagName}>{card.tagName}</div>
+                    <div data-safe-mode-title="true" className="mt-0.5 truncate font-mono text-[10px] text-gray-400" title={card.tagName}>{card.tagName}</div>
                     <div className="mt-1 flex items-center justify-between gap-1 text-[10px]">
                       <span className="text-gray-500">作品 {(card.postCount || 0).toLocaleString('zh-CN')}</span>
                       {card.matchReason && <span className="truncate rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 dark:bg-gray-700 dark:text-gray-300" title={`匹配：${card.matchReason}`}>匹配：{card.matchReason}</span>}

@@ -878,11 +878,15 @@ body,
 
 /* 全局安全模式：图片默认遮挡，首次点击仅临时显示该图片。 */
 .safe-mode img:not([data-safe-mode-ignore="true"]):not([data-safe-revealed="true"]) {
-  filter: blur(24px) brightness(0.4) saturate(0.65) !important;
+  filter: blur(24px) brightness(1.08) saturate(0.45) !important;
   transform: scale(1.08) !important;
   cursor: pointer;
   user-select: none;
   transition: filter 160ms ease, transform 160ms ease;
+}
+
+.dark .safe-mode img:not([data-safe-mode-ignore="true"]):not([data-safe-revealed="true"]) {
+  filter: blur(24px) brightness(0.4) saturate(0.65) !important;
 }
 
 /* 作品名称默认遮挡；可单独点击名称，或随所属作品图片一起临时显示。 */
