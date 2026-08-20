@@ -890,7 +890,7 @@ body,
 }
 
 /* 作品名称默认遮挡；可单独点击名称，或随所属作品图片一起临时显示。 */
-.safe-mode [data-safe-mode-title="true"]:not(input) {
+.safe-mode.safe-mode-hide-titles [data-safe-mode-title="true"]:not(input) {
   color: transparent !important;
   background-image: linear-gradient(90deg, rgb(156 163 175 / .34), rgb(156 163 175 / .18));
   background-position: left center;
@@ -900,19 +900,19 @@ body,
   user-select: none;
 }
 
-.safe-mode [data-safe-mode-title="true"][data-safe-title-revealed="true"]:not(input),
-.safe-mode [data-safe-mode-work="true"][data-safe-work-revealed="true"] [data-safe-mode-title="true"]:not(input) {
+.safe-mode.safe-mode-hide-titles [data-safe-mode-title="true"][data-safe-title-revealed="true"]:not(input),
+.safe-mode.safe-mode-hide-titles [data-safe-mode-work="true"][data-safe-work-revealed="true"] [data-safe-mode-title="true"]:not(input) {
   color: revert-layer !important;
   background-image: none;
   user-select: auto;
 }
 
-.safe-mode input[data-safe-mode-title="true"] {
+.safe-mode.safe-mode-hide-titles input[data-safe-mode-title="true"] {
   -webkit-text-security: disc;
 }
 
-.safe-mode input[data-safe-mode-title="true"][data-safe-title-revealed="true"],
-.safe-mode [data-safe-mode-work="true"][data-safe-work-revealed="true"] input[data-safe-mode-title="true"] {
+.safe-mode.safe-mode-hide-titles input[data-safe-mode-title="true"][data-safe-title-revealed="true"],
+.safe-mode.safe-mode-hide-titles [data-safe-mode-work="true"][data-safe-work-revealed="true"] input[data-safe-mode-title="true"] {
   -webkit-text-security: none;
 }
 

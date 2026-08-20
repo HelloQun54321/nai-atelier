@@ -59,6 +59,8 @@ interface GlobalSettingsProps {
   appearancePreferences: AppearancePreferences;
   setAppearancePreferences: React.Dispatch<React.SetStateAction<AppearancePreferences>>;
   safeMode: boolean;
+  safeModeHideTitles: boolean;
+  setSafeModeHideTitles: React.Dispatch<React.SetStateAction<boolean>>;
   toggleSafeMode: () => void;
 }
 
@@ -99,7 +101,7 @@ const ACCENT_PRESETS = [
 
 const readApiKey = () => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '';
 
-export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, initialSection = 'home', notify, isDark, themeMode, setThemeMode, appearancePreferences, setAppearancePreferences, safeMode, toggleSafeMode }) => {
+export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, initialSection = 'home', notify, isDark, themeMode, setThemeMode, appearancePreferences, setAppearancePreferences, safeMode, safeModeHideTitles, setSafeModeHideTitles, toggleSafeMode }) => {
   const confirmAction = useConfirmDialog();
   const [apiKey, setApiKey] = useState(readApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(() => localStorage.getItem('nai_api_key') !== null);
@@ -274,7 +276,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <button type="button" aria-pressed="true" className="atelier-theme-card group relative w-full overflow-hidden rounded-2xl border border-indigo-400/70 bg-gray-50 p-3 text-left ring-2 ring-indigo-500/10 dark:bg-gray-950">
                   <span className="absolute right-3 top-3 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-white"><Check className="h-3 w-3" /></span>
                   <span className="flex min-w-0 items-center gap-3">
-                    <span className="atelier-theme-preview grid h-20 w-28 flex-none grid-cols-[1.8rem_1fr] overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-sm dark:border-gray-700 dark:bg-gray-900" aria-hidden="true"><span className="border-r border-gray-200 bg-gray-950 p-1 dark:border-gray-700"><span className="mt-1 block h-1 w-3 rounded-full bg-indigo-400" /><span className="mt-2 block h-1 w-4 rounded-full bg-gray-600" /><span className="mt-1 block h-1 w-4 rounded-full bg-gray-700" /></span><span className="p-1.5"><span className="block h-2 w-8 rounded bg-indigo-500/70" /><span className="mt-1.5 block h-5 rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800" /><span className="mt-1.5 grid grid-cols-2 gap-1"><span className="h-7 rounded bg-gray-200 dark:bg-gray-800" /><span className="h-7 rounded bg-gray-200 dark:bg-gray-800" /></span></span></span>
+                    <span className="atelier-theme-preview grid h-20 w-28 flex-none grid-cols-[1.8rem_1fr] overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-sm dark:border-gray-700 dark:bg-gray-900" aria-hidden="true"><span className="border-r border-gray-200 bg-white p-1 dark:border-gray-700 dark:bg-gray-950"><span className="mt-1 block h-1 w-3 rounded-full bg-indigo-400" /><span className="mt-2 block h-1 w-4 rounded-full bg-gray-300 dark:bg-gray-600" /><span className="mt-1 block h-1 w-4 rounded-full bg-gray-400 dark:bg-gray-700" /></span><span className="p-1.5"><span className="block h-2 w-8 rounded bg-indigo-500/70" /><span className="mt-1.5 block h-5 rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800" /><span className="mt-1.5 grid grid-cols-2 gap-1"><span className="h-7 rounded bg-gray-200 dark:bg-gray-800" /><span className="h-7 rounded bg-gray-200 dark:bg-gray-800" /></span></span></span>
                     <span className="min-w-0"><b className="block text-sm text-gray-900 dark:text-white">NAI Atelier</b><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">安静的创作工作台、克制分层与作品优先的现代工坊语言。</span><span className="mt-1 block text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">当前：{isDark ? '黑夜版本' : '白天版本'}</span></span>
                   </span>
                 </button>
@@ -309,7 +311,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <button type="button" onClick={resetThemeCustomization} className="mobile-touch mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"><RotateCcw className="h-3.5 w-3.5" />恢复 NAI Atelier 默认外观</button>
               </div>
               <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />安全模式</span><span>{safeMode ? '已开启' : '已关闭'}</span></button>
-              <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">开启后遮挡全站图片与作品名称；点击名称只临时显示名称，点击图片会同时显示该图片和对应名称。</p>
+              <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">开启后遮挡全站图片；点击图片可临时显示，离开后自动重新遮挡。</p>
+              <button type="button" onClick={() => setSafeModeHideTitles(enabled => !enabled)} aria-pressed={safeModeHideTitles} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
+                <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">同时隐藏作品名称</b><span className="mt-0.5 block text-[10px] leading-4 text-gray-500 dark:text-gray-400">开启后可单独点击名称显示；点击图片会连同对应名称一起显示。</span></span>
+                <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeHideTitles ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeHideTitles ? 'translate-x-5' : 'translate-x-0'}`} /></span>
+              </button>
               <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
                 <div className="mb-2 text-xs font-bold text-gray-500 dark:text-gray-400">图片列表布局</div>
                 <div className="grid grid-cols-3 gap-2">

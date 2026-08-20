@@ -67,6 +67,7 @@ const App = () => {
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const isDark = themeMode === 'dark' || (themeMode === 'system' && systemDark);
   const [safeMode, setSafeMode] = useState(() => localStorage.getItem('nai_safe_mode') === 'true');
+  const [safeModeHideTitles, setSafeModeHideTitles] = useState(() => localStorage.getItem('nai_safe_mode_hide_titles') !== 'false');
 
   // Toast State
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
@@ -209,6 +210,7 @@ const App = () => {
 
   useEffect(() => {
     localStorage.setItem('nai_safe_mode', String(safeMode));
+    localStorage.setItem('nai_safe_mode_hide_titles', String(safeModeHideTitles));
     resetSafeModeReveals();
 
     if (!safeMode) return;
@@ -257,7 +259,7 @@ const App = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('pointermove', handlePointerMove, true);
     };
-  }, [safeMode]);
+  }, [safeMode, safeModeHideTitles]);
 
   useEffect(() => {
     if (safeMode) resetSafeModeReveals();
@@ -295,7 +297,7 @@ const App = () => {
 
   const handleSafeModeClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!safeMode || !(event.target instanceof HTMLElement)) return;
-    const title = event.target.closest<HTMLElement>('[data-safe-mode-title="true"]');
+    const title = safeModeHideTitles ? event.target.closest<HTMLElement>('[data-safe-mode-title="true"]') : null;
     if (title) {
       const work = title.closest<HTMLElement>('[data-safe-mode-work="true"]');
       if (title.dataset.safeTitleRevealed === 'true' || work?.dataset.safeWorkRevealed === 'true') return;
@@ -639,7 +641,7 @@ const App = () => {
 
   return (
     <div
-      className={`agent-stage flex flex-col h-screen ${safeMode ? 'safe-mode' : ''}`}
+      className={`agent-stage flex flex-col h-screen ${safeMode ? 'safe-mode' : ''} ${safeMode && safeModeHideTitles ? 'safe-mode-hide-titles' : ''}`}
       onClickCapture={handleSafeModeClickCapture}
     >
       <Layout
@@ -652,6 +654,8 @@ const App = () => {
         appearancePreferences={appearancePreferences}
         setAppearancePreferences={setAppearancePreferences}
         safeMode={safeMode}
+        safeModeHideTitles={safeModeHideTitles}
+        setSafeModeHideTitles={setSafeModeHideTitles}
         toggleSafeMode={toggleSafeMode}
         toast={toast}
         hideNav={view === 'edit' || view === 'playground'}
