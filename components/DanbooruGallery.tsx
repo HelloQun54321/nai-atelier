@@ -244,7 +244,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   const renderDanbooruCard = (post: DanbooruPost) => {
     const title = post.tags.character[0] || post.tags.artist[0] || `#${post.id}`;
     const ratio = `${post.width || 3} / ${post.height || 4}`;
-    return <article key={post.id} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors dark:bg-gray-800 ${selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
+    return <article key={post.id} data-safe-mode-work="true" className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors dark:bg-gray-800 ${selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
       <button type="button" onClick={() => setSelectedId(post.id)} className="block w-full text-left">
         <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}>
           <SmartImage src={post.sampleUrl} alt={title.replaceAll('_', ' ')} />
@@ -252,7 +252,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             <span>♥ {formatCount(post.favCount)}</span><span>▲ {formatCount(post.score)}</span>
           </div>
         </div>
-        <div className="p-2.5"><p className="truncate text-xs font-bold">{title.replaceAll('_', ' ')}</p><p className="mt-1 truncate text-[10px] text-gray-500">{post.tags.artist.slice(0, 2).join(', ').replaceAll('_', ' ') || `Danbooru #${post.id}`}</p></div>
+        <div className="p-2.5"><p data-safe-mode-title="true" className="truncate text-xs font-bold">{title.replaceAll('_', ' ')}</p><p className="mt-1 truncate text-[10px] text-gray-500">{post.tags.artist.slice(0, 2).join(', ').replaceAll('_', ' ') || `Danbooru #${post.id}`}</p></div>
       </button>
     </article>;
   };
@@ -364,6 +364,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
         <DetailSidePanel
           open={Boolean(selected)}
           title={selected ? `Danbooru #${selected.id}` : '作品详情'}
+          sensitiveTitle
           subInfo={selected ? `${selected.width}×${selected.height} · ${selected.fileExt.toUpperCase()}` : undefined}
           onBack={closeMobileDetail}
           onClose={() => setSelectedId(null)}

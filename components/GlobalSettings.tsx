@@ -309,6 +309,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <button type="button" onClick={resetThemeCustomization} className="mobile-touch mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"><RotateCcw className="h-3.5 w-3.5" />恢复 NAI Atelier 默认外观</button>
               </div>
               <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />安全模式</span><span>{safeMode ? '已开启' : '已关闭'}</span></button>
+              <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">开启后遮挡全站图片与作品名称；点击名称只临时显示名称，点击图片会同时显示该图片和对应名称。</p>
               <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
                 <div className="mb-2 text-xs font-bold text-gray-500 dark:text-gray-400">图片列表布局</div>
                 <div className="grid grid-cols-3 gap-2">

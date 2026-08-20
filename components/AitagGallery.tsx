@@ -308,6 +308,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     return (
       <div
         key={work.id}
+        data-safe-mode-work="true"
         role="button"
         tabIndex={0}
         onClick={() => loadDetail(work)}
@@ -340,7 +341,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         </div>
         <div className="p-3 flex-1">
           <div className="flex items-center gap-2">
-            <div className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate min-w-0 flex-1" title={work.title}>
+            <div data-safe-mode-title="true" className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate min-w-0 flex-1">
               {work.title || `#${work.id}`}
             </div>
             <button
@@ -1250,6 +1251,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         <DetailSidePanel
           open={Boolean(selectedWork)}
           title={selectedWork?.title || '作品详情'}
+          sensitiveTitle
           subInfo={selectedWork ? `#${selectedWork.id} · ${getAitagType(selectedWork)}` : undefined}
           onBack={closeMobileDetail}
           onClose={() => setSelectedId(null)}

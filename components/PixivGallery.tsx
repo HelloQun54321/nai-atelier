@@ -410,7 +410,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     // 会让每张封面的上游流量放大 5-10 倍。square 档是方形裁切版，仅作最后回退。
     // 原图不在卡片上升级加载——点开详情才加载原图（详情页自带 preview→original 链）。
     const previewSrc = illust.urls.medium || illust.urls.large || illust.urls.thumb;
-    return <MediaCardShell key={illust.id} selected={selectedId === illust.id} className="mobile-gallery-item group relative flex-col">
+    return <MediaCardShell key={illust.id} data-safe-mode-work="true" selected={selectedId === illust.id} className="mobile-gallery-item group relative flex-col">
       <button type="button" onClick={() => openDetail(illust)} className="block w-full text-left">
         <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}>
           <SmartImage
@@ -423,7 +423,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
           </div>
         </div>
         <div className="p-2.5">
-          <p className="truncate text-xs font-bold">{title}</p>
+          <p data-safe-mode-title="true" className="truncate text-xs font-bold">{title}</p>
           <p className="mt-1 truncate text-[10px] text-gray-500">{illust.user.name || `Pixiv #${illust.id}`}</p>
         </div>
       </button>
@@ -654,6 +654,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
         <DetailSidePanel
           open={Boolean(selected)}
           title={selected ? selected.title : '作品详情'}
+          sensitiveTitle
           subInfo={selected ? `Pixiv #${selected.id} · ${selected.width}×${selected.height} · ${currentPageCount} 页` : undefined}
           onBack={closeMobileDetail}
           onClose={() => setSelectedId(null)}

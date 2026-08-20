@@ -190,28 +190,34 @@ const App = () => {
     };
   }, []);
 
-  const resetRevealedImages = () => {
+  const resetSafeModeReveals = () => {
     document.querySelectorAll<HTMLImageElement>('img[data-safe-revealed="true"]').forEach(image => {
       delete image.dataset.safeRevealed;
+    });
+    document.querySelectorAll<HTMLElement>('[data-safe-title-revealed="true"]').forEach(title => {
+      delete title.dataset.safeTitleRevealed;
+    });
+    document.querySelectorAll<HTMLElement>('[data-safe-work-revealed="true"]').forEach(work => {
+      delete work.dataset.safeWorkRevealed;
     });
   };
 
   const toggleSafeMode = () => {
-    resetRevealedImages();
+    resetSafeModeReveals();
     setSafeMode(enabled => !enabled);
   };
 
   useEffect(() => {
     localStorage.setItem('nai_safe_mode', String(safeMode));
-    resetRevealedImages();
+    resetSafeModeReveals();
 
     if (!safeMode) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') resetRevealedImages();
+      if (event.key === 'Escape') resetSafeModeReveals();
     };
     const handleVisibilityChange = () => {
-      if (document.hidden) resetRevealedImages();
+      if (document.hidden) resetSafeModeReveals();
     };
     let pointerFrame: number | null = null;
     let pointerPosition = { x: 0, y: 0 };
@@ -225,18 +231,28 @@ const App = () => {
           const rect = image.getBoundingClientRect();
           const isInsideImage = pointerPosition.x >= rect.left && pointerPosition.x <= rect.right
             && pointerPosition.y >= rect.top && pointerPosition.y <= rect.bottom;
-          if (!isInsideImage) delete image.dataset.safeRevealed;
+          if (!isInsideImage) {
+            delete image.dataset.safeRevealed;
+            const work = image.closest<HTMLElement>('[data-safe-mode-work="true"]');
+            if (work) delete work.dataset.safeWorkRevealed;
+          }
+        });
+        document.querySelectorAll<HTMLElement>('[data-safe-title-revealed="true"]').forEach(title => {
+          const rect = title.getBoundingClientRect();
+          const isInsideTitle = pointerPosition.x >= rect.left && pointerPosition.x <= rect.right
+            && pointerPosition.y >= rect.top && pointerPosition.y <= rect.bottom;
+          if (!isInsideTitle) delete title.dataset.safeTitleRevealed;
         });
       });
     };
 
-    window.addEventListener('blur', resetRevealedImages);
+    window.addEventListener('blur', resetSafeModeReveals);
     window.addEventListener('keydown', handleKeyDown);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     document.addEventListener('pointermove', handlePointerMove, true);
     return () => {
       if (pointerFrame !== null) window.cancelAnimationFrame(pointerFrame);
-      window.removeEventListener('blur', resetRevealedImages);
+      window.removeEventListener('blur', resetSafeModeReveals);
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('pointermove', handlePointerMove, true);
@@ -244,7 +260,7 @@ const App = () => {
   }, [safeMode]);
 
   useEffect(() => {
-    if (safeMode) resetRevealedImages();
+    if (safeMode) resetSafeModeReveals();
   }, [view, safeMode]);
 
   const findImageAtPointer = (target: HTMLElement, clientX: number, clientY: number) => {
@@ -279,15 +295,26 @@ const App = () => {
 
   const handleSafeModeClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!safeMode || !(event.target instanceof HTMLElement)) return;
+    const title = event.target.closest<HTMLElement>('[data-safe-mode-title="true"]');
+    if (title) {
+      const work = title.closest<HTMLElement>('[data-safe-mode-work="true"]');
+      if (title.dataset.safeTitleRevealed === 'true' || work?.dataset.safeWorkRevealed === 'true') return;
+      event.preventDefault();
+      event.stopPropagation();
+      resetSafeModeReveals();
+      title.dataset.safeTitleRevealed = 'true';
+      return;
+    }
     const image = findImageAtPointer(event.target, event.clientX, event.clientY);
     if (!image) {
-      resetRevealedImages();
+      resetSafeModeReveals();
       return;
     }
     if (image.dataset.safeModeIgnore === 'true' || image.dataset.safeRevealed === 'true') return;
 
     event.preventDefault();
     event.stopPropagation();
+    resetSafeModeReveals();
     // SmartImage 会在同一容器内渲染主图 + 渐进升级高清叠加图，CSS 对每张 img
     // 独立判断 data-safe-revealed；只标记一张会导致叠加图残留模糊，必须整组解除。
     const images = [image];
@@ -298,6 +325,8 @@ const App = () => {
       if (candidate.dataset.safeModeIgnore === 'true') continue;
       candidate.dataset.safeRevealed = 'true';
     }
+    const work = image.closest<HTMLElement>('[data-safe-mode-work="true"]');
+    if (work) work.dataset.safeWorkRevealed = 'true';
   };
 
   // keep-alive 视图按最近使用保留最多 4 个：全部 9 个视图都是重型图库，

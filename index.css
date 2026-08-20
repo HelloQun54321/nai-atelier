@@ -885,6 +885,33 @@ body,
   transition: filter 160ms ease, transform 160ms ease;
 }
 
+/* 作品名称默认遮挡；可单独点击名称，或随所属作品图片一起临时显示。 */
+.safe-mode [data-safe-mode-title="true"]:not(input) {
+  color: transparent !important;
+  background-image: linear-gradient(90deg, rgb(156 163 175 / .34), rgb(156 163 175 / .18));
+  background-position: left center;
+  background-repeat: no-repeat;
+  background-size: min(9rem, 78%) .72em;
+  border-radius: .25rem;
+  user-select: none;
+}
+
+.safe-mode [data-safe-mode-title="true"][data-safe-title-revealed="true"]:not(input),
+.safe-mode [data-safe-mode-work="true"][data-safe-work-revealed="true"] [data-safe-mode-title="true"]:not(input) {
+  color: revert-layer !important;
+  background-image: none;
+  user-select: auto;
+}
+
+.safe-mode input[data-safe-mode-title="true"] {
+  -webkit-text-security: disc;
+}
+
+.safe-mode input[data-safe-mode-title="true"][data-safe-title-revealed="true"],
+.safe-mode [data-safe-mode-work="true"][data-safe-work-revealed="true"] input[data-safe-mode-title="true"] {
+  -webkit-text-security: none;
+}
+
 /* 避免页面自身的长动画拖慢解除模糊，例如画师tag和灵感的 700ms 懒加载过渡。 */
 .safe-mode img[data-safe-revealed="true"]:not([data-safe-mode-ignore="true"]) {
   transition: filter 160ms ease, transform 160ms ease !important;

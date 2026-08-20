@@ -13,6 +13,8 @@ import { IconButton } from './DesignSystem';
 interface DetailSidePanelProps {
   open: boolean;
   title: string;
+  /** 将作品标题接入安全模式的点击显示逻辑 */
+  sensitiveTitle?: boolean;
   /** 标题下的副信息行（尺寸·页数·来源等） */
   subInfo?: string;
   onClose: () => void;
@@ -25,8 +27,9 @@ interface DetailSidePanelProps {
   children: React.ReactNode;
 }
 
-export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, subInfo, onClose, onBack, bodyRef, onBodyScroll, children }) => (
+export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, sensitiveTitle = false, subInfo, onClose, onBack, bodyRef, onBodyScroll, children }) => (
   <aside
+    data-safe-mode-work={sensitiveTitle ? 'true' : undefined}
     className={`aitag-detail-panel ${open ? 'aitag-detail-panel--open flex' : 'aitag-detail-panel--closed hidden'} fixed inset-0 z-[1050] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 xl:static xl:z-auto xl:border-l`}
     aria-label={title}
   >
@@ -34,7 +37,7 @@ export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, s
       <div className="flex min-w-0 items-center gap-2">
         {onBack && <IconButton label="返回" onClick={onBack} className="mobile-touch aitag-detail-back xl:hidden"><DetailBackIcon /></IconButton>}
         <div className="min-w-0">
-          <p className="truncate text-sm font-bold">{title}</p>
+          <p data-safe-mode-title={sensitiveTitle ? 'true' : undefined} className="truncate text-sm font-bold">{title}</p>
           {subInfo && <p className="truncate text-[10px] text-gray-500 dark:text-gray-400">{subInfo}</p>}
         </div>
       </div>
