@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.81.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.81.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -710,7 +710,7 @@ NAI Atelier/
 
 ### 项目来源
 
-- NAI Atelier 最初基于 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 改造，后作为独立项目维护，不保持 Git 远程关系。
+- NAI Atelier 基于 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 二次开发并独立维护；原项目 README 声明采用 MIT License，本项目保留该许可与来源说明。
 - 当前版本围绕个人长期使用、本地数据安全、手机局域网与 NovelAI 创作效率持续演进，新增 Pixiv 图库、外部图库统一浏览、图片反推、封面固定与加载优化等能力。
 - 开源协议：[MIT License](./LICENSE)
 
