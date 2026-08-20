@@ -79,16 +79,31 @@ const preciseReferenceImageCache = new Map();
 let preciseReferenceImageCacheSize = 0;
 const preciseReferenceImageJobs = new Map();
 
+export const normalizeCloudQueueServiceUrl = value => {
+  const raw = String(value || '').trim();
+  if (!raw) throw new Error('公共队列服务地址不能为空');
+  let url;
+  try { url = new URL(raw); } catch { throw new Error('公共队列服务地址必须是完整的 HTTP(S) 地址'); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || !url.hostname) {
+    throw new Error('公共队列服务地址必须是无凭据、无查询参数的 HTTP(S) 地址');
+  }
+  return url.href.replace(/\/+$/, '');
+};
+
+export const normalizeCloudQueuePreferences = value => ({
+  enabled: value?.enabled === true,
+  greeting: String(value?.greeting || '正在生成中～').trim().slice(0, 15),
+  showGreeting: value?.showGreeting !== false,
+  serviceUrl: (() => {
+    try { return normalizeCloudQueueServiceUrl(value?.serviceUrl || CLOUD_QUEUE_URL); } catch { return CLOUD_QUEUE_URL; }
+  })(),
+});
+
 const loadCloudQueuePreferences = async () => {
   try {
-    const saved = JSON.parse(await readFile(CLOUD_QUEUE_CONFIG_FILE, 'utf8'));
-    return {
-      enabled: saved.enabled === true,
-      greeting: String(saved.greeting || '正在生成中～').trim().slice(0, 15),
-      showGreeting: saved.showGreeting !== false,
-    };
+    return normalizeCloudQueuePreferences(JSON.parse(await readFile(CLOUD_QUEUE_CONFIG_FILE, 'utf8')));
   } catch {
-    return { enabled: false, greeting: '正在生成中～', showGreeting: true };
+    return normalizeCloudQueuePreferences(null);
   }
 };
 
@@ -134,7 +149,7 @@ const readQueueJson = async response => {
 export class CloudQueueCoordinator {
   constructor(requestRemote, baseUrl = CLOUD_QUEUE_URL) {
     this.requestRemote = requestRemote;
-    this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.baseUrl = normalizeCloudQueueServiceUrl(baseUrl);
     this.clientId = randomUUID();
     this.tasks = new Map();
   }
@@ -153,8 +168,8 @@ export class CloudQueueCoordinator {
     return this.tasks.get(taskId) || null;
   }
 
-  async post(path, body) {
-    return readQueueJson(await this.requestRemote(`${this.baseUrl}${path}`, {
+  async post(path, body, serviceUrl = this.baseUrl) {
+    return readQueueJson(await this.requestRemote(`${serviceUrl}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -162,14 +177,15 @@ export class CloudQueueCoordinator {
     }));
   }
 
-  async join({ apiKey, taskId, greeting = '', showGreeting = true, signal }) {
+  async join({ apiKey, taskId, greeting = '', showGreeting = true, serviceUrl = this.baseUrl, signal }) {
+    const queueUrl = normalizeCloudQueueServiceUrl(serviceUrl);
     const keyHash = createHash('sha256').update(apiKey).digest('hex');
     const userId = this.clientId;
     const common = { key_hash: keyHash, user_id: userId, task_id: taskId };
     this.update(taskId, { phase: 'joining', position: null, queueSize: null, greeting: null, cancelable: true });
-    const joined = await this.post('/join-queue', { ...common, greeting: String(greeting).trim().slice(0, 15) || null });
+    const joined = await this.post('/join-queue', { ...common, greeting: String(greeting).trim().slice(0, 15) || null }, queueUrl);
     if (signal?.aborted) {
-      await this.post('/leave-queue', { ...common, lock_token: joined.lock_token || null }).catch(() => {});
+      await this.post('/leave-queue', { ...common, lock_token: joined.lock_token || null }, queueUrl).catch(() => {});
       throw signal.reason || new DOMException('Aborted', 'AbortError');
     }
     this.update(taskId, {
@@ -178,7 +194,7 @@ export class CloudQueueCoordinator {
       queueSize: Number(joined.queue_size) || 1,
       cancelable: true,
     });
-    if (joined.position === 0 && joined.lock_token) return { ...common, lockToken: joined.lock_token };
+    if (joined.position === 0 && joined.lock_token) return { ...common, lockToken: joined.lock_token, serviceUrl: queueUrl };
 
     let failures = 0;
     try {
@@ -186,13 +202,13 @@ export class CloudQueueCoordinator {
         await delay(CLOUD_QUEUE_POLL_INTERVAL, signal);
         try {
         const query = new URLSearchParams(common).toString();
-        const status = await readQueueJson(await this.requestRemote(`${this.baseUrl}/my-turn?${query}`, {
+        const status = await readQueueJson(await this.requestRemote(`${queueUrl}/my-turn?${query}`, {
           signal: AbortSignal.timeout(15_000),
         }));
         failures = 0;
         if (status.is_my_turn && status.lock_token) {
           this.update(taskId, { phase: 'ready', position: 0, queueSize: Number(status.queue_size) || 1, cancelable: true });
-          return { ...common, lockToken: status.lock_token };
+          return { ...common, lockToken: status.lock_token, serviceUrl: queueUrl };
         }
         this.update(taskId, {
           phase: 'waiting',
@@ -207,7 +223,7 @@ export class CloudQueueCoordinator {
         }
       }
     } catch (error) {
-      await this.post('/leave-queue', { ...common, lock_token: null }).catch(() => {});
+      await this.post('/leave-queue', { ...common, lock_token: null }, queueUrl).catch(() => {});
       throw error;
     }
   }
@@ -220,7 +236,7 @@ export class CloudQueueCoordinator {
       user_id: lock.user_id,
       task_id: lock.task_id,
       lock_token: lock.lockToken || null,
-    }).catch(() => {});
+    }, lock.serviceUrl || this.baseUrl).catch(() => {});
   }
 }
 
@@ -789,6 +805,7 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
         taskId: queueTaskId,
         greeting: queueGreeting,
         showGreeting: showQueueGreeting,
+        serviceUrl: queuePreferences.serviceUrl,
         signal: requestController.signal,
       });
       cloudQueue.update(queueTaskId, { phase: 'generating', position: 0, cancelable: false, controller: requestController });
@@ -1761,6 +1778,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
                 cloudQueuePreferences.enabled = next.enabled === true;
                 cloudQueuePreferences.greeting = String(next.greeting || '正在生成中～').trim().slice(0, 15);
                 cloudQueuePreferences.showGreeting = next.showGreeting !== false;
+                cloudQueuePreferences.serviceUrl = normalizeCloudQueueServiceUrl(next.serviceUrl ?? cloudQueuePreferences.serviceUrl);
                 await saveCloudQueuePreferences(cloudQueuePreferences);
                 return { ...cloudQueuePreferences };
               },
@@ -1847,12 +1865,18 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       if (req.method === 'GET') return sendJson(res, 200, cloudQueuePreferences);
       if (req.method !== 'PUT') return sendJson(res, 405, { error: 'Method not allowed' });
-      const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
-      cloudQueuePreferences.enabled = body.enabled === true;
-      cloudQueuePreferences.greeting = String(body.greeting || '正在生成中～').trim().slice(0, 15);
-      cloudQueuePreferences.showGreeting = body.showGreeting !== false;
-      await saveCloudQueuePreferences(cloudQueuePreferences);
-      return sendJson(res, 200, cloudQueuePreferences);
+      try {
+        const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
+        const serviceUrl = normalizeCloudQueueServiceUrl(body.serviceUrl ?? cloudQueuePreferences.serviceUrl);
+        cloudQueuePreferences.enabled = body.enabled === true;
+        cloudQueuePreferences.greeting = String(body.greeting || '正在生成中～').trim().slice(0, 15);
+        cloudQueuePreferences.showGreeting = body.showGreeting !== false;
+        cloudQueuePreferences.serviceUrl = serviceUrl;
+        await saveCloudQueuePreferences(cloudQueuePreferences);
+        return sendJson(res, 200, cloudQueuePreferences);
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 400, { error: error.message || '公共队列设置无效' });
+      }
     }
     if (url.pathname === '/api/generation-queue/status') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });

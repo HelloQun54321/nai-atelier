@@ -19,6 +19,8 @@ import {
   fetchNovelAiGeneration,
   getValidatedSource,
   isPixivConnectionMutationAllowed,
+  normalizeCloudQueuePreferences,
+  normalizeCloudQueueServiceUrl,
   selectThumbnailConcurrency,
 } from './media-gateway.mjs';
 import { PromptAgentService, calculateAgentContextBudget, customProviderRuntime, detectModelCapabilities, estimateContextTokens, parseTranslationResponse, parseWebSearchResponse, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
@@ -530,6 +532,35 @@ test('cloud queue uses st-chatu8 key hashing without sending the raw NovelAI key
   assert.equal(joined.key_hash, '85dbe15d75ef9308c7ae0f33c7a324cc6f4bf519a2ed2f3027bd33c140a4f9aa');
   assert.equal(calls.some(call => JSON.stringify(call).includes('secret-key')), false);
   assert.equal(calls.at(-1).url.endsWith('/complete'), true);
+});
+
+test('cloud queue accepts a custom service URL and keeps it for completion', async () => {
+  const calls = [];
+  const remote = async (url, options = {}) => {
+    calls.push({ url, options });
+    if (url.endsWith('/join-queue')) return new Response(JSON.stringify({ position: 0, queue_size: 1, lock_token: 'lock' }), { status: 200 });
+    return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
+  };
+  const coordinator = new CloudQueueCoordinator(remote, 'https://queue.example');
+  const lock = await coordinator.join({ apiKey: 'secret-key', taskId: 'task-custom-url', serviceUrl: 'https://custom-queue.example/v1/' });
+  await coordinator.release(lock);
+  assert.equal(calls[0].url, 'https://custom-queue.example/v1/join-queue');
+  assert.equal(calls.at(-1).url, 'https://custom-queue.example/v1/complete');
+});
+
+test('cloud queue service URL validation rejects credentials and query strings', () => {
+  assert.equal(normalizeCloudQueueServiceUrl('https://queue.example/'), 'https://queue.example');
+  assert.throws(() => normalizeCloudQueueServiceUrl('https://user:pass@queue.example'), /无凭据/);
+  assert.throws(() => normalizeCloudQueueServiceUrl('https://queue.example?token=secret'), /无凭据/);
+});
+
+test('legacy cloud queue preferences keep existing values and receive the current service URL', () => {
+  assert.deepEqual(normalizeCloudQueuePreferences({ enabled: true, greeting: '我的队列', showGreeting: false }), {
+    enabled: true,
+    greeting: '我的队列',
+    showGreeting: false,
+    serviceUrl: 'https://st-chatu-novelai-queue.hf.space',
+  });
 });
 
 test('cancelling while waiting removes the task from the cloud queue', async () => {

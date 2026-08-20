@@ -192,7 +192,22 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const updateCloudQueue = (patch: Partial<typeof cloudQueue>) => {
     const next = { ...cloudQueue, ...patch };
     setCloudQueue(next);
-    void setCloudQueuePreferences(next).then(setCloudQueue).catch(() => notify('保存公共队列设置失败', 'error'));
+    void setCloudQueuePreferences(next).then(setCloudQueue).catch(() => {
+      setCloudQueue(getCachedCloudQueuePreferences());
+      notify('保存公共队列设置失败', 'error');
+    });
+  };
+
+  const updateCloudQueueServiceUrl = (value: string) => {
+    const serviceUrl = value.trim();
+    try {
+      const url = new URL(serviceUrl);
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || !url.hostname) throw new Error();
+      updateCloudQueue({ serviceUrl: url.href.replace(/\/+$/, '') });
+    } catch {
+      notify('公共队列服务地址无效，请填写完整的 HTTP(S) 地址', 'error');
+      setCloudQueue(getCachedCloudQueuePreferences());
+    }
   };
 
   const updateAppearance = (patch: Partial<AppearancePreferences>) => {
@@ -345,12 +360,14 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <span><b className="block text-sm text-gray-800 dark:text-gray-100">多人拼车公共队列</b><span className="mt-0.5 block text-[11px] leading-5 text-gray-500 dark:text-gray-400">兼容 st-chatu8；相同 NovelAI Key 的接入者依次生图。</span></span>
                 <input type="checkbox" checked={cloudQueue.enabled} onChange={event => updateCloudQueue({ enabled: event.target.checked })} className="h-5 w-5 shrink-0 rounded border-gray-300 text-indigo-600" />
               </label>
-              {cloudQueue.enabled && <div className="mt-3 space-y-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/70">
-                <div><label className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">排队个性语（最多15字）</label><input value={cloudQueue.greeting} maxLength={15} onChange={event => setCloudQueue(value => ({ ...value, greeting: event.target.value.slice(0, 15) }))} onBlur={() => updateCloudQueue({ greeting: cloudQueue.greeting })} className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" /></div>
-                <label className="flex min-h-11 items-center justify-between gap-3 text-sm text-gray-700 dark:text-gray-200"><span>显示当前使用者的个性语</span><input type="checkbox" checked={cloudQueue.showGreeting} onChange={event => updateCloudQueue({ showGreeting: event.target.checked })} className="h-5 w-5 rounded border-gray-300 text-indigo-600" /></label>
-                <div className="break-all text-[10px] leading-4 text-gray-400">公共服务：{CLOUD_QUEUE_SERVICE_URL}</div>
+              <div className="mt-3 space-y-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/70">
+                <div><label className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">公共队列服务地址</label><input type="url" value={cloudQueue.serviceUrl} onChange={event => setCloudQueue(value => ({ ...value, serviceUrl: event.target.value }))} onBlur={event => updateCloudQueueServiceUrl(event.target.value)} placeholder={CLOUD_QUEUE_SERVICE_URL} className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" /><p className="mt-1 text-[10px] leading-4 text-gray-400">默认使用当前 st-chatu8 兼容服务；如使用自建兼容服务，可在这里替换地址。</p></div>
+                {cloudQueue.enabled && <>
+                  <div><label className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">排队个性语（最多15字）</label><input value={cloudQueue.greeting} maxLength={15} onChange={event => setCloudQueue(value => ({ ...value, greeting: event.target.value.slice(0, 15) }))} onBlur={() => updateCloudQueue({ greeting: cloudQueue.greeting })} className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" /></div>
+                  <label className="flex min-h-11 items-center justify-between gap-3 text-sm text-gray-700 dark:text-gray-200"><span>显示当前使用者的个性语</span><input type="checkbox" checked={cloudQueue.showGreeting} onChange={event => updateCloudQueue({ showGreeting: event.target.checked })} className="h-5 w-5 rounded border-gray-300 text-indigo-600" /></label>
+                </>}
                 <p className="text-[11px] leading-5 text-amber-600 dark:text-amber-400">仅发送 Key 的 SHA-256 指纹、任务标识和个性语；Prompt、图片、原始 Key 不会发送给队列服务。队列不可用时本次生成会停止，不会静默绕过。</p>
-              </div>}
+              </div>
             </div>
             <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
               <div><h4 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">当前剩余 <b className="text-indigo-600 dark:text-indigo-300">{anlasBudget.remaining}</b> 点，电脑与手机共用。</p></div>

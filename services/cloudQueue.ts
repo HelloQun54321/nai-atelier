@@ -4,6 +4,7 @@ export interface CloudQueuePreferences {
   enabled: boolean;
   greeting: string;
   showGreeting: boolean;
+  serviceUrl: string;
 }
 
 export interface CloudQueueStatus {
@@ -16,11 +17,18 @@ export interface CloudQueueStatus {
   cancelable?: boolean;
 }
 
-const defaults: CloudQueuePreferences = { enabled: false, greeting: '正在生成中～', showGreeting: true };
+const defaults: CloudQueuePreferences = { enabled: false, greeting: '正在生成中～', showGreeting: true, serviceUrl: CLOUD_QUEUE_SERVICE_URL };
 let cachedPreferences: CloudQueuePreferences = defaults;
 let currentQueueStatus: CloudQueueStatus | null = null;
 let clearStatusTimer: number | null = null;
 const statusListeners = new Set<() => void>();
+
+const normalizePreferences = (value: Partial<CloudQueuePreferences> | null | undefined): CloudQueuePreferences => ({
+  enabled: value?.enabled === true,
+  greeting: String(value?.greeting || defaults.greeting).trim().slice(0, 15),
+  showGreeting: value?.showGreeting !== false,
+  serviceUrl: String(value?.serviceUrl || defaults.serviceUrl).trim() || defaults.serviceUrl,
+});
 
 export const getCachedCloudQueuePreferences = (): CloudQueuePreferences => ({ ...cachedPreferences });
 
@@ -33,7 +41,7 @@ export const getCloudQueuePreferences = async (): Promise<CloudQueuePreferences>
     }
     throw new Error(payload?.error || await response.text());
   }
-  cachedPreferences = await response.json();
+  cachedPreferences = normalizePreferences(await response.json());
   return cachedPreferences;
 };
 
@@ -48,7 +56,7 @@ export const setCloudQueuePreferences = async (preferences: CloudQueuePreference
     }
     throw new Error(payload?.error || await response.text());
   }
-  cachedPreferences = await response.json();
+  cachedPreferences = normalizePreferences(await response.json());
   window.dispatchEvent(new CustomEvent('nai-cloud-queue-preferences-changed', { detail: cachedPreferences }));
   return cachedPreferences;
 };
