@@ -306,7 +306,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
-      <WorkspaceToolbar className="relative z-20">
+      <WorkspaceToolbar>
         <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center gap-2">
           <ToolbarSearch value={input} onChange={event => setInput(event.target.value)} placeholder="中文或英文 Tag；两个条件请用逗号分隔" aria-label="搜索 Danbooru" />
           <ToolbarButton type="submit" tone="primary" disabled={loading}><Search />搜索</ToolbarButton>

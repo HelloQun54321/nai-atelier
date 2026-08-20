@@ -192,7 +192,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   </div>;
 
   return <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-950">
-    <WorkspaceToolbar className="relative z-30">
+    <WorkspaceToolbar>
       <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索标题、Prompt、备注或标签" containerClassName="min-w-0 md:w-[24rem] md:flex-none" />
       <IconButton label={activeFilterCount > 0 ? `筛选，已启用 ${activeFilterCount} 项` : '筛选'} onClick={() => setMobileFilters(!mobileFilters)} tone={activeFilterCount > 0 ? 'primary' : 'neutral'} className="md:hidden"><Filter /></IconButton>
       <ToolbarButton onClick={() => setDesktopFilters(!desktopFilters)} className={`hidden md:inline-flex ${desktopFilters ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-800 dark:!bg-indigo-950/50' : ''}`} aria-expanded={desktopFilters}><Filter />筛选{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}</ToolbarButton>

@@ -1,6 +1,8 @@
 import { api } from './api';
 
 const AITAG_IMAGE_BASE_URL = 'https://ai-img.10118899.xyz/';
+const MIN_AITAG_METADATA_BYTES = 30;
+const utf8Encoder = new TextEncoder();
 
 export interface AitagWorkSummary {
   id: number;
@@ -391,16 +393,17 @@ export const formatAitagJson = (image: AitagImage) => {
 export const getAitagMetadataText = (image: AitagImage) => {
   const parsed = parseAitagAiJson(image.ai_json);
   const comment = parsed?.Comment ?? parsed?.comment;
+  let metadataText: string;
 
   if (comment && typeof comment === 'object') {
-    return JSON.stringify(comment);
+    metadataText = JSON.stringify(comment);
+  } else if (typeof comment === 'string' && comment.trim()) {
+    metadataText = comment;
+  } else {
+    metadataText = formatAitagJson(image);
   }
 
-  if (typeof comment === 'string' && comment.trim()) {
-    return comment;
-  }
-
-  return formatAitagJson(image);
+  return utf8Encoder.encode(metadataText.trim()).byteLength < MIN_AITAG_METADATA_BYTES ? '' : metadataText;
 };
 
 export const aitagService = {

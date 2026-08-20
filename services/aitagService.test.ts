@@ -3,6 +3,7 @@ import {
   parseMaybeJsonArray,
   parseAitagAiJson,
   getAitagType,
+  getAitagMetadataText,
   buildAitagImageUrl,
   buildAitagPreviewUrl,
 } from './aitagService';
@@ -84,5 +85,18 @@ describe('buildAitagPreviewUrl', () => {
   it('无 id 或无任何图片信息返回空串', () => {
     expect(buildAitagPreviewUrl(undefined)).toBe('');
     expect(buildAitagPreviewUrl({} as any)).toBe('');
+  });
+});
+
+describe('getAitagMetadataText', () => {
+  it('屏蔽 UTF-8 字节数少于 30 的短元数据', () => {
+    expect(getAitagMetadataText({ ai_json: JSON.stringify({ Comment: '👻👻👻' }) } as any)).toBe('');
+    expect(getAitagMetadataText({ ai_json: JSON.stringify({ Comment: 'a'.repeat(29) }) } as any)).toBe('');
+  });
+
+  it('保留达到 30 字节及以上的元数据', () => {
+    expect(getAitagMetadataText({ ai_json: JSON.stringify({ Comment: 'a'.repeat(30) }) } as any)).toBe('a'.repeat(30));
+    expect(getAitagMetadataText({ ai_json: JSON.stringify({ Comment: { prompt: '1girl, masterpiece, detailed eyes' } }) } as any))
+      .toBe(JSON.stringify({ prompt: '1girl, masterpiece, detailed eyes' }));
   });
 });

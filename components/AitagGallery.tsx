@@ -1106,7 +1106,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
 
   return (
     <div className="aitag-workspace flex-1 min-h-0 flex flex-col bg-gray-50 dark:bg-gray-900">
-      <WorkspaceToolbar className="relative z-20">
+      <WorkspaceToolbar>
         <div className="flex gap-2 md:hidden">
           <span title={isAitagConnected ? '连接正常' : '当前使用本地缓存'} className={`mt-4 h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
           <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') handleSearch(); }} placeholder="搜索 AITag 作品" />

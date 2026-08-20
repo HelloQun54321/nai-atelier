@@ -13,7 +13,7 @@ export const WorkspaceToolbar: React.FC<{
   children: React.ReactNode;
   className?: string;
 }> = ({ children, className = '' }) => (
-  <header className={`workspace-page-heading workspace-command-bar flex flex-none items-center gap-2 border-b border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900 md:px-5 ${className}`}>
+  <header className={`workspace-page-heading workspace-command-bar relative z-30 flex flex-none items-center gap-2 border-b border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900 md:px-5 ${className}`}>
     {children}
   </header>
 );

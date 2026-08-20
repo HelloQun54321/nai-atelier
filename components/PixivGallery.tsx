@@ -604,7 +604,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
-      <WorkspaceToolbar className="relative z-20">
+      <WorkspaceToolbar>
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 overflow-x-auto">
             {feedTabs.map(tab => (
