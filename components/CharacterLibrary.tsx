@@ -555,13 +555,15 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              <ToolbarButton tone="primary" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4" />自定义角色</ToolbarButton>
              <ToolbarButton onClick={() => void drawGacha()} disabled={isGachaLoading}><Dice5 className="h-4 w-4" />{gachaCards ? '再抽一批' : '随机抽卡'}</ToolbarButton>
              {gachaCards && <ToolbarButton onClick={() => setGachaCards(null)}>返回目录</ToolbarButton>}
-             <IconButton label="抽卡设置" onClick={() => setShowDesktopGachaSettings(value => !value)}><Settings2 /></IconButton>
+             <div className="relative flex-none">
+               <IconButton label="抽卡设置" onClick={() => setShowDesktopGachaSettings(value => !value)} aria-expanded={showDesktopGachaSettings} aria-haspopup="dialog"><Settings2 /></IconButton>
+               {showDesktopGachaSettings && <div role="dialog" aria-label="随机抽卡设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
+                 <div className="mb-3 text-sm font-bold text-gray-800 dark:text-white">随机抽卡设置</div>
+                 <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">抽卡范围<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option></select></label>
+                 <label className="block text-xs text-gray-500 dark:text-gray-400">抽卡数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label>
+               </div>}
+             </div>
              <ImageTaggerAction notify={notify} />
-             {showDesktopGachaSettings && <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
-               <div className="mb-3 text-sm font-bold text-gray-800 dark:text-white">随机抽卡设置</div>
-               <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">抽卡范围<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option></select></label>
-               <label className="block text-xs text-gray-500 dark:text-gray-400">抽卡数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label>
-             </div>}
            </div>
          </div>
        </WorkspaceToolbar>

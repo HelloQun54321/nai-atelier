@@ -195,7 +195,10 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     <WorkspaceToolbar>
       <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索标题、Prompt、备注或标签" containerClassName="min-w-0 md:w-[24rem] md:flex-none" />
       <IconButton label={activeFilterCount > 0 ? `筛选，已启用 ${activeFilterCount} 项` : '筛选'} onClick={() => setMobileFilters(!mobileFilters)} tone={activeFilterCount > 0 ? 'primary' : 'neutral'} className="md:hidden"><Filter /></IconButton>
-      <ToolbarButton onClick={() => setDesktopFilters(!desktopFilters)} className={`hidden md:inline-flex ${desktopFilters ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-800 dark:!bg-indigo-950/50' : ''}`} aria-expanded={desktopFilters}><Filter />筛选{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}</ToolbarButton>
+      <div className="relative hidden flex-none md:block">
+        <ToolbarButton onClick={() => setDesktopFilters(!desktopFilters)} className={desktopFilters ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-800 dark:!bg-indigo-950/50' : ''} aria-expanded={desktopFilters} aria-haspopup="dialog"><Filter />筛选{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}</ToolbarButton>
+        {desktopFilters && <div role="dialog" aria-label="筛选灵感" className="absolute left-1/2 top-[calc(100%+0.5rem)] z-50 w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-900"><div className="mb-3 flex items-center justify-between"><div><h2 className="text-sm font-bold text-gray-900 dark:text-white">筛选灵感</h2><p className="mt-0.5 text-[11px] text-gray-400">按分类、灵感板、标签、评分和使用情况组合筛选</p></div>{activeFilterCount > 0 && <button type="button" onClick={resetFilters} className="text-xs font-bold text-indigo-600 dark:text-indigo-400">重置</button>}</div>{renderFilterControls()}</div>}
+      </div>
       <IconButton label={selectedIds.size ? `取消选择 ${selectedIds.size} 项` : '选择灵感'} onClick={() => setSelectedIds(selectedIds.size ? new Set() : new Set(filtered.filter(item => canEditItem(item, currentUser)).map(item => item.id)))} tone={selectedIds.size ? 'primary' : 'neutral'} className="md:hidden"><CheckSquare /></IconButton>
       <ToolbarButton onClick={() => setSelectedIds(selectedIds.size ? new Set() : new Set(filtered.filter(item => canEditItem(item, currentUser)).map(item => item.id)))} tone={selectedIds.size ? 'primary' : 'neutral'} className="hidden md:inline-flex"><CheckSquare />{selectedIds.size ? `${selectedIds.size} 项` : '选择'}</ToolbarButton>
       <div className="hidden flex-1 md:block" />
@@ -203,7 +206,6 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       <ImageTaggerAction notify={notify} />
       <IconButton label="加入灵感" tone="primary" onClick={() => setUploadOpen(true)} className="md:hidden"><Plus /></IconButton>
       <ToolbarButton tone="primary" onClick={() => setUploadOpen(true)} className="hidden md:inline-flex"><Plus />加入灵感</ToolbarButton>
-      {desktopFilters && <div className="absolute right-4 top-[calc(100%+8px)] z-50 hidden w-[520px] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-900 md:block"><div className="mb-3 flex items-center justify-between"><div><h2 className="text-sm font-bold text-gray-900 dark:text-white">筛选灵感</h2><p className="mt-0.5 text-[11px] text-gray-400">按分类、灵感板、标签、评分和使用情况组合筛选</p></div>{activeFilterCount > 0 && <button type="button" onClick={resetFilters} className="text-xs font-bold text-indigo-600 dark:text-indigo-400">重置</button>}</div>{renderFilterControls()}</div>}
     </WorkspaceToolbar>
 
     <div className="flex min-h-0 flex-1">

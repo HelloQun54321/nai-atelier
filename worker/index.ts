@@ -284,6 +284,7 @@ function buildAitagWorkUrl(path: string) {
 
 type AitagAiTypeFilter = 'all' | 'nai' | 'sd' | 'comfyui';
 type AitagCacheFilter = 'all' | 'full' | 'first-image' | 'favorite';
+const AITAG_SOURCE_AI_TYPE: AitagAiTypeFilter = 'nai';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -459,9 +460,8 @@ async function fetchAitagConfig(env?: Env) {
   return fetchAitagJson(configUrl, env);
 }
 
-function normalizeAitagAiTypeFilter(value: string | null): AitagAiTypeFilter {
-  if (value === 'nai' || value === 'sd' || value === 'comfyui') return value;
-  return 'all';
+function normalizeAitagAiTypeFilter(_value: string | null): AitagAiTypeFilter {
+  return AITAG_SOURCE_AI_TYPE;
 }
 
 function normalizeAitagCacheFilter(value: string | null): AitagCacheFilter {

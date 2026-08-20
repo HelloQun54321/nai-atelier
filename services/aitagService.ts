@@ -1,6 +1,7 @@
 import { api } from './api';
 
 const AITAG_IMAGE_BASE_URL = 'https://ai-img.10118899.xyz/';
+const AITAG_SOURCE_TYPE = 'nai';
 const MIN_AITAG_METADATA_BYTES = 30;
 const utf8Encoder = new TextEncoder();
 
@@ -86,12 +87,9 @@ export interface AitagSearchParams {
   prompt?: string;
   sort?: 'new' | 'monthly';
   timeRange?: string;
-  aiType?: 'all' | 'nai' | 'sd' | 'comfyui';
 }
 
 export interface AitagCacheSearchParams extends AitagSearchParams {
-  aiType?: 'all' | 'nai' | 'sd' | 'comfyui';
-  statusAiType?: 'all' | 'nai' | 'sd' | 'comfyui';
   cacheFilter?: 'all' | 'full' | 'first-image' | 'favorite';
 }
 
@@ -413,12 +411,11 @@ export const aitagService = {
       page_size: String(params.pageSize || 60),
       sort: params.sort || 'new',
       time_range: params.timeRange || 'all',
+      aiType: AITAG_SOURCE_TYPE,
     });
 
     if (params.q?.trim()) query.set('q', params.q.trim());
     if (params.prompt?.trim()) query.set('prompt', params.prompt.trim());
-    if (params.aiType) query.set('aiType', params.aiType);
-
     return api.get(`/aitag/search?${query.toString()}`);
   },
 
@@ -428,22 +425,21 @@ export const aitagService = {
       page_size: String(params.pageSize || 60),
       sort: params.sort || 'new',
       time_range: params.timeRange || 'all',
-      aiType: params.aiType || 'all',
+      aiType: AITAG_SOURCE_TYPE,
     });
 
     if (params.q?.trim()) query.set('q', params.q.trim());
     if (params.prompt?.trim()) query.set('prompt', params.prompt.trim());
-    if (params.statusAiType) query.set('statusAiType', params.statusAiType);
     if (params.cacheFilter) query.set('cacheFilter', params.cacheFilter);
 
     return api.get(`/aitag/cache/search?${query.toString()}`);
   },
 
-  getCacheStatus: (params: { sort?: 'new' | 'monthly'; timeRange?: string; aiType?: 'all' | 'nai' | 'sd' | 'comfyui' } = {}): Promise<AitagCacheStatus> => {
+  getCacheStatus: (params: { sort?: 'new' | 'monthly'; timeRange?: string } = {}): Promise<AitagCacheStatus> => {
     const query = new URLSearchParams({
       sort: params.sort || 'new',
       time_range: params.timeRange || 'all',
-      aiType: params.aiType || 'all',
+      aiType: AITAG_SOURCE_TYPE,
     });
     return api.get(`/aitag/cache/status?${query.toString()}`);
   },
@@ -452,7 +448,6 @@ export const aitagService = {
     ids: number[];
     sort?: 'new' | 'monthly';
     timeRange?: string;
-    aiType?: 'all' | 'nai' | 'sd' | 'comfyui';
     timeoutMs?: number;
     intervalMs?: number;
     signal?: AbortSignal;
@@ -461,7 +456,7 @@ export const aitagService = {
       ids: params.ids.join(','),
       sort: params.sort || 'new',
       time_range: params.timeRange || 'all',
-      aiType: params.aiType || 'all',
+      aiType: AITAG_SOURCE_TYPE,
       timeout_ms: String(params.timeoutMs ?? 4500),
       interval_ms: String(params.intervalMs ?? 700),
     });

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
+  aitagService,
   parseMaybeJsonArray,
   parseAitagAiJson,
   getAitagType,
@@ -98,5 +99,26 @@ describe('getAitagMetadataText', () => {
     expect(getAitagMetadataText({ ai_json: JSON.stringify({ Comment: 'a'.repeat(30) }) } as any)).toBe('a'.repeat(30));
     expect(getAitagMetadataText({ ai_json: JSON.stringify({ Comment: { prompt: '1girl, masterpiece, detailed eyes' } }) } as any))
       .toBe(JSON.stringify({ prompt: '1girl, masterpiece, detailed eyes' }));
+  });
+});
+
+describe('aitagService', () => {
+  it('所有列表与缓存请求固定使用 NovelAI 来源', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ items: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+
+    try {
+      await aitagService.search({ page: 1 });
+      await aitagService.searchCache({ page: 1 });
+      await aitagService.getCacheStatus();
+      await aitagService.waitForFirstImageCache({ ids: [1] });
+
+      expect(fetchMock.mock.calls.map(([input]) => new URL(String(input), 'http://localhost').searchParams.get('aiType')))
+        .toEqual(['nai', 'nai', 'nai', 'nai']);
+    } finally {
+      fetchMock.mockRestore();
+    }
   });
 });

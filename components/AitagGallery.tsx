@@ -52,7 +52,6 @@ const formatCount = (value?: number) => {
 const getPixivUrl = (work: AitagWorkSummary) => `https://www.pixiv.net/artworks/${work.id}`;
 const getAitagUrl = (work: AitagWorkSummary) => `https://aitag.win/i/${work.id}`;
 type AitagSort = 'new' | 'monthly';
-type AitagAiType = 'all' | 'nai' | 'sd' | 'comfyui';
 type AitagCardCacheLevel = 'full' | 'first-image' | 'none';
 type AitagCacheFilter = 'all' | 'full' | 'first-image' | 'favorite';
 
@@ -182,7 +181,6 @@ interface AitagPageCache {
   sort: AitagSort;
   rankMonth: string;
   availableMonths: string[];
-  aiType: AitagAiType;
   cacheFilter: AitagCacheFilter;
   page: number;
   total: number;
@@ -203,7 +201,6 @@ let aitagPageCache: AitagPageCache = {
   sort: 'new',
   rankMonth: 'current',
   availableMonths: [],
-  aiType: 'nai',
   cacheFilter: 'all',
   page: 1,
   total: 0,
@@ -246,7 +243,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const [sort, setSort] = useState<AitagSort>(() => aitagPageCache.sort);
   const [rankMonth, setRankMonth] = useState(() => aitagPageCache.rankMonth);
   const [availableMonths, setAvailableMonths] = useState<string[]>(() => aitagPageCache.availableMonths);
-  const [aiType, setAiType] = useState<AitagAiType>(() => aitagPageCache.aiType);
   const [cacheFilter, setCacheFilter] = useState<AitagCacheFilter>(() => aitagPageCache.cacheFilter);
   const [page, setPage] = useState(() => aitagPageCache.page);
   const [total, setTotal] = useState(() => aitagPageCache.total);
@@ -422,9 +418,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   // 把 JSON 往返从滚动路径上移走。签名与页码都匹配才可消费，过期预取自然作废。
   const prefetchedPageRef = useRef<{ signature: string; page: number; promise: Promise<any> } | null>(null);
 
-  const buildPrefetchSignature = (sort: string, aiType: string, rankMonthValue: string, cacheFilterValue: string) =>
-    `${q}|${prompt}|${sort}|${aiType}|${rankMonthValue}|${cacheFilterValue}`;
-  const getQuerySignature = () => `${q}|${prompt}|${sort}|${aiType}|${rankMonth}|${cacheFilter}`;
+  const buildPrefetchSignature = (sort: string, rankMonthValue: string, cacheFilterValue: string) =>
+    `${q}|${prompt}|${sort}|${rankMonthValue}|${cacheFilterValue}`;
+  const getQuerySignature = () => `${q}|${prompt}|${sort}|${rankMonth}|${cacheFilter}`;
   const appendNextPage = async (force = false) => {
     if (appendingRef.current || isLoading) return;
     if (!force && visibleItems.length >= AITAG_APPEND_LIMIT) return;
@@ -453,7 +449,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     targetPage = page,
     options: {
       resetScroll?: boolean;
-      aiTypeOverride?: AitagAiType;
       sortOverride?: AitagSort;
       rankMonthOverride?: string;
       cacheFilterOverride?: AitagCacheFilter;
@@ -468,12 +463,11 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       if (querySignatureRef.current !== signature) return;
     }
     const mySeq = loadGuard.begin();
-    const targetAiType = options.aiTypeOverride || aiType;
     const targetSort = options.sortOverride || sort;
     const targetRankMonth = options.rankMonthOverride || rankMonth;
     const targetTimeRange = getAitagTimeRange(targetSort, targetRankMonth);
     const targetCacheFilter = options.cacheFilterOverride || cacheFilter;
-    const prefetchSignature = buildPrefetchSignature(targetSort, targetAiType, targetRankMonth, targetCacheFilter);
+    const prefetchSignature = buildPrefetchSignature(targetSort, targetRankMonth, targetCacheFilter);
     if (!options.silent) setIsLoading(true);
     aitagPageCache = { ...aitagPageCache, error: null };
     setError(null);
@@ -495,7 +489,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             q,
             prompt,
             sort: targetSort,
-            aiType: targetAiType,
             timeRange: targetTimeRange,
           });
         } else {
@@ -505,7 +498,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             q,
             prompt,
             sort: targetSort,
-            aiType: targetAiType,
             cacheFilter: targetCacheFilter,
             timeRange: targetTimeRange,
           });
@@ -517,7 +509,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           q,
           prompt,
           sort: targetSort,
-          aiType: targetAiType,
           cacheFilter: targetCacheFilter,
           timeRange: targetTimeRange,
         });
@@ -562,8 +553,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       // 当前页稳定后后台预取下一页：追加触底时直接消费，省掉 JSON 往返等待
       if (nextItems.length > 0) {
         const fetchPrefetchPage = (pageNumber: number) => targetCacheFilter === 'all'
-          ? aitagService.search({ page: pageNumber, pageSize: PAGE_SIZE, q, prompt, sort: targetSort, aiType: targetAiType, timeRange: targetTimeRange })
-          : aitagService.searchCache({ page: pageNumber, pageSize: PAGE_SIZE, q, prompt, sort: targetSort, aiType: targetAiType, cacheFilter: targetCacheFilter, timeRange: targetTimeRange });
+          ? aitagService.search({ page: pageNumber, pageSize: PAGE_SIZE, q, prompt, sort: targetSort, timeRange: targetTimeRange })
+          : aitagService.searchCache({ page: pageNumber, pageSize: PAGE_SIZE, q, prompt, sort: targetSort, cacheFilter: targetCacheFilter, timeRange: targetTimeRange });
         prefetchedPageRef.current = {
           signature: prefetchSignature,
           page: nextPage + 1,
@@ -590,11 +581,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     return () => window.removeEventListener('nai-project-data-changed', refreshAgentChanges);
   });
 
-  const refreshCacheStatus = async (targetSort = sort, targetAiType = aiType, targetRankMonth = rankMonth) => {
+  const refreshCacheStatus = async (targetSort = sort, targetRankMonth = rankMonth) => {
     const status = await aitagService.getCacheStatus({
       sort: targetSort,
       timeRange: getAitagTimeRange(targetSort, targetRankMonth),
-      aiType: targetAiType,
     });
     setCacheStatus(status);
     aitagPageCache = { ...aitagPageCache, cacheStatus: status };
@@ -635,7 +625,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       q,
       prompt,
       sort,
-      aiType,
       cacheFilter,
       timeRange: getAitagTimeRange(sort, rankMonth),
     });
@@ -656,7 +645,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       q: String(workId),
       prompt: '',
       sort,
-      aiType,
       timeRange: getAitagTimeRange(sort, rankMonth),
     });
     const refreshedWork = (data.items || []).find(item => item.id === workId);
@@ -704,7 +692,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             ids: Array.from(pendingIds),
             sort,
             timeRange: getAitagTimeRange(sort, rankMonth),
-            aiType,
             timeoutMs: 3500,
             intervalMs: 1000,
             signal: controller.signal,
@@ -757,7 +744,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       cancelIdleDelay();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, q, prompt, sort, rankMonth, aiType, cacheFilter, isLoading, isOfflineCache, hasPendingFirstImageCache, allowBackgroundChecks]);
+  }, [page, q, prompt, sort, rankMonth, cacheFilter, isLoading, isOfflineCache, hasPendingFirstImageCache, allowBackgroundChecks]);
 
   useEffect(() => {
     if (!allowBackgroundChecks || !selectedId || !selectedDetail || selectedDetail.isPreviewOnly || detailHasFullyCachedImages(selectedDetail)) return;
@@ -811,7 +798,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       sort,
       rankMonth,
       availableMonths,
-      aiType,
       cacheFilter,
       page,
       total,
@@ -820,7 +806,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       isOfflineCache,
       hasLoaded: hasLoadedRef.current,
     };
-  }, [items, details, selectedId, q, prompt, sort, rankMonth, availableMonths, aiType, cacheFilter, page, total, error, cacheStatus, isOfflineCache]);
+  }, [items, details, selectedId, q, prompt, sort, rankMonth, availableMonths, cacheFilter, page, total, error, cacheStatus, isOfflineCache]);
 
   useEffect(() => {
     let cancelled = false;
@@ -865,14 +851,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     loadWorks(1, { resetScroll: true });
   };
 
-  const handleAiTypeChange = (nextAiType: AitagAiType) => {
-    if (nextAiType === aiType && !isLoading) return;
-    aitagPageCache = { ...aitagPageCache, selectedId: null };
-    setAiType(nextAiType);
-    setSelectedId(null);
-    loadWorks(1, { resetScroll: true, aiTypeOverride: nextAiType });
-  };
-
   const handleCacheFilterChange = (nextCacheFilter: AitagCacheFilter) => {
     if (nextCacheFilter === cacheFilter && !isLoading) return;
     aitagPageCache = { ...aitagPageCache, selectedId: null };
@@ -887,7 +865,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     setSort(nextSort);
     setSelectedId(null);
     loadWorks(1, { resetScroll: true, sortOverride: nextSort });
-    refreshCacheStatus(nextSort, aiType).catch(console.error);
+    refreshCacheStatus(nextSort).catch(console.error);
   };
 
   const handleRankMonthChange = (nextRankMonth: string) => {
@@ -897,7 +875,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     setRankMonth(normalized);
     setSelectedId(null);
     loadWorks(1, { resetScroll: true, rankMonthOverride: normalized });
-    refreshCacheStatus(sort, aiType, normalized).catch(console.error);
+    refreshCacheStatus(sort, normalized).catch(console.error);
   };
 
   const toggleFavorite = async (work: AitagWorkSummary) => {
@@ -1118,28 +1096,28 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           <span title={isAitagConnected ? 'aitag.win 连接正常' : 'aitag.win 暂时不可用'} className={`h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]' : 'bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.14)]'}`} />
           <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') handleSearch(); }} placeholder="作品、作者、标题或标签" containerClassName="w-[23rem] flex-none" />
           <ToolbarSearch value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') handleSearch(); }} placeholder="Prompt" containerClassName="w-[18rem] flex-none" />
-          <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} className={showDesktopFilters ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600' : ''}><Filter className="h-4 w-4" />筛选</ToolbarButton>
+          <div className="relative flex-none">
+            <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} className={showDesktopFilters ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600' : ''} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" />筛选</ToolbarButton>
+            {showDesktopFilters && <div role="dialog" aria-label="AITag 筛选" className="absolute left-1/2 top-[calc(100%+0.5rem)] z-50 hidden w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-800 md:block">
+              <div className="mb-3 flex items-center justify-between"><h2 className="font-bold text-gray-900 dark:text-white">AITag 筛选</h2><button type="button" onClick={() => setShowDesktopFilters(false)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300">×</button></div>
+              <div className="grid grid-cols-3 gap-3">
+                <label className="text-xs text-gray-500 dark:text-gray-400">缓存<select value={cacheFilter} onChange={e => handleCacheFilterChange(e.target.value as AitagCacheFilter)} disabled={isLoading} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="all">全部</option><option value="favorite">收藏</option><option value="full">已缓存全部</option><option value="first-image">已缓存首图</option></select></label>
+                <label className="text-xs text-gray-500 dark:text-gray-400">排序<select value={sort} onChange={e => handleSortChange(e.target.value as AitagSort)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="new">最新</option><option value="monthly">月榜</option></select></label>
+                <label className="text-xs text-gray-500 dark:text-gray-400">月份<select value={sort === 'monthly' ? rankMonth : ''} onChange={e => handleRankMonthChange(e.target.value)} disabled={isLoading || sort !== 'monthly'} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="">无需月份</option><option value="current">当前月份</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">更早</option></select></label>
+              </div>
+              <button type="button" onClick={() => { handleSearch(); setShowDesktopFilters(false); }} className="mt-4 h-10 w-full rounded-lg bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-500">应用筛选</button>
+            </div>}
+          </div>
           <ToolbarButton tone="primary" onClick={handleSearch} disabled={isLoading}><Search className="h-4 w-4" />搜索</ToolbarButton>
           <div className="ml-auto hidden items-center gap-2 text-xs text-gray-500 xl:flex"><span>已加载 {formatCount(visibleItems.length)} 条</span><span>共 {formatCount(total)} 条</span></div>
           <IconButton label="刷新" onClick={() => loadWorks(page, { resetScroll: true })} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
           <ImageTaggerAction notify={notify} />
         </div>
-        {showDesktopFilters && <div className="absolute right-5 top-full z-50 hidden w-[520px] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-800 md:block">
-          <div className="mb-3 flex items-center justify-between"><h2 className="font-bold text-gray-900 dark:text-white">AITag 筛选</h2><button type="button" onClick={() => setShowDesktopFilters(false)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300">×</button></div>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs text-gray-500 dark:text-gray-400">类型<select value={aiType} onChange={e => handleAiTypeChange(e.target.value as AitagAiType)} disabled={isLoading} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="all">全部</option><option value="nai">NAI</option><option value="sd">SD</option><option value="comfyui">ComfyUI</option></select></label>
-            <label className="text-xs text-gray-500 dark:text-gray-400">缓存<select value={cacheFilter} onChange={e => handleCacheFilterChange(e.target.value as AitagCacheFilter)} disabled={isLoading} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="all">全部</option><option value="favorite">收藏</option><option value="full">已缓存全部</option><option value="first-image">已缓存首图</option></select></label>
-            <label className="text-xs text-gray-500 dark:text-gray-400">排序<select value={sort} onChange={e => handleSortChange(e.target.value as AitagSort)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="new">最新</option><option value="monthly">月榜</option></select></label>
-            <label className="text-xs text-gray-500 dark:text-gray-400">月份<select value={sort === 'monthly' ? rankMonth : ''} onChange={e => handleRankMonthChange(e.target.value)} disabled={isLoading || sort !== 'monthly'} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="">无需月份</option><option value="current">当前月份</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">更早</option></select></label>
-          </div>
-          <button type="button" onClick={() => { handleSearch(); setShowDesktopFilters(false); }} className="mt-4 h-10 w-full rounded-lg bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-500">应用筛选</button>
-        </div>}
       </WorkspaceToolbar>
       <MobileBottomSheet open={showMobileFilters} title="AITag 筛选" onClose={() => setShowMobileFilters(false)} footer={<button onClick={() => { handleSearch(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl bg-indigo-600 font-bold text-white">应用筛选</button>}>
         <div className="space-y-4">
-          <label className="block text-sm font-bold dark:text-white">Prompt 搜索<input value={prompt} onChange={event => setPrompt(event.target.value)} placeholder="搜索 NAI/SD 元数据 Prompt" className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-700 dark:bg-gray-800" /></label>
+          <label className="block text-sm font-bold dark:text-white">Prompt 搜索<input value={prompt} onChange={event => setPrompt(event.target.value)} placeholder="搜索 NovelAI 元数据 Prompt" className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-700 dark:bg-gray-800" /></label>
           <div className="grid grid-cols-2 gap-3">
-            <label className="text-sm font-bold dark:text-white">类型<select value={aiType} onChange={event => handleAiTypeChange(event.target.value as AitagAiType)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-700 dark:bg-gray-800"><option value="all">全部</option><option value="nai">NAI</option><option value="sd">SD</option><option value="comfyui">ComfyUI</option></select></label>
             <label className="text-sm font-bold dark:text-white">缓存<select value={cacheFilter} onChange={event => handleCacheFilterChange(event.target.value as AitagCacheFilter)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-700 dark:bg-gray-800"><option value="all">全部</option><option value="favorite">收藏</option><option value="full">已缓存全部</option><option value="first-image">已缓存首图</option></select></label>
             <label className="text-sm font-bold dark:text-white">排序<select value={sort} onChange={event => handleSortChange(event.target.value as AitagSort)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-700 dark:bg-gray-800"><option value="new">最新</option><option value="monthly">月榜</option></select></label>
             <label className="text-sm font-bold dark:text-white">月份<select value={sort === 'monthly' ? rankMonth : ''} disabled={sort !== 'monthly'} onChange={event => handleRankMonthChange(event.target.value)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800"><option value="current">当前月份</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">更早</option></select></label>

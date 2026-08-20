@@ -1356,13 +1356,12 @@ export class PromptAgentService {
         const task = text(payload.task).slice(0, 20);
         const sort = payload.sort === 'monthly' ? 'monthly' : 'new';
         const timeRange = text(payload.timeRange || 'all').slice(0, 32);
-        const aiType = ['all', 'nai', 'sd', 'comfyui'].includes(payload.aiType) ? payload.aiType : 'all';
         const workId = Number(payload.workId);
         if (task === 'favorite' || task === 'unfavorite') {
           if (!Number.isFinite(workId)) throw new Error('收藏操作缺少AITag作品ID');
           await project.requestJson(`/api/aitag/work/${Math.floor(workId)}/favorite`, { method: 'POST', body: { favorite: task === 'favorite', sort, timeRange } });
         } else if (!['index', 'pause', 'resume'].includes(task)) throw new Error('不允许执行这个 AITag 后台操作');
-        else await project.requestJson(`/api/aitag/cache/${task}`, { method: 'POST', body: { sort, timeRange, aiType, targetPages: Math.floor(clamp(payload.targetPages, 1, 10_000, 100)) } });
+        else await project.requestJson(`/api/aitag/cache/${task}`, { method: 'POST', body: { sort, timeRange, aiType: 'nai', targetPages: Math.floor(clamp(payload.targetPages, 1, 10_000, 100)) } });
       } else throw Object.assign(new Error('不允许执行这个项目操作'), { status: 400 });
       clearTimeout(confirmation.timer);
       this.pendingConfirmations.delete(requestId);
@@ -2401,17 +2400,16 @@ export class PromptAgentService {
       },
       {
         name: 'manage_aitag', label: '管理 AITag', description: '收藏/取消收藏AITag作品，查看、启动、暂停或继续本地索引缓存。',
-        parameters: Type.Object({ action: Type.Union([Type.Literal('favorite'), Type.Literal('unfavorite'), Type.Literal('status'), Type.Literal('index'), Type.Literal('pause'), Type.Literal('resume')]), workId: Type.Optional(Type.Number()), sort: Type.Optional(Type.Union([Type.Literal('new'), Type.Literal('monthly')])), timeRange: Type.Optional(Type.String()), aiType: Type.Optional(Type.String()), targetPages: Type.Optional(Type.Number()) }),
+        parameters: Type.Object({ action: Type.Union([Type.Literal('favorite'), Type.Literal('unfavorite'), Type.Literal('status'), Type.Literal('index'), Type.Literal('pause'), Type.Literal('resume')]), workId: Type.Optional(Type.Number()), sort: Type.Optional(Type.Union([Type.Literal('new'), Type.Literal('monthly')])), timeRange: Type.Optional(Type.String()), targetPages: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => {
           const sort = args.sort === 'monthly' ? 'monthly' : 'new';
           const timeRange = text(args.timeRange || 'all').slice(0, 32);
-          const aiType = ['all', 'nai', 'sd', 'comfyui'].includes(args.aiType) ? args.aiType : 'all';
           let result;
           if (args.action === 'favorite' || args.action === 'unfavorite') {
             if (!Number.isFinite(args.workId)) throw new Error('收藏操作缺少AITag作品ID');
             return pending('manage_aitag', '', args.action === 'favorite' ? '收藏 AITag 作品？' : '取消收藏 AITag 作品？', '将修改电脑上的 AITag 收藏状态。', { task: args.action, workId: Math.floor(args.workId), sort, timeRange });
-          } else if (args.action === 'status') result = await readProject(`/api/aitag/cache/status?sort=${sort}&time_range=${encodeURIComponent(timeRange)}&aiType=${aiType}`);
-          else return pending('manage_aitag', '', `执行 AITag ${args.action}？`, args.action === 'index' ? '将启动本地索引和缓存任务，可能持续较长时间并产生网络与磁盘负载。' : '将修改当前 AITag 后台任务状态。', { task: args.action, sort, timeRange, aiType, targetPages: Math.floor(clamp(args.targetPages, 1, 10_000, 100)) });
+          } else if (args.action === 'status') result = await readProject(`/api/aitag/cache/status?sort=${sort}&time_range=${encodeURIComponent(timeRange)}&aiType=nai`);
+          else return pending('manage_aitag', '', `执行 AITag ${args.action}？`, args.action === 'index' ? '将启动 NovelAI 作品的本地索引和缓存任务，可能持续较长时间并产生网络与磁盘负载。' : '将修改当前 AITag 后台任务状态。', { task: args.action, sort, timeRange, aiType: 'nai', targetPages: Math.floor(clamp(args.targetPages, 1, 10_000, 100)) });
           if (args.action !== 'status') changed('aitag');
           return { content: jsonText(result), details: result };
         },

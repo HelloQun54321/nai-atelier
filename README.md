@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.85.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.86.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -366,8 +366,8 @@ AITag 是连接 [aitag.win](https://aitag.win/) 的独立作品检索、缓存�
 
 - 每页读取 60 个带 Pixiv 信息和 AI 元数据的作品
 - 搜索作品 ID、作者 ID、标题、Tag、日期和模型
-- 单独搜索 NAI / SD 元数据中的 Prompt
-- 筛选 NovelAI、Stable Diffusion 和 ComfyUI
+- 只检索 NovelAI 来源作品，不混入 Stable Diffusion 或 ComfyUI 内容
+- 单独搜索 NovelAI 元数据中的 Prompt
 - 浏览最新作品或月榜
 - 选择当前月份、历史月份和更早目录
 
