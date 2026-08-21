@@ -668,7 +668,10 @@ export const sanitizeNovelAiSubscription = payload => {
 };
 
 // 生图扣预算时的 Opus 透支快照；由最近的 /api/novelai-subscription 代理请求刷新。
+// 拼车账号额度全员共享，快照过期时在扣费前向 NovelAI 重取一次。
 let lastKnownOpusUsageExhausted = false;
+let lastKnownOpusUsageAt = 0;
+const OPUS_USAGE_STALE_MS = 30_000;
 
 export const generateWithVibeCacheRetry = async (
   payload,
@@ -859,7 +862,20 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
         (nextPayload, nextAuthorization) => fetchNovelAiGeneration(nextPayload, nextAuthorization, generationSignal, requestRemote),
       )
       : await fetchNovelAiGeneration(payload, authorization, generationSignal, requestRemote);
-    // 透支状态由 /api/novelai-subscription 代理调用时缓存；未知时按未透支估算。
+    // 透支状态由 /api/novelai-subscription 代理调用时缓存；快照过期且本次是
+    // 受限额模型（V5 系）时，扣费前向 NovelAI 重取真实状态。
+    const isUsageLimitedModel = typeof payload?.model === 'string' && payload.model.startsWith('nai-diffusion-5');
+    if (response.ok && isUsageLimitedModel && Date.now() - lastKnownOpusUsageAt > OPUS_USAGE_STALE_MS) {
+      try {
+        const subscription = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(10_000), requestRemote);
+        if (subscription.ok) {
+          lastKnownOpusUsageExhausted = sanitizeNovelAiSubscription(await subscription.json()).usage?.isNegative === true;
+        }
+        lastKnownOpusUsageAt = Date.now();
+      } catch {
+        // 网络失败时沿用上次快照，不阻塞预算扣减。
+      }
+    }
     const estimatedCost = response.ok ? estimateNovelAiGenerationCost(payload, lastKnownOpusUsageExhausted) : 0;
     const anlasBudget = estimatedCost > 0
       ? await spendAnlasBudget(req, workerPort, estimatedCost, 'generation')
@@ -1969,6 +1985,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         const payload = await upstream.json();
         const sanitized = sanitizeNovelAiSubscription(payload);
         lastKnownOpusUsageExhausted = sanitized.usage?.isNegative === true;
+        lastKnownOpusUsageAt = Date.now();
         return sendJson(res, 200, sanitized);
       } catch (error) {
         return sendJson(res, 502, { error: error.message || 'NovelAI 订阅信息获取失败' });

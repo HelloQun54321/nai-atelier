@@ -21,6 +21,7 @@ import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { estimateV45GenerationCost } from '../services/anlasBudget';
 import { useNovelaiUsage } from '../services/naiUsage';
+import { getNaiModelInfo } from '../services/naiModels';
 import { ArrowLeft, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, UserRound, X } from 'lucide-react';
 
 const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
@@ -142,9 +143,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // Default Seed to undefined (random), UC Preset to 4 (None)
     const [params, setParams] = useState(chain.params || { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: undefined, qualityToggle: true, ucPreset: 4 });
     // Opus 限额透支后，受限额模型（V5）的小图不再免费，费用估算需同步。
-    const { usage: novelaiUsage } = useNovelaiUsage();
+    const { usage: novelaiUsage, refreshIfStale: refreshUsageIfStale } = useNovelaiUsage();
     const opusUsageExhausted = novelaiUsage?.isNegative === true;
     const estimatedAnlasCost = estimateV45GenerationCost(params, true, opusUsageExhausted);
+
+    /**
+     * 拼车共享账号：其他成员随时可能把 Opus 限额耗尽或透支。受限额模型
+     * 生成前强制刷新真实额度，确保费用确认弹窗按服务端最新状态计费。
+     */
+    const usageForCostEstimate = async (model?: string): Promise<boolean> => {
+        if (!getNaiModelInfo(model).opusUsageLimit) return opusUsageExhausted;
+        const fresh = await refreshUsageIfStale();
+        return fresh?.usage?.isNegative === true;
+    };
 
     // --- New: Subject/Variable Prompt State ---
     const [subjectPrompt, setSubjectPrompt] = useState('');
@@ -1165,7 +1176,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
     };
     const handleGenerate = async () => {
-        const cost = estimateV45GenerationCost(params, true, opusUsageExhausted);
+        const cost = estimateV45GenerationCost(params, true, await usageForCostEstimate(params.model));
         if (cost > 0 && !await confirmAction({
             title: '确认生成图片',
             message: `当前参数预计消耗 ${cost} Anlas${params.characterReferences?.enabled && params.characterReferences.slots.length ? `\n其中角色参考：${params.characterReferences.slots.length} × 5 = ${params.characterReferences.slots.length * 5} Anlas` : ''}。`,
@@ -1193,7 +1204,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string): Promise<boolean> => {
-        const cost = estimateV45GenerationCost(draft.params, true, opusUsageExhausted);
+        const cost = estimateV45GenerationCost(draft.params, true, await usageForCostEstimate(draft.params.model));
         if (cost > 0 && !await confirmAction({
             title: 'Agent 已准备好生图',
             message: `${reason ? `${reason}\n\n` : ''}预计本次消耗 ${cost} Anlas。确认后才会提交给 NovelAI。`,

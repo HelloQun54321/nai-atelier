@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * NovelAI Opus 免费生成限额（2026-08-21 随 V5 引入）。
@@ -43,33 +43,58 @@ export const usageRemainingImages = (usage: NovelaiUsageState): number =>
 
 export const NOVELAI_USAGE_REFRESH_EVENT = 'nai-novelai-usage-refresh';
 
-const SUBSCRIPTION_REFRESH_INTERVAL = 5 * 60 * 1000;
+/**
+ * 拼车共享账号：其他成员的生图也会消耗同一份额度，轮询需要比单账号更勤，
+ * 生成前的关键校验则由调用方显式 await refresh() 获取最新值。
+ */
+const SUBSCRIPTION_REFRESH_INTERVAL = 60 * 1000;
 
-/** 生图完成后（以及定期）刷新 NovelAI 订阅限额状态。 */
+/** 生图费用判定前，快照超过该时长即视为过期，需要重新拉取。 */
+export const USAGE_SNAPSHOT_TTL = 15 * 1000;
+
+/** 生图完成后（以及定期）刷新 NovelAI 订阅限额状态；返回本次拉到的最新快照。 */
 export const useNovelaiUsage = () => {
   const [info, setInfo] = useState<NovelaiSubscriptionInfo | null>(null);
+  const [fetchedAt, setFetchedAt] = useState(0);
   const [loading, setLoading] = useState(true);
+  const infoRef = useRef<NovelaiSubscriptionInfo | null>(null);
+  const fetchedAtRef = useRef(0);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<NovelaiSubscriptionInfo | null> => {
     // 与 GlobalSettings 相同的读取顺序，保证设置里改 Key 后下一次刷新即生效。
     const apiKey = sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '';
     if (!apiKey) {
+      infoRef.current = null;
+      fetchedAtRef.current = 0;
       setInfo(null);
+      setFetchedAt(0);
       setLoading(false);
-      return;
+      return null;
     }
     try {
       const res = await fetch('/api/novelai-subscription', {
         headers: { 'Authorization': `Bearer ${apiKey}` },
       });
       if (!res.ok) throw new Error(await res.text());
-      setInfo(await res.json());
+      const next = await res.json();
+      infoRef.current = next;
+      fetchedAtRef.current = Date.now();
+      setInfo(next);
+      setFetchedAt(fetchedAtRef.current);
+      return next;
     } catch {
       // 保留上一次的状态；侧栏展示不因临时网络失败闪断。
+      return infoRef.current;
     } finally {
       setLoading(false);
     }
   }, []);
+
+  /** 快照仍在有效期内时直接复用，避免生成前无谓等待。 */
+  const refreshIfStale = useCallback(async (): Promise<NovelaiSubscriptionInfo | null> => {
+    if (Date.now() - fetchedAtRef.current < USAGE_SNAPSHOT_TTL) return infoRef.current;
+    return refresh();
+  }, [refresh]);
 
   useEffect(() => {
     void refresh();
@@ -85,5 +110,5 @@ export const useNovelaiUsage = () => {
     };
   }, [refresh]);
 
-  return { info, usage: info?.usage, loading, refresh };
+  return { info, usage: info?.usage, loading, fetchedAt, refresh, refreshIfStale };
 };
