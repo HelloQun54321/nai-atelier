@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { NAIParams } from '../types';
+import { getNaiModelDisplayLabel } from '../services/naiModels';
 
 /**
  * UC Preset 的人类可读标签映射
@@ -122,6 +123,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                     Parameters
                 </label>
                 <div className="grid grid-cols-2 gap-2">
+                    <ParamItem label="Model" value={getNaiModelDisplayLabel(params.model)} />
                     <ParamItem label="Resolution" value={`${params.width} × ${params.height}`} />
                     <ParamItem label="Steps" value={params.steps} />
                     <ParamItem label="Scale (CFG)" value={params.scale} />

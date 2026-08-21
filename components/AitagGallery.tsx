@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AitagCacheStatus,
   AitagImage,
@@ -260,7 +260,20 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const selectedDetail = selectedId ? details[selectedId] : null;
   const selectedWork = selectedDetail?.work || items.find(item => item.id === selectedId) || null;
   const closeMobileDetail = useMobileHistoryLayer(Boolean(selectedWork), () => setSelectedId(null), 'aitag-detail');
-  const visibleItems = items;
+
+  // 模型版本筛选：与「收藏」一致，作用于已加载/已缓存的条目（按首图元数据判断）。
+  const [modelFilter, setModelFilter] = useState('');
+  const getWorkModelLabel = (work: AitagWorkSummary) => {
+    const image = work.firstImage || work.first_image;
+    return image ? getAitagModelLabel(image) : '';
+  };
+  const modelOptions = useMemo(
+    () => Array.from(new Set(items.map(getWorkModelLabel).filter(Boolean))).sort(),
+    [items],
+  );
+  const visibleItems = modelFilter
+    ? items.filter(work => getWorkModelLabel(work) === modelFilter)
+    : items;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasNextPage = page < totalPages;
 
@@ -1105,6 +1118,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                 <label className="text-xs text-gray-500 dark:text-gray-400">排序<select value={sort} onChange={e => handleSortChange(e.target.value as AitagSort)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="new">最新</option><option value="monthly">月榜</option></select></label>
                 <label className="text-xs text-gray-500 dark:text-gray-400">月份<select value={sort === 'monthly' ? rankMonth : ''} onChange={e => handleRankMonthChange(e.target.value)} disabled={isLoading || sort !== 'monthly'} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="">无需月份</option><option value="current">当前月份</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">更早</option></select></label>
               </div>
+              <label className="mt-3 block text-xs text-gray-500 dark:text-gray-400">模型版本（已加载条目）<select value={modelFilter} onChange={e => setModelFilter(e.target.value)} disabled={isLoading || modelOptions.length === 0} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="">全部</option>{modelOptions.map(label => <option key={label} value={label}>{label}</option>)}</select></label>
               <button type="button" onClick={() => { handleSearch(); setShowDesktopFilters(false); }} className="mt-4 h-10 w-full rounded-lg bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-500">应用筛选</button>
             </div>}
           </div>
@@ -1122,6 +1136,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             <label className="text-sm font-bold dark:text-white">排序<select value={sort} onChange={event => handleSortChange(event.target.value as AitagSort)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-700 dark:bg-gray-800"><option value="new">最新</option><option value="monthly">月榜</option></select></label>
             <label className="text-sm font-bold dark:text-white">月份<select value={sort === 'monthly' ? rankMonth : ''} disabled={sort !== 'monthly'} onChange={event => handleRankMonthChange(event.target.value)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800"><option value="current">当前月份</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">更早</option></select></label>
           </div>
+            <label className="text-sm font-bold dark:text-white">模型版本（已加载条目）<select value={modelFilter} onChange={event => setModelFilter(event.target.value)} disabled={modelOptions.length === 0} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800"><option value="">全部</option>{modelOptions.map(label => <option key={label} value={label}>{label}</option>)}</select></label>
           <div className="rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">已加载 {formatCount(visibleItems.length)} 条 · 共 {formatCount(total)} 条</div>
         </div>
       </MobileBottomSheet>

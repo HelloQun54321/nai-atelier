@@ -9,6 +9,7 @@ import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMa
 import { Copy, Heart, Menu, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isInternalChainTag } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
+import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel } from '../services/naiModels';
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -162,6 +163,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [newDesc, setNewDesc] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
+  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const [copyModalChain, setCopyModalChain] = useState<PromptChain | null>(null);
   const [sortOption, setSortOption] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
   const [favOnly, setFavOnly] = useState(false);
@@ -221,7 +223,18 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     ).sort();
   }, [chains, type]);
 
-  // Filter chains by Type, search term, favorites, and selected tags
+  // 模型版本来自各串生成参数（未设置的旧串归入默认模型），按列表中出现的模型生成筛选项
+  const allModels = useMemo(() => {
+    return Array.from(
+      new Set(
+        chains
+          .filter(c => c.type === type || (!c.type && type === 'style'))
+          .map(c => c.params?.model?.trim() || DEFAULT_NAI_MODEL)
+      )
+    ).sort();
+  }, [chains, type]);
+
+  // Filter chains by Type, search term, favorites, model version and selected tags
   const filteredChains = useMemo(() => {
     return chains
       .filter(c =>
@@ -230,6 +243,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
          c.description.toLowerCase().includes(searchTerm.toLowerCase()))
       )
       .filter(c => !favOnly || favorites.has(c.id))
+      .filter(c => selectedModels.size === 0 || selectedModels.has(c.params?.model?.trim() || DEFAULT_NAI_MODEL))
       .filter(c => {
         // If no tags are selected, show all
         if (selectedTags.size === 0) return true;
@@ -255,9 +269,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             return ub - ua;
         }
       });
-  }, [chains, type, searchTerm, favOnly, favorites, selectedTags, sortOption]);
+  }, [chains, type, searchTerm, favOnly, favorites, selectedModels, selectedTags, sortOption]);
 
-  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, selectedTags, sortOption]);
+  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, selectedModels, selectedTags, sortOption]);
   const visibleChains = filteredChains.slice(0, visibleCount);
 
   // 滚动接近列表底部自动追加一批；按钮保留作兜底。
@@ -338,6 +352,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       <div className="flex h-12 flex-col justify-center px-3">
         <div className="flex items-center justify-between">
           <h3 data-safe-mode-title="true" className="w-full truncate pr-1 text-sm font-bold text-gray-900 dark:text-gray-100 md:pr-2" title={chain.name}>{chain.name}</h3>
+          <span className="ml-1 flex-shrink-0 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300" title="生成模型">{getNaiModelDisplayLabel(chain.params?.model)}</span>
           <button
             type="button"
             onClick={(e) => toggleFav(chain.id, e)}
@@ -379,6 +394,13 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           </div>
         </WorkspaceToolbar>
 
+        {allModels.length > 1 && (
+          <div className="hidden items-center gap-1.5 overflow-x-auto border-b border-gray-200 bg-gray-50/70 px-3 py-2 md:flex md:px-5 dark:border-gray-800 dark:bg-gray-900/50">
+            <span className="flex-none text-xs font-medium text-gray-400 dark:text-gray-500">模型筛选</span>
+            {allModels.map(id => <button key={id} type="button" aria-pressed={selectedModels.has(id)} onClick={() => setSelectedModels(previous => { const next = new Set(previous); next.has(id) ? next.delete(id) : next.add(id); return next; })} className={`h-7 flex-none whitespace-nowrap rounded-full px-2.5 text-xs font-medium transition ${selectedModels.has(id) ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{getNaiModelDisplayLabel(id)}</button>)}
+          </div>
+        )}
+
         {allTags.length > 0 && (
           <div className="hidden items-center gap-1.5 overflow-x-auto border-b border-gray-200 bg-gray-50/70 px-3 py-2 md:flex md:px-5 dark:border-gray-800 dark:bg-gray-900/50">
             <span className="flex-none text-xs font-medium text-gray-400 dark:text-gray-500">标签筛选</span>
@@ -390,6 +412,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           <div className="space-y-5">
             <label className="block text-sm font-bold dark:text-white">排序<select value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option></select></label>
             <button onClick={() => setFavOnly(value => !value)} className={`mobile-touch w-full rounded-xl px-4 text-left font-bold ${favOnly ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-300' : 'bg-gray-100 dark:bg-gray-800'}`}>★ 只看收藏</button>
+            {allModels.length > 1 && <div><div className="mb-2 text-sm font-bold dark:text-white">模型版本</div><div className="flex flex-wrap gap-2">{allModels.map(id => <button key={id} onClick={() => setSelectedModels(previous => { const next = new Set(previous); next.has(id) ? next.delete(id) : next.add(id); return next; })} className={`mobile-touch rounded-full px-3 text-xs ${selectedModels.has(id) ? 'bg-violet-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}>{getNaiModelDisplayLabel(id)}</button>)}</div></div>}
             {allTags.length > 0 && <div><div className="mb-2 text-sm font-bold dark:text-white">Tag</div><div className="flex flex-wrap gap-2">{allTags.map(tag => <button key={tag} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`mobile-touch rounded-full px-3 text-xs ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}>{tag}</button>)}</div></div>}
             <button onClick={() => { void onRefresh(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl border border-gray-300 dark:border-gray-600">刷新列表</button>
           </div>

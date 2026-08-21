@@ -40,6 +40,14 @@ export const getNaiModelInfo = (model?: string): NaiModelInfo =>
 
 export const resolveNaiModelId = (model?: string): string => getNaiModelInfo(model).id;
 
+/** 显示用标签：注册表已知模型返回注册表标签，未知标识（如导入的未来新模型）推导显示名。 */
+export const getNaiModelDisplayLabel = (model?: string): string => {
+  const known = NAI_MODELS.find(item => item.id === model);
+  if (known) return known.label;
+  if (model && model.trim()) return deriveModelLabel(model.trim());
+  return NAI_MODELS.find(item => item.id === DEFAULT_NAI_MODEL)!.label;
+};
+
 /** 由模型标识推导显示名：nai-diffusion-4-5-curated-preview → 4.5 Curated Preview。 */
 const deriveModelLabel = (id: string) => id
   .replace(/^nai-diffusion-/, '')
