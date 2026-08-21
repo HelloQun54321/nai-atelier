@@ -685,7 +685,7 @@ test('NovelAI subscription proxy forwards auth and strips private fields', async
   };
   const response = await fetchNovelAiSubscription('Bearer nai-test-key', undefined, fakeRemote);
   assert.equal(response.ok, true);
-  assert.equal(seenUrl, 'https://api.novelai.net/user/subscription');
+  assert.equal(seenUrl, 'https://image.novelai.net/user/subscription');
   assert.equal(seenInit.method, 'GET');
   assert.equal(seenInit.headers.Authorization, 'Bearer nai-test-key');
   const sanitized = sanitizeNovelAiSubscription(await response.json());

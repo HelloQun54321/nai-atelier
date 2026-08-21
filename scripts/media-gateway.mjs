@@ -36,7 +36,8 @@ const VIBE_ENCODING_CACHE_LIMIT = 128 * 1024 * 1024;
 const PRECISE_REFERENCE_CACHE_LIMIT = 128 * 1024 * 1024;
 const NAI_GENERATE_URL = 'https://image.novelai.net/ai/generate-image';
 const NAI_ENCODE_VIBE_URL = 'https://image.novelai.net/ai/encode-vibe';
-const NAI_SUBSCRIPTION_URL = 'https://api.novelai.net/user/subscription';
+// api.novelai.net 的订阅接口会以 400 拒绝第三方工具并提示改用 image 域名（2026-08 实测）。
+const NAI_SUBSCRIPTION_URL = 'https://image.novelai.net/user/subscription';
 const CLOUD_QUEUE_URL = 'https://st-chatu-novelai-queue.hf.space';
 const CLOUD_QUEUE_POLL_INTERVAL = 1000;
 const CLOUD_QUEUE_MAX_FAILURES = 3;
