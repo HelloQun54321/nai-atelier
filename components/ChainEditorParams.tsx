@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { NAIParams } from '../types';
+import { NAI_MODELS, getNaiModelInfo } from '../services/naiModels';
 
 interface ChainEditorParamsProps {
     params: NAIParams;
@@ -101,6 +102,36 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
             </div>
 
             <div className="chain-editor-param-grid grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
+                <div className="flex flex-col gap-1">
+                    <label className="text-xs text-gray-500 dark:text-gray-500 block">生成模型</label>
+                    <select
+                        disabled={!canEdit}
+                        className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
+                        value={params.model ?? 'nai-diffusion-4-5-full'}
+                        onChange={(e) => {
+                            setParams({ ...params, model: e.target.value });
+                            markChange();
+                        }}
+                    >
+                        {NAI_MODELS.map(model => (
+                            <option key={model.id} value={model.id}>NovelAI {model.label}</option>
+                        ))}
+                        {params.model && !NAI_MODELS.some(model => model.id === params.model) && (
+                            <option value={params.model}>未知模型（{params.model}）</option>
+                        )}
+                    </select>
+                    {(() => {
+                        const info = getNaiModelInfo(params.model);
+                        if (info.id !== (params.model ?? info.id)) return null;
+                        const missing = [
+                            !info.supportsVibes ? 'Vibe Transfer' : null,
+                            !info.supportsCharacterReferences ? '角色参考' : null,
+                        ].filter(Boolean);
+                        if (!missing.length) return null;
+                        return <p className="text-[10px] leading-tight text-amber-600 dark:text-amber-400">{info.label} 暂不支持 {missing.join(' / ')}</p>;
+                    })()}
+                </div>
+
                 <div className="flex flex-col gap-1">
                     <label className="text-xs text-gray-500 dark:text-gray-500 block">图片尺寸</label>
                     <select

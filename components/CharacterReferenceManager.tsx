@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CharacterReferenceAsset, CharacterReferenceSelection, NAIParams } from '../types';
 import { characterReferenceService } from '../services/characterReferenceService';
+import { getNaiModelInfo } from '../services/naiModels';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 
@@ -147,6 +148,17 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
     try { await characterReferenceService.restore(detail.id); window.history.back(); await load(); notify('已恢复'); }
     catch (error: any) { notify(error.message || '恢复失败', 'error'); }
   };
+
+  // 与官方一致的模型边界：Precise/Character Reference 目前仅 V4.5 Full 可用（见 services/naiModels.ts）。
+  if (!getNaiModelInfo(params.model).supportsCharacterReferences) {
+    const modelInfo = getNaiModelInfo(params.model);
+    return <>
+      <section className="mt-4 rounded-xl border border-dashed border-gray-300 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40">
+        <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-800 dark:text-gray-100">角色参考</span></div>
+        <p className="mt-1 text-xs text-gray-500">当前生成模型为 {modelInfo.label}，暂不支持角色参考；已配置的角色参考不会随本次生成发送。</p>
+      </section>
+    </>;
+  }
 
   return <>
     <section className="mt-4 rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40">

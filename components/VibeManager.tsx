@@ -3,6 +3,7 @@ import { NAIParams, VibeAsset, VibeGroup, VibeSelection } from '../types';
 import { vibeService } from '../services/vibeService';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { useAnlasBudget } from '../services/anlasBudget';
+import { getNaiModelInfo } from '../services/naiModels';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 
@@ -261,6 +262,17 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
     try { await vibeService.restore(detail.id); closeLayer(); await load(); notify('已恢复'); }
     catch (error: any) { notify(error.message || '恢复失败', 'error'); }
   };
+
+  // 与官方一致的模型边界：Vibe Transfer 目前仅 V4.5 Full 可用（见 services/naiModels.ts）。
+  if (!getNaiModelInfo(params.model).supportsVibes) {
+    const modelInfo = getNaiModelInfo(params.model);
+    return (
+      <section className="rounded-xl border border-dashed border-gray-300 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40">
+        <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-800 dark:text-gray-100">Vibe Transfer</span></div>
+        <p className="mt-1 text-xs text-gray-500">当前生成模型为 {modelInfo.label}，暂不支持 Vibe Transfer；已配置的 Vibe 不会随本次生成发送。</p>
+      </section>
+    );
+  }
 
   return (
     <>

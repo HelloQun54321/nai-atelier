@@ -96,6 +96,8 @@ export interface CharacterReferenceSelection {
 }
 
 export interface NAIParams {
+  /** NovelAI 模型标识，缺省 V4.5 Full（注册表见 services/naiModels.ts）。 */
+  model?: string;
   width: number;
   height: number;
   steps: number;

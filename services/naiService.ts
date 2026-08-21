@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import { NAIParams } from '../types';
 import { api } from './api';
 import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
+import { getNaiModelInfo, resolveNaiModelId } from './naiModels';
 import { emitCloudQueueStatus, getCachedCloudQueuePreferences, getCloudQueuePreferences, scheduleCloudQueueStatusClear, watchCloudQueueTask } from './cloudQueue';
 
 export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams) => {
@@ -51,9 +52,18 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   // 3. AI's Choice Logic
   const useCoords = params.useCoords ?? hasCharacters;
 
+  const modelId = resolveNaiModelId(params.model);
+  const modelInfo = getNaiModelInfo(modelId);
+  if (params.vibes?.enabled && params.vibes.slots.length > 0 && !modelInfo.supportsVibes) {
+    throw new Error(`NovelAI ${modelInfo.label} 暂不支持 Vibe Transfer，请先移除 Vibe 或切换模型`);
+  }
+  if (params.characterReferences?.enabled && params.characterReferences.slots.length > 0 && !modelInfo.supportsCharacterReferences) {
+    throw new Error(`NovelAI ${modelInfo.label} 暂不支持角色参考，请先移除角色参考或切换模型`);
+  }
+
   const payload: any = {
     input: finalPrompt, // Use processed prompt
-    model: "nai-diffusion-4-5-full",
+    model: modelId,
     action: "generate",
     parameters: {
       params_version: 3,

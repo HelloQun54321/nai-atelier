@@ -161,6 +161,8 @@ export const parseNovelAIMetadata = (
             if (json.scale != null) newParams.scale = json.scale;
             if (json.seed != null && json.seed !== 0) newParams.seed = json.seed;
             if (json.sampler) newParams.sampler = json.sampler;
+            // 模型标识（V4/V4.5/V5 系列共用 v4_prompt 结构，可直接沿用）
+            if (typeof json.model === 'string' && json.model.startsWith('nai-diffusion-')) newParams.model = json.model;
             if (json.width != null) newParams.width = json.width;
             if (json.height != null) newParams.height = json.height;
 
