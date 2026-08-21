@@ -7,6 +7,14 @@ import { useEffect, useState } from 'react';
  * （scripts/media-gateway.mjs 的 syncNaiRuntime），官方调整后无需改代码。
  * 此处默认值与网关 DEFAULT_NAI_RUNTIME 一致，作为网关不可用时的兜底。
  */
+export interface NaiRuntimeHealth {
+  ok: boolean;
+  extracted?: string[];
+  missed?: string[];
+  reason?: string;
+  error?: string;
+}
+
 export interface NaiRuntimeConfig {
   /** Opus 限额剩余张数换算系数（剩余张数 ≈ 系数 × 百分比）。 */
   imagesPerPercent: number;
@@ -18,6 +26,7 @@ export interface NaiRuntimeConfig {
   models: string[];
   usageLimitedModels: string[];
   syncedAt?: number;
+  health?: NaiRuntimeHealth;
 }
 
 export const DEFAULT_NAI_RUNTIME: NaiRuntimeConfig = {

@@ -706,7 +706,9 @@ export const DEFAULT_NAI_RUNTIME = {
 const NAI_WEBAPP_SOURCE = 'https://novelai.net/image';
 const NAI_RUNTIME_SYNC_FILE = join(process.cwd(), 'local-data', 'novelai-webapp-sync.json');
 const NAI_RUNTIME_SYNC_INTERVAL = 24 * 60 * 60 * 1000;
-let naiRuntimeState = { ...DEFAULT_NAI_RUNTIME, syncedAt: 0 };
+/** 网关连续同步失败超过该时长时，前端展示同步异常标记。 */
+export const NAI_RUNTIME_STALE_MS = 48 * 60 * 60 * 1000;
+let naiRuntimeState = { ...DEFAULT_NAI_RUNTIME, syncedAt: 0, health: { ok: false, reason: 'pending' } };
 
 export const getNaiRuntime = () => naiRuntimeState;
 
@@ -767,47 +769,101 @@ export const extractNaiModelCapabilities = text => {
   return { models, usageLimitedModels };
 };
 
+/**
+ * 对官方 bundle 文本执行全部提取并生成健康记录：任何一项未命中都会记录到
+ * health.missed（官方改版或提取器被改坏时，调用方据此向用户示警，而不是
+ * 静默退回旧常量继续运行）。
+ */
+export const computeNaiRuntimeSync = text => {
+  const next = { ...DEFAULT_NAI_RUNTIME };
+  const health = { ok: true, extracted: [], missed: [] };
+  const imagesPerPercent = extractNaiImagesPerPercent(text);
+  if (imagesPerPercent) {
+    next.imagesPerPercent = imagesPerPercent;
+    health.extracted.push('imagesPerPercent');
+  } else health.missed.push('imagesPerPercent');
+  const coefficients = extractNaiCostCoefficients(text);
+  if (coefficients) {
+    Object.assign(next, coefficients);
+    health.extracted.push('costCoefficients');
+  } else health.missed.push('costCoefficients');
+  const freeTier = extractNaiFreeTierLimits(text);
+  if (freeTier) {
+    Object.assign(next, freeTier);
+    health.extracted.push('freeTier');
+  } else health.missed.push('freeTier');
+  const capabilities = extractNaiModelCapabilities(text);
+  if (capabilities.models.length && capabilities.usageLimitedModels.every(id => capabilities.models.includes(id))) {
+    next.models = capabilities.models;
+    next.usageLimitedModels = capabilities.usageLimitedModels;
+    health.extracted.push('models');
+  } else health.missed.push('models');
+  // 页面抓到了却一项都没提取到，几乎可以确定官方改版或提取器失效。
+  health.ok = health.extracted.length > 0;
+  return { runtime: next, health };
+};
+
 export const syncNaiRuntime = async (requestRemote = fetch) => {
-  const html = await (await requestRemote(NAI_WEBAPP_SOURCE, { signal: AbortSignal.timeout(30_000) })).text();
+  let html;
+  try {
+    html = await (await requestRemote(NAI_WEBAPP_SOURCE, { signal: AbortSignal.timeout(30_000) })).text();
+  } catch (error) {
+    naiRuntimeState = {
+      ...naiRuntimeState,
+      health: { ok: false, reason: 'fetch', error: error.message || String(error) },
+    };
+    console.warn('[nai-runtime] 官方页面抓取失败，沿用最近可用常量：', error.message || error);
+    return false;
+  }
   const paths = [...new Set([...html.matchAll(/"(\/_next\/static\/chunks\/[^"]+\.js)"/g)].map(m => m[1]))];
-  if (!paths.length) return false;
+  if (!paths.length) {
+    naiRuntimeState = {
+      ...naiRuntimeState,
+      health: { ok: false, reason: 'page', error: 'official page exposes no chunks' },
+    };
+    console.warn('[nai-runtime] 官方页面结构变化（未找到 JS 包），沿用最近可用常量');
+    return false;
+  }
   const chunks = await Promise.all(paths.map(path =>
     requestRemote(`https://novelai.net${path}`, { signal: AbortSignal.timeout(30_000) })
       .then(response => (response.ok ? response.text() : ''))
       .catch(() => '')));
-  const text = chunks.join('\n');
-  const next = { ...DEFAULT_NAI_RUNTIME };
-  const imagesPerPercent = extractNaiImagesPerPercent(text);
-  if (imagesPerPercent) next.imagesPerPercent = imagesPerPercent;
-  const coefficients = extractNaiCostCoefficients(text);
-  if (coefficients) Object.assign(next, coefficients);
-  const freeTier = extractNaiFreeTierLimits(text);
-  if (freeTier) Object.assign(next, freeTier);
-  const capabilities = extractNaiModelCapabilities(text);
-  if (capabilities.models.length) {
-    next.models = capabilities.models;
-    next.usageLimitedModels = capabilities.usageLimitedModels;
+  const { runtime, health } = computeNaiRuntimeSync(chunks.join('\n'));
+  const previouslyOk = naiRuntimeState.health?.ok !== false;
+  naiRuntimeState = { ...runtime, syncedAt: Date.now(), health };
+  if (!health.ok) {
+    console.warn('[nai-runtime] 官方常量提取全部失效（官方可能改版），沿用内置默认值');
+  } else if (health.missed.length && previouslyOk) {
+    console.warn('[nai-runtime] 官方常量部分提取失效：', health.missed.join(', '));
   }
-  naiRuntimeState = { ...next, syncedAt: Date.now() };
   try {
     await mkdir(dirname(NAI_RUNTIME_SYNC_FILE), { recursive: true });
-    await writeFile(NAI_RUNTIME_SYNC_FILE, JSON.stringify({ syncedAt: naiRuntimeState.syncedAt, runtime: next }, null, 2), 'utf8');
+    await writeFile(NAI_RUNTIME_SYNC_FILE, JSON.stringify({
+      syncedAt: naiRuntimeState.syncedAt,
+      runtime,
+      health,
+    }, null, 2), 'utf8');
   } catch {
     // 持久化失败只影响下次启动的初值，同步结果仍在本进程内生效。
   }
-  return true;
+  return health.ok;
 };
 
 const initNaiRuntimeSync = async () => {
   try {
     const saved = JSON.parse(await readFile(NAI_RUNTIME_SYNC_FILE, 'utf8'));
     if (saved?.runtime) {
-      naiRuntimeState = { ...DEFAULT_NAI_RUNTIME, ...saved.runtime, syncedAt: Number(saved.syncedAt) || 0 };
+      naiRuntimeState = {
+        ...DEFAULT_NAI_RUNTIME,
+        ...saved.runtime,
+        syncedAt: Number(saved.syncedAt) || 0,
+        health: saved.health || { ok: true, extracted: [], missed: [] },
+      };
     }
   } catch {
     // 无历史同步时直接使用内置默认值。
   }
-  // 启动即尝试同步一次，之后每天刷新；失败静默保留当前值。
+  // 启动即尝试同步一次，之后每天刷新；失败静默保留当前值但记录健康状态。
   const timer = setInterval(() => { void syncNaiRuntime().catch(() => {}); }, NAI_RUNTIME_SYNC_INTERVAL);
   if (typeof timer.unref === 'function') timer.unref();
   await syncNaiRuntime().catch(() => {});

@@ -52,6 +52,14 @@
 - 格式：日期节 `## YYYY-MM-DD` 按时间倒序、新在上（同 CHANGELOG 规则）；同一天内新条目排上方；条目格式 `- **模型名**：做了什么。`
 - 不产生用户可见功能的修改（纯文档、配置、重构等）同样必须记录。
 
+## 官方常量自动同步（保护区）
+
+NovelAI 的模型清单、Opus 限额换算、免费档门槛与成本公式系数依赖 `scripts/media-gateway.mjs` 中的提取器（`extractNai*`、`computeNaiRuntimeSync`、`DEFAULT_NAI_RUNTIME`、`syncNaiRuntime`）与前端 `services/naiRuntime.ts` / `services/naiUsage.ts` / `services/naiModels.ts` 自动从官方 Web 应用同步，**这是「官方调整规则后项目免改代码」的关键路径**：
+
+- 修改上述区域必须跑 `npm run test:gateway`，并加跑联网自检 `npm run test:live-sync`（对真实官方 bundle 逐项验证提取，任何一项未命中即失败）。
+- 不得删除或放宽提取器与健康记录相关测试；不得在未经 live-sync 验证的情况下改动提取正则或默认常量。
+- 侧栏 Opus 限额行出现琥珀色圆点 = 同步已失效，属于需要优先修复的回归，不得视为可忽略的展示问题。
+
 ## 语言与风格
 
 - 文档与代码注释用中文，提交信息用英文。

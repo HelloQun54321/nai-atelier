@@ -18,6 +18,7 @@ import {
   extractNaiCostCoefficients,
   extractNaiFreeTierLimits,
   extractNaiModelCapabilities,
+  computeNaiRuntimeSync,
   applyNaiRuntimeOverride,
   DEFAULT_NAI_RUNTIME,
   normalizeVibeStrengths,
@@ -758,6 +759,32 @@ test('成本估算跟随同步的运行时常量', () => {
       usageLimitedModels: DEFAULT_NAI_RUNTIME.usageLimitedModels,
     });
   }
+});
+
+test('同步健康记录：全部命中 / 全部失效 / 部分失效', () => {
+  const fullBundle = [
+    'function h(e){return e.timeUntilNextPercent<=0?0:Math.round(86400/e.timeUntilNextPercent*10)/10}function g(e){return Math.round(17.3*e)}',
+    'return Math.ceil(2951823174884865e-21*i+5753298233447344e-22*i*a)',
+    'function C(e){return!e.characterRef&&e.width*e.height<=1048576&&e.steps<=28}',
+    'case"nai-diffusion-5-full":{opusUsageLimit:!0};case"nai-diffusion-4-5-full":{opusUsageLimit:!1}',
+  ].join('\n');
+  const full = computeNaiRuntimeSync(fullBundle);
+  assert.equal(full.health.ok, true);
+  assert.deepEqual(full.health.missed, []);
+  assert.equal(full.runtime.imagesPerPercent, 17.3);
+
+  // 官方改版后一项都提取不到：健康标记为失效，运行时保持内置默认值。
+  const broken = computeNaiRuntimeSync('console.log("redesigned site")');
+  assert.equal(broken.health.ok, false);
+  assert.equal(broken.health.missed.length, 4);
+  assert.equal(broken.runtime.imagesPerPercent, DEFAULT_NAI_RUNTIME.imagesPerPercent);
+  assert.deepEqual(broken.runtime.models, DEFAULT_NAI_RUNTIME.models);
+
+  // 部分命中（例如只剩模型表）：正常可用但记录缺项，供前端示警。
+  const partial = computeNaiRuntimeSync('case"nai-diffusion-5-full":{opusUsageLimit:!0}');
+  assert.equal(partial.health.ok, true);
+  assert.deepEqual(partial.health.missed, ['imagesPerPercent', 'costCoefficients', 'freeTier']);
+  assert.equal(partial.runtime.models.length, 1);
 });
 
 test('Precise Reference uses official V4.5 director fields without local IDs', () => {

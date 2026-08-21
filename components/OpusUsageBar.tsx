@@ -23,9 +23,19 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
   const images = usageRemainingImages(usage, runtime.imagesPerPercent);
   const perDay = usagePercentPerDay(usage);
   const negative = usage.isNegative;
+  // 同步健康度：提取失效或超过 48 小时未更新时，用琥珀色圆点显式示警，
+  // 避免「项目能跑但常量早已过期」的静默失效。
+  const health = runtime.health;
+  const staleHours = runtime.syncedAt ? (Date.now() - runtime.syncedAt) / 3_600_000 : 0;
+  const syncBroken = health?.ok === false || ((runtime.syncedAt ?? 0) > 0 && staleHours > 48);
+  const syncSummary = syncBroken
+    ? `⚠ 官方常量同步异常（${health?.ok === false ? `原因：${health.reason || '提取失效'}` : `已 ${Math.floor(staleHours)} 小时未更新`}）：张数换算与费用估算可能过期，请检查电脑网络，或让 AI 运行 npm run test:live-sync 排查`
+    : health?.missed?.length
+      ? `常量同步部分失效：未命中 ${health.missed.join('、')}（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString() : ''} 同步）`
+      : `常量同步正常（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString() : '等待首次同步'}）`;
   const title = `${negative
     ? 'Opus 限额已用尽：所有生图将消耗 Anlas，额度恢复后自动回到免费生成'
-    : `Opus 免费生成限额：剩余 ${percent}%（约 ${images} 张）· 每天恢复 ${perDay}%${perDay ? `（约 ${Math.round(runtime.imagesPerPercent * perDay)} 张）` : ''}`} · 仅 V5 等新模型受限，V4.5 及以下不限\n拼车账号额度全员共享，每分钟自动同步，点击立即刷新`;
+    : `Opus 免费生成限额：剩余 ${percent}%（约 ${images} 张）· 每天恢复 ${perDay}%${perDay ? `（约 ${Math.round(runtime.imagesPerPercent * perDay)} 张）` : ''}`} · 仅 V5 等新模型受限，V4.5 及以下不限\n拼车账号额度全员共享，每分钟自动同步，点击立即刷新\n${syncSummary}`;
   return (
     <div
       role="status"
@@ -36,6 +46,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
     >
       <span className="flex items-center">
         <Gauge className="h-4 w-4" />
+        {syncBroken && <span className="ml-1.5 h-1.5 w-1.5 flex-none rounded-full bg-amber-500" aria-label="官方常量同步异常" />}
         {!collapsed && <span className="ml-2 text-xs font-medium text-gray-600 dark:text-gray-300">Opus 限额</span>}
       </span>
       {!collapsed && (
