@@ -52,6 +52,9 @@ export const DEFAULT_NAI_RUNTIME: NaiRuntimeConfig = {
 let cachedConfig: NaiRuntimeConfig | null = null;
 let pendingConfig: Promise<NaiRuntimeConfig> | null = null;
 
+/** 超过该时长未成功同步即视为“常量可能过期”，生成前需向用户示警。 */
+export const NAI_RUNTIME_STALE_MS = 48 * 60 * 60 * 1000;
+
 export const getNaiRuntimeConfig = async (): Promise<NaiRuntimeConfig> => {
   if (cachedConfig) return cachedConfig;
   if (!pendingConfig) {
@@ -74,6 +77,27 @@ export const getNaiRuntimeConfig = async (): Promise<NaiRuntimeConfig> => {
     })();
   }
   return pendingConfig;
+};
+
+/** 判断同步是否处于需要生成前示警的失效状态（提取全灭或超过 48 小时未更新）。 */
+export const isNaiRuntimeSyncUnhealthy = (config: NaiRuntimeConfig | null | undefined): boolean => {
+  if (!config) return false;
+  if (config.health?.ok === false) return true;
+  const syncedAt = config.syncedAt ?? 0;
+  return syncedAt > 0 && Date.now() - syncedAt > NAI_RUNTIME_STALE_MS;
+};
+
+export const describeNaiRuntimeSyncProblem = (config: NaiRuntimeConfig): string => {
+  if (config.health?.ok === false) {
+    const reason = config.health.reason === 'fetch'
+      ? '无法访问官方页面'
+      : config.health.reason === 'page'
+        ? '官方页面结构变化'
+        : '官方常量提取全部失效';
+    return `官方常量同步失效（${reason}${config.health.error ? `：${config.health.error}` : ''}）`;
+  }
+  const hours = Math.floor((Date.now() - (config.syncedAt ?? 0)) / 3_600_000);
+  return `官方常量已 ${hours} 小时未成功同步`;
 };
 
 /** 读取（必要时拉取一次）网关同步的运行时常量，供组件展示。 */

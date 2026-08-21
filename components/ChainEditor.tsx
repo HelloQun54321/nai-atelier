@@ -22,7 +22,7 @@ import { normalizeVibeSelections } from '../services/vibeUtils';
 import { estimateV45GenerationCost, applyEstimatorRuntime } from '../services/anlasBudget';
 import { useNovelaiUsage } from '../services/naiUsage';
 import { getNaiModelInfo } from '../services/naiModels';
-import { getNaiRuntimeConfig } from '../services/naiRuntime';
+import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import { ArrowLeft, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, UserRound, X } from 'lucide-react';
 
 const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
@@ -147,16 +147,23 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const { usage: novelaiUsage, refreshIfStale: refreshUsageIfStale } = useNovelaiUsage();
     const opusUsageExhausted = novelaiUsage?.isNegative === true;
     // 成本估算常量（免费门槛、公式系数、受限模型清单）由网关自动同步。
+    const [naiRuntimeConfig, setNaiRuntimeConfig] = useState<NaiRuntimeConfig | null>(null);
     const [, setRuntimeAppliedAt] = useState(0);
     useEffect(() => {
         let active = true;
         void getNaiRuntimeConfig().then(config => {
             if (!active) return;
             applyEstimatorRuntime(config);
+            setNaiRuntimeConfig(config);
             setRuntimeAppliedAt(Date.now());
         });
         return () => { active = false; };
     }, []);
+    // 同步失效时“免费/扣费”判断可能基于过期规则，生成前必须向用户示警。
+    const runtimeSyncUnhealthy = isNaiRuntimeSyncUnhealthy(naiRuntimeConfig);
+    const runtimeSyncWarning = naiRuntimeConfig
+        ? `${describeNaiRuntimeSyncProblem(naiRuntimeConfig)}，费用估算与“免费”判断可能过期，继续生成可能意外消耗共享 Anlas`
+        : '';
     const estimatedAnlasCost = estimateV45GenerationCost(params, true, opusUsageExhausted);
 
     /**
@@ -1189,9 +1196,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
     const handleGenerate = async () => {
         const cost = estimateV45GenerationCost(params, true, await usageForCostEstimate(params.model));
+        // 同步失效时按“免费”估算原本会静默直发，这里必须先警示确认。
+        if (runtimeSyncUnhealthy && cost === 0) {
+            if (!await confirmAction({
+                title: '常量同步异常',
+                message: `${runtimeSyncWarning}。\n\n仍要按当前估算（免费）继续生成吗？`,
+                confirmLabel: '仍要生成',
+                tone: 'danger',
+            })) return false;
+            return handleGenerateDraft();
+        }
         if (cost > 0 && !await confirmAction({
             title: '确认生成图片',
-            message: `当前参数预计消耗 ${cost} Anlas${params.characterReferences?.enabled && params.characterReferences.slots.length ? `\n其中角色参考：${params.characterReferences.slots.length} × 5 = ${params.characterReferences.slots.length * 5} Anlas` : ''}。`,
+            message: `当前参数预计消耗 ${cost} Anlas${params.characterReferences?.enabled && params.characterReferences.slots.length ? `\n其中角色参考：${params.characterReferences.slots.length} × 5 = ${params.characterReferences.slots.length * 5} Anlas` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
             confirmLabel: `消耗 ${cost} 点并生成`,
         })) return false;
         return handleGenerateDraft();
@@ -1217,9 +1234,18 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string): Promise<boolean> => {
         const cost = estimateV45GenerationCost(draft.params, true, await usageForCostEstimate(draft.params.model));
+        if (runtimeSyncUnhealthy && cost === 0) {
+            if (!await confirmAction({
+                title: '常量同步异常',
+                message: `${reason ? `${reason}\n\n` : ''}${runtimeSyncWarning}。\n\n仍要按当前估算（免费）继续生成吗？`,
+                confirmLabel: '仍要生成',
+                tone: 'danger',
+            })) return false;
+            return handleGenerateDraft(draft);
+        }
         if (cost > 0 && !await confirmAction({
             title: 'Agent 已准备好生图',
-            message: `${reason ? `${reason}\n\n` : ''}预计本次消耗 ${cost} Anlas。确认后才会提交给 NovelAI。`,
+            message: `${reason ? `${reason}\n\n` : ''}预计本次消耗 ${cost} Anlas。确认后才会提交给 NovelAI。${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
             confirmLabel: `消耗 ${cost} 点并生成`,
         })) return false;
         return handleGenerateDraft(draft);

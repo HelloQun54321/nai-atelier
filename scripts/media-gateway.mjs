@@ -706,8 +706,6 @@ export const DEFAULT_NAI_RUNTIME = {
 const NAI_WEBAPP_SOURCE = 'https://novelai.net/image';
 const NAI_RUNTIME_SYNC_FILE = join(process.cwd(), 'local-data', 'novelai-webapp-sync.json');
 const NAI_RUNTIME_SYNC_INTERVAL = 24 * 60 * 60 * 1000;
-/** 网关连续同步失败超过该时长时，前端展示同步异常标记。 */
-export const NAI_RUNTIME_STALE_MS = 48 * 60 * 60 * 1000;
 let naiRuntimeState = { ...DEFAULT_NAI_RUNTIME, syncedAt: 0, health: { ok: false, reason: 'pending' } };
 
 export const getNaiRuntime = () => naiRuntimeState;

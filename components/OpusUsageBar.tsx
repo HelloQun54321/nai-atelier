@@ -1,7 +1,7 @@
 import React from 'react';
 import { Gauge } from 'lucide-react';
 import { clampUsagePercent, usagePercentPerDay, usageRemainingImages, useNovelaiUsage } from '../services/naiUsage';
-import { useNaiRuntime } from '../services/naiRuntime';
+import { useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 
 interface OpusUsageBarProps {
   collapsed: boolean;
@@ -26,10 +26,9 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
   // 同步健康度：提取失效或超过 48 小时未更新时，用琥珀色圆点显式示警，
   // 避免「项目能跑但常量早已过期」的静默失效。
   const health = runtime.health;
-  const staleHours = runtime.syncedAt ? (Date.now() - runtime.syncedAt) / 3_600_000 : 0;
-  const syncBroken = health?.ok === false || ((runtime.syncedAt ?? 0) > 0 && staleHours > 48);
+  const syncBroken = isNaiRuntimeSyncUnhealthy(runtime);
   const syncSummary = syncBroken
-    ? `⚠ 官方常量同步异常（${health?.ok === false ? `原因：${health.reason || '提取失效'}` : `已 ${Math.floor(staleHours)} 小时未更新`}）：张数换算与费用估算可能过期，请检查电脑网络，或让 AI 运行 npm run test:live-sync 排查`
+    ? `⚠ ${describeNaiRuntimeSyncProblem(runtime)}：张数换算与费用估算可能过期，请检查电脑网络，或让 AI 运行 npm run test:live-sync 排查`
     : health?.missed?.length
       ? `常量同步部分失效：未命中 ${health.missed.join('、')}（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString() : ''} 同步）`
       : `常量同步正常（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString() : '等待首次同步'}）`;
