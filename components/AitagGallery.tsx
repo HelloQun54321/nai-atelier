@@ -1050,7 +1050,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       };
 
       await onCreateArtistChain(chain);
-      notify('已保存到画师串');
+      notify('已保存到风格串');
     } catch (e: any) {
       notify(e.message || '保存失败', 'error');
     }
@@ -1276,7 +1276,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                               </div>
                             </div>
                             <div className="flex flex-none gap-2">
-                              <IconButton label="保存到画师串" onClick={() => saveAsArtistChain(image, index)}><Package /></IconButton>
+                              <IconButton label="保存到风格串" onClick={() => saveAsArtistChain(image, index)}><Package /></IconButton>
                               <IconButton label="加入灵感库" tone="favorite" onClick={() => saveToInspiration(image, index)}><Star /></IconButton>
                               <IconButton label="导入实验室" tone="primary" onClick={() => importToPlayground(image)}><FlaskConical /></IconButton>
                               <ImageTaggerAction

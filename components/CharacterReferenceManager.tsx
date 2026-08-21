@@ -136,7 +136,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
   const archiveDetail = async () => {
     if (!detail || !await confirmAction({
       title: '归档这张角色参考图？',
-      message: '它会从默认资料库隐藏；已有画师串和历史仍保留引用，可随时恢复。',
+      message: '它会从默认资料库隐藏；已有风格串和历史仍保留引用，可随时恢复。',
       confirmLabel: '归档', tone: 'danger',
     })) return;
     try { await characterReferenceService.archive(detail.id); window.history.back(); await load(); notify('已归档'); }

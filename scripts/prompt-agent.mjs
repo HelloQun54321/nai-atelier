@@ -563,7 +563,7 @@ const baseSystemPrompt = `你是 NAI Atelier 的项目业务 Agent。你的职�
 
 规则：
 1. NovelAI 提示词优先使用英文 Danbooru/NovelAI tag，以逗号分隔；给用户的解释使用中文。
-2. 先理解用户意图，必要时读取历史原图和元数据、搜索 Tag、画师串、角色、灵感、AITag、Vibe 或角色参考图，再调用修改工具。项目里已有的数据绝不能要求用户重新描述或手工复制。
+2. 先理解用户意图，必要时读取历史原图和元数据、搜索 Tag、风格串、角色、灵感、AITag、Vibe 或角色参考图，再调用修改工具。项目里已有的数据绝不能要求用户重新描述或手工复制。
 3. 保留用户没有要求修改的内容。修改参数时遵守 V4.5 合理范围。
 4. 用户明确要求“生成、出图、跑一张、试试看”等操作时，修改完成后调用 request_generation；否则不要擅自消耗 Anlas。
 5. request_generation 只发出待确认请求，不能声称图片已经生成。
@@ -1991,7 +1991,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'get_project_overview', label: '读取项目概况', description: '读取画师串、角色、灵感、历史、画师资料、Vibe、角色参考及组合的数量与最近项目。',
+        name: 'get_project_overview', label: '读取项目概况', description: '读取风格串、角色、灵感、历史、画师资料、Vibe、角色参考及组合的数量与最近项目。',
         parameters: Type.Object({}),
         execute: async () => {
           const result = await readProject('/api/agent/project-overview');
@@ -1999,7 +1999,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'search_project_library', label: '搜索项目资料', description: '搜索画师串、角色串、灵感和画师资料。kind可为all、chains、inspirations、artists。',
+        name: 'search_project_library', label: '搜索项目资料', description: '搜索风格串、角色串、灵感和画师资料。kind可为all、chains、inspirations、artists。',
         parameters: Type.Object({ query: Type.Optional(Type.String()), kind: Type.Optional(Type.String()), limit: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => {
           const query = text(args.query).trim().toLowerCase();
@@ -2022,7 +2022,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'get_chain', label: '读取完整画师串或角色', description: '按搜索结果中的id读取一条画师串或角色串的完整提示词、模块、参数、Vibe和角色参考快照。修改或复用预设前必须先读取。',
+        name: 'get_chain', label: '读取完整风格串或角色', description: '按搜索结果中的id读取一条风格串或角色串的完整提示词、模块、参数、Vibe和角色参考快照。修改或复用预设前必须先读取。',
         parameters: Type.Object({ id: Type.String() }),
         execute: async (_id, args) => {
           const value = await readProject(`/api/chains/${encodeURIComponent(text(args.id).slice(0, 200))}`);
@@ -2111,7 +2111,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'set_chain_cover_from_history', label: '设置画师串封面', description: '把一张项目生成历史原图设为指定画师串或角色串封面。historyId必须来自list_generation_history，chainId必须来自项目搜索。',
+        name: 'set_chain_cover_from_history', label: '设置风格串封面', description: '把一张项目生成历史原图设为指定风格串或角色串封面。historyId必须来自list_generation_history，chainId必须来自项目搜索。',
         parameters: Type.Object({ historyId: Type.String(), chainId: Type.String() }),
         execute: async (_id, args) => {
           if (!project?.requestBuffer) throw new Error('电脑历史图片服务不可用');
@@ -2126,7 +2126,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'import_aitag_image', label: '导入 AITag 图片', description: '把电脑已经缓存的AITag图片导入灵感、角色参考、Vibe，或设为指定画师串封面。不会访问任意网址。',
+        name: 'import_aitag_image', label: '导入 AITag 图片', description: '把电脑已经缓存的AITag图片导入灵感、角色参考、Vibe，或设为指定风格串封面。不会访问任意网址。',
         parameters: Type.Object({ workId: Type.Number(), imageIndex: Type.Optional(Type.Number()), target: Type.Union([Type.Literal('inspiration'), Type.Literal('character_reference'), Type.Literal('vibe'), Type.Literal('chain_cover')]), name: Type.Optional(Type.String()), chainId: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           const source = await getAitagImage(args.workId, args.imageIndex);
@@ -2145,7 +2145,7 @@ export class PromptAgentService {
             changed('vibes');
           } else {
             const chainId = text(args.chainId).slice(0, 200);
-            if (!chainId) throw new Error('设为封面时必须提供画师串或角色串id');
+            if (!chainId) throw new Error('设为封面时必须提供风格串或角色串id');
             result = await readProject(`/api/chains/${encodeURIComponent(chainId)}`, { method: 'PUT', body: { previewImage: source.imageData } });
             changed('chains');
           }
@@ -2153,7 +2153,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'create_chain', label: '新建画师串或角色', description: '在项目中创建画师串或角色串。type为style或character。',
+        name: 'create_chain', label: '新建风格串或角色', description: '在项目中创建风格串或角色串。type为style或character。',
         parameters: Type.Object({ type: Type.Union([Type.Literal('style'), Type.Literal('character')]), name: Type.String(), description: Type.Optional(Type.String()), basePrompt: Type.Optional(Type.String()), subjectPrompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), modules: Type.Optional(Type.Array(Type.Object({ name: Type.String(), content: Type.String(), isActive: Type.Optional(Type.Boolean()), position: Type.Optional(Type.Union([Type.Literal('pre'), Type.Literal('post')])) }))), params: Type.Optional(Type.Any()) }),
         execute: async (_id, args) => {
           const body = { type: args.type, name: text(args.name).slice(0, 160), description: text(args.description).slice(0, 1000), basePrompt: text(args.basePrompt), negativePrompt: text(args.negativePrompt), tags: (args.tags || []).slice(0, 40).map(value => text(value).slice(0, 80)), modules: Array.isArray(args.modules) ? sanitizeDraft({ modules: args.modules, params: {} }).modules : [], params: args.params && typeof args.params === 'object' ? sanitizeParams(args.params) : undefined, variableValues: { subject: text(args.subjectPrompt) } };
@@ -2163,12 +2163,12 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'update_chain', label: '更新画师串或角色', description: '更新已有画师串或角色串的业务字段。id必须来自项目搜索。',
+        name: 'update_chain', label: '更新风格串或角色', description: '更新已有风格串或角色串的业务字段。id必须来自项目搜索。',
         parameters: Type.Object({ id: Type.String(), name: Type.Optional(Type.String()), description: Type.Optional(Type.String()), basePrompt: Type.Optional(Type.String()), subjectPrompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), modules: Type.Optional(Type.Array(Type.Object({ name: Type.String(), content: Type.String(), isActive: Type.Optional(Type.Boolean()), position: Type.Optional(Type.Union([Type.Literal('pre'), Type.Literal('post')])) }))), params: Type.Optional(Type.Any()) }),
         execute: async (_id, args) => {
           const currentValue = await readProject(`/api/chains/${encodeURIComponent(text(args.id).slice(0, 200))}`);
           const current = currentValue.item || currentValue;
-          if (!current?.id) throw new Error('找不到要更新的画师串或角色串');
+          if (!current?.id) throw new Error('找不到要更新的风格串或角色串');
           const body = {};
           for (const key of ['name', 'description', 'basePrompt', 'negativePrompt']) if (typeof args[key] === 'string') body[key] = text(args[key]);
           if (Array.isArray(args.tags)) body.tags = args.tags.slice(0, 40).map(value => text(value).slice(0, 80));
@@ -2320,7 +2320,7 @@ export class PromptAgentService {
         execute: async (_id, args) => pending('encode_vibe', text(args.vibeId).slice(0, 200), `为${text(args.vibeName || '这个 Vibe').slice(0, 100)}生成永久编码？`, `信息提取量：${clamp(args.informationExtracted, 0, 1, 1).toFixed(2)}\n本次消耗：2 Anlas。编码完成后可以免费重复用于生图。`, { informationExtracted: clamp(args.informationExtracted, 0, 1, 1) }),
       },
       {
-        name: 'request_delete_project_item', label: '请求删除项目数据', description: '请求删除画师串、角色、灵感、历史项，或归档Vibe/角色参考。只会打开项目确认框，不会直接删除。',
+        name: 'request_delete_project_item', label: '请求删除项目数据', description: '请求删除风格串、角色、灵感、历史项，或归档Vibe/角色参考。只会打开项目确认框，不会直接删除。',
         parameters: Type.Object({ resourceType: Type.Union([Type.Literal('chain'), Type.Literal('inspiration'), Type.Literal('history'), Type.Literal('vibe'), Type.Literal('vibe_group'), Type.Literal('artist'), Type.Literal('character_reference')]), id: Type.String(), name: Type.Optional(Type.String()), reason: Type.Optional(Type.String()) }),
         execute: async (_id, args) => pending(`delete_${args.resourceType}`, text(args.id).slice(0, 200), `删除${text(args.name || '这个项目').slice(0, 100)}？`, text(args.reason || '确认后将执行删除；历史原图删除后无法恢复。').slice(0, 500)),
       },
@@ -2439,7 +2439,7 @@ export class PromptAgentService {
       {
         name: 'request_clear_mobile_cache', label: '准备清空手机缓存', description: '请求清空当前设备可再生成的手机缩略图缓存，不影响电脑原图和历史。必须确认。',
         parameters: Type.Object({}),
-        execute: async () => pending('clear_mobile_cache', '', '清空当前设备的小图缓存？', '只会删除可重新生成的缩略图，不影响历史、灵感、画师串、角色或任何电脑原图。'),
+        execute: async () => pending('clear_mobile_cache', '', '清空当前设备的小图缓存？', '只会删除可重新生成的缩略图，不影响历史、灵感、风格串、角色或任何电脑原图。'),
       },
       {
         name: 'update_prompts', label: '修改全局提示词', description: '修改全局提示词。basePrompt仅用于画师、媒介、渲染与可复用画风；subjectPrompt仅用于整图主体、场景、动作和构图，不得存放角色专属外貌或角色提示词；negativePrompt是全局负面提示词。只传需要修改的字段。',

@@ -292,7 +292,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             type="button"
             onClick={async event => {
               event.stopPropagation();
-              if (await confirmAction({ title: `删除“${chain.name}”？`, message: `该${chain.type === 'character' ? '角色串' : '画师串'}及其配置将被永久删除，此操作无法撤销。`, confirmLabel: '确认删除', tone: 'danger' })) onDelete(chain.id);
+              if (await confirmAction({ title: `删除“${chain.name}”？`, message: `该${chain.type === 'character' ? '角色串' : '风格串'}及其配置将被永久删除，此操作无法撤销。`, confirmLabel: '确认删除', tone: 'danger' })) onDelete(chain.id);
             }}
             className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-red-50 hover:text-red-500 dark:bg-black/70 dark:text-gray-300 dark:hover:text-red-400"
             title="删除"
@@ -357,8 +357,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     </div>
   );
 
-  const title = type === 'character' ? '我的角色串' : '我的画师串';
-  const createLabel = type === 'character' ? '新建角色串' : '新建画师串';
+  const title = type === 'character' ? '我的角色串' : '我的风格串';
+  const createLabel = type === 'character' ? '新建角色串' : '新建风格串';
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">

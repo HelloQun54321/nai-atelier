@@ -364,7 +364,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 if (lightboxImg) setLightboxImg(nextImage);
             }
 
-            notify('已从当前画师串历史组移除，历史页仍会保留。', 'success');
+            notify('已从当前风格串历史组移除，历史页仍会保留。', 'success');
         } catch (error) {
             console.error('移除历史组图片失败:', error);
             notify('移除失败，请稍后重试。', 'error');
@@ -374,8 +374,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const handleClearHistoryGroup = async () => {
         if (previewHistory.length === 0) return;
         if (!await confirmAction({
-            title: '清除当前画师串的历史组？',
-            message: `将从当前画师串移除 ${previewHistory.length} 张图片，但不会删除本地历史中的原图。`,
+            title: '清除当前风格串的历史组？',
+            message: `将从当前风格串移除 ${previewHistory.length} 张图片，但不会删除本地历史中的原图。`,
             confirmLabel: '确认清除',
             tone: 'danger',
         })) return;
@@ -387,7 +387,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setPreviewMode('cover');
             setGeneratedImage(null);
             setLightboxImg(null);
-            notify(`已清除 ${count} 张图片的当前画师串归属，历史页仍会保留。`, 'success');
+            notify(`已清除 ${count} 张图片的当前风格串归属，历史页仍会保留。`, 'success');
         } catch (error) {
             console.error('清除历史组失败:', error);
             notify('清除失败，请稍后重试。', 'error');
@@ -1418,7 +1418,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <div className="flex items-center gap-2 group cursor-pointer min-w-0 flex-1" onClick={() => isOwner && setIsEditingInfo(true)}>
                             <div className="flex flex-col md:flex-row md:items-baseline gap-0.5 md:gap-2 overflow-hidden min-w-0">
                                 {chain.id !== 'playground' && <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase border flex-shrink-0 ${isCharacterMode ? 'bg-pink-100 text-pink-700 border-pink-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
-                                    {isCharacterMode ? '角色串' : '画师串'}
+                                    {isCharacterMode ? '角色串' : '风格串'}
                                 </span>}
                                 <h1 className="text-base md:text-lg font-bold text-gray-900 dark:text-white truncate min-w-0">{chainName}</h1>
                                 <span className="hidden text-xs text-gray-500 dark:text-gray-500 truncate max-w-full md:block md:max-w-xs min-w-0">{chainDesc}</span>
@@ -1529,7 +1529,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             <div className="mb-2 flex items-end justify-between gap-2">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <label className="flex flex-col items-center text-sm font-semibold text-indigo-500 dark:text-indigo-400 md:block md:text-left">
-                                        <span>基础画风</span><span className="text-[10px] font-normal opacity-70 md:inline md:text-sm md:font-semibold md:opacity-100">（画师串）</span>
+                                        <span>基础画风</span><span className="text-[10px] font-normal opacity-70 md:inline md:text-sm md:font-semibold md:opacity-100">（风格串）</span>
                                     </label>
                                     <PresetSourceBadge source={presetSources.base} />
                                 </div>

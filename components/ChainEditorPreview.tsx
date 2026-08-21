@@ -104,7 +104,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                             复制完整提示词
                         </button>
                     </div>
-                    <p className="text-[10px] text-gray-400 mb-2">放置画师串固定提示词以外的内容，比如人物、场景。</p>
+                    <p className="text-[10px] text-gray-400 mb-2">放置风格串固定提示词以外的内容，比如人物、场景。</p>
                     <TagAutocompleteTextarea
                         className="w-full h-24 md:h-32 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg p-3 text-sm outline-none focus:border-indigo-500 font-mono resize-none"
                         placeholder="输入动态主体描述，例如：1girl, blue hair, sitting..."
@@ -139,7 +139,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                                     onRemoveCurrentHistory?.();
                                 }}
                                 className="bg-red-600/90 hover:bg-red-500 text-white px-3 py-1.5 rounded text-xs font-medium shadow-lg backdrop-blur"
-                                title="从当前画师串历史组移除这张图，历史页仍会保留"
+                                title="从当前风格串历史组移除这张图，历史页仍会保留"
                             >
                                 删除
                             </button>
@@ -149,7 +149,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                                     onClearHistoryGroup?.();
                                 }}
                                 className="bg-gray-900/85 hover:bg-gray-800 text-white px-3 py-1.5 rounded text-xs font-medium shadow-lg backdrop-blur"
-                                title="清空当前画师串历史组，历史页仍会保留"
+                                title="清空当前风格串历史组，历史页仍会保留"
                             >
                                 清除
                             </button>

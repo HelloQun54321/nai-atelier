@@ -157,7 +157,7 @@ const artistHash = artist => sha256(JSON.stringify({
 }));
 
 const artistToChainBody = (artist, existing) => ({
-  name: String(artist.name || '未命名画师串').slice(0, 100),
+  name: String(artist.name || '未命名风格串').slice(0, 100),
   description: existing?.description || '与 SillyTavern st-chatu8 双向同步',
   type: 'style',
   tags: Array.isArray(existing?.tags) ? existing.tags : [],

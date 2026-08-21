@@ -378,7 +378,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
   const clearSelection = () => setSelectedKeys(new Set());
 
-  /** 批量复制：各角色按单卡语义取提示词，英文逗号拼接（与画师串/Tag 串语义一致）。 */
+  /** 批量复制：各角色按单卡语义取提示词，英文逗号拼接（与风格串/Tag 串语义一致）。 */
   const copyAllSelected = async () => {
     if (selectedCards.length === 0) return;
     await navigator.clipboard.writeText(selectedCards.map(cardPromptText).join(', '));

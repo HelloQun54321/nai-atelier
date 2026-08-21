@@ -2,7 +2,7 @@ import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from 'react
 import { MobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 
 /**
- * 通用“最短列分配”瀑布流（画师串/角色串、生成历史共用）。
+ * 通用“最短列分配”瀑布流（风格串/角色串、生成历史共用）。
  *
  * 不再依赖 CSS `column-count` 的自动平衡：CSS Multi-column 在小数量、大比例差异的
  * 组合下会只使用前 N-1 列，把第 N 列留成整块空白。这里改为显式生成等宽列容器，

@@ -251,7 +251,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
 
   const archiveDetail = async () => {
     if (!detail) return;
-    const accepted = await confirmAction({ title: '归档这个 Vibe？', message: '它会从当前资料库隐藏，但编码和文件仍会保留，已有画师串与历史仍可复现。', confirmLabel: '归档', tone: 'danger' });
+    const accepted = await confirmAction({ title: '归档这个 Vibe？', message: '它会从当前资料库隐藏，但编码和文件仍会保留，已有风格串与历史仍可复现。', confirmLabel: '归档', tone: 'danger' });
     if (!accepted) return;
     try { await vibeService.archive(detail.id); closeLayer(); await load(); notify('已归档'); }
     catch (error: any) { notify(error.message || '归档失败', 'error'); }

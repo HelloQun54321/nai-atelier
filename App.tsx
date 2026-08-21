@@ -126,8 +126,8 @@ const App = () => {
       if (e.message && e.message.includes('Database not configured')) {
         setDbConfigError(true);
       } else {
-        console.error('加载画师串列表失败', e);
-        notify('画师串列表加载失败，请稍后重试', 'error');
+        console.error('加载风格串列表失败', e);
+        notify('风格串列表加载失败，请稍后重试', 'error');
       }
     } finally {
       setLoading(false);
@@ -422,7 +422,7 @@ const App = () => {
       await refreshData(true);
       handleNavigate('edit', newId);
     } catch (e) {
-      console.error('创建画师串失败', e);
+      console.error('创建风格串失败', e);
       notify('创建失败，请稍后重试', 'error');
     } finally {
       setLoading(false);
@@ -441,7 +441,7 @@ const App = () => {
       setView(targetView);
       keepViewMounted(targetView);
     } catch (e) {
-      console.error('Fork 画师串失败', e);
+      console.error('Fork 风格串失败', e);
       notify('Fork 失败，请稍后重试', 'error');
     }
   };
@@ -451,7 +451,7 @@ const App = () => {
       await db.updateChain(id, updates);
       await refreshData(true);
     } catch (e) {
-      console.error('保存画师串失败', e);
+      console.error('保存风格串失败', e);
       notify('保存失败，请稍后重试', 'error');
     }
   };
@@ -463,7 +463,7 @@ const App = () => {
       await refreshData(true);
       handleNavigate('edit', newId);
     } catch (e) {
-      console.error('从 AITag 创建画师串失败', e);
+      console.error('从 AITag 创建风格串失败', e);
       notify('创建失败，请稍后重试', 'error');
     } finally {
       setLoading(false);
@@ -476,7 +476,7 @@ const App = () => {
       await db.deleteChain(id);
       await refreshData(true);
     } catch (e) {
-      console.error('删除画师串失败', e);
+      console.error('删除风格串失败', e);
       notify('删除失败，请稍后重试', 'error');
     } finally {
       // Stay on current list view
