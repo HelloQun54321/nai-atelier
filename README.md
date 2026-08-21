@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.86.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.86.2-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -690,6 +690,8 @@ NAI Atelier/
 ├─ local-data/          重要个人数据（Git 忽略）
 ├─ local-cache/         可再生成缩略图（Git 忽略）
 ├─ CHANGELOG.md         按真实日期倒序记录的修改历史
+├─ AGENTS.md            AI 协作强制规则（提交、版本、CHANGELOG、工作日志）
+├─ AI_WORKLOG.md        AI 工作日志，按模型与日期登记每次修改
 └─ README.md            项目总览与使用说明
 ```
 
