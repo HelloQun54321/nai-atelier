@@ -4,6 +4,7 @@ import { NAIParams } from '../types';
 import { api } from './api';
 import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
 import { getNaiModelInfo, resolveNaiModelId } from './naiModels';
+import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 import { emitCloudQueueStatus, getCachedCloudQueuePreferences, getCloudQueuePreferences, scheduleCloudQueueStatusClear, watchCloudQueueTask } from './cloudQueue';
 
 export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams) => {
@@ -175,6 +176,10 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
     throw error;
   } finally {
     requestFinished = true;
+    // 生图会消耗 Opus 免费限额（V5），通知限额组件刷新。
+    if (terminalPhase === 'completed' && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
+    }
     await statusWatcher;
     if (queue.enabled) {
       emitCloudQueueStatus({

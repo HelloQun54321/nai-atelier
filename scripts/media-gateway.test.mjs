@@ -12,6 +12,8 @@ import {
   classifyDanbooruRemoteTarget,
   estimateNovelAiGenerationCost,
   fetchAitagRemoteResponse,
+  fetchNovelAiSubscription,
+  sanitizeNovelAiSubscription,
   normalizeVibeStrengths,
   parseInvalidVibeCacheKeys,
   requestRemoteBuffer,
@@ -656,6 +658,46 @@ test('NovelAI V4.5 costs follow Opus free limits and current web formula', () =>
     ...payload.parameters,
     director_reference_images_cached: [{ cache_secret_key: 'character' }],
   } }), 5);
+});
+
+test('Opus usage overdraw charges V5 free-tier generations but leaves V4.5 free', () => {
+  const payload = { action: 'generate', model: 'nai-diffusion-5-full', parameters: { width: 832, height: 1216, steps: 23, n_samples: 1 } };
+  assert.equal(estimateNovelAiGenerationCost(payload), 0);
+  const charged = estimateNovelAiGenerationCost(payload, true);
+  assert.ok(charged > 0);
+  // V4.5 及以下不受 Opus 限额影响，透支后依旧免费。
+  assert.equal(estimateNovelAiGenerationCost({ ...payload, model: 'nai-diffusion-4-5-full' }, true), 0);
+  assert.equal(estimateNovelAiGenerationCost({ ...payload, model: undefined }, true), 0);
+});
+
+test('NovelAI subscription proxy forwards auth and strips private fields', async () => {
+  let seenUrl = '';
+  let seenInit = null;
+  const fakeRemote = async (url, init) => {
+    seenUrl = url;
+    seenInit = init;
+    return new Response(JSON.stringify({
+      tier: 4,
+      active: true,
+      paymentProcessorData: { customerId: 'secret' },
+      usage: { percent: 41.6, isNegative: false, timeUntilNextPercent: 1500 },
+    }), { status: 200 });
+  };
+  const response = await fetchNovelAiSubscription('Bearer nai-test-key', undefined, fakeRemote);
+  assert.equal(response.ok, true);
+  assert.equal(seenUrl, 'https://api.novelai.net/user/subscription');
+  assert.equal(seenInit.method, 'GET');
+  assert.equal(seenInit.headers.Authorization, 'Bearer nai-test-key');
+  const sanitized = sanitizeNovelAiSubscription(await response.json());
+  assert.deepEqual(sanitized, {
+    tier: 4,
+    active: true,
+    usage: { percent: 41.6, isNegative: false, timeUntilNextPercent: 1500 },
+  });
+  // 敏感的支付处理数据不出现在代理响应里。
+  assert.equal(sanitized.paymentProcessorData, undefined);
+  // 非 Opus 订阅没有 usage 字段，前端据此隐藏限额组件。
+  assert.equal(sanitizeNovelAiSubscription({ tier: 2, active: true }).usage, undefined);
 });
 
 test('Precise Reference uses official V4.5 director fields without local IDs', () => {

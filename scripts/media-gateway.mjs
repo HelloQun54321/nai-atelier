@@ -36,6 +36,7 @@ const VIBE_ENCODING_CACHE_LIMIT = 128 * 1024 * 1024;
 const PRECISE_REFERENCE_CACHE_LIMIT = 128 * 1024 * 1024;
 const NAI_GENERATE_URL = 'https://image.novelai.net/ai/generate-image';
 const NAI_ENCODE_VIBE_URL = 'https://image.novelai.net/ai/encode-vibe';
+const NAI_SUBSCRIPTION_URL = 'https://api.novelai.net/user/subscription';
 const CLOUD_QUEUE_URL = 'https://st-chatu-novelai-queue.hf.space';
 const CLOUD_QUEUE_POLL_INTERVAL = 1000;
 const CLOUD_QUEUE_MAX_FAILURES = 3;
@@ -523,7 +524,7 @@ export const clearPreciseReferenceParameters = parameters => {
 };
 
 /** NovelAI's current V4/V4.5 cost formula for the generation features supported here. */
-export const estimateNovelAiGenerationCost = payload => {
+export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = false) => {
   const parameters = payload?.parameters || {};
   const width = Math.max(1, Number(parameters.width) || 1);
   const height = Math.max(1, Number(parameters.height) || 1);
@@ -541,7 +542,9 @@ export const estimateNovelAiGenerationCost = payload => {
     : Array.isArray(parameters.director_reference_images) ? parameters.director_reference_images.length : 0;
   // Precise Reference is a per-reference surcharge, not an img2img base image.
   const isPlainGeneration = payload?.action === 'generate' && !parameters.image && !parameters.mask;
-  const freeSamples = isPlainGeneration && area <= 1_048_576 && steps <= 28 ? 1 : 0;
+  // Opus 免费额度仅对高于 V4.5 的模型（V5 系）设限；透支后所有图都按 Anlas 计费。
+  const isUsageLimitedModel = typeof payload?.model === 'string' && payload.model.startsWith('nai-diffusion-5');
+  const freeSamples = isPlainGeneration && !(opusUsageExhausted && isUsageLimitedModel) && area <= 1_048_576 && steps <= 28 ? 1 : 0;
   const base = baseCost * Math.max(0, samples - freeSamples);
   const vibeCount = Array.isArray(parameters.reference_image_multiple_cached)
     ? parameters.reference_image_multiple_cached.length
@@ -638,6 +641,34 @@ export const fetchNovelAiGeneration = (payload, authorization, signal = AbortSig
   body: JSON.stringify(payload),
   signal,
 });
+
+export const fetchNovelAiSubscription = (authorization, signal = AbortSignal.timeout(30_000), requestRemote = fetch) => requestRemote(NAI_SUBSCRIPTION_URL, {
+  method: 'GET',
+  headers: { 'Authorization': authorization },
+  signal,
+});
+
+/**
+ * 只保留前端需要的订阅字段，剥离 paymentProcessorData 等敏感/冗余数据，
+ * usage 三个字段与 NovelAI Web 应用的 Opus 限额映射一一对应。
+ */
+export const sanitizeNovelAiSubscription = payload => {
+  const usage = payload?.usage;
+  const percent = Number(usage?.percent);
+  const timeUntilNextPercent = Number(usage?.timeUntilNextPercent);
+  return {
+    tier: Number(payload?.tier) || 0,
+    active: payload?.active === true,
+    usage: usage && Number.isFinite(percent) ? {
+      percent,
+      isNegative: usage.isNegative === true,
+      timeUntilNextPercent: Number.isFinite(timeUntilNextPercent) ? timeUntilNextPercent : 0,
+    } : undefined,
+  };
+};
+
+// 生图扣预算时的 Opus 透支快照；由最近的 /api/novelai-subscription 代理请求刷新。
+let lastKnownOpusUsageExhausted = false;
 
 export const generateWithVibeCacheRetry = async (
   payload,
@@ -828,7 +859,8 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
         (nextPayload, nextAuthorization) => fetchNovelAiGeneration(nextPayload, nextAuthorization, generationSignal, requestRemote),
       )
       : await fetchNovelAiGeneration(payload, authorization, generationSignal, requestRemote);
-    const estimatedCost = response.ok ? estimateNovelAiGenerationCost(payload) : 0;
+    // 透支状态由 /api/novelai-subscription 代理调用时缓存；未知时按未透支估算。
+    const estimatedCost = response.ok ? estimateNovelAiGenerationCost(payload, lastKnownOpusUsageExhausted) : 0;
     const anlasBudget = estimatedCost > 0
       ? await spendAnlasBudget(req, workerPort, estimatedCost, 'generation')
       : null;
@@ -1924,6 +1956,24 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
     if (url.pathname === '/__internal/aitag-fetch') return handleAitagRemoteRequest(req, res, url, lanSecret, remoteFetch);
     if (url.pathname === '/__internal/danbooru-fetch') return handleDanbooruRemoteRequest(req, res, url, lanSecret, remoteFetch);
     if (url.pathname === '/api/generate') return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, cloudQueuePreferences, remoteFetch);
+    if (url.pathname === '/api/novelai-subscription') {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      const authorization = String(req.headers.authorization || '');
+      if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
+      try {
+        const upstream = await fetchNovelAiSubscription(authorization, undefined, remoteFetch);
+        if (!upstream.ok) {
+          return sendJson(res, 502, { error: 'NovelAI 订阅信息获取失败', upstreamStatus: upstream.status });
+        }
+        const payload = await upstream.json();
+        const sanitized = sanitizeNovelAiSubscription(payload);
+        lastKnownOpusUsageExhausted = sanitized.usage?.isNegative === true;
+        return sendJson(res, 200, sanitized);
+      } catch (error) {
+        return sendJson(res, 502, { error: error.message || 'NovelAI 订阅信息获取失败' });
+      }
+    }
     if (url.pathname === '/api/generation-queue/preferences') {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       if (req.method === 'GET') return sendJson(res, 200, cloudQueuePreferences);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { NAIParams } from '../types';
 import { api } from './api';
+import { getNaiModelInfo } from './naiModels';
 
 export const DEFAULT_ANLAS_BUDGET = 1666;
 export const ANLAS_BUDGET_CHANGED_EVENT = 'nai-anlas-budget-changed';
@@ -12,8 +13,14 @@ export interface AnlasBudgetState {
 
 const clampBudget = (value: number) => Math.max(0, Math.min(1_000_000_000, Math.floor(Number(value) || 0)));
 
-/** Mirrors NovelAI's current V4/V4.5 web cost calculator for this project's supported generation fields. */
-export const estimateV45GenerationCost = (params: NAIParams, opus = true) => {
+/**
+ * Mirrors NovelAI's web cost calculator (V4/V4.5/V5 share the same formula)
+ * for this project's supported generation fields. Since V5, free Opus
+ * generations additionally require remaining Opus usage allowance: when the
+ * allowance is overdrawn every image costs Anlas, so opusUsageExhausted
+ * removes the free sample for limited models only.
+ */
+export const estimateV45GenerationCost = (params: NAIParams, opus = true, opusUsageExhausted = false) => {
   const width = Math.max(1, Number(params.width) || 1);
   const height = Math.max(1, Number(params.height) || 1);
   const area = Math.max(65_536, width * height);
@@ -23,7 +30,8 @@ export const estimateV45GenerationCost = (params: NAIParams, opus = true) => {
   const preciseReferenceCount = params.characterReferences?.enabled ? params.characterReferences.slots.length : 0;
   const baseRaw = Math.ceil(2.951823174884865e-6 * area + 5.753298233447344e-7 * area * steps);
   const baseCost = Math.max(baseRaw, 2);
-  const freeSamples = opus && area <= 1_048_576 && steps <= 28 ? 1 : 0;
+  const allowanceBlocksFree = opusUsageExhausted && getNaiModelInfo(params.model).opusUsageLimit;
+  const freeSamples = opus && !allowanceBlocksFree && area <= 1_048_576 && steps <= 28 ? 1 : 0;
   const generationCost = baseCost * Math.max(0, samples - freeSamples);
   const extraVibeCost = Math.max(0, vibeCount - 4) * 2 * samples;
   return generationCost + extraVibeCost + preciseReferenceCount * 5 * samples;
