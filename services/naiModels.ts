@@ -39,3 +39,29 @@ export const getNaiModelInfo = (model?: string): NaiModelInfo =>
   NAI_MODELS.find(item => item.id === model) || NAI_MODELS.find(item => item.id === DEFAULT_NAI_MODEL)!;
 
 export const resolveNaiModelId = (model?: string): string => getNaiModelInfo(model).id;
+
+/** 由模型标识推导显示名：nai-diffusion-4-5-curated-preview → 4.5 Curated Preview。 */
+const deriveModelLabel = (id: string) => id
+  .replace(/^nai-diffusion-/, '')
+  .replace(/-inpainting$/, '')
+  .replace(/^(\d+)-(\d+)-/, '$1.$2 ')
+  .replace(/-/g, ' ')
+  .replace(/\b\w/g, char => char.toUpperCase());
+
+/**
+ * 选择器可用的模型列表：内置注册表优先，网关从官方 Web 应用同步到的新模型
+ * （例如未来发布的 V6）自动追加到末尾，能力标志按保守值处理。
+ */
+export const getSelectableNaiModels = (runtime?: { models: string[]; usageLimitedModels: string[] }): NaiModelInfo[] => {
+  if (!runtime?.models?.length) return NAI_MODELS;
+  const extras = runtime.models
+    .filter(id => !id.endsWith('-inpainting') && !NAI_MODELS.some(model => model.id === id))
+    .map(id => ({
+      id,
+      label: deriveModelLabel(id),
+      opusUsageLimit: runtime.usageLimitedModels.includes(id),
+      supportsVibes: false,
+      supportsCharacterReferences: false,
+    }));
+  return [...NAI_MODELS, ...extras];
+};

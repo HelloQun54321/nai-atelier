@@ -19,9 +19,10 @@ import { createUuid } from '../services/id';
 import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { normalizeVibeSelections } from '../services/vibeUtils';
-import { estimateV45GenerationCost } from '../services/anlasBudget';
+import { estimateV45GenerationCost, applyEstimatorRuntime } from '../services/anlasBudget';
 import { useNovelaiUsage } from '../services/naiUsage';
 import { getNaiModelInfo } from '../services/naiModels';
+import { getNaiRuntimeConfig } from '../services/naiRuntime';
 import { ArrowLeft, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, UserRound, X } from 'lucide-react';
 
 const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
@@ -145,6 +146,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // Opus 限额透支后，受限额模型（V5）的小图不再免费，费用估算需同步。
     const { usage: novelaiUsage, refreshIfStale: refreshUsageIfStale } = useNovelaiUsage();
     const opusUsageExhausted = novelaiUsage?.isNegative === true;
+    // 成本估算常量（免费门槛、公式系数、受限模型清单）由网关自动同步。
+    const [, setRuntimeAppliedAt] = useState(0);
+    useEffect(() => {
+        let active = true;
+        void getNaiRuntimeConfig().then(config => {
+            if (!active) return;
+            applyEstimatorRuntime(config);
+            setRuntimeAppliedAt(Date.now());
+        });
+        return () => { active = false; };
+    }, []);
     const estimatedAnlasCost = estimateV45GenerationCost(params, true, opusUsageExhausted);
 
     /**

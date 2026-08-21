@@ -14,6 +14,12 @@ import {
   fetchAitagRemoteResponse,
   fetchNovelAiSubscription,
   sanitizeNovelAiSubscription,
+  extractNaiImagesPerPercent,
+  extractNaiCostCoefficients,
+  extractNaiFreeTierLimits,
+  extractNaiModelCapabilities,
+  applyNaiRuntimeOverride,
+  DEFAULT_NAI_RUNTIME,
   normalizeVibeStrengths,
   parseInvalidVibeCacheKeys,
   requestRemoteBuffer,
@@ -670,7 +676,7 @@ test('Opus usage overdraw charges V5 free-tier generations but leaves V4.5 free'
   assert.equal(estimateNovelAiGenerationCost({ ...payload, model: undefined }, true), 0);
 });
 
-test('NovelAI subscription proxy forwards auth and strips private fields', async () => {
+test('NovelAI 订阅代理转发鉴权并剥离敏感字段', async () => {
   let seenUrl = '';
   let seenInit = null;
   const fakeRemote = async (url, init) => {
@@ -698,6 +704,60 @@ test('NovelAI subscription proxy forwards auth and strips private fields', async
   assert.equal(sanitized.paymentProcessorData, undefined);
   // 非 Opus 订阅没有 usage 字段，前端据此隐藏限额组件。
   assert.equal(sanitizeNovelAiSubscription({ tier: 2, active: true }).usage, undefined);
+});
+
+test('官方 Web 应用常量提取器解析真实压缩代码片段', () => {
+  // 剩余张数系数：模块同时含 timeUntilNextPercent 与 round(系数×变量)。
+  const usageModule = 'function h(e){return e.timeUntilNextPercent<=0?0:Math.round(86400/e.timeUntilNextPercent*10)/10}function g(e){return Math.round(17.3*e)}';
+  assert.equal(extractNaiImagesPerPercent(usageModule), 17.3);
+  // 模拟官方调整系数后自动跟随。
+  assert.equal(extractNaiImagesPerPercent(usageModule.replace('17.3', '25.9')), 25.9);
+  // 不含限额锚点的代码不误提取。
+  assert.equal(extractNaiImagesPerPercent('function g(e){return Math.round(17.3*e)}'), null);
+
+  // 成本公式系数。
+  const costModule = 'let M=function(e,t,a,r,n){let i=e*t;return Math.ceil(2951823174884865e-21*i+5753298233447344e-22*i*a)*(n?1.4:r?1.2:1)}';
+  assert.deepEqual(extractNaiCostCoefficients(costModule), {
+    costCoefficientArea: 2.951823174884865e-6,
+    costCoefficientSteps: 5.753298233447344e-7,
+  });
+
+  // 免费档门槛（无角色参考、面积、步数）。
+  const freeModule = 'function C(e){return!e.characterRef&&e.width*e.height<=1048576&&e.steps<=28}';
+  assert.deepEqual(extractNaiFreeTierLimits(freeModule), { freeMaxArea: 1048576, freeMaxSteps: 28 });
+  assert.deepEqual(extractNaiFreeTierLimits(freeModule.replace('<=28', '<=50')), { freeMaxArea: 1048576, freeMaxSteps: 50 });
+  assert.equal(extractNaiFreeTierLimits('function C(e){return e.steps<=28}'), null);
+
+  // 模型能力表：case 分组以 opusUsageLimit 收尾。
+  const capabilityTable = 'switch(t){case"nai-diffusion-5-full":case"nai-diffusion-5-full-inpainting":{streamedResponses:!0,opusUsageLimit:!0};case"nai-diffusion-4-5-full":case"nai-diffusion-4-5-full-inpainting":{characterReferences:!0,opusUsageLimit:!1};case"nai-diffusion-6-full":{opusUsageLimit:!0}}';
+  const capabilities = extractNaiModelCapabilities(capabilityTable);
+  assert.deepEqual(capabilities.models, [
+    'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
+    'nai-diffusion-4-5-full', 'nai-diffusion-4-5-full-inpainting',
+    'nai-diffusion-6-full',
+  ]);
+  assert.deepEqual(capabilities.usageLimitedModels, [
+    'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting', 'nai-diffusion-6-full',
+  ]);
+});
+
+test('成本估算跟随同步的运行时常量', () => {
+  const payload = { action: 'generate', model: 'nai-diffusion-5-full', parameters: { width: 832, height: 1216, steps: 23, n_samples: 1 } };
+  try {
+    // 官方把免费步数上限降到 20：23 步在免费档之外，开始计费。
+    applyNaiRuntimeOverride({ freeMaxSteps: 20 });
+    assert.ok(estimateNovelAiGenerationCost(payload) > 0);
+    // 官方把受限模型清单换成下一代：旧模型恢复免费，新模型透支时计费。
+    applyNaiRuntimeOverride({ freeMaxSteps: 28, usageLimitedModels: ['nai-diffusion-6-full'] });
+    assert.equal(estimateNovelAiGenerationCost(payload, true), 0);
+    assert.ok(estimateNovelAiGenerationCost({ ...payload, model: 'nai-diffusion-6-full' }, true) > 0);
+    assert.equal(estimateNovelAiGenerationCost({ ...payload, model: 'nai-diffusion-6-full' }, false), 0);
+  } finally {
+    applyNaiRuntimeOverride({
+      freeMaxSteps: DEFAULT_NAI_RUNTIME.freeMaxSteps,
+      usageLimitedModels: DEFAULT_NAI_RUNTIME.usageLimitedModels,
+    });
+  }
 });
 
 test('Precise Reference uses official V4.5 director fields without local IDs', () => {

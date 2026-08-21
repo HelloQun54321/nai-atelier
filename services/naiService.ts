@@ -3,7 +3,7 @@ import JSZip from 'jszip';
 import { NAIParams } from '../types';
 import { api } from './api';
 import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
-import { getNaiModelInfo, resolveNaiModelId } from './naiModels';
+import { DEFAULT_NAI_MODEL, getNaiModelInfo } from './naiModels';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 import { emitCloudQueueStatus, getCachedCloudQueuePreferences, getCloudQueuePreferences, scheduleCloudQueueStatusClear, watchCloudQueueTask } from './cloudQueue';
 
@@ -53,7 +53,8 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   // 3. AI's Choice Logic
   const useCoords = params.useCoords ?? hasCharacters;
 
-  const modelId = resolveNaiModelId(params.model);
+  // 未设置时用默认模型；未知标识（例如官方未来发布的新模型）原样透传，由服务端裁决。
+  const modelId = params.model?.trim() || DEFAULT_NAI_MODEL;
   const modelInfo = getNaiModelInfo(modelId);
   if (params.vibes?.enabled && params.vibes.slots.length > 0 && !modelInfo.supportsVibes) {
     throw new Error(`NovelAI ${modelInfo.label} 暂不支持 Vibe Transfer，请先移除 Vibe 或切换模型`);

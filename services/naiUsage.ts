@@ -37,9 +37,9 @@ export const usagePercentPerDay = (usage: NovelaiUsageState): number => {
   return Math.round((86400 / seconds) * 10) / 10;
 };
 
-/** 剩余可生成张数 ≈ 17.3 × 钳制后的百分比（官方 round(17.3 × percent)）。 */
-export const usageRemainingImages = (usage: NovelaiUsageState): number =>
-  Math.round(17.3 * clampUsagePercent(usage));
+/** 剩余可生成张数 ≈ 系数 × 钳制后的百分比（2026-08 官方系数为 17.3，由网关自动同步）。 */
+export const usageRemainingImages = (usage: NovelaiUsageState, imagesPerPercent = 17.3): number =>
+  Math.round(imagesPerPercent * clampUsagePercent(usage));
 
 export const NOVELAI_USAGE_REFRESH_EVENT = 'nai-novelai-usage-refresh';
 

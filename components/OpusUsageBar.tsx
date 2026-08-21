@@ -1,6 +1,7 @@
 import React from 'react';
 import { Gauge } from 'lucide-react';
 import { clampUsagePercent, usagePercentPerDay, usageRemainingImages, useNovelaiUsage } from '../services/naiUsage';
+import { useNaiRuntime } from '../services/naiRuntime';
 
 interface OpusUsageBarProps {
   collapsed: boolean;
@@ -12,18 +13,19 @@ interface OpusUsageBarProps {
  */
 export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
   const { usage, loading, refresh } = useNovelaiUsage();
+  const runtime = useNaiRuntime();
   if (!usage) {
     // 首次加载且可能存在数据时占位，避免侧栏高度跳动；确认无数据则完全不渲染。
     if (loading) return <div className="h-11 w-full" aria-hidden="true" />;
     return null;
   }
   const percent = clampUsagePercent(usage);
-  const images = usageRemainingImages(usage);
+  const images = usageRemainingImages(usage, runtime.imagesPerPercent);
   const perDay = usagePercentPerDay(usage);
   const negative = usage.isNegative;
   const title = `${negative
     ? 'Opus 限额已用尽：所有生图将消耗 Anlas，额度恢复后自动回到免费生成'
-    : `Opus 免费生成限额：剩余 ${percent}%（约 ${images} 张）· 每天恢复 ${perDay}%${perDay ? `（约 ${Math.round(17.3 * perDay)} 张）` : ''}`} · 仅 V5 等新模型受限，V4.5 及以下不限\n拼车账号额度全员共享，每分钟自动同步，点击立即刷新`;
+    : `Opus 免费生成限额：剩余 ${percent}%（约 ${images} 张）· 每天恢复 ${perDay}%${perDay ? `（约 ${Math.round(runtime.imagesPerPercent * perDay)} 张）` : ''}`} · 仅 V5 等新模型受限，V4.5 及以下不限\n拼车账号额度全员共享，每分钟自动同步，点击立即刷新`;
   return (
     <div
       role="status"

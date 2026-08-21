@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rename, rmdir, unlink, writeFile } f
 import { createServer, request as httpRequest } from 'node:http';
 import { connect as connectSocket } from 'node:net';
 import { availableParallelism, tmpdir, totalmem } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
@@ -532,7 +532,9 @@ export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = fals
   const area = Math.max(65_536, width * height);
   const steps = Math.max(1, Number(parameters.steps) || 1);
   const samples = Math.max(1, Math.floor(Number(parameters.n_samples) || 1));
-  const raw = Math.ceil(2.951823174884865e-6 * area + 5.753298233447344e-7 * area * steps);
+  // 系数与免费档门槛来自官方 Web 应用常量同步（见 DEFAULT_NAI_RUNTIME / syncNaiRuntime）。
+  const { costCoefficientArea, costCoefficientSteps, freeMaxArea, freeMaxSteps, usageLimitedModels } = getNaiRuntime();
+  const raw = Math.ceil(costCoefficientArea * area + costCoefficientSteps * area * steps);
   const smeaMultiplier = parameters.sm_dyn ? 1.4 : parameters.sm ? 1.2 : 1;
   const strength = parameters.mask
     ? Number(parameters.inpaintImg2ImgStrength ?? 1)
@@ -544,8 +546,8 @@ export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = fals
   // Precise Reference is a per-reference surcharge, not an img2img base image.
   const isPlainGeneration = payload?.action === 'generate' && !parameters.image && !parameters.mask;
   // Opus 免费额度仅对高于 V4.5 的模型（V5 系）设限；透支后所有图都按 Anlas 计费。
-  const isUsageLimitedModel = typeof payload?.model === 'string' && payload.model.startsWith('nai-diffusion-5');
-  const freeSamples = isPlainGeneration && !(opusUsageExhausted && isUsageLimitedModel) && area <= 1_048_576 && steps <= 28 ? 1 : 0;
+  const isUsageLimitedModel = typeof payload?.model === 'string' && usageLimitedModels.includes(payload.model);
+  const freeSamples = isPlainGeneration && !(opusUsageExhausted && isUsageLimitedModel) && area <= freeMaxArea && steps <= freeMaxSteps ? 1 : 0;
   const base = baseCost * Math.max(0, samples - freeSamples);
   const vibeCount = Array.isArray(parameters.reference_image_multiple_cached)
     ? parameters.reference_image_multiple_cached.length
@@ -673,6 +675,143 @@ export const sanitizeNovelAiSubscription = payload => {
 let lastKnownOpusUsageExhausted = false;
 let lastKnownOpusUsageAt = 0;
 const OPUS_USAGE_STALE_MS = 30_000;
+
+// ===== NovelAI Web 应用常量自动同步 =====
+// 官方未提供这些规则的查询接口（模型清单、Opus 限额换算系数、免费档门槛、
+// 成本公式系数均打包在官方 Web 应用 JS 内），因此定期抓取官方页面提取并缓存；
+// 提取失败时回退内置默认值，扣费与展示始终有可用数值，官方调整后无需改代码。
+export const DEFAULT_NAI_RUNTIME = {
+  /** Opus 限额剩余张数换算系数（官方 round(系数 × 百分比)，2026-08 版为 17.3）。 */
+  imagesPerPercent: 17.3,
+  costCoefficientArea: 2.951823174884865e-6,
+  costCoefficientSteps: 5.753298233447344e-7,
+  /** Opus 免费档门槛：无角色参考、面积与步数不超过上限。 */
+  freeMaxArea: 1_048_576,
+  freeMaxSteps: 28,
+  models: [
+    'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
+    'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
+    'nai-diffusion-4-5-full', 'nai-diffusion-4-5-full-inpainting',
+    'nai-diffusion-4-5-curated', 'nai-diffusion-4-5-curated-inpainting',
+    'nai-diffusion-4-full', 'nai-diffusion-4-full-inpainting',
+    'nai-diffusion-4-curated-preview',
+  ],
+  /** 受 Opus 免费限额约束的模型（官方仅对高于 V4.5 的模型启用）。 */
+  usageLimitedModels: [
+    'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
+    'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
+  ],
+};
+
+const NAI_WEBAPP_SOURCE = 'https://novelai.net/image';
+const NAI_RUNTIME_SYNC_FILE = join(process.cwd(), 'local-data', 'novelai-webapp-sync.json');
+const NAI_RUNTIME_SYNC_INTERVAL = 24 * 60 * 60 * 1000;
+let naiRuntimeState = { ...DEFAULT_NAI_RUNTIME, syncedAt: 0 };
+
+export const getNaiRuntime = () => naiRuntimeState;
+
+/** 仅供测试与内部覆盖，生产路径通过 syncNaiRuntime 写入。 */
+export const applyNaiRuntimeOverride = partial => {
+  naiRuntimeState = { ...naiRuntimeState, ...partial };
+};
+
+export const extractNaiImagesPerPercent = text => {
+  // 系数函数紧跟在 timeUntilNextPercent 的恢复速率函数之后，只在锚点后的小窗口
+  // 内查找，避免误匹配其他模块里同样形如 Math.round(N*var) 的代码。
+  const pattern = /Math\.round\((\d+(?:\.\d+)?)\*\w+\)\}/;
+  for (const anchor of text.matchAll(/timeUntilNextPercent/g)) {
+    const m = pattern.exec(text.slice(anchor.index, anchor.index + 400));
+    const value = m ? Number(m[1]) : NaN;
+    if (Number.isFinite(value) && value > 0 && value < 1000) return value;
+  }
+  return null;
+};
+
+export const extractNaiCostCoefficients = text => {
+  const m = text.match(/Math\.ceil\((\d+(?:\.\d+)?e-?\d+)\*\w+\+(\d+(?:\.\d+)?e-?\d+)\*\w+\*\w+\)/);
+  if (!m) return null;
+  const costCoefficientArea = Number(m[1]);
+  const costCoefficientSteps = Number(m[2]);
+  return costCoefficientArea > 0 && costCoefficientSteps > 0 ? { costCoefficientArea, costCoefficientSteps } : null;
+};
+
+export const extractNaiFreeTierLimits = text => {
+  const m = text.match(/!\w+\.characterRef&&\w+\.width\*\w+\.height<=(\d+)&&\w+\.steps<=(\d+)/);
+  if (!m) return null;
+  return { freeMaxArea: Number(m[1]), freeMaxSteps: Number(m[2]) };
+};
+
+/**
+ * 官方模型能力表的结构是 switch-case 分组：`case"id":case"id":{...opusUsageLimit:!0}`，
+ * 每个 case 组以一个 opusUsageLimit 结尾，据此归组得到全量模型清单与受限模型清单。
+ */
+export const extractNaiModelCapabilities = text => {
+  const events = [...text.matchAll(/case"(nai-diffusion-[^"]+)":/g)]
+    .map(m => ({ index: m.index, label: m[1] }));
+  const limits = [...text.matchAll(/opusUsageLimit:(!0|!1)/g)]
+    .map(m => ({ index: m.index, limited: m[1] === '!0' }));
+  const models = [];
+  const usageLimitedModels = [];
+  let buffered = [];
+  for (const event of [...events, ...limits].sort((a, b) => a.index - b.index)) {
+    if (event.label) {
+      buffered.push(event.label);
+      continue;
+    }
+    for (const label of buffered) {
+      if (!models.includes(label)) models.push(label);
+      if (event.limited && !usageLimitedModels.includes(label)) usageLimitedModels.push(label);
+    }
+    buffered = [];
+  }
+  return { models, usageLimitedModels };
+};
+
+export const syncNaiRuntime = async (requestRemote = fetch) => {
+  const html = await (await requestRemote(NAI_WEBAPP_SOURCE, { signal: AbortSignal.timeout(30_000) })).text();
+  const paths = [...new Set([...html.matchAll(/"(\/_next\/static\/chunks\/[^"]+\.js)"/g)].map(m => m[1]))];
+  if (!paths.length) return false;
+  const chunks = await Promise.all(paths.map(path =>
+    requestRemote(`https://novelai.net${path}`, { signal: AbortSignal.timeout(30_000) })
+      .then(response => (response.ok ? response.text() : ''))
+      .catch(() => '')));
+  const text = chunks.join('\n');
+  const next = { ...DEFAULT_NAI_RUNTIME };
+  const imagesPerPercent = extractNaiImagesPerPercent(text);
+  if (imagesPerPercent) next.imagesPerPercent = imagesPerPercent;
+  const coefficients = extractNaiCostCoefficients(text);
+  if (coefficients) Object.assign(next, coefficients);
+  const freeTier = extractNaiFreeTierLimits(text);
+  if (freeTier) Object.assign(next, freeTier);
+  const capabilities = extractNaiModelCapabilities(text);
+  if (capabilities.models.length) {
+    next.models = capabilities.models;
+    next.usageLimitedModels = capabilities.usageLimitedModels;
+  }
+  naiRuntimeState = { ...next, syncedAt: Date.now() };
+  try {
+    await mkdir(dirname(NAI_RUNTIME_SYNC_FILE), { recursive: true });
+    await writeFile(NAI_RUNTIME_SYNC_FILE, JSON.stringify({ syncedAt: naiRuntimeState.syncedAt, runtime: next }, null, 2), 'utf8');
+  } catch {
+    // 持久化失败只影响下次启动的初值，同步结果仍在本进程内生效。
+  }
+  return true;
+};
+
+const initNaiRuntimeSync = async () => {
+  try {
+    const saved = JSON.parse(await readFile(NAI_RUNTIME_SYNC_FILE, 'utf8'));
+    if (saved?.runtime) {
+      naiRuntimeState = { ...DEFAULT_NAI_RUNTIME, ...saved.runtime, syncedAt: Number(saved.syncedAt) || 0 };
+    }
+  } catch {
+    // 无历史同步时直接使用内置默认值。
+  }
+  // 启动即尝试同步一次，之后每天刷新；失败静默保留当前值。
+  const timer = setInterval(() => { void syncNaiRuntime().catch(() => {}); }, NAI_RUNTIME_SYNC_INTERVAL);
+  if (typeof timer.unref === 'function') timer.unref();
+  await syncNaiRuntime().catch(() => {});
+};
 
 export const generateWithVibeCacheRetry = async (
   payload,
@@ -1598,6 +1737,8 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
   await pixivGallery.init();
   await recoverPendingVibeEncodings(workerPort);
   stChatu8Bridge.startHistorySync();
+  // 后台同步官方 Web 应用常量（模型清单、限额换算、免费门槛、成本系数）。
+  void initNaiRuntimeSync();
 
   const historyIndexStatus = {
     running: false,
@@ -1991,6 +2132,11 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
       } catch (error) {
         return sendJson(res, 502, { error: error.message || 'NovelAI 订阅信息获取失败' });
       }
+    }
+    if (url.pathname === '/api/novelai-runtime') {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      return sendJson(res, 200, getNaiRuntime());
     }
     if (url.pathname === '/api/generation-queue/preferences') {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });

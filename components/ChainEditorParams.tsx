@@ -1,7 +1,8 @@
 
 import React from 'react';
 import { NAIParams } from '../types';
-import { NAI_MODELS, getNaiModelInfo } from '../services/naiModels';
+import { getNaiModelInfo, getSelectableNaiModels } from '../services/naiModels';
+import { useNaiRuntime } from '../services/naiRuntime';
 
 interface ChainEditorParamsProps {
     params: NAIParams;
@@ -18,6 +19,9 @@ const RESOLUTIONS = {
 };
 
 export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, setParams, canEdit, markChange, presetSource }) => {
+    // 网关自动同步的官方模型清单（未来新模型无需改代码即可出现在下拉里）。
+    const runtime = useNaiRuntime();
+    const selectableModels = getSelectableNaiModels(runtime);
 
     const handleResolutionChange = (mode: string) => {
         if (!canEdit && mode !== 'Custom') return;
@@ -113,10 +117,10 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                             markChange();
                         }}
                     >
-                        {NAI_MODELS.map(model => (
+                        {selectableModels.map(model => (
                             <option key={model.id} value={model.id}>NovelAI {model.label}</option>
                         ))}
-                        {params.model && !NAI_MODELS.some(model => model.id === params.model) && (
+                        {params.model && !selectableModels.some(model => model.id === params.model) && (
                             <option value={params.model}>未知模型（{params.model}）</option>
                         )}
                     </select>
