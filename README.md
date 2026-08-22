@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.98.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.99.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -136,7 +136,7 @@ flowchart LR
 - 图片尺寸、采样器、Steps、CFG、CFG Rescale、Variety+ 和 Seed
 - NovelAI V4.5 正面质量标签与负面预设
 - 生成结果预览、本地历史切换、下载和封面设置
-- 从 NovelAI PNG / JSON 元数据恢复 Prompt 与参数
+- 从 NovelAI PNG / JSON 元数据恢复 Prompt、对应模型与参数；导入前可预览并校正基础画风 / 主体的智能拆分结果
 
 ### 项目 Agent：不止生成一段文字
 

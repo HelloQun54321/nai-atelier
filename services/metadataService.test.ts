@@ -134,6 +134,16 @@ describe('NovelAI 标准 PNG 元数据', () => {
     expect(await extractNovelAiMetadataFromPng(buffer)).toBe(comment);
   });
 
+  it('合并独立 Source 文本块，以便识别图片模型', async () => {
+    const buffer = pngWithTextChunks(
+      textChunk('Source', 'NovelAI Diffusion V5 0ADF9AB7'),
+      textChunk('Comment', JSON.stringify({ prompt: '1girl', steps: 23 })),
+    );
+    const raw = await extractNovelAiMetadataFromPng(buffer);
+    expect(JSON.parse(raw!)).toMatchObject({ Source: 'NovelAI Diffusion V5 0ADF9AB7' });
+    expect(parseNovelAIMetadata(raw!).params.model).toBe('nai-diffusion-5-full');
+  });
+
   it('读取 UTF-8 iTXt Comment', async () => {
     const unicodeComment = JSON.stringify({ prompt: '少女、夜空', steps: 23 });
     const buffer = pngWithTextChunks(internationalTextChunk('Comment', unicodeComment));
@@ -192,6 +202,7 @@ describe('NovelAI Stealth PNG 元数据', () => {
     expect(raw).not.toBeNull();
     expect(JSON.parse(raw!)).toMatchObject(v5Comment);
     expect(parseNovelAIMetadata(raw!).params).toMatchObject({
+      model: 'nai-diffusion-5-full',
       width: 832,
       height: 1216,
       steps: 23,
@@ -199,6 +210,25 @@ describe('NovelAI Stealth PNG 元数据', () => {
       seed: 3908099454,
       sampler: 'k_euler_ancestral',
     });
+  });
+
+  it('按官方 Source 哈希区分 Full / Curated，并允许运行时新增映射', () => {
+    expect(parseNovelAIMetadata(JSON.stringify({
+      prompt: '1girl',
+      model_name: 'NovelAI Diffusion V4.5',
+      model_hash: '4BDE2A90',
+    })).params.model).toBe('nai-diffusion-4-5-full');
+    expect(parseNovelAIMetadata(JSON.stringify({
+      prompt: '1girl',
+      model_name: 'NovelAI Diffusion V5',
+      model_hash: 'UNKNOWN',
+    })).params.model).toBe('nai-diffusion-5-curated');
+    expect(parseNovelAIMetadata(JSON.stringify({
+      prompt: '1girl',
+      Source: 'NovelAI Diffusion V6 ABCDEF12',
+    }), undefined, {
+      'NovelAI Diffusion V6 ABCDEF12': 'nai-diffusion-6-full',
+    }).params.model).toBe('nai-diffusion-6-full');
   });
 
   it('拒绝声明长度超过图片容量的载荷', async () => {

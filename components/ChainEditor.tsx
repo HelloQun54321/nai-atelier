@@ -7,7 +7,7 @@ import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus'
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
 import { db } from '../services/dbService';
-import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData, extractRawMetadataFromJsonText } from '../services/metadataService';
+import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData, ParsedNAIData, extractRawMetadataFromJsonText } from '../services/metadataService';
 import { ChainEditorParams } from './ChainEditorParams';
 import { isInternalChainTag } from './DesignSystem';
 import { ChainEditorPreview } from './ChainEditorPreview';
@@ -23,6 +23,8 @@ import { estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostL
 import { useNovelaiUsage } from '../services/naiUsage';
 import { getNaiModelInfo } from '../services/naiModels';
 import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
+import { splitNovelAiPrompt, PromptImportSplit } from '../services/promptImport';
+import { MetadataImportChoice, MetadataImportDialog } from './MetadataImportDialog';
 import { ArrowLeft, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, UserRound, X } from 'lucide-react';
 
 const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
@@ -248,6 +250,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [isImportDragActive, setIsImportDragActive] = useState(false);
     const [showJsonPasteModal, setShowJsonPasteModal] = useState(false);
     const [jsonPasteText, setJsonPasteText] = useState('');
+    const [pendingMetadataImport, setPendingMetadataImport] = useState<{
+        sourceLabel: string;
+        parsed: ParsedNAIData;
+        smartSplit: PromptImportSplit;
+    } | null>(null);
     const [taggerOpen, setTaggerOpen] = useState(false);
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
     const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<PromptAgentDraft | null>(null);
@@ -757,38 +764,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             return;
         }
 
-        if (!await confirmAction({
-            title: '覆盖当前提示词和参数？',
-            message: `将把该${sourceLabel}的整图主提示词放入“主体／变量提示词”，同时清空旧的基础画风，避免与导入内容重复叠加。\n负面提示词、角色专属提示词和参数也会一并恢复，模块不会修改。`,
-            confirmLabel: '确认覆盖',
-        })) return;
-
         try {
-            // 调用公共解析服务
-            const parsed = parseNovelAIMetadata(rawMeta, params);
-            setBasePrompt('');
-            setSubjectPrompt(parsed.prompt);
-            setNegativePrompt(parsed.negativePrompt);
-            setParams(parsed.params);
-            clearPresetSources();
-            markChange();
-            notify('已将整图提示词导入主体／变量区域，并恢复角色与生成参数。');
-            void db.logClientEvent({
-                category: 'client',
-                action: 'metadata_import',
-                resourceType: chain.id === 'playground' ? 'playground' : 'chain',
-                resourceId: chain.id,
-                message: `从${sourceLabel}导入元数据`,
-                metadata: {
-                    source: sourceLabel,
-                    chainName,
-                    promptLength: parsed.prompt.length,
-                    negativeLength: parsed.negativePrompt.length,
-                    width: parsed.params.width,
-                    height: parsed.params.height,
-                    seed: parsed.params.seed ?? 'random',
-                },
-            }).catch(console.error);
+            const parsed = parseNovelAIMetadata(rawMeta, params, naiRuntimeConfig?.metadataModelMappings);
+            const smartSplit = await splitNovelAiPrompt(parsed.prompt);
+            setPendingMetadataImport({ sourceLabel, parsed, smartSplit });
         } catch (e: any) {
             notify('解析失败: ' + e.message, 'error');
             void db.logClientEvent({
@@ -801,6 +780,39 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 metadata: { source: sourceLabel, error: e.message },
             }).catch(console.error);
         }
+    };
+
+    const confirmMetadataImport = (choice: MetadataImportChoice) => {
+        if (!pendingMetadataImport) return;
+        const { parsed, sourceLabel } = pendingMetadataImport;
+        setBasePrompt(choice.basePrompt);
+        setSubjectPrompt(choice.subjectPrompt);
+        setNegativePrompt(parsed.negativePrompt);
+        setParams(parsed.params);
+        clearPresetSources();
+        markChange();
+        setPendingMetadataImport(null);
+        notify(choice.mode === 'smart'
+            ? '已按预览拆分提示词，并恢复角色与生成参数。'
+            : '已将完整提示词导入主体区域，并恢复角色与生成参数。');
+        void db.logClientEvent({
+            category: 'client',
+            action: 'metadata_import',
+            resourceType: chain.id === 'playground' ? 'playground' : 'chain',
+            resourceId: chain.id,
+            message: `从${sourceLabel}导入元数据`,
+            metadata: {
+                source: sourceLabel,
+                splitMode: choice.mode,
+                chainName,
+                promptLength: parsed.prompt.length,
+                negativeLength: parsed.negativePrompt.length,
+                model: parsed.params.model,
+                width: parsed.params.width,
+                height: parsed.params.height,
+                seed: parsed.params.seed ?? 'random',
+            },
+        }).catch(console.error);
     };
 
     const importMetadataFile = async (file: File) => {
@@ -1872,7 +1884,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
             </div>
 
-            {!lightboxImg && !showImportPreset && !importCandidate && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
+            {!lightboxImg && !showImportPreset && !importCandidate && !showJsonPasteModal && !pendingMetadataImport && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
                 {(displayedPreviewImage || chain.previewImage) && <button type="button" onClick={() => setLightboxImg(displayedPreviewImage || chain.previewImage || null)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-700" aria-label="查看最近生成结果"><SmartImage src={displayedPreviewImage || chain.previewImage || ''} alt="最近生成结果" /></button>}
                 {queueStatus
                     ? <InlineCloudQueueStatus compact className="min-w-64 max-w-[calc(100vw-5rem)]" />
@@ -1922,6 +1934,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                 </div>
+            )}
+
+            {pendingMetadataImport && (
+                <MetadataImportDialog
+                    sourceLabel={pendingMetadataImport.sourceLabel}
+                    parsed={pendingMetadataImport.parsed}
+                    smartSplit={pendingMetadataImport.smartSplit}
+                    onCancel={() => setPendingMetadataImport(null)}
+                    onConfirm={confirmMetadataImport}
+                />
             )}
 
             {/* Paste JSON Metadata Modal */}

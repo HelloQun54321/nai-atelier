@@ -789,6 +789,28 @@ export const DEFAULT_NAI_RUNTIME = {
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
     'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
   ],
+  /** NovelAI PNG 的 Source 字段到 API model_version 的精确映射。 */
+  metadataModelMappings: {
+    'NovelAI Diffusion V5 657484A5': 'nai-diffusion-5-full',
+    'NovelAI Diffusion V5 0ADF9AB7': 'nai-diffusion-5-full',
+    'NovelAI Diffusion V4.5 4BDE2A90': 'nai-diffusion-4-5-full',
+    'NovelAI Diffusion V4.5 1229B44F': 'nai-diffusion-4-5-full',
+    'NovelAI Diffusion V4.5 B9F340FD': 'nai-diffusion-4-5-full',
+    'NovelAI Diffusion V4.5 F3D95188': 'nai-diffusion-4-5-full',
+    'NovelAI Diffusion V4.5 C02D4F98': 'nai-diffusion-4-5-curated',
+    'NovelAI Diffusion V4.5 5AB81C7C': 'nai-diffusion-4-5-curated',
+    'NovelAI Diffusion V4.5 B5A2A797': 'nai-diffusion-4-5-curated',
+    'NovelAI Diffusion V4 5AB81C7C': 'nai-diffusion-4-5-curated',
+    'NovelAI Diffusion V4 B5A2A797': 'nai-diffusion-4-5-curated',
+    'NovelAI Diffusion V4 37442FCA': 'nai-diffusion-4-full',
+    'NovelAI Diffusion V4 4F49EC75': 'nai-diffusion-4-full',
+    'NovelAI Diffusion V4 CA4B7203': 'nai-diffusion-4-full',
+    'NovelAI Diffusion V4 79F47848': 'nai-diffusion-4-full',
+    'NovelAI Diffusion V4 F6302A9D': 'nai-diffusion-4-full',
+    'NovelAI Diffusion V4 7ABFFA2A': 'nai-diffusion-4-curated-preview',
+    'NovelAI Diffusion V4 C1CCBA86': 'nai-diffusion-4-curated-preview',
+    'NovelAI Diffusion V4 770A9E12': 'nai-diffusion-4-curated-preview',
+  },
 };
 
 const NAI_WEBAPP_SOURCE = 'https://novelai.net/image';
@@ -863,6 +885,26 @@ export const extractNaiModelCapabilities = text => {
   return { models, usageLimitedModels };
 };
 
+/**
+ * 官方图片导入器以 Source（模型展示名 + 哈希）switch-case 还原 API 模型。
+ * 这里只提取明确列出的哈希分支；每代未知哈希的默认分支由前端保守处理。
+ */
+export const extractNaiMetadataModelMappings = text => {
+  const mappings = {};
+  const groups = text.matchAll(/((?:case\s*"NovelAI Diffusion [^"]+"\s*:)+)\s*return\s+[\w$]+\.oM\.([\w$]+)/g);
+  for (const group of groups) {
+    const enumModel = group[2].match(/^naiDiffusionV?(\d+)(?:_(\d+))?(Full|Curated)(Preview)?$/i);
+    const model = enumModel
+      ? `nai-diffusion-${enumModel[1]}${enumModel[2] ? `-${enumModel[2]}` : ''}-${enumModel[3].toLowerCase()}${enumModel[4] ? '-preview' : ''}`
+      : null;
+    if (!model) continue;
+    for (const source of group[1].matchAll(/case\s*"([^"]+)"\s*:/g)) {
+      mappings[source[1]] = model;
+    }
+  }
+  return mappings;
+};
+
 /** 带短暂退避的官方 bundle 文本请求；单个 chunk 抖动时不应直接污染整次同步。 */
 export const fetchNaiRuntimeText = async (url, requestRemote = fetch, retryDelays = NAI_RUNTIME_REQUEST_RETRY_DELAYS_MS) => {
   let lastError = null;
@@ -911,6 +953,11 @@ export const computeNaiRuntimeSync = text => {
     next.usageLimitedModels = capabilities.usageLimitedModels;
     health.extracted.push('models');
   } else health.missed.push('models');
+  const metadataModelMappings = extractNaiMetadataModelMappings(text);
+  if (Object.keys(metadataModelMappings).length) {
+    next.metadataModelMappings = metadataModelMappings;
+    health.extracted.push('metadataModels');
+  } else health.missed.push('metadataModels');
   // 页面抓到了却一项都没提取到，几乎可以确定官方改版或提取器失效。
   health.ok = health.extracted.length > 0;
   return { runtime: next, health };
@@ -929,6 +976,7 @@ const persistNaiRuntimeState = async () => {
         freeMaxSteps: naiRuntimeState.freeMaxSteps,
         models: naiRuntimeState.models,
         usageLimitedModels: naiRuntimeState.usageLimitedModels,
+        metadataModelMappings: naiRuntimeState.metadataModelMappings,
       },
       health: naiRuntimeState.health,
     }, null, 2), 'utf8');

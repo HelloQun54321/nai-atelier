@@ -41,6 +41,14 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
         return 'Custom';
     };
 
+    const currentModelInfo = getNaiModelInfo(params.model);
+    const missingModelFeatures = currentModelInfo.id === (params.model ?? currentModelInfo.id)
+        ? [
+            !currentModelInfo.supportsVibes ? 'Vibe Transfer' : null,
+            !currentModelInfo.supportsCharacterReferences ? '角色参考' : null,
+        ].filter((value): value is string => Boolean(value))
+        : [];
+
     return (
         <section className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
             <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
@@ -105,8 +113,8 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 </div>
             </div>
 
-            <div className="chain-editor-param-grid grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
-                <div className="flex flex-col gap-1">
+            <div className="chain-editor-param-grid mb-4 grid grid-cols-2 gap-2 border-b border-gray-100 pb-4 dark:border-gray-700 md:grid-cols-4 md:gap-4 lg:grid-cols-6">
+                <div className="col-span-2 flex min-w-0 flex-col gap-1">
                     <label className="text-xs text-gray-500 dark:text-gray-500 block">生成模型</label>
                     <select
                         disabled={!canEdit}
@@ -124,16 +132,6 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                             <option value={params.model}>未知模型（{params.model}）</option>
                         )}
                     </select>
-                    {(() => {
-                        const info = getNaiModelInfo(params.model);
-                        if (info.id !== (params.model ?? info.id)) return null;
-                        const missing = [
-                            !info.supportsVibes ? 'Vibe Transfer' : null,
-                            !info.supportsCharacterReferences ? '角色参考' : null,
-                        ].filter(Boolean);
-                        if (!missing.length) return null;
-                        return <p className="text-[10px] leading-tight text-amber-600 dark:text-amber-400">{info.label} 暂不支持 {missing.join(' / ')}</p>;
-                    })()}
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -204,6 +202,12 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                         }}
                     />
                 </div>
+
+                {missingModelFeatures.length > 0 && (
+                    <p className="col-span-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-[11px] leading-4 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 md:col-span-4 lg:col-span-6">
+                        {currentModelInfo.label} 暂不支持 {missingModelFeatures.join(' / ')}
+                    </p>
+                )}
             </div>
 
             {/* Advanced Scales */}

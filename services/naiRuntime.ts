@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { DEFAULT_NAI_METADATA_MODEL_MAPPINGS } from './naiModels';
 
 /**
  * NovelAI 运行时常量（模型清单、限额换算系数、免费档门槛、成本公式系数）。
@@ -26,6 +27,8 @@ export interface NaiRuntimeConfig {
   freeMaxSteps: number;
   models: string[];
   usageLimitedModels: string[];
+  /** NovelAI PNG Source 文本到 API 模型标识的官方精确映射。 */
+  metadataModelMappings: Record<string, string>;
   syncedAt?: number;
   health?: NaiRuntimeHealth;
 }
@@ -48,6 +51,7 @@ export const DEFAULT_NAI_RUNTIME: NaiRuntimeConfig = {
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
     'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
   ],
+  metadataModelMappings: { ...DEFAULT_NAI_METADATA_MODEL_MAPPINGS },
 };
 
 let cachedConfig: NaiRuntimeConfig | null = null;

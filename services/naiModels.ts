@@ -34,6 +34,68 @@ export const NAI_MODELS: NaiModelInfo[] = [
 
 export const DEFAULT_NAI_MODEL = 'nai-diffusion-4-5-full';
 
+/**
+ * NovelAI PNG 的 Source / model_name + model_hash 与 API model_version 的对应关系。
+ * 精确哈希会由网关从官方 Web 应用同步；这里保留当前官方映射作为离线回退。
+ */
+export const DEFAULT_NAI_METADATA_MODEL_MAPPINGS: Record<string, string> = {
+  'NovelAI Diffusion V5 657484A5': 'nai-diffusion-5-full',
+  'NovelAI Diffusion V5 0ADF9AB7': 'nai-diffusion-5-full',
+  'NovelAI Diffusion V4.5 4BDE2A90': 'nai-diffusion-4-5-full',
+  'NovelAI Diffusion V4.5 1229B44F': 'nai-diffusion-4-5-full',
+  'NovelAI Diffusion V4.5 B9F340FD': 'nai-diffusion-4-5-full',
+  'NovelAI Diffusion V4.5 F3D95188': 'nai-diffusion-4-5-full',
+  'NovelAI Diffusion V4.5 C02D4F98': 'nai-diffusion-4-5-curated',
+  'NovelAI Diffusion V4.5 5AB81C7C': 'nai-diffusion-4-5-curated',
+  'NovelAI Diffusion V4.5 B5A2A797': 'nai-diffusion-4-5-curated',
+  'NovelAI Diffusion V4 5AB81C7C': 'nai-diffusion-4-5-curated',
+  'NovelAI Diffusion V4 B5A2A797': 'nai-diffusion-4-5-curated',
+  'NovelAI Diffusion V4 37442FCA': 'nai-diffusion-4-full',
+  'NovelAI Diffusion V4 4F49EC75': 'nai-diffusion-4-full',
+  'NovelAI Diffusion V4 CA4B7203': 'nai-diffusion-4-full',
+  'NovelAI Diffusion V4 79F47848': 'nai-diffusion-4-full',
+  'NovelAI Diffusion V4 F6302A9D': 'nai-diffusion-4-full',
+  'NovelAI Diffusion V4 7ABFFA2A': 'nai-diffusion-4-curated-preview',
+  'NovelAI Diffusion V4 C1CCBA86': 'nai-diffusion-4-curated-preview',
+  'NovelAI Diffusion V4 770A9E12': 'nai-diffusion-4-curated-preview',
+};
+
+export interface NaiMetadataModelFields {
+  model?: unknown;
+  Source?: unknown;
+  source?: unknown;
+  model_name?: unknown;
+  model_hash?: unknown;
+}
+
+/** 从 NovelAI 图片元数据识别 API 模型；未知哈希按官方各代默认分支回退。 */
+export const resolveNaiMetadataModel = (
+  metadata: NaiMetadataModelFields,
+  runtimeMappings: Record<string, string> = {},
+): string | undefined => {
+  if (typeof metadata.model === 'string' && metadata.model.startsWith('nai-diffusion-')) {
+    return metadata.model;
+  }
+
+  const source = typeof metadata.Source === 'string'
+    ? metadata.Source.trim()
+    : typeof metadata.source === 'string'
+      ? metadata.source.trim()
+      : '';
+  const modelName = typeof metadata.model_name === 'string' ? metadata.model_name.trim() : '';
+  const modelHash = typeof metadata.model_hash === 'string' ? metadata.model_hash.trim().toUpperCase() : '';
+  const generatedSource = [modelName, modelHash].filter(Boolean).join(' ');
+  const mappings = { ...DEFAULT_NAI_METADATA_MODEL_MAPPINGS, ...runtimeMappings };
+  const exact = mappings[source] || mappings[generatedSource];
+  if (exact) return exact;
+
+  const family = `${source} ${modelName}`.toLowerCase();
+  if (/novelai diffusion v5(?:\s|$)/.test(family)) return 'nai-diffusion-5-curated';
+  if (/novelai diffusion v4\.5(?:\s|$)/.test(family)) return 'nai-diffusion-4-5-curated';
+  if (/novelai diffusion v4(?:\s|$)/.test(family)) return 'nai-diffusion-4-curated-preview';
+  return undefined;
+};
+
 /** 未知标识（例如导入的元数据）回退到默认模型信息，保证旧数据行为不变。 */
 export const getNaiModelInfo = (model?: string): NaiModelInfo =>
   NAI_MODELS.find(item => item.id === model) || NAI_MODELS.find(item => item.id === DEFAULT_NAI_MODEL)!;

@@ -18,6 +18,7 @@ import {
   extractNaiCostCoefficients,
   extractNaiFreeTierLimits,
   extractNaiModelCapabilities,
+  extractNaiMetadataModelMappings,
   fetchNaiRuntimeText,
   computeNaiRuntimeSync,
   computeGenerationPersonalUsage,
@@ -743,6 +744,15 @@ test('官方 Web 应用常量提取器解析真实压缩代码片段', () => {
   assert.deepEqual(capabilities.usageLimitedModels, [
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting', 'nai-diffusion-6-full',
   ]);
+
+  const metadataModels = 'switch(e){case"NovelAI Diffusion V5 657484A5":case"NovelAI Diffusion V5 0ADF9AB7":return i.oM.naiDiffusionV5Full;case"NovelAI Diffusion V4.5 4BDE2A90":return i.oM.naiDiffusionV4_5Full;case"NovelAI Diffusion V4 7ABFFA2A":return i.oM.naiDiffusionV4CuratedPreview;case"NovelAI Diffusion V6 ABCDEF12":return i.oM.naiDiffusionV6Full}';
+  assert.deepEqual(extractNaiMetadataModelMappings(metadataModels), {
+    'NovelAI Diffusion V5 657484A5': 'nai-diffusion-5-full',
+    'NovelAI Diffusion V5 0ADF9AB7': 'nai-diffusion-5-full',
+    'NovelAI Diffusion V4.5 4BDE2A90': 'nai-diffusion-4-5-full',
+    'NovelAI Diffusion V4 7ABFFA2A': 'nai-diffusion-4-curated-preview',
+    'NovelAI Diffusion V6 ABCDEF12': 'nai-diffusion-6-full',
+  });
 });
 
 test('官方 bundle 请求在临时失败后自动重试', async () => {
@@ -781,6 +791,7 @@ test('同步健康记录：全部命中 / 全部失效 / 部分失效', () => {
     'return Math.ceil(2951823174884865e-21*i+5753298233447344e-22*i*a)',
     'function C(e){return!e.characterRef&&e.width*e.height<=1048576&&e.steps<=28}',
     'case"nai-diffusion-5-full":{opusUsageLimit:!0};case"nai-diffusion-4-5-full":{opusUsageLimit:!1}',
+    'case"NovelAI Diffusion V5 657484A5":case"NovelAI Diffusion V5 0ADF9AB7":return i.oM.naiDiffusionV5Full',
   ].join('\n');
   const full = computeNaiRuntimeSync(fullBundle);
   assert.equal(full.health.ok, true);
@@ -790,14 +801,14 @@ test('同步健康记录：全部命中 / 全部失效 / 部分失效', () => {
   // 官方改版后一项都提取不到：健康标记为失效，运行时保持内置默认值。
   const broken = computeNaiRuntimeSync('console.log("redesigned site")');
   assert.equal(broken.health.ok, false);
-  assert.equal(broken.health.missed.length, 4);
+  assert.equal(broken.health.missed.length, 5);
   assert.equal(broken.runtime.imagesPerPercent, DEFAULT_NAI_RUNTIME.imagesPerPercent);
   assert.deepEqual(broken.runtime.models, DEFAULT_NAI_RUNTIME.models);
 
   // 部分命中（例如只剩模型表）：正常可用但记录缺项，供前端示警。
   const partial = computeNaiRuntimeSync('case"nai-diffusion-5-full":{opusUsageLimit:!0}');
   assert.equal(partial.health.ok, true);
-  assert.deepEqual(partial.health.missed, ['imagesPerPercent', 'costCoefficients', 'freeTier']);
+  assert.deepEqual(partial.health.missed, ['imagesPerPercent', 'costCoefficients', 'freeTier', 'metadataModels']);
   assert.equal(partial.runtime.models.length, 1);
 });
 

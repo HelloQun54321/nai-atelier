@@ -12,6 +12,7 @@
 import { NAIParams, CharacterParams } from '../types';
 import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
 import { createUuid } from './id';
+import { resolveNaiMetadataModel } from './naiModels';
 
 // ========== 类型定义 ==========
 
@@ -138,7 +139,8 @@ export const extractRawMetadataFromJsonText = (jsonText: string): string => {
  */
 export const parseNovelAIMetadata = (
     rawMetadata: string,
-    baseParams?: Partial<NAIParams>
+    baseParams?: Partial<NAIParams>,
+    metadataModelMappings?: Record<string, string>,
 ): ParsedNAIData => {
     // 默认参数基底
     const defaultParams: NAIParams = {
@@ -174,8 +176,9 @@ export const parseNovelAIMetadata = (
             if (json.scale != null) newParams.scale = json.scale;
             if (json.seed != null && json.seed !== 0) newParams.seed = json.seed;
             if (json.sampler) newParams.sampler = json.sampler;
-            // 模型标识（V4/V4.5/V5 系列共用 v4_prompt 结构，可直接沿用）
-            if (typeof json.model === 'string' && json.model.startsWith('nai-diffusion-')) newParams.model = json.model;
+            // 官方图片通常只记录模型展示名与哈希；精确映射由网关从官方前端同步。
+            const importedModel = resolveNaiMetadataModel(json, metadataModelMappings);
+            if (importedModel) newParams.model = importedModel;
             if (json.width != null) newParams.width = json.width;
             if (json.height != null) newParams.height = json.height;
 
@@ -476,12 +479,13 @@ const decodePngTextChunk = async (type: string, data: Uint8Array): Promise<PngTe
 };
 
 const selectNovelAiGenerationMetadata = (entries: PngTextEntry[]): string | null => {
+    const source = entries.find(entry => entry.keyword === 'Source')?.text.trim();
     const candidates = entries
         .filter(entry => ['Comment', 'Description', 'Stealth'].includes(entry.keyword))
         .sort((left, right) => metadataKeywordPriority(left.keyword) - metadataKeywordPriority(right.keyword));
 
     for (const candidate of candidates) {
-        const normalized = normalizeNovelAiMetadataCandidate(candidate.text);
+        const normalized = normalizeNovelAiMetadataCandidate(candidate.text, source);
         if (normalized) return normalized;
     }
     return null;
@@ -493,7 +497,7 @@ const metadataKeywordPriority = (keyword: string): number => {
     return 2;
 };
 
-const normalizeNovelAiMetadataCandidate = (text: string): string | null => {
+const normalizeNovelAiMetadataCandidate = (text: string, inheritedSource?: string): string | null => {
     const trimmed = text.trim();
     if (!trimmed) return null;
 
@@ -502,15 +506,25 @@ const normalizeNovelAiMetadataCandidate = (text: string): string | null => {
             const json = JSON.parse(trimmed);
             if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
 
+            const source = typeof json.Source === 'string'
+                ? json.Source.trim()
+                : typeof json.source === 'string'
+                    ? json.source.trim()
+                    : inheritedSource;
+            const withSource = (value: Record<string, unknown>) => JSON.stringify(
+                source && typeof value.Source !== 'string' && typeof value.source !== 'string'
+                    ? { ...value, Source: source }
+                    : value,
+            );
             const comment = json.Comment ?? json.comment;
             if (comment && typeof comment === 'object') {
-                return hasNovelAiGenerationFields(comment) ? JSON.stringify(comment) : null;
+                return hasNovelAiGenerationFields(comment) ? withSource(comment) : null;
             }
             if (typeof comment === 'string') {
-                const normalizedComment = normalizeNovelAiMetadataCandidate(comment);
+                const normalizedComment = normalizeNovelAiMetadataCandidate(comment, source);
                 if (normalizedComment) return normalizedComment;
             }
-            if (hasNovelAiGenerationFields(json)) return trimmed;
+            if (hasNovelAiGenerationFields(json)) return withSource(json);
         } catch {
             return null;
         }
