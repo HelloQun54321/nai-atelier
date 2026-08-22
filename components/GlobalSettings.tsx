@@ -12,6 +12,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { DesktopImageColumns, getMobileImageDisplayPreferences, MobileImageColumns, MobileImageLayout, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { anlasBudgetService, DEFAULT_ANLAS_BUDGET, useAnlasBudget } from '../services/anlasBudget';
 import { CLOUD_QUEUE_SERVICE_URL, getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
+import { naiKeyVault, NaiKeyEntry } from '../services/naiKeyVault';
 import { PromptAgentSettings } from './PromptAgentSettings';
 import {
   AppearancePreferences,
@@ -101,11 +102,16 @@ const ACCENT_PRESETS = [
 
 const readApiKey = () => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '';
 
+const maskNaiKeyForDisplay = (key: string) => {
+  const trimmed = key.trim();
+  if (trimmed.length <= 8) return trimmed ? '****' : '';
+  return `${trimmed.slice(0, 6)}…${trimmed.slice(-4)}`;
+};
+
 export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, initialSection = 'home', notify, isDark, themeMode, setThemeMode, appearancePreferences, setAppearancePreferences, safeMode, safeModeHideTitles, setSafeModeHideTitles, toggleSafeMode }) => {
   const confirmAction = useConfirmDialog();
   const [apiKey, setApiKey] = useState(readApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(() => localStorage.getItem('nai_api_key') !== null);
-  const [showApiKey, setShowApiKey] = useState(false);
   const [cloudQueue, setCloudQueue] = useState(getCachedCloudQueuePreferences);
   const [mobileCacheStats, setMobileCacheStats] = useState(getMobileCacheStats);
   const [imageDisplay, setImageDisplay] = useState(getMobileImageDisplayPreferences);
@@ -189,6 +195,67 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     setRememberApiKey(remember);
     if (remember && apiKey) localStorage.setItem('nai_api_key', apiKey);
     else localStorage.removeItem('nai_api_key');
+  };
+
+  // ---- 多密钥保管箱 ----
+  const [keyVault, setKeyVault] = useState<NaiKeyEntry[]>([]);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [newKeyValue, setNewKeyValue] = useState('');
+  const [renamingKeyId, setRenamingKeyId] = useState('');
+  const [renameValue, setRenameValue] = useState('');
+  const [showNewKeyValue, setShowNewKeyValue] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setKeyVault(naiKeyVault.list());
+  }, [open]);
+
+  const refreshVault = () => setKeyVault(naiKeyVault.list());
+
+  const activateKeyEntry = (entry: NaiKeyEntry) => {
+    if (entry.key === readApiKey()) return;
+    naiKeyVault.activate(entry, rememberApiKey);
+    setApiKey(entry.key);
+    notify(`已切换到「${entry.name}」`, 'success');
+  };
+
+  const addKeyEntry = () => {
+    const entry = naiKeyVault.add(newKeyName, newKeyValue);
+    if (!entry) {
+      notify('密钥为空，或与已有条目重复', 'error');
+      return;
+    }
+    setNewKeyName('');
+    setNewKeyValue('');
+    refreshVault();
+    notify(`已添加「${entry.name}」`, 'success');
+  };
+
+  const removeKeyEntry = async (entry: NaiKeyEntry) => {
+    const active = entry.key === readApiKey();
+    if (!await confirmAction({
+      title: `删除密钥「${entry.name}」？`,
+      message: `仅从本机保管箱移除 ${maskNaiKeyForDisplay(entry.key)}${active ? '（当前正在使用，删除后需要重新选择密钥）' : ''}，不影响 NovelAI 账号本身。`,
+      confirmLabel: '删除',
+      tone: 'danger',
+    })) return;
+    naiKeyVault.remove(entry.id);
+    if (active) {
+      naiKeyVault.clearActive();
+      setApiKey('');
+    }
+    refreshVault();
+    notify('密钥已删除');
+  };
+
+  const commitRename = (entry: NaiKeyEntry) => {
+    if (!renameValue.trim()) {
+      setRenamingKeyId('');
+      return;
+    }
+    setKeyVault(naiKeyVault.rename(entry.id, renameValue));
+    setRenamingKeyId('');
+    notify('备注已更新');
   };
 
   const updateCloudQueue = (patch: Partial<typeof cloudQueue>) => {
@@ -343,25 +410,78 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           </section>
           <section id={`settings-novelai`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'novelai' ? 'hidden' : ''}`}>
             {activeSection === 'novelai' && <div>
-            <div className="flex gap-2">
+            {/* 密钥保管箱：多把密钥 + 命名备注，点击使用即切换 */}
+            <div className="space-y-2">
+              {keyVault.length === 0 && (
+                <p className="rounded-lg border border-dashed border-gray-300 px-3 py-4 text-center text-xs text-gray-500 dark:border-gray-600 dark:text-gray-400">还没有保存的密钥，在下方添加第一把。</p>
+              )}
+              {keyVault.map(entry => {
+                const active = entry.key === apiKey;
+                return (
+                  <div key={entry.id} className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${active ? 'border-indigo-300 bg-indigo-50/70 dark:border-indigo-500/40 dark:bg-indigo-950/30' : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/60'}`}>
+                    {renamingKeyId === entry.id ? (
+                      <input
+                        autoFocus
+                        value={renameValue}
+                        onChange={event => setRenameValue(event.target.value)}
+                        onKeyDown={event => {
+                          if (event.key === 'Enter') commitRename(entry);
+                          if (event.key === 'Escape') setRenamingKeyId('');
+                        }}
+                        onBlur={() => commitRename(entry)}
+                        maxLength={30}
+                        className="min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-2 py-1 text-sm outline-none dark:border-indigo-500/50 dark:bg-gray-900"
+                        aria-label="密钥备注名"
+                      />
+                    ) : (
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-bold text-gray-800 dark:text-gray-100" title={entry.name}>{entry.name}</span>
+                          {active && <span className="flex-none rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white">当前</span>}
+                        </div>
+                        <p className="mt-0.5 truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">{maskNaiKeyForDisplay(entry.key)}</p>
+                      </div>
+                    )}
+                    <div className="flex flex-none items-center gap-1">
+                      <button type="button" onClick={() => { setRenamingKeyId(entry.id); setRenameValue(entry.name); }} className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700" title="修改备注名">备注</button>
+                      {renamingKeyId !== entry.id && !active && <button type="button" onClick={() => activateKeyEntry(entry)} className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-indigo-500">使用</button>}
+                      {renamingKeyId !== entry.id && <button type="button" onClick={() => void removeKeyEntry(entry)} className="rounded-lg px-2 py-1 text-xs text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40" title="删除">删除</button>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-3 space-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+              <div className="text-xs font-bold text-gray-500 dark:text-gray-400">添加密钥</div>
               <input
-                type={showApiKey ? 'text' : 'password'}
-                value={apiKey}
-                onChange={event => updateApiKey(event.target.value.trim())}
-                placeholder="输入 NovelAI API Key"
-                autoComplete="off"
-                className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-                aria-label="NovelAI API Key"
+                value={newKeyName}
+                onChange={event => setNewKeyName(event.target.value)}
+                maxLength={30}
+                placeholder="备注名（例如：车队 A / 备用号）"
+                className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                aria-label="密钥备注名"
               />
-              <button type="button" onClick={() => setShowApiKey(value => !value)} className="rounded-lg border border-gray-300 px-3 text-sm text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
-                {showApiKey ? '隐藏' : '显示'}
-              </button>
+              <div className="flex gap-2">
+                <input
+                  type={showNewKeyValue ? 'text' : 'password'}
+                  value={newKeyValue}
+                  onChange={event => setNewKeyValue(event.target.value.trim())}
+                  placeholder="NovelAI API Key（pst-…）"
+                  autoComplete="off"
+                  className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                  aria-label="NovelAI API Key"
+                />
+                <button type="button" onClick={() => setShowNewKeyValue(value => !value)} className="rounded-lg border border-gray-300 px-3 text-sm text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+                  {showNewKeyValue ? '隐藏' : '显示'}
+                </button>
+                <button type="button" onClick={addKeyEntry} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-bold text-white hover:bg-indigo-500">添加</button>
+              </div>
             </div>
             <label className="mt-3 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
               <input type="checkbox" checked={rememberApiKey} onChange={event => updateRememberApiKey(event.target.checked)} className="rounded border-gray-300 text-indigo-600" />
-              在本机记住 API Key
+              在本机记住当前使用的 API Key
             </label>
-            <p className="mt-2 text-xs leading-relaxed text-amber-600 dark:text-amber-400">不勾选时仅保留到当前浏览器会话结束；浏览器前端无法对密钥提供真正的加密保护。</p>
+            <p className="mt-2 text-xs leading-relaxed text-amber-600 dark:text-amber-400">保管箱与备注保存在本机浏览器；不勾选时当前密钥仅保留到浏览器会话结束。浏览器前端无法对密钥提供真正的加密保护。</p>
             <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
               <label className="flex min-h-11 items-center justify-between gap-3">
                 <span><b className="block text-sm text-gray-800 dark:text-gray-100">多人拼车公共队列</b><span className="mt-0.5 block text-[11px] leading-5 text-gray-500 dark:text-gray-400">兼容 st-chatu8；相同 NovelAI Key 的接入者依次生图。</span></span>
