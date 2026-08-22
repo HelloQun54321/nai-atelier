@@ -1,5 +1,6 @@
 
 import React, { useRef, useState } from 'react';
+import { Image as ImageIcon } from 'lucide-react';
 import { OriginalImage } from './SmartImage';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 
@@ -196,14 +197,16 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                     )}
                 </div>
 
-                <div className="mt-4 flex-none">
-                    {errorMsg && <div className="mb-2 text-center text-xs text-red-500">{errorMsg}</div>}
-                    {queueStatus ? <InlineCloudQueueStatus className="flex-shrink-0" /> : <button
+                <div className="mt-4 flex flex-none flex-col items-center">
+                    {errorMsg && <div role="alert" className="mb-2 w-full max-w-sm rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center text-xs text-red-600 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{errorMsg}</div>}
+                    {queueStatus ? <InlineCloudQueueStatus className="w-full max-w-xs flex-shrink-0" /> : <button
                         onClick={handleGenerate}
                         disabled={isGenerating}
-                        className={`generation-action-button w-full rounded-lg py-3 font-bold text-white shadow-lg ${isGenerating ? 'generation-action-button--loading' : ''}`}
+                        className={`generation-action-button flex h-11 w-full max-w-xs items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold ${isGenerating ? 'generation-action-button--loading' : ''}`}
                     >
-                        <span>{isGenerating ? '生成中...' : `生成预览 · ${generationCostLabel}`}</span>
+                        <ImageIcon aria-hidden="true" className="relative z-[1] h-4 w-4 shrink-0" strokeWidth={2.2} />
+                        <span>{isGenerating ? '生成中…' : '生成图片'}</span>
+                        {!isGenerating && <span className="generation-action-button__cost">{generationCostLabel}</span>}
                     </button>}
                 </div>
             </div>

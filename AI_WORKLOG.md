@@ -6,6 +6,7 @@
 
 ## 2026-08-23
 
+- **Codex (GPT-5)**：将桌面生成按钮改为低强调度的主题化紧凑操作，采用“生成图片”文案与图片图标，补充费用标签及深浅色交互状态并完成浏览器视觉验收（style: refine generation button hierarchy）。
 - **Codex (GPT-5)**：将桌面生成按钮、排队状态和错误提示统一移动到图片预览下方，形成作品优先且位置稳定的底部操作区（style: move generation action below preview）。
 - **Codex (GPT-5)**：统一侧栏 Anlas/Opus 字体层级并补充折叠态 Anlas 余额，将主体提示词迁移到左侧全局编辑区，让右侧专注生成与图片预览（feat: refine quota and prompt layouts）。
 - **Codex (GPT-5)**：新增可持久化的提示词拆分设置，支持双字段与单一全局提示词界面切换，并让 NovelAI 元数据按设置直接导入而不再弹出选择框（feat: add configurable prompt field layout）。
