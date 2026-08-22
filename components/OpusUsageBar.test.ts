@@ -47,7 +47,7 @@ describe('OpusUsageBar', () => {
     fireEvent.click(screen.getByRole('status', { name: /同步失败/ }));
     await waitFor(() => {
       expect(screen.getByRole('status', { name: /73%/ })).toBeTruthy();
-      expect(screen.getByText('≈1263张')).toBeTruthy();
+      expect(screen.getByText('≈1263 张')).toBeTruthy();
     });
   });
 });

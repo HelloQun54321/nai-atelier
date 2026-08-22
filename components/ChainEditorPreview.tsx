@@ -1,13 +1,9 @@
 
 import React, { useRef, useState } from 'react';
-import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { OriginalImage } from './SmartImage';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 
 interface ChainEditorPreviewProps {
-    showSubjectPrompt: boolean;
-    subjectPrompt: string;
-    setSubjectPrompt: (s: string) => void;
     isGenerating: boolean;
     handleGenerate: () => void;
     errorMsg: string | null;
@@ -27,15 +23,10 @@ interface ChainEditorPreviewProps {
     canManageHistoryGroup?: boolean;
     onRemoveCurrentHistory?: () => void;
     onClearHistoryGroup?: () => void;
-    onCopyFinalPrompt: () => void;
-    subjectPresetSource?: { name: string; modified: boolean };
     generationCostLabel: string;
 }
 
 export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
-    showSubjectPrompt,
-    subjectPrompt,
-    setSubjectPrompt,
     isGenerating,
     handleGenerate,
     errorMsg,
@@ -55,8 +46,6 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     canManageHistoryGroup = false,
     onRemoveCurrentHistory,
     onClearHistoryGroup,
-    onCopyFinalPrompt,
-    subjectPresetSource,
     generationCostLabel
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -94,27 +83,6 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     return (
         <div className="chain-editor-preview w-full lg:w-1/2 flex flex-col bg-gray-100 dark:bg-black/20 order-1 lg:order-2 border-b lg:border-b-0 border-gray-200 dark:border-gray-800 shrink-0">
             <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden min-h-[400px]">
-                {/* Subject / Variable Input */}
-                {showSubjectPrompt && <div className="mb-4 bg-white dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-800">
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-500">主体／变量提示词</h3>
-                            {subjectPresetSource && <span className="max-w-28 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-40" title={`来自：${subjectPresetSource.name}${subjectPresetSource.modified ? ' · 已修改' : ''}`}>来自：{subjectPresetSource.name}{subjectPresetSource.modified ? ' · 已修改' : ''}</span>}
-                        </div>
-                        <button type="button" onClick={onCopyFinalPrompt} className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30" title="复制基础画风、模块和主体合成后的完整提示词">
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-                            复制完整提示词
-                        </button>
-                    </div>
-                    <p className="text-[10px] text-gray-400 mb-2">放置风格串固定提示词以外的内容，比如人物、场景。</p>
-                    <TagAutocompleteTextarea
-                        className="w-full h-24 md:h-32 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg p-3 text-sm outline-none focus:border-indigo-500 font-mono resize-none"
-                        placeholder="输入动态主体描述，例如：1girl, blue hair, sitting..."
-                        value={subjectPrompt}
-                        onValueChange={setSubjectPrompt}
-                    />
-                </div>}
-
                 {/* Generated Image */}
                 {queueStatus ? <InlineCloudQueueStatus className="mb-4 flex-shrink-0" /> : <button
                     onClick={handleGenerate}

@@ -88,14 +88,14 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
             />
           </svg>
         )}
-        <span className={`relative font-black tabular-nums ${syncBroken ? 'text-[17px] leading-none' : 'text-[9px]'}`}>
+        <span className={`relative font-bold tabular-nums ${syncBroken ? 'text-[17px] leading-none' : 'text-[10px]'}`}>
           {syncBroken ? '×' : usage ? `${percent}%` : ''}
         </span>
       </span>
       {!collapsed && <span className="min-w-0 flex-1">
-        <span className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Opus 限额</span>
-        <span className={`mt-0.5 block text-[10px] tabular-nums ${error ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
-          {error ? '同步失败，点击重试' : usage ? `≈${images}张` : '正在同步…'}
+        <span className="block text-xs font-medium text-gray-600 dark:text-gray-300">Opus 限额</span>
+        <span className={`mt-0.5 block text-[10px] font-normal tabular-nums ${error ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
+          {error ? '同步失败，点击重试' : usage ? `≈${images} 张` : '正在同步…'}
         </span>
       </span>}
     </button>

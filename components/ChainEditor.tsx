@@ -1643,6 +1643,27 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             />
                         </section>
 
+                        {splitPromptFields && <section className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
+                            <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                    <label className="text-sm font-semibold text-indigo-500 dark:text-indigo-400">主体／变量提示词</label>
+                                    <PresetSourceBadge source={presetSources.subject} />
+                                </div>
+                                <button type="button" onClick={() => copyPromptToClipboard(false)} className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-900/30" title="复制基础画风、模块和主体合成后的完整提示词">
+                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                                    复制完整提示词
+                                </button>
+                            </div>
+                            <p className="mb-2 text-[10px] text-gray-400">放置风格串固定提示词以外的内容，比如人物、场景。</p>
+                            <TagAutocompleteTextarea
+                                disabled={!canEdit}
+                                className={`min-h-[100px] w-full resize-none rounded-lg border p-3 font-mono text-sm leading-relaxed outline-none ${!canEdit ? 'cursor-not-allowed bg-gray-100 text-gray-500 dark:bg-gray-800' : 'border-gray-300 bg-gray-50 text-gray-900 focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'}`}
+                                placeholder="输入动态主体描述，例如：1girl, blue hair, sitting..."
+                                value={subjectPrompt}
+                                onValueChange={(value) => { setSubjectPrompt(value); markPresetSectionModified('subject'); markChange(); }}
+                            />
+                        </section>}
+
                         {/* Modules */}
                         <section className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
                             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1712,14 +1733,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 ))}
                             </div>
                         </section>
-
-                        {splitPromptFields && <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden'} rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/40 lg:hidden`}>
-                            <div className="mb-2 flex items-center justify-between gap-3">
-                                <div className="flex min-w-0 flex-wrap items-center gap-2"><label className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">主体／变量提示词</label><PresetSourceBadge source={presetSources.subject} /></div>
-                                <button type="button" onClick={() => copyPromptToClipboard(false)} className="text-xs font-medium text-indigo-600 dark:text-indigo-300">复制完整提示词</button>
-                            </div>
-                            <TagAutocompleteTextarea className="min-h-28 w-full resize-none rounded-lg border border-gray-300 bg-white p-3 font-mono text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" placeholder="输入人物、场景和动作等动态内容…" value={subjectPrompt} onValueChange={(value) => { setSubjectPrompt(value); markPresetSectionModified('subject'); markChange(); }} />
-                        </section>}
 
                         {/* Character Management (New V4.5) */}
                         <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'} rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40`}>
@@ -1868,9 +1881,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 {/* Right Panel - Preview (Testing) - Extracted Component */}
                 <div className="chain-editor-preview-wrapper hidden min-h-0 flex-1 lg:contents">
                 <ChainEditorPreview
-                    showSubjectPrompt={splitPromptFields}
-                    subjectPrompt={subjectPrompt}
-                    setSubjectPrompt={(s) => { setSubjectPrompt(s); markPresetSectionModified('subject'); markChange(); }}
                     isGenerating={isGenerating}
                     handleGenerate={handleGenerate}
                     errorMsg={errorMsg}
@@ -1890,8 +1900,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     canManageHistoryGroup={Boolean(selectedPreviewItem)}
                     onRemoveCurrentHistory={handleRemoveCurrentHistory}
                     onClearHistoryGroup={handleClearHistoryGroup}
-                    onCopyFinalPrompt={() => copyPromptToClipboard(false)}
-                    subjectPresetSource={presetSources.subject}
                     generationCostLabel={generationCostLabel}
                 />
                 </div>
