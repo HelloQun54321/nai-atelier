@@ -465,7 +465,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="truncate text-sm font-bold text-gray-800 dark:text-gray-100" title={entry.name}>{entry.name}</span>
-                          {active && <span className="flex-none rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white">使用中</span>}
                           {!entry.key.startsWith('pst-') && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title="NovelAI 官方密钥以 pst- 开头，这可能是误存的其他服务密钥（例如被浏览器自动填入）">格式可疑</span>}
                         </div>
                         <p className="mt-0.5 truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">{maskNaiKeyForDisplay(entry.key)}</p>
@@ -473,7 +472,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     )}
                     <div className="flex flex-none items-center gap-1">
                       <button type="button" onClick={() => { setRenamingKeyId(entry.id); setRenameValue(entry.name); }} className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700" title="修改备注名">备注</button>
-                      {renamingKeyId !== entry.id && !active && <button type="button" onClick={() => activateKeyEntry(entry)} className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-indigo-500">使用</button>}
+                      {renamingKeyId !== entry.id && <button type="button" disabled={active} aria-pressed={active} onClick={() => activateKeyEntry(entry)} className={`rounded-lg px-2.5 py-1 text-xs font-bold text-white ${active ? 'cursor-default bg-indigo-600' : 'bg-indigo-600 hover:bg-indigo-500'}`}>{active ? '使用中' : '使用'}</button>}
                       {renamingKeyId !== entry.id && <button type="button" onClick={() => void removeKeyEntry(entry)} className="rounded-lg px-2 py-1 text-xs text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40" title="删除">删除</button>}
                     </div>
                   </div>

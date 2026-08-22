@@ -1,6 +1,5 @@
 import React from 'react';
-import { Fuel } from 'lucide-react';
-import { clampUsagePercent, usagePercentPerDay, usageRemainingImages, useNovelaiUsage } from '../services/naiUsage';
+import { clampUsagePercent, usageRemainingImages, useNovelaiUsage } from '../services/naiUsage';
 import { useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 
 interface OpusUsageBarProps {
@@ -23,7 +22,6 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
   }
   const percent = clampUsagePercent(usage);
   const images = usageRemainingImages(usage, runtime.imagesPerPercent);
-  const perDay = usagePercentPerDay(usage);
   const negative = usage.isNegative;
   const low = !negative && percent <= 20;
   const ringClass = negative
@@ -31,11 +29,6 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
     : low
       ? 'text-amber-500 dark:text-amber-400'
       : 'text-emerald-500 dark:text-emerald-400';
-  const valueClass = negative
-    ? 'text-red-600 dark:text-red-400'
-    : low
-      ? 'text-amber-600 dark:text-amber-400'
-      : 'text-emerald-600 dark:text-emerald-400';
   // 同步健康度：提取失效或超过 48 小时未更新时，用琥珀色圆点显式示警，
   // 避免「项目能跑但常量早已过期」的静默失效。
   const health = runtime.health;
@@ -47,7 +40,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
       : `常量同步正常（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString() : '等待首次同步'}）`;
   const title = `${negative
     ? 'Opus 限额已用尽：所有生图将消耗 Anlas，额度恢复后自动回到免费生成'
-    : `Opus 免费生成限额：剩余 ${percent}%（约 ${images} 张）· 每天恢复 ${perDay}%${perDay ? `（约 ${Math.round(runtime.imagesPerPercent * perDay)} 张）` : ''}`} · 仅 V5 等新模型受限，V4.5 及以下不限\n拼车账号额度全员共享，每分钟自动同步，点击立即刷新\n${syncSummary}`;
+    : `Opus 免费生成限额：剩余 ${percent}%（约 ${images} 张）`} · 仅 V5 等新模型受限，V4.5 及以下不限\n拼车账号额度全员共享，每分钟自动同步，点击立即刷新\n${syncSummary}`;
   return (
     <button
       type="button"
@@ -73,19 +66,13 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
             className="transition-[stroke-dashoffset] duration-500"
           />
         </svg>
-        <Fuel className="relative h-4 w-4" />
+        <span className="relative text-[9px] font-black tabular-nums">{percent}%</span>
         {syncBroken && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white dark:ring-gray-900" aria-label="官方常量同步异常" />}
       </span>
       {!collapsed && <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-semibold text-gray-700 dark:text-gray-200">Opus 限额</span>
-        <span className="mt-0.5 block truncate text-[10px] text-gray-500 dark:text-gray-400">{negative ? '额度已用尽，生图将消耗 Anlas' : `剩余约 ${images} 张 · 每日恢复 ${perDay}%`}</span>
+        <span className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Opus 限额</span>
+        <span className="mt-0.5 block text-[10px] tabular-nums text-gray-500 dark:text-gray-400">≈{images}张</span>
       </span>}
-      {!collapsed && (
-        <span className={`flex flex-none flex-col items-end ${valueClass}`}>
-          <span className="text-sm font-black tabular-nums">{negative ? '已用尽' : `${percent}%`}</span>
-          {!negative && <span className="text-[10px] tabular-nums text-gray-500 dark:text-gray-400">≈{images}张</span>}
-        </span>
-      )}
     </button>
   );
 };
