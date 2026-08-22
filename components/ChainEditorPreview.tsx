@@ -84,15 +84,6 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
         <div className="chain-editor-preview w-full lg:w-1/2 flex flex-col bg-gray-100 dark:bg-black/20 order-1 lg:order-2 border-b lg:border-b-0 border-gray-200 dark:border-gray-800 shrink-0">
             <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden min-h-[400px]">
                 {/* Generated Image */}
-                {queueStatus ? <InlineCloudQueueStatus className="mb-4 flex-shrink-0" /> : <button
-                    onClick={handleGenerate}
-                    disabled={isGenerating}
-                    className={`generation-action-button w-full py-3 rounded-lg font-bold text-white shadow-lg mb-4 flex-shrink-0 ${isGenerating ? 'generation-action-button--loading' : ''}`}
-                >
-                    <span>{isGenerating ? '生成中...' : `生成预览 · ${generationCostLabel}`}</span>
-                </button>}
-                {errorMsg && <div className="text-red-500 text-xs mb-2 text-center">{errorMsg}</div>}
-
                 <div
                     className="flex-1 min-h-[300px] lg:min-h-0 bg-white dark:bg-gray-950/50 rounded-xl border border-gray-200 dark:border-gray-800 flex items-center justify-center relative group overflow-hidden cursor-zoom-in"
                     onClick={() => {
@@ -203,6 +194,17 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                             </button>
                         </div>
                     )}
+                </div>
+
+                <div className="mt-4 flex-none">
+                    {errorMsg && <div className="mb-2 text-center text-xs text-red-500">{errorMsg}</div>}
+                    {queueStatus ? <InlineCloudQueueStatus className="flex-shrink-0" /> : <button
+                        onClick={handleGenerate}
+                        disabled={isGenerating}
+                        className={`generation-action-button w-full rounded-lg py-3 font-bold text-white shadow-lg ${isGenerating ? 'generation-action-button--loading' : ''}`}
+                    >
+                        <span>{isGenerating ? '生成中...' : `生成预览 · ${generationCostLabel}`}</span>
+                    </button>}
                 </div>
             </div>
         </div>
