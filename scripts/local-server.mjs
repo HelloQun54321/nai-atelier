@@ -10,6 +10,10 @@ const IS_TERMUX = process.env.TERMUX_VERSION || existsSync('/data/data/com.termu
 const LOCAL_URL = 'http://127.0.0.1:3000';
 const DISPLAY_URL = 'http://localhost:3000';
 const LAN_CONFIG_FILE = 'local-data/lan-access.json';
+const BOOT_T0 = Date.now();
+
+/** 启动至今的秒数，用于各阶段耗时提示。 */
+const bootElapsedSec = () => ((Date.now() - BOOT_T0) / 1000).toFixed(1);
 
 function loadLanAccessConfig() {
   try {
@@ -129,14 +133,16 @@ function buildLatest() {
     console.log('\x1b[90m代码未变化，跳过构建。\x1b[0m');
     return;
   }
-  console.log('\x1b[33m正在构建最新版本...\x1b[0m');
+  console.log('\x1b[33m正在构建最新版本（本地快速构建，跳过类型检查）...\x1b[0m');
+  const startedAt = Date.now();
   const buildCmd = IS_WINDOWS ? 'npm.cmd' : 'npm';
   try {
-    execSync(`${buildCmd} run build`, { stdio: 'inherit', shell: IS_WINDOWS });
+    execSync(`${buildCmd} run build:local`, { stdio: 'inherit', shell: IS_WINDOWS });
   } catch {
     console.error('\x1b[31m构建失败\x1b[0m');
     process.exit(1);
   }
+  console.log(`\x1b[90m构建完成，耗时 ${((Date.now() - startedAt) / 1000).toFixed(1)} 秒。\x1b[0m`);
 }
 
 function openBrowser(url) {
@@ -270,7 +276,7 @@ async function startServer() {
   // Launch Wrangler's actual CLI process directly. The old cmd -> .cmd wrapper
   // chain left Miniflare descendants behind when startup failed on Windows.
   const wranglerCli = 'node_modules/wrangler/wrangler-dist/cli.js';
-  console.log('\x1b[36m核心页面服务正在启动，请稍候...\x1b[0m');
+  console.log('\x1b[36m核心页面服务正在启动，请稍候（需恢复本地 D1/R2 存储，数据量越大耗时越长）...\x1b[0m');
   const child = spawn(process.execPath, ['--no-warnings', '--experimental-vm-modules', wranglerCli, ...args], { stdio: 'inherit', shell: false });
   let mediaGateway = null;
   let shuttingDown = false;
@@ -304,9 +310,11 @@ async function startServer() {
 
   try {
     await waitForWorker(3001);
-    console.log('\x1b[32m核心页面服务已就绪。\x1b[0m');
+    console.log(`\x1b[32m核心页面服务已就绪（耗时 ${bootElapsedSec()} 秒，含本地 D1/R2 存储恢复）。\x1b[0m`);
+    const gatewayStartedAt = Date.now();
     mediaGateway = await createMediaGateway({ port: 3000, workerPort: 3001, lanSecret: lanAccess.secret, outboundProxyUrl });
-    console.log('\x1b[32m图片网关已就绪，手机列表将按需使用缩略图。\x1b[0m');
+    console.log(`\x1b[32m图片网关已就绪（耗时 ${((Date.now() - gatewayStartedAt) / 1000).toFixed(1)} 秒），手机列表将按需使用缩略图。\x1b[0m`);
+    console.log(`\x1b[32m全部就绪，总耗时 ${bootElapsedSec()} 秒。\x1b[0m`);
     openWhenReady();
   } catch (error) {
     console.error(`\x1b[31m本地服务启动失败: ${error.message}\x1b[0m`);

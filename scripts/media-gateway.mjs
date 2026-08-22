@@ -706,6 +706,8 @@ export const DEFAULT_NAI_RUNTIME = {
 const NAI_WEBAPP_SOURCE = 'https://novelai.net/image';
 const NAI_RUNTIME_SYNC_FILE = join(process.cwd(), 'local-data', 'novelai-webapp-sync.json');
 const NAI_RUNTIME_SYNC_INTERVAL = 24 * 60 * 60 * 1000;
+/** 首次同步在网关就绪后延迟触发，把启动带宽留给 D1/R2 恢复与页面加载。 */
+const NAI_RUNTIME_SYNC_STARTUP_DELAY_MS = 30_000;
 let naiRuntimeState = { ...DEFAULT_NAI_RUNTIME, syncedAt: 0, health: { ok: false, reason: 'pending' } };
 
 export const getNaiRuntime = () => naiRuntimeState;
@@ -861,10 +863,11 @@ const initNaiRuntimeSync = async () => {
   } catch {
     // 无历史同步时直接使用内置默认值。
   }
-  // 启动即尝试同步一次，之后每天刷新；失败静默保留当前值但记录健康状态。
+  // 启动后延迟同步，避免挤占启动期网络；之后每天刷新，失败保留当前值。
+  const startupDelay = setTimeout(() => { void syncNaiRuntime().catch(() => {}); }, NAI_RUNTIME_SYNC_STARTUP_DELAY_MS);
+  if (typeof startupDelay.unref === 'function') startupDelay.unref();
   const timer = setInterval(() => { void syncNaiRuntime().catch(() => {}); }, NAI_RUNTIME_SYNC_INTERVAL);
   if (typeof timer.unref === 'function') timer.unref();
-  await syncNaiRuntime().catch(() => {});
 };
 
 export const generateWithVibeCacheRetry = async (

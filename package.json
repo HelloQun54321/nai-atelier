@@ -1,7 +1,7 @@
 {
   "name": "nai-atelier",
   "private": true,
-  "version": "0.93.2",
+  "version": "0.93.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,7 +20,8 @@
     "dev:local:watch": "concurrently -k \"vite build --watch\" \"esbuild worker/index.ts --bundle --format=esm --outfile=dist/_worker.js --platform=browser --watch\" \"npm run dev:local:quick\"",
     "dev:local:win": "scripts\\local-server.bat",
     "dev:local:linux": "sh scripts/local-server.sh",
-    "test:live-sync": "node scripts/nai-live-sync.mjs"
+    "test:live-sync": "node scripts/nai-live-sync.mjs",
+    "build:local": "vite build && npm run build:worker"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.81.1",
