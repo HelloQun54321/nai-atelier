@@ -29,6 +29,12 @@ const sha256Hex = async (text: string) => {
   return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
 };
 
+/** 按 NovelAI Key 计算与网关一致的身份指纹。 */
+export const hashNaiApiKey = async (apiKey: string) => {
+  const normalized = apiKey.trim();
+  return normalized ? sha256Hex(normalized) : '';
+};
+
 // 成本估算使用的官方常量由网关自动同步（services/naiRuntime.ts），默认值兜底。
 let estimatorRuntime: NaiRuntimeConfig = DEFAULT_NAI_RUNTIME;
 export const applyEstimatorRuntime = (config: NaiRuntimeConfig) => { estimatorRuntime = config; };
@@ -57,14 +63,14 @@ export const estimateV45GenerationCost = (params: NAIParams, opus = true, opusUs
   return generationCost + extraVibeCost + preciseReferenceCount * 5 * samples;
 };
 
-const broadcastBudget = (state: AnlasBudgetState) => {
-  window.dispatchEvent(new CustomEvent<AnlasBudgetState>(ANLAS_BUDGET_CHANGED_EVENT, { detail: state }));
+const broadcastBudget = (state: AnlasBudgetState, keyHash: string) => {
+  window.dispatchEvent(new CustomEvent<AnlasBudgetState & { keyHash: string }>(ANLAS_BUDGET_CHANGED_EVENT, { detail: { ...state, keyHash } }));
 };
 
 /** 当前激活密钥的哈希（与网关侧 sha256 口径一致）。 */
 export const getActiveKeyHash = async () => {
   const apiKey = (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim();
-  return apiKey ? sha256Hex(apiKey) : '';
+  return hashNaiApiKey(apiKey);
 };
 
 export const anlasBudgetService = {
@@ -73,9 +79,10 @@ export const anlasBudgetService = {
     return api.get(`/anlas-budget${keyHash ? `?keyHash=${keyHash}` : ''}`);
   },
   set: async (remaining: number): Promise<AnlasBudgetState> => {
-    const keyHash = await getActiveKeyHash();
-    const state = await api.put('/anlas-budget', { remaining: clampBudget(remaining), ...(keyHash ? { keyHash } : {}) });
-    broadcastBudget(state);
+    const requestedKeyHash = await getActiveKeyHash();
+    const state = await api.put('/anlas-budget', { remaining: clampBudget(remaining), ...(requestedKeyHash ? { keyHash: requestedKeyHash } : {}) });
+    if (await getActiveKeyHash() !== requestedKeyHash) return anlasBudgetService.get();
+    broadcastBudget(state, requestedKeyHash);
     return state;
   },
   /** 重置当前密钥账号的个人用量统计。 */
@@ -104,11 +111,17 @@ export const useAnlasBudget = () => {
   useEffect(() => {
     void refresh();
     const update = (event: Event) => {
-      const detail = (event as CustomEvent<AnlasBudgetState>).detail;
-      setState(previous => ({ ...previous, ...detail }));
-      if (detail.personal !== undefined) {
-        void getActiveKeyHash().then(keyHash => setPersonal(keyHash ? detail.personal?.[keyHash] || null : null));
-      }
+      const detail = (event as CustomEvent<AnlasBudgetState & { keyHash?: string }>).detail;
+      const eventKeyHash = typeof detail?.keyHash === 'string' ? detail.keyHash : null;
+      if (eventKeyHash === null) return;
+      void getActiveKeyHash().then(currentKeyHash => {
+        if (currentKeyHash !== eventKeyHash) return;
+        const { keyHash: _keyHash, ...stateDetail } = detail;
+        setState(previous => ({ ...previous, ...stateDetail }));
+        if (stateDetail.personal !== undefined) {
+          setPersonal(eventKeyHash ? stateDetail.personal?.[eventKeyHash] || null : null);
+        }
+      });
     };
     const refreshProjectChange = () => void refresh();
     const refreshKeyChange = () => {

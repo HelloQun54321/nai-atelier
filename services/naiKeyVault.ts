@@ -38,8 +38,6 @@ const writeVault = (entries: NaiKeyEntry[]) => {
 
 const broadcastActiveKey = (key: string) => {
   window.dispatchEvent(new CustomEvent<string>('nai-api-key-changed', { detail: key }));
-  // 切换账号后立即用新 Key 刷新 Opus 限额，不等下一分钟轮询。
-  window.dispatchEvent(new CustomEvent('nai-novelai-usage-refresh'));
 };
 
 /** 密钥脱敏展示：保留前缀与末 4 位。 */

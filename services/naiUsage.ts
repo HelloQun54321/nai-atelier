@@ -52,6 +52,28 @@ const SUBSCRIPTION_REFRESH_INTERVAL = 60 * 1000;
 /** 生图费用判定前，快照超过该时长即视为过期，需要重新拉取。 */
 export const USAGE_SNAPSHOT_TTL = 15 * 1000;
 
+/** 同一把 Key 的并发刷新共用一个请求，避免切换事件与多个组件重复打到订阅接口。 */
+const inFlightUsageRequests = new Map<string, Promise<NovelaiSubscriptionInfo>>();
+
+const requestNovelaiSubscription = (apiKey: string): Promise<NovelaiSubscriptionInfo> => {
+  const existing = inFlightUsageRequests.get(apiKey);
+  if (existing) return existing;
+
+  const request = fetch(`/api/novelai-subscription?_t=${Date.now()}`, {
+    cache: 'no-store',
+    headers: { 'Authorization': `Bearer ${apiKey}` },
+  }).then(async response => {
+    if (!response.ok) throw new Error(await response.text());
+    return await response.json() as NovelaiSubscriptionInfo;
+  });
+  inFlightUsageRequests.set(apiKey, request);
+  request.then(
+    () => { if (inFlightUsageRequests.get(apiKey) === request) inFlightUsageRequests.delete(apiKey); },
+    () => { if (inFlightUsageRequests.get(apiKey) === request) inFlightUsageRequests.delete(apiKey); },
+  );
+  return request;
+};
+
 /** 生图完成后（以及定期）刷新 NovelAI 订阅限额状态；返回本次拉到的最新快照。 */
 export const useNovelaiUsage = () => {
   const [info, setInfo] = useState<NovelaiSubscriptionInfo | null>(null);
@@ -80,11 +102,7 @@ export const useNovelaiUsage = () => {
       return null;
     }
     try {
-      const res = await fetch('/api/novelai-subscription', {
-        headers: { 'Authorization': `Bearer ${apiKey}` },
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const next = await res.json();
+      const next = await requestNovelaiSubscription(apiKey);
       // Key 在请求期间切换时，丢弃旧账号的响应，避免额度短暂串到新账号。
       if (activeKeyRef.current !== apiKey) return null;
       infoRef.current = next;

@@ -22,6 +22,11 @@ const handleResponse = async (res: Response) => {
     return res.json();
 };
 
+interface BinaryRequestOptions {
+  /** 与本次生图所用 Key 对应的哈希，用于防止切 Key 后预算事件串号。 */
+  budgetKeyHash?: string;
+}
+
 export const api = {
   get: async (endpoint: string, options: { cache?: RequestCache } = {}) => {
     const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -69,7 +74,7 @@ export const api = {
   },
   
   // Binary response for images
-  postBinary: async (endpoint: string, data: any, headers?: Record<string, string>) => {
+  postBinary: async (endpoint: string, data: any, headers?: Record<string, string>, options: BinaryRequestOptions = {}) => {
     const res = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
       headers: getHeaders(headers),
@@ -85,7 +90,7 @@ export const api = {
     const remaining = res.headers.get('x-nai-anlas-remaining');
     if (remaining !== null && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('nai-anlas-budget-changed', {
-        detail: { remaining: Number(remaining), updatedAt: Date.now() },
+        detail: { remaining: Number(remaining), updatedAt: Date.now(), keyHash: options.budgetKeyHash || '' },
       }));
     }
     return res.blob();

@@ -5,6 +5,7 @@ import { api } from './api';
 import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
 import { DEFAULT_NAI_MODEL, getNaiModelInfo } from './naiModels';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
+import { hashNaiApiKey } from './anlasBudget';
 import { emitCloudQueueStatus, getCachedCloudQueuePreferences, getCloudQueuePreferences, scheduleCloudQueueStatusClear, watchCloudQueueTask } from './cloudQueue';
 
 export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams) => {
@@ -149,19 +150,21 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   const queueTaskId = typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const queueApiKey = apiKey.trim();
   let requestFinished = false;
-  if (queue.enabled) emitCloudQueueStatus({ taskId: queueTaskId, phase: 'preparing', cancelable: true });
-  const statusWatcher = queue.enabled ? watchCloudQueueTask(queueTaskId, () => requestFinished) : Promise.resolve();
+  if (queue.enabled) emitCloudQueueStatus({ taskId: queueTaskId, phase: 'preparing', cancelable: true }, queueApiKey);
+  const statusWatcher = queue.enabled ? watchCloudQueueTask(queueTaskId, () => requestFinished, queueApiKey) : Promise.resolve();
   let blob: Blob;
   let terminalPhase: 'completed' | 'cancelled' | 'error' = 'completed';
   let terminalError: string | undefined;
   try {
+    const budgetKeyHash = await hashNaiApiKey(apiKey);
     blob = await api.postBinary('/generate', payload, {
       'Authorization': `Bearer ${apiKey}`,
       ...(queue.enabled ? {
         'X-Nai-Queue-Task-Id': queueTaskId,
       } : {}),
-    });
+    }, { budgetKeyHash });
   } catch (error) {
     if (queue.enabled) {
       const message = error instanceof Error ? error.message : '公共队列连接失败';
@@ -172,7 +175,7 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
         phase: terminalPhase,
         error: message,
         cancelable: false,
-      });
+      }, queueApiKey);
     }
     throw error;
   } finally {
@@ -188,8 +191,8 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
         phase: terminalPhase,
         error: terminalError,
         cancelable: false,
-      });
-      scheduleCloudQueueStatusClear(queueTaskId, terminalPhase === 'error' ? 8000 : 5000);
+      }, queueApiKey);
+      scheduleCloudQueueStatusClear(queueTaskId, terminalPhase === 'error' ? 8000 : 5000, queueApiKey);
     }
   }
 

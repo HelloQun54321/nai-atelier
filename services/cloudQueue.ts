@@ -21,6 +21,7 @@ const defaults: CloudQueuePreferences = { enabled: false, greeting: '正在生�
 let cachedPreferences: CloudQueuePreferences = defaults;
 let cachedPreferencesKey = '';
 let currentQueueStatus: CloudQueueStatus | null = null;
+let currentQueueStatusKey = '';
 let clearStatusTimer: number | null = null;
 const statusListeners = new Set<() => void>();
 
@@ -31,9 +32,9 @@ const normalizePreferences = (value: Partial<CloudQueuePreferences> | null | und
   serviceUrl: String(value?.serviceUrl || defaults.serviceUrl).trim() || defaults.serviceUrl,
 });
 
-const getActiveApiKey = () => (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim();
-const getActiveKeyHeaders = (): Record<string, string> => {
-  const apiKey = getActiveApiKey();
+const normalizeApiKey = (apiKey: string) => apiKey.trim();
+const getActiveApiKey = () => normalizeApiKey(sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
+const getActiveKeyHeaders = (apiKey = getActiveApiKey()): Record<string, string> => {
   return apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
 };
 
@@ -78,21 +79,26 @@ export const setCloudQueuePreferences = async (preferences: CloudQueuePreference
   return cachedPreferences;
 };
 
-export const emitCloudQueueStatus = (status: CloudQueueStatus | null) => {
+export const emitCloudQueueStatus = (status: CloudQueueStatus | null, sourceApiKey = getActiveApiKey()) => {
+  const normalizedSourceApiKey = normalizeApiKey(sourceApiKey);
+  // 旧 Key 的请求结束时不得把终态重新显示到新 Key 的界面。
+  if (status && normalizedSourceApiKey !== getActiveApiKey()) return;
   if (status && clearStatusTimer !== null) {
     window.clearTimeout(clearStatusTimer);
     clearStatusTimer = null;
   }
   currentQueueStatus = status;
+  currentQueueStatusKey = status ? normalizedSourceApiKey : '';
   statusListeners.forEach(listener => listener());
   window.dispatchEvent(new CustomEvent('nai-cloud-queue-status', { detail: status }));
 };
 
-export const scheduleCloudQueueStatusClear = (taskId: string, delay: number) => {
+export const scheduleCloudQueueStatusClear = (taskId: string, delay: number, sourceApiKey = getActiveApiKey()) => {
+  const normalizedSourceApiKey = normalizeApiKey(sourceApiKey);
   if (clearStatusTimer !== null) window.clearTimeout(clearStatusTimer);
   clearStatusTimer = window.setTimeout(() => {
     clearStatusTimer = null;
-    if (currentQueueStatus?.taskId === taskId) emitCloudQueueStatus(null);
+    if (currentQueueStatus?.taskId === taskId && currentQueueStatusKey === normalizedSourceApiKey) emitCloudQueueStatus(null);
   }, delay);
 };
 
@@ -112,13 +118,14 @@ export const cancelCloudQueueTask = async (taskId: string) => {
   if (!response.ok) throw new Error(await response.text());
 };
 
-export const watchCloudQueueTask = async (taskId: string, isFinished: () => boolean) => {
-  while (!isFinished()) {
+export const watchCloudQueueTask = async (taskId: string, isFinished: () => boolean, sourceApiKey = getActiveApiKey()) => {
+  const normalizedSourceApiKey = normalizeApiKey(sourceApiKey);
+  while (!isFinished() && getActiveApiKey() === normalizedSourceApiKey) {
     try {
-      const response = await fetch(`/api/generation-queue/status?taskId=${encodeURIComponent(taskId)}&_t=${Date.now()}`, { cache: 'no-store', headers: getActiveKeyHeaders() });
+      const response = await fetch(`/api/generation-queue/status?taskId=${encodeURIComponent(taskId)}&_t=${Date.now()}`, { cache: 'no-store', headers: getActiveKeyHeaders(normalizedSourceApiKey) });
       if (response.ok) {
         const status = await response.json() as CloudQueueStatus;
-        emitCloudQueueStatus(status);
+        emitCloudQueueStatus(status, normalizedSourceApiKey);
         if (['completed', 'cancelled', 'error'].includes(status.phase)) return;
       }
     } catch {
@@ -127,3 +134,10 @@ export const watchCloudQueueTask = async (taskId: string, isFinished: () => bool
     await new Promise(resolve => setTimeout(resolve, 750));
   }
 };
+
+// 切换账号后，旧账号的排队提示立即失效；旧请求稍后返回时也会被 emitCloudQueueStatus 拦截。
+if (typeof window !== 'undefined') {
+  window.addEventListener('nai-api-key-changed', () => {
+    if (currentQueueStatus) emitCloudQueueStatus(null);
+  });
+}
