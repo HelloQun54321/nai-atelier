@@ -1,5 +1,5 @@
 import React from 'react';
-import { clampUsagePercent, usageRemainingImages, useNovelaiUsage } from '../services/naiUsage';
+import { usageRemainingImages, usageRemainingPercent, useNovelaiUsage } from '../services/naiUsage';
 import { useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 
 interface OpusUsageBarProps {
@@ -17,7 +17,9 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
   const runtime = useNaiRuntime();
   // 请求明确成功但没有 usage 时才表示非 Opus；加载和失败都保留完整状态行。
   if (!usage && !loading && !error) return null;
-  const percent = usage ? clampUsagePercent(usage) : 0;
+  const percent = usage ? usageRemainingPercent(usage) : 0;
+  // 活动加成可能让真实额度超过 100%；圆环保持满圈，数字和张数保留真实值。
+  const ringPercent = Math.min(100, percent);
   const images = usage ? usageRemainingImages(usage, runtime.imagesPerPercent) : 0;
   const negative = usage?.isNegative === true;
   const low = !negative && percent <= 20;
@@ -70,7 +72,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeDasharray={OPUS_RING_CIRCUMFERENCE}
-            strokeDashoffset={OPUS_RING_CIRCUMFERENCE * (1 - percent / 100)}
+            strokeDashoffset={OPUS_RING_CIRCUMFERENCE * (1 - ringPercent / 100)}
             className={`transition-[stroke-dashoffset,opacity] duration-700 ease-out ${loading ? 'opacity-25' : ''}`}
           />
         </svg>
@@ -88,7 +90,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
             />
           </svg>
         )}
-        <span className={`relative font-bold tabular-nums ${syncBroken ? 'text-[17px] leading-none' : 'text-[10px]'}`}>
+        <span className={`relative font-bold tabular-nums ${syncBroken ? 'text-[17px] leading-none' : percent > 99 ? 'text-[9px]' : 'text-[10px]'}`}>
           {syncBroken ? '×' : usage ? `${percent}%` : ''}
         </span>
       </span>

@@ -24,11 +24,18 @@ export interface NovelaiSubscriptionInfo {
   usage?: NovelaiUsageState;
 }
 
-// ===== 官方映射（逐行对照 NovelAI Web 应用 2026-08-22 版 bundle，勿凭记忆修改）=====
+// ===== 官方接口字段映射 =====
 
-/** 剩余百分比：透支显示 0，其余钳制在 0–100（官方 isNegative?0:min(100,max(0,percent))）。 */
-export const clampUsagePercent = (usage: NovelaiUsageState): number =>
-  usage.isNegative ? 0 : Math.min(100, Math.max(0, usage.percent));
+/**
+ * 真实剩余百分比：透支显示 0，其余保留官方原始上限。
+ *
+ * NovelAI 会通过活动加成让 Opus 额度超过 100%；侧栏必须显示真实返回值，
+ * 不能把 196% 截断成 100% 后同时低估剩余可生成张数。
+ */
+export const usageRemainingPercent = (usage: NovelaiUsageState): number => {
+  const percent = Number(usage.percent);
+  return usage.isNegative || !Number.isFinite(percent) ? 0 : Math.max(0, percent);
+};
 
 /** 每天恢复的百分比：86400 / timeUntilNextPercent，保留一位小数（官方同式）。 */
 export const usagePercentPerDay = (usage: NovelaiUsageState): number => {
@@ -37,9 +44,9 @@ export const usagePercentPerDay = (usage: NovelaiUsageState): number => {
   return Math.round((86400 / seconds) * 10) / 10;
 };
 
-/** 剩余可生成张数 ≈ 系数 × 钳制后的百分比（2026-08 官方系数为 17.3，由网关自动同步）。 */
+/** 剩余可生成张数 ≈ 系数 × 官方真实百分比（系数由网关自动同步）。 */
 export const usageRemainingImages = (usage: NovelaiUsageState, imagesPerPercent = 17.3): number =>
-  Math.round(imagesPerPercent * clampUsagePercent(usage));
+  Math.round(imagesPerPercent * usageRemainingPercent(usage));
 
 export const NOVELAI_USAGE_REFRESH_EVENT = 'nai-novelai-usage-refresh';
 

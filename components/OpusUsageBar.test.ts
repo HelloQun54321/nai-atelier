@@ -50,4 +50,23 @@ describe('OpusUsageBar', () => {
       expect(screen.getByText('≈1263 张')).toBeTruthy();
     });
   });
+
+  it('活动加成超过 100% 时显示官方真实额度和对应张数', async () => {
+    sessionStorage.setItem('nai_api_key', 'pst-opus-bonus-key');
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('/api/novelai-runtime')) {
+        return responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true, extracted: [], missed: [] } });
+      }
+      return responseFor({ tier: 3, active: true, usage: { percent: 196, isNegative: false, timeUntilNextPercent: 0 } });
+    }));
+
+    const { container } = render(React.createElement(OpusUsageBar, { collapsed: false }));
+    await waitFor(() => {
+      expect(screen.getByRole('status', { name: /196%/ })).toBeTruthy();
+      expect(screen.getByText('196%')).toBeTruthy();
+      expect(screen.getByText('≈3391 张')).toBeTruthy();
+    });
+    expect(container.querySelectorAll('circle')[1]?.getAttribute('stroke-dashoffset')).toBe('0');
+  });
 });
