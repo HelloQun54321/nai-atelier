@@ -548,6 +548,8 @@ const App = () => {
           notify={notify}
           agentOpenToken={editorAgentOpenToken}
           splitPromptFields={appearancePreferences.splitPromptFields}
+          labModuleOrder={appearancePreferences.labModuleOrder}
+          labModuleCollapsed={appearancePreferences.labModuleCollapsed}
         />;
       case 'library':
         return <ArtistLibrary
@@ -610,6 +612,8 @@ const App = () => {
           externalImportToken={playgroundImportToken}
           agentOpenToken={playgroundAgentOpenToken}
           splitPromptFields={appearancePreferences.splitPromptFields}
+          labModuleOrder={appearancePreferences.labModuleOrder}
+          labModuleCollapsed={appearancePreferences.labModuleCollapsed}
         />;
       default:
         return <div>Unknown View</div>;

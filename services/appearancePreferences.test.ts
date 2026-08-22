@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_APPEARANCE_PREFERENCES,
+  DEFAULT_LAB_MODULE_COLLAPSED,
   normalizeAppearancePreferences,
 } from './appearancePreferences';
 
@@ -16,6 +17,15 @@ describe('appearance preferences', () => {
       motion: 'reduced',
       fontScale: 'large',
       splitPromptFields: false,
+      labModuleOrder: ['params', 'prompt', 'negative', 'vibe', 'characters', 'characterReference'],
+      labModuleCollapsed: {
+        prompt: true,
+        characters: false,
+        params: true,
+        negative: false,
+        characterReference: false,
+        vibe: true,
+      },
     })).toEqual({
       designTheme: 'nai-atelier',
       themeMode: 'dark',
@@ -26,6 +36,15 @@ describe('appearance preferences', () => {
       motion: 'reduced',
       fontScale: 'large',
       splitPromptFields: false,
+      labModuleOrder: ['params', 'prompt', 'negative', 'vibe', 'characters', 'characterReference'],
+      labModuleCollapsed: {
+        prompt: true,
+        characters: false,
+        params: true,
+        negative: false,
+        characterReference: false,
+        vibe: true,
+      },
     });
   });
 
@@ -40,6 +59,28 @@ describe('appearance preferences', () => {
       motion: 'fast',
       fontScale: 'huge',
       splitPromptFields: 'sometimes',
+      labModuleOrder: 'anything',
+      labModuleCollapsed: null,
     })).toEqual(DEFAULT_APPEARANCE_PREFERENCES);
+  });
+
+  it('repairs duplicated, unknown and incomplete laboratory module preferences', () => {
+    const normalized = normalizeAppearancePreferences({
+      labModuleOrder: ['vibe', 'unknown', 'prompt', 'vibe'],
+      labModuleCollapsed: { vibe: false, prompt: 'yes' },
+    });
+
+    expect(normalized.labModuleOrder).toEqual([
+      'vibe',
+      'prompt',
+      'characters',
+      'params',
+      'negative',
+      'characterReference',
+    ]);
+    expect(normalized.labModuleCollapsed).toEqual({
+      ...DEFAULT_LAB_MODULE_COLLAPSED,
+      vibe: false,
+    });
   });
 });

@@ -19,13 +19,16 @@ import {
   AppearancePreferences,
   CornerStyle,
   DEFAULT_APPEARANCE_PREFERENCES,
+  DEFAULT_LAB_MODULE_COLLAPSED,
+  DEFAULT_LAB_MODULE_ORDER,
   FontScale,
   InterfaceDensity,
+  LabModuleId,
   MotionStyle,
   SurfaceStyle,
   ThemeMode,
 } from '../services/appearancePreferences';
-import { ArrowLeft, Bot, Check, ChevronRight, Database, ExternalLink, KeyRound, Monitor, Moon, Palette, RefreshCw, RotateCcw, Server, Shield, SlidersHorizontal, Smartphone, Sun, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Database, ExternalLink, GripVertical, KeyRound, Monitor, Moon, Palette, RefreshCw, RotateCcw, Server, Shield, SlidersHorizontal, Smartphone, Sun, X } from 'lucide-react';
 
 type SettingsSection = 'appearance' | 'novelai' | 'agent' | 'maintenance';
 type SettingsPage = 'home' | SettingsSection;
@@ -74,6 +77,15 @@ interface AppearanceOption {
   description?: string;
 }
 
+const LAB_MODULE_META: Record<LabModuleId, { label: string; description: string }> = {
+  prompt: { label: '提示词输入', description: '全局提示词、拆分后的风格与主体，以及提示词模块' },
+  characters: { label: '角色专属提示词', description: '角色描述、专属负面与构图坐标' },
+  params: { label: '参数设置', description: '模型、尺寸、采样器、步数和 CFG' },
+  negative: { label: '全局负面提示词', description: '整张图片共用的负面约束' },
+  characterReference: { label: '角色参考', description: '角色参考图与相关参数' },
+  vibe: { label: 'Vibe Transfer', description: 'Vibe 图像编码与复用' },
+};
+
 const AppearanceOptionGroup: React.FC<{
   value: string;
   options: AppearanceOption[];
@@ -120,6 +132,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [imageDisplay, setImageDisplay] = useState(getMobileImageDisplayPreferences);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
   const [activeSection, setActiveSection] = useState<SettingsPage>('home');
+  const [draggingLabModule, setDraggingLabModule] = useState<LabModuleId | null>(null);
   const anlasBudget = useAnlasBudget();
   // 个人 Opus 免费图折算百分比用的换算系数（网关自动同步，17.3 张 ≈ 1%）。
   const [naiRuntimeCoefficient, setNaiRuntimeCoefficient] = useState(17.3);
@@ -307,11 +320,43 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     setAppearancePreferences(current => ({ ...current, ...patch }));
   };
 
+  const moveLabModule = (moduleId: LabModuleId, offset: -1 | 1) => {
+    const currentIndex = appearancePreferences.labModuleOrder.indexOf(moduleId);
+    const targetIndex = currentIndex + offset;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= appearancePreferences.labModuleOrder.length) return;
+    const next = [...appearancePreferences.labModuleOrder];
+    [next[currentIndex], next[targetIndex]] = [next[targetIndex], next[currentIndex]];
+    updateAppearance({ labModuleOrder: next });
+  };
+
+  const dropLabModule = (targetId: LabModuleId) => {
+    if (!draggingLabModule || draggingLabModule === targetId) {
+      setDraggingLabModule(null);
+      return;
+    }
+    const next = appearancePreferences.labModuleOrder.filter(moduleId => moduleId !== draggingLabModule);
+    const targetIndex = appearancePreferences.labModuleOrder.indexOf(targetId);
+    next.splice(targetIndex, 0, draggingLabModule);
+    updateAppearance({ labModuleOrder: next });
+    setDraggingLabModule(null);
+  };
+
+  const toggleLabModuleCollapsed = (moduleId: LabModuleId) => {
+    updateAppearance({
+      labModuleCollapsed: {
+        ...appearancePreferences.labModuleCollapsed,
+        [moduleId]: !appearancePreferences.labModuleCollapsed[moduleId],
+      },
+    });
+  };
+
   const resetThemeCustomization = () => {
     setAppearancePreferences({
       ...DEFAULT_APPEARANCE_PREFERENCES,
       themeMode,
       splitPromptFields: appearancePreferences.splitPromptFields,
+      labModuleOrder: appearancePreferences.labModuleOrder,
+      labModuleCollapsed: appearancePreferences.labModuleCollapsed,
     });
   };
 
@@ -406,6 +451,57 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">拆分风格与主体提示词</b><span className="mt-0.5 block text-[10px] leading-4 text-gray-500 dark:text-gray-400">开启时分别编辑风格串和主体／变量；关闭时合并为一个“全局提示词”输入框，导入时也不再自动拆分。</span></span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.splitPromptFields ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.splitPromptFields ? 'translate-x-5' : 'translate-x-0'}`} /></span>
               </button>
+              <div className="rounded-2xl border border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35">
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs font-bold text-gray-800 dark:text-gray-100">实验室模块布局</h4>
+                    <p className="mt-0.5 text-[10px] leading-4 text-gray-500 dark:text-gray-400">拖动或使用箭头调整顺序；“默认收起”控制每次进入编辑器时的初始状态。桌面端与移动端共用同一配置。</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => updateAppearance({ labModuleOrder: [...DEFAULT_LAB_MODULE_ORDER], labModuleCollapsed: { ...DEFAULT_LAB_MODULE_COLLAPSED } })}
+                    className="mobile-touch flex flex-none items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-[10px] font-bold text-gray-500 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600"
+                  >
+                    <RotateCcw className="h-3 w-3" />推荐顺序
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {appearancePreferences.labModuleOrder.map((moduleId, index) => {
+                    const meta = LAB_MODULE_META[moduleId];
+                    const collapsed = appearancePreferences.labModuleCollapsed[moduleId];
+                    return <div
+                      key={moduleId}
+                      draggable
+                      onDragStart={event => {
+                        setDraggingLabModule(moduleId);
+                        event.dataTransfer.effectAllowed = 'move';
+                        event.dataTransfer.setData('text/plain', moduleId);
+                      }}
+                      onDragEnd={() => setDraggingLabModule(null)}
+                      onDragOver={event => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = 'move';
+                      }}
+                      onDrop={event => {
+                        event.preventDefault();
+                        dropLabModule(moduleId);
+                      }}
+                      className={`flex items-center gap-2 rounded-xl border bg-white p-2 transition dark:bg-gray-900 ${draggingLabModule === moduleId ? 'border-indigo-400 opacity-55 dark:border-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
+                    >
+                      <GripVertical className="h-4 w-4 flex-none cursor-grab text-gray-300 active:cursor-grabbing dark:text-gray-600" aria-hidden="true" />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs font-bold text-gray-700 dark:text-gray-200">{index + 1}. {meta.label}</div>
+                        <div className="truncate text-[10px] text-gray-400" title={meta.description}>{meta.description}</div>
+                      </div>
+                      <div className="flex flex-none items-center gap-1">
+                        <button type="button" onClick={() => moveLabModule(moduleId, -1)} disabled={index === 0} aria-label={`上移${meta.label}`} title="上移" className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowUp className="h-3.5 w-3.5" /></button>
+                        <button type="button" onClick={() => moveLabModule(moduleId, 1)} disabled={index === appearancePreferences.labModuleOrder.length - 1} aria-label={`下移${meta.label}`} title="下移" className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowDown className="h-3.5 w-3.5" /></button>
+                        <button type="button" onClick={() => toggleLabModuleCollapsed(moduleId)} aria-pressed={collapsed} className={`ml-1 rounded-full border px-2 py-1 text-[10px] font-bold transition ${collapsed ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>{collapsed ? '默认收起' : '默认展开'}</button>
+                      </div>
+                    </div>;
+                  })}
+                </div>
+              </div>
               <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />安全模式</span><span>{safeMode ? '已开启' : '已关闭'}</span></button>
               <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">开启后遮挡全站图片；点击图片可临时显示，离开后自动重新遮挡。</p>
               <button type="button" onClick={() => setSafeModeHideTitles(enabled => !enabled)} aria-pressed={safeModeHideTitles} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">

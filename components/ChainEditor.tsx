@@ -24,7 +24,8 @@ import { useNovelaiUsage } from '../services/naiUsage';
 import { getNaiModelInfo } from '../services/naiModels';
 import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
-import { ArrowLeft, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, UserRound, X } from 'lucide-react';
+import { LabModuleCollapsedPreferences, LabModuleId } from '../services/appearancePreferences';
+import { ArrowLeft, ChevronDown, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, UserRound, X } from 'lucide-react';
 
 const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
 
@@ -39,6 +40,8 @@ interface ChainEditorProps {
     externalImportToken?: number;
     agentOpenToken?: number;
     splitPromptFields: boolean;
+    labModuleOrder: LabModuleId[];
+    labModuleCollapsed: LabModuleCollapsedPreferences;
 }
 
 type PresetSource = { name: string; modified: boolean };
@@ -60,6 +63,36 @@ const PresetSourceBadges: React.FC<{ sources: Record<string, PresetSource> }> = 
     }, {});
     const values = Object.values(merged);
     return values.length > 0 ? <div className="flex min-w-0 flex-wrap items-center gap-1">{values.map(source => <PresetSourceBadge key={source.name} source={source} />)}</div> : null;
+};
+
+const LabModuleSection: React.FC<{
+    moduleId: LabModuleId;
+    label: string;
+    order: number;
+    defaultCollapsed: boolean;
+    className?: string;
+    children: React.ReactNode;
+}> = ({ moduleId, label, order, defaultCollapsed, className = '', children }) => {
+    const [open, setOpen] = useState(!defaultCollapsed);
+
+    useEffect(() => setOpen(!defaultCollapsed), [defaultCollapsed]);
+
+    return <details
+        open={open}
+        onToggle={event => setOpen(event.currentTarget.open)}
+        data-lab-module={moduleId}
+        style={{ order }}
+        className={`group min-w-0 ${className}`}
+    >
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-2 text-xs font-bold text-gray-500 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800/45 dark:text-gray-400 dark:hover:border-indigo-700 dark:hover:text-indigo-300 [&::-webkit-details-marker]:hidden">
+            <span>{label}</span>
+            <span className="flex items-center gap-1 text-[10px] font-medium text-gray-400">
+                {open ? '收起' : '展开'}
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+            </span>
+        </summary>
+        <div className="mt-4 space-y-6">{children}</div>
+    </details>;
 };
 
 interface PromptAgentOverlayControllerProps {
@@ -122,7 +155,7 @@ const PromptAgentOverlayController: React.FC<PromptAgentOverlayControllerProps> 
     );
 };
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, splitPromptFields }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, splitPromptFields, labModuleOrder, labModuleCollapsed }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
     const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
@@ -1576,7 +1609,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             <div className="chain-editor-body flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden bg-white dark:bg-gray-900">
                 {/* Left Panel - Editor */}
                 <div className="chain-editor-main flex w-full lg:w-1/2 min-h-full flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
-                    <div className="p-4 md:p-6 space-y-6 max-w-3xl mx-auto w-full pb-24">
+                    <div className="flex w-full max-w-3xl flex-col gap-6 p-4 pb-24 md:p-6 md:pb-24 mx-auto">
                         {!isOwner && (
                             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded mb-4 text-sm text-yellow-700 dark:text-yellow-400">
                                 {isGuest
@@ -1586,6 +1619,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             </div>
                         )}
 
+                        <LabModuleSection
+                            moduleId="prompt"
+                            label="提示词输入"
+                            order={labModuleOrder.indexOf('prompt')}
+                            defaultCollapsed={labModuleCollapsed.prompt}
+                            className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}
+                        >
                         {/* Base Prompt */}
                         <section className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
                             <div className="mb-2 flex items-end justify-between gap-2">
@@ -1733,8 +1773,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 ))}
                             </div>
                         </section>
+                        </LabModuleSection>
 
                         {/* Character Management (New V4.5) */}
+                        <LabModuleSection
+                            moduleId="characters"
+                            label="角色专属提示词"
+                            order={labModuleOrder.indexOf('characters')}
+                            defaultCollapsed={labModuleCollapsed.characters}
+                            className={mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'}
+                        >
                         <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'} rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40`}>
                             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -1827,17 +1875,30 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 ))}
                             </div>
                         </section>
+                        </LabModuleSection>
 
-                        <div className={mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'}>
+                        <LabModuleSection
+                            moduleId="characterReference"
+                            label="角色参考"
+                            order={labModuleOrder.indexOf('characterReference')}
+                            defaultCollapsed={labModuleCollapsed.characterReference}
+                            className={mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'}
+                        >
                             <CharacterReferenceManager
                                 params={params}
                                 setParams={setParams}
                                 markChange={markChange}
                                 notify={notify}
                             />
-                        </div>
+                        </LabModuleSection>
 
-                        <div className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
+                        <LabModuleSection
+                            moduleId="vibe"
+                            label="Vibe Transfer"
+                            order={labModuleOrder.indexOf('vibe')}
+                            defaultCollapsed={labModuleCollapsed.vibe}
+                            className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}
+                        >
                             <VibeManager
                                 params={params}
                                 setParams={setParams}
@@ -1845,10 +1906,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 apiKey={apiKey}
                                 notify={notify}
                             />
-                        </div>
+                        </LabModuleSection>
 
                         {/* Negative Prompt */}
-                        <section className={`${mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'} mb-8`}>
+                        <LabModuleSection
+                            moduleId="negative"
+                            label="全局负面提示词"
+                            order={labModuleOrder.indexOf('negative')}
+                            defaultCollapsed={labModuleCollapsed.negative}
+                            className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}
+                        >
+                        <section className="mb-8">
                             <div className="mb-2 flex items-center justify-between gap-3">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2"><label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">全局负面提示词</label><PresetSourceBadge source={presetSources.negative} /></div>
                                 <button type="button" onClick={() => copyPromptToClipboard(true)} className="flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" title="复制负面提示词">
@@ -1863,9 +1931,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 onValueChange={(nextValue) => { setNegativePrompt(nextValue); markPresetSectionModified('negative'); markChange() }}
                             />
                         </section>
+                        </LabModuleSection>
 
                         {/* Params Component */}
-                        <div className={mobileEditorTab === 'params' ? 'block' : 'hidden lg:block'}>
+                        <LabModuleSection
+                            moduleId="params"
+                            label="参数设置"
+                            order={labModuleOrder.indexOf('params')}
+                            defaultCollapsed={labModuleCollapsed.params}
+                            className={mobileEditorTab === 'params' ? 'block' : 'hidden lg:block'}
+                        >
                         <ChainEditorParams
                             params={params}
                             setParams={(nextParams) => { setParams(nextParams); markPresetSectionModified('settings'); }}
@@ -1873,7 +1948,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             markChange={markChange}
                             presetSource={presetSources.settings}
                         />
-                        </div>
+                        </LabModuleSection>
                     </div>
 
                 </div>

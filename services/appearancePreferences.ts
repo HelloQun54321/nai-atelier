@@ -5,6 +5,26 @@ export type CornerStyle = 'soft' | 'standard' | 'sharp';
 export type SurfaceStyle = 'solid' | 'translucent';
 export type MotionStyle = 'full' | 'reduced' | 'off';
 export type FontScale = 'small' | 'standard' | 'large';
+export type LabModuleId = 'prompt' | 'characters' | 'params' | 'negative' | 'characterReference' | 'vibe';
+export type LabModuleCollapsedPreferences = Record<LabModuleId, boolean>;
+
+export const DEFAULT_LAB_MODULE_ORDER: LabModuleId[] = [
+  'prompt',
+  'characters',
+  'params',
+  'negative',
+  'characterReference',
+  'vibe',
+];
+
+export const DEFAULT_LAB_MODULE_COLLAPSED: LabModuleCollapsedPreferences = {
+  prompt: false,
+  characters: false,
+  params: false,
+  negative: false,
+  characterReference: true,
+  vibe: true,
+};
 
 export interface AppearancePreferences {
   designTheme: DesignTheme;
@@ -16,6 +36,8 @@ export interface AppearancePreferences {
   motion: MotionStyle;
   fontScale: FontScale;
   splitPromptFields: boolean;
+  labModuleOrder: LabModuleId[];
+  labModuleCollapsed: LabModuleCollapsedPreferences;
 }
 
 const STORAGE_KEY = 'nai_appearance_preferences';
@@ -32,6 +54,8 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   motion: 'full',
   fontScale: 'standard',
   splitPromptFields: true,
+  labModuleOrder: [...DEFAULT_LAB_MODULE_ORDER],
+  labModuleCollapsed: { ...DEFAULT_LAB_MODULE_COLLAPSED },
 };
 
 const isOneOf = <T extends string>(value: unknown, values: readonly T[]): value is T =>
@@ -39,6 +63,22 @@ const isOneOf = <T extends string>(value: unknown, values: readonly T[]): value 
 
 export const normalizeAppearancePreferences = (value: unknown): AppearancePreferences => {
   const input = value && typeof value === 'object' ? value as Partial<AppearancePreferences> : {};
+  const persistedOrder = Array.isArray(input.labModuleOrder)
+    ? input.labModuleOrder.filter((item): item is LabModuleId => isOneOf(item, DEFAULT_LAB_MODULE_ORDER))
+    : [];
+  const labModuleOrder = [
+    ...new Set(persistedOrder),
+    ...DEFAULT_LAB_MODULE_ORDER.filter(item => !persistedOrder.includes(item)),
+  ];
+  const persistedCollapsed = input.labModuleCollapsed && typeof input.labModuleCollapsed === 'object'
+    ? input.labModuleCollapsed as Partial<LabModuleCollapsedPreferences>
+    : {};
+  const labModuleCollapsed = Object.fromEntries(DEFAULT_LAB_MODULE_ORDER.map(moduleId => [
+    moduleId,
+    typeof persistedCollapsed[moduleId] === 'boolean'
+      ? persistedCollapsed[moduleId]
+      : DEFAULT_LAB_MODULE_COLLAPSED[moduleId],
+  ])) as LabModuleCollapsedPreferences;
   return {
     designTheme: input.designTheme === 'nai-atelier' ? input.designTheme : DEFAULT_APPEARANCE_PREFERENCES.designTheme,
     themeMode: isOneOf(input.themeMode, ['light', 'dark', 'system']) ? input.themeMode : DEFAULT_APPEARANCE_PREFERENCES.themeMode,
@@ -53,6 +93,8 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     splitPromptFields: typeof input.splitPromptFields === 'boolean'
       ? input.splitPromptFields
       : DEFAULT_APPEARANCE_PREFERENCES.splitPromptFields,
+    labModuleOrder,
+    labModuleCollapsed,
   };
 };
 
