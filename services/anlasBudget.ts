@@ -39,6 +39,14 @@ export const hashNaiApiKey = async (apiKey: string) => {
 let estimatorRuntime: NaiRuntimeConfig = DEFAULT_NAI_RUNTIME;
 export const applyEstimatorRuntime = (config: NaiRuntimeConfig) => { estimatorRuntime = config; };
 
+/** 生成按钮的费用提示：V5 等受限模型的免费档也会消耗 Opus 额度。 */
+export const formatGenerationCostLabel = (cost: number, model?: string): string => {
+  const usesOpusAllowance = getNaiModelInfo(model).opusUsageLimit
+    || Boolean(model && estimatorRuntime.usageLimitedModels.includes(model));
+  if (cost > 0) return `${cost} 点`;
+  return usesOpusAllowance ? '消耗额度' : '免费';
+};
+
 /**
  * Mirrors NovelAI's web cost calculator for this project's supported generation
  * fields. Since V5, free Opus generations additionally require remaining Opus

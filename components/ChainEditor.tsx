@@ -19,7 +19,7 @@ import { createUuid } from '../services/id';
 import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { normalizeVibeSelections } from '../services/vibeUtils';
-import { estimateV45GenerationCost, applyEstimatorRuntime, useAnlasBudget } from '../services/anlasBudget';
+import { estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
 import { useNovelaiUsage } from '../services/naiUsage';
 import { getNaiModelInfo } from '../services/naiModels';
 import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
@@ -164,9 +164,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // 同步失效时“免费/扣费”判断可能基于过期规则，生成前必须向用户示警。
     const runtimeSyncUnhealthy = isNaiRuntimeSyncUnhealthy(naiRuntimeConfig);
     const runtimeSyncWarning = naiRuntimeConfig
-        ? `${describeNaiRuntimeSyncProblem(naiRuntimeConfig)}，费用估算与“免费”判断可能过期，继续生成可能意外消耗共享 Anlas`
+        ? `${describeNaiRuntimeSyncProblem(naiRuntimeConfig)}，费用估算与免费档判断可能过期，继续生成可能意外消耗共享 Anlas`
         : '';
     const estimatedAnlasCost = estimateV45GenerationCost(params, true, opusUsageExhausted);
+    const generationCostLabel = formatGenerationCostLabel(estimatedAnlasCost, params.model);
 
     /**
      * 拼车共享账号：其他成员随时可能把 Opus 限额耗尽或透支。受限额模型
@@ -1202,7 +1203,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (runtimeSyncUnhealthy && cost === 0) {
             if (!await confirmAction({
                 title: '常量同步异常',
-                message: `${runtimeSyncWarning}。\n\n仍要按当前估算（免费）继续生成吗？`,
+                message: `${runtimeSyncWarning}。\n\n仍要按当前估算（${generationCostLabel}）继续生成吗？`,
                 confirmLabel: '仍要生成',
                 tone: 'danger',
             })) return false;
@@ -1246,10 +1247,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string): Promise<boolean> => {
         const cost = estimateV45GenerationCost(draft.params, true, await usageForCostEstimate(draft.params.model));
+        const draftGenerationCostLabel = formatGenerationCostLabel(cost, draft.params.model);
         if (runtimeSyncUnhealthy && cost === 0) {
             if (!await confirmAction({
                 title: '常量同步异常',
-                message: `${reason ? `${reason}\n\n` : ''}${runtimeSyncWarning}。\n\n仍要按当前估算（免费）继续生成吗？`,
+                message: `${reason ? `${reason}\n\n` : ''}${runtimeSyncWarning}。\n\n仍要按当前估算（${draftGenerationCostLabel}）继续生成吗？`,
                 confirmLabel: '仍要生成',
                 tone: 'danger',
             })) return false;
@@ -1865,7 +1867,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     onClearHistoryGroup={handleClearHistoryGroup}
                     onCopyFinalPrompt={() => copyPromptToClipboard(false)}
                     subjectPresetSource={presetSources.subject}
-                    estimatedAnlasCost={estimatedAnlasCost}
+                    generationCostLabel={generationCostLabel}
                 />
                 </div>
             </div>
@@ -1874,7 +1876,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 {(displayedPreviewImage || chain.previewImage) && <button type="button" onClick={() => setLightboxImg(displayedPreviewImage || chain.previewImage || null)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-700" aria-label="查看最近生成结果"><SmartImage src={displayedPreviewImage || chain.previewImage || ''} alt="最近生成结果" /></button>}
                 {queueStatus
                     ? <InlineCloudQueueStatus compact className="min-w-64 max-w-[calc(100vw-5rem)] shadow-xl shadow-indigo-500/30" />
-                    : <button onClick={handleGenerate} disabled={isGenerating} className="mobile-touch rounded-full bg-indigo-600 px-6 text-sm font-bold text-white shadow-xl shadow-indigo-500/20 disabled:opacity-60">{isGenerating ? '生成中…' : `生成 · ${estimatedAnlasCost ? `${estimatedAnlasCost} 点` : '免费'}`}</button>}
+                    : <button onClick={handleGenerate} disabled={isGenerating} className="mobile-touch rounded-full bg-indigo-600 px-6 text-sm font-bold text-white shadow-xl shadow-indigo-500/20 disabled:opacity-60">{isGenerating ? '生成中…' : `生成 · ${generationCostLabel}`}</button>}
             </div>}
 
             {/* Lightbox Modal */}
