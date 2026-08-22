@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.95.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.96.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -52,7 +52,7 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 创作工坊。它不�
 | 🧬 Precise Reference | 电脑保存参考原图、三种官方参考类型、最多 4 张并准确计算费用 |
 | 🚦 拼车公共队列 | 与 st-chatu8 按相同 Key 指纹协调生图顺序，减少共享账号并发错误 |
 | 🔗 SillyTavern 互通 | 与 st-chatu8 同步风格串、封面、Vibe 和组合，并接入其原图历史 |
-| 🛡️ 安全模式 | 全局遮挡图片，作品名称可按设置选择是否同时隐藏；点击后临时显示 |
+| 🛡️ 安全模式 | 全局遮挡图片，作品名称可按设置选择是否同时隐藏，并可设置启动时默认开启；点击后临时显示 |
 | ✦ 项目 Agent | 用 DeepSeek、Gemini、Grok 等模型查看历史图片并操作资料库、设置、实验室与生图流程 |
 
 ### 整体结构
@@ -90,7 +90,7 @@ flowchart LR
 | 🧬 **角色参考** | 保存人物参考图并使用 NovelAI Precise Reference | 实验室、风格串、历史 |
 | 🚦 **拼车公共队列** | 与 st-chatu8 按相同 Key 指纹协调生图顺序，减少共享账号并发错误 | 全部生图入口、电脑与手机 |
 | 🕘 **历史** | 管理电脑保存的生成原图和完整参数 | 实验室、灵感、下载 |
-| ⚙️ **全局设置** | 管理主题、安全模式、API Key、Tag 词库和手机缓存 | 全项目生效 |
+| ⚙️ **全局设置** | 管理主题、安全模式、启动偏好、API Key、Tag 词库和手机缓存 | 全项目生效 |
 
 ---
 
@@ -572,6 +572,7 @@ flowchart TD
 - 切换页面、窗口失焦、页面隐藏或按 `Esc` 时恢复模糊。
 - 应用调色盘 Logo 等品牌资源不会被安全模式隐藏。
 - 手机端入口位于全局设置，桌面端保留侧栏快捷按钮。
+- 全局设置可单独控制“启动时自动开启安全模式”，默认开启；关闭后项目启动时保持关闭，当前会话仍可手动切换。
 
 ### API Key
 

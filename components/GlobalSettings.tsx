@@ -61,7 +61,9 @@ interface GlobalSettingsProps {
   appearancePreferences: AppearancePreferences;
   setAppearancePreferences: React.Dispatch<React.SetStateAction<AppearancePreferences>>;
   safeMode: boolean;
+  safeModeStartup: boolean;
   safeModeHideTitles: boolean;
+  setSafeModeStartup: React.Dispatch<React.SetStateAction<boolean>>;
   setSafeModeHideTitles: React.Dispatch<React.SetStateAction<boolean>>;
   toggleSafeMode: () => void;
 }
@@ -109,7 +111,7 @@ const maskNaiKeyForDisplay = (key: string) => {
   return `${trimmed.slice(0, 6)}…${trimmed.slice(-4)}`;
 };
 
-export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, initialSection = 'home', notify, isDark, themeMode, setThemeMode, appearancePreferences, setAppearancePreferences, safeMode, safeModeHideTitles, setSafeModeHideTitles, toggleSafeMode }) => {
+export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, initialSection = 'home', notify, isDark, themeMode, setThemeMode, appearancePreferences, setAppearancePreferences, safeMode, safeModeStartup, safeModeHideTitles, setSafeModeStartup, setSafeModeHideTitles, toggleSafeMode }) => {
   const confirmAction = useConfirmDialog();
   const [apiKey, setApiKey] = useState(readApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(() => localStorage.getItem('nai_api_key') !== null);
@@ -394,6 +396,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               <button type="button" onClick={() => setSafeModeHideTitles(enabled => !enabled)} aria-pressed={safeModeHideTitles} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
                 <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">同时隐藏作品名称</b><span className="mt-0.5 block text-[10px] leading-4 text-gray-500 dark:text-gray-400">开启后可单独点击名称显示；点击图片会连同对应名称一起显示。</span></span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeHideTitles ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeHideTitles ? 'translate-x-5' : 'translate-x-0'}`} /></span>
+              </button>
+              <button type="button" onClick={() => setSafeModeStartup(enabled => !enabled)} aria-pressed={safeModeStartup} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
+                <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">启动时自动开启安全模式</b><span className="mt-0.5 block text-[10px] leading-4 text-gray-500 dark:text-gray-400">每次重新打开项目时默认开启；关闭后启动时保持关闭，当前会话仍可手动切换。</span></span>
+                <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeStartup ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeStartup ? 'translate-x-5' : 'translate-x-0'}`} /></span>
               </button>
               <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
                 <div className="mb-2 text-xs font-bold text-gray-500 dark:text-gray-400">图片列表布局</div>

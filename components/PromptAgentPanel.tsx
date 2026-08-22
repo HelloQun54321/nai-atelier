@@ -486,7 +486,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       let artistFavorites: string[] = [];
       try { artistFavorites = JSON.parse(localStorage.getItem('nai_fav_artists') || '[]'); } catch { /* ignore damaged browser preference */ }
       await promptAgentService.run({ sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], draft: props.draft, context: { clientSettings: {
-        themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true',
+        themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true', safeModeStartup: localStorage.getItem('nai_safe_mode_startup') !== 'false',
         imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey), artistFavorites: Array.isArray(artistFavorites) ? artistFavorites.slice(0, 2000) : [],
       } } }, event => {
         if (event.type === 'response_start') {
@@ -544,6 +544,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               localStorage.setItem('nai_safe_mode', String(patch.safeMode));
               window.dispatchEvent(new CustomEvent('nai-agent-safe-mode-change', { detail: patch.safeMode }));
             }
+            if (patch.safeModeStartup !== undefined) localStorage.setItem('nai_safe_mode_startup', String(patch.safeModeStartup));
             if (patch.imageLayout || patch.imageColumns !== undefined) {
               const current = getMobileImageDisplayPreferences();
               setMobileImageDisplayPreferences({ layout: patch.imageLayout || current.layout, columns: patch.imageColumns ?? current.columns, desktopColumns: current.desktopColumns });

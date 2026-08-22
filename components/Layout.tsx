@@ -41,7 +41,9 @@ interface LayoutProps {
   appearancePreferences: AppearancePreferences;
   setAppearancePreferences: React.Dispatch<React.SetStateAction<AppearancePreferences>>;
   safeMode: boolean;
+  safeModeStartup: boolean;
   safeModeHideTitles: boolean;
+  setSafeModeStartup: React.Dispatch<React.SetStateAction<boolean>>;
   setSafeModeHideTitles: React.Dispatch<React.SetStateAction<boolean>>;
   toggleSafeMode: () => void;
   toast?: { message: string, type: 'success' | 'error' } | null;
@@ -87,7 +89,7 @@ const readMobileAgentDock = (): MobileAgentDock => {
   return { side: 'left', y: 0.82 };
 };
 
-export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentView, activeView = currentView, isDark, themeMode, setThemeMode, appearancePreferences, setAppearancePreferences, safeMode, safeModeHideTitles, setSafeModeHideTitles, toggleSafeMode, toast, hideNav, notify, onOpenAgent }) => {
+export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentView, activeView = currentView, isDark, themeMode, setThemeMode, appearancePreferences, setAppearancePreferences, safeMode, safeModeStartup, safeModeHideTitles, setSafeModeStartup, setSafeModeHideTitles, toggleSafeMode, toast, hideNav, notify, onOpenAgent }) => {
   const anlasBudget = useAnlasBudget();
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('home');
@@ -360,7 +362,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         </div>
       </>}
 
-      {showSettings && <React.Suspense fallback={null}><GlobalSettings open onClose={() => setShowSettings(false)} initialSection={settingsSection} notify={notify} isDark={isDark} themeMode={themeMode} setThemeMode={setThemeMode} appearancePreferences={appearancePreferences} setAppearancePreferences={setAppearancePreferences} safeMode={safeMode} safeModeHideTitles={safeModeHideTitles} setSafeModeHideTitles={setSafeModeHideTitles} toggleSafeMode={toggleSafeMode} /></React.Suspense>}
+      {showSettings && <React.Suspense fallback={null}><GlobalSettings open onClose={() => setShowSettings(false)} initialSection={settingsSection} notify={notify} isDark={isDark} themeMode={themeMode} setThemeMode={setThemeMode} appearancePreferences={appearancePreferences} setAppearancePreferences={setAppearancePreferences} safeMode={safeMode} safeModeStartup={safeModeStartup} safeModeHideTitles={safeModeHideTitles} setSafeModeStartup={setSafeModeStartup} setSafeModeHideTitles={setSafeModeHideTitles} toggleSafeMode={toggleSafeMode} /></React.Suspense>}
     </div>
   );
 };

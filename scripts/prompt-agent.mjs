@@ -2342,7 +2342,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'get_project_settings', label: '读取项目设置', description: '读取Anlas预算、公共队列、画师基准图配置和当前浏览器的主题、安全模式、手机图片显示与缓存设置。不会返回任何API Key。',
+        name: 'get_project_settings', label: '读取项目设置', description: '读取Anlas预算、公共队列、画师基准图配置和当前浏览器的主题、安全模式、启动时安全模式、手机图片显示与缓存设置。不会返回任何API Key。',
         parameters: Type.Object({}),
         execute: async () => {
           const [budget, benchmarks] = await Promise.all([readProject('/api/anlas-budget'), readProject('/api/config/benchmarks')]);
@@ -2415,8 +2415,8 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'set_client_preferences', label: '调整界面偏好', description: '调整当前设备的主题、安全模式、手机图片布局/列数与小图缓存上限。只传需要修改的字段。',
-        parameters: Type.Object({ themeMode: Type.Optional(Type.Union([Type.Literal('light'), Type.Literal('dark'), Type.Literal('system')])), safeMode: Type.Optional(Type.Boolean()), imageLayout: Type.Optional(Type.Union([Type.Literal('masonry'), Type.Literal('portrait'), Type.Literal('square')])), imageColumns: Type.Optional(Type.Union([Type.Literal('auto'), Type.Literal(1), Type.Literal(2), Type.Literal(3)])), mobileCacheLimit: Type.Optional(Type.Union([Type.Literal(0), Type.Literal(25), Type.Literal(50), Type.Literal(100)])) }),
+        name: 'set_client_preferences', label: '调整界面偏好', description: '调整当前设备的主题、安全模式、启动时是否自动开启安全模式、手机图片布局/列数与小图缓存上限。只传需要修改的字段。',
+        parameters: Type.Object({ themeMode: Type.Optional(Type.Union([Type.Literal('light'), Type.Literal('dark'), Type.Literal('system')])), safeMode: Type.Optional(Type.Boolean()), safeModeStartup: Type.Optional(Type.Boolean()), imageLayout: Type.Optional(Type.Union([Type.Literal('masonry'), Type.Literal('portrait'), Type.Literal('square')])), imageColumns: Type.Optional(Type.Union([Type.Literal('auto'), Type.Literal(1), Type.Literal(2), Type.Literal(3)])), mobileCacheLimit: Type.Optional(Type.Union([Type.Literal(0), Type.Literal(25), Type.Literal(50), Type.Literal(100)])) }),
         execute: async (_id, args) => apply('set_client_preferences', args),
       },
       {

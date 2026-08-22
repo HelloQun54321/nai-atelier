@@ -66,7 +66,8 @@ const App = () => {
   const setThemeMode = (mode: ThemeMode) => setAppearancePreferences(current => ({ ...current, themeMode: mode }));
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const isDark = themeMode === 'dark' || (themeMode === 'system' && systemDark);
-  const [safeMode, setSafeMode] = useState(() => localStorage.getItem('nai_safe_mode') === 'true');
+  const [safeModeStartup, setSafeModeStartup] = useState(() => localStorage.getItem('nai_safe_mode_startup') !== 'false');
+  const [safeMode, setSafeMode] = useState(() => localStorage.getItem('nai_safe_mode_startup') !== 'false');
   const [safeModeHideTitles, setSafeModeHideTitles] = useState(() => localStorage.getItem('nai_safe_mode_hide_titles') !== 'false');
 
   // Toast State
@@ -99,6 +100,7 @@ const App = () => {
       const detail = (event as CustomEvent).detail || {};
       if (['light', 'dark', 'system'].includes(detail.themeMode)) setThemeMode(detail.themeMode);
       if (typeof detail.safeMode === 'boolean') setSafeMode(detail.safeMode);
+      if (typeof detail.safeModeStartup === 'boolean') setSafeModeStartup(detail.safeModeStartup);
     };
     const navigate = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
@@ -207,6 +209,10 @@ const App = () => {
     resetSafeModeReveals();
     setSafeMode(enabled => !enabled);
   };
+
+  useEffect(() => {
+    localStorage.setItem('nai_safe_mode_startup', String(safeModeStartup));
+  }, [safeModeStartup]);
 
   useEffect(() => {
     localStorage.setItem('nai_safe_mode', String(safeMode));
@@ -654,7 +660,9 @@ const App = () => {
         appearancePreferences={appearancePreferences}
         setAppearancePreferences={setAppearancePreferences}
         safeMode={safeMode}
+        safeModeStartup={safeModeStartup}
         safeModeHideTitles={safeModeHideTitles}
+        setSafeModeStartup={setSafeModeStartup}
         setSafeModeHideTitles={setSafeModeHideTitles}
         toggleSafeMode={toggleSafeMode}
         toast={toast}
