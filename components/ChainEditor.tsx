@@ -1876,7 +1876,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 {(displayedPreviewImage || chain.previewImage) && <button type="button" onClick={() => setLightboxImg(displayedPreviewImage || chain.previewImage || null)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-700" aria-label="查看最近生成结果"><SmartImage src={displayedPreviewImage || chain.previewImage || ''} alt="最近生成结果" /></button>}
                 {queueStatus
                     ? <InlineCloudQueueStatus compact className="min-w-64 max-w-[calc(100vw-5rem)] shadow-xl shadow-indigo-500/30" />
-                    : <button onClick={handleGenerate} disabled={isGenerating} className="mobile-touch rounded-full bg-indigo-600 px-6 text-sm font-bold text-white shadow-xl shadow-indigo-500/20 disabled:opacity-60">{isGenerating ? '生成中…' : `生成 · ${generationCostLabel}`}</button>}
+                    : <button onClick={handleGenerate} disabled={isGenerating} className={`generation-action-button mobile-touch rounded-full px-6 text-sm font-bold text-white shadow-xl disabled:opacity-60 ${isGenerating ? 'generation-action-button--loading' : ''}`}><span>{isGenerating ? '生成中…' : `生成 · ${generationCostLabel}`}</span></button>}
             </div>}
 
             {/* Lightbox Modal */}

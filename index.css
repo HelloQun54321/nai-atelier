@@ -97,6 +97,13 @@ html[data-design-theme='nai-atelier'] {
   --color-violet-800: var(--color-indigo-800);
   --color-violet-900: var(--color-indigo-900);
   --color-violet-950: var(--color-indigo-950);
+
+  /* 主要生成操作的同色系渐变与光斑，全部跟随当前强调色。 */
+  --nai-action-deep: color-mix(in srgb, var(--nai-accent) 68%, black);
+  --nai-action-mid: var(--nai-accent);
+  --nai-action-light: color-mix(in srgb, var(--nai-accent) 68%, white);
+  --nai-action-glow: color-mix(in srgb, var(--nai-accent) 30%, white);
+  --nai-action-shadow: color-mix(in srgb, var(--nai-accent) 30%, transparent);
 }
 
 html[data-design-theme='nai-atelier'].dark {
@@ -122,6 +129,99 @@ html[data-design-theme='nai-atelier'].dark body {
 
 html[data-design-theme='nai-atelier'] ::selection {
   background: color-mix(in srgb, var(--nai-accent) 28%, transparent);
+}
+
+/* 主要生成按钮：同色系多段渐变叠加缓慢往返的光斑，形成轻微粒子流光。 */
+.generation-action-button {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 0;
+  background-color: var(--nai-action-deep, #4f46e5);
+  background-image: linear-gradient(
+    108deg,
+    var(--nai-action-deep, #4f46e5) 0%,
+    var(--nai-action-mid, #6366f1) 24%,
+    var(--nai-action-light, #a5b4fc) 48%,
+    var(--nai-action-mid, #6366f1) 72%,
+    var(--nai-action-deep, #4f46e5) 100%
+  );
+  background-position: 0% 50%;
+  background-size: 220% 100%;
+  box-shadow: 0 10px 24px var(--nai-action-shadow, rgb(79 70 229 / .28));
+  transition: filter 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.generation-action-button::before {
+  position: absolute;
+  inset: -35% -20%;
+  z-index: 0;
+  pointer-events: none;
+  content: '';
+  background-image:
+    radial-gradient(circle at 16% 48%, var(--nai-action-glow, rgb(255 255 255 / .48)) 0%, transparent 15%),
+    radial-gradient(circle at 48% 22%, var(--nai-action-glow, rgb(255 255 255 / .38)) 0%, transparent 18%),
+    radial-gradient(circle at 82% 72%, var(--nai-action-glow, rgb(255 255 255 / .42)) 0%, transparent 16%);
+  background-position: 0% 50%;
+  background-size: 180% 100%;
+  filter: blur(9px);
+  opacity: .62;
+}
+
+.generation-action-button:hover {
+  filter: saturate(1.08) brightness(1.04);
+  box-shadow: 0 12px 28px var(--nai-action-shadow, rgb(79 70 229 / .34));
+}
+
+.generation-action-button:active {
+  transform: translateY(1px) scale(.99);
+}
+
+.generation-action-button--loading {
+  cursor: wait;
+  filter: saturate(1.05);
+}
+
+.generation-action-button--loading::before {
+  opacity: .8;
+}
+
+.generation-action-button > span {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-motion='full'] .generation-action-button {
+  animation: nai-generation-gradient-flow 6.4s ease-in-out infinite alternate;
+}
+
+html[data-motion='full'] .generation-action-button::before {
+  animation: nai-generation-particle-drift 5.2s ease-in-out infinite alternate;
+}
+
+html[data-motion='full'] .generation-action-button--loading {
+  animation-duration: 2.8s;
+}
+
+html[data-motion='full'] .generation-action-button--loading::before {
+  animation-duration: 2.4s;
+}
+
+@keyframes nai-generation-gradient-flow {
+  from { background-position: 0% 50%; }
+  to { background-position: 100% 50%; }
+}
+
+@keyframes nai-generation-particle-drift {
+  from { background-position: 0% 50%; transform: translate3d(-2%, 0, 0) scale(1); }
+  to { background-position: 100% 50%; transform: translate3d(2%, -2%, 0) scale(1.04); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .generation-action-button,
+  .generation-action-button::before {
+    animation: none !important;
+  }
 }
 
 html[data-design-theme='nai-atelier'] :focus-visible {
