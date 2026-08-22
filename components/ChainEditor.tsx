@@ -1511,7 +1511,21 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             <RotateCcw className="h-[18px] w-[18px] md:h-5 md:w-5" />
                         </button>
                     )}
-                    {isOwner && chain.id !== 'playground' && <button onClick={handleSaveAll} disabled={!hasChanges} className={`mobile-touch rounded-xl px-3 text-sm font-bold lg:hidden ${hasChanges ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}>{hasChanges ? '保存' : '已保存'}</button>}
+                    {isOwner && chain.id !== 'playground' && (
+                        <button
+                            type="button"
+                            onClick={handleSaveAll}
+                            disabled={!hasChanges}
+                            className={`mobile-touch flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-bold transition-colors lg:w-11 lg:px-0 ${hasChanges
+                                ? 'bg-indigo-600 text-white hover:bg-indigo-500'
+                                : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}
+                            title={hasChanges ? '保存修改' : '已保存'}
+                            aria-label={hasChanges ? '保存修改' : '已保存'}
+                        >
+                            <Save className="h-[18px] w-[18px] md:h-5 md:w-5" />
+                            <span className="lg:hidden">{hasChanges ? '保存' : '已保存'}</span>
+                        </button>
+                    )}
                 </div>
             </header>
             <PromptAgentOverlayController
@@ -1828,29 +1842,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         </div>
                     </div>
 
-                    {/* Save Footer: fixed on mobile so always visible, sticky in left panel on lg */}
-                    {!lightboxImg && (
-                        <div className="chain-editor-footer hidden lg:sticky lg:bottom-0 lg:z-[999] lg:flex w-full p-2 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-800 justify-between items-center shadow-lg transition-transform duration-300">
-                            <div className="text-xs text-gray-500 ml-2">
-                                {chain.id === 'playground' ? <span className="text-indigo-600 dark:text-indigo-400">生图实验室</span> : hasChanges ? <span className="text-yellow-600 dark:text-yellow-500 font-medium">⚠️ 未保存</span> : <span className="text-green-600 dark:text-green-500">✅ 已保存</span>}
-                            </div>
-                            <div className="flex items-center gap-2 md:gap-3">
-                                {isOwner && chain.id !== 'playground' &&
-                                <button
-                                    onClick={handleSaveAll}
-                                    disabled={!hasChanges}
-                                    className={`mobile-touch px-5 py-1.5 rounded-xl font-bold text-sm shadow-md transition-all transform active:scale-95 ${hasChanges
-                                        ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20'
-                                        : 'bg-gray-200 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
-                                        }`}
-                                >
-                                    保存
-                                </button>
-                                }
-                                <button onClick={handleGenerate} disabled={isGenerating} className={`generation-action-button mobile-touch rounded-xl px-6 text-sm font-bold text-white shadow-lg disabled:opacity-60 ${isGenerating ? 'generation-action-button--loading' : ''}`}><span>{isGenerating ? '生成中…' : `生成 · ${generationCostLabel}`}</span></button>
-                            </div>
-                        </div>
-                    )}
                 </div>
 
                 {/* Right Panel - Preview (Testing) - Extracted Component */}

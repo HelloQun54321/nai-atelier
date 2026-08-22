@@ -113,7 +113,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 </div>
             </div>
 
-            <div className="chain-editor-param-grid mb-4 grid grid-cols-2 gap-2 border-b border-gray-100 pb-4 dark:border-gray-700 md:grid-cols-4 md:gap-4 lg:grid-cols-6">
+            <div className="chain-editor-param-grid mb-4 grid grid-cols-2 gap-2 border-b border-gray-100 pb-4 dark:border-gray-700 md:gap-4 lg:grid-cols-3">
                 <div className="col-span-2 flex min-w-0 flex-col gap-1">
                     <label className="text-xs text-gray-500 dark:text-gray-500 block">生成模型</label>
                     <select
@@ -204,7 +204,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 </div>
 
                 {missingModelFeatures.length > 0 && (
-                    <p className="col-span-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-[11px] leading-4 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 md:col-span-4 lg:col-span-6">
+                    <p className="col-span-full rounded-md bg-amber-50 px-2.5 py-1.5 text-[11px] leading-4 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
                         {currentModelInfo.label} 暂不支持 {missingModelFeatures.join(' / ')}
                     </p>
                 )}

@@ -6,6 +6,7 @@
 
 ## 2026-08-23
 
+- **Codex (GPT-5)**：将生成参数控件改为宽屏分行布局，移除桌面编辑器重复底栏并保留顶部保存入口（fix: refine generation parameter layout）。
 - **Codex (GPT-5)**：重排生成参数区，新增 NovelAI 元数据导入拆分预览，并接入官方图片模型哈希映射同步与 V5 自动选择（feat: improve novelai metadata import）。
 - **Codex (GPT-5)**：按 NovelAI 官方格式新增 Alpha Stealth PNG 元数据导入，补齐标准压缩文本块和损坏数据保护，并用 V5/V4.5 原图验证新旧解析路径（feat: support novelai stealth png metadata）。
 - **Codex (GPT-5)**：修复切换 Key 后订阅请求失败会让 Opus 限额整行消失的问题，增加可重试错误态及对应回归测试（fix: keep opus status visible on key switch failure）。
