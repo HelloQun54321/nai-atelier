@@ -18,6 +18,7 @@ import {
   extractNaiCostCoefficients,
   extractNaiFreeTierLimits,
   extractNaiModelCapabilities,
+  fetchNaiRuntimeText,
   computeNaiRuntimeSync,
   computeGenerationPersonalUsage,
   applyNaiRuntimeOverride,
@@ -741,6 +742,17 @@ test('官方 Web 应用常量提取器解析真实压缩代码片段', () => {
   assert.deepEqual(capabilities.usageLimitedModels, [
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting', 'nai-diffusion-6-full',
   ]);
+});
+
+test('官方 bundle 请求在临时失败后自动重试', async () => {
+  let attempts = 0;
+  const text = await fetchNaiRuntimeText('https://novelai.net/chunk.js', async () => {
+    attempts += 1;
+    if (attempts < 3) throw new Error('temporary network failure');
+    return new Response('chunk payload', { status: 200 });
+  }, [0, 0]);
+  assert.equal(text, 'chunk payload');
+  assert.equal(attempts, 3);
 });
 
 test('成本估算跟随同步的运行时常量', () => {

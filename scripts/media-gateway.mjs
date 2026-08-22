@@ -788,9 +788,15 @@ export const DEFAULT_NAI_RUNTIME = {
 const NAI_WEBAPP_SOURCE = 'https://novelai.net/image';
 const NAI_RUNTIME_SYNC_FILE = join(process.cwd(), 'local-data', 'novelai-webapp-sync.json');
 const NAI_RUNTIME_SYNC_INTERVAL = 24 * 60 * 60 * 1000;
+const NAI_RUNTIME_RETRY_INTERVAL = 5 * 60 * 1000;
+const NAI_RUNTIME_REQUEST_RETRY_DELAYS_MS = [250, 1000];
+const NAI_RUNTIME_REQUEST_TIMEOUT_MS = 30_000;
 /** 首次同步在网关就绪后延迟触发，把启动带宽留给 D1/R2 恢复与页面加载。 */
 const NAI_RUNTIME_SYNC_STARTUP_DELAY_MS = 30_000;
 let naiRuntimeState = { ...DEFAULT_NAI_RUNTIME, syncedAt: 0, health: { ok: false, reason: 'pending' } };
+let naiRuntimeSyncPromise = null;
+let naiRuntimeSyncInitialized = false;
+let naiRuntimeSyncTimer = null;
 
 export const getNaiRuntime = () => naiRuntimeState;
 
@@ -851,6 +857,25 @@ export const extractNaiModelCapabilities = text => {
   return { models, usageLimitedModels };
 };
 
+/** 带短暂退避的官方 bundle 文本请求；单个 chunk 抖动时不应直接污染整次同步。 */
+export const fetchNaiRuntimeText = async (url, requestRemote = fetch, retryDelays = NAI_RUNTIME_REQUEST_RETRY_DELAYS_MS) => {
+  let lastError = null;
+  for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+    try {
+      const response = await requestRemote(url, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(NAI_RUNTIME_REQUEST_TIMEOUT_MS),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.text();
+    } catch (error) {
+      lastError = error;
+      if (attempt < retryDelays.length) await new Promise(resolve => setTimeout(resolve, retryDelays[attempt]));
+    }
+  }
+  throw lastError || new Error('官方 bundle 请求失败');
+};
+
 /**
  * 对官方 bundle 文本执行全部提取并生成健康记录：任何一项未命中都会记录到
  * health.missed（官方改版或提取器被改坏时，调用方据此向用户示警，而不是
@@ -885,15 +910,37 @@ export const computeNaiRuntimeSync = text => {
   return { runtime: next, health };
 };
 
-export const syncNaiRuntime = async (requestRemote = fetch) => {
+const persistNaiRuntimeState = async () => {
+  try {
+    await mkdir(dirname(NAI_RUNTIME_SYNC_FILE), { recursive: true });
+    await writeFile(NAI_RUNTIME_SYNC_FILE, JSON.stringify({
+      syncedAt: naiRuntimeState.syncedAt,
+      runtime: {
+        imagesPerPercent: naiRuntimeState.imagesPerPercent,
+        costCoefficientArea: naiRuntimeState.costCoefficientArea,
+        costCoefficientSteps: naiRuntimeState.costCoefficientSteps,
+        freeMaxArea: naiRuntimeState.freeMaxArea,
+        freeMaxSteps: naiRuntimeState.freeMaxSteps,
+        models: naiRuntimeState.models,
+        usageLimitedModels: naiRuntimeState.usageLimitedModels,
+      },
+      health: naiRuntimeState.health,
+    }, null, 2), 'utf8');
+  } catch {
+    // 持久化失败只影响下次启动的初值，同步结果仍在本进程内生效。
+  }
+};
+
+const runNaiRuntimeSync = async (requestRemote = fetch) => {
   let html;
   try {
-    html = await (await requestRemote(NAI_WEBAPP_SOURCE, { signal: AbortSignal.timeout(30_000) })).text();
+    html = await fetchNaiRuntimeText(NAI_WEBAPP_SOURCE, requestRemote);
   } catch (error) {
     naiRuntimeState = {
       ...naiRuntimeState,
-      health: { ok: false, reason: 'fetch', error: error.message || String(error) },
+      health: { ok: false, reason: 'fetch', error: error.message || String(error), attemptedAt: Date.now() },
     };
+    await persistNaiRuntimeState();
     console.warn('[nai-runtime] 官方页面抓取失败，沿用最近可用常量：', error.message || error);
     return false;
   }
@@ -901,37 +948,56 @@ export const syncNaiRuntime = async (requestRemote = fetch) => {
   if (!paths.length) {
     naiRuntimeState = {
       ...naiRuntimeState,
-      health: { ok: false, reason: 'page', error: 'official page exposes no chunks' },
+      health: { ok: false, reason: 'page', error: 'official page exposes no chunks', attemptedAt: Date.now() },
     };
+    await persistNaiRuntimeState();
     console.warn('[nai-runtime] 官方页面结构变化（未找到 JS 包），沿用最近可用常量');
     return false;
   }
   const chunks = await Promise.all(paths.map(path =>
-    requestRemote(`https://novelai.net${path}`, { signal: AbortSignal.timeout(30_000) })
-      .then(response => (response.ok ? response.text() : ''))
-      .catch(() => '')));
+    fetchNaiRuntimeText(`https://novelai.net${path}`, requestRemote).catch(() => '')));
   const { runtime, health } = computeNaiRuntimeSync(chunks.join('\n'));
-  const previouslyOk = naiRuntimeState.health?.ok !== false;
+  if (health.missed.length) {
+    // 部分提取不能替换上一次完整快照，否则一次 chunk 网络抖动会把默认值持久化一天。
+    naiRuntimeState = {
+      ...naiRuntimeState,
+      health: { ...health, ok: false, reason: 'partial', attemptedAt: Date.now() },
+    };
+    await persistNaiRuntimeState();
+    console.warn('[nai-runtime] 官方常量部分提取失效，将沿用最近完整快照并稍后重试：', health.missed.join(', '));
+    return false;
+  }
   naiRuntimeState = { ...runtime, syncedAt: Date.now(), health };
-  if (!health.ok) {
-    console.warn('[nai-runtime] 官方常量提取全部失效（官方可能改版），沿用内置默认值');
-  } else if (health.missed.length && previouslyOk) {
-    console.warn('[nai-runtime] 官方常量部分提取失效：', health.missed.join(', '));
-  }
-  try {
-    await mkdir(dirname(NAI_RUNTIME_SYNC_FILE), { recursive: true });
-    await writeFile(NAI_RUNTIME_SYNC_FILE, JSON.stringify({
-      syncedAt: naiRuntimeState.syncedAt,
-      runtime,
-      health,
-    }, null, 2), 'utf8');
-  } catch {
-    // 持久化失败只影响下次启动的初值，同步结果仍在本进程内生效。
-  }
-  return health.ok;
+  await persistNaiRuntimeState();
+  return true;
+};
+
+export const syncNaiRuntime = (requestRemote = fetch) => {
+  if (naiRuntimeSyncPromise) return naiRuntimeSyncPromise;
+  naiRuntimeSyncPromise = runNaiRuntimeSync(requestRemote).finally(() => {
+    naiRuntimeSyncPromise = null;
+  });
+  return naiRuntimeSyncPromise;
+};
+
+const scheduleNaiRuntimeSync = (delay) => {
+  if (naiRuntimeSyncTimer !== null) clearTimeout(naiRuntimeSyncTimer);
+  naiRuntimeSyncTimer = setTimeout(async () => {
+    naiRuntimeSyncTimer = null;
+    let succeeded = false;
+    try {
+      succeeded = await syncNaiRuntime();
+    } catch (error) {
+      console.warn('[nai-runtime] 同步任务异常，将稍后重试：', error.message || error);
+    }
+    scheduleNaiRuntimeSync(succeeded ? NAI_RUNTIME_SYNC_INTERVAL : NAI_RUNTIME_RETRY_INTERVAL);
+  }, delay);
+  if (typeof naiRuntimeSyncTimer.unref === 'function') naiRuntimeSyncTimer.unref();
 };
 
 const initNaiRuntimeSync = async () => {
+  if (naiRuntimeSyncInitialized) return;
+  naiRuntimeSyncInitialized = true;
   try {
     const saved = JSON.parse(await readFile(NAI_RUNTIME_SYNC_FILE, 'utf8'));
     if (saved?.runtime) {
@@ -939,17 +1005,16 @@ const initNaiRuntimeSync = async () => {
         ...DEFAULT_NAI_RUNTIME,
         ...saved.runtime,
         syncedAt: Number(saved.syncedAt) || 0,
-        health: saved.health || { ok: true, extracted: [], missed: [] },
+        health: saved.health?.missed?.length
+          ? { ...saved.health, ok: false, reason: 'partial' }
+          : saved.health || { ok: true, extracted: [], missed: [] },
       };
     }
   } catch {
     // 无历史同步时直接使用内置默认值。
   }
-  // 启动后延迟同步，避免挤占启动期网络；之后每天刷新，失败保留当前值。
-  const startupDelay = setTimeout(() => { void syncNaiRuntime().catch(() => {}); }, NAI_RUNTIME_SYNC_STARTUP_DELAY_MS);
-  if (typeof startupDelay.unref === 'function') startupDelay.unref();
-  const timer = setInterval(() => { void syncNaiRuntime().catch(() => {}); }, NAI_RUNTIME_SYNC_INTERVAL);
-  if (typeof timer.unref === 'function') timer.unref();
+  // 启动后延迟同步，失败时改为短间隔重试，完整成功后再恢复每日同步。
+  scheduleNaiRuntimeSync(NAI_RUNTIME_SYNC_STARTUP_DELAY_MS);
 };
 
 export const generateWithVibeCacheRetry = async (

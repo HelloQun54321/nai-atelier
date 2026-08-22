@@ -13,6 +13,7 @@ export interface NaiRuntimeHealth {
   missed?: string[];
   reason?: string;
   error?: string;
+  attemptedAt?: number;
 }
 
 export interface NaiRuntimeConfig {
@@ -54,40 +55,58 @@ let pendingConfig: Promise<NaiRuntimeConfig> | null = null;
 
 /** 超过该时长未成功同步即视为“常量可能过期”，生成前需向用户示警。 */
 export const NAI_RUNTIME_STALE_MS = 48 * 60 * 60 * 1000;
+export const NAI_RUNTIME_REFRESH_EVENT = 'nai-runtime-refresh';
+const NAI_RUNTIME_REFRESH_INTERVAL = 60 * 1000;
+
+const requestNaiRuntimeConfig = async (): Promise<NaiRuntimeConfig> => {
+  try {
+    const res = await fetch(`/api/novelai-runtime?_t=${Date.now()}`, { cache: 'no-store' });
+    if (res.ok) {
+      const next = await res.json();
+      if (next && Array.isArray(next.models) && next.models.length) {
+        const resolved: NaiRuntimeConfig = { ...DEFAULT_NAI_RUNTIME, ...next };
+        cachedConfig = resolved;
+        return resolved;
+      }
+    }
+  } catch {
+    // 网关未启动或临时不可用时保留上一次结果。
+  }
+  return cachedConfig || DEFAULT_NAI_RUNTIME;
+};
+
+const loadNaiRuntimeConfig = () => {
+  if (pendingConfig) return pendingConfig;
+  const request = requestNaiRuntimeConfig();
+  pendingConfig = request;
+  request.then(() => {
+    if (pendingConfig === request) pendingConfig = null;
+  });
+  return request;
+};
 
 export const getNaiRuntimeConfig = async (): Promise<NaiRuntimeConfig> => {
   if (cachedConfig) return cachedConfig;
-  if (!pendingConfig) {
-    pendingConfig = (async () => {
-      try {
-        const res = await fetch('/api/novelai-runtime');
-        if (res.ok) {
-          const next = await res.json();
-          if (next && Array.isArray(next.models) && next.models.length) {
-            const resolved: NaiRuntimeConfig = { ...DEFAULT_NAI_RUNTIME, ...next };
-            cachedConfig = resolved;
-            return resolved;
-          }
-        }
-      } catch {
-        // 网关未启动或临时不可用时使用内置默认值。
-      }
-      cachedConfig = DEFAULT_NAI_RUNTIME;
-      return DEFAULT_NAI_RUNTIME;
-    })();
-  }
-  return pendingConfig;
+  return loadNaiRuntimeConfig();
 };
+
+/** 强制重新读取网关状态，避免页面永久使用第一次请求的旧健康记录。 */
+export const refreshNaiRuntimeConfig = () => loadNaiRuntimeConfig();
 
 /** 判断同步是否处于需要生成前示警的失效状态（提取全灭或超过 48 小时未更新）。 */
 export const isNaiRuntimeSyncUnhealthy = (config: NaiRuntimeConfig | null | undefined): boolean => {
   if (!config) return false;
+  if (config.health?.reason === 'pending') return false;
   if (config.health?.ok === false) return true;
   const syncedAt = config.syncedAt ?? 0;
   return syncedAt > 0 && Date.now() - syncedAt > NAI_RUNTIME_STALE_MS;
 };
 
 export const describeNaiRuntimeSyncProblem = (config: NaiRuntimeConfig): string => {
+  if (config.health?.reason === 'pending') return '官方常量同步进行中，稍后会自动重试';
+  if (config.health?.reason === 'partial') {
+    return `官方常量同步部分失效（未命中 ${config.health.missed?.join('、') || '未知项目'}）`;
+  }
   if (config.health?.ok === false) {
     const reason = config.health.reason === 'fetch'
       ? '无法访问官方页面'
@@ -105,10 +124,24 @@ export const useNaiRuntime = () => {
   const [config, setConfig] = useState<NaiRuntimeConfig>(DEFAULT_NAI_RUNTIME);
   useEffect(() => {
     let active = true;
-    void getNaiRuntimeConfig().then(next => {
-      if (active) setConfig(next);
-    });
-    return () => { active = false; };
+    const update = (force = false) => {
+      const request = force ? refreshNaiRuntimeConfig() : getNaiRuntimeConfig();
+      void request.then(next => {
+        if (active) setConfig(next);
+      });
+    };
+    update();
+    const onRefresh = () => update(true);
+    const onFocus = () => update(true);
+    window.addEventListener(NAI_RUNTIME_REFRESH_EVENT, onRefresh);
+    window.addEventListener('focus', onFocus);
+    const timer = window.setInterval(() => update(true), NAI_RUNTIME_REFRESH_INTERVAL);
+    return () => {
+      active = false;
+      window.removeEventListener(NAI_RUNTIME_REFRESH_EVENT, onRefresh);
+      window.removeEventListener('focus', onFocus);
+      window.clearInterval(timer);
+    };
   }, []);
   return config;
 };

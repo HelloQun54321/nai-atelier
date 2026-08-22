@@ -32,8 +32,11 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
   // 同步健康度：提取失效或超过 48 小时未更新时，用琥珀色圆点显式示警，
   // 避免「项目能跑但常量早已过期」的静默失效。
   const health = runtime.health;
+  const syncPending = health?.reason === 'pending';
   const syncBroken = isNaiRuntimeSyncUnhealthy(runtime);
-  const syncSummary = syncBroken
+  const syncSummary = syncPending
+    ? '官方常量同步进行中，稍后自动重试'
+    : syncBroken
     ? `⚠ ${describeNaiRuntimeSyncProblem(runtime)}：张数换算与费用估算可能过期，请检查电脑网络，或让 AI 运行 npm run test:live-sync 排查`
     : health?.missed?.length
       ? `常量同步部分失效：未命中 ${health.missed.join('、')}（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString() : ''} 同步）`
