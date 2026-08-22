@@ -90,7 +90,7 @@ export const api = {
     const remaining = res.headers.get('x-nai-anlas-remaining');
     if (remaining !== null && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('nai-anlas-budget-changed', {
-        detail: { remaining: Number(remaining), updatedAt: Date.now(), keyHash: options.budgetKeyHash || '' },
+        detail: { remaining: Number(remaining), updatedAt: Date.now(), keyHash: options.budgetKeyHash || '', refreshPersonal: true },
       }));
     }
     return res.blob();

@@ -119,15 +119,17 @@ export const useAnlasBudget = () => {
   useEffect(() => {
     void refresh();
     const update = (event: Event) => {
-      const detail = (event as CustomEvent<AnlasBudgetState & { keyHash?: string }>).detail;
+      const detail = (event as CustomEvent<AnlasBudgetState & { keyHash?: string; refreshPersonal?: boolean }>).detail;
       const eventKeyHash = typeof detail?.keyHash === 'string' ? detail.keyHash : null;
       if (eventKeyHash === null) return;
       void getActiveKeyHash().then(currentKeyHash => {
         if (currentKeyHash !== eventKeyHash) return;
-        const { keyHash: _keyHash, ...stateDetail } = detail;
+        const { keyHash: _keyHash, refreshPersonal: _refreshPersonal, ...stateDetail } = detail;
         setState(previous => ({ ...previous, ...stateDetail }));
         if (stateDetail.personal !== undefined) {
           setPersonal(eventKeyHash ? stateDetail.personal?.[eventKeyHash] || null : null);
+        } else if (detail.refreshPersonal) {
+          void refresh();
         }
       });
     };

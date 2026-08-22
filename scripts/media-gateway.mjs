@@ -600,7 +600,7 @@ export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = fals
 /**
  * 成功生成后的个人用量增量（按密钥账号累计，供设置页展示）：
  * - anlasDelta：本次实际扣减的 Anlas（估算口径与本地预算一致）；
- * - opusImages：计入 Opus 免费额度的张数——仅“受限模型（V5 系）+ 免费档
+ * - opusImagesDelta：计入 Opus 免费额度的张数——仅“受限模型（V5 系）+ 免费档
  *   （单张、无底图、面积/步数达标）+ 未透支”的生成才消耗共享额度。
  */
 export const computeGenerationPersonalUsage = (payload, estimatedCost, usageExhausted, runtime = getNaiRuntime()) => {
@@ -612,9 +612,9 @@ export const computeGenerationPersonalUsage = (payload, estimatedCost, usageExha
   const steps = Math.max(1, Number(parameters.steps) || 1);
   const isPlainGeneration = payload?.action === 'generate' && !parameters.image && !parameters.mask;
   const isUsageLimitedModel = typeof payload?.model === 'string' && runtime.usageLimitedModels.includes(payload.model);
-  const opusImages = isUsageLimitedModel && isPlainGeneration && !usageExhausted
+  const opusImagesDelta = isUsageLimitedModel && isPlainGeneration && !usageExhausted
     && area <= runtime.freeMaxArea && steps <= runtime.freeMaxSteps ? samples : 0;
-  return { anlasDelta: Math.max(0, Math.floor(Number(estimatedCost) || 0)), opusImages };
+  return { anlasDelta: Math.max(0, Math.floor(Number(estimatedCost) || 0)), opusImagesDelta };
 };
 
 const spendAnlasBudget = async (req, workerPort, amount, reason, personal = null) => {
@@ -1225,7 +1225,7 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
     const estimatedCost = response.ok ? estimateNovelAiGenerationCost(payload, usageExhausted) : 0;
     // 个人用量（按密钥账号累计）：Anlas 扣减 + 计入 Opus 免费额度的张数。
     const personalUsage = computeGenerationPersonalUsage(payload, estimatedCost, usageExhausted);
-    const anlasBudget = estimatedCost > 0 || personalUsage.opusImages > 0
+    const anlasBudget = estimatedCost > 0 || personalUsage.opusImagesDelta > 0
       ? await spendAnlasBudget(req, workerPort, estimatedCost, 'generation', { keyHash, ...personalUsage })
       : null;
     const headers = {
