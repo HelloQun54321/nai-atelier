@@ -547,6 +547,7 @@ const App = () => {
           setIsDirty={setIsEditorDirty}
           notify={notify}
           agentOpenToken={editorAgentOpenToken}
+          splitPromptFields={appearancePreferences.splitPromptFields}
         />;
       case 'library':
         return <ArtistLibrary
@@ -608,6 +609,7 @@ const App = () => {
           notify={notify}
           externalImportToken={playgroundImportToken}
           agentOpenToken={playgroundAgentOpenToken}
+          splitPromptFields={appearancePreferences.splitPromptFields}
         />;
       default:
         return <div>Unknown View</div>;

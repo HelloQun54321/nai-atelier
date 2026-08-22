@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft } from '../types';
-import { compilePrompt } from '../services/promptUtils';
+import { compilePrompt, mergePromptFields } from '../services/promptUtils';
 import { generateImage } from '../services/naiService';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
 import { db } from '../services/dbService';
-import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData, ParsedNAIData, extractRawMetadataFromJsonText } from '../services/metadataService';
+import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData, extractRawMetadataFromJsonText } from '../services/metadataService';
 import { ChainEditorParams } from './ChainEditorParams';
 import { isInternalChainTag } from './DesignSystem';
 import { ChainEditorPreview } from './ChainEditorPreview';
@@ -23,8 +23,7 @@ import { estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostL
 import { useNovelaiUsage } from '../services/naiUsage';
 import { getNaiModelInfo } from '../services/naiModels';
 import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
-import { splitNovelAiPrompt, PromptImportSplit } from '../services/promptImport';
-import { MetadataImportChoice, MetadataImportDialog } from './MetadataImportDialog';
+import { splitNovelAiPrompt } from '../services/promptImport';
 import { ArrowLeft, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, UserRound, X } from 'lucide-react';
 
 const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
@@ -39,6 +38,7 @@ interface ChainEditorProps {
     notify: (msg: string, type?: 'success' | 'error') => void;
     externalImportToken?: number;
     agentOpenToken?: number;
+    splitPromptFields: boolean;
 }
 
 type PresetSource = { name: string; modified: boolean };
@@ -122,7 +122,7 @@ const PromptAgentOverlayController: React.FC<PromptAgentOverlayControllerProps> 
     );
 };
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken, agentOpenToken }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, splitPromptFields }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
     const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
@@ -230,6 +230,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // --- Testing State ---
     const [activeModules, setActiveModules] = useState<Record<string, boolean>>({});
     const [finalPrompt, setFinalPrompt] = useState('');
+    const globalPrompt = mergePromptFields(basePrompt, subjectPrompt);
 
     // --- Generation State ---
     const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
@@ -250,11 +251,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [isImportDragActive, setIsImportDragActive] = useState(false);
     const [showJsonPasteModal, setShowJsonPasteModal] = useState(false);
     const [jsonPasteText, setJsonPasteText] = useState('');
-    const [pendingMetadataImport, setPendingMetadataImport] = useState<{
-        sourceLabel: string;
-        parsed: ParsedNAIData;
-        smartSplit: PromptImportSplit;
-    } | null>(null);
     const [taggerOpen, setTaggerOpen] = useState(false);
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
     const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<PromptAgentDraft | null>(null);
@@ -510,9 +506,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             }))
         } as any;
 
-        const compiled = compilePrompt(tempChain, subjectPrompt);
+        const compiled = compilePrompt(
+            { ...tempChain, basePrompt: splitPromptFields ? basePrompt : globalPrompt },
+            splitPromptFields ? subjectPrompt : '',
+        );
         setFinalPrompt(compiled);
-    }, [basePrompt, modules, activeModules, subjectPrompt]);
+    }, [basePrompt, modules, activeModules, subjectPrompt, splitPromptFields, globalPrompt]);
 
     const getDownloadFilename = () => {
         const now = new Date();
@@ -766,8 +765,36 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
         try {
             const parsed = parseNovelAIMetadata(rawMeta, params, naiRuntimeConfig?.metadataModelMappings);
-            const smartSplit = await splitNovelAiPrompt(parsed.prompt);
-            setPendingMetadataImport({ sourceLabel, parsed, smartSplit });
+            const importedPrompts = splitPromptFields
+                ? await splitNovelAiPrompt(parsed.prompt)
+                : { basePrompt: parsed.prompt, subjectPrompt: '' };
+            setBasePrompt(importedPrompts.basePrompt);
+            setSubjectPrompt(importedPrompts.subjectPrompt);
+            setNegativePrompt(parsed.negativePrompt);
+            setParams(parsed.params);
+            clearPresetSources();
+            markChange();
+            notify(splitPromptFields
+                ? '已按设置自动拆分提示词，并恢复角色与生成参数。'
+                : '已将完整提示词导入全局提示词，并恢复角色与生成参数。');
+            void db.logClientEvent({
+                category: 'client',
+                action: 'metadata_import',
+                resourceType: chain.id === 'playground' ? 'playground' : 'chain',
+                resourceId: chain.id,
+                message: `从${sourceLabel}导入元数据`,
+                metadata: {
+                    source: sourceLabel,
+                    splitMode: splitPromptFields ? 'smart' : 'global',
+                    chainName,
+                    promptLength: parsed.prompt.length,
+                    negativeLength: parsed.negativePrompt.length,
+                    model: parsed.params.model,
+                    width: parsed.params.width,
+                    height: parsed.params.height,
+                    seed: parsed.params.seed ?? 'random',
+                },
+            }).catch(console.error);
         } catch (e: any) {
             notify('解析失败: ' + e.message, 'error');
             void db.logClientEvent({
@@ -780,39 +807,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 metadata: { source: sourceLabel, error: e.message },
             }).catch(console.error);
         }
-    };
-
-    const confirmMetadataImport = (choice: MetadataImportChoice) => {
-        if (!pendingMetadataImport) return;
-        const { parsed, sourceLabel } = pendingMetadataImport;
-        setBasePrompt(choice.basePrompt);
-        setSubjectPrompt(choice.subjectPrompt);
-        setNegativePrompt(parsed.negativePrompt);
-        setParams(parsed.params);
-        clearPresetSources();
-        markChange();
-        setPendingMetadataImport(null);
-        notify(choice.mode === 'smart'
-            ? '已按预览拆分提示词，并恢复角色与生成参数。'
-            : '已将完整提示词导入主体区域，并恢复角色与生成参数。');
-        void db.logClientEvent({
-            category: 'client',
-            action: 'metadata_import',
-            resourceType: chain.id === 'playground' ? 'playground' : 'chain',
-            resourceId: chain.id,
-            message: `从${sourceLabel}导入元数据`,
-            metadata: {
-                source: sourceLabel,
-                splitMode: choice.mode,
-                chainName,
-                promptLength: parsed.prompt.length,
-                negativeLength: parsed.negativePrompt.length,
-                model: parsed.params.model,
-                width: parsed.params.width,
-                height: parsed.params.height,
-                seed: parsed.params.seed ?? 'random',
-            },
-        }).catch(console.error);
     };
 
     const importMetadataFile = async (file: File) => {
@@ -950,13 +944,21 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
      */
     const applyImportData = (data: PendingImportData) => {
         if (data.mode === 'append-prompt') {
-            setSubjectPrompt(current => [current.trim(), data.prompt.trim()].filter(Boolean).join(', '));
+            if (splitPromptFields) setSubjectPrompt(current => mergePromptFields(current, data.prompt));
+            else {
+                setBasePrompt(current => mergePromptFields(mergePromptFields(current, subjectPrompt), data.prompt));
+                setSubjectPrompt('');
+            }
             markChange();
-            notify('已把灵感 Prompt 追加到主体／变量区域。');
+            notify(splitPromptFields ? '已把灵感 Prompt 追加到主体／变量区域。' : '已把灵感 Prompt 追加到全局提示词。');
             return;
         }
         if (data.mode === 'prompt-only') {
-            setSubjectPrompt(data.prompt || '');
+            if (splitPromptFields) setSubjectPrompt(data.prompt || '');
+            else {
+                setBasePrompt(data.prompt || '');
+                setSubjectPrompt('');
+            }
             markChange();
             notify('已使用灵感的正面 Prompt。');
             return;
@@ -981,19 +983,22 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setModules(importedModules);
             setActiveModules(Object.fromEntries(importedModules.map(module => [module.id, module.isActive])));
         } else {
-            // Older images only saved their compiled prompt. Their original
-            // style/subject boundary no longer exists in the metadata, so do
-            // not invent one. Keep this legacy fallback in the subject field.
-            setBasePrompt('');
-            setSubjectPrompt(data.prompt);
+            // 旧图片只保存了最终提示词，原有风格/主体边界已不存在；按当前
+            // 编辑模式放入主体或全局字段，不再凭空推断结构。
+            setBasePrompt(splitPromptFields ? '' : data.prompt);
+            setSubjectPrompt(splitPromptFields ? data.prompt : '');
         }
         setNegativePrompt(data.negativePrompt);
         setParams(data.params);
         clearPresetSources();
         markChange();
         notify(hasPromptStructure
-            ? '已按原结构恢复全局画风、模块和主体／变量提示词。'
-            : '这张旧历史图未保存提示词结构，完整提示词已放入主体／变量区域。');
+            ? splitPromptFields
+                ? '已按原结构恢复全局画风、模块和主体／变量提示词。'
+                : '已恢复全局提示词、模块与生成参数。'
+            : splitPromptFields
+                ? '这张旧历史图未保存提示词结构，完整提示词已放入主体／变量区域。'
+                : '这张旧历史图未保存提示词结构，完整提示词已放入全局提示词。');
     };
 
 
@@ -1550,8 +1555,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onClose={() => setTaggerOpen(false)}
                 notify={notify}
                 onInsert={(tags) => {
-                    setSubjectPrompt(current => [current.trim(), tags].filter(Boolean).join(', '));
-                    markPresetSectionModified('subject');
+                    if (splitPromptFields) {
+                        setSubjectPrompt(current => mergePromptFields(current, tags));
+                        markPresetSectionModified('subject');
+                    } else {
+                        setBasePrompt(current => mergePromptFields(mergePromptFields(current, subjectPrompt), tags));
+                        setSubjectPrompt('');
+                        markPresetSectionModified('base');
+                        markPresetSectionModified('subject');
+                    }
                     markChange();
                     notify(`已追加 ${tags.split(',').length} 个识别 Tag`);
                 }}
@@ -1579,13 +1591,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             <div className="mb-2 flex items-end justify-between gap-2">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <label className="flex flex-col items-center text-sm font-semibold text-indigo-500 dark:text-indigo-400 md:block md:text-left">
-                                        <span>基础画风</span><span className="text-[10px] font-normal opacity-70 md:inline md:text-sm md:font-semibold md:opacity-100">（风格串）</span>
+                                        {splitPromptFields ? <><span>基础画风</span><span className="text-[10px] font-normal opacity-70 md:inline md:text-sm md:font-semibold md:opacity-100">（风格串）</span></> : <span>全局提示词</span>}
                                     </label>
-                                    <PresetSourceBadge source={presetSources.base} />
+                                    {splitPromptFields
+                                        ? <PresetSourceBadge source={presetSources.base} />
+                                        : <PresetSourceBadges sources={Object.fromEntries(Object.entries({ base: presetSources.base, subject: presetSources.subject }).filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />}
                                 </div>
 
                                 {/* Direct import buttons */}
                                 <div className="flex items-center gap-2">
+                                    {!splitPromptFields && <button type="button" onClick={() => copyPromptToClipboard(false)} className="text-xs font-medium text-indigo-600 dark:text-indigo-300">复制完整提示词</button>}
                                     {canEdit && (
                                         <div className="flex gap-2">
                                             <input
@@ -1616,9 +1631,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             <TagAutocompleteTextarea
                                 disabled={!canEdit}
                                 className={`w-full border rounded-lg p-3 outline-none font-mono text-sm leading-relaxed min-h-[100px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500'}`}
-                                value={basePrompt}
-                                placeholder="画风标签，如 masterpiece、best quality、画师tag等，英文逗号分隔"
-                                onValueChange={(nextValue) => { setBasePrompt(nextValue); markPresetSectionModified('base'); markChange() }}
+                                value={splitPromptFields ? basePrompt : globalPrompt}
+                                placeholder={splitPromptFields ? '画风标签，如 masterpiece、best quality、画师tag等，英文逗号分隔' : '输入完整的正面提示词，英文逗号分隔'}
+                                onValueChange={(nextValue) => {
+                                    setBasePrompt(nextValue);
+                                    if (!splitPromptFields) setSubjectPrompt('');
+                                    markPresetSectionModified('base');
+                                    if (!splitPromptFields) markPresetSectionModified('subject');
+                                    markChange();
+                                }}
                             />
                         </section>
 
@@ -1692,13 +1713,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             </div>
                         </section>
 
-                        <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden'} rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/40 lg:hidden`}>
+                        {splitPromptFields && <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden'} rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/40 lg:hidden`}>
                             <div className="mb-2 flex items-center justify-between gap-3">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2"><label className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">主体／变量提示词</label><PresetSourceBadge source={presetSources.subject} /></div>
                                 <button type="button" onClick={() => copyPromptToClipboard(false)} className="text-xs font-medium text-indigo-600 dark:text-indigo-300">复制完整提示词</button>
                             </div>
                             <TagAutocompleteTextarea className="min-h-28 w-full resize-none rounded-lg border border-gray-300 bg-white p-3 font-mono text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" placeholder="输入人物、场景和动作等动态内容…" value={subjectPrompt} onValueChange={(value) => { setSubjectPrompt(value); markPresetSectionModified('subject'); markChange(); }} />
-                        </section>
+                        </section>}
 
                         {/* Character Management (New V4.5) */}
                         <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'} rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40`}>
@@ -1847,6 +1868,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 {/* Right Panel - Preview (Testing) - Extracted Component */}
                 <div className="chain-editor-preview-wrapper hidden min-h-0 flex-1 lg:contents">
                 <ChainEditorPreview
+                    showSubjectPrompt={splitPromptFields}
                     subjectPrompt={subjectPrompt}
                     setSubjectPrompt={(s) => { setSubjectPrompt(s); markPresetSectionModified('subject'); markChange(); }}
                     isGenerating={isGenerating}
@@ -1875,7 +1897,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
             </div>
 
-            {!lightboxImg && !showImportPreset && !importCandidate && !showJsonPasteModal && !pendingMetadataImport && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
+            {!lightboxImg && !showImportPreset && !importCandidate && !showJsonPasteModal && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
                 {(displayedPreviewImage || chain.previewImage) && <button type="button" onClick={() => setLightboxImg(displayedPreviewImage || chain.previewImage || null)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-700" aria-label="查看最近生成结果"><SmartImage src={displayedPreviewImage || chain.previewImage || ''} alt="最近生成结果" /></button>}
                 {queueStatus
                     ? <InlineCloudQueueStatus compact className="min-w-64 max-w-[calc(100vw-5rem)]" />
@@ -1925,16 +1947,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                 </div>
-            )}
-
-            {pendingMetadataImport && (
-                <MetadataImportDialog
-                    sourceLabel={pendingMetadataImport.sourceLabel}
-                    parsed={pendingMetadataImport.parsed}
-                    smartSplit={pendingMetadataImport.smartSplit}
-                    onCancel={() => setPendingMetadataImport(null)}
-                    onConfirm={confirmMetadataImport}
-                />
             )}
 
             {/* Paste JSON Metadata Modal */}

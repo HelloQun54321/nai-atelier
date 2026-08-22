@@ -15,6 +15,7 @@ describe('appearance preferences', () => {
       surfaces: 'translucent',
       motion: 'reduced',
       fontScale: 'large',
+      splitPromptFields: false,
     })).toEqual({
       designTheme: 'nai-atelier',
       themeMode: 'dark',
@@ -24,6 +25,7 @@ describe('appearance preferences', () => {
       surfaces: 'translucent',
       motion: 'reduced',
       fontScale: 'large',
+      splitPromptFields: false,
     });
   });
 
@@ -37,6 +39,7 @@ describe('appearance preferences', () => {
       surfaces: 'glassier',
       motion: 'fast',
       fontScale: 'huge',
+      splitPromptFields: 'sometimes',
     })).toEqual(DEFAULT_APPEARANCE_PREFERENCES);
   });
 });

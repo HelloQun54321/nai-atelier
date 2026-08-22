@@ -14,6 +14,15 @@ export const NAI_UC_PRESETS = {
     3: 'nsfw, lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, @_@, mismatched pupils, glowing eyes, bad anatomy, '
 };
 
+/** 将原本分开的画风与主体内容合并为一个可编辑的全局提示词。 */
+export const mergePromptFields = (basePrompt: string, subjectPrompt: string): string =>
+  [basePrompt.trim(), subjectPrompt.trim()]
+    .filter(Boolean)
+    .join(', ')
+    .replace(/,\s*,/g, ',')
+    .replace(/^,\s*/, '')
+    .replace(/,\s*$/, '');
+
 /**
  * Compiles the final prompt string by combining parts in a fixed order:
  * 1. Base Prompt

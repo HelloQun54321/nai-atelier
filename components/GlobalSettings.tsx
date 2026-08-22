@@ -44,7 +44,7 @@ interface LocalMaintenanceStatus {
 }
 
 const settingsSections: Array<{ id: SettingsSection; label: string; description: string; icon: React.ComponentType<{ className?: string }> }> = [
-  { id: 'appearance', label: '界面与内容显示', description: '主题、安全模式与图片布局', icon: Palette },
+  { id: 'appearance', label: '界面与内容显示', description: '主题、提示词编辑、安全模式与图片布局', icon: Palette },
   { id: 'novelai', label: 'NovelAI 与 Anlas', description: '连接、队列与本地预算', icon: KeyRound },
   { id: 'agent', label: '项目 Agent', description: '模型、权限与服务商', icon: Bot },
   { id: 'maintenance', label: '数据与维护', description: '词库、缓存、备份与服务状态', icon: Database },
@@ -311,6 +311,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     setAppearancePreferences({
       ...DEFAULT_APPEARANCE_PREFERENCES,
       themeMode,
+      splitPromptFields: appearancePreferences.splitPromptFields,
     });
   };
 
@@ -401,6 +402,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
                 <button type="button" onClick={resetThemeCustomization} className="mobile-touch mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"><RotateCcw className="h-3.5 w-3.5" />恢复 NAI Atelier 默认外观</button>
               </div>
+              <button type="button" onClick={() => updateAppearance({ splitPromptFields: !appearancePreferences.splitPromptFields })} aria-pressed={appearancePreferences.splitPromptFields} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+                <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">拆分风格与主体提示词</b><span className="mt-0.5 block text-[10px] leading-4 text-gray-500 dark:text-gray-400">开启时分别编辑风格串和主体／变量；关闭时合并为一个“全局提示词”输入框，导入时也不再自动拆分。</span></span>
+                <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.splitPromptFields ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.splitPromptFields ? 'translate-x-5' : 'translate-x-0'}`} /></span>
+              </button>
               <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />安全模式</span><span>{safeMode ? '已开启' : '已关闭'}</span></button>
               <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">开启后遮挡全站图片；点击图片可临时显示，离开后自动重新遮挡。</p>
               <button type="button" onClick={() => setSafeModeHideTitles(enabled => !enabled)} aria-pressed={safeModeHideTitles} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">

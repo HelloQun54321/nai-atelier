@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compilePrompt, NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
+import { compilePrompt, mergePromptFields, NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
 
 const mod = (content: string, position: 'pre' | 'post', isActive = true) =>
   ({ content, position, isActive, id: content, name: content } as any);
@@ -43,6 +43,17 @@ describe('compilePrompt', () => {
       modules: [mod('  ', 'post'), mod('real', 'post')],
     };
     expect(compilePrompt(chain, '   ')).toBe('real');
+  });
+});
+
+describe('mergePromptFields', () => {
+  it('按原顺序合并风格与主体，并清理边界逗号', () => {
+    expect(mergePromptFields('masterpiece, ', ' 1girl, blue eyes,')).toBe('masterpiece, 1girl, blue eyes');
+  });
+
+  it('任一输入为空时不产生多余分隔符', () => {
+    expect(mergePromptFields('', '1girl')).toBe('1girl');
+    expect(mergePromptFields('masterpiece', '')).toBe('masterpiece');
   });
 });
 

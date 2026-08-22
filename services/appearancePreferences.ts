@@ -15,6 +15,7 @@ export interface AppearancePreferences {
   surfaces: SurfaceStyle;
   motion: MotionStyle;
   fontScale: FontScale;
+  splitPromptFields: boolean;
 }
 
 const STORAGE_KEY = 'nai_appearance_preferences';
@@ -30,6 +31,7 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   surfaces: 'solid',
   motion: 'full',
   fontScale: 'standard',
+  splitPromptFields: true,
 };
 
 const isOneOf = <T extends string>(value: unknown, values: readonly T[]): value is T =>
@@ -48,6 +50,9 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     surfaces: isOneOf(input.surfaces, ['solid', 'translucent']) ? input.surfaces : DEFAULT_APPEARANCE_PREFERENCES.surfaces,
     motion: isOneOf(input.motion, ['full', 'reduced', 'off']) ? input.motion : DEFAULT_APPEARANCE_PREFERENCES.motion,
     fontScale: isOneOf(input.fontScale, ['small', 'standard', 'large']) ? input.fontScale : DEFAULT_APPEARANCE_PREFERENCES.fontScale,
+    splitPromptFields: typeof input.splitPromptFields === 'boolean'
+      ? input.splitPromptFields
+      : DEFAULT_APPEARANCE_PREFERENCES.splitPromptFields,
   };
 };
 
