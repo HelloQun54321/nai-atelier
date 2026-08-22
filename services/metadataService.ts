@@ -3,7 +3,7 @@
  * NAI 图片元数据提取与解析服务
  *
  * 职责：
- * 1. 从 PNG 的 tEXt chunk 中读取原始元数据字符串
+ * 1. 从 PNG 文本块或 NovelAI Stealth PNG 中读取原始元数据字符串
  * 2. 将原始字符串解析为结构化的 { prompt, negativePrompt, params } 对象
  *
  * 解析逻辑严格参照 NOVELAI_API_DOCS.md 与 promptUtils.ts 中的常量定义
@@ -50,23 +50,36 @@ const COMPILED_REGEX = {
     Size: /Size:\s*([^,]+)/
 };
 
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
+const STEALTH_MAGIC = 'stealth_pngcomp';
+const STEALTH_HEADER_BYTES = STEALTH_MAGIC.length + 4;
+const MAX_STEALTH_COMPRESSED_BYTES = 1024 * 1024;
+const MAX_STEALTH_DECOMPRESSED_BYTES = 4 * 1024 * 1024;
+const MAX_STEALTH_IMAGE_PIXELS = 40_000_000;
+
+interface PngTextEntry {
+    keyword: string;
+    text: string;
+}
+
 // ========== 文件级元数据提取 ==========
 
 /**
  * 从 PNG 文件中提取元数据原始字符串
- * 读取 tEXt chunk 中 Description / Comment 关键字的内容
+ * 优先读取标准文本块，未命中时回退到 NovelAI Alpha Stealth 元数据
  */
 export const extractMetadata = async (file: File): Promise<string | null> => {
-    if (file.type !== 'image/png') {
+    if (file.type && file.type !== 'image/png') {
         console.warn('Only PNG metadata is supported currently.');
         return null;
     }
 
     try {
         const arrayBuffer = await file.arrayBuffer();
-        const text = readPngTextChunks(arrayBuffer);
-        if (!text) return null;
-        return parseNaiGenerationData(text);
+        const standardMetadata = await extractNovelAiMetadataFromPng(arrayBuffer);
+        if (standardMetadata) return standardMetadata;
+
+        return await extractStealthMetadataFromFile(file);
     } catch (e) {
         console.error('Failed to parse metadata', e);
         return null;
@@ -303,50 +316,259 @@ export const parseNovelAIMetadata = (
 
 // ========== 内部工具函数 ==========
 
-/** 读取 PNG 二进制流中的 tEXt chunk */
-const readPngTextChunks = (buffer: ArrayBuffer): string | null => {
-    const data = new DataView(buffer);
+/**
+ * 从标准 PNG 文本块提取 NovelAI 生成参数。
+ * NovelAI 历史图片主要使用 tEXt，新格式也可能落在 iTXt / zTXt。
+ */
+export const extractNovelAiMetadataFromPng = async (buffer: ArrayBuffer): Promise<string | null> => {
+    const entries = await readPngTextChunks(buffer);
+    return selectNovelAiGenerationMetadata(entries);
+};
 
-    // 校验 PNG 签名：89 50 4E 47 0D 0A 1A 0A
-    if (data.getUint32(0) !== 0x89504E47 || data.getUint32(4) !== 0x0D0A1A0A) {
+/**
+ * 按 NovelAI 官方顺序从 RGBA Alpha 通道最低位读取 stealth_pngcomp。
+ * 官方实现先转置 Alpha 矩阵，因此位顺序是 x 优先、y 次之，而不是常规行优先。
+ */
+export const extractNovelAiStealthMetadataFromRgba = async (
+    rgba: Uint8Array | Uint8ClampedArray,
+    width: number,
+    height: number,
+): Promise<string | null> => {
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return null;
+    const pixelCount = width * height;
+    if (!Number.isSafeInteger(pixelCount) || pixelCount > MAX_STEALTH_IMAGE_PIXELS) return null;
+    if (rgba.byteLength < pixelCount * 4 || pixelCount < STEALTH_HEADER_BYTES * 8) return null;
+
+    const availableBytes = Math.floor(pixelCount / 8);
+    const readByte = (byteOffset: number): number => {
+        let value = 0;
+        const firstBit = byteOffset * 8;
+        for (let bit = 0; bit < 8; bit++) {
+            const bitOffset = firstBit + bit;
+            const x = Math.floor(bitOffset / height);
+            const y = bitOffset % height;
+            value = (value << 1) | (rgba[(y * width + x) * 4 + 3] & 1);
+        }
+        return value;
+    };
+
+    let magic = '';
+    for (let i = 0; i < STEALTH_MAGIC.length; i++) magic += String.fromCharCode(readByte(i));
+    if (magic !== STEALTH_MAGIC) return null;
+
+    const lengthOffset = STEALTH_MAGIC.length;
+    const payloadBits = (
+        readByte(lengthOffset) * 0x1000000
+        + readByte(lengthOffset + 1) * 0x10000
+        + readByte(lengthOffset + 2) * 0x100
+        + readByte(lengthOffset + 3)
+    );
+    if (payloadBits % 8 !== 0) return null;
+
+    const payloadBytes = payloadBits / 8;
+    if (
+        payloadBytes <= 0
+        || payloadBytes > MAX_STEALTH_COMPRESSED_BYTES
+        || payloadBytes > availableBytes - STEALTH_HEADER_BYTES
+    ) return null;
+
+    const compressed = new Uint8Array(payloadBytes);
+    for (let i = 0; i < payloadBytes; i++) compressed[i] = readByte(STEALTH_HEADER_BYTES + i);
+
+    try {
+        const jsonBytes = await decompressWithLimit(compressed, 'gzip', MAX_STEALTH_DECOMPRESSED_BYTES);
+        const outerMetadata = new TextDecoder('utf-8', { fatal: true }).decode(jsonBytes);
+        return selectNovelAiGenerationMetadata([{ keyword: 'Stealth', text: outerMetadata }]);
+    } catch {
         return null;
     }
+};
 
-    let offset = 8;
-    const decoder = new TextDecoder('iso-8859-1');
+const extractStealthMetadataFromFile = async (file: File): Promise<string | null> => {
+    if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return null;
 
-    while (offset < data.byteLength) {
-        const length = data.getUint32(offset);
-        offset += 4;
+    const bitmap = await createImageBitmap(file);
+    try {
+        const pixelCount = bitmap.width * bitmap.height;
+        if (!Number.isSafeInteger(pixelCount) || pixelCount > MAX_STEALTH_IMAGE_PIXELS) return null;
 
-        const type = decoder.decode(new Uint8Array(buffer, offset, 4));
-        offset += 4;
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) return null;
+        context.drawImage(bitmap, 0, 0);
+        const imageData = context.getImageData(0, 0, bitmap.width, bitmap.height);
+        return await extractNovelAiStealthMetadataFromRgba(imageData.data, bitmap.width, bitmap.height);
+    } finally {
+        bitmap.close();
+    }
+};
 
-        if (type === 'tEXt') {
-            const chunkData = new Uint8Array(buffer, offset, length);
-            let nullIndex = -1;
-            for (let i = 0; i < length; i++) {
-                if (chunkData[i] === 0) {
-                    nullIndex = i;
-                    break;
-                }
-            }
+const readPngTextChunks = async (buffer: ArrayBuffer): Promise<PngTextEntry[]> => {
+    if (buffer.byteLength < PNG_SIGNATURE.length) return [];
+    const bytes = new Uint8Array(buffer);
+    if (!PNG_SIGNATURE.every((value, index) => bytes[index] === value)) return [];
 
-            if (nullIndex > -1) {
-                const keyword = decoder.decode(chunkData.slice(0, nullIndex));
-                if (keyword === 'Description' || keyword === 'Comment') {
-                    const content = decoder.decode(chunkData.slice(nullIndex + 1));
-                    if (content.includes('Steps:') || content.includes('"prompt":') || content.includes('"steps":')) {
-                        return content;
-                    }
-                }
-            }
+    const view = new DataView(buffer);
+    const typeDecoder = new TextDecoder('iso-8859-1');
+    const entries: PngTextEntry[] = [];
+    let offset: number = PNG_SIGNATURE.length;
+
+    while (offset + 12 <= buffer.byteLength) {
+        const length = view.getUint32(offset, false);
+        const typeOffset = offset + 4;
+        const dataOffset = typeOffset + 4;
+        const dataEnd = dataOffset + length;
+        const chunkEnd = dataEnd + 4;
+        if (!Number.isSafeInteger(chunkEnd) || dataEnd < dataOffset || chunkEnd > buffer.byteLength) break;
+
+        const type = typeDecoder.decode(bytes.subarray(typeOffset, dataOffset));
+        const chunkData = bytes.subarray(dataOffset, dataEnd);
+        try {
+            const entry = await decodePngTextChunk(type, chunkData);
+            if (entry) entries.push(entry);
+        } catch {
+            // 单个压缩文本块损坏时继续检查其他块与 Stealth 元数据。
         }
 
-        offset += length + 4; // 跳过数据 + CRC
+        offset = chunkEnd;
+        if (type === 'IEND') break;
     }
 
+    return entries;
+};
+
+const decodePngTextChunk = async (type: string, data: Uint8Array): Promise<PngTextEntry | null> => {
+    if (type !== 'tEXt' && type !== 'zTXt' && type !== 'iTXt') return null;
+    const nullIndex = data.indexOf(0);
+    if (nullIndex <= 0) return null;
+    const keyword = new TextDecoder('iso-8859-1').decode(data.subarray(0, nullIndex));
+
+    if (type === 'tEXt') {
+        return { keyword, text: decodeUtf8OrLatin1(data.subarray(nullIndex + 1)) };
+    }
+
+    if (type === 'zTXt') {
+        if (data[nullIndex + 1] !== 0) return null;
+        const text = await decompressWithLimit(
+            data.subarray(nullIndex + 2),
+            'deflate',
+            MAX_STEALTH_DECOMPRESSED_BYTES,
+        );
+        return { keyword, text: decodeUtf8OrLatin1(text) };
+    }
+
+    if (type !== 'iTXt' || nullIndex + 3 > data.length) return null;
+    const compressionFlag = data[nullIndex + 1];
+    const compressionMethod = data[nullIndex + 2];
+    if ((compressionFlag !== 0 && compressionFlag !== 1) || compressionMethod !== 0) return null;
+
+    const languageEnd = data.indexOf(0, nullIndex + 3);
+    if (languageEnd < 0) return null;
+    const translatedKeywordEnd = data.indexOf(0, languageEnd + 1);
+    if (translatedKeywordEnd < 0) return null;
+    const textBytes = data.subarray(translatedKeywordEnd + 1);
+    const decoded = compressionFlag === 1
+        ? await decompressWithLimit(textBytes, 'deflate', MAX_STEALTH_DECOMPRESSED_BYTES)
+        : textBytes;
+    return { keyword, text: new TextDecoder('utf-8').decode(decoded) };
+};
+
+const selectNovelAiGenerationMetadata = (entries: PngTextEntry[]): string | null => {
+    const candidates = entries
+        .filter(entry => ['Comment', 'Description', 'Stealth'].includes(entry.keyword))
+        .sort((left, right) => metadataKeywordPriority(left.keyword) - metadataKeywordPriority(right.keyword));
+
+    for (const candidate of candidates) {
+        const normalized = normalizeNovelAiMetadataCandidate(candidate.text);
+        if (normalized) return normalized;
+    }
     return null;
+};
+
+const metadataKeywordPriority = (keyword: string): number => {
+    if (keyword === 'Comment') return 0;
+    if (keyword === 'Stealth') return 1;
+    return 2;
+};
+
+const normalizeNovelAiMetadataCandidate = (text: string): string | null => {
+    const trimmed = text.trim();
+    if (!trimmed) return null;
+
+    if (trimmed.startsWith('{')) {
+        try {
+            const json = JSON.parse(trimmed);
+            if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+
+            const comment = json.Comment ?? json.comment;
+            if (comment && typeof comment === 'object') {
+                return hasNovelAiGenerationFields(comment) ? JSON.stringify(comment) : null;
+            }
+            if (typeof comment === 'string') {
+                const normalizedComment = normalizeNovelAiMetadataCandidate(comment);
+                if (normalizedComment) return normalizedComment;
+            }
+            if (hasNovelAiGenerationFields(json)) return trimmed;
+        } catch {
+            return null;
+        }
+    }
+
+    return trimmed.includes('Steps:') ? parseNaiGenerationData(trimmed) : null;
+};
+
+const hasNovelAiGenerationFields = (value: Record<string, unknown>): boolean => Boolean(
+    value.prompt
+    || value.steps
+    || value.v4_prompt
+    || value.v4_negative_prompt
+    || value.uc
+);
+
+const decodeUtf8OrLatin1 = (bytes: Uint8Array): string => {
+    try {
+        return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+        return new TextDecoder('iso-8859-1').decode(bytes);
+    }
+};
+
+const decompressWithLimit = async (
+    bytes: Uint8Array,
+    format: 'gzip' | 'deflate',
+    maxBytes: number,
+): Promise<Uint8Array> => {
+    if (typeof DecompressionStream !== 'function') throw new Error('Browser does not support compressed metadata');
+    const source = Uint8Array.from(bytes).buffer;
+    const stream = new Blob([source]).stream().pipeThrough(new DecompressionStream(format));
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.byteLength;
+            if (total > maxBytes) {
+                await reader.cancel();
+                throw new Error('Decompressed metadata is too large');
+            }
+            chunks.push(value);
+        }
+    } finally {
+        reader.releaseLock();
+    }
+
+    const output = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+        output.set(chunk, offset);
+        offset += chunk.byteLength;
+    }
+    return output;
 };
 
 /** 预处理 NAI 元数据文本（JSON 校验或原样返回） */

@@ -4,6 +4,12 @@
 
 ## 2026-08-23
 
+### 新增：NovelAI Stealth PNG 元数据导入
+
+- 支持读取 NovelAI V5 原图写入 Alpha 通道最低位的 `stealth_pngcomp` 元数据，拖入风格串编辑器后可恢复提示词、角色与生成参数。
+- 标准 PNG 元数据扩展支持 `tEXt`、`iTXt` 和 `zTXt`，旧版 NovelAI 图片继续优先读取完整的 `Comment`。
+- 增加图片容量、压缩长度和解压大小保护，并补充 V5 Stealth、新旧文本块及损坏数据回归测试。
+
 ### 修复：切换 Key 后 Opus 限额不再消失
 
 - 切换 Key 后若 NovelAI 订阅请求失败，侧栏会保留 Opus 限额行并显示红色叉号与“同步失败，点击重试”，不再静默隐藏。

@@ -6,6 +6,7 @@
 
 ## 2026-08-23
 
+- **Codex (GPT-5)**：按 NovelAI 官方格式新增 Alpha Stealth PNG 元数据导入，补齐标准压缩文本块和损坏数据保护，并用 V5/V4.5 原图验证新旧解析路径（feat: support novelai stealth png metadata）。
 - **Codex (GPT-5)**：修复切换 Key 后订阅请求失败会让 Opus 限额整行消失的问题，增加可重试错误态及对应回归测试（fix: keep opus status visible on key switch failure）。
 - **Codex (GPT-5)**：修复失败生图误记个人 Opus、受限模型判断依赖 V5 前缀和切 Key 迟到预算事件覆盖风险，并补充对应回归测试（fix: harden key-scoped usage settlement）。
 - **Codex (GPT-5)**：修复个人用量字段错位与生图后设置页不刷新问题，并校正“困困的小群福利”历史 NAI5 生成的 1 张 Opus 免费图（fix: repair key-scoped personal usage accounting）。
