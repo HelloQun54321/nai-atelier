@@ -224,15 +224,23 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   };
 
   const addKeyEntry = () => {
-    const entry = naiKeyVault.add(newKeyName, newKeyValue);
-    if (!entry) {
-      notify('密钥为空，或与已有条目重复', 'error');
+    const result = naiKeyVault.add(newKeyName, newKeyValue);
+    if (result.status === 'empty') {
+      notify('密钥不能为空', 'error');
+      return;
+    }
+    if (result.status === 'invalid') {
+      notify('这不像 NovelAI 密钥：官方密钥以 pst- 开头。请检查是否粘贴了其他服务的密钥（浏览器可能自动填入了别处的密码）。', 'error');
+      return;
+    }
+    if (result.status === 'duplicate') {
+      notify('这把密钥已经在保管箱里了', 'error');
       return;
     }
     setNewKeyName('');
     setNewKeyValue('');
     refreshVault();
-    notify(`已添加「${entry.name}」`, 'success');
+    notify(`已添加「${result.entry.name}」`, 'success');
   };
 
   const removeKeyEntry = async (entry: NaiKeyEntry) => {
@@ -442,6 +450,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                         <div className="flex items-center gap-2">
                           <span className="truncate text-sm font-bold text-gray-800 dark:text-gray-100" title={entry.name}>{entry.name}</span>
                           {active && <span className="flex-none rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white">当前</span>}
+                          {!entry.key.startsWith('pst-') && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title="NovelAI 官方密钥以 pst- 开头，这可能是误存的其他服务密钥（例如被浏览器自动填入）">格式可疑</span>}
                         </div>
                         <p className="mt-0.5 truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">{maskNaiKeyForDisplay(entry.key)}</p>
                       </div>
@@ -462,6 +471,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 onChange={event => setNewKeyName(event.target.value)}
                 maxLength={30}
                 placeholder="备注名（例如：车队 A / 备用号）"
+                autoComplete="off"
+                name="nai-vault-key-label"
                 className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                 aria-label="密钥备注名"
               />
@@ -471,7 +482,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   value={newKeyValue}
                   onChange={event => setNewKeyValue(event.target.value.trim())}
                   placeholder="NovelAI API Key（pst-…）"
-                  autoComplete="off"
+                  autoComplete="new-password"
+                  name="nai-vault-key-secret"
+                  readOnly={false}
                   className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                   aria-label="NovelAI API Key"
                 />
@@ -525,21 +538,31 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     }} className="text-[11px] font-bold text-indigo-600 dark:text-indigo-300">重置</button>
                   )}
                 </div>
-                {anlasBudget.personal ? (
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                    <div className="rounded-lg bg-white px-3 py-2 dark:bg-gray-900">
-                      <div className="text-[11px] text-gray-500 dark:text-gray-400">个人已花 Anlas</div>
-                      <div className="mt-0.5 text-lg font-black tabular-nums text-indigo-600 dark:text-indigo-300">{anlasBudget.personal.anlasSpent}</div>
-                    </div>
-                    <div className="rounded-lg bg-white px-3 py-2 dark:bg-gray-900">
-                      <div className="text-[11px] text-gray-500 dark:text-gray-400">个人 Opus 免费图</div>
-                      <div className="mt-0.5 text-lg font-black tabular-nums text-emerald-600 dark:text-emerald-300">{anlasBudget.personal.opusImages} 张</div>
-                      <div className="text-[10px] text-gray-400">≈ {(anlasBudget.personal.opusImages / naiRuntimeCoefficient).toFixed(2)}% 额度</div>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">尚未配置 NovelAI 密钥，或本机还没有该账号的使用记录。统计只记本机行为，按密钥分账号累计。</p>
-                )}
+                {(() => {
+                  const personal = anlasBudget.personal || (apiKey ? { anlasSpent: 0, opusImages: 0 } : null);
+                  if (!personal) {
+                    return <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">尚未配置 NovelAI 密钥。统计只记本机行为，按密钥分账号累计。</p>;
+                  }
+                  const hasRecords = anlasBudget.personal != null;
+                  return (
+                    <>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                        <div className="rounded-lg bg-white px-3 py-2 dark:bg-gray-900">
+                          <div className="text-[11px] text-gray-500 dark:text-gray-400">个人已花 Anlas</div>
+                          <div className="mt-0.5 text-lg font-black tabular-nums text-indigo-600 dark:text-indigo-300">{personal.anlasSpent}</div>
+                        </div>
+                        <div className="rounded-lg bg-white px-3 py-2 dark:bg-gray-900">
+                          <div className="text-[11px] text-gray-500 dark:text-gray-400">个人 Opus 免费图</div>
+                          <div className="mt-0.5 text-lg font-black tabular-nums text-emerald-600 dark:text-emerald-300">{personal.opusImages} 张</div>
+                          <div className="text-[10px] text-gray-400">≈ {(personal.opusImages / naiRuntimeCoefficient).toFixed(2)}% 额度</div>
+                        </div>
+                      </div>
+                      {!hasRecords && (
+                        <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">本机在该账号还没有产生计费记录。注意统计口径：<b>只有扣 Anlas 的生成（大图/多步/角色参考/Vibe 编码等）计入个人 Anlas；只有 V5 等受限模型的免费档生成计入 Opus 张数</b>——V4.5 免费小图不消耗任何共享资源，因此不计入。</p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div></div>}
           </section>

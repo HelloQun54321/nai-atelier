@@ -62,12 +62,16 @@ export const naiKeyVault = {
     return vault;
   },
 
-  /** 新增密钥；与已有条目重复时返回 null（同一把 Key 不存两份）。 */
-  add(name: string, key: string): NaiKeyEntry | null {
+  /**
+   * 新增密钥。NovelAI 持久令牌以 pst- 开头；其他前缀（例如被浏览器自动填进来的
+   * LLM 服务密钥）直接拒绝，防止存错类型的密钥。
+   */
+  add(name: string, key: string): { status: 'added'; entry: NaiKeyEntry } | { status: 'empty' } | { status: 'duplicate' } | { status: 'invalid' } {
     const trimmedKey = key.trim();
-    if (!trimmedKey) return null;
+    if (!trimmedKey) return { status: 'empty' };
+    if (!trimmedKey.startsWith('pst-')) return { status: 'invalid' };
     const vault = readVault();
-    if (vault.some(entry => entry.key === trimmedKey)) return null;
+    if (vault.some(entry => entry.key === trimmedKey)) return { status: 'duplicate' };
     const entry: NaiKeyEntry = {
       id: createUuid(),
       name: name.trim().slice(0, 30) || `密钥 ${vault.length + 1}`,
@@ -75,7 +79,7 @@ export const naiKeyVault = {
       createdAt: Date.now(),
     };
     writeVault([...vault, entry]);
-    return entry;
+    return { status: 'added', entry };
   },
 
   rename(id: string, name: string): NaiKeyEntry[] {
