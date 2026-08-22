@@ -2548,22 +2548,51 @@ export default {
         return error('Account management is disabled in personal mode', 410);
       }
 
-      // --- Local Anlas budget tracker ---
+      // --- Local Anlas budget tracker + per-account personal usage ---
       if (path === '/api/anlas-budget') {
         const key = 'anlas_budget_remaining_v1';
+        const personalKey = 'anlas_personal_usage_v1';
         const defaultBudget = 1666;
         await db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').bind(key, String(defaultBudget)).run();
 
-        if (method === 'GET') {
+        type PersonalUsageMap = Record<string, { anlasSpent: number; opusImages: number; updatedAt: number }>;
+        const readPersonalMap = async (): Promise<PersonalUsageMap> => {
+          const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(personalKey).first<{value: string}>();
+          try {
+            const parsed = JSON.parse(row?.value || '{}');
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+            const map: PersonalUsageMap = {};
+            for (const [hash, entry] of Object.entries(parsed as Record<string, any>)) {
+              if (!/^[0-9a-f]{16,128}$/.test(hash) || !entry || typeof entry !== 'object') continue;
+              map[hash] = {
+                anlasSpent: Math.max(0, Math.floor(Number(entry.anlasSpent) || 0)),
+                opusImages: Math.max(0, Math.floor(Number(entry.opusImages) || 0)),
+                updatedAt: Number(entry.updatedAt) || Date.now(),
+              };
+            }
+            return map;
+          } catch {
+            return {};
+          }
+        };
+        const writePersonalMap = async (map: PersonalUsageMap) => {
+          await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+            .bind(personalKey, JSON.stringify(map)).run();
+        };
+        const readRemaining = async () => {
           const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{value: string}>();
-          return json({ remaining: Math.max(0, Number.parseInt(row?.value || String(defaultBudget), 10) || 0) });
+          return Math.max(0, Number.parseInt(row?.value || String(defaultBudget), 10) || 0);
+        };
+
+        if (method === 'GET') {
+          return json({ remaining: await readRemaining(), personal: await readPersonalMap() });
         }
         if (method === 'PUT') {
           const body = await request.json() as any;
           const remaining = Math.max(0, Math.min(1_000_000_000, Math.floor(Number(body.remaining))));
           if (!Number.isFinite(remaining)) return error('点数必须是有效整数', 400);
           await db.prepare('UPDATE settings SET value = ? WHERE key = ?').bind(String(remaining), key).run();
-          return json({ remaining, updatedAt: Date.now() });
+          return json({ remaining, personal: await readPersonalMap(), updatedAt: Date.now() });
         }
         if (method === 'POST') {
           const body = await request.json() as any;
@@ -2572,8 +2601,27 @@ export default {
           await db.prepare(`UPDATE settings
             SET value = CAST(MAX(0, CAST(value AS INTEGER) - ?) AS TEXT)
             WHERE key = ?`).bind(amount, key).run();
-          const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{value: string}>();
-          return json({ remaining: Math.max(0, Number.parseInt(row?.value || '0', 10) || 0), spent: amount, updatedAt: Date.now() });
+          // 个人用量按密钥哈希分账号累计（用于设置页的“我个人用了多少”统计）。
+          if (typeof body.keyHash === 'string' && /^[0-9a-f]{16,128}$/.test(body.keyHash)) {
+            const map = await readPersonalMap();
+            const previous = map[body.keyHash] || { anlasSpent: 0, opusImages: 0, updatedAt: 0 };
+            map[body.keyHash] = {
+              anlasSpent: previous.anlasSpent + Math.max(0, Math.floor(Number(body.anlasDelta) || 0)),
+              opusImages: previous.opusImages + Math.max(0, Math.floor(Number(body.opusImagesDelta) || 0)),
+              updatedAt: Date.now(),
+            };
+            await writePersonalMap(map);
+          }
+          return json({ remaining: await readRemaining(), spent: amount, personal: await readPersonalMap(), updatedAt: Date.now() });
+        }
+        if (method === 'DELETE') {
+          const body = await request.json() as any;
+          if (typeof body.keyHash === 'string' && /^[0-9a-f]{16,128}$/.test(body.keyHash)) {
+            const map = await readPersonalMap();
+            delete map[body.keyHash];
+            await writePersonalMap(map);
+          }
+          return json({ remaining: await readRemaining(), personal: await readPersonalMap() });
         }
         return error('Method not allowed', 405);
       }

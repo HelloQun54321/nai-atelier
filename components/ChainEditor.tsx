@@ -19,7 +19,7 @@ import { createUuid } from '../services/id';
 import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { normalizeVibeSelections } from '../services/vibeUtils';
-import { estimateV45GenerationCost, applyEstimatorRuntime } from '../services/anlasBudget';
+import { estimateV45GenerationCost, applyEstimatorRuntime, useAnlasBudget } from '../services/anlasBudget';
 import { useNovelaiUsage } from '../services/naiUsage';
 import { getNaiModelInfo } from '../services/naiModels';
 import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
@@ -145,6 +145,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [params, setParams] = useState(chain.params || { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: undefined, qualityToggle: true, ucPreset: 4 });
     // Opus 限额透支后，受限额模型（V5）的小图不再免费，费用估算需同步。
     const { usage: novelaiUsage, refreshIfStale: refreshUsageIfStale } = useNovelaiUsage();
+    // 本地 Anlas 预算（账号整体，手动校准）：用尽后扣费生成需要红色警告。
+    const anlasBudget = useAnlasBudget();
     const opusUsageExhausted = novelaiUsage?.isNegative === true;
     // 成本估算常量（免费门槛、公式系数、受限模型清单）由网关自动同步。
     const [naiRuntimeConfig, setNaiRuntimeConfig] = useState<NaiRuntimeConfig | null>(null);
@@ -1206,9 +1208,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             })) return false;
             return handleGenerateDraft();
         }
+        // 本地 Anlas 预算已用尽但仍需扣费：红色警告，由用户确认后才继续。
+        if (cost > 0 && anlasBudget.remaining <= 0) {
+            if (!await confirmAction({
+                title: 'Anlas 预算已用尽',
+                message: `本地预算已扣到 0，本次生成仍需消耗 ${cost} Anlas（共享账号额度），继续将透支你手动设定的预算线。\n\n若预算数字过期，可先到全局设置校准。`,
+                confirmLabel: `仍要消耗 ${cost} 点生成`,
+                tone: 'danger',
+            })) return false;
+            return handleGenerateDraft();
+        }
         if (cost > 0 && !await confirmAction({
             title: '确认生成图片',
-            message: `当前参数预计消耗 ${cost} Anlas${params.characterReferences?.enabled && params.characterReferences.slots.length ? `\n其中角色参考：${params.characterReferences.slots.length} × 5 = ${params.characterReferences.slots.length * 5} Anlas` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
+            message: `当前参数预计消耗 ${cost} Anlas${params.characterReferences?.enabled && params.characterReferences.slots.length ? `\n其中角色参考：${params.characterReferences.slots.length} × 5 = ${params.characterReferences.slots.length * 5} Anlas` : ''}${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
             confirmLabel: `消耗 ${cost} 点并生成`,
         })) return false;
         return handleGenerateDraft();
@@ -1243,9 +1255,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             })) return false;
             return handleGenerateDraft(draft);
         }
+        // 预算已用尽仍需扣费：红色警告（Agent 路径同样拦截）。
+        if (cost > 0 && anlasBudget.remaining <= 0) {
+            if (!await confirmAction({
+                title: 'Anlas 预算已用尽',
+                message: `${reason ? `${reason}\n\n` : ''}本地预算已扣到 0，本次生成仍需消耗 ${cost} Anlas（共享账号额度），继续将透支你手动设定的预算线。`,
+                confirmLabel: `仍要消耗 ${cost} 点生成`,
+                tone: 'danger',
+            })) return false;
+            return handleGenerateDraft(draft);
+        }
         if (cost > 0 && !await confirmAction({
             title: 'Agent 已准备好生图',
-            message: `${reason ? `${reason}\n\n` : ''}预计本次消耗 ${cost} Anlas。确认后才会提交给 NovelAI。${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
+            message: `${reason ? `${reason}\n\n` : ''}预计本次消耗 ${cost} Anlas。确认后才会提交给 NovelAI。${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
             confirmLabel: `消耗 ${cost} 点并生成`,
         })) return false;
         return handleGenerateDraft(draft);

@@ -10,7 +10,8 @@ import {
 import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
 import { DesktopImageColumns, getMobileImageDisplayPreferences, MobileImageColumns, MobileImageLayout, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
-import { anlasBudgetService, DEFAULT_ANLAS_BUDGET, useAnlasBudget } from '../services/anlasBudget';
+import { anlasBudgetService, DEFAULT_ANLAS_BUDGET, getActiveKeyHash, useAnlasBudget } from '../services/anlasBudget';
+import { getNaiRuntimeConfig } from '../services/naiRuntime';
 import { CLOUD_QUEUE_SERVICE_URL, getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 import { naiKeyVault, NaiKeyEntry } from '../services/naiKeyVault';
 import { PromptAgentSettings } from './PromptAgentSettings';
@@ -118,6 +119,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
   const [activeSection, setActiveSection] = useState<SettingsPage>('home');
   const anlasBudget = useAnlasBudget();
+  // 个人 Opus 免费图折算百分比用的换算系数（网关自动同步，17.3 张 ≈ 1%）。
+  const [naiRuntimeCoefficient, setNaiRuntimeCoefficient] = useState(17.3);
   const [anlasInput, setAnlasInput] = useState(String(DEFAULT_ANLAS_BUDGET));
   const [maintenanceStatus, setMaintenanceStatus] = useState<LocalMaintenanceStatus | null>(null);
   const [maintenanceStatusError, setMaintenanceStatusError] = useState('');
@@ -136,6 +139,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     setActiveSection(initialSection === 'home' ? (isMobile ? 'home' : 'appearance') : initialSection);
     setApiKey(readApiKey());
     setRememberApiKey(localStorage.getItem('nai_api_key') !== null);
+    void getNaiRuntimeConfig().then(config => setNaiRuntimeCoefficient(config.imagesPerPercent || 17.3));
     void getCloudQueuePreferences().then(setCloudQueue).catch(() => notify('读取公共队列设置失败', 'error'));
   }, [open, initialSection, isMobile]);
 
@@ -502,7 +506,41 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <input type="number" min="0" step="1" value={anlasInput} onChange={event => setAnlasInput(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-lg font-black tabular-nums outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900" aria-label="可支配 Anlas 点数" />
                 <button type="button" onClick={async () => { const next = await anlasBudgetService.set(Number(anlasInput)); setAnlasInput(String(next.remaining)); notify('Anlas 预算已更新'); }} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white">保存</button>
               </div>
-              <div className="mt-2 flex items-start justify-between gap-3 text-[11px] leading-5 text-gray-500 dark:text-gray-400"><p>这是本地预算，不是 NovelAI 官网实时余额。默认按 Opus 每月 10000 点由 6 人均分后取整为 1666；生图和永久 Vibe 成功后按官方规则扣减，失败、导入或重复编码不扣。</p><button type="button" onClick={async () => { const next = await anlasBudgetService.set(DEFAULT_ANLAS_BUDGET); setAnlasInput(String(next.remaining)); }} className="flex-shrink-0 font-bold text-indigo-600 dark:text-indigo-300">恢复 1666</button></div>
+              <div className="mt-2 flex items-start justify-between gap-3 text-[11px] leading-5 text-gray-500 dark:text-gray-400"><p>这是本地预算（账号整体，手动校准），不是 NovelAI 官网实时余额——官方没有提供余额接口。默认按 Opus 每月 10000 点由 6 人均分后取整为 1666；生图和永久 Vibe 成功后按官方规则扣减，失败、导入或重复编码不扣。</p><button type="button" onClick={async () => { const next = await anlasBudgetService.set(DEFAULT_ANLAS_BUDGET); setAnlasInput(String(next.remaining)); }} className="flex-shrink-0 font-bold text-indigo-600 dark:text-indigo-300">恢复 1666</button></div>
+              <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-gray-500 dark:text-gray-400">个人使用统计（当前密钥）</span>
+                  {anlasBudget.personal && (anlasBudget.personal.anlasSpent > 0 || anlasBudget.personal.opusImages > 0) && (
+                    <button type="button" onClick={async () => {
+                      if (!await confirmAction({ title: '重置个人使用统计？', message: '把当前密钥的个人 Anlas 花费与 Opus 免费图计数清零，不影响本地预算。', confirmLabel: '重置', tone: 'danger' })) return;
+                      try {
+                        const keyHash = await getActiveKeyHash();
+                        if (!keyHash) return;
+                        await anlasBudgetService.resetPersonal(keyHash);
+                        await anlasBudget.refresh();
+                        notify('个人统计已重置');
+                      } catch {
+                        notify('重置失败', 'error');
+                      }
+                    }} className="text-[11px] font-bold text-indigo-600 dark:text-indigo-300">重置</button>
+                  )}
+                </div>
+                {anlasBudget.personal ? (
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                    <div className="rounded-lg bg-white px-3 py-2 dark:bg-gray-900">
+                      <div className="text-[11px] text-gray-500 dark:text-gray-400">个人已花 Anlas</div>
+                      <div className="mt-0.5 text-lg font-black tabular-nums text-indigo-600 dark:text-indigo-300">{anlasBudget.personal.anlasSpent}</div>
+                    </div>
+                    <div className="rounded-lg bg-white px-3 py-2 dark:bg-gray-900">
+                      <div className="text-[11px] text-gray-500 dark:text-gray-400">个人 Opus 免费图</div>
+                      <div className="mt-0.5 text-lg font-black tabular-nums text-emerald-600 dark:text-emerald-300">{anlasBudget.personal.opusImages} 张</div>
+                      <div className="text-[10px] text-gray-400">≈ {(anlasBudget.personal.opusImages / naiRuntimeCoefficient).toFixed(2)}% 额度</div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">尚未配置 NovelAI 密钥，或本机还没有该账号的使用记录。统计只记本机行为，按密钥分账号累计。</p>
+                )}
+              </div>
             </div></div>}
           </section>
 

@@ -19,6 +19,7 @@ import {
   extractNaiFreeTierLimits,
   extractNaiModelCapabilities,
   computeNaiRuntimeSync,
+  computeGenerationPersonalUsage,
   applyNaiRuntimeOverride,
   DEFAULT_NAI_RUNTIME,
   normalizeVibeStrengths,
@@ -1139,4 +1140,26 @@ test('预热器 pinned 任务不截断来源 URL', async () => {
     assert.equal(item.source, src, 'source 不得被截断');
     assert.equal(item.pinned, true);
   }
+});
+
+test('个人用量统计：只有受限模型的免费档生成计入 Opus 张数', () => {
+  const base = { action: 'generate', parameters: { width: 832, height: 1216, steps: 23, n_samples: 1 } };
+  // V5 免费档：计入 Opus 张数，Anlas 为 0。
+  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full' }, 0, false), { anlasDelta: 0, opusImages: 1 });
+  // V4.5 不受限额：不算 Opus 张数。
+  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-4-5-full' }, 0, false), { anlasDelta: 0, opusImages: 0 });
+  // V5 但额度透支（本次按 Anlas 计费）：不消耗免费额度，不计张数。
+  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full' }, 20, true), { anlasDelta: 20, opusImages: 0 });
+  // 免费档条件之外（步数超限）：按 Anlas 计费，不计张数。
+  assert.deepEqual(
+    computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full', parameters: { ...base.parameters, steps: 29 } }, 20, false),
+    { anlasDelta: 20, opusImages: 0 },
+  );
+  // 带 Vibe 的免费档 V5 生成仍计入张数，附加费进 Anlas。
+  assert.deepEqual(
+    computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full', parameters: { ...base.parameters, reference_image_multiple_cached: [{}, {}, {}, {}, {}] } }, 2, false),
+    { anlasDelta: 2, opusImages: 1 },
+  );
+  // 未知模型标识按受限清单判断（不在清单则不计）。
+  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-6-full' }, 0, false), { anlasDelta: 0, opusImages: 0 });
 });
