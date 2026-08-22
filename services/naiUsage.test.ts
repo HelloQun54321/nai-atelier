@@ -9,6 +9,12 @@ const responseFor = (payload: unknown) => ({
   text: async () => '',
 }) as Response;
 
+const errorResponse = (message: string) => ({
+  ok: false,
+  json: async () => ({ error: message }),
+  text: async () => message,
+}) as Response;
+
 describe('useNovelaiUsage', () => {
   beforeEach(() => {
     sessionStorage.clear();
@@ -75,6 +81,49 @@ describe('useNovelaiUsage', () => {
       expect(hook.result.current.usage?.percent).toBe(72);
       expect(hook.result.current.loading).toBe(false);
     });
+    hook.unmount();
+  });
+
+  it('切换 Key 后订阅请求失败会暴露错误，重试成功后恢复当前 Key 额度', async () => {
+    const keyA = 'pst-usage-key-a';
+    const keyB = 'pst-usage-key-b';
+    sessionStorage.setItem('nai_api_key', keyA);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(responseFor({ tier: 4, active: true, usage: { percent: 64, isNegative: false, timeUntilNextPercent: 1500 } }))
+      .mockResolvedValueOnce(errorResponse('temporary subscription failure'))
+      .mockResolvedValueOnce(responseFor({ tier: 4, active: true, usage: { percent: 37, isNegative: false, timeUntilNextPercent: 1500 } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const hook = renderHook(() => useNovelaiUsage());
+    await waitFor(() => expect(hook.result.current.usage?.percent).toBe(64));
+
+    await act(async () => {
+      sessionStorage.setItem('nai_api_key', keyB);
+      window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: keyB }));
+    });
+    await waitFor(() => {
+      expect(hook.result.current.loading).toBe(false);
+      expect(hook.result.current.usage).toBeUndefined();
+      expect(hook.result.current.error).toContain('temporary subscription failure');
+    });
+
+    await act(async () => { await hook.result.current.refresh(); });
+    await waitFor(() => {
+      expect(hook.result.current.usage?.percent).toBe(37);
+      expect(hook.result.current.error).toBeNull();
+    });
+    hook.unmount();
+  });
+
+  it('请求成功但没有 usage 时识别为非 Opus，而不是同步失败', async () => {
+    sessionStorage.setItem('nai_api_key', 'pst-tablet-key');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(responseFor({ tier: 2, active: true })));
+
+    const hook = renderHook(() => useNovelaiUsage());
+    await waitFor(() => expect(hook.result.current.loading).toBe(false));
+    expect(hook.result.current.info?.tier).toBe(2);
+    expect(hook.result.current.usage).toBeUndefined();
+    expect(hook.result.current.error).toBeNull();
     hook.unmount();
   });
 });

@@ -79,6 +79,7 @@ export const useNovelaiUsage = () => {
   const [info, setInfo] = useState<NovelaiSubscriptionInfo | null>(null);
   const [fetchedAt, setFetchedAt] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const infoRef = useRef<NovelaiSubscriptionInfo | null>(null);
   const fetchedAtRef = useRef(0);
   const activeKeyRef = useRef('');
@@ -92,15 +93,18 @@ export const useNovelaiUsage = () => {
       fetchedAtRef.current = 0;
       setInfo(null);
       setFetchedAt(0);
+      setError(null);
     }
     if (!apiKey) {
       infoRef.current = null;
       fetchedAtRef.current = 0;
       setInfo(null);
       setFetchedAt(0);
+      setError(null);
       setLoading(false);
       return null;
     }
+    setError(null);
     setLoading(true);
     try {
       const next = await requestNovelaiSubscription(apiKey);
@@ -110,9 +114,15 @@ export const useNovelaiUsage = () => {
       fetchedAtRef.current = Date.now();
       setInfo(next);
       setFetchedAt(fetchedAtRef.current);
+      setError(null);
       return next;
-    } catch {
-      // 保留上一次的状态；侧栏展示不因临时网络失败闪断。
+    } catch (requestError) {
+      // 同一 Key 的旧快照仍保留，但必须显式暴露失败状态；切 Key 后没有旧快照时，
+      // 侧栏也应显示红色错误行，而不是把 Opus 限额整行静默隐藏。
+      if (activeKeyRef.current === apiKey) {
+        const message = requestError instanceof Error ? requestError.message.trim() : '';
+        setError(message.slice(0, 300) || 'NovelAI 订阅信息请求失败');
+      }
       return activeKeyRef.current === apiKey ? infoRef.current : null;
     } finally {
       if (activeKeyRef.current === apiKey) setLoading(false);
@@ -134,6 +144,7 @@ export const useNovelaiUsage = () => {
       fetchedAtRef.current = 0;
       setInfo(null);
       setFetchedAt(0);
+      setError(null);
       setLoading(true);
       void refresh();
     };
@@ -150,5 +161,5 @@ export const useNovelaiUsage = () => {
     };
   }, [refresh]);
 
-  return { info, usage: info?.usage, loading, fetchedAt, refresh, refreshIfStale };
+  return { info, usage: info?.usage, loading, error, fetchedAt, refresh, refreshIfStale };
 };
