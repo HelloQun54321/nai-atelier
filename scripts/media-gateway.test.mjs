@@ -21,6 +21,7 @@ import {
   fetchNaiRuntimeText,
   computeNaiRuntimeSync,
   computeGenerationPersonalUsage,
+  isNaiUsageLimitedModel,
   applyNaiRuntimeOverride,
   DEFAULT_NAI_RUNTIME,
   normalizeVibeStrengths,
@@ -1154,7 +1155,7 @@ test('预热器 pinned 任务不截断来源 URL', async () => {
   }
 });
 
-test('个人用量统计：只有受限模型的免费档生成计入 Opus 张数，并使用预算接口字段', () => {
+test('个人用量统计：只有成功的受限模型免费档生成计入 Opus 张数，并使用预算接口字段', () => {
   const base = { action: 'generate', parameters: { width: 832, height: 1216, steps: 23, n_samples: 1 } };
   // V5 免费档：计入 Opus 张数，Anlas 为 0。
   assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full' }, 0, false), { anlasDelta: 0, opusImagesDelta: 1 });
@@ -1174,4 +1175,10 @@ test('个人用量统计：只有受限模型的免费档生成计入 Opus 张�
   );
   // 未知模型标识按受限清单判断（不在清单则不计）。
   assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-6-full' }, 0, false), { anlasDelta: 0, opusImagesDelta: 0 });
+  // 生成请求失败时不产生任何个人用量，即使请求参数本身符合免费档。
+  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full' }, 0, false, DEFAULT_NAI_RUNTIME, false), { anlasDelta: 0, opusImagesDelta: 0 });
+  // 未来模型是否受限由官方运行时清单决定，不依赖 V5 字符串前缀。
+  const futureRuntime = { ...DEFAULT_NAI_RUNTIME, usageLimitedModels: ['nai-diffusion-6-full'] };
+  assert.equal(isNaiUsageLimitedModel('nai-diffusion-6-full', futureRuntime), true);
+  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-6-full' }, 0, false, futureRuntime), { anlasDelta: 0, opusImagesDelta: 1 });
 });

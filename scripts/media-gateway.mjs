@@ -566,6 +566,10 @@ export const clearPreciseReferenceParameters = parameters => {
   return parameters;
 };
 
+/** 判断模型是否受官方同步得到的 Opus 免费额度限制。 */
+export const isNaiUsageLimitedModel = (model, runtime = getNaiRuntime()) =>
+  typeof model === 'string' && runtime.usageLimitedModels.includes(model);
+
 /** NovelAI's current V4/V4.5 cost formula for the generation features supported here. */
 export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = false) => {
   const parameters = payload?.parameters || {};
@@ -575,7 +579,8 @@ export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = fals
   const steps = Math.max(1, Number(parameters.steps) || 1);
   const samples = Math.max(1, Math.floor(Number(parameters.n_samples) || 1));
   // 系数与免费档门槛来自官方 Web 应用常量同步（见 DEFAULT_NAI_RUNTIME / syncNaiRuntime）。
-  const { costCoefficientArea, costCoefficientSteps, freeMaxArea, freeMaxSteps, usageLimitedModels } = getNaiRuntime();
+  const runtime = getNaiRuntime();
+  const { costCoefficientArea, costCoefficientSteps, freeMaxArea, freeMaxSteps } = runtime;
   const raw = Math.ceil(costCoefficientArea * area + costCoefficientSteps * area * steps);
   const smeaMultiplier = parameters.sm_dyn ? 1.4 : parameters.sm ? 1.2 : 1;
   const strength = parameters.mask
@@ -588,7 +593,7 @@ export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = fals
   // Precise Reference is a per-reference surcharge, not an img2img base image.
   const isPlainGeneration = payload?.action === 'generate' && !parameters.image && !parameters.mask;
   // Opus 免费额度仅对高于 V4.5 的模型（V5 系）设限；透支后所有图都按 Anlas 计费。
-  const isUsageLimitedModel = typeof payload?.model === 'string' && usageLimitedModels.includes(payload.model);
+  const isUsageLimitedModel = isNaiUsageLimitedModel(payload?.model, runtime);
   const freeSamples = isPlainGeneration && !(opusUsageExhausted && isUsageLimitedModel) && area <= freeMaxArea && steps <= freeMaxSteps ? 1 : 0;
   const base = baseCost * Math.max(0, samples - freeSamples);
   const vibeCount = Array.isArray(parameters.reference_image_multiple_cached)
@@ -603,7 +608,8 @@ export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = fals
  * - opusImagesDelta：计入 Opus 免费额度的张数——仅“受限模型（V5 系）+ 免费档
  *   （单张、无底图、面积/步数达标）+ 未透支”的生成才消耗共享额度。
  */
-export const computeGenerationPersonalUsage = (payload, estimatedCost, usageExhausted, runtime = getNaiRuntime()) => {
+export const computeGenerationPersonalUsage = (payload, estimatedCost, usageExhausted, runtime = getNaiRuntime(), generationSucceeded = true) => {
+  if (!generationSucceeded) return { anlasDelta: 0, opusImagesDelta: 0 };
   const parameters = payload?.parameters || {};
   const samples = Math.max(1, Math.floor(Number(parameters.n_samples) || 1));
   const width = Math.max(1, Number(parameters.width) || 1);
@@ -611,7 +617,7 @@ export const computeGenerationPersonalUsage = (payload, estimatedCost, usageExha
   const area = Math.max(65_536, width * height);
   const steps = Math.max(1, Number(parameters.steps) || 1);
   const isPlainGeneration = payload?.action === 'generate' && !parameters.image && !parameters.mask;
-  const isUsageLimitedModel = typeof payload?.model === 'string' && runtime.usageLimitedModels.includes(payload.model);
+  const isUsageLimitedModel = isNaiUsageLimitedModel(payload?.model, runtime);
   const opusImagesDelta = isUsageLimitedModel && isPlainGeneration && !usageExhausted
     && area <= runtime.freeMaxArea && steps <= runtime.freeMaxSteps ? samples : 0;
   return { anlasDelta: Math.max(0, Math.floor(Number(estimatedCost) || 0)), opusImagesDelta };
@@ -1209,7 +1215,8 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
       : await fetchNovelAiGeneration(payload, authorization, generationSignal, requestRemote);
     // 透支状态由 /api/novelai-subscription 代理调用时缓存；快照过期且本次是
     // 受限额模型（V5 系）时，扣费前向 NovelAI 重取真实状态。
-    const isUsageLimitedModel = typeof payload?.model === 'string' && payload.model.startsWith('nai-diffusion-5');
+    const runtime = getNaiRuntime();
+    const isUsageLimitedModel = isNaiUsageLimitedModel(payload?.model, runtime);
     const opusSnapshot = getOpusUsageSnapshot(keyHash);
     if (response.ok && isUsageLimitedModel && Date.now() - opusSnapshot.updatedAt > OPUS_USAGE_STALE_MS) {
       try {
@@ -1224,7 +1231,7 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
     const usageExhausted = getOpusUsageSnapshot(keyHash).exhausted;
     const estimatedCost = response.ok ? estimateNovelAiGenerationCost(payload, usageExhausted) : 0;
     // 个人用量（按密钥账号累计）：Anlas 扣减 + 计入 Opus 免费额度的张数。
-    const personalUsage = computeGenerationPersonalUsage(payload, estimatedCost, usageExhausted);
+    const personalUsage = computeGenerationPersonalUsage(payload, estimatedCost, usageExhausted, runtime, response.ok);
     const anlasBudget = estimatedCost > 0 || personalUsage.opusImagesDelta > 0
       ? await spendAnlasBudget(req, workerPort, estimatedCost, 'generation', { keyHash, ...personalUsage })
       : null;
