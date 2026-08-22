@@ -879,12 +879,17 @@ body,
   100% { box-shadow: 0 0 15px rgba(255, 215, 0, 0.8), 0 0 30px rgba(255, 215, 0, 0.5); }
 }
 
-/* 公共队列状态：只保留正常、排队、成功和失败四种视觉语言。 */
+/* 公共队列状态：活动状态跟随生成按钮主题，结果状态保留语义色。 */
 .queue-status-surface {
+  --queue-status-deep: var(--nai-action-deep, #4f46e5);
+  --queue-status-mid: var(--nai-action-mid, #6366f1);
+  --queue-status-light: var(--nai-action-light, #a5b4fc);
+  --queue-status-glow: var(--nai-action-glow, rgb(255 255 255 / .48));
+  --queue-status-shadow: var(--nai-action-shadow, rgb(79 70 229 / .28));
   isolation: isolate;
   overflow: hidden;
   background-size: 100% 100%;
-  box-shadow: 0 10px 28px rgb(30 41 59 / .22), inset 0 1px 0 rgb(255 255 255 / .2);
+  box-shadow: 0 10px 28px var(--queue-status-shadow), inset 0 1px 0 rgb(255 255 255 / .2);
 }
 
 .queue-status-surface::before {
@@ -893,7 +898,7 @@ body,
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background: radial-gradient(circle at 18% 0%, rgb(255 255 255 / .24), transparent 38%),
+  background: radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--queue-status-glow) 58%, transparent), transparent 38%),
               linear-gradient(105deg, transparent 35%, rgb(255 255 255 / .10) 50%, transparent 65%);
 }
 
@@ -906,31 +911,62 @@ body,
   z-index: 0;
   width: 55%;
   pointer-events: none;
-  background: linear-gradient(90deg, transparent, rgb(167 139 250 / .46), rgb(52 211 153 / .34), transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--queue-status-light) 58%, white), color-mix(in srgb, var(--queue-status-mid) 46%, transparent), transparent);
   filter: blur(10px);
   transform: skewX(-18deg);
-  animation: queue-status-sheen 2.2s linear infinite;
 }
 
 .queue-status-surface--normal {
-  background-image: linear-gradient(120deg, #4f46e5 0%, #7c3aed 55%, #5b21b6 100%);
+  background-image: linear-gradient(120deg, var(--queue-status-deep) 0%, var(--queue-status-mid) 55%, var(--queue-status-deep) 100%);
 }
 
 .queue-status-surface--active {
-  background-image: linear-gradient(110deg, #047857 0%, #10b981 16%, #10b981 28%, #7c3aed 45%, #6d28d9 60%, #059669 78%, #10b981 90%, #047857 100%);
+  background-image: linear-gradient(110deg,
+    var(--queue-status-deep) 0%,
+    var(--queue-status-mid) 18%,
+    var(--queue-status-light) 36%,
+    var(--queue-status-mid) 52%,
+    var(--queue-status-deep) 70%,
+    var(--queue-status-mid) 86%,
+    var(--queue-status-deep) 100%);
   background-size: 260% 100%;
-  animation: queue-status-flow 2.8s linear infinite;
-  box-shadow: 0 10px 30px rgb(16 185 129 / .22), 0 5px 22px rgb(124 58 237 / .22), inset 0 1px 0 rgb(255 255 255 / .24);
+  box-shadow: 0 10px 30px var(--queue-status-shadow), inset 0 1px 0 rgb(255 255 255 / .24);
 }
 
 .queue-status-surface--success {
-  background-image: linear-gradient(120deg, #047857 0%, #10b981 52%, #0f766e 100%);
-  box-shadow: 0 10px 28px rgb(5 150 105 / .26), inset 0 1px 0 rgb(255 255 255 / .22);
+  --queue-status-deep: #047857;
+  --queue-status-mid: #10b981;
+  --queue-status-light: #6ee7b7;
+  --queue-status-glow: #a7f3d0;
+  --queue-status-shadow: rgb(5 150 105 / .26);
+  background-image: linear-gradient(120deg, var(--queue-status-deep) 0%, var(--queue-status-mid) 52%, #0f766e 100%);
+  box-shadow: 0 10px 28px var(--queue-status-shadow), inset 0 1px 0 rgb(255 255 255 / .22);
 }
 
 .queue-status-surface--failure {
-  background-image: linear-gradient(120deg, #e11d48 0%, #be123c 48%, #7f1d1d 100%);
-  box-shadow: 0 10px 28px rgb(190 18 60 / .25), inset 0 1px 0 rgb(255 255 255 / .2);
+  --queue-status-deep: #e11d48;
+  --queue-status-mid: #be123c;
+  --queue-status-light: #fda4af;
+  --queue-status-glow: #fecdd3;
+  --queue-status-shadow: rgb(190 18 60 / .25);
+  background-image: linear-gradient(120deg, var(--queue-status-deep) 0%, var(--queue-status-mid) 48%, #7f1d1d 100%);
+  box-shadow: 0 10px 28px var(--queue-status-shadow), inset 0 1px 0 rgb(255 255 255 / .2);
+}
+
+html[data-motion='full'] .queue-status-surface--active {
+  animation: queue-status-flow 2.8s linear infinite;
+}
+
+html[data-motion='full'] .queue-status-surface--active::after {
+  animation: queue-status-sheen 2.2s linear infinite;
+}
+
+.queue-status-spinner {
+  animation: none;
+}
+
+html[data-motion='full'] .queue-status-spinner {
+  animation: queue-status-spinner-spin 900ms linear infinite;
 }
 
 @keyframes queue-status-flow {
@@ -943,9 +979,14 @@ body,
   to { left: 115%; }
 }
 
+@keyframes queue-status-spinner-spin {
+  to { transform: rotate(360deg); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .queue-status-surface--active,
-  .queue-status-surface--active::after { animation: none; }
+  html[data-motion='full'] .queue-status-surface--active,
+  html[data-motion='full'] .queue-status-surface--active::after,
+  html[data-motion='full'] .queue-status-spinner { animation: none !important; }
 }
 
 /* VIP 角标 */

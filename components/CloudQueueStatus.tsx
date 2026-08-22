@@ -34,7 +34,7 @@ const QueueStatusBody: React.FC<{ status: QueueStatus; compact?: boolean }> = ({
   return <div className={`relative z-[1] flex w-full items-center justify-center ${compact ? 'min-h-8' : 'min-h-7'}`}>
       <div className={`flex w-full min-w-0 justify-center ${status.cancelable ? 'px-12' : 'px-2'}`}>
         <div className="flex min-w-0 max-w-full items-center justify-center gap-2">
-          {active && <span aria-hidden="true" className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white/90 border-t-transparent" />}
+          {active && <span aria-hidden="true" className="queue-status-spinner h-4 w-4 shrink-0 rounded-full border-2 border-white/90 border-t-transparent" />}
           <div className="min-w-0 text-center">
             <p className="truncate text-sm font-bold leading-5">{statusLabel(status)}</p>
             {status.greeting && <p className="mt-0.5 truncate text-center text-xs leading-4 text-white/75">当前使用者：{status.greeting}</p>}
