@@ -872,16 +872,16 @@ async function waitForAitagFirstImageUpdates(
   };
 }
 
-async function cacheAitagFirstImage(env: Env, db: D1Database, work: any) {
+async function cacheAitagFirstImage(env: Env, db: D1Database, work: any): Promise<boolean> {
   const workId = Number(work?.id);
-  if (!Number.isFinite(workId)) return;
+  if (!Number.isFinite(workId)) return true;
   const sourceSort = normalizeAitagSourceSort(work?.source_sort || null);
 
   const existing = await db.prepare(`
     SELECT local_cover_url, remote_cover_url, first_image_json FROM aitag_works
     WHERE id = ? AND source_sort = ?
   `).bind(workId, sourceSort).first<{local_cover_url?: string; remote_cover_url?: string; first_image_json?: string}>();
-  if (existing?.local_cover_url && existing?.first_image_json) return;
+  if (existing?.local_cover_url && existing?.first_image_json) return true;
 
   try {
     const cachedDetail = await getCachedAitagDetail(db, workId);
@@ -923,6 +923,7 @@ async function cacheAitagFirstImage(env: Env, db: D1Database, work: any) {
       workId,
       sourceSort
     ).run();
+    return true;
   } catch (e: any) {
     const now = Date.now();
     await db.prepare(`
@@ -931,13 +932,26 @@ async function cacheAitagFirstImage(env: Env, db: D1Database, work: any) {
       WHERE id = ? AND source_sort = ? AND (local_cover_url IS NULL OR local_cover_url = '')
     `).bind('error', now, workId, sourceSort).run();
     console.error(`Failed to cache aitag first image ${workId}:`, e?.message || e);
+    return false;
   }
 }
 
 async function cacheAitagFirstImagesForWorks(env: Env, db: D1Database, works: any[], sort: string) {
   if (!Array.isArray(works)) return;
+  let consecutiveFailures = 0;
   for (const work of works) {
-    await cacheAitagFirstImage(env, db, { ...work, source_sort: sort });
+    const success = await cacheAitagFirstImage(env, db, { ...work, source_sort: sort });
+    if (!success) {
+      consecutiveFailures++;
+      // 连续失败说明 aitag.win 正在挑战/限流，本轮熔断避免轰炸并刷屏错误日志；
+      // 未处理的作品保持原状态，下次加载会继续重试。
+      if (consecutiveFailures >= 2) {
+        console.warn(`[aitag] 首图缓存连续失败 ${consecutiveFailures} 次，本轮暂停（${works.length} 个待处理）`);
+        return;
+      }
+    } else {
+      consecutiveFailures = 0;
+    }
     await sleep(550);
   }
 }

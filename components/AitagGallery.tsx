@@ -117,8 +117,9 @@ const isAitagFavorite = (work: AitagWorkSummary) => {
 
 const needsFirstImageCacheRefresh = (work: AitagWorkSummary) => {
   if (work.localFirstImageUrl || work.local_cover_url) return false;
-  const status = String(work.firstImageStatus || work.cover_status || 'missing').toLowerCase();
-  return status !== 'error';
+  // error 也允许重试：上游的 502 多为 Cloudflare 挑战/限流等瞬时故障，
+  // 批量缓存侧有连续失败熔断，不会因此轰炸 aitag.win。
+  return true;
 };
 
 const buildPreviewDetail = (work: AitagWorkSummary): AitagWorkDetail | null => {

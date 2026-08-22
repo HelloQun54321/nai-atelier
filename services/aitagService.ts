@@ -267,12 +267,23 @@ const formatGenerationType = (rawValue: string) => {
   return raw;
 };
 
+/**
+ * aitag 元数据里的模型名常带版本哈希后缀（如 "NovelAI Diffusion V4.5 1229B44F"），
+ * 同一模型系列每个作品后缀都不同；去掉独立的十六进制哈希词，让筛选项按系列归并。
+ */
+const normalizeAitagModelLabel = (raw: string) =>
+  raw
+    .split(/\s+/)
+    .filter(part => part && !/^[0-9A-Fa-f]{6,10}$/i.test(part))
+    .join(' ')
+    .trim();
+
 export const getAitagModelLabel = (image: AitagImage) => {
   const parsed = parseAitagAiJson(image.ai_json);
   const comment = getAitagCommentObject(parsed);
   const parameters = parsed?.parameters;
 
-  return pickString(
+  return normalizeAitagModelLabel(pickString(
     image.model,
     parsed?.model,
     parsed?.Model,
@@ -280,7 +291,7 @@ export const getAitagModelLabel = (image: AitagImage) => {
     comment?.model,
     comment?.Model,
     image.image_type
-  );
+  ));
 };
 
 export const getAitagGenerationLabels = (image: AitagImage) => {
