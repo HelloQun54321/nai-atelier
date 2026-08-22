@@ -24,16 +24,18 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
   const images = usageRemainingImages(usage, runtime.imagesPerPercent);
   const negative = usage.isNegative;
   const low = !negative && percent <= 20;
-  const ringClass = negative
-    ? 'text-red-500 dark:text-red-400'
-    : low
-      ? 'text-amber-500 dark:text-amber-400'
-      : 'text-emerald-500 dark:text-emerald-400';
-  // 同步健康度：提取失效或超过 48 小时未更新时，用琥珀色圆点显式示警，
+  // 同步健康度：提取失效或超过 48 小时未更新时，直接用红色圆环和叉号示警，
   // 避免「项目能跑但常量早已过期」的静默失效。
   const health = runtime.health;
   const syncPending = health?.reason === 'pending';
   const syncBroken = isNaiRuntimeSyncUnhealthy(runtime);
+  const ringClass = syncBroken
+    ? 'text-red-500 dark:text-red-400'
+    : negative
+      ? 'text-red-500 dark:text-red-400'
+      : low
+        ? 'text-amber-500 dark:text-amber-400'
+        : 'text-emerald-500 dark:text-emerald-400';
   const syncSummary = syncPending
     ? '官方常量同步进行中，稍后自动重试'
     : syncBroken
@@ -50,7 +52,8 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
       role="status"
       onClick={() => void refresh()}
       title={collapsed ? title : `${title}（点击立即刷新）`}
-      aria-label={`Opus 生成限额 ${negative ? '已用尽' : `${percent}%`}`}
+      aria-busy={loading}
+      aria-label={`Opus 生成限额 ${syncBroken ? '同步失败' : negative ? '已用尽' : `${percent}%`}`}
       className={`group relative flex min-h-14 w-full cursor-pointer select-none items-center border-b border-gray-200 text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:border-gray-800 dark:hover:bg-gray-800 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}
     >
       <span className={`relative flex h-9 w-9 flex-none items-center justify-center rounded-full ${ringClass}`}>
@@ -66,11 +69,26 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
             strokeLinecap="round"
             strokeDasharray={OPUS_RING_CIRCUMFERENCE}
             strokeDashoffset={OPUS_RING_CIRCUMFERENCE * (1 - percent / 100)}
-            className="transition-[stroke-dashoffset] duration-500"
+            className={`transition-[stroke-dashoffset,opacity] duration-700 ease-out ${loading ? 'opacity-25' : ''}`}
           />
         </svg>
-        <span className="relative text-[9px] font-black tabular-nums">{percent}%</span>
-        {syncBroken && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white dark:ring-gray-900" aria-label="官方常量同步异常" />}
+        {loading && (
+          <svg viewBox="0 0 36 36" className="absolute inset-0 h-full w-full animate-spin" aria-label="正在刷新 Opus 限额">
+            <circle
+              cx="18"
+              cy="18"
+              r="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeDasharray={`${OPUS_RING_CIRCUMFERENCE * 0.22} ${OPUS_RING_CIRCUMFERENCE * 0.78}`}
+            />
+          </svg>
+        )}
+        <span className={`relative font-black tabular-nums ${syncBroken ? 'text-[17px] leading-none' : 'text-[9px]'}`}>
+          {syncBroken ? '×' : `${percent}%`}
+        </span>
       </span>
       {!collapsed && <span className="min-w-0 flex-1">
         <span className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Opus 限额</span>

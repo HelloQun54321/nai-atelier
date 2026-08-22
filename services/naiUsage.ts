@@ -101,6 +101,7 @@ export const useNovelaiUsage = () => {
       setLoading(false);
       return null;
     }
+    setLoading(true);
     try {
       const next = await requestNovelaiSubscription(apiKey);
       // Key 在请求期间切换时，丢弃旧账号的响应，避免额度短暂串到新账号。

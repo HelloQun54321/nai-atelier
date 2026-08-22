@@ -47,4 +47,34 @@ describe('useNovelaiUsage', () => {
     first.unmount();
     second.unmount();
   });
+
+  it('手动刷新期间会保持 loading 状态，完成后更新额度', async () => {
+    sessionStorage.setItem('nai_api_key', 'pst-refresh-key');
+    let resolveNext!: (response: Response) => void;
+    const nextRequest = new Promise<Response>(resolve => { resolveNext = resolve; });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(responseFor({ tier: 4, active: true, usage: { percent: 100, isNegative: false, timeUntilNextPercent: 1500 } }))
+      .mockReturnValueOnce(nextRequest);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const hook = renderHook(() => useNovelaiUsage());
+    await waitFor(() => {
+      expect(hook.result.current.usage?.percent).toBe(100);
+      expect(hook.result.current.loading).toBe(false);
+    });
+
+    let refreshPromise!: Promise<unknown>;
+    act(() => { refreshPromise = hook.result.current.refresh(); });
+    await waitFor(() => expect(hook.result.current.loading).toBe(true));
+
+    await act(async () => {
+      resolveNext(responseFor({ tier: 4, active: true, usage: { percent: 72, isNegative: false, timeUntilNextPercent: 1500 } }));
+      await refreshPromise;
+    });
+    await waitFor(() => {
+      expect(hook.result.current.usage?.percent).toBe(72);
+      expect(hook.result.current.loading).toBe(false);
+    });
+    hook.unmount();
+  });
 });
