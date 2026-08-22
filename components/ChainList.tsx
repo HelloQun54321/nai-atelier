@@ -9,7 +9,8 @@ import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMa
 import { Copy, Heart, Menu, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isInternalChainTag } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
-import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel } from '../services/naiModels';
+import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
+import { useNaiRuntime } from '../services/naiRuntime';
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -223,16 +224,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     ).sort();
   }, [chains, type]);
 
-  // 模型版本来自各串生成参数（未设置的旧串归入默认模型），按列表中出现的模型生成筛选项
-  const allModels = useMemo(() => {
-    return Array.from(
-      new Set(
-        chains
-          .filter(c => c.type === type || (!c.type && type === 'style'))
-          .map(c => c.params?.model?.trim() || DEFAULT_NAI_MODEL)
-      )
-    ).sort();
-  }, [chains, type]);
+  // 常驻筛选：选项固定为可选模型清单（注册表 + 网关同步的新模型），与链表内容无关。
+  const runtime = useNaiRuntime();
+  const modelFilterOptions = useMemo(() => getSelectableNaiModels(runtime), [runtime]);
 
   // Filter chains by Type, search term, favorites, model version and selected tags
   const filteredChains = useMemo(() => {
@@ -394,12 +388,10 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           </div>
         </WorkspaceToolbar>
 
-        {allModels.length > 1 && (
-          <div className="hidden items-center gap-1.5 overflow-x-auto border-b border-gray-200 bg-gray-50/70 px-3 py-2 md:flex md:px-5 dark:border-gray-800 dark:bg-gray-900/50">
-            <span className="flex-none text-xs font-medium text-gray-400 dark:text-gray-500">模型筛选</span>
-            {allModels.map(id => <button key={id} type="button" aria-pressed={selectedModels.has(id)} onClick={() => setSelectedModels(previous => { const next = new Set(previous); next.has(id) ? next.delete(id) : next.add(id); return next; })} className={`h-7 flex-none whitespace-nowrap rounded-full px-2.5 text-xs font-medium transition ${selectedModels.has(id) ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{getNaiModelDisplayLabel(id)}</button>)}
-          </div>
-        )}
+        <div className="hidden items-center gap-1.5 overflow-x-auto border-b border-gray-200 bg-gray-50/70 px-3 py-2 md:flex md:px-5 dark:border-gray-800 dark:bg-gray-900/50">
+          <span className="flex-none text-xs font-medium text-gray-400 dark:text-gray-500">模型筛选</span>
+          {modelFilterOptions.map(model => <button key={model.id} type="button" aria-pressed={selectedModels.has(model.id)} onClick={() => setSelectedModels(previous => { const next = new Set(previous); next.has(model.id) ? next.delete(model.id) : next.add(model.id); return next; })} className={`h-7 flex-none whitespace-nowrap rounded-full px-2.5 text-xs font-medium transition ${selectedModels.has(model.id) ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{model.label}</button>)}
+        </div>
 
         {allTags.length > 0 && (
           <div className="hidden items-center gap-1.5 overflow-x-auto border-b border-gray-200 bg-gray-50/70 px-3 py-2 md:flex md:px-5 dark:border-gray-800 dark:bg-gray-900/50">
@@ -412,7 +404,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           <div className="space-y-5">
             <label className="block text-sm font-bold dark:text-white">排序<select value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option></select></label>
             <button onClick={() => setFavOnly(value => !value)} className={`mobile-touch w-full rounded-xl px-4 text-left font-bold ${favOnly ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-300' : 'bg-gray-100 dark:bg-gray-800'}`}>★ 只看收藏</button>
-            {allModels.length > 1 && <div><div className="mb-2 text-sm font-bold dark:text-white">模型版本</div><div className="flex flex-wrap gap-2">{allModels.map(id => <button key={id} onClick={() => setSelectedModels(previous => { const next = new Set(previous); next.has(id) ? next.delete(id) : next.add(id); return next; })} className={`mobile-touch rounded-full px-3 text-xs ${selectedModels.has(id) ? 'bg-violet-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}>{getNaiModelDisplayLabel(id)}</button>)}</div></div>}
+            <div><div className="mb-2 text-sm font-bold dark:text-white">模型版本</div><div className="flex flex-wrap gap-2">{modelFilterOptions.map(model => <button key={model.id} onClick={() => setSelectedModels(previous => { const next = new Set(previous); next.has(model.id) ? next.delete(model.id) : next.add(model.id); return next; })} className={`mobile-touch rounded-full px-3 text-xs ${selectedModels.has(model.id) ? 'bg-violet-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}>{model.label}</button>)}</div></div>
             {allTags.length > 0 && <div><div className="mb-2 text-sm font-bold dark:text-white">Tag</div><div className="flex flex-wrap gap-2">{allTags.map(tag => <button key={tag} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`mobile-touch rounded-full px-3 text-xs ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}>{tag}</button>)}</div></div>}
             <button onClick={() => { void onRefresh(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl border border-gray-300 dark:border-gray-600">刷新列表</button>
           </div>
