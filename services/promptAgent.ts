@@ -279,11 +279,17 @@ export const promptAgentService = {
     return response.json();
   },
   run: async (
-    input: { sessionId: string; message: string; mode?: 'prompt' | 'retry'; images?: Array<{ data: string; mimeType: string }>; draft: PromptAgentDraft; context: { clientSettings?: Record<string, unknown> } },
+    input: { sessionId: string; message: string; mode?: 'prompt' | 'retry'; images?: Array<{ data: string; mimeType: string }>; draft: PromptAgentDraft; context: { clientSettings?: Record<string, unknown> }; apiKey?: string },
     onEvent: (event: PromptAgentEvent) => void,
     signal?: AbortSignal,
   ) => {
-    const response = await fetch('/api/prompt-agent/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input), signal });
+    const { apiKey, ...payload } = input;
+    const response = await fetch('/api/prompt-agent/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
+      body: JSON.stringify(payload),
+      signal,
+    });
     if (!response.ok) return readError(response);
     if (!response.body) throw new Error('浏览器不支持 Agent 流式响应');
     const reader = response.body.getReader();

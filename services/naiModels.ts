@@ -62,8 +62,12 @@ const deriveModelLabel = (id: string) => id
  */
 export const getSelectableNaiModels = (runtime?: { models: string[]; usageLimitedModels: string[] }): NaiModelInfo[] => {
   if (!runtime?.models?.length) return NAI_MODELS;
+  // 官方运行时 bundle 还会带出旧版短名、Furry/Anime 旧模型和 inpainting
+  // 变体；它们不是本项目当前生图模型选择器应展示的独立选项。保留数字版本
+  // 的 Full/Curated 形态，未来新增 V6 等模型时仍可自动进入列表。
+  const selectableModelId = /^nai-diffusion-\d+(?:-\d+)?-(?:full|curated)(?:-preview)?$/;
   const extras = runtime.models
-    .filter(id => !id.endsWith('-inpainting') && !NAI_MODELS.some(model => model.id === id))
+    .filter(id => selectableModelId.test(id) && !NAI_MODELS.some(model => model.id === id))
     .map(id => ({
       id,
       label: deriveModelLabel(id),

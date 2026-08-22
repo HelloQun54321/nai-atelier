@@ -61,10 +61,20 @@ const broadcastBudget = (state: AnlasBudgetState) => {
   window.dispatchEvent(new CustomEvent<AnlasBudgetState>(ANLAS_BUDGET_CHANGED_EVENT, { detail: state }));
 };
 
+/** 当前激活密钥的哈希（与网关侧 sha256 口径一致）。 */
+export const getActiveKeyHash = async () => {
+  const apiKey = (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim();
+  return apiKey ? sha256Hex(apiKey) : '';
+};
+
 export const anlasBudgetService = {
-  get: async (): Promise<AnlasBudgetState> => api.get('/anlas-budget'),
+  get: async (): Promise<AnlasBudgetState> => {
+    const keyHash = await getActiveKeyHash();
+    return api.get(`/anlas-budget${keyHash ? `?keyHash=${keyHash}` : ''}`);
+  },
   set: async (remaining: number): Promise<AnlasBudgetState> => {
-    const state = await api.put('/anlas-budget', { remaining: clampBudget(remaining) });
+    const keyHash = await getActiveKeyHash();
+    const state = await api.put('/anlas-budget', { remaining: clampBudget(remaining), ...(keyHash ? { keyHash } : {}) });
     broadcastBudget(state);
     return state;
   },
@@ -72,34 +82,41 @@ export const anlasBudgetService = {
   resetPersonal: async (keyHash: string): Promise<AnlasBudgetState> => api.delete('/anlas-budget', { keyHash }),
 };
 
-/** 当前激活密钥的哈希（与网关侧 sha256 口径一致）。 */
-export const getActiveKeyHash = async () => {
-  const apiKey = sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '';
-  return apiKey ? sha256Hex(apiKey) : '';
-};
-
 export const useAnlasBudget = () => {
   const [state, setState] = useState<AnlasBudgetState>({ remaining: DEFAULT_ANLAS_BUDGET });
   const [personal, setPersonal] = useState<AnlasPersonalUsage | null>(null);
   const [loading, setLoading] = useState(true);
   const refresh = useCallback(async () => {
+    const requestedKeyHash = await getActiveKeyHash();
     try {
       const next = await anlasBudgetService.get();
+      const currentKeyHash = await getActiveKeyHash();
+      if (currentKeyHash !== requestedKeyHash) return;
       setState(next);
-      const keyHash = await getActiveKeyHash();
-      setPersonal(keyHash ? next.personal?.[keyHash] || null : null);
+      setPersonal(requestedKeyHash ? next.personal?.[requestedKeyHash] || null : null);
     } catch {
       // Keep the safe default visible while the local data service is starting.
     } finally {
-      setLoading(false);
+      if (await getActiveKeyHash() === requestedKeyHash) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void refresh();
-    const update = (event: Event) => setState(previous => ({ ...previous, ...(event as CustomEvent<AnlasBudgetState>).detail }));
+    const update = (event: Event) => {
+      const detail = (event as CustomEvent<AnlasBudgetState>).detail;
+      setState(previous => ({ ...previous, ...detail }));
+      if (detail.personal !== undefined) {
+        void getActiveKeyHash().then(keyHash => setPersonal(keyHash ? detail.personal?.[keyHash] || null : null));
+      }
+    };
     const refreshProjectChange = () => void refresh();
-    const refreshKeyChange = () => void refresh();
+    const refreshKeyChange = () => {
+      setState({ remaining: DEFAULT_ANLAS_BUDGET });
+      setPersonal(null);
+      setLoading(true);
+      void refresh();
+    };
     window.addEventListener(ANLAS_BUDGET_CHANGED_EVENT, update);
     window.addEventListener('nai-project-data-changed', refreshProjectChange);
     window.addEventListener('nai-api-key-changed', refreshKeyChange);

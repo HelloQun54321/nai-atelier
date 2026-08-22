@@ -164,7 +164,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [newDesc, setNewDesc] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
-  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
+  const [selectedModel, setSelectedModel] = useState('');
   const [copyModalChain, setCopyModalChain] = useState<PromptChain | null>(null);
   const [sortOption, setSortOption] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
   const [favOnly, setFavOnly] = useState(false);
@@ -237,7 +237,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
          c.description.toLowerCase().includes(searchTerm.toLowerCase()))
       )
       .filter(c => !favOnly || favorites.has(c.id))
-      .filter(c => selectedModels.size === 0 || selectedModels.has(c.params?.model?.trim() || DEFAULT_NAI_MODEL))
+      .filter(c => !selectedModel || (c.params?.model?.trim() || DEFAULT_NAI_MODEL) === selectedModel)
       .filter(c => {
         // If no tags are selected, show all
         if (selectedTags.size === 0) return true;
@@ -263,9 +263,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             return ub - ua;
         }
       });
-  }, [chains, type, searchTerm, favOnly, favorites, selectedModels, selectedTags, sortOption]);
+  }, [chains, type, searchTerm, favOnly, favorites, selectedModel, selectedTags, sortOption]);
 
-  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, selectedModels, selectedTags, sortOption]);
+  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, selectedModel, selectedTags, sortOption]);
   const visibleChains = filteredChains.slice(0, visibleCount);
 
   // 滚动接近列表底部自动追加一批；按钮保留作兜底。
@@ -376,6 +376,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={`搜索${title}`} containerClassName="md:w-[24rem] md:flex-none" />
           <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
             <select value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className="ml-auto h-10 w-36 rounded-xl border border-gray-200 bg-white px-2 text-xs text-gray-600 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option></select>
+            <select value={selectedModel} onChange={event => setSelectedModel(event.target.value)} aria-label="模型筛选" className="h-10 w-36 rounded-xl border border-gray-200 bg-white px-2 text-xs text-gray-600 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><option value="">全部模型</option>{modelFilterOptions.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}</select>
             <IconButton label="仅显示收藏" onClick={() => setFavOnly(value => !value)} className={favOnly ? '!border-indigo-200 !bg-indigo-50 !text-indigo-600 dark:!bg-indigo-950/40' : ''}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} /></IconButton>
             <IconButton label="刷新列表" onClick={onRefresh} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
             <ImageTaggerAction notify={notify} />
@@ -388,11 +389,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           </div>
         </WorkspaceToolbar>
 
-        <div className="hidden items-center gap-1.5 overflow-x-auto border-b border-gray-200 bg-gray-50/70 px-3 py-2 md:flex md:px-5 dark:border-gray-800 dark:bg-gray-900/50">
-          <span className="flex-none text-xs font-medium text-gray-400 dark:text-gray-500">模型筛选</span>
-          {modelFilterOptions.map(model => <button key={model.id} type="button" aria-pressed={selectedModels.has(model.id)} onClick={() => setSelectedModels(previous => { const next = new Set(previous); next.has(model.id) ? next.delete(model.id) : next.add(model.id); return next; })} className={`h-7 flex-none whitespace-nowrap rounded-full px-2.5 text-xs font-medium transition ${selectedModels.has(model.id) ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{model.label}</button>)}
-        </div>
-
         {allTags.length > 0 && (
           <div className="hidden items-center gap-1.5 overflow-x-auto border-b border-gray-200 bg-gray-50/70 px-3 py-2 md:flex md:px-5 dark:border-gray-800 dark:bg-gray-900/50">
             <span className="flex-none text-xs font-medium text-gray-400 dark:text-gray-500">标签筛选</span>
@@ -404,7 +400,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           <div className="space-y-5">
             <label className="block text-sm font-bold dark:text-white">排序<select value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option></select></label>
             <button onClick={() => setFavOnly(value => !value)} className={`mobile-touch w-full rounded-xl px-4 text-left font-bold ${favOnly ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-300' : 'bg-gray-100 dark:bg-gray-800'}`}>★ 只看收藏</button>
-            <div><div className="mb-2 text-sm font-bold dark:text-white">模型版本</div><div className="flex flex-wrap gap-2">{modelFilterOptions.map(model => <button key={model.id} onClick={() => setSelectedModels(previous => { const next = new Set(previous); next.has(model.id) ? next.delete(model.id) : next.add(model.id); return next; })} className={`mobile-touch rounded-full px-3 text-xs ${selectedModels.has(model.id) ? 'bg-violet-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}>{model.label}</button>)}</div></div>
+            <label className="block text-sm font-bold dark:text-white">模型版本<select value={selectedModel} onChange={event => setSelectedModel(event.target.value)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="">全部模型</option>{modelFilterOptions.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}</select></label>
             {allTags.length > 0 && <div><div className="mb-2 text-sm font-bold dark:text-white">Tag</div><div className="flex flex-wrap gap-2">{allTags.map(tag => <button key={tag} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`mobile-touch rounded-full px-3 text-xs ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}>{tag}</button>)}</div></div>}
             <button onClick={() => { void onRefresh(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl border border-gray-300 dark:border-gray-600">刷新列表</button>
           </div>

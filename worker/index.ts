@@ -2550,12 +2550,20 @@ export default {
 
       // --- Local Anlas budget tracker + per-account personal usage ---
       if (path === '/api/anlas-budget') {
-        const key = 'anlas_budget_remaining_v1';
+        const legacyKey = 'anlas_budget_remaining_v1';
+        // 新版本每把 Key 使用独立 settings 行，扣减可以继续走 SQL 原子更新，
+        // 避免多个设备同时生成时 JSON 读改写互相覆盖。
+        const scopedKey = 'anlas_budget_remaining_v2';
+        const migrationKey = 'anlas_budget_migrated_v2';
         const personalKey = 'anlas_personal_usage_v1';
         const defaultBudget = 1666;
-        await db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').bind(key, String(defaultBudget)).run();
+        const validKeyHash = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{16,128}$/.test(value);
+        await db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').bind(legacyKey, String(defaultBudget)).run();
+        await db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').bind(scopedKey, '{}').run();
+        await db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').bind(migrationKey, '0').run();
 
         type PersonalUsageMap = Record<string, { anlasSpent: number; opusImages: number; updatedAt: number }>;
+        type BudgetMap = Record<string, number>;
         const readPersonalMap = async (): Promise<PersonalUsageMap> => {
           const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(personalKey).first<{value: string}>();
           try {
@@ -2579,49 +2587,101 @@ export default {
           await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
             .bind(personalKey, JSON.stringify(map)).run();
         };
-        const readRemaining = async () => {
-          const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{value: string}>();
-          return Math.max(0, Number.parseInt(row?.value || String(defaultBudget), 10) || 0);
+        const readBudgetMap = async (): Promise<BudgetMap> => {
+          const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(scopedKey).first<{value: string}>();
+          try {
+            const parsed = JSON.parse(row?.value || '{}');
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+            const map: BudgetMap = {};
+            for (const [hash, value] of Object.entries(parsed as Record<string, unknown>)) {
+              if (validKeyHash(hash) && Number.isFinite(Number(value))) map[hash] = Math.max(0, Math.min(1_000_000_000, Math.floor(Number(value))));
+            }
+            return map;
+          } catch {
+            return {};
+          }
+        };
+        const scopedBudgetKey = (keyHash: string) => `${scopedKey}:${keyHash}`;
+        const readLegacyRemaining = async () => {
+          const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(legacyKey).first<{value: string}>();
+          return Math.max(0, Math.min(1_000_000_000, Number.parseInt(row?.value || String(defaultBudget), 10) || 0));
+        };
+        const ensureScopedRemaining = async (keyHash: string) => {
+          const settingKey = scopedBudgetKey(keyHash);
+          const existing = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(settingKey).first<{value: string}>();
+          if (existing) return Math.max(0, Math.min(1_000_000_000, Number.parseInt(existing.value, 10) || 0));
+          const map = await readBudgetMap();
+          const migration = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(migrationKey).first<{value: string}>();
+          const initial = Object.prototype.hasOwnProperty.call(map, keyHash)
+            ? map[keyHash]
+            : migration?.value === '1' ? defaultBudget : await readLegacyRemaining();
+          await db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').bind(settingKey, String(initial)).run();
+          if (migration?.value !== '1') {
+            await db.prepare('UPDATE settings SET value = ? WHERE key = ? AND value = ?').bind('1', migrationKey, '0').run();
+          }
+          const created = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(settingKey).first<{value: string}>();
+          return Math.max(0, Math.min(1_000_000_000, Number.parseInt(created?.value || String(defaultBudget), 10) || 0));
+        };
+        const readRemaining = async (keyHash: string) => keyHash ? ensureScopedRemaining(keyHash) : readLegacyRemaining();
+        const writeRemaining = async (keyHash: string, remaining: number) => {
+          if (!keyHash) {
+            await db.prepare('UPDATE settings SET value = ? WHERE key = ?').bind(String(remaining), legacyKey).run();
+            return;
+          }
+          await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+            .bind(scopedBudgetKey(keyHash), String(remaining)).run();
+        };
+        const readPersonalForKey = async (keyHash: string) => {
+          if (!validKeyHash(keyHash)) return {};
+          const map = await readPersonalMap();
+          return map[keyHash] ? { [keyHash]: map[keyHash] } : {};
         };
 
+        const body = method === 'GET' ? {} : await request.json() as any;
+        const keyHashValue = body.keyHash || url.searchParams.get('keyHash') || '';
+        const keyHash = validKeyHash(keyHashValue) ? keyHashValue : '';
         if (method === 'GET') {
-          return json({ remaining: await readRemaining(), personal: await readPersonalMap() });
+          return json({ remaining: await readRemaining(keyHash), personal: await readPersonalForKey(keyHash) });
         }
         if (method === 'PUT') {
-          const body = await request.json() as any;
           const remaining = Math.max(0, Math.min(1_000_000_000, Math.floor(Number(body.remaining))));
           if (!Number.isFinite(remaining)) return error('点数必须是有效整数', 400);
-          await db.prepare('UPDATE settings SET value = ? WHERE key = ?').bind(String(remaining), key).run();
-          return json({ remaining, personal: await readPersonalMap(), updatedAt: Date.now() });
+          await writeRemaining(keyHash, remaining);
+          return json({ remaining, personal: await readPersonalForKey(keyHash), updatedAt: Date.now() });
         }
         if (method === 'POST') {
-          const body = await request.json() as any;
           const amount = Math.max(0, Math.min(1_000_000, Math.floor(Number(body.amount))));
           if (!Number.isFinite(amount)) return error('扣除点数必须是有效整数', 400);
-          await db.prepare(`UPDATE settings
-            SET value = CAST(MAX(0, CAST(value AS INTEGER) - ?) AS TEXT)
-            WHERE key = ?`).bind(amount, key).run();
+          if (keyHash) {
+            await ensureScopedRemaining(keyHash);
+            await db.prepare(`UPDATE settings
+              SET value = CAST(MAX(0, CAST(value AS INTEGER) - ?) AS TEXT)
+              WHERE key = ?`).bind(amount, scopedBudgetKey(keyHash)).run();
+          } else {
+            await db.prepare(`UPDATE settings
+              SET value = CAST(MAX(0, CAST(value AS INTEGER) - ?) AS TEXT)
+              WHERE key = ?`).bind(amount, legacyKey).run();
+          }
           // 个人用量按密钥哈希分账号累计（用于设置页的“我个人用了多少”统计）。
-          if (typeof body.keyHash === 'string' && /^[0-9a-f]{16,128}$/.test(body.keyHash)) {
+          if (keyHash) {
             const map = await readPersonalMap();
-            const previous = map[body.keyHash] || { anlasSpent: 0, opusImages: 0, updatedAt: 0 };
-            map[body.keyHash] = {
+            const previous = map[keyHash] || { anlasSpent: 0, opusImages: 0, updatedAt: 0 };
+            map[keyHash] = {
               anlasSpent: previous.anlasSpent + Math.max(0, Math.floor(Number(body.anlasDelta) || 0)),
               opusImages: previous.opusImages + Math.max(0, Math.floor(Number(body.opusImagesDelta) || 0)),
               updatedAt: Date.now(),
             };
             await writePersonalMap(map);
           }
-          return json({ remaining: await readRemaining(), spent: amount, personal: await readPersonalMap(), updatedAt: Date.now() });
+          return json({ remaining: await readRemaining(keyHash), spent: amount, personal: await readPersonalForKey(keyHash), updatedAt: Date.now() });
         }
         if (method === 'DELETE') {
-          const body = await request.json() as any;
-          if (typeof body.keyHash === 'string' && /^[0-9a-f]{16,128}$/.test(body.keyHash)) {
+          if (keyHash) {
             const map = await readPersonalMap();
-            delete map[body.keyHash];
+            delete map[keyHash];
             await writePersonalMap(map);
           }
-          return json({ remaining: await readRemaining(), personal: await readPersonalMap() });
+          return json({ remaining: await readRemaining(keyHash), personal: await readPersonalForKey(keyHash) });
         }
         return error('Method not allowed', 405);
       }

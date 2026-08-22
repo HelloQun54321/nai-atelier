@@ -145,6 +145,16 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     void getCloudQueuePreferences().then(setCloudQueue).catch(() => notify('读取公共队列设置失败', 'error'));
   }, [open, initialSection, isMobile]);
 
+  useEffect(() => {
+    if (!open) return;
+    const refreshQueueForKey = () => {
+      setCloudQueue(getCachedCloudQueuePreferences());
+      void getCloudQueuePreferences().then(setCloudQueue).catch(() => notify('读取当前密钥的公共队列设置失败', 'error'));
+    };
+    window.addEventListener('nai-api-key-changed', refreshQueueForKey);
+    return () => window.removeEventListener('nai-api-key-changed', refreshQueueForKey);
+  }, [open, notify]);
+
   useEffect(() => { setAnlasInput(String(anlasBudget.remaining)); }, [anlasBudget.remaining]);
 
   useEffect(() => {
@@ -455,7 +465,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="truncate text-sm font-bold text-gray-800 dark:text-gray-100" title={entry.name}>{entry.name}</span>
-                          {active && <span className="flex-none rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white">当前</span>}
+                          {active && <span className="flex-none rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white">使用中</span>}
                           {!entry.key.startsWith('pst-') && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title="NovelAI 官方密钥以 pst- 开头，这可能是误存的其他服务密钥（例如被浏览器自动填入）">格式可疑</span>}
                         </div>
                         <p className="mt-0.5 truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">{maskNaiKeyForDisplay(entry.key)}</p>
@@ -507,7 +517,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             <p className="mt-2 text-xs leading-relaxed text-amber-600 dark:text-amber-400">保管箱与备注保存在本机浏览器；不勾选时当前密钥仅保留到浏览器会话结束。浏览器前端无法对密钥提供真正的加密保护。</p>
             <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
               <label className="flex min-h-11 items-center justify-between gap-3">
-                <span><b className="block text-sm text-gray-800 dark:text-gray-100">多人拼车公共队列</b><span className="mt-0.5 block text-[11px] leading-5 text-gray-500 dark:text-gray-400">兼容 st-chatu8；相同 NovelAI Key 的接入者依次生图。</span></span>
+                <span><b className="block text-sm text-gray-800 dark:text-gray-100">多人拼车公共队列</b><span className="mt-0.5 block text-[11px] leading-5 text-gray-500 dark:text-gray-400">兼容 st-chatu8；设置按当前 NovelAI Key 独立保存，切换 Key 后不会串用；相同 Key 的接入者依次生图。</span></span>
                 <input type="checkbox" checked={cloudQueue.enabled} onChange={event => updateCloudQueue({ enabled: event.target.checked })} className="h-5 w-5 shrink-0 rounded border-gray-300 text-indigo-600" />
               </label>
               <div className="mt-3 space-y-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/70">
@@ -520,12 +530,12 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </div>
             </div>
             <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
-              <div><h4 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">当前剩余 <b className="text-indigo-600 dark:text-indigo-300">{anlasBudget.remaining}</b> 点，电脑与手机共用。</p></div>
+              <div><h4 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">当前密钥剩余 <b className="text-indigo-600 dark:text-indigo-300">{anlasBudget.remaining}</b> 点，电脑与手机共用。</p></div>
               <div className="mt-3 flex gap-2">
                 <input type="number" min="0" step="1" value={anlasInput} onChange={event => setAnlasInput(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-lg font-black tabular-nums outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900" aria-label="可支配 Anlas 点数" />
                 <button type="button" onClick={async () => { const next = await anlasBudgetService.set(Number(anlasInput)); setAnlasInput(String(next.remaining)); notify('Anlas 预算已更新'); }} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white">保存</button>
               </div>
-              <div className="mt-2 flex items-start justify-between gap-3 text-[11px] leading-5 text-gray-500 dark:text-gray-400"><p>这是本地预算（账号整体，手动校准），不是 NovelAI 官网实时余额——官方没有提供余额接口。默认按 Opus 每月 10000 点由 6 人均分后取整为 1666；生图和永久 Vibe 成功后按官方规则扣减，失败、导入或重复编码不扣。</p><button type="button" onClick={async () => { const next = await anlasBudgetService.set(DEFAULT_ANLAS_BUDGET); setAnlasInput(String(next.remaining)); }} className="flex-shrink-0 font-bold text-indigo-600 dark:text-indigo-300">恢复 1666</button></div>
+              <div className="mt-2 flex items-start justify-between gap-3 text-[11px] leading-5 text-gray-500 dark:text-gray-400"><p>这是当前密钥的本地预算（手动校准），不是 NovelAI 官网实时余额——官方没有提供余额接口。每把 Key 独立计算，切换 Key 后不会串用；电脑与手机共用当前 Key 的数据。默认按 Opus 每月 10000 点由 6 人均分后取整为 1666；生图和永久 Vibe 成功后按官方规则扣减，失败、导入或重复编码不扣。</p><button type="button" onClick={async () => { const next = await anlasBudgetService.set(DEFAULT_ANLAS_BUDGET); setAnlasInput(String(next.remaining)); }} className="flex-shrink-0 font-bold text-indigo-600 dark:text-indigo-300">恢复 1666</button></div>
               <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-bold text-gray-500 dark:text-gray-400">个人使用统计（当前密钥）</span>

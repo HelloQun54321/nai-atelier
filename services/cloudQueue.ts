@@ -19,6 +19,7 @@ export interface CloudQueueStatus {
 
 const defaults: CloudQueuePreferences = { enabled: false, greeting: '正在生成中～', showGreeting: true, serviceUrl: CLOUD_QUEUE_SERVICE_URL };
 let cachedPreferences: CloudQueuePreferences = defaults;
+let cachedPreferencesKey = '';
 let currentQueueStatus: CloudQueueStatus | null = null;
 let clearStatusTimer: number | null = null;
 const statusListeners = new Set<() => void>();
@@ -30,10 +31,19 @@ const normalizePreferences = (value: Partial<CloudQueuePreferences> | null | und
   serviceUrl: String(value?.serviceUrl || defaults.serviceUrl).trim() || defaults.serviceUrl,
 });
 
-export const getCachedCloudQueuePreferences = (): CloudQueuePreferences => ({ ...cachedPreferences });
+const getActiveApiKey = () => (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim();
+const getActiveKeyHeaders = (): Record<string, string> => {
+  const apiKey = getActiveApiKey();
+  return apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+};
+
+export const getCachedCloudQueuePreferences = (): CloudQueuePreferences => ({
+  ...(cachedPreferencesKey === getActiveApiKey() ? cachedPreferences : defaults),
+});
 
 export const getCloudQueuePreferences = async (): Promise<CloudQueuePreferences> => {
-  const response = await fetch(`/api/generation-queue/preferences?_t=${Date.now()}`, { cache: 'no-store' });
+  const requestedApiKey = getActiveApiKey();
+  const response = await fetch(`/api/generation-queue/preferences?_t=${Date.now()}`, { cache: 'no-store', headers: getActiveKeyHeaders() });
   if (!response.ok) {
     const payload = await response.clone().json().catch(() => null);
     if (response.status === 401 && payload?.code === 'LAN_ACCESS_REQUIRED') {
@@ -41,13 +51,17 @@ export const getCloudQueuePreferences = async (): Promise<CloudQueuePreferences>
     }
     throw new Error(payload?.error || await response.text());
   }
-  cachedPreferences = normalizePreferences(await response.json());
+  const next = normalizePreferences(await response.json());
+  if (getActiveApiKey() !== requestedApiKey) return getCachedCloudQueuePreferences();
+  cachedPreferences = next;
+  cachedPreferencesKey = requestedApiKey;
   return cachedPreferences;
 };
 
 export const setCloudQueuePreferences = async (preferences: CloudQueuePreferences) => {
+  const requestedApiKey = getActiveApiKey();
   const response = await fetch('/api/generation-queue/preferences', {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(preferences),
+    method: 'PUT', headers: { 'Content-Type': 'application/json', ...getActiveKeyHeaders() }, body: JSON.stringify(preferences),
   });
   if (!response.ok) {
     const payload = await response.clone().json().catch(() => null);
@@ -56,7 +70,10 @@ export const setCloudQueuePreferences = async (preferences: CloudQueuePreference
     }
     throw new Error(payload?.error || await response.text());
   }
-  cachedPreferences = normalizePreferences(await response.json());
+  const next = normalizePreferences(await response.json());
+  if (getActiveApiKey() !== requestedApiKey) return getCachedCloudQueuePreferences();
+  cachedPreferences = next;
+  cachedPreferencesKey = requestedApiKey;
   window.dispatchEvent(new CustomEvent('nai-cloud-queue-preferences-changed', { detail: cachedPreferences }));
   return cachedPreferences;
 };
@@ -89,7 +106,7 @@ export const subscribeCloudQueueStatus = (listener: () => void) => {
 export const cancelCloudQueueTask = async (taskId: string) => {
   const response = await fetch('/api/generation-queue/cancel', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getActiveKeyHeaders() },
     body: JSON.stringify({ taskId }),
   });
   if (!response.ok) throw new Error(await response.text());
@@ -98,7 +115,7 @@ export const cancelCloudQueueTask = async (taskId: string) => {
 export const watchCloudQueueTask = async (taskId: string, isFinished: () => boolean) => {
   while (!isFinished()) {
     try {
-      const response = await fetch(`/api/generation-queue/status?taskId=${encodeURIComponent(taskId)}&_t=${Date.now()}`, { cache: 'no-store' });
+      const response = await fetch(`/api/generation-queue/status?taskId=${encodeURIComponent(taskId)}&_t=${Date.now()}`, { cache: 'no-store', headers: getActiveKeyHeaders() });
       if (response.ok) {
         const status = await response.json() as CloudQueueStatus;
         emitCloudQueueStatus(status);

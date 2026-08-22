@@ -59,10 +59,18 @@ export const useNovelaiUsage = () => {
   const [loading, setLoading] = useState(true);
   const infoRef = useRef<NovelaiSubscriptionInfo | null>(null);
   const fetchedAtRef = useRef(0);
+  const activeKeyRef = useRef('');
 
   const refresh = useCallback(async (): Promise<NovelaiSubscriptionInfo | null> => {
     // 与 GlobalSettings 相同的读取顺序，保证设置里改 Key 后下一次刷新即生效。
-    const apiKey = sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '';
+    const apiKey = (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim();
+    if (activeKeyRef.current !== apiKey) {
+      activeKeyRef.current = apiKey;
+      infoRef.current = null;
+      fetchedAtRef.current = 0;
+      setInfo(null);
+      setFetchedAt(0);
+    }
     if (!apiKey) {
       infoRef.current = null;
       fetchedAtRef.current = 0;
@@ -77,6 +85,8 @@ export const useNovelaiUsage = () => {
       });
       if (!res.ok) throw new Error(await res.text());
       const next = await res.json();
+      // Key 在请求期间切换时，丢弃旧账号的响应，避免额度短暂串到新账号。
+      if (activeKeyRef.current !== apiKey) return null;
       infoRef.current = next;
       fetchedAtRef.current = Date.now();
       setInfo(next);
@@ -84,9 +94,9 @@ export const useNovelaiUsage = () => {
       return next;
     } catch {
       // 保留上一次的状态；侧栏展示不因临时网络失败闪断。
-      return infoRef.current;
+      return activeKeyRef.current === apiKey ? infoRef.current : null;
     } finally {
-      setLoading(false);
+      if (activeKeyRef.current === apiKey) setLoading(false);
     }
   }, []);
 
@@ -99,12 +109,23 @@ export const useNovelaiUsage = () => {
   useEffect(() => {
     void refresh();
     const onRefresh = () => void refresh();
+    const onKeyChange = () => {
+      activeKeyRef.current = '';
+      infoRef.current = null;
+      fetchedAtRef.current = 0;
+      setInfo(null);
+      setFetchedAt(0);
+      setLoading(true);
+      void refresh();
+    };
     const onFocus = () => void refresh();
     window.addEventListener(NOVELAI_USAGE_REFRESH_EVENT, onRefresh);
+    window.addEventListener('nai-api-key-changed', onKeyChange);
     window.addEventListener('focus', onFocus);
     const timer = window.setInterval(onRefresh, SUBSCRIPTION_REFRESH_INTERVAL);
     return () => {
       window.removeEventListener(NOVELAI_USAGE_REFRESH_EVENT, onRefresh);
+      window.removeEventListener('nai-api-key-changed', onKeyChange);
       window.removeEventListener('focus', onFocus);
       window.clearInterval(timer);
     };

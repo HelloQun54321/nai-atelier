@@ -22,6 +22,7 @@ const CACHE_DIR = join(process.cwd(), 'local-cache', 'thumbnails');
 const CACHE_INDEX = join(CACHE_DIR, 'index.json');
 const VIBE_RECOVERY_DIR = join(process.cwd(), 'local-data', 'vibe-recovery');
 const CLOUD_QUEUE_CONFIG_FILE = join(process.cwd(), 'local-data', 'cloud-queue.json');
+const CLOUD_QUEUE_CONFIG_VERSION = 2;
 const CACHE_LIMIT = 1024 * 1024 * 1024;
 const CACHE_PRUNE_TARGET = 900 * 1024 * 1024;
 // pinned 封面缓存总量上限：封面单张数十 KB，正常画师/角色数量级远达不到；
@@ -109,17 +110,58 @@ export const normalizeCloudQueuePreferences = value => ({
   })(),
 });
 
+const isCloudQueuePreferenceObject = value => Boolean(value && typeof value === 'object' && !Array.isArray(value)
+  && ('enabled' in value || 'greeting' in value || 'showGreeting' in value || 'serviceUrl' in value));
+
+const normalizeCloudQueueStore = value => {
+  const accounts = {};
+  const rawAccounts = value?.version === CLOUD_QUEUE_CONFIG_VERSION && value.accounts && typeof value.accounts === 'object'
+    ? value.accounts
+    : {};
+  for (const [keyHash, preferences] of Object.entries(rawAccounts)) {
+    if (/^[0-9a-f]{16,128}$/.test(keyHash)) accounts[keyHash] = normalizeCloudQueuePreferences(preferences);
+  }
+  const legacy = value?.version === CLOUD_QUEUE_CONFIG_VERSION
+    ? (isCloudQueuePreferenceObject(value.legacy) ? normalizeCloudQueuePreferences(value.legacy) : null)
+    : (isCloudQueuePreferenceObject(value) ? normalizeCloudQueuePreferences(value) : null);
+  return { version: CLOUD_QUEUE_CONFIG_VERSION, accounts, legacy };
+};
+
 const loadCloudQueuePreferences = async () => {
   try {
-    return normalizeCloudQueuePreferences(JSON.parse(await readFile(CLOUD_QUEUE_CONFIG_FILE, 'utf8')));
+    return normalizeCloudQueueStore(JSON.parse(await readFile(CLOUD_QUEUE_CONFIG_FILE, 'utf8')));
   } catch {
-    return normalizeCloudQueuePreferences(null);
+    return normalizeCloudQueueStore(null);
   }
 };
 
+const keyHashFromAuthorization = authorization => {
+  const value = String(authorization || '');
+  if (!value.startsWith('Bearer ')) return '';
+  const apiKey = value.slice(7).trim();
+  return apiKey ? createHash('sha256').update(apiKey).digest('hex') : '';
+};
+
+const keyHashFromRequest = req => keyHashFromAuthorization(req?.headers?.authorization);
+
+const resolveCloudQueuePreferences = (store, keyHash) => {
+  if (keyHash && store.accounts[keyHash]) return { preferences: { ...store.accounts[keyHash] }, migrated: false };
+  if (keyHash && store.legacy) {
+    // 旧版本只有一份全局设置：首次带 Key 访问时迁移给该 Key，避免把历史设置悄悄丢掉。
+    store.accounts[keyHash] = { ...store.legacy };
+    store.legacy = null;
+    return { preferences: { ...store.accounts[keyHash] }, migrated: true };
+  }
+  return { preferences: normalizeCloudQueuePreferences(null), migrated: false };
+};
+
 let cloudQueueConfigWrite = Promise.resolve();
-const saveCloudQueuePreferences = preferences => {
-  const snapshot = { ...preferences };
+const saveCloudQueuePreferences = store => {
+  const snapshot = {
+    version: CLOUD_QUEUE_CONFIG_VERSION,
+    accounts: Object.fromEntries(Object.entries(store.accounts || {}).map(([keyHash, preferences]) => [keyHash, normalizeCloudQueuePreferences(preferences)])),
+    ...(store.legacy ? { legacy: normalizeCloudQueuePreferences(store.legacy) } : {}),
+  };
   cloudQueueConfigWrite = cloudQueueConfigWrite.catch(() => {}).then(async () => {
     await mkdir(join(process.cwd(), 'local-data'), { recursive: true });
     const temporary = `${CLOUD_QUEUE_CONFIG_FILE}.tmp`;
@@ -701,10 +743,20 @@ export const sanitizeNovelAiSubscription = payload => {
 };
 
 // 生图扣预算时的 Opus 透支快照；由最近的 /api/novelai-subscription 代理请求刷新。
-// 拼车账号额度全员共享，快照过期时在扣费前向 NovelAI 重取一次。
-let lastKnownOpusUsageExhausted = false;
-let lastKnownOpusUsageAt = 0;
+// 拼车账号额度全员共享，但不同 NovelAI Key 可能属于不同账号，不能共用快照。
+const lastKnownOpusUsage = new Map();
 const OPUS_USAGE_STALE_MS = 30_000;
+
+const setOpusUsageSnapshot = (keyHash, isNegative) => {
+  if (!keyHash) return;
+  lastKnownOpusUsage.set(keyHash, { exhausted: isNegative === true, updatedAt: Date.now() });
+  if (lastKnownOpusUsage.size > 128) {
+    const oldest = lastKnownOpusUsage.keys().next().value;
+    if (oldest) lastKnownOpusUsage.delete(oldest);
+  }
+};
+
+const getOpusUsageSnapshot = keyHash => lastKnownOpusUsage.get(keyHash) || { exhausted: false, updatedAt: 0 };
 
 // ===== NovelAI Web 应用常量自动同步 =====
 // 官方未提供这些规则的查询接口（模型清单、Opus 限额换算系数、免费档门槛、
@@ -983,6 +1035,7 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
   if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
 
   const queueEnabled = queuePreferences.enabled === true;
+  const keyHash = keyHashFromAuthorization(authorization);
   const requestedTaskId = String(req.headers['x-nai-queue-task-id'] || '');
   const queueTaskId = /^[a-zA-Z0-9-]{8,80}$/.test(requestedTaskId) ? requestedTaskId : randomUUID();
   const queueGreeting = String(queuePreferences.greeting || '').slice(0, 15);
@@ -996,7 +1049,7 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
     requestController.abort(new DOMException('用户已取消排队', 'AbortError'));
   };
   req.once('aborted', abortRequest);
-  if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'preparing', cancelable: true, controller: requestController });
+  if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'preparing', cancelable: true, controller: requestController, keyHash });
 
   try {
     const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
@@ -1092,21 +1145,21 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
     // 透支状态由 /api/novelai-subscription 代理调用时缓存；快照过期且本次是
     // 受限额模型（V5 系）时，扣费前向 NovelAI 重取真实状态。
     const isUsageLimitedModel = typeof payload?.model === 'string' && payload.model.startsWith('nai-diffusion-5');
-    if (response.ok && isUsageLimitedModel && Date.now() - lastKnownOpusUsageAt > OPUS_USAGE_STALE_MS) {
+    const opusSnapshot = getOpusUsageSnapshot(keyHash);
+    if (response.ok && isUsageLimitedModel && Date.now() - opusSnapshot.updatedAt > OPUS_USAGE_STALE_MS) {
       try {
         const subscription = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(10_000), requestRemote);
         if (subscription.ok) {
-          lastKnownOpusUsageExhausted = sanitizeNovelAiSubscription(await subscription.json()).usage?.isNegative === true;
+          setOpusUsageSnapshot(keyHash, sanitizeNovelAiSubscription(await subscription.json()).usage?.isNegative === true);
         }
-        lastKnownOpusUsageAt = Date.now();
       } catch {
         // 网络失败时沿用上次快照，不阻塞预算扣减。
       }
     }
-    const estimatedCost = response.ok ? estimateNovelAiGenerationCost(payload, lastKnownOpusUsageExhausted) : 0;
+    const usageExhausted = getOpusUsageSnapshot(keyHash).exhausted;
+    const estimatedCost = response.ok ? estimateNovelAiGenerationCost(payload, usageExhausted) : 0;
     // 个人用量（按密钥账号累计）：Anlas 扣减 + 计入 Opus 免费额度的张数。
-    const keyHash = createHash('sha256').update(authorization.slice(7)).digest('hex');
-    const personalUsage = computeGenerationPersonalUsage(payload, estimatedCost, lastKnownOpusUsageExhausted);
+    const personalUsage = computeGenerationPersonalUsage(payload, estimatedCost, usageExhausted);
     const anlasBudget = estimatedCost > 0 || personalUsage.opusImages > 0
       ? await spendAnlasBudget(req, workerPort, estimatedCost, 'generation', { keyHash, ...personalUsage })
       : null;
@@ -1796,7 +1849,13 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
   const remoteFetch = (url, options = {}) => undiciFetch(url, { ...options, ...(proxyAgent ? { dispatcher: proxyAgent } : {}) });
   const cloudQueue = new CloudQueueCoordinator(remoteFetch);
   const imageTagger = new ImageTaggerService(remoteFetch);
-  const cloudQueuePreferences = await loadCloudQueuePreferences();
+  const cloudQueueStore = await loadCloudQueuePreferences();
+  const getCloudQueueScope = async req => {
+    const keyHash = keyHashFromRequest(req);
+    const resolved = resolveCloudQueuePreferences(cloudQueueStore, keyHash);
+    if (resolved.migrated) await saveCloudQueuePreferences(cloudQueueStore);
+    return { keyHash, preferences: resolved.preferences };
+  };
   const cache = new ThumbnailCache();
   // 图库浏览预热：feed/搜索返回后后台抓取缩略图写盘，滚动时缓存命中秒出。
   const thumbnailPreWarmer = createThumbnailPreWarmer({
@@ -2115,16 +2174,21 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
           });
           const emit = event => { if (!res.destroyed) res.write(`${JSON.stringify(event)}\n`); };
           try {
+            const cloudQueueScope = await getCloudQueueScope(req);
             const result = await promptAgent.run(body, emit, undefined, {
               requestJson: (path, options) => requestWorkerJson(path, req, workerPort, options),
-              getQueuePreferences: () => ({ ...cloudQueuePreferences }),
+              getQueuePreferences: () => ({ ...cloudQueueScope.preferences }),
               setQueuePreferences: async next => {
-                cloudQueuePreferences.enabled = next.enabled === true;
-                cloudQueuePreferences.greeting = String(next.greeting || '正在生成中～').trim().slice(0, 15);
-                cloudQueuePreferences.showGreeting = next.showGreeting !== false;
-                cloudQueuePreferences.serviceUrl = normalizeCloudQueueServiceUrl(next.serviceUrl ?? cloudQueuePreferences.serviceUrl);
-                await saveCloudQueuePreferences(cloudQueuePreferences);
-                return { ...cloudQueuePreferences };
+                if (!cloudQueueScope.keyHash) throw new Error('请先配置 NovelAI API Key，再修改该密钥的公共队列设置');
+                const preferences = normalizeCloudQueuePreferences({
+                  ...cloudQueueScope.preferences,
+                  ...next,
+                  serviceUrl: normalizeCloudQueueServiceUrl(next.serviceUrl ?? cloudQueueScope.preferences.serviceUrl),
+                });
+                cloudQueueStore.accounts[cloudQueueScope.keyHash] = preferences;
+                cloudQueueScope.preferences = preferences;
+                await saveCloudQueuePreferences(cloudQueueStore);
+                return { ...preferences };
               },
               tagDictionary: method => requestTagDictionaryControl(method),
               requestBuffer: async (path, maxBytes) => {
@@ -2204,7 +2268,10 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
     }
     if (url.pathname === '/__internal/aitag-fetch') return handleAitagRemoteRequest(req, res, url, lanSecret, remoteFetch);
     if (url.pathname === '/__internal/danbooru-fetch') return handleDanbooruRemoteRequest(req, res, url, lanSecret, remoteFetch);
-    if (url.pathname === '/api/generate') return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, cloudQueuePreferences, remoteFetch);
+    if (url.pathname === '/api/generate') {
+      const { preferences } = await getCloudQueueScope(req);
+      return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, preferences, remoteFetch);
+    }
     if (url.pathname === '/api/novelai-subscription') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
@@ -2217,8 +2284,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         }
         const payload = await upstream.json();
         const sanitized = sanitizeNovelAiSubscription(payload);
-        lastKnownOpusUsageExhausted = sanitized.usage?.isNegative === true;
-        lastKnownOpusUsageAt = Date.now();
+        setOpusUsageSnapshot(keyHashFromAuthorization(authorization), sanitized.usage?.isNegative === true);
         return sendJson(res, 200, sanitized);
       } catch (error) {
         return sendJson(res, 502, { error: error.message || 'NovelAI 订阅信息获取失败' });
@@ -2231,17 +2297,17 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
     }
     if (url.pathname === '/api/generation-queue/preferences') {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
-      if (req.method === 'GET') return sendJson(res, 200, cloudQueuePreferences);
+      const scope = await getCloudQueueScope(req);
+      if (req.method === 'GET') return sendJson(res, 200, scope.preferences);
       if (req.method !== 'PUT') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!scope.keyHash) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
       try {
         const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
-        const serviceUrl = normalizeCloudQueueServiceUrl(body.serviceUrl ?? cloudQueuePreferences.serviceUrl);
-        cloudQueuePreferences.enabled = body.enabled === true;
-        cloudQueuePreferences.greeting = String(body.greeting || '正在生成中～').trim().slice(0, 15);
-        cloudQueuePreferences.showGreeting = body.showGreeting !== false;
-        cloudQueuePreferences.serviceUrl = serviceUrl;
-        await saveCloudQueuePreferences(cloudQueuePreferences);
-        return sendJson(res, 200, cloudQueuePreferences);
+        const serviceUrl = normalizeCloudQueueServiceUrl(body.serviceUrl ?? scope.preferences.serviceUrl);
+        const preferences = normalizeCloudQueuePreferences({ ...scope.preferences, ...body, serviceUrl });
+        cloudQueueStore.accounts[scope.keyHash] = preferences;
+        await saveCloudQueuePreferences(cloudQueueStore);
+        return sendJson(res, 200, preferences);
       } catch (error) {
         return sendJson(res, Number(error.status) || 400, { error: error.message || '公共队列设置无效' });
       }
@@ -2249,16 +2315,21 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
     if (url.pathname === '/api/generation-queue/status') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      const keyHash = keyHashFromRequest(req);
+      if (!keyHash) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
       const status = cloudQueue.get(url.searchParams.get('taskId') || '');
-      if (!status) return sendJson(res, 404, { error: '排队任务不存在' });
-      const { controller, ...safeStatus } = status;
+      if (!status || status.keyHash !== keyHash) return sendJson(res, 404, { error: '排队任务不存在' });
+      const { controller, keyHash: _keyHash, ...safeStatus } = status;
       return sendJson(res, 200, safeStatus);
     }
     if (url.pathname === '/api/generation-queue/cancel') {
       if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      const keyHash = keyHashFromRequest(req);
+      if (!keyHash) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
       const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
       const status = cloudQueue.get(String(body.taskId || ''));
+      if (status && status.keyHash !== keyHash) return sendJson(res, 404, { error: '排队任务不存在' });
       if (!status?.cancelable || !status.controller) return sendJson(res, 409, { error: '当前任务已不能取消' });
       status.controller.abort(new DOMException('用户已取消排队', 'AbortError'));
       cloudQueue.update(status.taskId, { phase: 'cancelled', cancelable: false, controller: null });
