@@ -26,9 +26,21 @@ import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncP
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
 import { LabModuleCollapsedPreferences, LabModuleId } from '../services/appearancePreferences';
-import { ArrowLeft, ChevronDown, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, UserRound, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Copy, FileDown, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, UserRound, X } from 'lucide-react';
 
 const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
+
+const PromptCopyButton: React.FC<{ onClick: () => void; title: string }> = ({ onClick, title }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-200"
+        title={title}
+    >
+        <Copy className="h-4 w-4" />
+        复制
+    </button>
+);
 
 interface ChainEditorProps {
     chain: PromptChain;
@@ -283,8 +295,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const importDragDepthRef = useRef(0);
     const [showForkModal, setShowForkModal] = useState(false);
     const [isImportDragActive, setIsImportDragActive] = useState(false);
-    const [showJsonPasteModal, setShowJsonPasteModal] = useState(false);
-    const [jsonPasteText, setJsonPasteText] = useState('');
     const [taggerOpen, setTaggerOpen] = useState(false);
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
     const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<PromptAgentDraft | null>(null);
@@ -875,19 +885,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (importInputRef.current) importInputRef.current.value = '';
     };
 
-    const handlePasteJsonImport = async () => {
-        const text = jsonPasteText.trim();
-        if (!text) {
-            notify('请先粘贴 JSON 元数据', 'error');
-            return;
-        }
-
-        const rawMeta = extractRawMetadataFromJsonText(text);
-        await applyRawMetadata(rawMeta, 'JSON');
-        setShowJsonPasteModal(false);
-        setJsonPasteText('');
-    };
-
     const hasImageImportPayload = (dataTransfer: DataTransfer) => {
         const types = Array.from(dataTransfer.types || []);
         return types.includes('Files') || types.includes('text/uri-list');
@@ -1437,14 +1434,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
     };
 
-    const copyPromptToClipboard = (isNegative: boolean) => {
-        if (isNegative) {
-            navigator.clipboard.writeText(negativePrompt);
-            notify('负面提示词已复制');
-        } else {
-            navigator.clipboard.writeText(finalPrompt);
-            notify('完整正面提示词已复制');
-        }
+    const copyPromptToClipboard = (value: string, label: string) => {
+        navigator.clipboard.writeText(value);
+        notify(`${label}已复制`);
     };
 
     return (
@@ -1459,9 +1451,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 <div className="pointer-events-none absolute inset-0 z-[80] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm">
                     <div className="mx-4 max-w-sm rounded-lg border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center shadow-2xl dark:bg-gray-900/95 dark:border-indigo-300">
                         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
-                            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                            </svg>
+                            <FileDown className="h-6 w-6" />
                         </div>
                         <div className="text-base font-bold text-gray-900 dark:text-white">松手导入配置</div>
                         <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">支持 PNG 图片元数据或 JSON 元数据，并覆盖当前 Prompt 与生成参数</div>
@@ -1540,6 +1530,26 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
                 <div className="chain-editor-actions ml-auto flex flex-shrink-0 items-center gap-2">
                     {canEdit && (
+                        <>
+                            <input
+                                type="file"
+                                ref={importInputRef}
+                                className="hidden"
+                                accept="image/png,application/json,.json"
+                                onChange={handleImportImage}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => importInputRef.current?.click()}
+                                className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
+                                title="导入图片或 JSON 配置"
+                                aria-label="导入图片或 JSON 配置"
+                            >
+                                <FileDown className="h-[18px] w-[18px] md:h-5 md:w-5" />
+                            </button>
+                        </>
+                    )}
+                    {canEdit && (
                         <button
                             type="button"
                             onClick={() => setShowImportPreset(true)}
@@ -1561,6 +1571,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             <ImagePlus className="h-[18px] w-[18px] md:h-5 md:w-5" />
                         </button>
                     )}
+                    {chain.id === 'playground' && (
+                        <button
+                            type="button"
+                            onClick={handleReset}
+                            className="mobile-touch ml-1 flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-red-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:bg-gray-800 dark:text-red-400 dark:hover:border-red-900/60 dark:hover:bg-red-950/30"
+                            title="重置实验室"
+                            aria-label="重置实验室"
+                        >
+                            <RotateCcw className="h-[18px] w-[18px] md:h-5 md:w-5" />
+                        </button>
+                    )}
                     {/* Fork / Save to Library Button */}
                     {((!isOwner && !isGuest) || chain.id === 'playground') && (
                         <button
@@ -1572,18 +1593,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         >
                             <Save className={`block h-[18px] w-[18px] md:h-5 md:w-5 ${chain.id === 'playground' ? '' : 'mr-1'}`} />
                             {chain.id !== 'playground' && <span>Fork</span>}
-                        </button>
-                    )}
-
-                    {chain.id === 'playground' && (
-                        <button
-                            type="button"
-                            onClick={handleReset}
-                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-red-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:bg-gray-800 dark:text-red-400 dark:hover:border-red-900/60 dark:hover:bg-red-950/30"
-                            title="重置实验室"
-                            aria-label="重置实验室"
-                        >
-                            <RotateCcw className="h-[18px] w-[18px] md:h-5 md:w-5" />
                         </button>
                     )}
                     {isOwner && chain.id !== 'playground' && (
@@ -1675,35 +1684,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                         : <PresetSourceBadges sources={Object.fromEntries(Object.entries({ base: presetSources.base, subject: presetSources.subject }).filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />}
                                 </div>
 
-                                {/* Direct import buttons */}
-                                <div className="flex items-center gap-2">
-                                    {!splitPromptFields && <button type="button" onClick={() => copyPromptToClipboard(false)} className="text-xs font-medium text-indigo-600 dark:text-indigo-300">复制完整提示词</button>}
-                                    {canEdit && (
-                                        <div className="flex gap-2">
-                                            <input
-                                                type="file"
-                                                ref={importInputRef}
-                                                className="hidden"
-                                                accept="image/png,application/json,.json"
-                                                onChange={handleImportImage}
-                                            />
-                                            <button
-                                                onClick={() => importInputRef.current?.click()}
-                                                className="text-xs bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2 py-1 rounded hover:bg-indigo-100 dark:hover:bg-indigo-900/50 flex items-center gap-1"
-                                            >
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                                                导入
-                                            </button>
-                                            <button
-                                                onClick={() => setShowJsonPasteModal(true)}
-                                                className="text-xs bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2 py-1 rounded hover:bg-indigo-100 dark:hover:bg-indigo-900/50 flex items-center gap-1"
-                                            >
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 4H7a2 2 0 01-2-2V6a2 2 0 012-2h5l5 5v9a2 2 0 01-2 2z" /></svg>
-                                                粘贴
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
+                                <PromptCopyButton
+                                    onClick={() => copyPromptToClipboard(splitPromptFields ? basePrompt : globalPrompt, splitPromptFields ? '基础画风' : '全局提示词')}
+                                    title={splitPromptFields ? '复制基础画风' : '复制全局提示词'}
+                                />
                             </div>
                             <TagAutocompleteTextarea
                                 disabled={!canEdit}
@@ -1726,10 +1710,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                     <label className="text-sm font-semibold text-indigo-500 dark:text-indigo-400">主体／变量提示词</label>
                                     <PresetSourceBadge source={presetSources.subject} />
                                 </div>
-                                <button type="button" onClick={() => copyPromptToClipboard(false)} className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-900/30" title="复制基础画风、模块和主体合成后的完整提示词">
-                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-                                    复制完整提示词
-                                </button>
+                                <PromptCopyButton onClick={() => copyPromptToClipboard(subjectPrompt, '主体／变量提示词')} title="复制主体／变量提示词" />
                             </div>
                             <p className="mb-2 text-[10px] text-gray-400">放置风格串固定提示词以外的内容，比如人物、场景。</p>
                             <TagAutocompleteTextarea
@@ -1956,10 +1937,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <section className="mb-8">
                             <div className="mb-2 flex items-center justify-between gap-3">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2"><label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">全局负面提示词</label><PresetSourceBadge source={presetSources.negative} /></div>
-                                <button type="button" onClick={() => copyPromptToClipboard(true)} className="flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" title="复制负面提示词">
-                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-                                    复制
-                                </button>
+                                <PromptCopyButton onClick={() => copyPromptToClipboard(negativePrompt, '全局负面提示词')} title="复制全局负面提示词" />
                             </div>
                             <TagAutocompleteTextarea
                                 disabled={!canEdit}
@@ -2017,7 +1995,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
             </div>
 
-            {!lightboxImg && !showImportPreset && !importCandidate && !showJsonPasteModal && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
+            {!lightboxImg && !showImportPreset && !importCandidate && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
                 {(displayedPreviewImage || chain.previewImage) && <button type="button" onClick={() => setLightboxImg(displayedPreviewImage || chain.previewImage || null)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-700" aria-label="查看最近生成结果"><SmartImage src={displayedPreviewImage || chain.previewImage || ''} alt="最近生成结果" /></button>}
                 {queueStatus
                     ? <InlineCloudQueueStatus compact className="min-w-64 max-w-[calc(100vw-5rem)]" />
@@ -2066,54 +2044,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     <button className="absolute top-4 right-4 text-white hover:text-gray-300" onClick={() => setLightboxImg(null)} aria-label="关闭大图">
                         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
-                </div>
-            )}
-
-            {/* Paste JSON Metadata Modal */}
-            {showJsonPasteModal && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-3xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col max-h-[85vh]">
-                        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3">
-                            <div>
-                                <h3 className="font-bold text-gray-900 dark:text-white">粘贴 JSON 元数据</h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">支持完整导出的 JSON，或仅包含 prompt / steps / v4_prompt 的 Comment 内容。</p>
-                            </div>
-                            <button
-                                onClick={() => setShowJsonPasteModal(false)}
-                                className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                                aria-label="关闭"
-                            >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                        </div>
-                        <div className="p-4 flex-1 min-h-0">
-                            <textarea
-                                value={jsonPasteText}
-                                onChange={(e) => setJsonPasteText(e.target.value)}
-                                placeholder='粘贴 JSON，例如 {"Comment":{"prompt":"...","steps":28,"width":832,"height":1216}}'
-                                className="w-full h-[45vh] min-h-[260px] resize-none rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 p-3 font-mono text-xs leading-relaxed text-gray-900 dark:text-gray-100 outline-none focus:ring-2 focus:ring-indigo-500"
-                                autoFocus
-                            />
-                        </div>
-                        <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row justify-end gap-2">
-                            <button
-                                onClick={() => {
-                                    setShowJsonPasteModal(false);
-                                    setJsonPasteText('');
-                                }}
-                                className="px-4 py-2 text-sm text-gray-500 hover:text-gray-800 dark:hover:text-white transition-colors"
-                            >
-                                取消
-                            </button>
-                            <button
-                                onClick={handlePasteJsonImport}
-                                disabled={!jsonPasteText.trim()}
-                                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed text-white text-sm font-bold rounded shadow-lg shadow-indigo-500/20 transition-all"
-                            >
-                                导入 JSON 配置
-                            </button>
-                        </div>
-                    </div>
                 </div>
             )}
 
