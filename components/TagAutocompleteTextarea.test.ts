@@ -17,12 +17,13 @@ const responseFor = (payload: unknown) => ({
   json: async () => payload,
 }) as Response;
 
-const Harness: React.FC<{ initial?: string }> = ({ initial = '' }) => {
+const Harness: React.FC<{ initial?: string; tagAssistEnabled?: boolean; showTranslations?: boolean }> = ({ initial = '', tagAssistEnabled = true, showTranslations = false }) => {
   const [value, setValue] = useState(initial);
   return React.createElement(TagAutocompleteTextarea, {
     value,
     onValueChange: setValue,
-    showTranslations: false,
+    tagAssistEnabled,
+    showTranslations,
     'aria-label': 'Prompt',
   });
 };
@@ -60,6 +61,37 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     const textarea = screen.getByRole('combobox') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'masterpiece, ' } });
     expect(textarea.value).toBe('masterpiece, ');
+  });
+
+  it('关闭 Tag 辅助后保留普通文本输入且不查询词典', async () => {
+    render(React.createElement(Harness, { tagAssistEnabled: false, showTranslations: true }));
+    const textarea = screen.getByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    fireEvent.focus(textarea);
+    fireEvent.change(textarea, { target: { value: '一个女孩坐在窗边，夕阳照进房间' } });
+    fireEvent.click(textarea);
+
+    await new Promise(resolve => window.setTimeout(resolve, 120));
+    expect(textarea.value).toBe('一个女孩坐在窗边，夕阳照进房间');
+    expect(screen.queryByRole('option')).toBeNull();
+    expect(screen.queryByLabelText('提示词中文翻译')).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('查询等待期间关闭 Tag 辅助会取消候选请求', async () => {
+    const ToggleHarness = () => {
+      const [enabled, setEnabled] = useState(true);
+      return React.createElement(React.Fragment, null,
+        React.createElement(Harness, { tagAssistEnabled: enabled }),
+        React.createElement('button', { type: 'button', onClick: () => setEnabled(false) }, '关闭辅助'));
+    };
+    render(React.createElement(ToggleHarness));
+    const textarea = screen.getByRole('combobox') as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: 'mas' } });
+    fireEvent.click(screen.getByRole('button', { name: '关闭辅助' }));
+
+    await new Promise(resolve => window.setTimeout(resolve, 120));
+    expect(screen.queryByRole('option')).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it('候选出现时普通 Enter 和 Tab 不接管原生输入', async () => {

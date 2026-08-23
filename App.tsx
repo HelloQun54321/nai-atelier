@@ -548,6 +548,8 @@ const App = () => {
           notify={notify}
           agentOpenToken={editorAgentOpenToken}
           splitPromptFields={appearancePreferences.splitPromptFields}
+          tagAssistEnabled={appearancePreferences.tagAssistEnabled}
+          onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           labModuleOrder={appearancePreferences.labModuleOrder}
           labModuleCollapsed={appearancePreferences.labModuleCollapsed}
         />;
@@ -612,6 +614,8 @@ const App = () => {
           externalImportToken={playgroundImportToken}
           agentOpenToken={playgroundAgentOpenToken}
           splitPromptFields={appearancePreferences.splitPromptFields}
+          tagAssistEnabled={appearancePreferences.tagAssistEnabled}
+          onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           labModuleOrder={appearancePreferences.labModuleOrder}
           labModuleCollapsed={appearancePreferences.labModuleCollapsed}
         />;

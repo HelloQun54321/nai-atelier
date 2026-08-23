@@ -20,6 +20,7 @@ interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes
   value: string;
   onValueChange: (value: string) => void;
   containerClassName?: string;
+  tagAssistEnabled?: boolean;
   showTranslations?: boolean;
   allowAiTranslation?: boolean;
 }
@@ -70,6 +71,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   onValueChange,
   className,
   containerClassName = '',
+  tagAssistEnabled = true,
   showTranslations = true,
   allowAiTranslation = true,
   disabled,
@@ -99,12 +101,12 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const [translationError, setTranslationError] = useState('');
   const [translationRevision, setTranslationRevision] = useState(0);
   const listboxId = useId();
-  const promptTokens = useMemo(() => parsePromptTags(value), [value]);
+  const promptTokens = useMemo(() => tagAssistEnabled ? parsePromptTags(value) : [], [tagAssistEnabled, value]);
 
   useEffect(() => subscribeTagTranslations(() => setTranslationRevision(revision => revision + 1)), []);
 
   useEffect(() => {
-    if (!showTranslations || promptTokens.length === 0) {
+    if (!tagAssistEnabled || !showTranslations || promptTokens.length === 0) {
       setTranslations([]);
       return;
     }
@@ -117,14 +119,14 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       });
     }, 250);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [promptTokens, showTranslations, translationRevision]);
+  }, [promptTokens, showTranslations, tagAssistEnabled, translationRevision]);
 
   const missingTags = useMemo(() => [...new Set(translations
     .filter(item => item.source === 'missing')
     .map(item => item.lookupTag))], [translations]);
 
   const translateMissing = async () => {
-    if (!missingTags.length || translationLoading) return;
+    if (!tagAssistEnabled || !missingTags.length || translationLoading) return;
     setTranslationLoading(true);
     setTranslationError('');
     try {
@@ -142,8 +144,23 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     requestIdRef.current++;
   }, []);
 
+  useEffect(() => {
+    if (tagAssistEnabled) return;
+    if (searchTimerRef.current !== null) {
+      window.clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
+    requestIdRef.current++;
+    setSuggestions([]);
+    setTarget(null);
+    setActiveIndex(-1);
+    setIsLoading(false);
+    setTranslations([]);
+    setTranslationError('');
+  }, [tagAssistEnabled]);
+
   const refreshSuggestions = useCallback((nextValue = value, caret = textareaRef.current?.selectionStart ?? 0) => {
-    if (disabled || composingRef.current) return;
+    if (!tagAssistEnabled || disabled || composingRef.current) return;
     if (searchTimerRef.current !== null) {
       window.clearTimeout(searchTimerRef.current);
       searchTimerRef.current = null;
@@ -171,7 +188,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         if (requestId === requestIdRef.current) setIsLoading(false);
       });
     }, 80);
-  }, [disabled, value]);
+  }, [disabled, tagAssistEnabled, value]);
 
   const selectSuggestion = (suggestion: TagSuggestion) => {
     if (!target) return;
@@ -189,7 +206,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     });
   };
 
-  const isOpen = Boolean(target && (suggestions.length > 0 || isLoading));
+  const isOpen = tagAssistEnabled && Boolean(target && (suggestions.length > 0 || isLoading));
 
   useEffect(() => {
     if (!isOpen) return;
@@ -232,19 +249,21 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         disabled={disabled}
         value={value}
         className={className}
-        role="combobox"
-        aria-autocomplete="list"
-        aria-expanded={isOpen}
-        aria-controls={isOpen ? listboxId : undefined}
-        aria-activedescendant={isOpen && suggestions[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
+        role={tagAssistEnabled ? 'combobox' : undefined}
+        aria-autocomplete={tagAssistEnabled ? 'list' : undefined}
+        aria-expanded={tagAssistEnabled ? isOpen : undefined}
+        aria-controls={tagAssistEnabled && isOpen ? listboxId : undefined}
+        aria-activedescendant={tagAssistEnabled && isOpen && suggestions[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
         onChange={(event) => {
           onValueChange(event.target.value);
-          refreshSuggestions(event.target.value, event.target.selectionStart);
+          if (tagAssistEnabled) refreshSuggestions(event.target.value, event.target.selectionStart);
         }}
         onFocus={(event) => {
           if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
-          preloadTagDictionary();
-          refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
+          if (tagAssistEnabled) {
+            preloadTagDictionary();
+            refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
+          }
           onFocus?.(event);
         }}
         onBlur={(event) => {
@@ -255,7 +274,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
           onBlur?.(event);
         }}
         onClick={(event) => {
-          refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
+          if (tagAssistEnabled) refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
           onClick?.(event);
         }}
         onKeyUp={onKeyUp}
@@ -304,12 +323,12 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         }}
         onCompositionEnd={(event) => {
           composingRef.current = false;
-          refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
+          if (tagAssistEnabled) refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
           onCompositionEnd?.(event);
         }}
       />
 
-      {showTranslations && translations.length > 0 && (
+      {tagAssistEnabled && showTranslations && translations.length > 0 && (
         <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50/80 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-900/55" aria-label="提示词中文翻译">
           <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto overscroll-contain pr-0.5">
             {translations.map(item => (

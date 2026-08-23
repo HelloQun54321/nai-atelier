@@ -36,6 +36,7 @@ export interface AppearancePreferences {
   motion: MotionStyle;
   fontScale: FontScale;
   splitPromptFields: boolean;
+  tagAssistEnabled: boolean;
   labModuleOrder: LabModuleId[];
   labModuleCollapsed: LabModuleCollapsedPreferences;
 }
@@ -54,6 +55,7 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   motion: 'full',
   fontScale: 'standard',
   splitPromptFields: true,
+  tagAssistEnabled: true,
   labModuleOrder: [...DEFAULT_LAB_MODULE_ORDER],
   labModuleCollapsed: { ...DEFAULT_LAB_MODULE_COLLAPSED },
 };
@@ -93,6 +95,9 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     splitPromptFields: typeof input.splitPromptFields === 'boolean'
       ? input.splitPromptFields
       : DEFAULT_APPEARANCE_PREFERENCES.splitPromptFields,
+    tagAssistEnabled: typeof input.tagAssistEnabled === 'boolean'
+      ? input.tagAssistEnabled
+      : DEFAULT_APPEARANCE_PREFERENCES.tagAssistEnabled,
     labModuleOrder,
     labModuleCollapsed,
   };

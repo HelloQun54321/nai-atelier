@@ -26,7 +26,7 @@ import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncP
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
 import { LabModuleCollapsedPreferences, LabModuleId } from '../services/appearancePreferences';
-import { ArrowLeft, ChevronDown, Copy, FileDown, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, UserRound, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Copy, FileDown, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, Tags, UserRound, X } from 'lucide-react';
 
 const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
 
@@ -53,6 +53,8 @@ interface ChainEditorProps {
     externalImportToken?: number;
     agentOpenToken?: number;
     splitPromptFields: boolean;
+    tagAssistEnabled: boolean;
+    onTagAssistEnabledChange: (enabled: boolean) => void;
     labModuleOrder: LabModuleId[];
     labModuleCollapsed: LabModuleCollapsedPreferences;
 }
@@ -168,7 +170,7 @@ const PromptAgentOverlayController: React.FC<PromptAgentOverlayControllerProps> 
     );
 };
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, splitPromptFields, labModuleOrder, labModuleCollapsed }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, splitPromptFields, tagAssistEnabled, onTagAssistEnabledChange, labModuleOrder, labModuleCollapsed }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
     const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
@@ -1571,6 +1573,27 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             <ImagePlus className="h-[18px] w-[18px] md:h-5 md:w-5" />
                         </button>
                     )}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const enabled = !tagAssistEnabled;
+                            onTagAssistEnabledChange(enabled);
+                            notify(`Tag 辅助已${enabled ? '开启' : '关闭'}`);
+                        }}
+                        aria-pressed={tagAssistEnabled}
+                        className={`mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border p-0 transition-colors ${tagAssistEnabled
+                            ? 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/60'
+                            : 'border-gray-200 bg-gray-100 text-gray-500 hover:border-gray-300 hover:bg-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-700'}`}
+                        title={tagAssistEnabled ? '关闭 Tag 辅助' : '开启 Tag 辅助'}
+                        aria-label={tagAssistEnabled ? '关闭 Tag 辅助' : '开启 Tag 辅助'}
+                    >
+                        <span className="relative block">
+                            <Tags className="h-[18px] w-[18px] md:h-5 md:w-5" />
+                            <span aria-hidden="true" className="absolute -bottom-1.5 -right-1.5 text-[9px] font-black leading-none">
+                                {tagAssistEnabled ? 'o' : '−'}
+                            </span>
+                        </span>
+                    </button>
                     {chain.id === 'playground' && (
                         <button
                             type="button"
@@ -1692,6 +1715,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 />
                             </div>
                             <TagAutocompleteTextarea
+                                tagAssistEnabled={tagAssistEnabled}
                                 disabled={!canEdit}
                                 className={`w-full border rounded-lg p-3 outline-none font-mono text-sm leading-relaxed min-h-[100px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500'}`}
                                 value={splitPromptFields ? basePrompt : globalPrompt}
@@ -1716,6 +1740,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             </div>
                             <p className="mb-2 text-[10px] text-gray-400">放置风格串固定提示词以外的内容，比如人物、场景。</p>
                             <TagAutocompleteTextarea
+                                tagAssistEnabled={tagAssistEnabled}
                                 disabled={!canEdit}
                                 className={`min-h-[100px] w-full resize-none rounded-lg border p-3 font-mono text-sm leading-relaxed outline-none ${!canEdit ? 'cursor-not-allowed bg-gray-100 text-gray-500 dark:bg-gray-800' : 'border-gray-300 bg-gray-50 text-gray-900 focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'}`}
                                 placeholder="输入动态主体描述，例如：1girl, blue hair, sitting..."
@@ -1784,6 +1809,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                             </div>
                                         </div>
                                         <TagAutocompleteTextarea
+                                            tagAssistEnabled={tagAssistEnabled}
                                             disabled={!canEdit}
                                             className={`w-full rounded p-2 outline-none font-mono text-xs h-16 resize-none ${!canEdit ? 'bg-transparent text-gray-500' : 'bg-white dark:bg-gray-900/50 border border-gray-300 dark:border-gray-700/30 text-gray-800 dark:text-gray-300 focus:ring-1 focus:ring-indigo-500/50'}`}
                                             value={mod.content}
@@ -1845,6 +1871,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                                 <div>
                                                     <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">人物描述</label>
                                                     <TagAutocompleteTextarea
+                                                        tagAssistEnabled={tagAssistEnabled}
                                                         disabled={!canEdit}
                                                         value={char.prompt}
                                                         onValueChange={(nextValue) => updateCharacter(idx, { prompt: nextValue })}
@@ -1855,6 +1882,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                                 <div>
                                                     <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">专属负面</label>
                                                     <TagAutocompleteTextarea
+                                                        tagAssistEnabled={tagAssistEnabled}
                                                         disabled={!canEdit}
                                                         value={char.negativePrompt || ''}
                                                         onValueChange={(nextValue) => updateCharacter(idx, { negativePrompt: nextValue })}
@@ -1942,6 +1970,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 <PromptCopyButton onClick={() => copyPromptToClipboard(negativePrompt, '全局负面提示词')} title="复制全局负面提示词" />
                             </div>
                             <TagAutocompleteTextarea
+                                tagAssistEnabled={tagAssistEnabled}
                                 disabled={!canEdit}
                                 className={`w-full border rounded-lg p-3 outline-none font-mono text-sm leading-relaxed min-h-[80px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-indigo-500/50'}`}
                                 value={negativePrompt}

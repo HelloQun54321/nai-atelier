@@ -355,6 +355,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       ...DEFAULT_APPEARANCE_PREFERENCES,
       themeMode,
       splitPromptFields: appearancePreferences.splitPromptFields,
+      tagAssistEnabled: appearancePreferences.tagAssistEnabled,
       labModuleOrder: appearancePreferences.labModuleOrder,
       labModuleCollapsed: appearancePreferences.labModuleCollapsed,
     });
