@@ -1587,7 +1587,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <button
                             onClick={handleFork}
                             disabled={isUploading}
-                            className={`mobile-touch flex h-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-sm font-medium text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40 ${chain.id === 'playground' ? 'w-11' : 'w-auto px-4'}`}
+                            className={`mobile-touch flex h-11 items-center justify-center rounded-xl border p-0 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${chain.id === 'playground'
+                                ? 'w-11 border-emerald-200 bg-emerald-50 text-emerald-600 hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/35 dark:text-emerald-300 dark:hover:border-emerald-800 dark:hover:bg-emerald-950/60'
+                                : 'w-auto border-gray-200 bg-gray-100 px-4 text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40'}`}
                             title={chain.id === 'playground' ? '保存到库' : 'Fork'}
                             aria-label={chain.id === 'playground' ? '保存到库' : 'Fork'}
                         >
@@ -1601,7 +1603,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             onClick={handleSaveAll}
                             disabled={!canSaveCurrentChain || isUploading}
                             className={`mobile-touch flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-bold transition-colors lg:w-11 lg:px-0 ${canSaveCurrentChain && !isUploading
-                                ? 'bg-indigo-600 text-white hover:bg-indigo-500'
+                                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20 hover:bg-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500'
                                 : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}
                             title={isUploading ? '正在保存' : hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存'}
                             aria-label={isUploading ? '正在保存' : hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存'}
