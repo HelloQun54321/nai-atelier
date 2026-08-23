@@ -528,14 +528,14 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
-       <WorkspaceToolbar className="flex-col !items-stretch">
+       <WorkspaceToolbar>
          <div className="flex gap-2 md:hidden">
            <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品或 Tag" />
            <MobileIconButton label="筛选和抽卡设置" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><Menu className="h-5 w-5" /></MobileIconButton>
            <ImageTaggerAction notify={notify} />
            <MobileIconButton label={gachaCards ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} className="bg-indigo-600 text-white"><Dice5 className="h-5 w-5" /></MobileIconButton>
          </div>
-         <div className="workspace-page-heading workspace-toolbar hidden min-w-0 flex-wrap items-center gap-2 md:flex">
+         <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
            <div className="flex flex-none items-center gap-1 overflow-x-auto">
              {([
                ['all', '全部'], ['catalog', '角色 Tag'], ['custom', `我的自定义 ${customChains.length}`], ['favorites', '收藏'],
@@ -547,18 +547,15 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
            <select value={sort} disabled={Boolean(gachaCards)} onChange={event => setSort(event.target.value as CharacterDictionarySort)} className="flex-none rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white">
              <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">{searchTerm.trim() ? '相关性优先 · 名称 A → Z' : '名称 A → Z'}</option><option value="name-desc">{searchTerm.trim() ? '相关性优先 · 名称 Z → A' : '名称 Z → A'}</option>
            </select>
-           <div className="flex flex-none items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2 dark:border-gray-800 dark:bg-gray-900/50">
-             <span className="text-xs text-gray-400">列数</span>
-             <input type="range" min="3" max="10" value={gridColumns} onChange={event => { const value = Number(event.target.value); setGridColumns(value); localStorage.setItem('nai_character_grid_columns', String(value)); }} className="w-24 flex-none" />
-           </div>
            <div className="relative ml-auto flex flex-none items-center justify-end gap-2">
              <ToolbarButton tone="primary" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4" />自定义角色</ToolbarButton>
              <ToolbarButton onClick={() => void drawGacha()} disabled={isGachaLoading}><Dice5 className="h-4 w-4" />{gachaCards ? '再抽一批' : '随机抽卡'}</ToolbarButton>
              {gachaCards && <ToolbarButton onClick={() => setGachaCards(null)}>返回目录</ToolbarButton>}
              <div className="relative flex-none">
-               <IconButton label="抽卡设置" onClick={() => setShowDesktopGachaSettings(value => !value)} aria-expanded={showDesktopGachaSettings} aria-haspopup="dialog"><Settings2 /></IconButton>
-               {showDesktopGachaSettings && <div role="dialog" aria-label="随机抽卡设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
-                 <div className="mb-3 text-sm font-bold text-gray-800 dark:text-white">随机抽卡设置</div>
+               <IconButton label="角色页面设置" onClick={() => setShowDesktopGachaSettings(value => !value)} aria-expanded={showDesktopGachaSettings} aria-haspopup="dialog"><Settings2 /></IconButton>
+               {showDesktopGachaSettings && <div role="dialog" aria-label="角色页面设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
+                 <div className="mb-3 text-sm font-bold text-gray-800 dark:text-white">角色页面设置</div>
+                 <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">每行 {gridColumns} 列<input type="range" min="3" max="10" value={gridColumns} onChange={event => { const value = Number(event.target.value); setGridColumns(value); localStorage.setItem('nai_character_grid_columns', String(value)); }} className="mt-2 w-full accent-indigo-500" /></label>
                  <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">抽卡范围<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option></select></label>
                  <label className="block text-xs text-gray-500 dark:text-gray-400">抽卡数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-white"><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label>
                </div>}
@@ -567,14 +564,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
            </div>
          </div>
        </WorkspaceToolbar>
-
-       <div className="hidden items-center gap-1.5 border-b border-gray-100 px-5 py-1 text-[11px] text-gray-400 dark:border-gray-800 dark:text-gray-500 md:flex">
-         <span>显示 {visibleCards.length.toLocaleString('zh-CN')}</span>
-         <span className="opacity-50">·</span>
-         <span>目录 {catalogTotal.toLocaleString('zh-CN')}</span>
-         <span className="opacity-50">·</span>
-         <span>自定义 {customChains.length}</span>
-       </div>
 
        <MobileBottomSheet open={showMobileFilters} title="角色筛选与抽卡" onClose={() => setShowMobileFilters(false)}>
          <div className="space-y-5">
@@ -595,6 +584,9 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
        </MobileBottomSheet>
 
       <div ref={scrollRef} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
+        <div className="mb-3 hidden items-center gap-1.5 text-[11px] text-gray-400 dark:text-gray-500 md:flex">
+          <span>显示 {visibleCards.length.toLocaleString('zh-CN')}</span><span className="opacity-50">·</span><span>目录 {catalogTotal.toLocaleString('zh-CN')}</span><span className="opacity-50">·</span><span>自定义 {customChains.length}</span>
+        </div>
         {isLoading && <div className="absolute inset-x-0 top-3 z-20 flex justify-center"><span className="rounded-full bg-gray-900/80 px-4 py-2 text-xs text-white">正在加载角色目录…</span></div>}
         {imageDisplay.layout === 'masonry' ? (
           <ShortestColumnMasonry

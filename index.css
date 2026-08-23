@@ -5,13 +5,16 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --workspace-toolbar-height: 57px;
+  --workspace-toolbar-height: 56px;
   --workspace-control-radius: 0.75rem;
   --workspace-card-radius: 1rem;
 }
 
 .workspace-command-bar {
-  min-height: var(--workspace-toolbar-height);
+  box-sizing: border-box;
+  height: calc(var(--workspace-toolbar-height) + env(safe-area-inset-top));
+  min-height: calc(var(--workspace-toolbar-height) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
   box-shadow: 0 1px 0 rgb(15 23 42 / 0.03);
 }
 
@@ -336,8 +339,8 @@ html[data-surfaces='translucent'] .settings-navigation {
   backdrop-filter: blur(22px) saturate(130%);
 }
 
-html[data-density='comfortable'] { --spacing: 0.275rem; --workspace-toolbar-height: 61px; }
-html[data-density='standard'] { --spacing: 0.25rem; --workspace-toolbar-height: 57px; }
+html[data-density='comfortable'] { --spacing: 0.275rem; --workspace-toolbar-height: 60px; }
+html[data-density='standard'] { --spacing: 0.25rem; --workspace-toolbar-height: 56px; }
 html[data-density='compact'] { --spacing: 0.225rem; --workspace-toolbar-height: 52px; }
 
 html[data-corners='soft'] {
@@ -459,11 +462,11 @@ body,
   }
 
   .agent-panel-docked .workspace-toolbar {
-    flex-wrap: wrap !important;
+    flex-wrap: nowrap !important;
   }
 
   .agent-panel-docked .workspace-page-heading {
-    align-items: flex-start !important;
+    align-items: center !important;
   }
 
   .agent-panel-docked .workspace-history-pagination {
@@ -486,19 +489,6 @@ body,
 }
 
 @container workspace (max-width: 1180px) {
-  .agent-panel-docked .chain-editor-header {
-    flex-wrap: wrap;
-    overflow: visible;
-  }
-
-  .agent-panel-docked .chain-editor-header > :first-child {
-    flex: 1 1 280px;
-  }
-
-  .agent-panel-docked .chain-editor-actions {
-    margin-left: auto;
-  }
-
   .agent-panel-docked .chain-editor-body {
     flex-direction: column !important;
     overflow-x: hidden !important;
@@ -542,19 +532,6 @@ body,
  * an already-open portal. Layout.tsx mirrors the measured state onto this
  * class so the first frame and subsequent Agent/sidebar resizes agree.
  */
-.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-header {
-  flex-wrap: wrap;
-  overflow: visible;
-}
-
-.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-header > :first-child {
-  flex: 1 1 280px;
-}
-
-.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-actions {
-  margin-left: auto;
-}
-
 .agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-body {
   flex-direction: column !important;
   overflow-x: hidden !important;
@@ -592,11 +569,6 @@ body,
 }
 
 @container workspace (max-width: 980px) {
-  .agent-panel-docked .workspace-page-heading {
-    flex-direction: column !important;
-    align-items: stretch !important;
-  }
-
   .agent-panel-docked .workspace-manager-detail {
     grid-template-columns: minmax(0, 1fr) !important;
   }

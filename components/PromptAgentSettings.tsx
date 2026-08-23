@@ -279,7 +279,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
     </div>
 
     {view !== 'home' && <div className="fixed inset-0 z-[1700] flex flex-col bg-gray-50 dark:bg-gray-950">
-      <header className="flex min-h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-3 border-b border-gray-200 bg-white px-3 pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900 md:px-5">
+      <header className="workspace-command-bar flex flex-none items-center gap-3 border-b border-gray-200 bg-white px-3 dark:border-gray-800 dark:bg-gray-900 md:px-5">
         <button type="button" onClick={view === 'key' ? () => { setView('login'); setApiKey(''); } : requestClose} className="mobile-touch flex items-center justify-center text-gray-500" aria-label="返回"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7 7-7m-7 7h18" /></svg></button>
         <div className="min-w-0 flex-1"><h2 className="font-black text-gray-900 dark:text-white">{view === 'login' ? '选择要配置的服务' : view === 'logout' ? '选择要退出的服务' : view === 'model' ? '选择 Agent 模型' : view === 'vision' ? '选择视觉模型' : view === 'auth' ? '选择登录方式' : view === 'custom' ? (customDraft.id ? '编辑自定义接口' : '添加自定义接口') : `登录 ${targetProvider?.name || ''}`}</h2><p className="text-[11px] text-gray-500">{view === 'model' ? '主模型负责推理和调用工具' : view === 'vision' ? '只显示支持图片输入的已配置模型' : view === 'key' ? (loginAuthType === 'oauth' ? '按 pi 的 OAuth 流程完成登录' : '使用 API Key 登录') : view === 'custom' ? '由 Pi 作为正式 Provider运行，不是简单转发器' : view === 'auth' ? targetProvider?.name : '输入文字可立即筛选'}</p></div>
       </header>

@@ -1420,26 +1420,27 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
             )}
             {/* Top Bar */}
-            <header className="chain-editor-header flex-shrink-0 min-h-[calc(3.5rem+env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-2 md:px-6 pt-[env(safe-area-inset-top)] md:pt-3 pb-2 md:pb-3 flex items-center justify-between gap-1 md:gap-4 overflow-x-hidden">
-                <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
+            <header className="chain-editor-header workspace-command-bar relative z-30 flex h-auto flex-shrink-0 items-center justify-between gap-1 overflow-visible border-b border-gray-200 bg-white px-2 py-0 dark:border-gray-800 dark:bg-gray-950 md:gap-4 md:px-6">
+                <div className="relative flex min-w-0 flex-1 items-center gap-2 md:gap-4">
                     <button onClick={onBack} className="mobile-touch flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors flex-shrink-0" aria-label="返回">
                         <ArrowLeft className="h-[18px] w-[18px] md:h-5 md:w-5" />
                     </button>
 
-                    {chain.id !== 'playground' && (isEditingInfo && isOwner ? (
-                        <div className="flex flex-col md:flex-row gap-2 flex-1 w-full max-w-2xl min-w-0">
-                            <input type="text" value={chainName} onChange={e => { setChainName(e.target.value); markChange() }} className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-gray-900 dark:text-white text-sm focus:border-indigo-500 outline-none font-bold min-w-0" placeholder="名称" />
-                            <div className="flex gap-2">
-                                <input type="text" value={chainDesc} onChange={e => { setChainDesc(e.target.value); markChange() }} className="flex-1 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-gray-700 dark:text-gray-300 text-sm focus:border-indigo-500 outline-none min-w-0" placeholder="描述" />
-                                <button
-                                    onClick={() => setIsEditingInfo(false)}
-                                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded text-sm font-medium flex-shrink-0 whitespace-nowrap"
-                                >
-                                    确定
-                                </button>
-                            </div>
-                            {/* Tags Input */}
-                            <div className="flex flex-wrap gap-1 mt-2">
+                    {chain.id !== 'playground' && <div className="flex min-w-0 flex-1 cursor-pointer items-center gap-2" onClick={() => isOwner && setIsEditingInfo(true)}>
+                        <div className="flex min-w-0 items-baseline gap-2 overflow-hidden">
+                            <span className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase ${isCharacterMode ? 'border-pink-200 bg-pink-100 text-pink-700' : 'border-blue-200 bg-blue-100 text-blue-700'}`}>{isCharacterMode ? '角色串' : '风格串'}</span>
+                            <h1 className="min-w-0 truncate text-base font-bold text-gray-900 dark:text-white md:text-lg">{chainName}</h1>
+                            <span className="hidden min-w-0 max-w-xs truncate text-xs text-gray-500 md:block">{chainDesc}</span>
+                        </div>
+                        {isOwner && <Pencil className="h-4 w-4 flex-shrink-0 text-gray-400 opacity-50" />}
+                    </div>}
+                    {chain.id !== 'playground' && isEditingInfo && isOwner && <div role="dialog" aria-label="编辑风格串信息" className="absolute left-9 top-[calc(100%+0.5rem)] z-50 w-[min(40rem,calc(100vw-2rem))] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            <label className="text-xs font-bold text-gray-500">名称<input type="text" value={chainName} onChange={e => { setChainName(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white" placeholder="名称" /></label>
+                            <label className="text-xs font-bold text-gray-500">描述<input type="text" value={chainDesc} onChange={e => { setChainDesc(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-700 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" placeholder="描述" /></label>
+                        </div>
+                        <div className="mt-3 text-xs font-bold text-gray-500">标签</div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
                               {chainTags.map((tag, idx) => (
                                 <span key={idx} className="px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 flex items-center gap-1">
                                   {tag}
@@ -1458,8 +1459,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                   )}
                                 </span>
                               ))}
-                              {canEdit && (
-                                <input
+                              {canEdit && <input
                                   type="text"
                                   placeholder="添加标签..."
                                   className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-full bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -1483,23 +1483,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                       e.target.value = '';
                                     }
                                   }}
-                                />
-                              )}
-                            </div>
-
+                                />}
                         </div>
-                    ) : (
-                        <div className="flex items-center gap-2 group cursor-pointer min-w-0 flex-1" onClick={() => isOwner && setIsEditingInfo(true)}>
-                            <div className="flex flex-col md:flex-row md:items-baseline gap-0.5 md:gap-2 overflow-hidden min-w-0">
-                                {chain.id !== 'playground' && <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase border flex-shrink-0 ${isCharacterMode ? 'bg-pink-100 text-pink-700 border-pink-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
-                                    {isCharacterMode ? '角色串' : '风格串'}
-                                </span>}
-                                <h1 className="text-base md:text-lg font-bold text-gray-900 dark:text-white truncate min-w-0">{chainName}</h1>
-                                <span className="hidden text-xs text-gray-500 dark:text-gray-500 truncate max-w-full md:block md:max-w-xs min-w-0">{chainDesc}</span>
-                            </div>
-                            {isOwner && <Pencil className="h-4 w-4 flex-shrink-0 text-gray-400 opacity-50" />}
-                        </div>
-                    ))}
+                        <div className="mt-4 flex justify-end"><button type="button" onClick={() => setIsEditingInfo(false)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-500">完成</button></div>
+                    </div>}
                 </div>
 
                 <div className="chain-editor-actions ml-auto flex flex-shrink-0 items-center gap-2">

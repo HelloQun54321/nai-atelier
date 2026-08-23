@@ -178,7 +178,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
     </section>
 
     {open && <div className="workspace-manager fixed inset-0 z-[10000] flex flex-col bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
-      <header className="flex min-h-14 items-center gap-2 border-b border-gray-200 bg-white px-3 pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900 sm:px-5">
+      <header className="workspace-command-bar flex flex-none items-center gap-2 border-b border-gray-200 bg-white px-3 dark:border-gray-800 dark:bg-gray-900 sm:px-5">
         <button type="button" onClick={() => window.history.back()} className="mobile-touch flex h-11 w-11 items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="返回"><BackIcon /></button>
         <div className="min-w-0 flex-1"><h2 className="truncate font-bold">角色参考</h2><p className="text-[10px] text-gray-500">启用后与 Vibe Transfer 互斥</p></div>
         {!detail && <span className="rounded-full bg-cyan-100 px-2.5 py-1 text-xs font-bold text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300">已选 {references.slots.length}/4</span>}
