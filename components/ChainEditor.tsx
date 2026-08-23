@@ -2267,6 +2267,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 draft={activeEditDraft}
                 maskData={imageEditMaskData}
                 generationCostLabel={imageEditCostLabel}
+                apiKey={apiKey}
+                notify={notify}
                 onPromptChange={value => updateEditDraft(activeEditOperation, { prompt: value, promptSource: 'custom' })}
                 onNegativePromptChange={value => updateEditDraft(activeEditOperation, { negativePrompt: value })}
                 onPromptSource={source => {
