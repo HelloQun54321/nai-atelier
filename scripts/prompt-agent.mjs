@@ -10,6 +10,7 @@ import { lookup } from 'dns/promises';
 import { isIP } from 'net';
 import { dirname, join } from 'path';
 import { getGlobalDispatcher, ProxyAgent, setGlobalDispatcher } from 'undici';
+import { getNovelAiModelProfile, readNovelAiOfficialKnowledge, searchNovelAiOfficialKnowledge } from './novelai-agent-knowledge.mjs';
 
 const CONFIG_FILE = 'local-data/prompt-agent.json';
 const CREDENTIAL_KEY_FILE = 'local-data/prompt-agent.key';
@@ -39,7 +40,7 @@ const BLOCKED_CUSTOM_HEADERS = new Set(['authorization', 'proxy-authorization', 
 // Bump this whenever the built-in Agent instruction set changes. The UI exposes
 // only this version and a hash, never the instruction text itself, so a running
 // local backend can be verified without relying on a behavioral probe.
-const PROMPT_AGENT_POLICY_VERSION = '2026-08-09.1';
+const PROMPT_AGENT_POLICY_VERSION = '2026-08-23.1';
 let proxyRunCount = 0;
 let previousDispatcher = null;
 let sharedProxyDispatcher = null;
@@ -465,8 +466,11 @@ const withDiscoveryPlaceholder = input => ({
 
 const sanitizeParams = raw => {
   const value = raw && typeof raw === 'object' ? raw : {};
+  const requestedModel = typeof value.model === 'string' ? text(value.model).trim().slice(0, 160) : '';
+  const safeModel = /^[a-z0-9._:-]+$/i.test(requestedModel) ? requestedModel : 'nai-diffusion-4-5-full';
   const params = {
     ...value,
+    ...(requestedModel ? { model: safeModel } : {}),
     width: Math.round(clamp(value.width, 64, 2048, 832) / 64) * 64,
     height: Math.round(clamp(value.height, 64, 2048, 1216) / 64) * 64,
     steps: Math.round(clamp(value.steps, 1, 50, 28)),
@@ -479,7 +483,8 @@ const sanitizeParams = raw => {
     cfgRescale: clamp(value.cfgRescale, 0, 1, 0),
   };
   if (Number.isInteger(Number(value.seed)) && Number(value.seed) >= 0) params.seed = Number(value.seed);
-  if (Array.isArray(value.characters)) params.characters = value.characters.slice(0, 6).map(character => ({
+  const modelProfile = getNovelAiModelProfile(safeModel);
+  if (Array.isArray(value.characters)) params.characters = value.characters.slice(0, modelProfile.project.maxCharacterPrompts).map(character => ({
     id: text(character.id || randomBytes(8).toString('hex')).slice(0, 80),
     prompt: text(character.prompt),
     negativePrompt: text(character.negativePrompt),
@@ -562,9 +567,9 @@ const validatePromptDraft = draft => {
 const baseSystemPrompt = `你是 NAI Atelier 的项目业务 Agent。你的职责不是只给建议，而是读取项目中的真实数据并使用工具完成操作。
 
 规则：
-1. NovelAI 提示词优先使用英文 Danbooru/NovelAI tag，以逗号分隔；给用户的解释使用中文。
+1. NovelAI 提示词默认优先使用英文 Danbooru/NovelAI Tag，以逗号分隔；给用户的解释使用中文。V5 同时完整支持自然语言，用户明确要求自然语言或非英语提示时，应先读取当前模型的官方知识再决定写法，不得把 V4.5 的限制套到 V5。
 2. 先理解用户意图，必要时读取历史原图和元数据、搜索 Tag、风格串、角色、灵感、AITag、Vibe 或角色参考图，再调用修改工具。项目里已有的数据绝不能要求用户重新描述或手工复制。
-3. 保留用户没有要求修改的内容。修改参数时遵守 V4.5 合理范围。
+3. 保留用户没有要求修改的内容。修改提示词或参数前先读取实验室当前模型，并通过 search_novelai_docs 查找适用规则；官方模型事实优先于下方项目经验，不得凭记忆编造模型能力。
 4. 用户明确要求“生成、出图、跑一张、试试看”等操作时，修改完成后调用 request_generation；否则不要擅自消耗 Anlas。
 5. request_generation 只发出待确认请求，不能声称图片已经生成。
 6. 当用户要求参考上一张/最近一张生成图时，先调用 list_generation_history，再调用 inspect_generation_image。没有真正收到图片时不得声称看过图片。
@@ -572,11 +577,16 @@ const baseSystemPrompt = `你是 NAI Atelier 的项目业务 Agent。你的职�
 8. 不得要求或泄露 API Key，不得访问任意电脑文件、命令行、系统进程或任意网址。只能使用这里明确提供的项目业务工具。
 9. 优先执行工具。完成后只用简短中文总结实际读取、修改或待确认的事项，不复述整份实验室内容。
 10. Precise/角色参考每张每次生图增加 5 Anlas，当前与 Vibe Transfer 互斥；设置其中一项时必须关闭另一项。
-11. 必须严格区分三类正面提示词：basePrompt 只放画师名、媒介、渲染和可复用画风；subjectPrompt 只放整图主体、场景、动作、构图和其他全局动态内容；params.characters 通过 set_characters 存放角色专属外貌、服装、身份 Tag 与角色专属负面词。用户说“角色提示词”“人物提示词”“角色外貌”或要求填写某个角色时，即使只有一个角色，也必须优先调用 set_characters，除非用户明确指定放到主体／变量提示词框。不得把角色专属提示词写入 subjectPrompt。`;
+11. 必须严格区分三类正面提示词：basePrompt 只放画师名、媒介、渲染和可复用画风；subjectPrompt 只放整图主体、场景、动作、构图和其他全局动态内容；params.characters 通过 set_characters 存放角色专属外貌、服装、身份 Tag 与角色专属负面词。用户说“角色提示词”“人物提示词”“角色外貌”或要求填写某个角色时，即使只有一个角色，也必须优先调用 set_characters，除非用户明确指定放到主体／变量提示词框。不得把角色专属提示词写入 subjectPrompt。若当前界面是“单一全局提示词”，则只使用 basePrompt 存放完整正面提示词并保持 subjectPrompt 为空。`;
 
 const jailbreakBlock = ''; // [redacted]
 
 const techBlock = `
+[规则来源层级]
+- search_novelai_docs/read_novelai_doc 返回的是带官方来源的模型事实，优先级高于本技术块。
+- 本技术块 A–K 是项目工作流与经验规则，不得称为 NovelAI 官方硬性要求；与当前模型官方资料冲突时，以模型适用的官方资料为准。
+- 当前模型、提示词布局和项目能力以 get_lab_state 返回的 modelProfile/interface 为准，不得把 V4.5 的 Token、角色数、定位和参考图能力套到 V5 或未来模型。
+
 A. 权重语法
 - 花括号强调：{tag}=1.05x，{{tag}}=1.10x，{{{tag}}}=1.16x，每层约+0.05~0.06x，可叠加。只强化确实重要的内容，不得与精确权重同用，不得给无关 Tag 加权。
 - 方括号弱化：[tag]=0.95x，[[tag]]=0.90x，[[[tag]]]=0.86x。保留但弱化次要内容；正文事实、角色身份锚点、核心动作不得因人数增加被弱化。
@@ -597,7 +607,7 @@ C. 人数检测与字段分流（强化规则12）
 - basePrompt（Scene/Base）写准确总人数与性别：1girl,1boy / 2girls / 2girls,1boy 等，不用 multiple girls/boys 代替可数人数。solo 仅单人时使用。
 - characters 数组每角色一个槽：N=1 槽内以 1girl/1boy/1other 开头；N≥2 各槽只写无数字的 girl/boy/other，不在角色槽重复 Base 的 1girl/2girls 等总数标签。
 - 计数规则：计入可见且需独立描述的角色；POV 观察者有身体部位入镜才按身份归属或新增槽并计入 N，纯视点不入镜不计数；背景路人不建详细槽用 background figures，但不得把正式角色降格成路人；镜像是反射不重复计数，真实分身/克隆按实际计数。
-- 构图底线：N=2 默认 cowboy shot 或更宽；N=3 默认 medium shot 或更宽；N≥4 强制 wide shot/long shot；详细角色槽上限 4 人，超出用背景人物表达。
+- 构图底线属于项目经验：N=2 通常 cowboy shot 或更宽；N=3 通常 medium shot 或更宽；N≥4 优先 wide shot/long shot。角色槽数量必须读取 modelProfile.project.maxCharacterPrompts，不得写死为 4 人。
 - duo/trio/group 非必填；hetero/yuri/yaoi/harem 等关系 Tag 只在正文明确该关系时用，不能由性别组合自动推断。
 - POV：纯视点不入镜只在 base 写 pov，不指定性别；女性视角正文明确才用 female pov；男性正文明确用 pov 仅供男性身体部位入镜时补；未说明不推断性别。pov hands/own hands/pov_breasts 只在相应部位确实入镜且语义准确时用。
 
@@ -614,7 +624,7 @@ E. 构图类型（构图选择的唯一来源）
 - 每图选一个主视角：front view｜side view/from side｜three-quarter view｜from behind｜from above｜from below。同义择一。
 - POV/越肩/反射/前景遮挡最多选一个，没有叙事需要不选。焦点0~1个，只在主体明确聚焦该区域用。透视/镜头效果0~1个。
 - 构图写在 subjectPrompt（整图共属时）或某角色 characters.prompt（仅该角色朝向/可见面/观察关系必须单独绑定时）；不在两处重复堆叠。不得同时写物理矛盾的视角/景别（如正面表情+纯背面无回头、极近脸+完整全身）。
-- 分辨率由人物布局/可见区域/主体方向/人数共同决定，不由单个 pov 或焦点词机械决定：832x1216纵向全身/上下关系/单人竖构图；1024x1024无明显横纵；1216x832多人横向/宽景/环境/空镜。N≥3 和空镜强制 1216x832。
+- 分辨率由人物布局/可见区域/主体方向/人数共同决定，不由单个 pov 或焦点词机械决定：832x1216适合纵向全身/上下关系/单人竖构图；1024x1024适合无明显横纵；1216x832适合多人横向/宽景/环境/空镜。这些是建议，不得因 N≥3 或空镜机械强制横图。
 - 景别/视角/构图组件只是候选，必须核对正文才用；不输出斜杠候选、内部编号或中文解释。不自动派生"非正面=荷兰角/偷窥/身体焦点"。
 
 F. 角色一致性 DNA 锁定（对接 set_characters）
@@ -627,7 +637,7 @@ F. 角色一致性 DNA 锁定（对接 set_characters）
 - Type H人形拓扑/Type M非人拓扑只表示身体结构：Type H保留标准人形头躯干双臂双腿+附加兽耳角尾翼；Type M核心区域被替换或数量改变(蛇身代腿/半人马/四足/多臂/多头)。物种名不能替代可见拓扑，验收法：去掉物种Tag后剩余描述仍能表达可见身体构型。
 
 G. Tag 构成
-- 正向提示由一个 subjectPrompt(Scene/Base) 与各 characters 槽组成。Scene负责整图共有信息，各Character负责该角色独有信息，不得两处重复倾倒。Scene/Base与全部Character共用约512 T5 Token，约480为保守安全目标。
+- 正向提示由一个整图提示字段与各 characters 槽组成。Scene负责整图共有信息，各Character负责该角色独有信息，不得两处重复倾倒。V4/V4.5 的 Scene/Base 与全部 Character 共用约 512 T5 Token；V5 只可表述为官方支持更长提示词，除非官方知识给出新数字，否则不得编造精确 Token 上限。
 - 只用NovelAI熟悉的独立标准Tag；未知复杂概念用一句简短具体英文自然语言。禁自造长复合Tag、同义词堆叠、固定套餐、假Token公式。
 - subjectPrompt 构成职责：分级、准确总人数性别、正文明确整图关系/共用状态、地点环境、时间天气、全局光源氛围、全局构图。禁止放单角色DNA/专属服装/专属动作/专属表情/角色专用位置。
 - subjectPrompt 堆叠顺序：真实冲突的针对性负权重→准确人数/性别→分级→明确关系/共用状态→地点→周边物件→时间天气→氛围→主光源/方向/光影→主景别→主视角→可选特殊镜头/焦点。负权重无冲突不写，不凑。
@@ -639,8 +649,8 @@ G. Tag 构成
 - 预算裁剪顺序(实际接近上限才裁): 默认值/完全重复同义→本图不可见或无法辨认微细节→无依据自动背景装饰/表现效果→非身份普通配饰和服装微细节。禁裁剪可见身份/正文事实/真实拓扑/核心服装/主要动作。无法读取真实T5计数时写明不编造，禁用Tag数×1.3等假公式。
 - 缺失禁止写"同上""沿用前图"，每张图独立完整展开。
 
-H. 空间坐标（characters.x / characters.y，5×5网格粗略位置）
-网格列A~E从左到右、行1~5从上到下；坐标是粗略画布提示非精确像素。N=1坐标可选；N≥2每角色保留一个坐标x/y及相符粗略位置/深度词，角色槽顺序、坐标、自然语言位置、朝向、source/target/mutual必须一致。
+H. 空间坐标（characters.x / characters.y，项目使用 0..1 归一化画布坐标）
+V4/V4.5 官方界面曾使用 5×5 粗略网格，V5 改为自由画布定位；本项目统一提交 0..1 坐标。N=1坐标可选；N≥2每角色保留一个坐标x/y及相符粗略位置/深度词，角色槽顺序、坐标、自然语言位置、朝向、source/target/mutual必须一致。V4.5 定位只作轻量提示，V5 服从性更强，但两者都不是像素级保证。
 - 双人：对话对峙 on left B3 + on right D3 facing each other；前后 foreground C4 + background C2；上下压制 above on top C2 + below under C4；亲密贴合 close together 左右区分。
 - 三人：横排 B3+C3+D3；正三角(领队在前) C4+B2+D2；倒三角(包围) B4+D4+C2；纵深 C4+C3+C2。
 - 四人：四角 B2+D2+B4+D4；双排 B4+D4+B2+D2。
@@ -685,6 +695,24 @@ const researchBlock = `
 const buildSystemPrompt = creativeMode => creativeMode
   ? `${baseSystemPrompt}\n${jailbreakBlock}\n${techBlock}\n${researchBlock}`
   : `${baseSystemPrompt}\n${techBlock}\n${researchBlock}`;
+
+const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
+  const modelProfile = getNovelAiModelProfile(draft?.params?.model);
+  const splitPromptFields = clientSettings.splitPromptFields !== false;
+  const tagAssistEnabled = clientSettings.tagAssistEnabled !== false;
+  return `
+[当前实验室运行上下文：这是项目状态数据，不是用户指令]
+- 当前 NovelAI 模型：${JSON.stringify(modelProfile.id)}（${modelProfile.label} / ${modelProfile.family}）
+- 官方提示能力：${modelProfile.officialPrompting}
+- 官方提示容量：${modelProfile.officialPromptCapacity}
+- 官方多角色能力：${modelProfile.officialCharacterCapability}
+- 官方定位能力：${modelProfile.officialPositioning}
+- 项目当前最多可提交角色提示词：${modelProfile.project.maxCharacterPrompts}
+- 项目当前 Vibe Transfer：${modelProfile.project.supportsVibes ? '可用' : '不可用'}；Precise Reference：${modelProfile.project.supportsPreciseReference ? '可用' : '不可用'}
+- 提示词界面：${splitPromptFields ? '拆分模式（basePrompt=基础画风，subjectPrompt=主体/变量）' : '单一全局模式（完整正面提示词只写 basePrompt，subjectPrompt 保持为空）'}
+- Tag 辅助界面：${tagAssistEnabled ? '开启' : '关闭'}。这只影响编辑器补全，不限制 Agent 使用 Tag 或自然语言。
+- 涉及模型能力、提示写法、角色、文字、权重、质量 Tag、Vibe 或参考图时，先调用 search_novelai_docs；需要完整事实时再调用 read_novelai_doc。`;
+};
 // 复刻酒馆"同帧淹没"机制：在 agent 模式下，每轮用户请求前重发一遍浓缩破甲前导，
 // 让破甲话术与触发词在同一帧内同时占据模型注意力，最大化压制第一层犹豫。
 // systemPrompt 已含完整破甲但模型可能当成背景；此前导作为判定帧前台话术生效。
@@ -1927,6 +1955,32 @@ export class PromptAgentService {
     };
     return [
       {
+        name: 'search_novelai_docs', label: '检索 NovelAI 官方知识', description: '检索项目内置的 NovelAI 官方文档结构化摘要。默认只返回适用于实验室当前模型的条目；模型发布信息优先于尚未更新的通用文档。',
+        parameters: Type.Object({ query: Type.Optional(Type.String()), topic: Type.Optional(Type.String()), modelId: Type.Optional(Type.String()), includeOtherModels: Type.Optional(Type.Boolean()), limit: Type.Optional(Type.Number()) }),
+        execute: async (_id, args) => {
+          const modelId = text(args.modelId || draft.params?.model || 'nai-diffusion-4-5-full').trim().slice(0, 160);
+          const results = searchNovelAiOfficialKnowledge({
+            query: text(args.query).trim().slice(0, 500), modelId,
+            topic: text(args.topic).trim().slice(0, 80),
+            includeOtherModels: args.includeOtherModels === true,
+            limit: Math.floor(clamp(args.limit, 1, 20, 8)),
+          });
+          const output = { modelProfile: getNovelAiModelProfile(modelId), results, sourcePolicy: '官方发布公告 > 模型专用官方文档 > 通用官方文档 > 项目经验' };
+          return { content: jsonText(output), details: output };
+        },
+      },
+      {
+        name: 'read_novelai_doc', label: '读取 NovelAI 官方知识', description: '按 search_novelai_docs 返回的 id 读取一条完整结构化事实、适用模型、注意事项与官方来源。',
+        parameters: Type.Object({ id: Type.String() }),
+        execute: async (_id, args) => {
+          const entry = readNovelAiOfficialKnowledge(text(args.id).trim());
+          if (!entry) throw new Error('找不到这条 NovelAI 官方知识，请先调用 search_novelai_docs');
+          const family = getNovelAiModelProfile(draft.params?.model).family;
+          const output = { ...entry, applicableToCurrentModel: entry.appliesTo.includes('all') || entry.appliesTo.includes(family), trustNotice: '这是项目维护的官方资料结构化摘要；结论应附带 sourceUrl，不得把 caveats 中的项目说明称为官方原文。' };
+          return { content: jsonText(output), details: output };
+        },
+      },
+      {
         name: 'web_search', label: '联网搜索', description: '搜索当前互联网并返回标题、摘要和HTTPS来源。用户要求搜索/核实最新信息时使用；不要在查询中包含项目密钥或私密资料。',
         parameters: Type.Object({ query: Type.String(), limit: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => {
@@ -1955,7 +2009,17 @@ export class PromptAgentService {
       {
         name: 'get_lab_state', label: '读取实验室', description: '读取当前实验室的提示词、模块、角色、参数和 Vibe。',
         parameters: Type.Object({}),
-        execute: async () => ({ content: jsonText(draft), details: draft }),
+        execute: async () => {
+          const state = {
+            ...draft,
+            interface: {
+              splitPromptFields: contextData.clientSettings?.splitPromptFields !== false,
+              tagAssistEnabled: contextData.clientSettings?.tagAssistEnabled !== false,
+            },
+            modelProfile: getNovelAiModelProfile(draft.params?.model),
+          };
+          return { content: jsonText(state), details: state };
+        },
       },
       {
         name: 'search_tags', label: '搜索 Tag', description: '按中文或英文搜索本地 Tag 词库。',
@@ -2477,7 +2541,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'set_generation_params', label: '调整生成参数', description: '调整 NovelAI V4.5尺寸、步数、引导、采样器和其他参数，只传需要修改的字段。',
+        name: 'set_generation_params', label: '调整生成参数', description: `调整当前 NovelAI ${getNovelAiModelProfile(draft.params?.model).label} 的尺寸、步数、引导、采样器和其他参数，只传需要修改的字段；模型能力以 get_lab_state 与官方知识工具为准。`,
         parameters: Type.Object({
           width: Type.Optional(Type.Number()), height: Type.Optional(Type.Number()), steps: Type.Optional(Type.Number()), scale: Type.Optional(Type.Number()),
           sampler: Type.Optional(Type.String()), seed: Type.Optional(Type.Number()), qualityToggle: Type.Optional(Type.Boolean()), ucPreset: Type.Optional(Type.Number()),
@@ -2603,11 +2667,13 @@ export class PromptAgentService {
     this.runHistory.push(now);
     const thinkingLevel = this.normalizeThinkingLevel(storedSession.meta?.thinkingLevel, modelInfo);
     const creativeMode = typeof storedSession.meta?.creativeMode === 'boolean' ? storedSession.meta.creativeMode : this.config.creativeMode !== false;
-    const activeSystemPrompt = buildSystemPrompt(creativeMode);
     const draft = sanitizeDraft(input?.draft);
     const contextData = {
       clientSettings: input?.context?.clientSettings && typeof input.context.clientSettings === 'object' ? input.context.clientSettings : {},
     };
+    const policySystemPrompt = buildSystemPrompt(creativeMode);
+    const runtimeContext = buildAgentRuntimeContext(draft, contextData.clientSettings);
+    const activeSystemPrompt = `${policySystemPrompt}\n${runtimeContext}`;
     const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
     let taskStatus = 'failed';
     const taskStartedAt = Date.now();
@@ -2623,6 +2689,11 @@ export class PromptAgentService {
         visionModel: visionSelection?.model || '',
         thinkingLevel,
         policy: { version: PROMPT_AGENT_POLICY_VERSION, ...runtimePolicyInfo(creativeMode) },
+        naiModel: getNovelAiModelProfile(draft.params.model),
+        interface: {
+          splitPromptFields: contextData.clientSettings.splitPromptFields !== false,
+          tagAssistEnabled: contextData.clientSettings.tagAssistEnabled !== false,
+        },
         storedMessageCount: Array.isArray(storedSession.messages) ? storedSession.messages.length : 0,
       });
       const taskEmit = event => {

@@ -19,12 +19,15 @@ interface PromptAgentPanelProps {
   onRequestGeneration: (draft: PromptAgentDraft, reason?: string) => Promise<boolean> | void;
   onUndo: () => void;
   canUndo: boolean;
+  splitPromptFields: boolean;
+  tagAssistEnabled: boolean;
 }
 
 type ToolProgress = { id: string; name: string; state: 'running' | 'done' | 'error'; args?: unknown; result?: unknown };
 type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; visionUsage?: PromptAgentVisionUsage[]; stopReason?: string; timestamp?: number; queued?: 'steer' | 'followUp' };
 type AgentAttachment = { data: string; mimeType: string; name: string };
 const toolLabels: Record<string, string> = {
+  search_novelai_docs: '检索 NovelAI 官方知识', read_novelai_doc: '读取 NovelAI 官方知识',
   web_search: '联网搜索', read_web_page: '读取网页',
   get_lab_state: '读取实验室', search_tags: '搜索 Tag', search_character_catalog: '搜索角色 Tag', search_vibes: '搜索 Vibe', search_character_references: '搜索角色参考',
   update_prompts: '修改全局提示词', set_prompt_modules: '整理提示词模块', set_characters: '设置角色专属提示词',
@@ -488,6 +491,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       await promptAgentService.run({ apiKey: props.apiKey, sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], draft: props.draft, context: { clientSettings: {
         themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true', safeModeStartup: localStorage.getItem('nai_safe_mode_startup') !== 'false',
         imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey), artistFavorites: Array.isArray(artistFavorites) ? artistFavorites.slice(0, 2000) : [],
+        splitPromptFields: props.splitPromptFields, tagAssistEnabled: props.tagAssistEnabled,
       } } }, event => {
         if (event.type === 'response_start') {
           if (responseStartedRef.current) {

@@ -6,6 +6,7 @@
 
 ## 2026-08-23
 
+- **Codex (GPT-5)**：为项目 Agent 新增按模型检索的 NovelAI 官方知识索引与工具，传入实验室模型和提示词界面状态，并修正 V5 与 V4.5 的提示容量、多角色和定位规则隔离（feat: add model-aware NovelAI agent knowledge）。
 - **Codex (GPT-5)**：在实验室右上角新增带 `o`／`−` 状态标记的持久化 Tag 辅助开关，统一控制全部提示词框的补全、翻译与词典查询（feat: add laboratory tag assist toggle）。
 - **Codex (GPT-5)**：修复单字段全局提示词吞掉末尾逗号，以及 Tag 补全重复查询、抢占键盘、干扰中文输入法、双击选择和中间替换残留等问题，并补充完整输入交互测试（fix: stop tag autocomplete from disrupting input）。
 - **Codex (GPT-5)**：为实验室保存到库和风格串待保存状态增加 emerald 绿色语义色，同时保持 Fork 蓝色、重置红色与已保存灰色（style: color save actions green）。

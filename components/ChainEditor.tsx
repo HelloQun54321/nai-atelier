@@ -120,6 +120,8 @@ interface PromptAgentOverlayControllerProps {
     onRequestGeneration: (draft: PromptAgentDraft, reason?: string) => Promise<boolean>;
     canUndo: boolean;
     onUndo: () => void;
+    splitPromptFields: boolean;
+    tagAssistEnabled: boolean;
 }
 
 /** Keep the overlay's visibility local so opening it does not rerender the editor. */
@@ -133,6 +135,8 @@ const PromptAgentOverlayController: React.FC<PromptAgentOverlayControllerProps> 
     onRequestGeneration,
     canUndo,
     onUndo,
+    splitPromptFields,
+    tagAssistEnabled,
 }) => {
     const [open, setOpen] = useState(false);
 
@@ -166,6 +170,8 @@ const PromptAgentOverlayController: React.FC<PromptAgentOverlayControllerProps> 
             }}
             canUndo={canUndo}
             onUndo={onUndo}
+            splitPromptFields={splitPromptFields}
+            tagAssistEnabled={tagAssistEnabled}
         /></React.Suspense>
     );
 };
@@ -1653,6 +1659,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onRequestGeneration={(draft, reason) => requestAgentGeneration(draft, reason)}
                 canUndo={Boolean(agentUndoSnapshot)}
                 onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次 Agent 修改'); } }}
+                splitPromptFields={splitPromptFields}
+                tagAssistEnabled={tagAssistEnabled}
             />
             <ImageTaggerPanel
                 open={taggerOpen}
