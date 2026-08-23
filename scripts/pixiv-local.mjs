@@ -10,8 +10,8 @@ export const PIXIV_API_HOST = 'app-api.pixiv.net';
 export const PIXIV_OAUTH_TOKEN_URL = 'https://oauth.secure.pixiv.net/auth/token';
 // Pixiv App 客户端公开固定凭据（Pixiv 官方 App 使用，用于 refresh token 授权）。
 export const PIXIV_APP_CLIENT_ID = 'MOBrBDS8blbauoSck0ZfDbtuzpyT';
-export const PIXIV_APP_CLIENT_SECRET = 'lsACyCD94FhDUtGTXi3QzcFE2uU1hqtDaKeqrdwj';
-export const PIXIV_HASH_SECRET = '28c1fdd170a5204386cb1313c7077b34f83e4aaf4aa829ce78c231e05b0bae2c';
+export const PIXIV_APP_CLIENT_SECRET = 'lsACyCD94FhDUtGTXi3QzcFE2uU1hqtDaKeqrdwj'; // secret-scan: allow（公开 App 固定值，不是用户凭据）
+export const PIXIV_HASH_SECRET = '28c1fdd170a5204386cb1313c7077b34f83e4aaf4aa829ce78c231e05b0bae2c'; // secret-scan: allow（公开 App 固定值，不是用户凭据）
 export const PIXIV_USER_AGENT = 'PixivIOSApp/7.13.3 (iOS 14.6; iPhone13,2)';
 export const PIXIV_REFERER = 'https://www.pixiv.net/';
 export const PIXIV_IMAGE_HOST = 'i.pximg.net';

@@ -12,6 +12,18 @@ dist
 dist-ssr
 *.local
 
+# Secrets and local environment overrides
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+
 # TypeScript build cache
 *.tsbuildinfo
 

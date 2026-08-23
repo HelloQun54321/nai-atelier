@@ -16,6 +16,3 @@ database_id = "04b0c4f6-8b3b-4e1d-a880-2dfe4f7d75f7"
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "nai-assets" # 请替换为你真实创建的 Bucket 名称
-
-[vars]
-GUEST_PASSCODE = "nai_guest_123" # 默认游客口令，部署后请在后台修改或修改此处

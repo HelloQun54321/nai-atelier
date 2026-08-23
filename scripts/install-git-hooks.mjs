@@ -15,6 +15,9 @@ const HOOK = `#!/bin/sh
 # 由 scripts/install-git-hooks.mjs 生成：提交前质量门禁，任一失败即阻止提交
 cd "$(dirname "$0")/../.." || exit 1
 
+echo "[pre-commit] 暂存区密钥扫描..."
+npm run --silent test:secrets -- --staged || exit 1
+
 echo "[pre-commit] eslint（0 错误才放行；警告用 npm run lint 查看）..."
 npx eslint . --quiet || exit 1
 
