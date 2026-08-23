@@ -2,7 +2,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { afterEach, beforeEach, vi } from 'vitest';
-import { ANLAS_BUDGET_CHANGED_EVENT, formatGenerationCostLabel, hashNaiApiKey, useAnlasBudget } from './anlasBudget';
+import { ANLAS_BUDGET_CHANGED_EVENT, estimateImageEditCost, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, useAnlasBudget } from './anlasBudget';
 
 const responseFor = (payload: unknown) => ({
   ok: true,
@@ -78,5 +78,22 @@ describe('formatGenerationCostLabel', () => {
   it('V4.5 免费档仍显示免费，超出免费档显示 Anlas 点数', () => {
     expect(formatGenerationCostLabel(0, 'nai-diffusion-4-5-full')).toBe('免费');
     expect(formatGenerationCostLabel(2, 'nai-diffusion-5-full')).toBe('2 点');
+  });
+});
+
+describe('image edit cost estimation', () => {
+  const params = { model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' };
+
+  it('does not apply ordinary Opus free generation to image edits', () => {
+    expect(estimateImageEditCost(params, 'image-to-image', 1, false, 4, false)).toBeGreaterThan(0);
+    expect(estimateImageEditCost(params, 'inpaint', 1, false, 4, false)).toBeGreaterThan(0);
+    expect(estimateImageEditCost(params, 'outpaint', 1, false, 4, false)).toBeGreaterThan(0);
+  });
+
+  it('only marks focused inpainting free for a confirmed Opus account', () => {
+    expect(estimateImageEditCost(params, 'inpaint', 1, true, 4, false)).toBe(0);
+    expect(estimateImageEditCost(params, 'inpaint', 1, true, 3, false)).toBeGreaterThan(0);
+    expect(formatImageEditCostLabel(0, 'inpaint', true, 4)).toBe('Opus 免费');
+    expect(formatImageEditCostLabel(0, 'inpaint', true, undefined)).toBe('费用以官方返回为准');
   });
 });

@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft } from '../types';
+import { ImageEditMetadata, ImageEditOperation, PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft } from '../types';
 import { compilePrompt, getEditableGlobalPrompt, mergePromptFields } from '../services/promptUtils';
-import { generateImage, generateImageStream } from '../services/naiService';
+import { generateImage, generateImageEdit, generateImageStream } from '../services/naiService';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
@@ -11,6 +11,8 @@ import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImpor
 import { ChainEditorParams } from './ChainEditorParams';
 import { isInternalChainTag } from './DesignSystem';
 import { ChainEditorPreview } from './ChainEditorPreview';
+import { ImageEditPanel, ImageEditRequest } from './ImageEditPanel';
+import { dataUrlToBlob } from '../services/imageEdit';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { ImageTaggerPanel } from './ImageTaggerPanel';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -19,7 +21,7 @@ import { createUuid } from '../services/id';
 import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { normalizeVibeSelections } from '../services/vibeUtils';
-import { estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
+import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, useAnlasBudget } from '../services/anlasBudget';
 import { useNovelaiUsage } from '../services/naiUsage';
 import { getNaiModelInfo } from '../services/naiModels';
 import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
@@ -201,7 +203,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // Default Seed to undefined (random), UC Preset to 4 (None)
     const [params, setParams] = useState(chain.params || { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: undefined, qualityToggle: true, ucPreset: 4 });
     // Opus 限额透支后，受限额模型（V5）的小图不再免费，费用估算需同步。
-    const { usage: novelaiUsage, refreshIfStale: refreshUsageIfStale } = useNovelaiUsage();
+    const { info: novelaiSubscription, usage: novelaiUsage, refreshIfStale: refreshUsageIfStale } = useNovelaiUsage();
     // 本地 Anlas 预算（账号整体，手动校准）：用尽后扣费生成需要红色警告。
     const anlasBudget = useAnlasBudget();
     const opusUsageExhausted = novelaiUsage?.isNegative === true;
@@ -297,6 +299,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [previewIndex, setPreviewIndex] = useState(0);
     const [previewMode, setPreviewMode] = useState<'history' | 'cover' | 'result' | 'unsaved'>('cover');
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const [imageEditOpen, setImageEditOpen] = useState(false);
+    const [imageEditBaseImage, setImageEditBaseImage] = useState<string | null>(null);
+    const [imageEditParentHistoryId, setImageEditParentHistoryId] = useState<string | undefined>();
+    const [imageEditInitialOperation, setImageEditInitialOperation] = useState<ImageEditOperation>('image-to-image');
 
     useEffect(() => () => {
         if (generatedImage?.startsWith('blob:')) URL.revokeObjectURL(generatedImage);
@@ -987,6 +993,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
      * 由 useEffect 在检测到 sessionStorage 中的 nai_pending_import 时调用
      */
     const applyImportData = (data: PendingImportData) => {
+        if (data.mode === 'image-edit' && data.baseImageUrl) {
+            setImageEditBaseImage(data.baseImageUrl);
+            setImageEditParentHistoryId(data.parentHistoryId);
+            setImageEditInitialOperation(data.imageEditOperation || 'image-to-image');
+            setImageEditOpen(true);
+            notify('已载入历史图片，正在打开图片编辑面板。');
+            return;
+        }
         if (data.mode === 'append-prompt') {
             if (splitPromptFields) setSubjectPrompt(current => mergePromptFields(current, data.prompt));
             else {
@@ -1359,6 +1373,80 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             confirmLabel: `消耗 ${cost} 点并生成`,
         })) return false;
         return handleGenerateDraft();
+    };
+
+    const openImageEditor = (operation: ImageEditOperation = 'image-to-image') => {
+        const source = displayedPreviewImage || chain.previewImage;
+        setImageEditBaseImage(source || null);
+        setImageEditParentHistoryId(selectedPreviewItem?.id);
+        setImageEditInitialOperation(operation);
+        setImageEditOpen(true);
+    };
+
+    const imageEditCostLabel = (operation: ImageEditOperation, focused: boolean) => {
+        const cost = estimateImageEditCost(params, operation, operation === 'image-to-image' ? 0.7 : 1, focused, novelaiSubscription?.tier, opusUsageExhausted);
+        return formatImageEditCostLabel(cost, operation, focused, novelaiSubscription?.tier);
+    };
+
+    const handleImageEditGenerate = async (request: ImageEditRequest) => {
+        if (!apiKey) {
+            const message = '请先在“全局设置”中配置 NovelAI API Key';
+            setErrorMsg(message);
+            notify(message, 'error');
+            return;
+        }
+        const editCost = estimateImageEditCost(params, request.operation, request.strength, Boolean(request.focused), novelaiSubscription?.tier, opusUsageExhausted);
+        if (editCost > 0 && anlasBudget.remaining <= 0) {
+            if (!await confirmAction({ title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return;
+        } else if (editCost > 0 && !await confirmAction({ title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}预计消耗 ${editCost} Anlas，最终以 NovelAI 实际返回为准。`, confirmLabel: `消耗 ${editCost} 点并生成` })) return;
+
+        setIsGenerating(true);
+        setErrorMsg(null);
+        try {
+            const imageBlob = await dataUrlToBlob(request.image);
+            const bitmap = await createImageBitmap(imageBlob);
+            const editParams: NAIParams = { ...params, width: bitmap.width, height: bitmap.height, seed: undefined };
+            bitmap.close();
+            const result = await generateImageEdit(apiKey, finalPrompt, negativePrompt, editParams, request);
+            setGeneratedImage(result.image);
+            setPreviewMode('result');
+            const keyHash = await hashNaiApiKey(apiKey);
+            const edit: ImageEditMetadata = {
+                operation: request.operation,
+                parentHistoryId: request.parentHistoryId,
+                baseImageSource: request.baseImageSource || (request.parentHistoryId ? 'history' : 'generated'),
+                strength: request.strength,
+                noise: request.noise,
+                maskData: request.mask,
+                focused: request.focused,
+                minimumContextArea: request.minimumContextArea,
+                canvasExpansion: request.expansion,
+                estimatedCost: editCost,
+                actualCost: result.actualCost,
+                keyHash,
+            };
+            const historyItem = await localHistory.add(result.blob, finalPrompt, { ...editParams, seed: result.seed }, negativePrompt, {
+                sourceChainId,
+                sourceChainName: chainName,
+                sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
+                basePrompt,
+                subjectPrompt,
+                modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })),
+                edit,
+            });
+            setPreviewHistory(previous => [historyItem, ...previous.filter(item => item.id !== historyItem.id)]);
+            setPreviewIndex(0);
+            setPreviewMode('history');
+            setGeneratedImage(historyItem.imageUrl);
+            setImageEditOpen(false);
+            notify('图片编辑完成，结果已保存为新的历史图片', 'success');
+        } catch (editError) {
+            const message = editError instanceof Error ? editError.message : '图片编辑失败';
+            setErrorMsg(message);
+            notify(message, 'error');
+        } finally {
+            setIsGenerating(false);
+        }
     };
 
     const currentAgentDraft = (): PromptAgentDraft => ({
@@ -2062,9 +2150,20 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     generationCostLabel={generationCostLabel}
                     transparentPreview={getNaiModelInfo(params.model).supportsTransparentBackground && params.transparent === true}
                     generationProgress={generationProgress}
+                    onOpenImageEditor={() => openImageEditor('image-to-image')}
                 />
                 </div>
             </div>
+
+            <ImageEditPanel
+                open={imageEditOpen}
+                baseImage={imageEditBaseImage}
+                parentHistoryId={imageEditParentHistoryId}
+                initialOperation={imageEditInitialOperation}
+                generationCostLabel={imageEditCostLabel}
+                onClose={() => setImageEditOpen(false)}
+                onGenerate={handleImageEditGenerate}
+            />
 
             {!lightboxImg && !showImportPreset && !importCandidate && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
                 {(displayedPreviewImage || chain.previewImage) && <button type="button" onClick={() => setLightboxImg(displayedPreviewImage || chain.previewImage || null)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-700" aria-label="查看最近生成结果"><SmartImage src={displayedPreviewImage || chain.previewImage || ''} alt="最近生成结果" /></button>}

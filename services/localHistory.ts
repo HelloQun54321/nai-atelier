@@ -1,5 +1,5 @@
 
-import { LocalGenItem, NAIParams } from '../types';
+import { ImageEditMetadata, LocalGenItem, NAIParams } from '../types';
 import { api } from './api';
 import { createUuid } from './id';
 
@@ -189,7 +189,7 @@ class LocalHistoryService {
         prompt: string,
         params: NAIParams,
         negativePrompt = '',
-        source?: Pick<LocalGenItem, 'basePrompt' | 'subjectPrompt' | 'modules' | 'sourceChainId' | 'sourceChainName' | 'sourceChainType'>
+        source?: Pick<LocalGenItem, 'basePrompt' | 'subjectPrompt' | 'modules' | 'sourceChainId' | 'sourceChainName' | 'sourceChainType' | 'edit'>
     ): Promise<LocalGenItem> {
         const remoteEnabled = await this.isRemoteEnabled();
         const imageUrl = typeof image === 'string' ? image : '';
@@ -206,6 +206,7 @@ class LocalHistoryService {
             sourceChainId: source?.sourceChainId,
             sourceChainName: source?.sourceChainName,
             sourceChainType: source?.sourceChainType,
+            edit: source?.edit,
             createdAt: Date.now()
         };
 

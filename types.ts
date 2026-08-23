@@ -130,6 +130,31 @@ export interface NAIParams {
   };
 }
 
+export type ImageEditOperation = 'image-to-image' | 'inpaint' | 'outpaint';
+
+export interface ImageEditCanvasExpansion {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export interface ImageEditMetadata {
+  operation: ImageEditOperation;
+  parentHistoryId?: string;
+  baseImageSource?: 'generated' | 'history' | 'upload';
+  strength?: number;
+  noise?: number;
+  maskData?: string;
+  maskInverted?: boolean;
+  focused?: boolean;
+  minimumContextArea?: number;
+  canvasExpansion?: ImageEditCanvasExpansion;
+  estimatedCost?: number;
+  actualCost?: number;
+  keyHash?: string;
+}
+
 export interface PromptAgentDraft {
   basePrompt: string;
   subjectPrompt: string;
@@ -246,6 +271,7 @@ export interface LocalGenItem {
   sourceChainId?: string;
   sourceChainName?: string;
   sourceChainType?: ChainType | 'playground';
+  edit?: ImageEditMetadata;
   createdAt: number;
 }
 

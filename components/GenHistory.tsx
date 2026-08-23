@@ -13,7 +13,7 @@ import { ImageActivityContext, OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, ListChecks, LoaderCircle, RefreshCw, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, ListChecks, LoaderCircle, Pencil, RefreshCw, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarLink, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
@@ -824,6 +824,20 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         }
     };
 
+    const handleOpenImageEditor = (item: LocalGenItem) => {
+        sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify({
+            mode: 'image-edit',
+            prompt: item.prompt,
+            negativePrompt: item.negativePrompt || '',
+            params: item.params,
+            baseImageUrl: item.imageUrl,
+            parentHistoryId: item.id,
+            imageEditOperation: 'image-to-image',
+        }));
+        setLightbox(null);
+        onNavigateToPlayground?.();
+    };
+
     const handleRefresh = async () => {
         setCacheState({});
         inflightPagesRef.current = {};
@@ -1127,6 +1141,10 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                 <ToolbarButton tone="primary" className="w-full" onClick={handleImportToEditor} disabled={isPreparingImport}>
                                     <Save />
                                     {isPreparingImport ? '正在读取元数据...' : '导入到编辑器'}
+                                </ToolbarButton>
+                                <ToolbarButton className="w-full" onClick={() => handleOpenImageEditor(lightbox)}>
+                                    <Pencil />
+                                    编辑这张图片
                                 </ToolbarButton>
 
                                 <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { NAIParams } from '../types';
+import { ImageEditOperation, NAIParams } from '../types';
 import { api } from './api';
 import { getNaiModelInfo } from './naiModels';
 import { DEFAULT_NAI_RUNTIME, NaiRuntimeConfig } from './naiRuntime';
@@ -69,6 +69,40 @@ export const estimateV45GenerationCost = (params: NAIParams, opus = true, opusUs
   const generationCost = baseCost * Math.max(0, samples - freeSamples);
   const extraVibeCost = Math.max(0, vibeCount - 4) * 2 * samples;
   return generationCost + extraVibeCost + preciseReferenceCount * 5 * samples;
+};
+
+export const estimateImageEditCost = (
+  params: NAIParams,
+  operation: ImageEditOperation,
+  strength: number,
+  focused: boolean,
+  opusTier?: number,
+  opusUsageExhausted = false,
+) => {
+  const width = Math.max(1, Number(params.width) || 1);
+  const height = Math.max(1, Number(params.height) || 1);
+  const area = Math.max(65_536, width * height);
+  const steps = Math.max(1, Number(params.steps) || 1);
+  const raw = Math.ceil(estimatorRuntime.costCoefficientArea * area + estimatorRuntime.costCoefficientSteps * area * steps);
+  const baseCost = Math.max(2, Math.ceil(raw * Math.max(0, Math.min(1, Number(strength) || 0))));
+  const vibeCount = params.vibes?.enabled ? params.vibes.slots.length : 0;
+  const preciseReferenceCount = params.characterReferences?.enabled ? params.characterReferences.slots.length : 0;
+  const focusedFree = (operation === 'inpaint' || operation === 'outpaint')
+    && focused
+    && opusTier === 4
+    && !opusUsageExhausted
+    && vibeCount === 0
+    && preciseReferenceCount === 0;
+  const editCost = focusedFree ? 0 : baseCost;
+  return editCost + Math.max(0, vibeCount - 4) * 2 + preciseReferenceCount * 5;
+};
+
+export const formatImageEditCostLabel = (cost: number, operation: ImageEditOperation, focused: boolean, opusTier?: number) => {
+  if (focused && (operation === 'inpaint' || operation === 'outpaint')) {
+    if (opusTier === 4 && cost === 0) return 'Opus 免费';
+    if (opusTier === undefined) return '费用以官方返回为准';
+  }
+  return `${cost} 点`;
 };
 
 const broadcastBudget = (state: AnlasBudgetState, keyHash: string) => {

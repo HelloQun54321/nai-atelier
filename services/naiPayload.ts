@@ -1,10 +1,22 @@
-import { NAIParams } from '../types';
+import { ImageEditOperation, NAIParams } from '../types';
 import { DEFAULT_NAI_MODEL, findNaiModelInfo } from './naiModels';
 import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
+import { buildImageEditParameters, resolveImageEditModel, validateImageEditSampler } from './imageEdit';
 
 export interface NaiPayloadOptions {
   stream?: boolean;
   runtimeStreamSupported?: boolean;
+}
+
+export interface NaiImageEditPayloadOptions {
+  operation: ImageEditOperation;
+  image: string;
+  mask?: string;
+  strength: number;
+  noise: number;
+  focused?: boolean;
+  minimumContextArea?: number;
+  runtimeModels?: string[];
 }
 
 const TRANSPARENT_PROMPT_TAGS = 'transparent background, has alpha';
@@ -98,4 +110,37 @@ export const buildNaiGenerationPayload = (
   }
 
   return { input: finalPrompt, model: modelId, action: 'generate' as const, parameters };
+};
+
+export const buildNaiImageEditPayload = (
+  prompt: string,
+  negative: string,
+  params: NAIParams,
+  options: NaiImageEditPayloadOptions,
+) => {
+  validateImageEditSampler(params.sampler);
+  const base = buildNaiGenerationPayload(prompt, negative, params);
+  const isInpaintOperation = options.operation === 'inpaint' || options.operation === 'outpaint';
+  const model = isInpaintOperation
+    ? resolveImageEditModel(base.model, options.runtimeModels || [])
+    : base.model;
+  const parameters = {
+    ...base.parameters,
+    ...buildImageEditParameters(
+      options.operation,
+      options.image,
+      options.mask,
+      options.strength,
+      options.noise,
+      options.focused === true,
+      options.minimumContextArea,
+    ),
+    _local_edit_operation: options.operation,
+  };
+  return {
+    ...base,
+    model,
+    action: isInpaintOperation ? 'infill' as const : 'img2img' as const,
+    parameters,
+  };
 };

@@ -1934,6 +1934,7 @@ function localHistoryImageUrl(row: any) {
 
 function mapLocalHistoryRow(row: any) {
   const hasStructuredPrompt = Number(row.structure_version || 0) >= 1;
+  const storedParams = parseStoredJson(row.params, {});
   return {
     id: row.id,
     imageUrl: localHistoryImageUrl(row),
@@ -1941,7 +1942,8 @@ function mapLocalHistoryRow(row: any) {
     favoriteAt: row.favorite_at ? Number(row.favorite_at) : undefined,
     prompt: row.prompt || '',
     negativePrompt: row.negative_prompt || '',
-    params: parseStoredJson(row.params, {}),
+    params: storedParams,
+    edit: storedParams?._local_edit || undefined,
     ...(hasStructuredPrompt ? {
       basePrompt: row.base_prompt || '',
       subjectPrompt: row.subject_prompt || '',
@@ -3354,7 +3356,12 @@ export default {
           }
           // 以图片真实尺寸为准覆盖宽高；保留 steps/scale/sampler/seed 等其他生成参数
           const rawParams = body.params && typeof body.params === 'object' && !Array.isArray(body.params) ? body.params : {};
-          const normalizedParams = { ...rawParams, width, height };
+          const normalizedParams = {
+            ...rawParams,
+            width,
+            height,
+            ...(body.edit && typeof body.edit === 'object' ? { _local_edit: body.edit } : {}),
+          };
           const imageKey = `local-history/${currentUser.id}/${id}.${extension}`;
           const existing = await db.prepare('SELECT image_key, is_favorite, favorite_at FROM local_generation_history WHERE id = ? AND user_id = ?')
             .bind(id, currentUser.id).first<{image_key: string, is_favorite: number, favorite_at: number | null}>();

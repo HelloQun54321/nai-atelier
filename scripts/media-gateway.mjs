@@ -572,7 +572,7 @@ export const isNaiUsageLimitedModel = (model, runtime = getNaiRuntime()) =>
   typeof model === 'string' && runtime.usageLimitedModels.includes(model);
 
 /** NovelAI's current V4/V4.5 cost formula for the generation features supported here. */
-export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = false) => {
+export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = false, opusSubscriber = false) => {
   const parameters = payload?.parameters || {};
   const width = Math.max(1, Number(parameters.width) || 1);
   const height = Math.max(1, Number(parameters.height) || 1);
@@ -591,15 +591,23 @@ export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = fals
   const preciseReferences = Array.isArray(parameters.director_reference_images_cached)
     ? parameters.director_reference_images_cached.length
     : Array.isArray(parameters.director_reference_images) ? parameters.director_reference_images.length : 0;
-  // Precise Reference is a per-reference surcharge, not an img2img base image.
-  const isPlainGeneration = payload?.action === 'generate' && !parameters.image && !parameters.mask;
-  // Opus 免费额度仅对高于 V4.5 的模型（V5 系）设限；透支后所有图都按 Anlas 计费。
-  const isUsageLimitedModel = isNaiUsageLimitedModel(payload?.model, runtime);
-  const freeSamples = isPlainGeneration && !(opusUsageExhausted && isUsageLimitedModel) && area <= freeMaxArea && steps <= freeMaxSteps ? 1 : 0;
-  const base = baseCost * Math.max(0, samples - freeSamples);
   const vibeCount = Array.isArray(parameters.reference_image_multiple_cached)
     ? parameters.reference_image_multiple_cached.length
     : Array.isArray(parameters.reference_image_multiple) ? parameters.reference_image_multiple.length : 0;
+  // Precise Reference is a per-reference surcharge, not an img2img base image.
+  const isPlainGeneration = payload?.action === 'generate' && !parameters.image && !parameters.mask;
+  const focusedEdit = parameters._local_focused_inpainting === true
+    && (payload?.action === 'infill' || parameters._local_edit_operation === 'inpaint' || parameters._local_edit_operation === 'outpaint')
+    && opusSubscriber
+    && samples === 1
+    && preciseReferences === 0
+    && vibeCount === 0;
+  // Opus 免费额度仅对高于 V4.5 的模型（V5 系）设限；透支后所有图都按 Anlas 计费。
+  const isUsageLimitedModel = isNaiUsageLimitedModel(payload?.model, runtime);
+  const freeSamples = focusedEdit
+    ? 1
+    : isPlainGeneration && !(opusUsageExhausted && isUsageLimitedModel) && area <= freeMaxArea && steps <= freeMaxSteps ? 1 : 0;
+  const base = baseCost * Math.max(0, samples - freeSamples);
   return base + Math.max(0, vibeCount - 4) * 2 * samples + preciseReferences * 5 * samples;
 };
 
@@ -790,34 +798,36 @@ export const sanitizeNovelAiSubscription = payload => {
 const lastKnownOpusUsage = new Map();
 const OPUS_USAGE_STALE_MS = 30_000;
 
-const setOpusUsageSnapshot = (keyHash, isNegative) => {
+const setOpusUsageSnapshot = (keyHash, isNegative, opusSubscriber = false) => {
   if (!keyHash) return;
-  lastKnownOpusUsage.set(keyHash, { exhausted: isNegative === true, updatedAt: Date.now() });
+  lastKnownOpusUsage.set(keyHash, { exhausted: isNegative === true, opusSubscriber: opusSubscriber === true, updatedAt: Date.now() });
   if (lastKnownOpusUsage.size > 128) {
     const oldest = lastKnownOpusUsage.keys().next().value;
     if (oldest) lastKnownOpusUsage.delete(oldest);
   }
 };
 
-const getOpusUsageSnapshot = keyHash => lastKnownOpusUsage.get(keyHash) || { exhausted: false, updatedAt: 0 };
+const getOpusUsageSnapshot = keyHash => lastKnownOpusUsage.get(keyHash) || { exhausted: false, opusSubscriber: false, updatedAt: 0 };
 
 /** 成功生成统一走这里结算，保证 ZIP 与 SSE 使用同一 Key 隔离和个人用量口径。 */
 const settleSuccessfulNovelAiGeneration = async ({ payload, authorization, keyHash, req, workerPort, requestRemote }) => {
   const runtime = getNaiRuntime();
   const isUsageLimitedModel = isNaiUsageLimitedModel(payload?.model, runtime);
+  const isFocusedImageEdit = payload?.parameters?._local_focused_inpainting === true;
   const opusSnapshot = getOpusUsageSnapshot(keyHash);
-  if (isUsageLimitedModel && Date.now() - opusSnapshot.updatedAt > OPUS_USAGE_STALE_MS) {
+  if ((isUsageLimitedModel || isFocusedImageEdit) && Date.now() - opusSnapshot.updatedAt > OPUS_USAGE_STALE_MS) {
     try {
       const subscription = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(10_000), requestRemote);
       if (subscription.ok) {
-        setOpusUsageSnapshot(keyHash, sanitizeNovelAiSubscription(await subscription.json()).usage?.isNegative === true);
+        const sanitized = sanitizeNovelAiSubscription(await subscription.json());
+        setOpusUsageSnapshot(keyHash, sanitized.usage?.isNegative === true, sanitized.tier === 4);
       }
     } catch {
       // 网络失败时沿用上次快照，不阻塞本次已经完成的生成结算。
     }
   }
   const usageExhausted = getOpusUsageSnapshot(keyHash).exhausted;
-  const estimatedCost = estimateNovelAiGenerationCost(payload, usageExhausted);
+  const estimatedCost = estimateNovelAiGenerationCost(payload, usageExhausted, getOpusUsageSnapshot(keyHash).opusSubscriber === true);
   const personalUsage = computeGenerationPersonalUsage(payload, estimatedCost, usageExhausted, runtime, true);
   const anlasBudget = estimatedCost > 0 || personalUsage.opusImagesDelta > 0
     ? await spendAnlasBudget(req, workerPort, estimatedCost, 'generation', { keyHash, ...personalUsage })
@@ -1317,6 +1327,12 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
         }
       }
     }
+    const settlementPayload = JSON.parse(JSON.stringify(payload));
+    if (payload.parameters) {
+      delete payload.parameters._local_edit_operation;
+      delete payload.parameters._local_focused_inpainting;
+      delete payload.parameters._local_minimum_context_area;
+    }
     if (queueEnabled) {
       queueLock = await cloudQueue.join({
         apiKey: authorization.slice(7).trim(),
@@ -1339,7 +1355,7 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
       )
       : await fetchNovelAiGeneration(payload, authorization, generationSignal, requestRemote);
     const { estimatedCost, anlasBudget } = response.ok
-      ? await settleSuccessfulNovelAiGeneration({ payload, authorization, keyHash, req, workerPort, requestRemote })
+      ? await settleSuccessfulNovelAiGeneration({ payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote })
       : { estimatedCost: 0, anlasBudget: null };
     const headers = {
       'Content-Type': response.headers.get('content-type') || 'application/octet-stream',
@@ -1419,6 +1435,10 @@ const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, clou
     }
     delete payload.parameters._local_vibes;
     delete payload.parameters._local_character_references;
+    const settlementPayload = JSON.parse(JSON.stringify(payload));
+    delete payload.parameters._local_edit_operation;
+    delete payload.parameters._local_focused_inpainting;
+    delete payload.parameters._local_minimum_context_area;
     payload.parameters.stream = 'sse';
 
     if (queueEnabled) {
@@ -1475,7 +1495,7 @@ const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, clou
 
     try {
       const { estimatedCost, anlasBudget } = await settleSuccessfulNovelAiGeneration({
-        payload, authorization, keyHash, req, workerPort, requestRemote,
+        payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote,
       });
       res.write(`\nevent: nai_usage\ndata: ${JSON.stringify({
         keyHash,
@@ -2598,7 +2618,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         }
         const payload = await upstream.json();
         const sanitized = sanitizeNovelAiSubscription(payload);
-        setOpusUsageSnapshot(keyHashFromAuthorization(authorization), sanitized.usage?.isNegative === true);
+        setOpusUsageSnapshot(keyHashFromAuthorization(authorization), sanitized.usage?.isNegative === true, sanitized.tier === 4);
         return sendJson(res, 200, sanitized);
       } catch (error) {
         return sendJson(res, 502, { error: error.message || 'NovelAI 订阅信息获取失败' });

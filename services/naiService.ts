@@ -1,12 +1,14 @@
 
 import JSZip from 'jszip';
-import { NAIParams } from '../types';
+import { ImageEditOperation, NAIParams } from '../types';
 import { api } from './api';
 import { findNaiModelInfo, getNaiModelInfo } from './naiModels';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 import { hashNaiApiKey } from './anlasBudget';
 import { emitCloudQueueStatus, getCachedCloudQueuePreferences, getCloudQueuePreferences, scheduleCloudQueueStatusClear, watchCloudQueueTask } from './cloudQueue';
 import { buildNaiGenerationPayload } from './naiPayload';
+import { buildNaiImageEditPayload } from './naiPayload';
+import { getNaiRuntimeConfig } from './naiRuntime';
 
 export interface NaiStreamPreview {
   image: string;
@@ -141,6 +143,76 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   }
 
   return { image: URL.createObjectURL(fileData), blob: fileData, seed: actualSeed };
+};
+
+export const generateImageEdit = async (
+  apiKey: string,
+  prompt: string,
+  negative: string,
+  params: NAIParams,
+  edit: {
+    operation: ImageEditOperation;
+    image: string;
+    mask?: string;
+    strength: number;
+    noise: number;
+    focused?: boolean;
+    minimumContextArea?: number;
+  },
+) => {
+  const runtime = await getNaiRuntimeConfig();
+  const payload = buildNaiImageEditPayload(prompt, negative, params, { ...edit, runtimeModels: runtime.models });
+  validateGenerationCapabilities(params);
+  const queue = await (async () => {
+    try { return await getCloudQueuePreferences(); } catch { return getCachedCloudQueuePreferences(); }
+  })();
+  const queueTaskId = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const queueApiKey = apiKey.trim();
+  let requestFinished = false;
+  let terminalPhase: 'completed' | 'cancelled' | 'error' = 'completed';
+  let terminalError: string | undefined;
+  if (queue.enabled) emitCloudQueueStatus({ taskId: queueTaskId, phase: 'preparing', cancelable: true }, queueApiKey);
+  const statusWatcher = queue.enabled ? watchCloudQueueTask(queueTaskId, () => requestFinished, queueApiKey) : Promise.resolve();
+  try {
+    const budgetKeyHash = await hashNaiApiKey(apiKey);
+    const binaryResult = await api.postBinaryDetailed('/generate', payload, {
+      Authorization: `Bearer ${apiKey}`,
+      ...(queue.enabled ? { 'X-Nai-Queue-Task-Id': queueTaskId } : {}),
+    }, { budgetKeyHash });
+    const blob = binaryResult.blob;
+    const zip = await JSZip.loadAsync(blob);
+    const filename = Object.keys(zip.files).find(name => !zip.files[name].dir && /\.(?:png|jpe?g|webp)$/i.test(name));
+    if (!filename) throw new Error('NovelAI 编辑接口没有返回图片');
+    const imageBytes = await zip.files[filename].async('uint8array');
+    const imageType = /\.jpe?g$/i.test(filename) ? 'image/jpeg' : /\.webp$/i.test(filename) ? 'image/webp' : 'image/png';
+    const imageBuffer = imageBytes.buffer.slice(imageBytes.byteOffset, imageBytes.byteOffset + imageBytes.byteLength) as ArrayBuffer;
+    const fileData = new Blob([imageBuffer], { type: imageType });
+    const payloadParameters = payload.parameters as Record<string, unknown>;
+    let actualSeed = typeof payloadParameters.seed === 'number' ? payloadParameters.seed : undefined;
+    const jsonFile = Object.keys(zip.files).find(file => file.endsWith('.json'));
+    if (jsonFile) {
+      try {
+        const json = JSON.parse(await zip.files[jsonFile].async('text'));
+        const reportedSeed = json.seed ?? json.parameters?.seed ?? json.metadata?.seed;
+        if (typeof reportedSeed === 'number' && Number.isFinite(reportedSeed)) actualSeed = reportedSeed;
+      } catch { /* 固定响应中可能不带 JSON 元数据。 */ }
+    }
+    return { image: URL.createObjectURL(fileData), blob: fileData, seed: actualSeed, actualCost: binaryResult.actualCost };
+  } catch (error) {
+    terminalPhase = error instanceof Error && error.message.includes('已取消排队') ? 'cancelled' : 'error';
+    terminalError = error instanceof Error ? error.message : '图片编辑失败';
+    throw error;
+  } finally {
+    requestFinished = true;
+    if (terminalPhase === 'completed' && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
+    await statusWatcher;
+    if (queue.enabled) {
+      emitCloudQueueStatus({ taskId: queueTaskId, phase: terminalPhase, error: terminalError, cancelable: false }, queueApiKey);
+      scheduleCloudQueueStatusClear(queueTaskId, terminalPhase === 'error' ? 8000 : 5000, queueApiKey);
+    }
+  }
 };
 
 /** 使用 NovelAI SSE 中间帧；只有 final 事件才会作为可保存的生成结果返回。 */

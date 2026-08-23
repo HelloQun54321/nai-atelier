@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildNaiGenerationPayload, withTransparentPromptTags } from './naiPayload';
+import { buildNaiGenerationPayload, buildNaiImageEditPayload, withTransparentPromptTags } from './naiPayload';
 
 const baseParams = {
   model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28,
@@ -39,5 +39,52 @@ describe('NovelAI generation payload', () => {
     const params = { ...baseParams, model: 'nai-diffusion-6-full' };
     expect(buildNaiGenerationPayload('1girl', '', params, { stream: true }).parameters.stream).toBeUndefined();
     expect(buildNaiGenerationPayload('1girl', '', params, { stream: true, runtimeStreamSupported: true }).parameters.stream).toBe('sse');
+  });
+
+  it('builds an img2img payload with strength and noise while preserving normal prompts', () => {
+    const payload = buildNaiImageEditPayload('1girl', 'bad hands', baseParams, {
+      operation: 'image-to-image', image: 'data:image/png;base64,aW1hZ2U=', strength: 0.65, noise: 0.2,
+      runtimeModels: ['nai-diffusion-5-full-inpainting'],
+    });
+    const editParameters = payload.parameters as Record<string, any>;
+    expect(payload.action).toBe('img2img');
+    expect(payload.model).toBe('nai-diffusion-5-full');
+    expect(editParameters.image).toBe('aW1hZ2U=');
+    expect(editParameters.strength).toBe(0.65);
+    expect(editParameters.noise).toBe(0.2);
+    expect(editParameters.add_original_image).toBe(true);
+  });
+
+  it('builds an inpainting payload with a mask and inpainting model capability', () => {
+    const payload = buildNaiImageEditPayload('1girl', '', { ...baseParams, model: 'nai-diffusion-4-5-full' }, {
+      operation: 'inpaint', image: 'data:image/png;base64,aW1hZ2U=', mask: 'data:image/png;base64,bWFzaw==',
+      strength: 0.8, noise: 0.1, runtimeModels: ['nai-diffusion-4-5-full-inpainting'],
+    });
+    const editParameters = payload.parameters as Record<string, any>;
+    expect(payload.action).toBe('infill');
+    expect(payload.model).toBe('nai-diffusion-4-5-full-inpainting');
+    expect(editParameters.mask).toBe('bWFzaw==');
+    expect(editParameters.img2img).toEqual({ strength: 0.8 });
+    expect(editParameters.inpaintImg2ImgStrength).toBe(0.8);
+  });
+
+  it('builds outpainting as infill and preserves the focused marker for local settlement', () => {
+    const payload = buildNaiImageEditPayload('landscape', '', baseParams, {
+      operation: 'outpaint', image: 'data:image/png;base64,aW1hZ2U=', mask: 'data:image/png;base64,bWFzaw==',
+      strength: 1, noise: 0, focused: true, minimumContextArea: 0.5, runtimeModels: ['nai-diffusion-5-full-inpainting'],
+    });
+    const editParameters = payload.parameters as Record<string, any>;
+    expect(payload.action).toBe('infill');
+    expect(payload.model).toBe('nai-diffusion-5-full-inpainting');
+    expect(editParameters._local_edit_operation).toBe('outpaint');
+    expect(editParameters._local_focused_inpainting).toBe(true);
+    expect(editParameters._local_minimum_context_area).toBe(0.5);
+  });
+
+  it('rejects an edit when the runtime does not expose the inpainting variant', () => {
+    expect(() => buildNaiImageEditPayload('1girl', '', baseParams, {
+      operation: 'inpaint', image: 'data:image/png;base64,aW1hZ2U=', mask: 'data:image/png;base64,bWFzaw==',
+      strength: 1, noise: 0, runtimeModels: [],
+    })).toThrow('当前模型不支持图像编辑');
   });
 });

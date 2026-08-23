@@ -27,6 +27,12 @@ interface BinaryRequestOptions {
   budgetKeyHash?: string;
 }
 
+interface BinaryResponseDetails {
+  blob: Blob;
+  actualCost?: number;
+  remaining?: number;
+}
+
 export interface ParsedSseEvent {
   event: string;
   data: unknown;
@@ -132,7 +138,7 @@ export const api = {
   },
   
   // Binary response for images
-  postBinary: async (endpoint: string, data: any, headers?: Record<string, string>, options: BinaryRequestOptions = {}) => {
+  postBinaryDetailed: async (endpoint: string, data: any, headers?: Record<string, string>, options: BinaryRequestOptions = {}): Promise<BinaryResponseDetails> => {
     const res = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
       headers: getHeaders(headers),
@@ -147,7 +153,13 @@ export const api = {
     if (!res.ok) throw new Error(await res.text());
     const remaining = res.headers.get('x-nai-anlas-remaining');
     if (remaining !== null) emitBudgetChanged(Number(remaining), options.budgetKeyHash);
-    return res.blob();
+    const spent = res.headers.get('x-nai-anlas-spent');
+    const parsedCost = spent === null ? NaN : Number(spent);
+    return { blob: await res.blob(), actualCost: Number.isFinite(parsedCost) ? parsedCost : undefined, remaining: remaining === null ? undefined : Number(remaining) };
+  },
+
+  postBinary: async (endpoint: string, data: any, headers?: Record<string, string>, options: BinaryRequestOptions = {}) => {
+    return (await api.postBinaryDetailed(endpoint, data, headers, options)).blob;
   },
 
   postSse: async (

@@ -32,14 +32,17 @@ export interface ParsedNAIData {
     params: NAIParams;
 }
 
-export type ImportMode = 'replace' | 'prompt-only' | 'negative-only' | 'params-only' | 'append-prompt';
+export type ImportMode = 'replace' | 'prompt-only' | 'negative-only' | 'params-only' | 'append-prompt' | 'image-edit';
 
 export interface PendingImportData extends ParsedNAIData {
     mode?: ImportMode;
     basePrompt?: string;
     subjectPrompt?: string;
     modules?: import('../types').PromptModule[];
-    sourceInspirationId?: string;
+  sourceInspirationId?: string;
+  baseImageUrl?: string;
+  parentHistoryId?: string;
+  imageEditOperation?: import('../types').ImageEditOperation;
 }
 
 // ========== 常量 / 预编译正则 ==========

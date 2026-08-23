@@ -1281,3 +1281,24 @@ test('个人用量统计：只有成功的受限模型免费档生成计入 Opus
   assert.equal(isNaiUsageLimitedModel('nai-diffusion-6-full', futureRuntime), true);
   assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-6-full' }, 0, false, futureRuntime), { anlasDelta: 0, opusImagesDelta: 1 });
 });
+
+test('图像编辑费用：普通编辑不套用 V5 普通生图免费档，Focused Inpainting 只对 Opus 免费', () => {
+  const base = {
+    action: 'infill',
+    model: 'nai-diffusion-5-full-inpainting',
+    parameters: {
+      width: 832,
+      height: 1216,
+      steps: 28,
+      n_samples: 1,
+      mask: '脱敏蒙版',
+      inpaintImg2ImgStrength: 1,
+      _local_edit_operation: 'inpaint',
+      _local_focused_inpainting: true,
+    },
+  };
+  assert.ok(estimateNovelAiGenerationCost({ ...base, parameters: { ...base.parameters, _local_focused_inpainting: false } }, false, true) > 0);
+  assert.equal(estimateNovelAiGenerationCost(base, false, true), 0);
+  assert.ok(estimateNovelAiGenerationCost(base, false, false) > 0);
+  assert.equal(computeGenerationPersonalUsage(base, 0, false).opusImagesDelta, 0);
+});
