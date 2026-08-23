@@ -131,6 +131,7 @@ export interface NAIParams {
 }
 
 export type ImageEditOperation = 'image-to-image' | 'inpaint' | 'outpaint';
+export type GenerationMode = 'text-to-image' | ImageEditOperation;
 
 export interface ImageEditCanvasExpansion {
   top: number;
@@ -153,6 +154,39 @@ export interface ImageEditMetadata {
   estimatedCost?: number;
   actualCost?: number;
   keyHash?: string;
+  promptSource?: 'current' | 'style-only' | 'history' | 'custom';
+}
+
+export interface LabImageEditDraft {
+  prompt: string;
+  negativePrompt: string;
+  params: NAIParams;
+  baseImageRef?: string;
+  baseImageSource?: 'generated' | 'history' | 'upload';
+  parentHistoryId?: string;
+  maskRef?: string;
+  strength: number;
+  noise: number;
+  brushSize: number;
+  focused: boolean;
+  minimumContextArea: number;
+  expansion: ImageEditCanvasExpansion;
+  focusedRect?: { x: number; y: number; width: number; height: number };
+  promptSource: 'current' | 'style-only' | 'history' | 'custom';
+}
+
+export interface LabWorkspaceSession {
+  version: 1;
+  activeMode: GenerationMode;
+  textToImage: {
+    basePrompt: string;
+    subjectPrompt: string;
+    negativePrompt: string;
+    params: NAIParams;
+    activeModules: Record<string, boolean>;
+  };
+  edits: Record<ImageEditOperation, LabImageEditDraft>;
+  updatedAt: number;
 }
 
 export interface PromptAgentDraft {

@@ -542,7 +542,6 @@ const App = () => {
           chain={editChain}
           allChains={chains}
           onUpdateChain={handleUpdateChain}
-          onBack={() => handleNavigate(editChain.type === 'character' ? 'characters' : 'list')}
           onFork={handleForkChain}
           setIsDirty={setIsEditorDirty}
           notify={notify}
@@ -608,7 +607,6 @@ const App = () => {
           chain={playgroundChain}
           allChains={chains}
           onUpdateChain={handleUpdatePlaygroundChain}
-          onBack={() => handleNavigate('list')}
           onFork={handleForkChain}
           setIsDirty={() => { }}
           notify={notify}

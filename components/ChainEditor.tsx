@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ImageEditMetadata, ImageEditOperation, PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft } from '../types';
+import { GenerationMode, ImageEditMetadata, ImageEditOperation, PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft, LabImageEditDraft, LabWorkspaceSession } from '../types';
 import { compilePrompt, getEditableGlobalPrompt, mergePromptFields } from '../services/promptUtils';
 import { generateImage, generateImageEdit, generateImageStream } from '../services/naiService';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
@@ -22,13 +22,14 @@ import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, useAnlasBudget } from '../services/anlasBudget';
+import { createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, getLabWorkspaceSessionKey, loadLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl } from '../services/labWorkspace';
 import { useNovelaiUsage } from '../services/naiUsage';
 import { getNaiModelInfo } from '../services/naiModels';
 import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
 import { LabModuleCollapsedPreferences, LabModuleId } from '../services/appearancePreferences';
-import { ArrowLeft, ChevronDown, Copy, FileDown, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, Tags, UserRound, X } from 'lucide-react';
+import { ChevronDown, Copy, FileDown, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, Tags, UserRound, X } from 'lucide-react';
 
 const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
 
@@ -48,7 +49,6 @@ interface ChainEditorProps {
     chain: PromptChain;
     allChains: PromptChain[]; // Need access to other chains for importing
     onUpdateChain: (id: string, updates: Partial<PromptChain>) => Promise<void> | void;
-    onBack: () => void;
     onFork: (chain: PromptChain, targetType?: 'style' | 'character') => Promise<void> | void;
     setIsDirty: (isDirty: boolean) => void;
     notify: (msg: string, type?: 'success' | 'error') => void;
@@ -179,7 +179,7 @@ const PromptAgentOverlayController: React.FC<PromptAgentOverlayControllerProps> 
     );
 };
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, splitPromptFields, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, labModuleOrder, labModuleCollapsed }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, splitPromptFields, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, labModuleOrder, labModuleCollapsed }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
     const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
@@ -299,10 +299,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [previewIndex, setPreviewIndex] = useState(0);
     const [previewMode, setPreviewMode] = useState<'history' | 'cover' | 'result' | 'unsaved'>('cover');
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
-    const [imageEditOpen, setImageEditOpen] = useState(false);
     const [imageEditBaseImage, setImageEditBaseImage] = useState<string | null>(null);
-    const [imageEditParentHistoryId, setImageEditParentHistoryId] = useState<string | undefined>();
-    const [imageEditInitialOperation, setImageEditInitialOperation] = useState<ImageEditOperation>('image-to-image');
+    const workspaceKey = getLabWorkspaceSessionKey(chain.id);
+    const workspaceFallback = createLabWorkspaceSession(chain.basePrompt || '', String(chain.variableValues?.subject || ''), chain.negativePrompt || '', chain.params || { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' }, Object.fromEntries((chain.modules || []).map(module => [module.id, module.isActive])));
+    const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => loadLabWorkspaceSession(workspaceKey, workspaceFallback));
+    const [imageEditMaskData, setImageEditMaskData] = useState<string | undefined>();
+    const [imageEditBaseLoading, setImageEditBaseLoading] = useState(false);
+    const maskSaveRevisionRef = useRef(0);
+    const workspaceInitializedKeyRef = useRef(workspaceKey);
 
     useEffect(() => () => {
         if (generatedImage?.startsWith('blob:')) URL.revokeObjectURL(generatedImage);
@@ -366,6 +370,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const sourceChainId = chain.id === 'playground' ? 'playground' : chain.id;
+    const activeGenerationMode = workspaceSession.activeMode;
+    const activeEditOperation = activeGenerationMode === 'text-to-image' ? null : activeGenerationMode;
+    const activeEditDraft = activeEditOperation ? workspaceSession.edits[activeEditOperation] : null;
     const selectedPreviewItem = previewMode === 'history' ? previewHistory[previewIndex] || null : null;
     const displayedPreviewImage = selectedPreviewItem?.imageUrl || generatedImage;
     const currentPreviewCover = decideCurrentPreviewCover(displayedPreviewImage, chain.previewImage);
@@ -471,8 +478,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         prevChainIdRef.current = chain.id;
         clearPresetSources();
 
-        setBasePrompt(chain.basePrompt || '');
-        setNegativePrompt(chain.negativePrompt || '');
+        const storedWorkspace = loadLabWorkspaceSession(workspaceKey, workspaceFallback);
+        workspaceInitializedKeyRef.current = workspaceKey;
+        workspaceSyncBlockedRef.current = true;
+        setWorkspaceSession(storedWorkspace);
+        setBasePrompt(storedWorkspace.textToImage.basePrompt);
+        setNegativePrompt(storedWorkspace.textToImage.negativePrompt);
         setModules((chain.modules || []).map(m => ({
             ...m,
             position: m.position || 'post'
@@ -484,7 +495,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             useCoords: chain.params?.useCoords ?? false,
             variety: chain.params?.variety ?? false,
             cfgRescale: chain.params?.cfgRescale ?? 0,
-            ...chain.params
+            ...storedWorkspace.textToImage.params
         });
         setChainName(chain.name);
         setChainDesc(chain.description);
@@ -492,18 +503,25 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
         // Default subject to empty, not '1girl'
         const savedVars = chain.variableValues || {};
-        setSubjectPrompt(savedVars['subject'] || '');
+        setSubjectPrompt(storedWorkspace.textToImage.subjectPrompt || savedVars['subject'] || '');
 
-        const initialModules: Record<string, boolean> = {};
+        const initialModules: Record<string, boolean> = { ...storedWorkspace.textToImage.activeModules };
         if (chain.modules) {
             chain.modules.forEach(m => {
-                initialModules[m.id] = m.isActive;
+                if (initialModules[m.id] === undefined) initialModules[m.id] = m.isActive;
             });
         }
         setActiveModules(initialModules);
         setHasChanges(false);
 
         void reloadPreviewHistory(sourceChainId);
+
+        const initialEditOperation = storedWorkspace.activeMode === 'text-to-image' ? null : storedWorkspace.activeMode;
+        if (initialEditOperation) void resolveEditBaseImage(storedWorkspace.edits[initialEditOperation]);
+        else {
+            setImageEditBaseImage(null);
+            setImageEditMaskData(undefined);
+        }
 
     }, [chain.id, chain.basePrompt, chain.negativePrompt, chain.modules, chain.params, chain.name, chain.description, chain.variableValues]);
     // Dependency note: we still list props to satisfy linter, but the guard 'if (prevChainId === chain.id) return' blocks re-execution.
@@ -575,6 +593,96 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         );
         setFinalPrompt(compiled);
     }, [basePrompt, modules, activeModules, subjectPrompt, splitPromptFields, globalPrompt]);
+
+    useEffect(() => {
+        if (workspaceInitializedKeyRef.current !== workspaceKey) return;
+        saveLabWorkspaceSession(workspaceKey, workspaceSession);
+    }, [workspaceKey, workspaceSession]);
+
+    const workspaceSyncBlockedRef = useRef(false);
+
+    useEffect(() => {
+        if (prevChainIdRef.current !== chain.id) return;
+        if (workspaceSyncBlockedRef.current) {
+            workspaceSyncBlockedRef.current = false;
+            return;
+        }
+        setWorkspaceSession(previous => {
+            const nextTextToImage = { basePrompt, subjectPrompt, negativePrompt, params: { ...params }, activeModules: { ...activeModules } };
+            if (JSON.stringify(previous.textToImage) === JSON.stringify(nextTextToImage)) return previous;
+            return { ...previous, textToImage: nextTextToImage, updatedAt: Date.now() };
+        });
+    }, [basePrompt, subjectPrompt, negativePrompt, params, activeModules, chain.id]);
+
+    const updateWorkspace = (updater: (previous: LabWorkspaceSession) => LabWorkspaceSession) => {
+        setWorkspaceSession(previous => ({ ...updater(previous), updatedAt: Date.now() }));
+    };
+
+    const updateEditDraft = (operation: ImageEditOperation, patch: Partial<LabImageEditDraft> & { maskData?: string }) => {
+        const { maskData, ...draftPatch } = patch;
+        updateWorkspace(previous => ({
+            ...previous,
+            edits: { ...previous.edits, [operation]: { ...previous.edits[operation], ...draftPatch } },
+        }));
+        if (maskData !== undefined) {
+            setImageEditMaskData(maskData);
+            const saveRevision = (maskSaveRevisionRef.current += 1);
+            void dataUrlToBlob(maskData).then(saveLabWorkspaceAsset).then(maskRef => {
+                if (saveRevision !== maskSaveRevisionRef.current) return;
+                updateWorkspace(previous => ({
+                    ...previous,
+                    edits: { ...previous.edits, [operation]: { ...previous.edits[operation], maskRef } },
+                }));
+            }).catch(error => console.warn('保存编辑蒙版失败:', error));
+        }
+    };
+
+    const resolveEditBaseImage = async (draft: LabImageEditDraft | null) => {
+        if (!draft?.baseImageRef) {
+            setImageEditBaseImage(null);
+            setImageEditMaskData(undefined);
+            return;
+        }
+        setImageEditBaseLoading(true);
+        try {
+            const blob = await readLabWorkspaceAsset(draft.baseImageRef);
+            setImageEditBaseImage(blob ? await blobToDataUrl(blob) : null);
+            if (draft.maskRef) {
+                const maskBlob = await readLabWorkspaceAsset(draft.maskRef);
+                setImageEditMaskData(maskBlob ? await blobToDataUrl(maskBlob) : undefined);
+            } else setImageEditMaskData(undefined);
+        } finally {
+            setImageEditBaseLoading(false);
+        }
+    };
+
+    const createEditDraftFromSource = async (operation: ImageEditOperation, sourceImage: string | undefined, source: 'generated' | 'history' | 'upload', parentHistoryId?: string, sourcePrompt = finalPrompt, sourceNegativePrompt = negativePrompt, sourceParams = params) => {
+        const draft = createLabImageEditDraft(operation, sourcePrompt, sourceNegativePrompt, sourceParams, { baseImageSource: source, parentHistoryId, promptSource: source === 'history' ? 'history' : 'current' });
+        if (sourceImage) {
+            draft.baseImageRef = await dataUrlToWorkspaceAsset(sourceImage);
+            setImageEditBaseImage(sourceImage);
+        } else setImageEditBaseImage(null);
+        updateWorkspace(previous => ({ ...previous, activeMode: operation, edits: { ...previous.edits, [operation]: draft } }));
+        setImageEditMaskData(undefined);
+    };
+
+    const selectGenerationMode = async (mode: GenerationMode) => {
+        if (mode === 'text-to-image') {
+            updateWorkspace(previous => ({ ...previous, activeMode: mode }));
+            setImageEditBaseImage(null);
+            setImageEditMaskData(undefined);
+            return;
+        }
+        const existing = workspaceSession.edits[mode];
+        if (existing.baseImageRef || existing.prompt || existing.parentHistoryId) {
+            updateWorkspace(previous => ({ ...previous, activeMode: mode }));
+            await resolveEditBaseImage(existing);
+            return;
+        }
+        const sourceItem = selectedPreviewItem;
+        const sourceImage = displayedPreviewImage || chain.previewImage;
+        await createEditDraftFromSource(mode, sourceImage, sourceItem ? 'history' : 'generated', sourceItem?.id, sourceItem?.prompt || finalPrompt, sourceItem?.negativePrompt || negativePrompt, sourceItem?.params || params);
+    };
 
     const getDownloadFilename = () => {
         const now = new Date();
@@ -994,11 +1102,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
      */
     const applyImportData = (data: PendingImportData) => {
         if (data.mode === 'image-edit' && data.baseImageUrl) {
-            setImageEditBaseImage(data.baseImageUrl);
-            setImageEditParentHistoryId(data.parentHistoryId);
-            setImageEditInitialOperation(data.imageEditOperation || 'image-to-image');
-            setImageEditOpen(true);
-            notify('已载入历史图片，正在打开图片编辑面板。');
+            const operation = data.imageEditOperation || 'image-to-image';
+            void createEditDraftFromSource(
+                operation,
+                data.baseImageUrl,
+                data.parentHistoryId ? 'history' : 'upload',
+                data.parentHistoryId,
+                data.prompt || finalPrompt,
+                data.negativePrompt || negativePrompt,
+                data.params || params,
+            );
+            notify('已载入底图，正在打开对应图片编辑模式。');
             return;
         }
         if (data.mode === 'append-prompt') {
@@ -1375,16 +1489,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         return handleGenerateDraft();
     };
 
-    const openImageEditor = (operation: ImageEditOperation = 'image-to-image') => {
-        const source = displayedPreviewImage || chain.previewImage;
-        setImageEditBaseImage(source || null);
-        setImageEditParentHistoryId(selectedPreviewItem?.id);
-        setImageEditInitialOperation(operation);
-        setImageEditOpen(true);
-    };
-
     const imageEditCostLabel = (operation: ImageEditOperation, focused: boolean) => {
-        const cost = estimateImageEditCost(params, operation, operation === 'image-to-image' ? 0.7 : 1, focused, novelaiSubscription?.tier, opusUsageExhausted);
+        const cost = estimateImageEditCost(activeEditDraft?.params || params, operation, activeEditDraft?.strength || (operation === 'image-to-image' ? 0.7 : 1), focused, novelaiSubscription?.tier, opusUsageExhausted);
         return formatImageEditCostLabel(cost, operation, focused, novelaiSubscription?.tier);
     };
 
@@ -1395,7 +1501,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             notify(message, 'error');
             return;
         }
-        const editCost = estimateImageEditCost(params, request.operation, request.strength, Boolean(request.focused), novelaiSubscription?.tier, opusUsageExhausted);
+        const editParamsSource = activeEditDraft?.params || params;
+        const editCost = estimateImageEditCost(editParamsSource, request.operation, request.strength, Boolean(request.focused), novelaiSubscription?.tier, opusUsageExhausted);
         if (editCost > 0 && anlasBudget.remaining <= 0) {
             if (!await confirmAction({ title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return;
         } else if (editCost > 0 && !await confirmAction({ title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}预计消耗 ${editCost} Anlas，最终以 NovelAI 实际返回为准。`, confirmLabel: `消耗 ${editCost} 点并生成` })) return;
@@ -1405,9 +1512,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         try {
             const imageBlob = await dataUrlToBlob(request.image);
             const bitmap = await createImageBitmap(imageBlob);
-            const editParams: NAIParams = { ...params, width: bitmap.width, height: bitmap.height, seed: undefined };
+            const editParams: NAIParams = { ...editParamsSource, width: bitmap.width, height: bitmap.height, seed: undefined };
             bitmap.close();
-            const result = await generateImageEdit(apiKey, finalPrompt, negativePrompt, editParams, request);
+            const result = await generateImageEdit(apiKey, request.prompt, request.negativePrompt, editParams, request);
             setGeneratedImage(result.image);
             setPreviewMode('result');
             const keyHash = await hashNaiApiKey(apiKey);
@@ -1424,8 +1531,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 estimatedCost: editCost,
                 actualCost: result.actualCost,
                 keyHash,
+                promptSource: request.promptSource,
             };
-            const historyItem = await localHistory.add(result.blob, finalPrompt, { ...editParams, seed: result.seed }, negativePrompt, {
+            const historyItem = await localHistory.add(result.blob, request.prompt, { ...editParams, seed: result.seed }, request.negativePrompt, {
                 sourceChainId,
                 sourceChainName: chainName,
                 sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
@@ -1438,7 +1546,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setPreviewIndex(0);
             setPreviewMode('history');
             setGeneratedImage(historyItem.imageUrl);
-            setImageEditOpen(false);
             notify('图片编辑完成，结果已保存为新的历史图片', 'success');
         } catch (editError) {
             const message = editError instanceof Error ? editError.message : '图片编辑失败';
@@ -1587,10 +1694,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             {/* Top Bar */}
             <header className="chain-editor-header workspace-command-bar relative z-30 flex h-auto flex-shrink-0 items-center justify-between gap-1 overflow-visible border-b border-gray-200 bg-white px-2 py-0 dark:border-gray-800 dark:bg-gray-950 md:gap-4 md:px-6">
                 <div className="relative flex min-w-0 flex-1 items-center gap-2 md:gap-4">
-                    <button onClick={onBack} className="mobile-touch flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors flex-shrink-0" aria-label="返回">
-                        <ArrowLeft className="h-[18px] w-[18px] md:h-5 md:w-5" />
-                    </button>
-
                     {chain.id !== 'playground' && <div className="flex min-w-0 flex-1 cursor-pointer items-center gap-2" onClick={() => isOwner && setIsEditingInfo(true)}>
                         <div className="flex min-w-0 items-baseline gap-2 overflow-hidden">
                             <span className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase ${isCharacterMode ? 'border-pink-200 bg-pink-100 text-pink-700' : 'border-blue-200 bg-blue-100 text-blue-700'}`}>{isCharacterMode ? '角色串' : '风格串'}</span>
@@ -1599,6 +1702,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         </div>
                         {isOwner && <Pencil className="h-4 w-4 flex-shrink-0 text-gray-400 opacity-50" />}
                     </div>}
+                    <nav className="generation-mode-nav flex min-w-0 max-w-[52vw] shrink-0 items-center gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1 dark:bg-gray-900" aria-label="生成模式">
+                        {([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const).map(([mode, label]) => <button key={mode} type="button" onClick={() => void selectGenerationMode(mode)} className={`mobile-touch shrink-0 rounded-lg px-2 py-1.5 text-[11px] font-bold transition md:px-3 md:text-xs ${activeGenerationMode === mode ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}>{label}</button>)}
+                    </nav>
                     {chain.id !== 'playground' && isEditingInfo && isOwner && <div role="dialog" aria-label="编辑风格串信息" className="absolute left-9 top-[calc(100%+0.5rem)] z-50 w-[min(40rem,calc(100vw-2rem))] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
                         <div className="grid gap-3 sm:grid-cols-2">
                             <label className="text-xs font-bold text-gray-500">名称<input type="text" value={chainName} onChange={e => { setChainName(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white" placeholder="名称" /></label>
@@ -1798,6 +1904,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     notify(`已追加 ${tags.split(',').length} 个识别 Tag`);
                 }}
             />
+            {activeGenerationMode === 'text-to-image' ? <>
             <nav className="grid h-10 grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
                 {([['global', '全局'], ['character', '角色'], ['params', '参数']] as const).map(([value, label]) => <button key={value} onClick={() => setMobileEditorTab(value)} className={`relative min-w-0 text-sm font-bold ${mobileEditorTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>{label}{mobileEditorTab === value && <span className="absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-indigo-500" />}</button>)}
             </nav>
@@ -2150,20 +2257,51 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     generationCostLabel={generationCostLabel}
                     transparentPreview={getNaiModelInfo(params.model).supportsTransparentBackground && params.transparent === true}
                     generationProgress={generationProgress}
-                    onOpenImageEditor={() => openImageEditor('image-to-image')}
                 />
                 </div>
             </div>
 
-            <ImageEditPanel
-                open={imageEditOpen}
+            </> : activeEditOperation && activeEditDraft ? <ImageEditPanel
                 baseImage={imageEditBaseImage}
-                parentHistoryId={imageEditParentHistoryId}
-                initialOperation={imageEditInitialOperation}
+                operation={activeEditOperation}
+                draft={activeEditDraft}
+                maskData={imageEditMaskData}
                 generationCostLabel={imageEditCostLabel}
-                onClose={() => setImageEditOpen(false)}
+                onPromptChange={value => updateEditDraft(activeEditOperation, { prompt: value, promptSource: 'custom' })}
+                onNegativePromptChange={value => updateEditDraft(activeEditOperation, { negativePrompt: value })}
+                onPromptSource={source => {
+                    const sourceItem = selectedPreviewItem || (activeEditDraft.parentHistoryId ? previewHistory.find(item => item.id === activeEditDraft.parentHistoryId) : null);
+                    const value = source === 'style-only'
+                        ? compilePrompt({ basePrompt, modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })) }, '')
+                        : source === 'history'
+                            ? sourceItem?.prompt || activeEditDraft.prompt
+                            : source === 'custom'
+                                ? ''
+                                : finalPrompt;
+                    updateEditDraft(activeEditOperation, { prompt: value, promptSource: source });
+                }}
+                onDraftChange={patch => updateEditDraft(activeEditOperation, patch)}
+                onBaseImageChange={(dataUrl, source) => {
+                    void (async () => {
+                        const ref = await dataUrlToWorkspaceAsset(dataUrl);
+                        updateEditDraft(activeEditOperation, { baseImageRef: ref, baseImageSource: source, parentHistoryId: source === 'upload' ? undefined : activeEditDraft.parentHistoryId, maskRef: undefined, focusedRect: undefined });
+                        setImageEditBaseImage(dataUrl);
+                        setImageEditMaskData(undefined);
+                    })();
+                }}
+                onCanvasChange={(imageData, maskData) => {
+                    void (async () => {
+                        const [baseRef, maskRef] = await Promise.all([
+                            dataUrlToWorkspaceAsset(imageData),
+                            dataUrlToWorkspaceAsset(maskData),
+                        ]);
+                        updateEditDraft(activeEditOperation, { baseImageRef: baseRef, maskRef });
+                        setImageEditBaseImage(imageData);
+                        setImageEditMaskData(maskData);
+                    })();
+                }}
                 onGenerate={handleImageEditGenerate}
-            />
+            /> : null}
 
             {!lightboxImg && !showImportPreset && !importCandidate && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
                 {(displayedPreviewImage || chain.previewImage) && <button type="button" onClick={() => setLightboxImg(displayedPreviewImage || chain.previewImage || null)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-700" aria-label="查看最近生成结果"><SmartImage src={displayedPreviewImage || chain.previewImage || ''} alt="最近生成结果" /></button>}
