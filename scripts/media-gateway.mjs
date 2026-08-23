@@ -36,6 +36,7 @@ const GENERATION_REQUEST_LIMIT = 20 * 1024 * 1024;
 const VIBE_ENCODING_CACHE_LIMIT = 128 * 1024 * 1024;
 const PRECISE_REFERENCE_CACHE_LIMIT = 128 * 1024 * 1024;
 const NAI_GENERATE_URL = 'https://image.novelai.net/ai/generate-image';
+const NAI_GENERATE_STREAM_URL = 'https://image.novelai.net/ai/generate-image-stream';
 const NAI_ENCODE_VIBE_URL = 'https://image.novelai.net/ai/encode-vibe';
 // api.novelai.net 的订阅接口会以 400 拒绝第三方工具并提示改用 image 域名（2026-08 实测）。
 const NAI_SUBSCRIPTION_URL = 'https://image.novelai.net/user/subscription';
@@ -723,6 +724,42 @@ export const fetchNovelAiGeneration = (payload, authorization, signal = AbortSig
   signal,
 });
 
+export const fetchNovelAiGenerationStream = (payload, authorization, signal = AbortSignal.timeout(300_000), requestRemote = fetch) => requestRemote(NAI_GENERATE_STREAM_URL, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': authorization,
+    'Accept': 'text/event-stream',
+  },
+  body: JSON.stringify(payload),
+  signal,
+});
+
+/** 网关只需观察事件名；图片正文保持原字节流转发，避免二次编码。 */
+export const createSseEventObserver = onEvent => {
+  let buffer = '';
+  const emit = frame => {
+    const eventLine = frame.split(/\r?\n/).find(line => line.startsWith('event:'));
+    onEvent(eventLine ? eventLine.slice(6).trim() || 'message' : 'message');
+  };
+  return {
+    push(text) {
+      buffer += text;
+      let boundary = buffer.search(/\r?\n\r?\n/);
+      while (boundary >= 0) {
+        const separator = buffer.slice(boundary).match(/^\r?\n\r?\n/)?.[0] || '\n\n';
+        emit(buffer.slice(0, boundary));
+        buffer = buffer.slice(boundary + separator.length);
+        boundary = buffer.search(/\r?\n\r?\n/);
+      }
+    },
+    finish() {
+      if (buffer.trim()) emit(buffer);
+      buffer = '';
+    },
+  };
+};
+
 export const fetchNovelAiSubscription = (authorization, signal = AbortSignal.timeout(30_000), requestRemote = fetch) => requestRemote(NAI_SUBSCRIPTION_URL, {
   method: 'GET',
   headers: { 'Authorization': authorization },
@@ -764,6 +801,30 @@ const setOpusUsageSnapshot = (keyHash, isNegative) => {
 
 const getOpusUsageSnapshot = keyHash => lastKnownOpusUsage.get(keyHash) || { exhausted: false, updatedAt: 0 };
 
+/** 成功生成统一走这里结算，保证 ZIP 与 SSE 使用同一 Key 隔离和个人用量口径。 */
+const settleSuccessfulNovelAiGeneration = async ({ payload, authorization, keyHash, req, workerPort, requestRemote }) => {
+  const runtime = getNaiRuntime();
+  const isUsageLimitedModel = isNaiUsageLimitedModel(payload?.model, runtime);
+  const opusSnapshot = getOpusUsageSnapshot(keyHash);
+  if (isUsageLimitedModel && Date.now() - opusSnapshot.updatedAt > OPUS_USAGE_STALE_MS) {
+    try {
+      const subscription = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(10_000), requestRemote);
+      if (subscription.ok) {
+        setOpusUsageSnapshot(keyHash, sanitizeNovelAiSubscription(await subscription.json()).usage?.isNegative === true);
+      }
+    } catch {
+      // 网络失败时沿用上次快照，不阻塞本次已经完成的生成结算。
+    }
+  }
+  const usageExhausted = getOpusUsageSnapshot(keyHash).exhausted;
+  const estimatedCost = estimateNovelAiGenerationCost(payload, usageExhausted);
+  const personalUsage = computeGenerationPersonalUsage(payload, estimatedCost, usageExhausted, runtime, true);
+  const anlasBudget = estimatedCost > 0 || personalUsage.opusImagesDelta > 0
+    ? await spendAnlasBudget(req, workerPort, estimatedCost, 'generation', { keyHash, ...personalUsage })
+    : null;
+  return { estimatedCost, personalUsage, anlasBudget };
+};
+
 // ===== NovelAI Web 应用常量自动同步 =====
 // 官方未提供这些规则的查询接口（模型清单、Opus 限额换算系数、免费档门槛、
 // 成本公式系数均打包在官方 Web 应用 JS 内），因此定期抓取官方页面提取并缓存；
@@ -788,6 +849,12 @@ export const DEFAULT_NAI_RUNTIME = {
   usageLimitedModels: [
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
     'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
+  ],
+  /** 支持 SSE 中间帧的模型，由官方 streamedResponses 能力位同步。 */
+  streamedModels: [
+    'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting', 'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
+    'nai-diffusion-4-5-full', 'nai-diffusion-4-5-full-inpainting', 'nai-diffusion-4-5-curated', 'nai-diffusion-4-5-curated-inpainting',
+    'nai-diffusion-4-full', 'nai-diffusion-4-full-inpainting', 'nai-diffusion-4-curated-preview',
   ],
   /** NovelAI PNG 的 Source 字段到 API model_version 的精确映射。 */
   metadataModelMappings: {
@@ -870,19 +937,24 @@ export const extractNaiModelCapabilities = text => {
     .map(m => ({ index: m.index, limited: m[1] === '!0' }));
   const models = [];
   const usageLimitedModels = [];
+  const streamedModels = [];
   let buffered = [];
+  let bufferedStart = 0;
   for (const event of [...events, ...limits].sort((a, b) => a.index - b.index)) {
     if (event.label) {
+      if (!buffered.length) bufferedStart = event.index;
       buffered.push(event.label);
       continue;
     }
+    const streamed = /streamedResponses:!0/.test(text.slice(bufferedStart, event.index));
     for (const label of buffered) {
       if (!models.includes(label)) models.push(label);
       if (event.limited && !usageLimitedModels.includes(label)) usageLimitedModels.push(label);
+      if (streamed && !streamedModels.includes(label)) streamedModels.push(label);
     }
     buffered = [];
   }
-  return { models, usageLimitedModels };
+  return { models, usageLimitedModels, streamedModels };
 };
 
 /**
@@ -953,6 +1025,10 @@ export const computeNaiRuntimeSync = text => {
     next.usageLimitedModels = capabilities.usageLimitedModels;
     health.extracted.push('models');
   } else health.missed.push('models');
+  if (capabilities.streamedModels.length && capabilities.streamedModels.every(id => capabilities.models.includes(id))) {
+    next.streamedModels = capabilities.streamedModels;
+    health.extracted.push('streamedModels');
+  } else health.missed.push('streamedModels');
   const metadataModelMappings = extractNaiMetadataModelMappings(text);
   if (Object.keys(metadataModelMappings).length) {
     next.metadataModelMappings = metadataModelMappings;
@@ -976,6 +1052,7 @@ const persistNaiRuntimeState = async () => {
         freeMaxSteps: naiRuntimeState.freeMaxSteps,
         models: naiRuntimeState.models,
         usageLimitedModels: naiRuntimeState.usageLimitedModels,
+        streamedModels: naiRuntimeState.streamedModels,
         metadataModelMappings: naiRuntimeState.metadataModelMappings,
       },
       health: naiRuntimeState.health,
@@ -1261,28 +1338,9 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
         (nextPayload, nextAuthorization) => fetchNovelAiGeneration(nextPayload, nextAuthorization, generationSignal, requestRemote),
       )
       : await fetchNovelAiGeneration(payload, authorization, generationSignal, requestRemote);
-    // 透支状态由 /api/novelai-subscription 代理调用时缓存；快照过期且本次是
-    // 受限额模型（V5 系）时，扣费前向 NovelAI 重取真实状态。
-    const runtime = getNaiRuntime();
-    const isUsageLimitedModel = isNaiUsageLimitedModel(payload?.model, runtime);
-    const opusSnapshot = getOpusUsageSnapshot(keyHash);
-    if (response.ok && isUsageLimitedModel && Date.now() - opusSnapshot.updatedAt > OPUS_USAGE_STALE_MS) {
-      try {
-        const subscription = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(10_000), requestRemote);
-        if (subscription.ok) {
-          setOpusUsageSnapshot(keyHash, sanitizeNovelAiSubscription(await subscription.json()).usage?.isNegative === true);
-        }
-      } catch {
-        // 网络失败时沿用上次快照，不阻塞预算扣减。
-      }
-    }
-    const usageExhausted = getOpusUsageSnapshot(keyHash).exhausted;
-    const estimatedCost = response.ok ? estimateNovelAiGenerationCost(payload, usageExhausted) : 0;
-    // 个人用量（按密钥账号累计）：Anlas 扣减 + 计入 Opus 免费额度的张数。
-    const personalUsage = computeGenerationPersonalUsage(payload, estimatedCost, usageExhausted, runtime, response.ok);
-    const anlasBudget = estimatedCost > 0 || personalUsage.opusImagesDelta > 0
-      ? await spendAnlasBudget(req, workerPort, estimatedCost, 'generation', { keyHash, ...personalUsage })
-      : null;
+    const { estimatedCost, anlasBudget } = response.ok
+      ? await settleSuccessfulNovelAiGeneration({ payload, authorization, keyHash, req, workerPort, requestRemote })
+      : { estimatedCost: 0, anlasBudget: null };
     const headers = {
       'Content-Type': response.headers.get('content-type') || 'application/octet-stream',
       'Cache-Control': 'private, no-store',
@@ -1318,6 +1376,138 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
     });
   } finally {
     req.off('aborted', abortRequest);
+    if (queueLock) await cloudQueue.release(queueLock, requestAborted);
+  }
+};
+
+const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote) => {
+  if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+  if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+  const authorization = String(req.headers.authorization || '');
+  if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
+
+  const queueEnabled = queuePreferences.enabled === true;
+  const keyHash = keyHashFromAuthorization(authorization);
+  const requestedTaskId = String(req.headers['x-nai-queue-task-id'] || '');
+  const queueTaskId = /^[a-zA-Z0-9-]{8,80}$/.test(requestedTaskId) ? requestedTaskId : randomUUID();
+  const requestController = new AbortController();
+  const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(300_000)]);
+  let queueLock = null;
+  let requestAborted = false;
+  let responseCompleted = false;
+  const abortRequest = () => {
+    if (responseCompleted) return;
+    requestAborted = true;
+    requestController.abort(new DOMException('用户已取消生成', 'AbortError'));
+  };
+  req.once('aborted', abortRequest);
+  res.once('close', abortRequest);
+  if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'preparing', cancelable: true, controller: requestController, keyHash });
+
+  try {
+    const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
+    let payload;
+    try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
+    const runtime = getNaiRuntime();
+    if (!runtime.streamedModels.includes(payload?.model)) {
+      return sendJson(res, 400, { error: '当前模型不支持生成过程预览，请关闭该设置后重试' });
+    }
+    const hasLocalVibes = payload?.parameters?._local_vibes?.enabled && payload.parameters._local_vibes.slots?.length;
+    const hasLocalReferences = payload?.parameters?._local_character_references?.enabled && payload.parameters._local_character_references.slots?.length;
+    if (hasLocalVibes || hasLocalReferences) {
+      return sendJson(res, 400, { error: '当前参考图功能不支持生成过程预览，请关闭过程预览后重试' });
+    }
+    delete payload.parameters._local_vibes;
+    delete payload.parameters._local_character_references;
+    payload.parameters.stream = 'sse';
+
+    if (queueEnabled) {
+      queueLock = await cloudQueue.join({
+        apiKey: authorization.slice(7).trim(),
+        taskId: queueTaskId,
+        greeting: String(queuePreferences.greeting || '').slice(0, 15),
+        showGreeting: queuePreferences.showGreeting !== false,
+        serviceUrl: queuePreferences.serviceUrl,
+        signal: requestController.signal,
+      });
+      cloudQueue.update(queueTaskId, { phase: 'generating', position: 0, cancelable: false, controller: requestController });
+      await delay(1000, requestController.signal);
+    }
+
+    const upstream = await fetchNovelAiGenerationStream(payload, authorization, generationSignal, requestRemote);
+    if (!upstream.ok) {
+      const upstreamError = new Error(await upstream.text() || `NovelAI HTTP ${upstream.status}`);
+      upstreamError.status = upstream.status;
+      throw upstreamError;
+    }
+    if (!upstream.body) throw Object.assign(new Error('NovelAI 流式接口没有返回响应体'), { status: 502 });
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Accel-Buffering': 'no',
+      ...(queueEnabled ? { 'X-Nai-Queue-Task-Id': queueTaskId } : {}),
+    });
+    const decoder = new TextDecoder();
+    let finalSeen = false;
+    let upstreamErrorSeen = false;
+    const observer = createSseEventObserver(event => {
+      if (event === 'final') finalSeen = true;
+      if (event === 'error') upstreamErrorSeen = true;
+    });
+    const reader = upstream.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      observer.push(decoder.decode(value, { stream: !done }));
+      if (value?.byteLength) res.write(Buffer.from(value.buffer, value.byteOffset, value.byteLength));
+      if (done) break;
+    }
+    observer.finish();
+
+    if (!finalSeen) {
+      const message = upstreamErrorSeen ? 'NovelAI 流式生成失败' : '流式响应结束但没有最终图片';
+      if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'error', error: message, cancelable: false, controller: null });
+      res.write(`\nevent: error\ndata: ${JSON.stringify({ message })}\n\n`);
+      responseCompleted = true;
+      return res.end();
+    }
+
+    try {
+      const { estimatedCost, anlasBudget } = await settleSuccessfulNovelAiGeneration({
+        payload, authorization, keyHash, req, workerPort, requestRemote,
+      });
+      res.write(`\nevent: nai_usage\ndata: ${JSON.stringify({
+        keyHash,
+        remaining: anlasBudget?.remaining,
+        spent: estimatedCost,
+        refreshPersonal: true,
+      })}\n\n`);
+    } catch (accountingError) {
+      // 图片已经由 NovelAI 成功生成，结算异常单独上报，绝不能触发前端再次生图。
+      res.write(`\nevent: nai_usage_error\ndata: ${JSON.stringify({ message: accountingError?.message || '本地用量结算失败' })}\n\n`);
+    }
+    if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'completed', cancelable: false, controller: null });
+    responseCompleted = true;
+    return res.end();
+  } catch (error) {
+    const cancelled = requestAborted || error?.name === 'AbortError';
+    const message = cancelled ? '已取消生成' : (error?.message || '流式生成失败');
+    if (queueEnabled) cloudQueue.update(queueTaskId, { phase: cancelled ? 'cancelled' : 'error', error: message, cancelable: false, controller: null });
+    if (res.headersSent) {
+      if (!res.destroyed) {
+        res.write(`\nevent: error\ndata: ${JSON.stringify({ message })}\n\n`);
+        responseCompleted = true;
+        res.end();
+      }
+      return;
+    }
+    if (error?.code === 'CLOUD_QUEUE_UNAVAILABLE') return sendJson(res, 503, { error: `公共队列服务不可用：${error.message}`, code: error.code });
+    if (cancelled) return sendJson(res, 499, { error: message, code: 'QUEUE_CANCELLED' });
+    return sendJson(res, Number(error.status) || 502, { error: message });
+  } finally {
+    req.off('aborted', abortRequest);
+    res.off('close', abortRequest);
     if (queueLock) await cloudQueue.release(queueLock, requestAborted);
   }
 };
@@ -2391,6 +2581,10 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
     if (url.pathname === '/api/generate') {
       const { preferences } = await getCloudQueueScope(req);
       return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, preferences, remoteFetch);
+    }
+    if (url.pathname === '/api/generate-stream') {
+      const { preferences } = await getCloudQueueScope(req);
+      return handleGenerateStreamRequest(req, res, lanSecret, workerPort, cloudQueue, preferences, remoteFetch);
     }
     if (url.pathname === '/api/novelai-subscription') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });

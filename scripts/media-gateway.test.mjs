@@ -30,7 +30,9 @@ import {
   requestRemoteBuffer,
   selectPreciseReferenceCanvas,
   CloudQueueCoordinator,
+  createSseEventObserver,
   fetchNovelAiGeneration,
+  fetchNovelAiGenerationStream,
   getValidatedSource,
   isPixivConnectionMutationAllowed,
   normalizeCloudQueuePreferences,
@@ -47,6 +49,7 @@ test('prompt agent official knowledge is model-aware and release-first', () => {
   const v5Profile = getNovelAiModelProfile('nai-diffusion-5-full');
   assert.equal(v5Profile.project.maxCharacterPrompts, 22);
   assert.equal(v5Profile.project.supportsVibes, false);
+  assert.equal(v5Profile.project.supportsAlphaTransparency, true);
   assert.match(v5Profile.officialPromptCapacity, /未给出精确 Token/);
   const v5Results = searchNovelAiOfficialKnowledge({ modelId: 'nai-diffusion-5-full', query: 'V5 中文 自然语言' });
   assert.equal(v5Results[0].id, 'v5-release-capabilities');
@@ -491,13 +494,14 @@ test('prompt agent destructive tools only emit confirmation requests', async () 
 
 test('prompt agent keeps advanced generation fields when changing one parameter', async () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
-  const draft = { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', noiseSchedule: 'karras', sm: true, customAdvancedFlag: 7 } };
+  const draft = { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: { model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', transparent: true, noiseSchedule: 'karras', sm: true, customAdvancedFlag: 7 } };
   const tool = service.createTools(draft, { presets: [], vibes: [] }, () => {}).find(item => item.name === 'set_generation_params');
   await tool.execute('call', { steps: 32 });
   assert.equal(draft.params.steps, 32);
   assert.equal(draft.params.noiseSchedule, 'karras');
   assert.equal(draft.params.sm, true);
   assert.equal(draft.params.customAdvancedFlag, 7);
+  assert.equal(draft.params.transparent, true);
 });
 
 test('prompt agent reads a complete chain and safely merges partial stored params', async () => {
@@ -764,6 +768,34 @@ test('NovelAI 订阅代理转发鉴权并剥离敏感字段', async () => {
   assert.equal(sanitizeNovelAiSubscription({ tier: 2, active: true }).usage, undefined);
 });
 
+test('NovelAI 流式代理使用 SSE 端点并保留鉴权与请求体', async () => {
+  let seenUrl = '';
+  let seenInit = null;
+  const payload = { model: 'nai-diffusion-5-full', parameters: { stream: 'sse' } };
+  const response = await fetchNovelAiGenerationStream(payload, 'Bearer stream-key', undefined, async (url, init) => {
+    seenUrl = url;
+    seenInit = init;
+    return new Response('event: final\ndata: {}\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+  });
+  assert.equal(response.ok, true);
+  assert.equal(seenUrl, 'https://image.novelai.net/ai/generate-image-stream');
+  assert.equal(seenInit.headers.Authorization, 'Bearer stream-key');
+  assert.equal(seenInit.headers.Accept, 'text/event-stream');
+  assert.deepEqual(JSON.parse(seenInit.body), payload);
+});
+
+test('SSE 观察器跨网络分片只在 final 事件后确认成功', () => {
+  const events = [];
+  const observer = createSseEventObserver(event => events.push(event));
+  observer.push('event: intermediate\ndata: {"step_ix":0}\r\n');
+  observer.push('\r\nevent: inter');
+  observer.push('mediate\ndata: {"step_ix":1}\n\nevent: final\n');
+  observer.push('data: {"image":"png"}\n\n');
+  observer.finish();
+  assert.deepEqual(events, ['intermediate', 'intermediate', 'final']);
+  assert.equal(events.filter(event => event === 'final').length, 1);
+});
+
 test('官方 Web 应用常量提取器解析真实压缩代码片段', () => {
   // 剩余张数系数：模块同时含 timeUntilNextPercent 与 round(系数×变量)。
   const usageModule = 'function h(e){return e.timeUntilNextPercent<=0?0:Math.round(86400/e.timeUntilNextPercent*10)/10}function g(e){return Math.round(17.3*e)}';
@@ -796,6 +828,9 @@ test('官方 Web 应用常量提取器解析真实压缩代码片段', () => {
   ]);
   assert.deepEqual(capabilities.usageLimitedModels, [
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting', 'nai-diffusion-6-full',
+  ]);
+  assert.deepEqual(capabilities.streamedModels, [
+    'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
   ]);
 
   const metadataModels = 'switch(e){case"NovelAI Diffusion V5 657484A5":case"NovelAI Diffusion V5 0ADF9AB7":return i.oM.naiDiffusionV5Full;case"NovelAI Diffusion V4.5 4BDE2A90":return i.oM.naiDiffusionV4_5Full;case"NovelAI Diffusion V4 7ABFFA2A":return i.oM.naiDiffusionV4CuratedPreview;case"NovelAI Diffusion V6 ABCDEF12":return i.oM.naiDiffusionV6Full}';
@@ -843,7 +878,7 @@ test('同步健康记录：全部命中 / 全部失效 / 部分失效', () => {
     'function h(e){return e.timeUntilNextPercent<=0?0:Math.round(86400/e.timeUntilNextPercent*10)/10}function g(e){return Math.round(17.3*e)}',
     'return Math.ceil(2951823174884865e-21*i+5753298233447344e-22*i*a)',
     'function C(e){return!e.characterRef&&e.width*e.height<=1048576&&e.steps<=28}',
-    'case"nai-diffusion-5-full":{opusUsageLimit:!0};case"nai-diffusion-4-5-full":{opusUsageLimit:!1}',
+    'case"nai-diffusion-5-full":{streamedResponses:!0,opusUsageLimit:!0};case"nai-diffusion-4-5-full":{streamedResponses:!0,opusUsageLimit:!1}',
     'case"NovelAI Diffusion V5 657484A5":case"NovelAI Diffusion V5 0ADF9AB7":return i.oM.naiDiffusionV5Full',
   ].join('\n');
   const full = computeNaiRuntimeSync(fullBundle);
@@ -854,14 +889,14 @@ test('同步健康记录：全部命中 / 全部失效 / 部分失效', () => {
   // 官方改版后一项都提取不到：健康标记为失效，运行时保持内置默认值。
   const broken = computeNaiRuntimeSync('console.log("redesigned site")');
   assert.equal(broken.health.ok, false);
-  assert.equal(broken.health.missed.length, 5);
+  assert.equal(broken.health.missed.length, 6);
   assert.equal(broken.runtime.imagesPerPercent, DEFAULT_NAI_RUNTIME.imagesPerPercent);
   assert.deepEqual(broken.runtime.models, DEFAULT_NAI_RUNTIME.models);
 
   // 部分命中（例如只剩模型表）：正常可用但记录缺项，供前端示警。
   const partial = computeNaiRuntimeSync('case"nai-diffusion-5-full":{opusUsageLimit:!0}');
   assert.equal(partial.health.ok, true);
-  assert.deepEqual(partial.health.missed, ['imagesPerPercent', 'costCoefficients', 'freeTier', 'metadataModels']);
+  assert.deepEqual(partial.health.missed, ['imagesPerPercent', 'costCoefficients', 'freeTier', 'streamedModels', 'metadataModels']);
   assert.equal(partial.runtime.models.length, 1);
 });
 

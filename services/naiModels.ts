@@ -21,15 +21,19 @@ export interface NaiModelInfo {
   supportsVibes: boolean;
   /** 是否支持 Precise/Character Reference（官方仅 V4.5 Full 支持）。 */
   supportsCharacterReferences: boolean;
+  /** 官方流式接口是否会返回采样中间帧。 */
+  supportsStreamedResponses: boolean;
+  /** 是否支持原生 Alpha 透明 PNG。 */
+  supportsTransparentBackground: boolean;
 }
 
 export const NAI_MODELS: NaiModelInfo[] = [
-  { id: 'nai-diffusion-5-full', label: 'V5 Full', opusUsageLimit: true, supportsVibes: false, supportsCharacterReferences: false },
-  { id: 'nai-diffusion-5-curated', label: 'V5 Curated', opusUsageLimit: true, supportsVibes: false, supportsCharacterReferences: false },
-  { id: 'nai-diffusion-4-5-full', label: 'V4.5 Full', opusUsageLimit: false, supportsVibes: true, supportsCharacterReferences: true },
-  { id: 'nai-diffusion-4-5-curated', label: 'V4.5 Curated', opusUsageLimit: false, supportsVibes: false, supportsCharacterReferences: false },
-  { id: 'nai-diffusion-4-full', label: 'V4 Full', opusUsageLimit: false, supportsVibes: false, supportsCharacterReferences: false },
-  { id: 'nai-diffusion-4-curated-preview', label: 'V4 Curated', opusUsageLimit: false, supportsVibes: false, supportsCharacterReferences: false },
+  { id: 'nai-diffusion-5-full', label: 'V5 Full', opusUsageLimit: true, supportsVibes: false, supportsCharacterReferences: false, supportsStreamedResponses: true, supportsTransparentBackground: true },
+  { id: 'nai-diffusion-5-curated', label: 'V5 Curated', opusUsageLimit: true, supportsVibes: false, supportsCharacterReferences: false, supportsStreamedResponses: true, supportsTransparentBackground: true },
+  { id: 'nai-diffusion-4-5-full', label: 'V4.5 Full', opusUsageLimit: false, supportsVibes: true, supportsCharacterReferences: true, supportsStreamedResponses: true, supportsTransparentBackground: false },
+  { id: 'nai-diffusion-4-5-curated', label: 'V4.5 Curated', opusUsageLimit: false, supportsVibes: false, supportsCharacterReferences: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
+  { id: 'nai-diffusion-4-full', label: 'V4 Full', opusUsageLimit: false, supportsVibes: false, supportsCharacterReferences: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
+  { id: 'nai-diffusion-4-curated-preview', label: 'V4 Curated', opusUsageLimit: false, supportsVibes: false, supportsCharacterReferences: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
 ];
 
 export const DEFAULT_NAI_MODEL = 'nai-diffusion-4-5-full';
@@ -100,6 +104,10 @@ export const resolveNaiMetadataModel = (
 export const getNaiModelInfo = (model?: string): NaiModelInfo =>
   NAI_MODELS.find(item => item.id === model) || NAI_MODELS.find(item => item.id === DEFAULT_NAI_MODEL)!;
 
+/** 精确查询已知模型；能力判断不得把未知未来模型误当成默认 V4.5。 */
+export const findNaiModelInfo = (model?: string): NaiModelInfo | undefined =>
+  NAI_MODELS.find(item => item.id === (model?.trim() || DEFAULT_NAI_MODEL));
+
 export const resolveNaiModelId = (model?: string): string => getNaiModelInfo(model).id;
 
 /** 显示用标签：注册表已知模型返回注册表标签，未知标识（如导入的未来新模型）推导显示名。 */
@@ -122,7 +130,7 @@ const deriveModelLabel = (id: string) => id
  * 选择器可用的模型列表：内置注册表优先，网关从官方 Web 应用同步到的新模型
  * （例如未来发布的 V6）自动追加到末尾，能力标志按保守值处理。
  */
-export const getSelectableNaiModels = (runtime?: { models: string[]; usageLimitedModels: string[] }): NaiModelInfo[] => {
+export const getSelectableNaiModels = (runtime?: { models: string[]; usageLimitedModels: string[]; streamedModels?: string[] }): NaiModelInfo[] => {
   if (!runtime?.models?.length) return NAI_MODELS;
   // 官方运行时 bundle 还会带出旧版短名、Furry/Anime 旧模型和 inpainting
   // 变体；它们不是本项目当前生图模型选择器应展示的独立选项。保留数字版本
@@ -136,6 +144,9 @@ export const getSelectableNaiModels = (runtime?: { models: string[]; usageLimite
       opusUsageLimit: runtime.usageLimitedModels.includes(id),
       supportsVibes: false,
       supportsCharacterReferences: false,
+      supportsStreamedResponses: runtime.streamedModels?.includes(id) ?? false,
+      // 官方当前仅 V5 暴露 Alpha 输出；未来未知模型默认关闭，避免发送不兼容字段。
+      supportsTransparentBackground: /^nai-diffusion-5-/.test(id),
     }));
   return [...NAI_MODELS, ...extras];
 };

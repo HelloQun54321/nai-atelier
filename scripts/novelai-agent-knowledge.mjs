@@ -230,7 +230,7 @@ export const getNovelAiModelProfile = modelId => {
     officialPromptCapacity: '长于 V4.5；官方发布公告未给出精确 Token 上限。',
     officialCharacterCapability: '高于 V4.5，官方测试最高展示 22 个角色；不是稳定保证。',
     officialPositioning: '画布自由定位，服从性比 V4.5 更强。',
-    project: { maxCharacterPrompts: 22, supportsVibes: false, supportsPreciseReference: false, coordinateRange: '0..1' },
+    project: { maxCharacterPrompts: 22, supportsVibes: false, supportsPreciseReference: false, supportsAlphaTransparency: true, coordinateRange: '0..1' },
   };
   if (family === 'v4.5') return {
     id, family, label: /curated/.test(id) ? 'V4.5 Curated' : 'V4.5 Full',
@@ -238,7 +238,7 @@ export const getNovelAiModelProfile = modelId => {
     officialPromptCapacity: '基础提示词与全部角色提示词合计约 512 T5 Token。',
     officialCharacterCapability: '最多六个独立角色提示词。',
     officialPositioning: '官方界面为 5×5 粗略位置提示，需与顺序和文字描述一致。',
-    project: { maxCharacterPrompts: 6, supportsVibes: id === 'nai-diffusion-4-5-full', supportsPreciseReference: id === 'nai-diffusion-4-5-full', coordinateRange: '0..1' },
+    project: { maxCharacterPrompts: 6, supportsVibes: id === 'nai-diffusion-4-5-full', supportsPreciseReference: id === 'nai-diffusion-4-5-full', supportsAlphaTransparency: false, coordinateRange: '0..1' },
   };
   if (family === 'v4') return {
     id, family, label: /curated/.test(id) ? 'V4 Curated' : 'V4 Full',
@@ -246,7 +246,7 @@ export const getNovelAiModelProfile = modelId => {
     officialPromptCapacity: '基础提示词与全部角色提示词合计约 512 T5 Token。',
     officialCharacterCapability: '最多六个独立角色提示词。',
     officialPositioning: '5×5 粗略位置提示。',
-    project: { maxCharacterPrompts: 6, supportsVibes: false, supportsPreciseReference: false, coordinateRange: '0..1' },
+    project: { maxCharacterPrompts: 6, supportsVibes: false, supportsPreciseReference: false, supportsAlphaTransparency: false, coordinateRange: '0..1' },
   };
   return {
     id, family, label: id,
@@ -254,7 +254,7 @@ export const getNovelAiModelProfile = modelId => {
     officialPromptCapacity: '未知，不套用其他代际的 Token 上限。',
     officialCharacterCapability: '未知，按项目保守上限处理。',
     officialPositioning: '未知，位置只视为粗略提示。',
-    project: { maxCharacterPrompts: 6, supportsVibes: false, supportsPreciseReference: false, coordinateRange: '0..1' },
+    project: { maxCharacterPrompts: 6, supportsVibes: false, supportsPreciseReference: false, supportsAlphaTransparency: false, coordinateRange: '0..1' },
   };
 };
 

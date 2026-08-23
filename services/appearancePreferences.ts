@@ -37,6 +37,8 @@ export interface AppearancePreferences {
   fontScale: FontScale;
   splitPromptFields: boolean;
   tagAssistEnabled: boolean;
+  /** 在支持的模型上显示采样过程；这是当前设备的观看偏好，不写入风格串。 */
+  generationStreamPreview: boolean;
   labModuleOrder: LabModuleId[];
   labModuleCollapsed: LabModuleCollapsedPreferences;
 }
@@ -56,6 +58,7 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   fontScale: 'standard',
   splitPromptFields: true,
   tagAssistEnabled: true,
+  generationStreamPreview: false,
   labModuleOrder: [...DEFAULT_LAB_MODULE_ORDER],
   labModuleCollapsed: { ...DEFAULT_LAB_MODULE_COLLAPSED },
 };
@@ -98,6 +101,9 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     tagAssistEnabled: typeof input.tagAssistEnabled === 'boolean'
       ? input.tagAssistEnabled
       : DEFAULT_APPEARANCE_PREFERENCES.tagAssistEnabled,
+    generationStreamPreview: typeof input.generationStreamPreview === 'boolean'
+      ? input.generationStreamPreview
+      : DEFAULT_APPEARANCE_PREFERENCES.generationStreamPreview,
     labModuleOrder,
     labModuleCollapsed,
   };

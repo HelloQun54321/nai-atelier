@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft } from '../types';
 import { compilePrompt, getEditableGlobalPrompt, mergePromptFields } from '../services/promptUtils';
-import { generateImage } from '../services/naiService';
+import { generateImage, generateImageStream } from '../services/naiService';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
@@ -55,6 +55,7 @@ interface ChainEditorProps {
     splitPromptFields: boolean;
     tagAssistEnabled: boolean;
     onTagAssistEnabledChange: (enabled: boolean) => void;
+    generationStreamPreview: boolean;
     labModuleOrder: LabModuleId[];
     labModuleCollapsed: LabModuleCollapsedPreferences;
 }
@@ -176,7 +177,7 @@ const PromptAgentOverlayController: React.FC<PromptAgentOverlayControllerProps> 
     );
 };
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, splitPromptFields, tagAssistEnabled, onTagAssistEnabledChange, labModuleOrder, labModuleCollapsed }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onBack, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, splitPromptFields, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, labModuleOrder, labModuleCollapsed }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
     const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
@@ -289,6 +290,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // --- Generation State ---
     const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
     const [isGenerating, setIsGenerating] = useState(false);
+    const [generationProgress, setGenerationProgress] = useState<{ step: number; total: number } | null>(null);
     const [isUploading, setIsUploading] = useState(false);
     const [generatedImage, setGeneratedImage] = useState<string | null>(null);
     const [previewHistory, setPreviewHistory] = useState<LocalGenItem[]>([]);
@@ -1187,7 +1189,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const generationPrompt = override ? compilePrompt({ basePrompt: override.basePrompt, modules: override.modules }, override.subjectPrompt) : finalPrompt;
         const generationNegativePrompt = override?.negativePrompt ?? negativePrompt;
         const generationParams = override?.params ?? params;
+        const previousGeneratedImage = generatedImage;
+        const previousPreviewMode = previewMode;
+        let streamedPreviewShown = false;
         setIsGenerating(true);
+        setGenerationProgress(null);
         setErrorMsg(null);
         try {
             const activeParams: NAIParams = {
@@ -1197,7 +1203,26 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     slots: normalizeVibeSelections(generationParams.vibes.slots, generationParams.vibes.normalizeStrengths),
                 } : undefined,
             };
-            const result = await generateImage(apiKey, generationPrompt, generationNegativePrompt, activeParams);
+            const streamSupported = getNaiModelInfo(activeParams.model).supportsStreamedResponses
+                || Boolean(activeParams.model && naiRuntimeConfig?.streamedModels.includes(activeParams.model));
+            let result;
+            if (generationStreamPreview && streamSupported) {
+                try {
+                    result = await generateImageStream(apiKey, generationPrompt, generationNegativePrompt, activeParams, preview => {
+                        streamedPreviewShown = true;
+                        setGeneratedImage(preview.image);
+                        setPreviewMode('result');
+                        setGenerationProgress(preview.step ? { step: preview.step, total: activeParams.steps } : null);
+                    }, streamSupported);
+                } catch (streamError) {
+                    // 只有 final 尚未到达时 generateImageStream 才会抛错，因此这里回退不会重复生成。
+                    console.warn('生成过程预览不可用，已回退普通生成：', streamError);
+                    setGenerationProgress(null);
+                    result = await generateImage(apiKey, generationPrompt, generationNegativePrompt, activeParams);
+                }
+            } else {
+                result = await generateImage(apiKey, generationPrompt, generationNegativePrompt, activeParams);
+            }
 
             // Show the completed image before uploading its several-megabyte
             // base64 payload to local history. Keeping previewMode='history'
@@ -1274,6 +1299,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             }).catch(console.error);
             return true;
         } catch (e: any) {
+            if (streamedPreviewShown) {
+                setGeneratedImage(previousGeneratedImage);
+                setPreviewMode(previousPreviewMode);
+            }
             setErrorMsg(e.message);
             notify(e.message, 'error');
             void db.logClientEvent({
@@ -1298,6 +1327,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             }).catch(console.error);
             return false;
         } finally {
+            setGenerationProgress(null);
             setIsGenerating(false);
         }
     };
@@ -2030,6 +2060,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     onRemoveCurrentHistory={handleRemoveCurrentHistory}
                     onClearHistoryGroup={handleClearHistoryGroup}
                     generationCostLabel={generationCostLabel}
+                    transparentPreview={getNaiModelInfo(params.model).supportsTransparentBackground && params.transparent === true}
+                    generationProgress={generationProgress}
                 />
                 </div>
             </div>
@@ -2038,7 +2070,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 {(displayedPreviewImage || chain.previewImage) && <button type="button" onClick={() => setLightboxImg(displayedPreviewImage || chain.previewImage || null)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-700" aria-label="查看最近生成结果"><SmartImage src={displayedPreviewImage || chain.previewImage || ''} alt="最近生成结果" /></button>}
                 {queueStatus
                     ? <InlineCloudQueueStatus compact className="min-w-64 max-w-[calc(100vw-5rem)]" />
-                    : <button onClick={handleGenerate} disabled={isGenerating} className={`generation-action-button mobile-touch rounded-full px-6 text-sm font-bold text-white shadow-xl disabled:opacity-60 ${isGenerating ? 'generation-action-button--loading' : ''}`}><span>{isGenerating ? '生成中…' : `生成 · ${generationCostLabel}`}</span></button>}
+                    : <button onClick={handleGenerate} disabled={isGenerating} className={`generation-action-button mobile-touch rounded-full px-6 text-sm font-bold text-white shadow-xl disabled:opacity-60 ${isGenerating ? 'generation-action-button--loading' : ''}`}><span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : `生成 · ${generationCostLabel}`}</span></button>}
             </div>}
 
             {/* Lightbox Modal */}

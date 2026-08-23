@@ -181,6 +181,10 @@ export const parseNovelAIMetadata = (
             if (importedModel) newParams.model = importedModel;
             if (json.width != null) newParams.width = json.width;
             if (json.height != null) newParams.height = json.height;
+            if (json.tag_hint_transparent_background === true || typeof json.straight_alpha === 'boolean') {
+                newParams.transparent = true;
+                newParams.alphaMode = json.straight_alpha === false ? 'premultiplied' : 'straight';
+            }
 
             // Variety+ 开关（通过 skip_cfg_above_sigma 探测）
             if (json.skip_cfg_above_sigma !== undefined && json.skip_cfg_above_sigma !== null) {

@@ -6,6 +6,7 @@
 
 ## 2026-08-23
 
+- **Codex (GPT-5)**：新增 V5 Alpha 透明 PNG、可记忆的生成过程预览与 SSE 网关，按最终事件和原请求 Key 隔离结算用量，并接入官方流式能力同步及回归测试（feat: add transparent and streamed generation）。
 - **Codex (GPT-5)**：移除失效明文游客口令与前端 Gemini 密钥注入，完善敏感文件忽略规则，并新增接入测试和提交钩子的无回显密钥扫描（fix: prevent credentials from entering git）。
 - **Codex (GPT-5)**：为项目 Agent 新增按模型检索的 NovelAI 官方知识索引与工具，传入实验室模型和提示词界面状态，并修正 V5 与 V4.5 的提示容量、多角色和定位规则隔离（feat: add model-aware NovelAI agent knowledge）。
 - **Codex (GPT-5)**：在实验室右上角新增带 `o`／`−` 状态标记的持久化 Tag 辅助开关，统一控制全部提示词框的补全、翻译与词典查询（feat: add laboratory tag assist toggle）。

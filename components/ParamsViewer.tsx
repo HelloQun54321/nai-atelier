@@ -148,6 +148,9 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                         label="Variety+"
                         value={params.variety ? '✅ On' : '❌ Off'}
                     />
+                    {params.transparent && (
+                        <ParamItem label="透明背景" value={params.alphaMode === 'premultiplied' ? '预乘 Alpha' : 'Straight Alpha'} />
+                    )}
                     {/* CFG Rescale 仅在非零时展示 */}
                     {(params.cfgRescale !== undefined && params.cfgRescale > 0) && (
                         <ParamItem label="CFG Rescale" value={params.cfgRescale} />

@@ -2,140 +2,47 @@
 import JSZip from 'jszip';
 import { NAIParams } from '../types';
 import { api } from './api';
-import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
-import { DEFAULT_NAI_MODEL, getNaiModelInfo } from './naiModels';
+import { findNaiModelInfo, getNaiModelInfo } from './naiModels';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 import { hashNaiApiKey } from './anlasBudget';
 import { emitCloudQueueStatus, getCachedCloudQueuePreferences, getCloudQueuePreferences, scheduleCloudQueueStatusClear, watchCloudQueueTask } from './cloudQueue';
+import { buildNaiGenerationPayload } from './naiPayload';
 
-export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams) => {
-  // Logic update: NAI API treats missing seed as random. 0 is a specific seed.
-  // We pass seed only if it is a valid number and not -1 (our internal convention for random).
-  let seed: number | undefined = undefined;
-  if (params.seed !== undefined && params.seed !== null && params.seed !== -1) {
-    seed = params.seed;
-  }
+export interface NaiStreamPreview {
+  image: string;
+  step?: number;
+}
 
-  // --- Pre-process Prompt & Negative based on V4 Settings ---
-
-  // 1. Quality Tags (Append to positive prompt if enabled)
-  // Note: NAI Appends strictly at the end.
-  let finalPrompt = prompt;
-  if (params.qualityToggle ?? true) {
-    finalPrompt = finalPrompt + NAI_QUALITY_TAGS;
-  }
-
-  // 2. UC Preset (Prepend to negative prompt)
-  let finalNegative = negative;
-  const presetId = params.ucPreset ?? 0;
-  if (presetId !== 4) { // 4 is 'None'
-    // @ts-expect-error - Index access is safe here as UI restricts values
-    const presetString = NAI_UC_PRESETS[presetId];
-    if (presetString) {
-      finalNegative = presetString + finalNegative;
-    }
-  }
-
-  // Prepare Character Captions for V4.5
-  const hasCharacters = params.characters && params.characters.length > 0;
-
-  // 1. Positive Character Captions
-  const charCaptions = hasCharacters ? params.characters!.map(c => ({
-    char_caption: c.prompt,
-    centers: [{ x: c.x, y: c.y }]
-  })) : [];
-
-  // 2. Negative Character Captions (Structure must mirror positive)
-  const charNegativeCaptions = hasCharacters ? params.characters!.map(c => ({
-    char_caption: c.negativePrompt || "", // Use empty string placeholder if undefined
-    centers: [{ x: c.x, y: c.y }] // Coordinates mirrored
-  })) : [];
-
-  // 3. AI's Choice Logic
-  const useCoords = params.useCoords ?? hasCharacters;
-
-  // 未设置时用默认模型；未知标识（例如官方未来发布的新模型）原样透传，由服务端裁决。
-  const modelId = params.model?.trim() || DEFAULT_NAI_MODEL;
-  const modelInfo = getNaiModelInfo(modelId);
+const validateGenerationCapabilities = (params: NAIParams) => {
+  const modelInfo = getNaiModelInfo(params.model);
   if (params.vibes?.enabled && params.vibes.slots.length > 0 && !modelInfo.supportsVibes) {
     throw new Error(`NovelAI ${modelInfo.label} 暂不支持 Vibe Transfer，请先移除 Vibe 或切换模型`);
   }
   if (params.characterReferences?.enabled && params.characterReferences.slots.length > 0 && !modelInfo.supportsCharacterReferences) {
     throw new Error(`NovelAI ${modelInfo.label} 暂不支持角色参考，请先移除角色参考或切换模型`);
   }
+  return modelInfo;
+};
 
-  const payload: any = {
-    input: finalPrompt, // Use processed prompt
-    model: modelId,
-    action: "generate",
-    parameters: {
-      params_version: 3,
-      width: params.width,
-      height: params.height,
-      scale: params.scale,
-      sampler: params.sampler,
-      steps: params.steps,
-      n_samples: 1,
+const imageDataUri = (value: string) => {
+  if (value.startsWith('data:image/')) return value;
+  return `${value.replace(/\s/g, '').startsWith('/9j/') ? 'data:image/jpeg;base64,' : 'data:image/png;base64,'}${value}`;
+};
 
-      // New Features
-      // Variety+ is controlled by skip_cfg_above_sigma.
-      // If On, set to 58 (V4 standard for variety). If Off, omit or null.
-      skip_cfg_above_sigma: params.variety ? 58 : null,
+const blobFromDataUri = (uri: string): Blob => {
+  const comma = uri.indexOf(',');
+  if (comma < 0) throw new Error('流式生成返回了无效图片');
+  const mime = uri.slice(5, uri.indexOf(';', 5)) || 'image/png';
+  const binary = atob(uri.slice(comma + 1));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type: mime });
+};
 
-      cfg_rescale: params.cfgRescale ?? 0,
-
-      // V4 Specifics (Sent even if processed into prompt)
-      qualityToggle: params.qualityToggle ?? true,
-      ucPreset: params.ucPreset ?? 0,
-
-      // Legacy / Standard params
-      sm: false,
-      sm_dyn: false,
-      dynamic_thresholding: false,
-      controlnet_strength: 1,
-      legacy: false,
-      add_original_image: true,
-      uncond_scale: 1,
-      noise_schedule: "karras",
-      negative_prompt: finalNegative, // Use processed negative
-      // seed key is added conditionally below
-
-      v4_prompt: {
-        caption: {
-          base_caption: finalPrompt, // Use processed prompt
-          char_captions: charCaptions
-        },
-        use_coords: useCoords, // Controlled by UI toggle
-        use_order: true
-      },
-      v4_negative_prompt: {
-        caption: {
-          base_caption: finalNegative, // Use processed negative
-          char_captions: charNegativeCaptions
-        },
-        legacy_uc: false
-      },
-
-      // Resolved by the computer gateway. The phone/browser never downloads
-      // the permanent Vibe encoding or original reference image.
-      _local_vibes: params.vibes?.enabled && params.vibes.slots.length > 0
-        ? params.vibes
-        : undefined,
-
-      // The computer gateway resolves stable IDs into original images. This
-      // keeps Precise Reference originals out of phones and browser storage.
-      _local_character_references: params.characterReferences?.enabled && params.characterReferences.slots.length > 0
-        ? params.characterReferences
-        : undefined,
-
-      deliberate_euler_ancestral_bug: false,
-      prefer_brownian: true
-    }
-  };
-
-  if (seed !== undefined) {
-    payload.parameters.seed = seed;
-  }
+export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams) => {
+  const payload = buildNaiGenerationPayload(prompt, negative, params);
+  const seed = typeof payload.parameters.seed === 'number' ? payload.parameters.seed : undefined;
+  validateGenerationCapabilities(params);
 
   // 调用 Worker Proxy, 传递 API Key Header
   // Queue status is auxiliary.  A temporary failure to read its preference
@@ -166,14 +73,13 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
       } : {}),
     }, { budgetKeyHash });
   } catch (error) {
+    terminalPhase = error instanceof Error && error.message.includes('已取消排队') ? 'cancelled' : 'error';
+    terminalError = error instanceof Error ? error.message : '生成失败';
     if (queue.enabled) {
-      const message = error instanceof Error ? error.message : '公共队列连接失败';
-      terminalPhase = message.includes('已取消排队') ? 'cancelled' : 'error';
-      terminalError = message;
       emitCloudQueueStatus({
         taskId: queueTaskId,
         phase: terminalPhase,
-        error: message,
+        error: terminalError,
         cancelable: false,
       }, queueApiKey);
     }
@@ -235,4 +141,76 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   }
 
   return { image: URL.createObjectURL(fileData), blob: fileData, seed: actualSeed };
+};
+
+/** 使用 NovelAI SSE 中间帧；只有 final 事件才会作为可保存的生成结果返回。 */
+export const generateImageStream = async (
+  apiKey: string,
+  prompt: string,
+  negative: string,
+  params: NAIParams,
+  onPreview?: (preview: NaiStreamPreview) => void,
+  runtimeStreamSupported = false,
+) => {
+  const modelInfo = validateGenerationCapabilities(params);
+  if (!findNaiModelInfo(params.model)?.supportsStreamedResponses && !runtimeStreamSupported) throw new Error(`NovelAI ${modelInfo.label} 暂不支持生成过程预览`);
+  const payload = buildNaiGenerationPayload(prompt, negative, params, { stream: true, runtimeStreamSupported });
+  const fallbackSeed = typeof payload.parameters.seed === 'number' ? payload.parameters.seed : undefined;
+  let queue = getCachedCloudQueuePreferences();
+  try { queue = await getCloudQueuePreferences(); } catch { /* 由真实生成请求触发统一解锁和错误处理。 */ }
+  const taskId = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const queueApiKey = apiKey.trim();
+  let requestFinished = false;
+  let terminalPhase: 'completed' | 'cancelled' | 'error' = 'error';
+  let terminalError: string | undefined;
+  let finalImage = '';
+  let finalSeed = fallbackSeed;
+  if (queue.enabled) emitCloudQueueStatus({ taskId, phase: 'preparing', cancelable: true }, queueApiKey);
+  const statusWatcher = queue.enabled ? watchCloudQueueTask(taskId, () => requestFinished, queueApiKey) : Promise.resolve();
+  try {
+    const budgetKeyHash = await hashNaiApiKey(apiKey);
+    try {
+      await api.postSse('/generate-stream', payload, {
+        Authorization: `Bearer ${apiKey}`,
+        ...(queue.enabled ? { 'X-Nai-Queue-Task-Id': taskId } : {}),
+      }, ({ event, data }) => {
+        if (!data || typeof data !== 'object') return;
+        const eventData = data as { image?: unknown; step_ix?: unknown; seed?: unknown; message?: unknown };
+        if (event === 'error') throw new Error(typeof eventData.message === 'string' ? eventData.message : '流式生成失败');
+        if (typeof eventData.image !== 'string' || !eventData.image) return;
+        const image = imageDataUri(eventData.image);
+        if (event === 'intermediate') {
+          onPreview?.({ image, step: typeof eventData.step_ix === 'number' ? eventData.step_ix + 1 : undefined });
+        } else if (event === 'final') {
+          finalImage = image;
+          if (typeof eventData.seed === 'number' && Number.isFinite(eventData.seed)) finalSeed = eventData.seed;
+          onPreview?.({ image, step: params.steps });
+        }
+      }, { budgetKeyHash });
+    } catch (error) {
+      // final 图片已经完整到达时，不得回退后再生成一次；保留成品并让额度刷新自行校准。
+      if (!finalImage) throw error;
+    }
+    if (!finalImage) throw new Error('流式生成没有返回最终图片');
+    terminalPhase = 'completed';
+    const blob = blobFromDataUri(finalImage);
+    return { image: URL.createObjectURL(blob), blob, seed: finalSeed };
+  } catch (error) {
+    terminalPhase = error instanceof Error && error.message.includes('已取消排队') ? 'cancelled' : 'error';
+    terminalError = error instanceof Error ? error.message : '流式生成失败';
+    if (queue.enabled) emitCloudQueueStatus({ taskId, phase: terminalPhase, error: terminalError, cancelable: false }, queueApiKey);
+    throw error;
+  } finally {
+    requestFinished = true;
+    if (terminalPhase === 'completed' && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
+    }
+    await statusWatcher;
+    if (queue.enabled) {
+      emitCloudQueueStatus({ taskId, phase: terminalPhase, error: terminalError, cancelable: false }, queueApiKey);
+      scheduleCloudQueueStatusClear(taskId, terminalPhase === 'error' ? 8000 : 5000, queueApiKey);
+    }
+  }
 };

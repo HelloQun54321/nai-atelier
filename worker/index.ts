@@ -3895,6 +3895,30 @@ export default {
         return new Response(blob, { headers: { ...corsHeaders, 'Content-Type': 'application/zip' } });
       }
 
+      if (path === '/api/generate-stream' && method === 'POST') {
+        const body = await request.json();
+        const clientAuth = request.headers.get('Authorization');
+        if (!clientAuth) return error('Missing API Key', 401);
+        const naiRes = await fetch('https://image.novelai.net/ai/generate-image-stream', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': clientAuth,
+            'Accept': 'text/event-stream',
+          },
+          body: JSON.stringify(body),
+        });
+        if (!naiRes.ok) return error(await naiRes.text(), naiRes.status);
+        return new Response(naiRes.body, {
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'private, no-store',
+            'X-Accel-Buffering': 'no',
+          },
+        });
+      }
+
       // --- File Upload ---
       if (path === '/api/upload' && method === 'POST') {
           if (!env.BUCKET) return error('R2 Bucket not configured', 503);

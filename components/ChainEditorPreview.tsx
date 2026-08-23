@@ -25,6 +25,8 @@ interface ChainEditorPreviewProps {
     onRemoveCurrentHistory?: () => void;
     onClearHistoryGroup?: () => void;
     generationCostLabel: string;
+    transparentPreview?: boolean;
+    generationProgress?: { step: number; total: number } | null;
 }
 
 export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
@@ -47,7 +49,9 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     canManageHistoryGroup = false,
     onRemoveCurrentHistory,
     onClearHistoryGroup,
-    generationCostLabel
+    generationCostLabel,
+    transparentPreview = false,
+    generationProgress = null,
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDownloading, setIsDownloading] = useState(false);
@@ -86,7 +90,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
             <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden min-h-[400px]">
                 {/* Generated Image */}
                 <div
-                    className="flex-1 min-h-[300px] lg:min-h-0 bg-white dark:bg-gray-950/50 rounded-xl border border-gray-200 dark:border-gray-800 flex items-center justify-center relative group overflow-hidden cursor-zoom-in"
+                    className={`flex-1 min-h-[300px] lg:min-h-0 rounded-xl border border-gray-200 dark:border-gray-800 flex items-center justify-center relative group overflow-hidden cursor-zoom-in ${transparentPreview ? 'nai-alpha-checker' : 'bg-white dark:bg-gray-950/50'}`}
                     onClick={() => {
                         const img = generatedImage || previewImage;
                         if (img) setLightboxImg(img);
@@ -175,6 +179,12 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                         ) : <div className="text-gray-400 text-xs">预览区</div>
                     )}
 
+                    {isGenerating && generationProgress && (
+                        <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 rounded-full bg-black/65 px-3 py-1 text-[11px] font-semibold text-white shadow-lg backdrop-blur-sm pointer-events-none">
+                            采样 {generationProgress.step} / {generationProgress.total}
+                        </div>
+                    )}
+
 
                     {/* Manual Upload Cover Button */}
                     {isOwner && !hideCoverActions && (
@@ -205,7 +215,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                         className={`generation-action-button flex h-11 w-full max-w-xs items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold ${isGenerating ? 'generation-action-button--loading' : ''}`}
                     >
                         <ImageIcon aria-hidden="true" className="relative z-[1] h-4 w-4 shrink-0" strokeWidth={2.2} />
-                        <span>{isGenerating ? '生成中…' : '生成图片'}</span>
+                        <span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : '生成图片'}</span>
                         {!isGenerating && <span className="generation-action-button__cost">{generationCostLabel}</span>}
                     </button>}
                 </div>

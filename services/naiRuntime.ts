@@ -27,6 +27,8 @@ export interface NaiRuntimeConfig {
   freeMaxSteps: number;
   models: string[];
   usageLimitedModels: string[];
+  /** 官方能力表中 streamedResponses=true 的模型。 */
+  streamedModels: string[];
   /** NovelAI PNG Source 文本到 API 模型标识的官方精确映射。 */
   metadataModelMappings: Record<string, string>;
   syncedAt?: number;
@@ -50,6 +52,11 @@ export const DEFAULT_NAI_RUNTIME: NaiRuntimeConfig = {
   usageLimitedModels: [
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
     'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
+  ],
+  streamedModels: [
+    'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting', 'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
+    'nai-diffusion-4-5-full', 'nai-diffusion-4-5-full-inpainting', 'nai-diffusion-4-5-curated', 'nai-diffusion-4-5-curated-inpainting',
+    'nai-diffusion-4-full', 'nai-diffusion-4-full-inpainting', 'nai-diffusion-4-curated-preview',
   ],
   metadataModelMappings: { ...DEFAULT_NAI_METADATA_MODEL_MAPPINGS },
 };

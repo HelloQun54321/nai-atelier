@@ -147,6 +147,26 @@ html[data-design-theme='nai-atelier'] ::selection {
   transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease, filter 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 
+.nai-alpha-checker {
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, rgb(148 163 184 / 22%) 25%, transparent 25%),
+    linear-gradient(-45deg, rgb(148 163 184 / 22%) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgb(148 163 184 / 22%) 75%),
+    linear-gradient(-45deg, transparent 75%, rgb(148 163 184 / 22%) 75%);
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+  background-size: 20px 20px;
+}
+
+.dark .nai-alpha-checker {
+  background-color: rgb(17 24 39);
+  background-image:
+    linear-gradient(45deg, rgb(148 163 184 / 16%) 25%, transparent 25%),
+    linear-gradient(-45deg, rgb(148 163 184 / 16%) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgb(148 163 184 / 16%) 75%),
+    linear-gradient(-45deg, transparent 75%, rgb(148 163 184 / 16%) 75%);
+}
+
 .generation-action-button::before {
   position: absolute;
   inset: -35% -20%;

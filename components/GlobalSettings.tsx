@@ -452,6 +452,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">拆分风格与主体提示词</b><span className="mt-0.5 block text-[10px] leading-4 text-gray-500 dark:text-gray-400">开启时分别编辑风格串和主体／变量；关闭时合并为一个“全局提示词”输入框，导入时也不再自动拆分。</span></span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.splitPromptFields ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.splitPromptFields ? 'translate-x-5' : 'translate-x-0'}`} /></span>
               </button>
+              <button type="button" onClick={() => updateAppearance({ generationStreamPreview: !appearancePreferences.generationStreamPreview })} aria-pressed={appearancePreferences.generationStreamPreview} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+                <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">生成过程预览</b><span className="mt-0.5 block text-[10px] leading-4 text-gray-500 dark:text-gray-400">支持时逐步显示采样中的图片；关闭后等待最终成品。流式不可用会自动回退普通生成。</span></span>
+                <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.generationStreamPreview ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.generationStreamPreview ? 'translate-x-5' : 'translate-x-0'}`} /></span>
+              </button>
               <div className="rounded-2xl border border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35">
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>

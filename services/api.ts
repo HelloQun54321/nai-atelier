@@ -27,6 +27,64 @@ interface BinaryRequestOptions {
   budgetKeyHash?: string;
 }
 
+export interface ParsedSseEvent {
+  event: string;
+  data: unknown;
+}
+
+/** 增量解析 fetch POST 返回的 SSE；兼容 CRLF、分片字段与多行 data。 */
+export const createSseParser = (onEvent: (event: ParsedSseEvent) => void) => {
+  let buffer = '';
+  const emitFrame = (frame: string) => {
+    let event = 'message';
+    const data: string[] = [];
+    for (const line of frame.split(/\r?\n/)) {
+      if (!line || line.startsWith(':')) continue;
+      const separator = line.indexOf(':');
+      const field = separator < 0 ? line : line.slice(0, separator);
+      const value = separator < 0 ? '' : line.slice(separator + 1).replace(/^ /, '');
+      if (field === 'event') event = value || 'message';
+      if (field === 'data') data.push(value);
+    }
+    if (!data.length) return;
+    const raw = data.join('\n');
+    let parsed: unknown = raw;
+    try { parsed = JSON.parse(raw); } catch { /* 文本事件原样交给调用方。 */ }
+    onEvent({ event, data: parsed });
+  };
+  return {
+    push(chunk: string) {
+      buffer += chunk;
+      let boundary = buffer.search(/\r?\n\r?\n/);
+      while (boundary >= 0) {
+        const frame = buffer.slice(0, boundary);
+        const separator = buffer.slice(boundary).match(/^\r?\n\r?\n/)?.[0] || '\n\n';
+        buffer = buffer.slice(boundary + separator.length);
+        emitFrame(frame);
+        boundary = buffer.search(/\r?\n\r?\n/);
+      }
+    },
+    finish() {
+      if (buffer.trim()) emitFrame(buffer);
+      buffer = '';
+    },
+  };
+};
+
+const emitBudgetChanged = (remaining: number, budgetKeyHash = '') => {
+  if (!Number.isFinite(remaining) || typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('nai-anlas-budget-changed', {
+    detail: { remaining, updatedAt: Date.now(), keyHash: budgetKeyHash, refreshPersonal: true },
+  }));
+};
+
+const requestPersonalUsageRefresh = (budgetKeyHash = '') => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('nai-anlas-budget-changed', {
+    detail: { keyHash: budgetKeyHash, refreshPersonal: true },
+  }));
+};
+
 export const api = {
   get: async (endpoint: string, options: { cache?: RequestCache } = {}) => {
     const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -88,12 +146,49 @@ export const api = {
     }
     if (!res.ok) throw new Error(await res.text());
     const remaining = res.headers.get('x-nai-anlas-remaining');
-    if (remaining !== null && typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('nai-anlas-budget-changed', {
-        detail: { remaining: Number(remaining), updatedAt: Date.now(), keyHash: options.budgetKeyHash || '', refreshPersonal: true },
-      }));
-    }
+    if (remaining !== null) emitBudgetChanged(Number(remaining), options.budgetKeyHash);
     return res.blob();
+  },
+
+  postSse: async (
+    endpoint: string,
+    data: unknown,
+    headers: Record<string, string>,
+    onEvent: (event: ParsedSseEvent) => void,
+    options: BinaryRequestOptions = {},
+  ) => {
+    const res = await fetch(`${API_BASE}${endpoint}`, {
+      method: 'POST',
+      headers: getHeaders({ Accept: 'text/event-stream', ...headers }),
+      body: JSON.stringify(data),
+    });
+    if (res.status === 401) {
+      const payload = await res.clone().json().catch(() => null);
+      if (payload?.code === 'LAN_ACCESS_REQUIRED' && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('nai-lan-access-required'));
+      }
+    }
+    if (!res.ok) throw new Error(await res.text());
+    if (!res.body) throw new Error('流式生成没有返回响应体');
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    const parser = createSseParser(event => {
+      if (event.event === 'nai_usage' && event.data && typeof event.data === 'object') {
+        const remaining = Number((event.data as { remaining?: unknown }).remaining);
+        if (Number.isFinite(remaining)) emitBudgetChanged(remaining, options.budgetKeyHash);
+        else requestPersonalUsageRefresh(options.budgetKeyHash);
+      }
+      if (event.event === 'nai_usage_error') {
+        requestPersonalUsageRefresh(options.budgetKeyHash);
+      }
+      onEvent(event);
+    });
+    while (true) {
+      const { done, value } = await reader.read();
+      parser.push(decoder.decode(value, { stream: !done }));
+      if (done) break;
+    }
+    parser.finish();
   },
 
   // NEW: Upload File (Multipart)

@@ -468,6 +468,7 @@ const sanitizeParams = raw => {
   const value = raw && typeof raw === 'object' ? raw : {};
   const requestedModel = typeof value.model === 'string' ? text(value.model).trim().slice(0, 160) : '';
   const safeModel = /^[a-z0-9._:-]+$/i.test(requestedModel) ? requestedModel : 'nai-diffusion-4-5-full';
+  const modelProfile = getNovelAiModelProfile(safeModel);
   const params = {
     ...value,
     ...(requestedModel ? { model: safeModel } : {}),
@@ -481,9 +482,10 @@ const sanitizeParams = raw => {
     useCoords: value.useCoords === true,
     variety: value.variety === true,
     cfgRescale: clamp(value.cfgRescale, 0, 1, 0),
+    transparent: modelProfile.project.supportsAlphaTransparency === true && value.transparent === true,
+    alphaMode: value.alphaMode === 'premultiplied' ? 'premultiplied' : 'straight',
   };
   if (Number.isInteger(Number(value.seed)) && Number(value.seed) >= 0) params.seed = Number(value.seed);
-  const modelProfile = getNovelAiModelProfile(safeModel);
   if (Array.isArray(value.characters)) params.characters = value.characters.slice(0, modelProfile.project.maxCharacterPrompts).map(character => ({
     id: text(character.id || randomBytes(8).toString('hex')).slice(0, 80),
     prompt: text(character.prompt),
@@ -2546,6 +2548,7 @@ export class PromptAgentService {
           width: Type.Optional(Type.Number()), height: Type.Optional(Type.Number()), steps: Type.Optional(Type.Number()), scale: Type.Optional(Type.Number()),
           sampler: Type.Optional(Type.String()), seed: Type.Optional(Type.Number()), qualityToggle: Type.Optional(Type.Boolean()), ucPreset: Type.Optional(Type.Number()),
           useCoords: Type.Optional(Type.Boolean()), variety: Type.Optional(Type.Boolean()), cfgRescale: Type.Optional(Type.Number()),
+          transparent: Type.Optional(Type.Boolean()),
         }),
         execute: async (_id, args) => {
           draft.params = sanitizeParams({ ...draft.params, ...args });

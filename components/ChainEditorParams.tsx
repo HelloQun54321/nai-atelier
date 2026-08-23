@@ -203,6 +203,22 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                     />
                 </div>
 
+                {currentModelInfo.supportsTransparentBackground && (
+                    <button
+                        type="button"
+                        disabled={!canEdit}
+                        aria-pressed={params.transparent === true}
+                        onClick={() => {
+                            setParams({ ...params, transparent: !params.transparent, alphaMode: 'straight' });
+                            markChange();
+                        }}
+                        className="col-span-full flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700"
+                    >
+                        <span className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-200">透明背景</b><span className="mt-0.5 block text-[10px] text-gray-400">生成带 Alpha 通道的 PNG；自动保留原图，不转换为 JPG。</span></span>
+                        <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${params.transparent ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${params.transparent ? 'translate-x-5' : ''}`} /></span>
+                    </button>
+                )}
+
                 {missingModelFeatures.length > 0 && (
                     <p className="col-span-full rounded-md bg-amber-50 px-2.5 py-1.5 text-[11px] leading-4 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
                         {currentModelInfo.label} 暂不支持 {missingModelFeatures.join(' / ')}

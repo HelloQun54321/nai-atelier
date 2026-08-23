@@ -231,6 +231,22 @@ describe('NovelAI Stealth PNG 元数据', () => {
     }).params.model).toBe('nai-diffusion-6-full');
   });
 
+  it('导入 V5 Alpha 元数据时恢复透明输出参数', () => {
+    expect(parseNovelAIMetadata(JSON.stringify({
+      prompt: '1girl, transparent background',
+      model: 'nai-diffusion-5-full',
+      tag_hint_transparent_background: true,
+      straight_alpha: true,
+    })).params).toMatchObject({
+      model: 'nai-diffusion-5-full',
+      transparent: true,
+      alphaMode: 'straight',
+    });
+    expect(parseNovelAIMetadata(JSON.stringify({
+      prompt: 'effect', model: 'nai-diffusion-5-full', straight_alpha: false,
+    })).params.alphaMode).toBe('premultiplied');
+  });
+
   it('拒绝声明长度超过图片容量的载荷', async () => {
     const fixture = makeStealthRgba(new Uint8Array([1, 2, 3]), 8_000_000);
     expect(await extractNovelAiStealthMetadataFromRgba(fixture.rgba, fixture.width, fixture.height)).toBeNull();

@@ -28,6 +28,7 @@ try {
     ['freeMaxSteps', `${DEFAULT_NAI_RUNTIME.freeMaxSteps}`, `${runtime.freeMaxSteps}`],
     ['models', `${DEFAULT_NAI_RUNTIME.models.length} 个`, `${runtime.models.length} 个`],
     ['usageLimitedModels', DEFAULT_NAI_RUNTIME.usageLimitedModels.join(' '), runtime.usageLimitedModels.join(' ') || '（空）'],
+    ['streamedModels', DEFAULT_NAI_RUNTIME.streamedModels.join(' '), runtime.streamedModels.join(' ') || '（空）'],
     ['metadataModels', `${Object.keys(DEFAULT_NAI_RUNTIME.metadataModelMappings).length} 个`, `${Object.keys(runtime.metadataModelMappings).length} 个`],
   ];
   console.log(`官方 bundle ${paths.length} 个 chunk，提取结果（默认值 → 实时值）：`);

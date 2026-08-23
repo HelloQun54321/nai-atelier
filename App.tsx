@@ -550,6 +550,7 @@ const App = () => {
           splitPromptFields={appearancePreferences.splitPromptFields}
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
+          generationStreamPreview={appearancePreferences.generationStreamPreview}
           labModuleOrder={appearancePreferences.labModuleOrder}
           labModuleCollapsed={appearancePreferences.labModuleCollapsed}
         />;
@@ -616,6 +617,7 @@ const App = () => {
           splitPromptFields={appearancePreferences.splitPromptFields}
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
+          generationStreamPreview={appearancePreferences.generationStreamPreview}
           labModuleOrder={appearancePreferences.labModuleOrder}
           labModuleCollapsed={appearancePreferences.labModuleCollapsed}
         />;

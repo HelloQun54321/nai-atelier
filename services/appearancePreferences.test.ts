@@ -18,6 +18,7 @@ describe('appearance preferences', () => {
       fontScale: 'large',
       splitPromptFields: false,
       tagAssistEnabled: false,
+      generationStreamPreview: true,
       labModuleOrder: ['params', 'prompt', 'negative', 'vibe', 'characters', 'characterReference'],
       labModuleCollapsed: {
         prompt: true,
@@ -38,6 +39,7 @@ describe('appearance preferences', () => {
       fontScale: 'large',
       splitPromptFields: false,
       tagAssistEnabled: false,
+      generationStreamPreview: true,
       labModuleOrder: ['params', 'prompt', 'negative', 'vibe', 'characters', 'characterReference'],
       labModuleCollapsed: {
         prompt: true,
@@ -62,6 +64,7 @@ describe('appearance preferences', () => {
       fontScale: 'huge',
       splitPromptFields: 'sometimes',
       tagAssistEnabled: 'sometimes',
+      generationStreamPreview: 'sometimes',
       labModuleOrder: 'anything',
       labModuleCollapsed: null,
     })).toEqual(DEFAULT_APPEARANCE_PREFERENCES);
