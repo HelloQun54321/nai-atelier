@@ -6,6 +6,7 @@
 
 ## 2026-08-23
 
+- **Codex (GPT-5)**：修正图生图、局部重绘和扩图的前端布局与文生图保持一致，控制区回到左侧，底图预览和生成按钮固定在右侧（fix: align image edit workspace layout）。
 - **Codex (GPT-5)**：将图片编辑重构为实验室内嵌的四模式同级工作区，加入独立 Prompt 草稿、IndexedDB 私有底图／蒙版资产、历史 Prompt 恢复、编辑参数持久化并移除旧返回与弹窗入口（feat: unify image generation modes）。
 - **Codex (GPT-5)**：实现统一图片编辑工作区，接入图生图、局部重绘、Focused Inpainting、扩图、历史元数据、Key 隔离费用结算、移动端入口与 Mock 回归测试（feat: add image editing workspace）。
 - **Codex (GPT-5)**：新增 V5 Alpha 透明 PNG、可记忆的生成过程预览与 SSE 网关，按最终事件和原请求 Key 隔离结算用量，并接入官方流式能力同步及回归测试（feat: add transparent and streamed generation）。
