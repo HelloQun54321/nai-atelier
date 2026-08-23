@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compilePrompt, mergePromptFields, NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
+import { compilePrompt, getEditableGlobalPrompt, mergePromptFields, NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
 
 const mod = (content: string, position: 'pre' | 'post', isActive = true) =>
   ({ content, position, isActive, id: content, name: content } as any);
@@ -54,6 +54,16 @@ describe('mergePromptFields', () => {
   it('任一输入为空时不产生多余分隔符', () => {
     expect(mergePromptFields('', '1girl')).toBe('1girl');
     expect(mergePromptFields('masterpiece', '')).toBe('masterpiece');
+  });
+
+  it('单字段实时编辑保留末尾逗号、空格和换行', () => {
+    expect(getEditableGlobalPrompt('masterpiece, ', '')).toBe('masterpiece, ');
+    expect(getEditableGlobalPrompt('masterpiece, ', '   ')).toBe('masterpiece, ');
+    expect(getEditableGlobalPrompt('masterpiece,\n', '')).toBe('masterpiece,\n');
+  });
+
+  it('首次关闭拆分时仍会合并已有画风与主体字段', () => {
+    expect(getEditableGlobalPrompt('masterpiece, ', ' 1girl,')).toBe('masterpiece, 1girl');
   });
 });
 

@@ -28,7 +28,7 @@ const unwrapToken = (raw: string) => {
 };
 
 export const parsePromptTags = (prompt: string): PromptTagToken[] => prompt
-  .split(/[,\n|]+/)
+  .split(/[,，\n|]+/)
   .map(unwrapToken)
   .filter(item => item.lookupTag && /[\p{L}\p{N}]/u.test(item.lookupTag))
   .map((item, index) => ({ ...item, id: `${index}:${item.lookupTag}` }));

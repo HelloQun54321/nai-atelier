@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft } from '../types';
-import { compilePrompt, mergePromptFields } from '../services/promptUtils';
+import { compilePrompt, getEditableGlobalPrompt, mergePromptFields } from '../services/promptUtils';
 import { generateImage } from '../services/naiService';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 import { localHistory } from '../services/localHistory';
@@ -276,7 +276,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // --- Testing State ---
     const [activeModules, setActiveModules] = useState<Record<string, boolean>>({});
     const [finalPrompt, setFinalPrompt] = useState('');
-    const globalPrompt = mergePromptFields(basePrompt, subjectPrompt);
+    const globalPrompt = getEditableGlobalPrompt(basePrompt, subjectPrompt);
 
     // --- Generation State ---
     const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');

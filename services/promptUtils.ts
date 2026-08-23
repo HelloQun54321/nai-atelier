@@ -24,6 +24,13 @@ export const mergePromptFields = (basePrompt: string, subjectPrompt: string): st
     .replace(/,\s*$/, '');
 
 /**
+ * 单字段编辑模式只在仍有旧主体字段时执行一次合并；合并完成后直接返回原始输入。
+ * 这样用户正在键入的末尾逗号、空格和换行不会被受控输入框的下一次渲染清理掉。
+ */
+export const getEditableGlobalPrompt = (basePrompt: string, subjectPrompt: string): string =>
+  subjectPrompt.trim() ? mergePromptFields(basePrompt, subjectPrompt) : basePrompt;
+
+/**
  * Compiles the final prompt string by combining parts in a fixed order:
  * 1. Base Prompt
  * 2. Pre-Modules (isActive & position='pre')

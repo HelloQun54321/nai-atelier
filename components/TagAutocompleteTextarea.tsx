@@ -24,10 +24,13 @@ interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes
   allowAiTranslation?: boolean;
 }
 
-const findCompletionTarget = (value: string, caret: number): CompletionTarget | null => {
+const isPromptDelimiter = (character: string) => character === ',' || character === '，' || character === '\n' || character === '|';
+
+export const findCompletionTarget = (value: string, caret: number): CompletionTarget | null => {
   const beforeCaret = value.slice(0, caret);
   const delimiterIndex = Math.max(
     beforeCaret.lastIndexOf(','),
+    beforeCaret.lastIndexOf('，'),
     beforeCaret.lastIndexOf('\n'),
     beforeCaret.lastIndexOf('|')
   );
@@ -39,12 +42,21 @@ const findCompletionTarget = (value: string, caret: number): CompletionTarget | 
   while (replaceStart < caret && /[\s{\[]/.test(value[replaceStart])) replaceStart++;
   if (value.slice(replaceStart, replaceStart + 7).toLowerCase() === 'artist:') replaceStart += 7;
 
-  let replaceEnd = caret;
-  while (replaceEnd > replaceStart && /[}\]]/.test(value[replaceEnd - 1])) replaceEnd--;
-  const closingLength = caret - replaceEnd;
-  const query = normalizeTagQuery(value.slice(replaceStart, replaceEnd));
+  let queryEnd = caret;
+  while (queryEnd > replaceStart && /[}\]]/.test(value[queryEnd - 1])) queryEnd--;
+  const closingLength = caret - queryEnd;
+  const query = normalizeTagQuery(value.slice(replaceStart, queryEnd));
 
   if (!query || query.length > 100 || query.includes('::')) return null;
+
+  let replaceEnd = queryEnd;
+  while (
+    replaceEnd < value.length
+    && !isPromptDelimiter(value[replaceEnd])
+    && !/[}\]]/.test(value[replaceEnd])
+    && value.slice(replaceEnd, replaceEnd + 2) !== '::'
+  ) replaceEnd++;
+
   return { query, replaceStart, replaceEnd, closingLength };
 };
 
@@ -74,10 +86,11 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const requestIdRef = useRef(0);
   const composingRef = useRef(false);
   const blurTimerRef = useRef<number | null>(null);
+  const searchTimerRef = useRef<number | null>(null);
   const listboxRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const [target, setTarget] = useState<CompletionTarget | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [dropUp, setDropUp] = useState(false);
@@ -125,13 +138,19 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
 
   useEffect(() => () => {
     if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
+    if (searchTimerRef.current !== null) window.clearTimeout(searchTimerRef.current);
+    requestIdRef.current++;
   }, []);
 
-  const refreshSuggestions = useCallback(async (nextValue = value, caret = textareaRef.current?.selectionStart ?? 0) => {
+  const refreshSuggestions = useCallback((nextValue = value, caret = textareaRef.current?.selectionStart ?? 0) => {
     if (disabled || composingRef.current) return;
+    if (searchTimerRef.current !== null) {
+      window.clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
     const nextTarget = findCompletionTarget(nextValue, caret);
     setTarget(nextTarget);
-    setActiveIndex(0);
+    setActiveIndex(-1);
     const requestId = ++requestIdRef.current;
 
     if (!nextTarget) {
@@ -141,15 +160,17 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     }
 
     setIsLoading(true);
-    try {
-      const results = await searchTagDictionary(nextTarget.query);
-      if (requestId === requestIdRef.current) setSuggestions(results);
-    } catch (error) {
-      if (requestId === requestIdRef.current) setSuggestions([]);
-      console.warn('Tag autocomplete search failed:', error);
-    } finally {
-      if (requestId === requestIdRef.current) setIsLoading(false);
-    }
+    searchTimerRef.current = window.setTimeout(() => {
+      searchTimerRef.current = null;
+      void searchTagDictionary(nextTarget.query).then(results => {
+        if (requestId === requestIdRef.current) setSuggestions(results);
+      }).catch(error => {
+        if (requestId === requestIdRef.current) setSuggestions([]);
+        console.warn('Tag autocomplete search failed:', error);
+      }).finally(() => {
+        if (requestId === requestIdRef.current) setIsLoading(false);
+      });
+    }, 80);
   }, [disabled, value]);
 
   const selectSuggestion = (suggestion: TagSuggestion) => {
@@ -161,6 +182,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     onValueChange(nextValue);
     setSuggestions([]);
     setTarget(null);
+    setActiveIndex(-1);
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(nextCaret, nextCaret);
@@ -217,12 +239,12 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         aria-activedescendant={isOpen && suggestions[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
         onChange={(event) => {
           onValueChange(event.target.value);
-          void refreshSuggestions(event.target.value, event.target.selectionStart);
+          refreshSuggestions(event.target.value, event.target.selectionStart);
         }}
         onFocus={(event) => {
           if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
           preloadTagDictionary();
-          void refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
+          refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
           onFocus?.(event);
         }}
         onBlur={(event) => {
@@ -233,28 +255,27 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
           onBlur?.(event);
         }}
         onClick={(event) => {
-          void refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
+          refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
           onClick?.(event);
         }}
-        onKeyUp={(event) => {
-          if (!['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(event.key)) {
-            void refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
-          }
-          onKeyUp?.(event);
-        }}
+        onKeyUp={onKeyUp}
         onKeyDown={(event) => {
+          if (composingRef.current || event.nativeEvent.isComposing) {
+            onKeyDown?.(event);
+            return;
+          }
           if (isOpen && suggestions.length > 0) {
             if (event.key === 'ArrowDown') {
               event.preventDefault();
-              setActiveIndex(index => (index + 1) % suggestions.length);
+              setActiveIndex(index => index < 0 ? 0 : (index + 1) % suggestions.length);
               return;
             }
             if (event.key === 'ArrowUp') {
               event.preventDefault();
-              setActiveIndex(index => (index - 1 + suggestions.length) % suggestions.length);
+              setActiveIndex(index => index < 0 ? suggestions.length - 1 : (index - 1 + suggestions.length) % suggestions.length);
               return;
             }
-            if (event.key === 'Enter' || event.key === 'Tab') {
+            if (event.key === 'Enter' && activeIndex >= 0) {
               event.preventDefault();
               selectSuggestion(suggestions[activeIndex]);
               return;
@@ -270,12 +291,20 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         }}
         onCompositionStart={(event) => {
           composingRef.current = true;
+          if (searchTimerRef.current !== null) {
+            window.clearTimeout(searchTimerRef.current);
+            searchTimerRef.current = null;
+          }
+          requestIdRef.current++;
           setSuggestions([]);
+          setTarget(null);
+          setActiveIndex(-1);
+          setIsLoading(false);
           onCompositionStart?.(event);
         }}
         onCompositionEnd={(event) => {
           composingRef.current = false;
-          void refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
+          refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
           onCompositionEnd?.(event);
         }}
       />
@@ -344,8 +373,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 ? 'bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-200'
                 : 'hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-800 dark:text-gray-200'
               }`}
-              onPointerDown={(event) => { event.preventDefault(); }}
-              onDoubleClick={(event) => { event.preventDefault(); selectSuggestion(suggestion); }}
+              onClick={() => selectSuggestion(suggestion)}
               onPointerMove={() => setActiveIndex(index)}
             >
               <span className="min-w-0 flex-1">

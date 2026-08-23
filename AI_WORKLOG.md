@@ -6,6 +6,7 @@
 
 ## 2026-08-23
 
+- **Codex (GPT-5)**：修复单字段全局提示词吞掉末尾逗号，以及 Tag 补全重复查询、抢占键盘、干扰中文输入法、双击选择和中间替换残留等问题，并补充完整输入交互测试（fix: stop tag autocomplete from disrupting input）。
 - **Codex (GPT-5)**：为实验室保存到库和风格串待保存状态增加 emerald 绿色语义色，同时保持 Fork 蓝色、重置红色与已保存灰色（style: color save actions green）。
 - **Codex (GPT-5)**：将实验室配置导入移至右上角并修正图标与操作顺序，移除 JSON 粘贴入口，统一正面、主体和负面提示词的主题化就地复制按钮（style: refine laboratory import and copy actions）。
 - **Codex (GPT-5)**：让实验室新建与已有风格串保存时自动把当前预览图片复制为独立封面，并补充当前图片选择回归测试（feat: use current preview as chain cover）。
