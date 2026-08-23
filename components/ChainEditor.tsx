@@ -24,6 +24,7 @@ import { useNovelaiUsage } from '../services/naiUsage';
 import { getNaiModelInfo } from '../services/naiModels';
 import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
+import { decideCurrentPreviewCover } from '../services/chainCover';
 import { LabModuleCollapsedPreferences, LabModuleId } from '../services/appearancePreferences';
 import { ArrowLeft, ChevronDown, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, UserRound, X } from 'lucide-react';
 
@@ -32,9 +33,9 @@ const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(modu
 interface ChainEditorProps {
     chain: PromptChain;
     allChains: PromptChain[]; // Need access to other chains for importing
-    onUpdateChain: (id: string, updates: Partial<PromptChain>) => void;
+    onUpdateChain: (id: string, updates: Partial<PromptChain>) => Promise<void> | void;
     onBack: () => void;
-    onFork: (chain: PromptChain, targetType?: 'style' | 'character') => void;
+    onFork: (chain: PromptChain, targetType?: 'style' | 'character') => Promise<void> | void;
     setIsDirty: (isDirty: boolean) => void;
     notify: (msg: string, type?: 'success' | 'error') => void;
     externalImportToken?: number;
@@ -341,6 +342,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const sourceChainId = chain.id === 'playground' ? 'playground' : chain.id;
     const selectedPreviewItem = previewMode === 'history' ? previewHistory[previewIndex] || null : null;
     const displayedPreviewImage = selectedPreviewItem?.imageUrl || generatedImage;
+    const currentPreviewCover = decideCurrentPreviewCover(displayedPreviewImage, chain.previewImage);
+    const hasPendingPreviewCover = chain.type === 'style' && currentPreviewCover.needsUpload;
+    const canSaveCurrentChain = hasChanges || hasPendingPreviewCover;
     const lightboxItem = lightboxImg ? previewHistory.find(item => item.imageUrl === lightboxImg) || null : null;
     const currentPreviewPosition = selectedPreviewItem
         ? `${previewIndex + 1} / ${previewHistory.length}`
@@ -1035,26 +1039,57 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
 
-    const handleSaveAll = () => {
-        if (!isOwner) return;
+    const prepareCurrentPreviewCover = async (forceUpload = false): Promise<{ previewImage?: string; changed: boolean }> => {
+        const decision = decideCurrentPreviewCover(displayedPreviewImage, chain.previewImage, forceUpload);
+        if (!decision.source || !decision.needsUpload) {
+            return { previewImage: decision.source || undefined, changed: false };
+        }
+
+        const response = await fetch(decision.source);
+        if (!response.ok) throw new Error(`读取当前预览图片失败（${response.status}）`);
+        const blob = await response.blob();
+        if (!blob.type.startsWith('image/')) throw new Error('当前预览内容不是有效图片');
+        const extension = blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/webp' ? 'webp' : 'png';
+        const file = new File([blob], `chain-cover.${extension}`, { type: blob.type });
+        const upload = await api.uploadFile(file, 'covers');
+        return { previewImage: upload.url, changed: true };
+    };
+
+    const handleSaveAll = async () => {
+        if (!isOwner || isUploading) return;
+        setIsUploading(true);
         const updatedModules = modules.map(m => ({
             ...m,
             isActive: activeModules[m.id] ?? true
         }));
         const varValues = { 'subject': subjectPrompt };
-        onUpdateChain(chain.id, {
-            name: chainName,
-            description: chainDesc,
-            tags: chainTags,
-            basePrompt,
-            negativePrompt,
-            modules: updatedModules,
-            params,
-            variableValues: varValues
-        });
-        setHasChanges(false);
-        setIsEditingInfo(false);
-        notify(`${isCharacterMode ? '角色' : '画师'}串已保存`);
+        try {
+            const cover = chain.type === 'style'
+                ? await prepareCurrentPreviewCover()
+                : { previewImage: chain.previewImage, changed: false };
+            await onUpdateChain(chain.id, {
+                name: chainName,
+                description: chainDesc,
+                tags: chainTags,
+                basePrompt,
+                negativePrompt,
+                modules: updatedModules,
+                params,
+                variableValues: varValues,
+                ...(cover.changed ? { previewImage: cover.previewImage } : {}),
+            });
+            if (cover.changed) {
+                setPreviewMode('cover');
+                setGeneratedImage(null);
+            }
+            setHasChanges(false);
+            setIsEditingInfo(false);
+            notify(`${isCharacterMode ? '角色串' : '风格串'}已保存${cover.changed ? '，当前图片已设为封面' : ''}`);
+        } catch (error: any) {
+            notify(`保存失败：${error?.message || '未知错误'}`, 'error');
+        } finally {
+            setIsUploading(false);
+        }
     };
 
     const handleFork = () => {
@@ -1084,21 +1119,35 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         notify('实验室已重置');
     };
 
-    const confirmFork = (targetType: 'style' | 'character') => {
+    const confirmFork = async (targetType: 'style' | 'character') => {
+        if (isUploading) return;
+        setIsUploading(true);
         const updatedModules = modules.map(m => ({
             ...m,
             isActive: activeModules[m.id] ?? true
         }));
-        onFork({
-            ...chain,
-            tags: chainTags,
-            basePrompt,
-            negativePrompt,
-            modules: updatedModules,
-            params,
-            variableValues: { 'subject': subjectPrompt }
-        }, targetType);
-        setShowForkModal(false);
+        try {
+            const cover = targetType === 'style'
+                ? await prepareCurrentPreviewCover(true)
+                : { previewImage: chain.previewImage, changed: false };
+            await onFork({
+                ...chain,
+                name: chainName,
+                description: chainDesc,
+                tags: chainTags,
+                basePrompt,
+                negativePrompt,
+                modules: updatedModules,
+                params,
+                variableValues: { 'subject': subjectPrompt },
+                previewImage: cover.previewImage,
+            }, targetType);
+            setShowForkModal(false);
+        } catch (error: any) {
+            notify(`保存失败：${error?.message || '未知错误'}`, 'error');
+        } finally {
+            setIsUploading(false);
+        }
     };
 
     const toggleModuleActive = (id: string) => {
@@ -1516,6 +1565,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     {((!isOwner && !isGuest) || chain.id === 'playground') && (
                         <button
                             onClick={handleFork}
+                            disabled={isUploading}
                             className={`mobile-touch flex h-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-sm font-medium text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40 ${chain.id === 'playground' ? 'w-11' : 'w-auto px-4'}`}
                             title={chain.id === 'playground' ? '保存到库' : 'Fork'}
                             aria-label={chain.id === 'playground' ? '保存到库' : 'Fork'}
@@ -1540,15 +1590,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <button
                             type="button"
                             onClick={handleSaveAll}
-                            disabled={!hasChanges}
-                            className={`mobile-touch flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-bold transition-colors lg:w-11 lg:px-0 ${hasChanges
+                            disabled={!canSaveCurrentChain || isUploading}
+                            className={`mobile-touch flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-bold transition-colors lg:w-11 lg:px-0 ${canSaveCurrentChain && !isUploading
                                 ? 'bg-indigo-600 text-white hover:bg-indigo-500'
                                 : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}
-                            title={hasChanges ? '保存修改' : '已保存'}
-                            aria-label={hasChanges ? '保存修改' : '已保存'}
+                            title={isUploading ? '正在保存' : hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存'}
+                            aria-label={isUploading ? '正在保存' : hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存'}
                         >
                             <Save className="h-[18px] w-[18px] md:h-5 md:w-5" />
-                            <span className="lg:hidden">{hasChanges ? '保存' : '已保存'}</span>
+                            <span className="lg:hidden">{isUploading ? '保存中' : canSaveCurrentChain ? '保存' : '已保存'}</span>
                         </button>
                     )}
                 </div>
@@ -2311,17 +2361,20 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             {showForkModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-sm shadow-2xl border border-gray-200 dark:border-gray-700 p-6">
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 text-center">选择保存类型</h3>
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1 text-center">选择保存类型</h3>
+                        {currentPreviewCover.source && <p className="mb-4 text-center text-xs text-gray-500 dark:text-gray-400">保存为风格串时，当前显示图片会自动成为封面。</p>}
                         <div className="grid grid-cols-2 gap-4">
                             <button
-                                onClick={() => confirmFork('style')}
+                                onClick={() => void confirmFork('style')}
+                                disabled={isUploading}
                                 className="flex flex-col items-center justify-center p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors gap-2"
                             >
                                 <Palette className="h-6 w-6 text-indigo-500" />
-                                <span className="font-bold text-blue-700 dark:text-blue-300">画师/风格串</span>
+                                <span className="font-bold text-blue-700 dark:text-blue-300">{isUploading ? '保存中…' : '画师/风格串'}</span>
                             </button>
                             <button
-                                onClick={() => confirmFork('character')}
+                                onClick={() => void confirmFork('character')}
+                                disabled={isUploading}
                                 className="flex flex-col items-center justify-center p-4 rounded-lg bg-pink-50 dark:bg-pink-900/20 border-2 border-pink-200 dark:border-pink-800 hover:bg-pink-100 dark:hover:bg-pink-900/40 transition-colors gap-2"
                             >
                                 <UserRound className="h-6 w-6 text-indigo-500" />

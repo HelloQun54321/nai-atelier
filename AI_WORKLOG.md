@@ -6,6 +6,7 @@
 
 ## 2026-08-23
 
+- **Codex (GPT-5)**：让实验室新建与已有风格串保存时自动把当前预览图片复制为独立封面，并补充当前图片选择回归测试（feat: use current preview as chain cover）。
 - **Codex (GPT-5)**：统一工作区与全屏管理页的固定高度顶栏，重做画师 Tag 单行命令栏，并将角色、AITag、风格串与编辑器的次要控件收进弹层（style: unify workspace toolbar layouts）。
 - **Codex (GPT-5)**：新增可持久化的实验室模块排序与默认折叠设置，支持拖拽、上下移动、恢复推荐顺序及桌面/移动端共用配置（feat: add customizable laboratory layout）。
 - **Codex (GPT-5)**：移除 Opus 限额显示的 100% 上限，保留官方活动加成后的真实百分比与张数，并为超额满圈状态补充回归测试（fix: show uncapped opus allowance）。

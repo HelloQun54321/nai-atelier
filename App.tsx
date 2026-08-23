@@ -448,7 +448,7 @@ const App = () => {
       keepViewMounted(targetView);
     } catch (e) {
       console.error('Fork 风格串失败', e);
-      notify('Fork 失败，请稍后重试', 'error');
+      throw e;
     }
   };
 
@@ -458,7 +458,7 @@ const App = () => {
       await refreshData(true);
     } catch (e) {
       console.error('保存风格串失败', e);
-      notify('保存失败，请稍后重试', 'error');
+      throw e;
     }
   };
 
