@@ -24,7 +24,6 @@ interface ImageEditControlsProps {
   tool: 'brush' | 'eraser';
   manualMaskEditing?: boolean;
   expansion: ImageEditCanvasExpansion;
-  canvasSize?: { width: number; height: number };
   isBusy?: boolean;
   safeMode?: boolean;
   apiKey: string;
@@ -58,7 +57,7 @@ const getModuleOrder = (layout: LabPageLayout, moduleId: keyof LabPageLayout['co
 const isModuleCollapsed = (layout: LabPageLayout, moduleId: keyof LabPageLayout['collapsed']) => Boolean(layout.collapsed[moduleId]);
 
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
-  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, canvasSize = { width: 0, height: 0 }, isBusy = false, safeMode = false, apiKey, notify,
+  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, isBusy = false, safeMode = false, apiKey, notify,
   onPromptChange, onNegativePromptChange, onPromptSource, onDraftChange, onFileChange, onStrengthChange, onNoiseChange, onBrushSizeChange, onFocusedChange,
   onMinimumContextAreaChange, onToolChange, manualMaskEditing = false, onManualMaskEditingChange = () => undefined, onClearMask, onInvertMask, onUndo, onRedo, onExpansionChange, onApplyOutpaint, onResetFocusedRect = () => undefined, normalization = null, onNormalize = () => undefined,
 }) => {
@@ -91,7 +90,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
       </LabModuleSection>
 
       <LabModuleSection moduleId="params" label="参数设置" order={getModuleOrder(layout, 'params')} defaultCollapsed={isModuleCollapsed(layout, 'params')}>
-        <ChainEditorParams params={selectableParams} setParams={params => onDraftChange({ params })} canEdit={!isBusy} markChange={() => undefined} hideResolution imageEditSize={canvasSize} mode={operation} />
+        <ChainEditorParams params={selectableParams} setParams={params => onDraftChange({ params })} canEdit={!isBusy} markChange={() => undefined} hideResolution mode={operation} />
       </LabModuleSection>
 
       <LabModuleSection moduleId="editSettings" label="编辑参数" order={getModuleOrder(layout, 'editSettings')} defaultCollapsed={isModuleCollapsed(layout, 'editSettings')}>

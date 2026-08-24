@@ -11,7 +11,6 @@ interface ChainEditorParamsProps {
     markChange: () => void;
     presetSource?: { name: string; modified: boolean };
     hideResolution?: boolean;
-    imageEditSize?: { width: number; height: number };
     mode?: 'text-to-image' | ImageEditOperation;
 }
 
@@ -21,7 +20,7 @@ const RESOLUTIONS = {
     Square: { width: 1024, height: 1024, label: "方形 (1024x1024)" },
 };
 
-export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, setParams, canEdit, markChange, presetSource, hideResolution = false, imageEditSize, mode = 'text-to-image' }) => {
+export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, setParams, canEdit, markChange, presetSource, hideResolution = false, mode = 'text-to-image' }) => {
     // 网关自动同步的官方模型清单（未来新模型无需改代码即可出现在下拉里）。
     const runtime = useNaiRuntime();
     const selectableModels = getSelectableNaiModels(runtime);
@@ -155,25 +154,19 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                     </select>
                 </div>
 
-                <div className="flex flex-col gap-1">
+                {!hideResolution && <div className="flex flex-col gap-1">
                     <label className="text-xs text-gray-500 dark:text-gray-500 block">图片尺寸</label>
-                    {hideResolution ? (
-                        <div className="flex h-[34px] items-center rounded border border-gray-300 bg-gray-100 px-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                            {imageEditSize?.width && imageEditSize?.height ? `${imageEditSize.width} × ${imageEditSize.height}（当前画布）` : '等待底图'}
-                        </div>
-                    ) : (
-                        <select
-                            disabled={!canEdit}
-                            className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
-                            value={getCurrentResolutionMode()}
-                            onChange={(e) => handleResolutionChange(e.target.value)}
-                        >
-                            {Object.entries(RESOLUTIONS).map(([key, val]) => (
-                                <option key={key} value={key}>{val.label}</option>
-                            ))}
-                        </select>
-                    )}
-                </div>
+                    <select
+                        disabled={!canEdit}
+                        className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
+                        value={getCurrentResolutionMode()}
+                        onChange={(e) => handleResolutionChange(e.target.value)}
+                    >
+                        {Object.entries(RESOLUTIONS).map(([key, val]) => (
+                            <option key={key} value={key}>{val.label}</option>
+                        ))}
+                    </select>
+                </div>}
 
                 <div className="flex flex-col gap-1">
                     <label className="text-xs text-gray-500 dark:text-gray-500 block">采样器</label>

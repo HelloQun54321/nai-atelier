@@ -607,7 +607,6 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         tool={tool}
         manualMaskEditing={manualMaskEditing}
         expansion={expansion}
-        canvasSize={{ width: state.width, height: state.height }}
         isBusy={isLoading || isGenerating}
         safeMode={safeMode}
         apiKey={apiKey}

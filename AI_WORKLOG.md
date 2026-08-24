@@ -6,6 +6,8 @@
 
 ## 2026-08-25
 
+- **Codex (GPT-5)**：移除图生图、局部重绘和扩图参数区中不可调节的画布尺寸伪输入框，并清理无用尺寸传参（fix: remove read-only image edit fields）。
+
 - **Codex (GPT-5)**：修复实验室 CFG 滑块误显为灰色禁用状态，并统一四种模式提示词输入框的字体与字重（fix: align laboratory input styling）。
 
 - **Codex (GPT-5)**：让安全模式同时禁用实验室蒙版工具、透明画布和 Focused 选区交互，并在关闭后无损恢复编辑（fix: block mask painting in safe mode）。
