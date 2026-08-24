@@ -1932,9 +1932,26 @@ function localHistoryImageUrl(row: any) {
     : `/api/local-history/${encodeURIComponent(row.id)}/image`;
 }
 
+function localHistoryEditMaskKey(userId: string, historyId: string) {
+  return `local-history/${userId}/${historyId}.edit-mask`;
+}
+
+function sanitizeLocalHistoryEdit(edit: any) {
+  if (!edit || typeof edit !== 'object') return undefined;
+  const { maskData, actualCost, ...rest } = edit;
+  return {
+    ...rest,
+    ...(rest.estimatedCost === undefined && Number.isFinite(Number(actualCost)) ? { estimatedCost: Number(actualCost) } : {}),
+    ...(rest.maskAvailable === undefined && typeof maskData === 'string' && maskData.length > 0 ? { maskAvailable: true } : {}),
+  };
+}
+
 function mapLocalHistoryRow(row: any) {
   const hasStructuredPrompt = Number(row.structure_version || 0) >= 1;
   const storedParams = parseStoredJson(row.params, {});
+  const mappedParams = storedParams && typeof storedParams === 'object'
+    ? { ...storedParams, ...(storedParams._local_edit ? { _local_edit: sanitizeLocalHistoryEdit(storedParams._local_edit) } : {}) }
+    : {};
   return {
     id: row.id,
     imageUrl: localHistoryImageUrl(row),
@@ -1942,8 +1959,8 @@ function mapLocalHistoryRow(row: any) {
     favoriteAt: row.favorite_at ? Number(row.favorite_at) : undefined,
     prompt: row.prompt || '',
     negativePrompt: row.negative_prompt || '',
-    params: storedParams,
-    edit: storedParams?._local_edit || undefined,
+    params: mappedParams,
+    edit: sanitizeLocalHistoryEdit(storedParams?._local_edit),
     ...(hasStructuredPrompt ? {
       basePrompt: row.base_prompt || '',
       subjectPrompt: row.subject_prompt || '',
@@ -3213,6 +3230,7 @@ export default {
               const reference = await db.prepare('SELECT COUNT(*) AS count FROM inspirations WHERE image_key = ?').bind(row.image_key).first<{count: number}>();
               if (Number(reference?.count || 0) === 0) await env.BUCKET!.delete(row.image_key);
             }
+            await env.BUCKET!.delete(localHistoryEditMaskKey(currentUser.id, row.id));
             await db.prepare('DELETE FROM local_generation_history WHERE id = ? AND user_id = ?')
               .bind(row.id, currentUser.id).run();
           }
@@ -3252,6 +3270,46 @@ export default {
           headers.set('etag', object.httpEtag);
           headers.set('Cache-Control', 'private, max-age=31536000, immutable');
           return new Response(object.body, { headers });
+        }
+
+        const editMaskMatch = path.match(/^\/api\/local-history\/([^/]+)\/edit-mask$/);
+        if (editMaskMatch && method === 'GET') {
+          const id = decodeURIComponent(editMaskMatch[1]);
+          const row = await db.prepare('SELECT params FROM local_generation_history WHERE id = ? AND user_id = ?')
+            .bind(id, currentUser.id).first<{params: string}>();
+          if (!row) return error('History edit mask not found', 404);
+          const object = await env.BUCKET!.get(localHistoryEditMaskKey(currentUser.id, id));
+          if (object) {
+            const headers = new Headers();
+            object.writeHttpMetadata(headers);
+            headers.set('etag', object.httpEtag);
+            headers.set('Cache-Control', 'private, max-age=31536000, immutable');
+            return new Response(object.body, { headers });
+          }
+          const storedParams = parseStoredJson(row.params, {});
+          const legacyEdit = storedParams?._local_edit;
+          const legacyMask = legacyEdit?.maskData;
+          if (typeof legacyMask === 'string' && legacyMask.startsWith('data:image/')) {
+            try {
+              const parsed = parseImageData(legacyMask);
+              const editMaskKey = localHistoryEditMaskKey(currentUser.id, id);
+              await env.BUCKET.put(editMaskKey, exactArrayBuffer(parsed.bytes), { httpMetadata: { contentType: parsed.contentType } });
+              const normalizedEdit = sanitizeLocalHistoryEdit(legacyEdit);
+              if (normalizedEdit) {
+                await db.prepare('UPDATE local_generation_history SET params = ? WHERE id = ? AND user_id = ?')
+                  .bind(JSON.stringify({ ...storedParams, _local_edit: { ...normalizedEdit, maskAvailable: true } }), id, currentUser.id)
+                  .run();
+              }
+              return new Response(exactArrayBuffer(parsed.bytes), {
+                headers: {
+                  'Content-Type': parsed.contentType,
+                  'Cache-Control': 'private, max-age=31536000, immutable',
+                  'X-Content-Type-Options': 'nosniff',
+                },
+              });
+            } catch { /* 旧蒙版损坏时按不存在处理。 */ }
+          }
+          return error('History edit mask not found', 404);
         }
 
         if (path === '/api/local-history' && method === 'GET') {
@@ -3334,6 +3392,7 @@ export default {
           let extension: string;
           let width: number;
           let height: number;
+          let editMask: { bytes: Uint8Array; contentType: string } | null = null;
           if (multipart) {
             let parsed;
             try { parsed = await parseUploadedImage(form?.get('image') || null, MAX_MANAGED_IMAGE_BYTES); } catch (e: any) { return error(e.message, 400); }
@@ -3342,6 +3401,15 @@ export default {
             extension = parsed.format;
             width = parsed.width;
             height = parsed.height;
+            const editMaskFile = form?.get('editMask');
+            if (editMaskFile instanceof File) {
+              try {
+                const parsedMask = await parseUploadedImage(editMaskFile, MAX_MANAGED_IMAGE_BYTES);
+                editMask = { bytes: parsedMask.bytes, contentType: parsedMask.contentType };
+              } catch (e: any) {
+                return error(`编辑蒙版无效：${e.message}`, 400);
+              }
+            }
           } else {
             let parsed;
             try { parsed = parseImageData(String(body.imageUrl || '')); } catch (e: any) { return error(e.message, 400); }
@@ -3356,11 +3424,19 @@ export default {
           }
           // 以图片真实尺寸为准覆盖宽高；保留 steps/scale/sampler/seed 等其他生成参数
           const rawParams = body.params && typeof body.params === 'object' && !Array.isArray(body.params) ? body.params : {};
-          const normalizedParams = {
+          const normalizedEdit = sanitizeLocalHistoryEdit(body.edit);
+          const editWithAvailability = normalizedEdit
+            ? { ...normalizedEdit, ...(editMask ? { maskAvailable: true } : {}) }
+            : undefined;
+          const sanitizedRawParams = {
             ...rawParams,
+            ...(rawParams._local_edit ? { _local_edit: sanitizeLocalHistoryEdit(rawParams._local_edit) } : {}),
+          };
+          const normalizedParams = {
+            ...sanitizedRawParams,
             width,
             height,
-            ...(body.edit && typeof body.edit === 'object' ? { _local_edit: body.edit } : {}),
+            ...(editWithAvailability ? { _local_edit: editWithAvailability } : {}),
           };
           const imageKey = `local-history/${currentUser.id}/${id}.${extension}`;
           const existing = await db.prepare('SELECT image_key, is_favorite, favorite_at FROM local_generation_history WHERE id = ? AND user_id = ?')
@@ -3369,6 +3445,10 @@ export default {
           const favoriteAt = isFavorite ? Number(body.favoriteAt || existing?.favorite_at || Date.now()) : null;
 
           await env.BUCKET.put(imageKey, exactArrayBuffer(bytes), { httpMetadata: { contentType: imageType } });
+          const editMaskKey = localHistoryEditMaskKey(currentUser.id, id);
+          if (editMask) {
+            await env.BUCKET.put(editMaskKey, exactArrayBuffer(editMask.bytes), { httpMetadata: { contentType: editMask.contentType } });
+          }
           await db.prepare(`
             INSERT OR REPLACE INTO local_generation_history (
               id, user_id, image_key, image_type, prompt, negative_prompt, params,
@@ -3384,6 +3464,7 @@ export default {
             Number(body.createdAt || Date.now())
           ).run();
           if (existing?.image_key && existing.image_key !== imageKey) await env.BUCKET.delete(existing.image_key);
+          if (!editMask) await env.BUCKET.delete(editMaskKey);
           return json({ item: mapLocalHistoryRow({
             id, image_key: imageKey, prompt: body.prompt, negative_prompt: body.negativePrompt,
             params: JSON.stringify(normalizedParams), base_prompt: body.basePrompt, subject_prompt: body.subjectPrompt,

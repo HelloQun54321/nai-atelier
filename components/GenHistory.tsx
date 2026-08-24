@@ -824,7 +824,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         }
     };
 
-    const handleOpenImageEditor = (item: LocalGenItem) => {
+    const handleOpenImageEditor = (item: LocalGenItem, reuseEditMask = false) => {
         sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify({
             mode: 'image-edit',
             prompt: item.prompt,
@@ -832,7 +832,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             params: item.params,
             baseImageUrl: item.imageUrl,
             parentHistoryId: item.id,
-            imageEditOperation: 'image-to-image',
+            imageEditOperation: item.edit?.operation || 'image-to-image',
+            editMetadata: item.edit,
+            reuseEditMask,
         }));
         setLightbox(null);
         onNavigateToPlayground?.();
@@ -1132,6 +1134,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                     params={lightbox.params}
                                     prompt={lightbox.prompt}
                                     negativePrompt={getHistoryNegativePrompt(lightbox)}
+                                    edit={lightbox.edit}
                                     notify={notify}
                                 />
                             </div>
@@ -1144,8 +1147,12 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                 </ToolbarButton>
                                 <ToolbarButton className="w-full" onClick={() => handleOpenImageEditor(lightbox)}>
                                     <Pencil />
-                                    编辑这张图片
+                                    编辑这张图片（清空旧蒙版）
                                 </ToolbarButton>
+                                {lightbox.edit?.maskAvailable && <ToolbarButton className="w-full" onClick={() => handleOpenImageEditor(lightbox, true)}>
+                                    <Pencil />
+                                    编辑并复用原蒙版
+                                </ToolbarButton>}
 
                                 <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
                                     <label className="block text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-2">加入灵感库</label>

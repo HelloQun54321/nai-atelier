@@ -22,7 +22,7 @@ import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, useAnlasBudget } from '../services/anlasBudget';
-import { createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, getLabWorkspaceSessionKey, loadLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl } from '../services/labWorkspace';
+import { cleanupLabWorkspaceAssets, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, loadLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl } from '../services/labWorkspace';
 import { useNovelaiUsage } from '../services/naiUsage';
 import { getNaiModelInfo } from '../services/naiModels';
 import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
@@ -299,6 +299,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [previewIndex, setPreviewIndex] = useState(0);
     const [previewMode, setPreviewMode] = useState<'history' | 'cover' | 'result' | 'unsaved'>('cover');
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const generationInFlightRef = useRef(false);
     const [imageEditBaseImage, setImageEditBaseImage] = useState<string | null>(null);
     const workspaceKey = getLabWorkspaceSessionKey(chain.id);
     const workspaceFallback = createLabWorkspaceSession(chain.basePrompt || '', String(chain.variableValues?.subject || ''), chain.negativePrompt || '', chain.params || { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' }, Object.fromEntries((chain.modules || []).map(module => [module.id, module.isActive])));
@@ -306,6 +307,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [imageEditMaskData, setImageEditMaskData] = useState<string | undefined>();
     const [imageEditBaseLoading, setImageEditBaseLoading] = useState(false);
     const maskSaveRevisionRef = useRef(0);
+    const maskSaveTimerRef = useRef<number | null>(null);
+    const pendingMaskSaveRef = useRef<{ operation: ImageEditOperation; data: string; revision: number } | null>(null);
+    const editBaseResolveRevisionRef = useRef(0);
     const workspaceInitializedKeyRef = useRef(workspaceKey);
 
     useEffect(() => () => {
@@ -599,6 +603,21 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         saveLabWorkspaceSession(workspaceKey, workspaceSession);
     }, [workspaceKey, workspaceSession]);
 
+    useEffect(() => {
+        const references = Object.values(workspaceSession.edits).flatMap(edit => [edit.baseImageRef, edit.maskRef].filter((value): value is string => Boolean(value)));
+        void cleanupLabWorkspaceAssets(references).catch(error => console.warn('清理编辑资产失败:', error));
+        // 仅在进入一个工作区时扫描一次，避免每次笔画都触发全库清理。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [workspaceKey]);
+
+    useEffect(() => () => {
+        const pending = pendingMaskSaveRef.current;
+        if (pending) void flushMaskSave(pending.operation, false).catch(error => console.warn('离开实验室前保存编辑蒙版失败:', error));
+        if (maskSaveTimerRef.current !== null) window.clearTimeout(maskSaveTimerRef.current);
+    // 当前 cleanup 只需要捕获离开前的工作区与待写入资产。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [workspaceKey]);
+
     const workspaceSyncBlockedRef = useRef(false);
 
     useEffect(() => {
@@ -618,26 +637,58 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setWorkspaceSession(previous => ({ ...updater(previous), updatedAt: Date.now() }));
     };
 
+    const flushMaskSave = async (operation?: ImageEditOperation, updateSession = true) => {
+        const pending = pendingMaskSaveRef.current;
+        if (!pending || (operation && pending.operation !== operation)) return;
+        pendingMaskSaveRef.current = null;
+        if (maskSaveTimerRef.current !== null) {
+            window.clearTimeout(maskSaveTimerRef.current);
+            maskSaveTimerRef.current = null;
+        }
+        const maskRef = await saveLabWorkspaceAsset(await dataUrlToBlob(pending.data), getLabWorkspaceAssetId(workspaceKey, pending.operation, 'mask'));
+        if (updateSession && pending.revision === maskSaveRevisionRef.current) {
+            updateWorkspace(previous => ({
+                ...previous,
+                edits: { ...previous.edits, [pending.operation]: { ...previous.edits[pending.operation], maskRef } },
+            }));
+        }
+    };
+
+    const cancelPendingMaskSave = () => {
+        pendingMaskSaveRef.current = null;
+        if (maskSaveTimerRef.current !== null) {
+            window.clearTimeout(maskSaveTimerRef.current);
+            maskSaveTimerRef.current = null;
+        }
+    };
+
     const updateEditDraft = (operation: ImageEditOperation, patch: Partial<LabImageEditDraft> & { maskData?: string }) => {
         const { maskData, ...draftPatch } = patch;
+        const hasMaskPatch = Object.prototype.hasOwnProperty.call(patch, 'maskData');
         updateWorkspace(previous => ({
             ...previous,
-            edits: { ...previous.edits, [operation]: { ...previous.edits[operation], ...draftPatch } },
+            edits: { ...previous.edits, [operation]: { ...previous.edits[operation], ...draftPatch, ...(hasMaskPatch && maskData === undefined ? { maskRef: undefined } : {}) } },
         }));
-        if (maskData !== undefined) {
+        const maskAssetId = getLabWorkspaceAssetId(workspaceKey, operation, 'mask');
+        if (hasMaskPatch && maskData !== undefined) {
             setImageEditMaskData(maskData);
             const saveRevision = (maskSaveRevisionRef.current += 1);
-            void dataUrlToBlob(maskData).then(saveLabWorkspaceAsset).then(maskRef => {
-                if (saveRevision !== maskSaveRevisionRef.current) return;
-                updateWorkspace(previous => ({
-                    ...previous,
-                    edits: { ...previous.edits, [operation]: { ...previous.edits[operation], maskRef } },
-                }));
-            }).catch(error => console.warn('保存编辑蒙版失败:', error));
+            pendingMaskSaveRef.current = { operation, data: maskData, revision: saveRevision };
+            if (maskSaveTimerRef.current !== null) window.clearTimeout(maskSaveTimerRef.current);
+            maskSaveTimerRef.current = window.setTimeout(() => {
+                void flushMaskSave(operation).catch(error => console.warn('保存编辑蒙版失败:', error));
+            }, 140);
+        } else if (hasMaskPatch) {
+            maskSaveRevisionRef.current += 1;
+            cancelPendingMaskSave();
+            setImageEditMaskData(undefined);
+            void deleteLabWorkspaceAsset(maskAssetId).catch(error => console.warn('删除编辑蒙版失败:', error));
         }
     };
 
     const resolveEditBaseImage = async (draft: LabImageEditDraft | null) => {
+        const resolveRevision = editBaseResolveRevisionRef.current + 1;
+        editBaseResolveRevisionRef.current = resolveRevision;
         if (!draft?.baseImageRef) {
             setImageEditBaseImage(null);
             setImageEditMaskData(undefined);
@@ -646,27 +697,54 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setImageEditBaseLoading(true);
         try {
             const blob = await readLabWorkspaceAsset(draft.baseImageRef);
+            if (resolveRevision !== editBaseResolveRevisionRef.current) return;
             setImageEditBaseImage(blob ? await blobToDataUrl(blob) : null);
             if (draft.maskRef) {
                 const maskBlob = await readLabWorkspaceAsset(draft.maskRef);
+                if (resolveRevision !== editBaseResolveRevisionRef.current) return;
                 setImageEditMaskData(maskBlob ? await blobToDataUrl(maskBlob) : undefined);
             } else setImageEditMaskData(undefined);
         } finally {
-            setImageEditBaseLoading(false);
+            if (resolveRevision === editBaseResolveRevisionRef.current) setImageEditBaseLoading(false);
         }
     };
 
-    const createEditDraftFromSource = async (operation: ImageEditOperation, sourceImage: string | undefined, source: 'generated' | 'history' | 'upload', parentHistoryId?: string, sourcePrompt = finalPrompt, sourceNegativePrompt = negativePrompt, sourceParams = params) => {
-        const draft = createLabImageEditDraft(operation, sourcePrompt, sourceNegativePrompt, sourceParams, { baseImageSource: source, parentHistoryId, promptSource: source === 'history' ? 'history' : 'current' });
+    const createEditDraftFromSource = async (operation: ImageEditOperation, sourceImage: string | undefined, source: 'generated' | 'history' | 'upload', parentHistoryId?: string, sourcePrompt = finalPrompt, sourceNegativePrompt = negativePrompt, sourceParams = params, editMetadata?: ImageEditMetadata, reuseEditMask = false) => {
+        const draft = createLabImageEditDraft(operation, sourcePrompt, sourceNegativePrompt, sourceParams, {
+            baseImageSource: source,
+            parentHistoryId,
+            promptSource: source === 'history' ? 'history' : 'current',
+            strength: editMetadata?.strength ?? (operation === 'image-to-image' ? 0.7 : 1),
+            noise: editMetadata?.noise ?? 0,
+            focused: operation === 'inpaint' && Boolean(editMetadata?.focused),
+            minimumContextArea: editMetadata?.minimumContextArea ?? editMetadata?.contextArea ?? 64,
+            expansion: editMetadata?.canvasExpansion || { top: 0, right: 0, bottom: 0, left: 0 },
+            focusedRect: editMetadata?.focusedArea,
+        });
+        let restoredMask: string | undefined;
+        const baseAssetId = getLabWorkspaceAssetId(workspaceKey, operation, 'base');
         if (sourceImage) {
-            draft.baseImageRef = await dataUrlToWorkspaceAsset(sourceImage);
+            draft.baseImageRef = await dataUrlToWorkspaceAsset(sourceImage, baseAssetId);
             setImageEditBaseImage(sourceImage);
-        } else setImageEditBaseImage(null);
+        } else {
+            await deleteLabWorkspaceAsset(baseAssetId);
+            setImageEditBaseImage(null);
+        }
+        const maskAssetId = getLabWorkspaceAssetId(workspaceKey, operation, 'mask');
+        await deleteLabWorkspaceAsset(maskAssetId);
+        if (reuseEditMask && parentHistoryId) {
+            const maskBlob = await localHistory.getEditMask(parentHistoryId);
+            if (maskBlob) {
+                draft.maskRef = await saveLabWorkspaceAsset(maskBlob, maskAssetId);
+                restoredMask = await blobToDataUrl(maskBlob);
+            }
+        }
         updateWorkspace(previous => ({ ...previous, activeMode: operation, edits: { ...previous.edits, [operation]: draft } }));
-        setImageEditMaskData(undefined);
+        setImageEditMaskData(restoredMask);
     };
 
     const selectGenerationMode = async (mode: GenerationMode) => {
+        if (activeEditOperation) await flushMaskSave(activeEditOperation).catch(error => console.warn('切换编辑模式前保存蒙版失败:', error));
         if (mode === 'text-to-image') {
             updateWorkspace(previous => ({ ...previous, activeMode: mode }));
             setImageEditBaseImage(null);
@@ -1111,6 +1189,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 data.prompt || finalPrompt,
                 data.negativePrompt || negativePrompt,
                 data.params || params,
+                data.editMetadata,
+                data.reuseEditMask === true,
             );
             notify('已载入底图，正在打开对应图片编辑模式。');
             return;
@@ -1239,6 +1319,23 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             tone: 'danger',
         })) return;
 
+        if (activeEditOperation) await flushMaskSave(activeEditOperation, false).catch(error => console.warn('重置实验室前保存蒙版失败:', error));
+        cancelPendingMaskSave();
+        editBaseResolveRevisionRef.current += 1;
+        await Promise.all((Object.keys(workspaceSession.edits) as ImageEditOperation[]).flatMap(operation => [
+            deleteLabWorkspaceAsset(getLabWorkspaceAssetId(workspaceKey, operation, 'base')),
+            deleteLabWorkspaceAsset(getLabWorkspaceAssetId(workspaceKey, operation, 'mask')),
+        ])).catch(error => console.warn('清理实验室编辑资产失败:', error));
+        const resetWorkspace = createLabWorkspaceSession(
+            '',
+            '',
+            '',
+            { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: undefined, qualityToggle: true, ucPreset: 4, characters: [] },
+            {},
+        );
+        setWorkspaceSession(resetWorkspace);
+        saveLabWorkspaceSession(workspaceKey, resetWorkspace);
+
         setChainName('生图实验室');
         setChainDesc('临时生图实验，点击 Fork 可保存到库');
         setBasePrompt('');
@@ -1251,6 +1348,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setActiveModules({});
         clearPresetSources();
         setGeneratedImage(null);
+        setImageEditBaseImage(null);
+        setImageEditMaskData(undefined);
         notify('实验室已重置');
     };
 
@@ -1314,6 +1413,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             notify(message, 'error');
             return false;
         }
+        if (generationInFlightRef.current) return false;
+        generationInFlightRef.current = true;
         const generationPrompt = override ? compilePrompt({ basePrompt: override.basePrompt, modules: override.modules }, override.subjectPrompt) : finalPrompt;
         const generationNegativePrompt = override?.negativePrompt ?? negativePrompt;
         const generationParams = override?.params ?? params;
@@ -1457,6 +1558,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         } finally {
             setGenerationProgress(null);
             setIsGenerating(false);
+            generationInFlightRef.current = false;
         }
     };
     const handleGenerate = async () => {
@@ -1490,8 +1592,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const imageEditCostLabel = (operation: ImageEditOperation, focused: boolean, context?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number }) => {
-        const cost = estimateImageEditCost(activeEditDraft?.params || params, operation, activeEditDraft?.strength || (operation === 'image-to-image' ? 0.7 : 1), focused, novelaiSubscription?.tier, opusUsageExhausted, context);
-        return formatImageEditCostLabel(cost, operation, focused, novelaiSubscription?.tier);
+        const focusedReady = operation === 'inpaint' && focused && Boolean(context?.focusedRect && context.focusedRect.width >= 2 && context.focusedRect.height >= 2);
+        const cost = estimateImageEditCost(activeEditDraft?.params || params, operation, activeEditDraft?.strength || (operation === 'image-to-image' ? 0.7 : 1), focusedReady, novelaiSubscription?.tier, opusUsageExhausted, context);
+        return formatImageEditCostLabel(cost, operation, focusedReady, novelaiSubscription?.tier);
     };
 
     const handleImageEditGenerate = async (request: ImageEditRequest) => {
@@ -1525,6 +1628,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             if (!await confirmAction({ title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return;
         } else if (editCost > 0 && !await confirmAction({ title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。`, confirmLabel: `消耗 ${editCost} 点并生成` })) return;
 
+        await flushMaskSave(request.operation).catch(error => console.warn('生成前保存编辑蒙版失败:', error));
         setIsGenerating(true);
         setErrorMsg(null);
         try {
@@ -1533,17 +1637,24 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setGeneratedImage(result.image);
             setPreviewMode('result');
             const keyHash = await hashNaiApiKey(apiKey);
+            const editMask = request.mask ? await dataUrlToBlob(request.mask) : undefined;
             const edit: ImageEditMetadata = {
                 operation: request.operation,
                 parentHistoryId: request.parentHistoryId,
                 baseImageSource: request.baseImageSource || (request.parentHistoryId ? 'history' : 'generated'),
                 strength: request.strength,
                 noise: request.noise,
-                maskData: request.mask,
                 focused: request.focused,
                 minimumContextArea: request.minimumContextArea,
+                focusedArea: request.focusedRect,
+                contextArea: request.minimumContextArea,
                 canvasExpansion: request.expansion,
+                requestWidth: result.requestWidth,
+                requestHeight: result.requestHeight,
+                fullSizeMask: Boolean(result.focusedGeometry?.fullSizeMask || (request.mask && !request.focused)),
+                maskAvailable: Boolean(editMask),
                 estimatedCost: result.estimatedCost ?? editCost,
+                settlementStatus: 'estimated',
                 keyHash,
                 promptSource: request.promptSource,
             };
@@ -1555,6 +1666,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 subjectPrompt,
                 modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })),
                 edit,
+                editMask,
             });
             setPreviewHistory(previous => [historyItem, ...previous.filter(item => item.id !== historyItem.id)]);
             setPreviewIndex(0);
@@ -2300,17 +2412,20 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onDraftChange={patch => updateEditDraft(activeEditOperation, patch)}
                 onBaseImageChange={(dataUrl, source) => {
                     void (async () => {
-                        const ref = await dataUrlToWorkspaceAsset(dataUrl);
-                        updateEditDraft(activeEditOperation, { baseImageRef: ref, baseImageSource: source, parentHistoryId: source === 'upload' ? undefined : activeEditDraft.parentHistoryId, maskRef: undefined, focusedRect: undefined });
+                        cancelPendingMaskSave();
+                        const ref = await dataUrlToWorkspaceAsset(dataUrl, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'base'));
+                        await deleteLabWorkspaceAsset(getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'mask'));
+                        updateEditDraft(activeEditOperation, { baseImageRef: ref, baseImageSource: source, parentHistoryId: source === 'upload' ? undefined : activeEditDraft.parentHistoryId, maskRef: undefined, maskData: undefined, focusedRect: undefined });
                         setImageEditBaseImage(dataUrl);
                         setImageEditMaskData(undefined);
                     })();
                 }}
                 onCanvasChange={(imageData, maskData) => {
                     void (async () => {
+                        cancelPendingMaskSave();
                         const [baseRef, maskRef] = await Promise.all([
-                            dataUrlToWorkspaceAsset(imageData),
-                            dataUrlToWorkspaceAsset(maskData),
+                            dataUrlToWorkspaceAsset(imageData, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'base')),
+                            dataUrlToWorkspaceAsset(maskData, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'mask')),
                         ]);
                         updateEditDraft(activeEditOperation, { baseImageRef: baseRef, maskRef });
                         setImageEditBaseImage(imageData);

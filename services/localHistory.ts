@@ -5,9 +5,50 @@ import { createUuid } from './id';
 
 const DB_NAME = 'NAI_History_DB';
 const STORE_NAME = 'generations';
-const DB_VERSION = 3;
+const EDIT_MASK_STORE_NAME = 'editMasks';
+const DB_VERSION = 4;
 const HISTORY_THUMBNAIL_MAX_EDGE = 960;
 const HISTORY_THUMBNAIL_VARIANT = 'thumb-960';
+
+type LocalHistoryAddSource = Pick<LocalGenItem, 'basePrompt' | 'subjectPrompt' | 'modules' | 'sourceChainId' | 'sourceChainName' | 'sourceChainType' | 'edit'> & {
+    editMask?: Blob;
+};
+
+type StoredEditMask = {
+    historyId: string;
+    blob: Blob;
+    mimeType: string;
+    updatedAt: number;
+};
+
+const normalizeHistoryEdit = (edit: ImageEditMetadata | undefined): ImageEditMetadata | undefined => {
+    if (!edit) return undefined;
+    const { maskData, actualCost, ...rest } = edit;
+    const legacyCost = Number(actualCost);
+    return {
+        ...rest,
+        ...(rest.estimatedCost === undefined && Number.isFinite(legacyCost) ? { estimatedCost: legacyCost } : {}),
+        ...(rest.maskAvailable === undefined && typeof maskData === 'string' && maskData.length > 0 ? { maskAvailable: true } : {}),
+    };
+};
+
+const normalizeHistoryItem = (item: LocalGenItem): LocalGenItem => {
+    const params = item.params && typeof item.params === 'object'
+        ? {
+            ...item.params,
+            ...((item.params as NAIParams & { _local_edit?: ImageEditMetadata })._local_edit
+                ? { _local_edit: normalizeHistoryEdit((item.params as NAIParams & { _local_edit?: ImageEditMetadata })._local_edit) }
+                : {}),
+        } as NAIParams
+        : item.params;
+    return { ...item, params, edit: normalizeHistoryEdit(item.edit) };
+};
+
+const dataUrlToBlob = async (value: string): Promise<Blob> => {
+    const response = await fetch(value);
+    if (!response.ok) throw new Error('读取历史图片资产失败');
+    return response.blob();
+};
 
 export type LocalHistoryChange = {
     type: 'add' | 'delete' | 'clear' | 'cleanup' | 'favorite';
@@ -123,7 +164,18 @@ class LocalHistoryService {
                 const batch = await this.getBrowserPage(page, batchSize);
                 if (batch.length === 0) break;
                 for (const item of batch) {
-                    await api.post('/local-history', item);
+                    const editMask = await this.getEditMask(item.id, item);
+                    if (editMask) {
+                        const image = await dataUrlToBlob(item.imageUrl);
+                        const { imageUrl: _imageUrl, ...metadata } = item;
+                        const formData = new FormData();
+                        formData.append('image', image, `generation.${image.type === 'image/jpeg' ? 'jpg' : image.type.split('/')[1] || 'png'}`);
+                        formData.append('editMask', editMask, 'edit-mask.png');
+                        formData.append('metadata', JSON.stringify(metadata));
+                        await api.postForm('/local-history', formData);
+                    } else {
+                        await api.post('/local-history', normalizeHistoryItem(item));
+                    }
                     migrated++;
                     onProgress?.({ current: migrated, total });
                 }
@@ -167,6 +219,9 @@ class LocalHistoryService {
                 if (!store.indexNames.contains('isFavorite')) {
                     store.createIndex('isFavorite', 'isFavorite', { unique: false });
                 }
+                if (!db.objectStoreNames.contains(EDIT_MASK_STORE_NAME)) {
+                    db.createObjectStore(EDIT_MASK_STORE_NAME, { keyPath: 'historyId' });
+                }
             };
 
             request.onsuccess = (event) => {
@@ -184,12 +239,38 @@ class LocalHistoryService {
         });
     }
 
+    /** 迁移远端历史前读取浏览器旧库中的蒙版；读取失败不影响普通历史迁移。 */
+    private async getBrowserEditMask(id: string, item?: LocalGenItem): Promise<Blob | null> {
+        try {
+            const db = await this.open();
+            const stored = await new Promise<StoredEditMask | undefined>((resolve, reject) => {
+                const request = db.transaction(EDIT_MASK_STORE_NAME, 'readonly').objectStore(EDIT_MASK_STORE_NAME).get(id);
+                request.onsuccess = () => resolve(request.result as StoredEditMask | undefined);
+                request.onerror = () => reject(request.error || new Error('读取历史蒙版失败'));
+            });
+            if (stored?.blob) return stored.blob;
+
+            let legacyMask = item?.edit?.maskData;
+            if (!legacyMask) {
+                const storedItem = await new Promise<LocalGenItem | undefined>((resolve, reject) => {
+                    const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(id);
+                    request.onsuccess = () => resolve(request.result as LocalGenItem | undefined);
+                    request.onerror = () => reject(request.error || new Error('读取历史记录失败'));
+                });
+                legacyMask = storedItem?.edit?.maskData;
+            }
+            return legacyMask ? dataUrlToBlob(legacyMask).catch(() => null) : null;
+        } catch {
+            return null;
+        }
+    }
+
     async add(
         image: string | Blob,
         prompt: string,
         params: NAIParams,
         negativePrompt = '',
-        source?: Pick<LocalGenItem, 'basePrompt' | 'subjectPrompt' | 'modules' | 'sourceChainId' | 'sourceChainName' | 'sourceChainType' | 'edit'>
+        source?: LocalHistoryAddSource
     ): Promise<LocalGenItem> {
         const remoteEnabled = await this.isRemoteEnabled();
         const imageUrl = typeof image === 'string' ? image : '';
@@ -206,21 +287,27 @@ class LocalHistoryService {
             sourceChainId: source?.sourceChainId,
             sourceChainName: source?.sourceChainName,
             sourceChainType: source?.sourceChainType,
-            edit: source?.edit,
+            edit: normalizeHistoryEdit(source?.edit),
             createdAt: Date.now()
         };
 
         if (remoteEnabled) {
             let thumbnail: { thumbnail: Blob | undefined; width: number; height: number } | undefined;
-            const result = image instanceof Blob
+            const uploadImage = image instanceof Blob
+                ? image
+                : source?.editMask
+                    ? await dataUrlToBlob(image)
+                    : null;
+            const result = uploadImage
                 ? await (async () => {
-                    thumbnail = await createHistoryThumbnail(image);
+                    thumbnail = await createHistoryThumbnail(uploadImage);
                     // 复用缩略图 bitmap 的真实尺寸：调用方提供的宽高可能与图片文件不一致
                     if (thumbnail && thumbnail.width > 0 && thumbnail.height > 0) {
                         item.params = { ...item.params, width: thumbnail.width, height: thumbnail.height };
                     }
                     const formData = new FormData();
-                    formData.append('image', image, `generation.${image.type === 'image/jpeg' ? 'jpg' : image.type.split('/')[1] || 'png'}`);
+                    formData.append('image', uploadImage, `generation.${uploadImage.type === 'image/jpeg' ? 'jpg' : uploadImage.type.split('/')[1] || 'png'}`);
+                    if (source?.editMask) formData.append('editMask', source.editMask, 'edit-mask.png');
                     formData.append('metadata', JSON.stringify(item));
                     return api.postForm('/local-history', formData);
                 })()
@@ -243,9 +330,18 @@ class LocalHistoryService {
         }
 
         return new Promise((resolve, reject) => {
-            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const transaction = db.transaction([STORE_NAME, EDIT_MASK_STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
+            const editMaskStore = transaction.objectStore(EDIT_MASK_STORE_NAME);
             const request = store.add(item);
+            if (source?.editMask) {
+                editMaskStore.put({
+                    historyId: item.id,
+                    blob: source.editMask,
+                    mimeType: source.editMask.type || 'image/png',
+                    updatedAt: Date.now(),
+                } satisfies StoredEditMask);
+            }
 
             transaction.oncomplete = () => {
                 this.emit({ type: 'add', id: item.id });
@@ -253,6 +349,85 @@ class LocalHistoryService {
             };
             transaction.onerror = () => reject(transaction.error);
             request.onerror = () => reject(request.error);
+        });
+    }
+
+    /** 保存独立编辑蒙版；远端记录会随 add() 的 multipart 一起上传。 */
+    async saveEditMask(id: string, mask: Blob | undefined): Promise<void> {
+        if (await this.isRemoteEnabled()) return;
+        const db = await this.open();
+        await new Promise<void>((resolve, reject) => {
+            const store = db.transaction(EDIT_MASK_STORE_NAME, 'readwrite').objectStore(EDIT_MASK_STORE_NAME);
+            const request = mask
+                ? store.put({ historyId: id, blob: mask, mimeType: mask.type || 'image/png', updatedAt: Date.now() } satisfies StoredEditMask)
+                : store.delete(id);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error || new Error('保存历史蒙版失败'));
+        });
+    }
+
+    /** 按需读取历史蒙版；旧记录中的 Base64 会在第一次访问时迁移到独立存储。 */
+    async getEditMask(id: string, item?: LocalGenItem): Promise<Blob | null> {
+        if (await this.isRemoteEnabled()) {
+            try {
+                return await api.getBlob(`/local-history/${encodeURIComponent(id)}/edit-mask`);
+            } catch {
+                // prepare() 会先读取本地旧记录再上传远端；此时远端还不存在该 ID，
+                // 不能只看已经去掉 Base64 的轻量列表对象。
+                return this.getBrowserEditMask(id, item);
+            }
+        }
+
+        const db = await this.open();
+        const stored = await new Promise<StoredEditMask | undefined>((resolve, reject) => {
+            const request = db.transaction(EDIT_MASK_STORE_NAME, 'readonly').objectStore(EDIT_MASK_STORE_NAME).get(id);
+            request.onsuccess = () => resolve(request.result as StoredEditMask | undefined);
+            request.onerror = () => reject(request.error || new Error('读取历史蒙版失败'));
+        });
+        if (stored?.blob) return stored.blob;
+
+        let legacyMask = item?.edit?.maskData;
+        if (!legacyMask) {
+            const storedItem = await new Promise<LocalGenItem | undefined>((resolve, reject) => {
+                const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(id);
+                request.onsuccess = () => resolve(request.result as LocalGenItem | undefined);
+                request.onerror = () => reject(request.error || new Error('读取历史记录失败'));
+            });
+            legacyMask = storedItem?.edit?.maskData;
+        }
+        if (!legacyMask) return null;
+        try {
+            const blob = await dataUrlToBlob(legacyMask);
+            await this.saveEditMask(id, blob);
+            // 迁移完成后清除历史记录中的大 Base64，列表与后续读取都只保留轻量元数据。
+            const current = await new Promise<LocalGenItem | undefined>((resolve, reject) => {
+                const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(id);
+                request.onsuccess = () => resolve(request.result as LocalGenItem | undefined);
+                request.onerror = () => reject(request.error || new Error('读取历史记录失败'));
+            });
+            if (current?.edit?.maskData) {
+                const updatedEdit = normalizeHistoryEdit(current.edit);
+                const updated = { ...current, ...(updatedEdit ? { edit: updatedEdit } : { edit: undefined }) };
+                const writeDb = await this.open();
+                await new Promise<void>((resolve, reject) => {
+                    const request = writeDb.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put(updated);
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error || new Error('迁移历史蒙版元数据失败'));
+                });
+            }
+            return blob;
+        } catch {
+            return null;
+        }
+    }
+
+    async deleteEditMask(id: string): Promise<void> {
+        if (await this.isRemoteEnabled()) return;
+        const db = await this.open();
+        await new Promise<void>((resolve, reject) => {
+            const request = db.transaction(EDIT_MASK_STORE_NAME, 'readwrite').objectStore(EDIT_MASK_STORE_NAME).delete(id);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error || new Error('删除历史蒙版失败'));
         });
     }
 
@@ -265,6 +440,7 @@ class LocalHistoryService {
 
             request.onsuccess = () => {
                 const results = (request.result as LocalGenItem[])
+                    .map(normalizeHistoryItem)
                     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
                 resolve(results);
             };
@@ -297,7 +473,7 @@ class LocalHistoryService {
             request.onsuccess = (event) => {
                 const cursor = (event.target as IDBRequest).result;
                 if (cursor) {
-                    results.push(cursor.value as LocalGenItem);
+                    results.push(normalizeHistoryItem(cursor.value as LocalGenItem));
                     cursor.continue();
                 } else {
                     resolve(
@@ -394,9 +570,11 @@ class LocalHistoryService {
         }
         const db = await this.open();
         return new Promise((resolve, reject) => {
-            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const transaction = db.transaction([STORE_NAME, EDIT_MASK_STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
+            const editMaskStore = transaction.objectStore(EDIT_MASK_STORE_NAME);
             const request = store.delete(id);
+            editMaskStore.delete(id);
             transaction.oncomplete = () => {
                 this.emit({ type: 'delete', id });
                 resolve();
@@ -463,9 +641,11 @@ class LocalHistoryService {
     private async clearBrowserHistory(): Promise<void> {
         const db = await this.open();
         return new Promise((resolve, reject) => {
-            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const transaction = db.transaction([STORE_NAME, EDIT_MASK_STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
+            const editMaskStore = transaction.objectStore(EDIT_MASK_STORE_NAME);
             const request = store.clear();
+            editMaskStore.clear();
             transaction.oncomplete = () => resolve();
             transaction.onerror = () => reject(transaction.error);
             request.onerror = () => reject(request.error);
@@ -521,7 +701,7 @@ class LocalHistoryService {
                     return;
                 }
 
-                const item = cursor.value as LocalGenItem;
+                const item = normalizeHistoryItem(cursor.value as LocalGenItem);
                 if (range?.favoriteOnly && !item.isFavorite) {
                     cursor.continue();
                     return;
@@ -608,8 +788,9 @@ class LocalHistoryService {
         const cutoffTime = Date.now() - (days * 24 * 60 * 60 * 1000);
         
         return new Promise((resolve, reject) => {
-            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const transaction = db.transaction([STORE_NAME, EDIT_MASK_STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
+            const editMaskStore = transaction.objectStore(EDIT_MASK_STORE_NAME);
             const index = store.index('createdAt');
             let deletedCount = 0;
             
@@ -631,6 +812,7 @@ class LocalHistoryService {
                 const cursor = (event.target as IDBRequest).result;
                 if (cursor) {
                     cursor.delete();
+                    editMaskStore.delete(cursor.primaryKey);
                     deletedCount++;
                     cursor.continue();
                 }
@@ -658,8 +840,9 @@ class LocalHistoryService {
         const db = await this.open();
         
         return new Promise((resolve, reject) => {
-            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const transaction = db.transaction([STORE_NAME, EDIT_MASK_STORE_NAME], 'readwrite');
             const store = transaction.objectStore(STORE_NAME);
+            const editMaskStore = transaction.objectStore(EDIT_MASK_STORE_NAME);
             const index = store.index('createdAt');
             let deletedCount = 0;
             let index_count = 0;
@@ -683,6 +866,7 @@ class LocalHistoryService {
                     index_count++;
                     if (index_count > n) {
                         cursor.delete();
+                        editMaskStore.delete(cursor.primaryKey);
                         deletedCount++;
                     }
                     cursor.continue();

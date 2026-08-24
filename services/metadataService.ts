@@ -9,7 +9,7 @@
  * 解析逻辑严格参照 NOVELAI_API_DOCS.md 与 promptUtils.ts 中的常量定义
  */
 
-import { NAIParams, CharacterParams } from '../types';
+import { NAIParams, CharacterParams, ImageEditMetadata } from '../types';
 import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
 import { createUuid } from './id';
 import { resolveNaiMetadataModel } from './naiModels';
@@ -43,6 +43,8 @@ export interface PendingImportData extends ParsedNAIData {
   baseImageUrl?: string;
   parentHistoryId?: string;
   imageEditOperation?: import('../types').ImageEditOperation;
+  editMetadata?: ImageEditMetadata;
+  reuseEditMask?: boolean;
 }
 
 // ========== 常量 / 预编译正则 ==========

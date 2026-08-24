@@ -299,8 +299,8 @@ const blurAlpha = (alpha: Uint8ClampedArray, width: number, height: number, radi
     for (let offset = -radius; offset <= radius; offset += 1) sum += alpha[y * width + Math.max(0, Math.min(width - 1, offset))];
     for (let x = 0; x < width; x += 1) {
       horizontal[y * width + x] = Math.round(sum / windowSize);
-      const removeX = Math.max(0, x - radius);
-      const addX = Math.min(width - 1, x + radius + 1);
+      const removeX = Math.max(0, Math.min(width - 1, x - radius));
+      const addX = Math.max(0, Math.min(width - 1, x + radius + 1));
       sum += alpha[y * width + addX] - alpha[y * width + removeX];
     }
   }
@@ -309,8 +309,8 @@ const blurAlpha = (alpha: Uint8ClampedArray, width: number, height: number, radi
     for (let offset = -radius; offset <= radius; offset += 1) sum += horizontal[Math.max(0, Math.min(height - 1, offset)) * width + x];
     for (let y = 0; y < height; y += 1) {
       output[y * width + x] = Math.round(sum / windowSize);
-      const removeY = Math.max(0, y - radius);
-      const addY = Math.min(height - 1, y + radius + 1);
+      const removeY = Math.max(0, Math.min(height - 1, y - radius));
+      const addY = Math.max(0, Math.min(height - 1, y + radius + 1));
       sum += horizontal[addY * width + x] - horizontal[removeY * width + x];
     }
   }

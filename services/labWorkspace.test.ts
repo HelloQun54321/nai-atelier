@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createLabWorkspaceSession, loadLabWorkspaceSession, saveLabWorkspaceSession } from './labWorkspace';
+import { createLabWorkspaceSession, getLabWorkspaceAssetId, loadLabWorkspaceSession, saveLabWorkspaceSession } from './labWorkspace';
 
 const params = {
   model: 'nai-diffusion-4-5-full',
@@ -47,5 +47,11 @@ describe('lab workspace session', () => {
     expect(loadLabWorkspaceSession('chain-a', fallback).textToImage.basePrompt).toBe('chain a');
     expect(loadLabWorkspaceSession('playground', fallback).textToImage.basePrompt).toBe('playground');
     expect(loadLabWorkspaceSession('chain-b', fallback).textToImage.basePrompt).toBe('style');
+  });
+
+  it('uses stable role-specific asset ids so repeated mask saves overwrite one blob', () => {
+    expect(getLabWorkspaceAssetId('chain-a', 'inpaint', 'mask')).toBe(getLabWorkspaceAssetId('chain-a', 'inpaint', 'mask'));
+    expect(getLabWorkspaceAssetId('chain-a', 'inpaint', 'mask')).not.toBe(getLabWorkspaceAssetId('chain-a', 'inpaint', 'base'));
+    expect(getLabWorkspaceAssetId('chain-a', 'inpaint', 'mask')).not.toBe(getLabWorkspaceAssetId('chain-b', 'inpaint', 'mask'));
   });
 });

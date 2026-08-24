@@ -4,7 +4,7 @@ import { normalizeMinimumContextArea } from './imageEdit';
 const SESSION_PREFIX = 'nai-lab-workspace-v1:';
 const ASSET_DB_NAME = 'NAI_Lab_Workspace_DB';
 const ASSET_STORE_NAME = 'assets';
-const ASSET_DB_VERSION = 2;
+const ASSET_DB_VERSION = 3;
 
 const emptyExpansion: ImageEditCanvasExpansion = { top: 0, right: 0, bottom: 0, left: 0 };
 
@@ -114,7 +114,7 @@ const openAssetDb = async (): Promise<IDBDatabase> => new Promise((resolve, reje
   request.onerror = () => reject(request.error || new Error('无法打开图片编辑资产存储'));
 });
 
-export const saveLabWorkspaceAsset = async (blob: Blob, id = crypto.randomUUID()): Promise<string> => {
+export const saveLabWorkspaceAsset = async (blob: Blob, id: string = crypto.randomUUID()): Promise<string> => {
   const db = await openAssetDb();
   await new Promise<void>((resolve, reject) => {
     const request = db.transaction(ASSET_STORE_NAME, 'readwrite').objectStore(ASSET_STORE_NAME).put({ id, blob, mimeType: blob.type, updatedAt: Date.now() });
@@ -123,6 +123,21 @@ export const saveLabWorkspaceAsset = async (blob: Blob, id = crypto.randomUUID()
   });
   db.close();
   return id;
+};
+
+/** 工作区资产按会话、模式和角色复用，重复保存会覆盖同一个 Blob。 */
+export const getLabWorkspaceAssetId = (sessionKey: string, operation: ImageEditOperation, role: 'base' | 'mask') =>
+  `lab:${encodeURIComponent(sessionKey)}:${operation}:${role}`;
+
+export const deleteLabWorkspaceAsset = async (id: string | undefined) => {
+  if (!id) return;
+  const db = await openAssetDb();
+  await new Promise<void>((resolve, reject) => {
+    const request = db.transaction(ASSET_STORE_NAME, 'readwrite').objectStore(ASSET_STORE_NAME).delete(id);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error || new Error('删除图片编辑资产失败'));
+  });
+  db.close();
 };
 
 export const readLabWorkspaceAsset = async (id: string): Promise<Blob | null> => {
@@ -143,10 +158,53 @@ export const blobToDataUrl = async (blob: Blob): Promise<string> => new Promise(
   reader.readAsDataURL(blob);
 });
 
-export const dataUrlToWorkspaceAsset = async (dataUrl: string) => {
+export const dataUrlToWorkspaceAsset = async (dataUrl: string, id?: string) => {
   const response = await fetch(dataUrl);
   if (!response.ok) throw new Error('读取图片编辑资产失败');
-  return saveLabWorkspaceAsset(await response.blob());
+  return saveLabWorkspaceAsset(await response.blob(), id);
+};
+
+const collectReferencedAssetIds = () => {
+  const referenced = new Set<string>();
+  if (typeof window === 'undefined') return referenced;
+  for (let index = 0; index < sessionStorage.length; index += 1) {
+    const key = sessionStorage.key(index);
+    if (!key?.startsWith(SESSION_PREFIX)) continue;
+    try {
+      const value = JSON.parse(sessionStorage.getItem(key) || 'null') as any;
+      const edits = value?.edits && typeof value.edits === 'object' ? Object.values(value.edits) as Array<Record<string, unknown>> : [];
+      for (const edit of edits) {
+        if (typeof edit?.baseImageRef === 'string') referenced.add(edit.baseImageRef);
+        if (typeof edit?.maskRef === 'string') referenced.add(edit.maskRef);
+      }
+    } catch {
+      // 损坏的会话由正常的工作区恢复逻辑处理，这里不阻断清理。
+    }
+  }
+  return referenced;
+};
+
+/** 启动时清理不再被任何实验室会话引用的旧 Blob。 */
+export const cleanupLabWorkspaceAssets = async (additionalReferencedIds: string[] = []) => {
+  const referenced = collectReferencedAssetIds();
+  additionalReferencedIds.filter(Boolean).forEach(id => referenced.add(id));
+  const db = await openAssetDb();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(ASSET_STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(ASSET_STORE_NAME);
+    const request = store.openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const value = cursor.value as { id?: string };
+      if (value.id && !referenced.has(value.id)) cursor.delete();
+      cursor.continue();
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error('清理图片编辑资产失败'));
+    request.onerror = () => reject(request.error || new Error('扫描图片编辑资产失败'));
+  });
+  db.close();
 };
 
 export const getLabWorkspaceSessionKey = (chainId: string) => chainId || 'playground';

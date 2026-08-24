@@ -6,6 +6,8 @@
 
 ## 2026-08-24
 
+- **Codex (GPT-5)**：将编辑历史蒙版迁移到独立 IndexedDB／R2 存储，补齐按需读取、旧数据迁移、历史恢复、资产清理、Focused 选区移动缩放与异步状态隔离（feat: isolate image edit masks and restore history）。
+
 - **Codex (GPT-5)**：让图片编辑费用确认与最终请求共用底图真实尺寸，并将提示改为本地结算估算语义（fix: align image edit settlement and request dimensions）。
 
 - **Codex (GPT-5)**：重建图片编辑的官方请求链，补齐 1/8 蒙版、Focused 局部裁切回贴、Seed/采样器/估算费用一致性与任意尺寸底图规范化（feat: implement official image edit pipeline）。

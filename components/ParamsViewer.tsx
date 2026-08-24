@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { NAIParams } from '../types';
+import { ImageEditMetadata, NAIParams } from '../types';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
 
 /**
@@ -49,6 +49,8 @@ interface ParamsViewerProps {
     prompt?: string;
     /** 负面提示词（可选展示） */
     negativePrompt?: string;
+    /** 图片编辑元数据；历史列表只传轻量字段，不传蒙版 Base64。 */
+    edit?: ImageEditMetadata;
     /** 通知回调（用于复制按钮） */
     notify?: (msg: string) => void;
 }
@@ -57,6 +59,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
     params,
     prompt,
     negativePrompt,
+    edit,
     notify,
 }) => {
     const handleCopy = (text: string, label: string) => {
@@ -200,6 +203,27 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                             </div>
                         ))}
                         {params.vibes.sourceGroupName && <p className="text-[10px] text-gray-500">来源组合：{params.vibes.sourceGroupName}</p>}
+                    </div>
+                </div>
+            )}
+
+            {edit && (
+                <div>
+                    <label className="mb-2 flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                        图片编辑
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                        <ParamItem label="Operation" value={edit.operation === 'image-to-image' ? '图生图' : edit.operation === 'inpaint' ? '局部重绘' : '扩图'} />
+                        {edit.strength !== undefined && <ParamItem label="Strength" value={edit.strength.toFixed(2)} />}
+                        {edit.noise !== undefined && <ParamItem label="Noise" value={edit.noise.toFixed(2)} />}
+                        {edit.focused && <ParamItem label="Focused" value={edit.focusedArea ? `${Math.round(edit.focusedArea.width)} × ${Math.round(edit.focusedArea.height)}` : 'On'} />}
+                        {edit.contextArea !== undefined && <ParamItem label="Context" value={`${edit.contextArea}px`} />}
+                        {edit.canvasExpansion && (edit.canvasExpansion.top || edit.canvasExpansion.right || edit.canvasExpansion.bottom || edit.canvasExpansion.left) > 0 && <ParamItem label="Canvas Expansion" value={`上 ${edit.canvasExpansion.top} · 右 ${edit.canvasExpansion.right} · 下 ${edit.canvasExpansion.bottom} · 左 ${edit.canvasExpansion.left}`} />}
+                        {edit.requestWidth && edit.requestHeight && <ParamItem label="Request Size" value={`${edit.requestWidth} × ${edit.requestHeight}`} />}
+                        {edit.maskAvailable !== undefined && <ParamItem label="Mask" value={edit.maskAvailable ? (edit.fullSizeMask ? '独立蒙版 · 全尺寸' : '独立蒙版') : '无'} />}
+                        {edit.estimatedCost !== undefined && <ParamItem label="本地结算估算" value={`${edit.estimatedCost} Anlas`} />}
+                        {edit.settlementStatus && <ParamItem label="Settlement" value={edit.settlementStatus === 'estimated' ? '本地估算' : edit.settlementStatus === 'synced' ? '已同步' : '未知'} />}
+                        {edit.keyHash && <ParamItem label="Key" value={`${edit.keyHash.slice(0, 8)}…`} />}
                     </div>
                 </div>
             )}

@@ -146,13 +146,22 @@ export interface ImageEditMetadata {
   baseImageSource?: 'generated' | 'history' | 'upload';
   strength?: number;
   noise?: number;
+  /** 旧版本把完整蒙版 Base64 直接写进历史；新记录只通过独立资产读取。 */
   maskData?: string;
   maskInverted?: boolean;
   focused?: boolean;
   minimumContextArea?: number;
+  focusedArea?: { x: number; y: number; width: number; height: number };
+  contextArea?: number;
   canvasExpansion?: ImageEditCanvasExpansion;
+  requestWidth?: number;
+  requestHeight?: number;
+  fullSizeMask?: boolean;
+  maskAvailable?: boolean;
   estimatedCost?: number;
+  /** @deprecated 旧记录字段；读取时按 estimatedCost 兼容。新记录不得写入。 */
   actualCost?: number;
+  settlementStatus?: 'estimated' | 'synced' | 'unknown';
   keyHash?: string;
   promptSource?: 'current' | 'style-only' | 'history' | 'custom';
 }

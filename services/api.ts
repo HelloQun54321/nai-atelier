@@ -203,6 +203,18 @@ export const api = {
     parser.finish();
   },
 
+  getBlob: async (endpoint: string) => {
+    const res = await fetch(`${API_BASE}${endpoint}`, { headers: getHeaders() });
+    if (res.status === 401) {
+      const payload = await res.clone().json().catch(() => null);
+      if (payload?.code === 'LAN_ACCESS_REQUIRED' && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('nai-lan-access-required'));
+      }
+    }
+    if (!res.ok) throw new Error(await res.text());
+    return res.blob();
+  },
+
   // NEW: Upload File (Multipart)
   uploadFile: async (file: File, folder: string = 'misc') => {
       const formData = new FormData();
