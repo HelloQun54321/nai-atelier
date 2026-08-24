@@ -3145,7 +3145,9 @@ export default {
         }
         if (path === '/api/vibe-groups' && method === 'POST') {
           const body = await request.json() as any;
-          const slots = Array.isArray(body.slots) ? body.slots.slice(0, 4) : [];
+          const submittedSlots = Array.isArray(body.slots) ? body.slots : [];
+          if (submittedSlots.length > 16) return error('一个 Vibe 组合最多包含 16 个 Vibe', 400);
+          const slots = submittedSlots;
           if (!slots.length) return error('组合至少需要一个 Vibe', 400);
           const id = crypto.randomUUID(); const now = Date.now();
           await db.prepare('INSERT INTO vibe_groups (id, name, slots, normalize_strengths, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
@@ -3155,7 +3157,9 @@ export default {
         const groupMatch = path.match(/^\/api\/vibe-groups\/([^/]+)$/);
         if (groupMatch && method === 'PUT') {
           const body = await request.json() as any;
-          const slots = Array.isArray(body.slots) ? body.slots.slice(0, 4) : [];
+          const submittedSlots = Array.isArray(body.slots) ? body.slots : [];
+          if (submittedSlots.length > 16) return error('一个 Vibe 组合最多包含 16 个 Vibe', 400);
+          const slots = submittedSlots;
           await db.prepare('UPDATE vibe_groups SET name = ?, slots = ?, normalize_strengths = ?, updated_at = ? WHERE id = ?')
             .bind(String(body.name || '未命名组合').slice(0, 100), JSON.stringify(slots), body.normalizeStrengths === false ? 0 : 1, Date.now(), decodeURIComponent(groupMatch[1])).run();
           return json({ success: true });

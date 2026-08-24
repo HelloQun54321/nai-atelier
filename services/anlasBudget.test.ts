@@ -96,4 +96,17 @@ describe('image edit cost estimation', () => {
     expect(formatImageEditCostLabel(0, 'inpaint', true, 4)).toBe('Opus 免费');
     expect(formatImageEditCostLabel(0, 'inpaint', true, undefined)).toBe('费用以官方返回为准');
   });
+
+  it('does not charge retained Vibe slots for operations that do not send Vibe', () => {
+    const withFiveVibes = {
+      ...params,
+      vibes: {
+        enabled: true,
+        normalizeStrengths: true,
+        slots: Array.from({ length: 5 }, (_, index) => ({ vibeId: `v${index}`, encodingId: `e${index}`, informationExtracted: 1, strength: 0.2 })),
+      },
+    };
+    expect(estimateImageEditCost(withFiveVibes, 'image-to-image', 1, false, 4, false)
+      - estimateImageEditCost(withFiveVibes, 'inpaint', 1, false, 4, false)).toBe(2);
+  });
 });

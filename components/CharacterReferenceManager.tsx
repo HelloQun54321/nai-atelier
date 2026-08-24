@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CharacterReferenceAsset, CharacterReferenceSelection, NAIParams } from '../types';
+import { CharacterReferenceAsset, CharacterReferenceSelection, ImageEditOperation, NAIParams } from '../types';
 import { characterReferenceService } from '../services/characterReferenceService';
-import { getNaiModelInfo } from '../services/naiModels';
+import { getRuntimeNaiModelInfo } from '../services/naiModels';
+import { useNaiRuntime } from '../services/naiRuntime';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 
@@ -10,6 +11,7 @@ interface Props {
   setParams: (params: NAIParams) => void;
   markChange: () => void;
   notify: (message: string, type?: 'success' | 'error') => void;
+  operation?: ImageEditOperation;
 }
 
 const referenceTypes: Array<{ value: CharacterReferenceSelection['type']; label: string; hint: string }> = [
@@ -21,8 +23,9 @@ const referenceTypes: Array<{ value: CharacterReferenceSelection['type']; label:
 const emptyReferences = (): NonNullable<NAIParams['characterReferences']> => ({ enabled: false, slots: [] });
 const BackIcon = () => <svg className="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>;
 
-export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, markChange, notify }) => {
+export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, markChange, notify, operation }) => {
   const confirmAction = useConfirmDialog();
+  const runtime = useNaiRuntime();
   const imageInputRef = useRef<HTMLInputElement>(null);
   const historyActiveRef = useRef(false);
   const detailRef = useRef<CharacterReferenceAsset | null>(null);
@@ -149,16 +152,12 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
     catch (error: any) { notify(error.message || '恢复失败', 'error'); }
   };
 
-  // 与官方一致的模型边界：Precise/Character Reference 目前仅 V4.5 Full 可用（见 services/naiModels.ts）。
-  if (!getNaiModelInfo(params.model).supportsCharacterReferences) {
-    const modelInfo = getNaiModelInfo(params.model);
-    return <>
-      <section className="mt-4 rounded-xl border border-dashed border-gray-300 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40">
-        <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-800 dark:text-gray-100">角色参考</span></div>
-        <p className="mt-1 text-xs text-gray-500">当前生成模型为 {modelInfo.label}，暂不支持角色参考；已配置的角色参考不会随本次生成发送。</p>
-      </section>
-    </>;
-  }
+  const modelInfo = getRuntimeNaiModelInfo(params.model, runtime);
+  const supportsReferences = operation === 'inpaint' || operation === 'outpaint'
+    ? modelInfo.supportsCharacterReferenceInpainting
+    : modelInfo.supportsCharacterReferences;
+  // 不支持的辅助模块直接隐藏；已有选择保留，切回支持的模型后由用户重新启用。
+  if (!supportsReferences) return null;
 
   return <>
     <section className="mt-4 rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40">

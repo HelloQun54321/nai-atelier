@@ -173,7 +173,7 @@ export const NOVELAI_OFFICIAL_KNOWLEDGE = Object.freeze([
       '最多可使用 16 个 Vibe；V4 及以上超过四个后，每多一个会增加 2 ImageAnlas。',
       '图片下载得到的 PNG 元数据可包含编码后的 Vibe，但不包含原始参考图片。',
     ],
-    caveats: ['V5 发布时尚未开放 Vibe Transfer；本项目当前只允许 V4.5 Full 使用永久 Vibe 管线。'],
+    caveats: ['V5 当前仍未开放 Vibe Transfer；项目永久编码资产仍使用 V4.5 Full 编码管线，实际可用模型由官方运行时能力表决定。'],
   },
   {
     id: 'precise-reference-v45',

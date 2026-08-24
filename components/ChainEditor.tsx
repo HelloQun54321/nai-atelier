@@ -24,8 +24,8 @@ import { normalizeVibeSelections } from '../services/vibeUtils';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, useAnlasBudget } from '../services/anlasBudget';
 import { cleanupLabWorkspaceAssets, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, loadLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl } from '../services/labWorkspace';
 import { useNovelaiUsage } from '../services/naiUsage';
-import { getNaiModelInfo } from '../services/naiModels';
-import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
+import { getRuntimeNaiModelInfo } from '../services/naiModels';
+import { DEFAULT_NAI_RUNTIME, getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
 import { LabModuleCollapsedPreferences, LabModuleId } from '../services/appearancePreferences';
@@ -225,6 +225,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const runtimeSyncWarning = naiRuntimeConfig
         ? `${describeNaiRuntimeSyncProblem(naiRuntimeConfig)}，费用估算与免费档判断可能过期，继续生成可能意外消耗共享 Anlas`
         : '';
+    const activeModelInfo = getRuntimeNaiModelInfo(params.model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME);
     const estimatedAnlasCost = estimateV45GenerationCost(params, true, opusUsageExhausted);
     const generationCostLabel = formatGenerationCostLabel(estimatedAnlasCost, params.model);
 
@@ -233,7 +234,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
      * 生成前强制刷新真实额度，确保费用确认弹窗按服务端最新状态计费。
      */
     const usageForCostEstimate = async (model?: string): Promise<boolean> => {
-        if (!getNaiModelInfo(model).opusUsageLimit) return opusUsageExhausted;
+        if (!getRuntimeNaiModelInfo(model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).opusUsageLimit) return opusUsageExhausted;
         const fresh = await refreshUsageIfStale();
         return fresh?.usage?.isNegative === true;
     };
@@ -816,6 +817,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // --- Character Handlers ---
     const addCharacter = () => {
         if (!canEdit) return;
+        if ((params.characters || []).length >= activeModelInfo.maxCharacters) {
+            notify(`${activeModelInfo.label} 最多支持 ${activeModelInfo.maxCharacters} 个角色提示词`, 'error');
+            return;
+        }
         const newChar: CharacterParams = { id: createUuid(), prompt: '', x: 0.5, y: 0.5 };
         setParams({ ...params, characters: [...(params.characters || []), newChar] });
         markChange();
@@ -1432,8 +1437,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     slots: normalizeVibeSelections(generationParams.vibes.slots, generationParams.vibes.normalizeStrengths),
                 } : undefined,
             };
-            const streamSupported = getNaiModelInfo(activeParams.model).supportsStreamedResponses
-                || Boolean(activeParams.model && naiRuntimeConfig?.streamedModels.includes(activeParams.model));
+            const streamSupported = getRuntimeNaiModelInfo(activeParams.model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).supportsStreamedResponses;
             let result;
             if (generationStreamPreview && streamSupported) {
                 try {
@@ -2284,7 +2288,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         </section>
                         </LabModuleSection>
 
-                        <LabModuleSection
+                        {activeModelInfo.supportsCharacterReferences && <LabModuleSection
                             moduleId="characterReference"
                             label="角色参考"
                             order={labModuleOrder.indexOf('characterReference')}
@@ -2297,9 +2301,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 markChange={markChange}
                                 notify={notify}
                             />
-                        </LabModuleSection>
+                        </LabModuleSection>}
 
-                        <LabModuleSection
+                        {activeModelInfo.supportsVibes && <LabModuleSection
                             moduleId="vibe"
                             label="Vibe Transfer"
                             order={labModuleOrder.indexOf('vibe')}
@@ -2313,7 +2317,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 apiKey={apiKey}
                                 notify={notify}
                             />
-                        </LabModuleSection>
+                        </LabModuleSection>}
 
                         {/* Negative Prompt */}
                         <LabModuleSection
@@ -2381,7 +2385,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     onRemoveCurrentHistory={handleRemoveCurrentHistory}
                     onClearHistoryGroup={handleClearHistoryGroup}
                     generationCostLabel={generationCostLabel}
-                    transparentPreview={getNaiModelInfo(params.model).supportsTransparentBackground && params.transparent === true}
+                    transparentPreview={activeModelInfo.supportsTransparentBackground && params.transparent === true}
                     generationProgress={generationProgress}
                 />
                 </div>

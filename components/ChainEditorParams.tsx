@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { NAIParams } from '../types';
+import { ImageEditOperation, NAIParams } from '../types';
 import { getRuntimeNaiModelInfo, getSelectableNaiModels } from '../services/naiModels';
 import { getNaiRuntimeModelCapability, useNaiRuntime } from '../services/naiRuntime';
 
@@ -12,6 +12,7 @@ interface ChainEditorParamsProps {
     presetSource?: { name: string; modified: boolean };
     hideResolution?: boolean;
     imageEditSize?: { width: number; height: number };
+    mode?: 'text-to-image' | ImageEditOperation;
 }
 
 const RESOLUTIONS = {
@@ -20,7 +21,7 @@ const RESOLUTIONS = {
     Square: { width: 1024, height: 1024, label: "方形 (1024x1024)" },
 };
 
-export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, setParams, canEdit, markChange, presetSource, hideResolution = false, imageEditSize }) => {
+export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, setParams, canEdit, markChange, presetSource, hideResolution = false, imageEditSize, mode = 'text-to-image' }) => {
     // 网关自动同步的官方模型清单（未来新模型无需改代码即可出现在下拉里）。
     const runtime = useNaiRuntime();
     const selectableModels = getSelectableNaiModels(runtime);
@@ -123,7 +124,25 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                         className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
                         value={params.model ?? 'nai-diffusion-4-5-full'}
                         onChange={(e) => {
-                            setParams({ ...params, model: e.target.value });
+                            const nextModel = getRuntimeNaiModelInfo(e.target.value, runtime);
+                            const nextSupportsVibes = mode === 'text-to-image' || mode === 'image-to-image'
+                                ? nextModel.supportsVibes
+                                : false;
+                            const nextSupportsCharacterReferences = mode === 'inpaint' || mode === 'outpaint'
+                                ? nextModel.supportsCharacterReferenceInpainting
+                                : nextModel.supportsCharacterReferences;
+                            const nextParams: NAIParams = {
+                                ...params,
+                                model: e.target.value,
+                                ...(nextModel.supportsTransparentBackground ? {} : { transparent: false }),
+                                ...(nextSupportsVibes || !params.vibes?.enabled
+                                    ? {}
+                                    : { vibes: { ...params.vibes, enabled: false } }),
+                                ...(nextSupportsCharacterReferences || !params.characterReferences?.enabled
+                                    ? {}
+                                    : { characterReferences: { ...params.characterReferences, enabled: false } }),
+                            };
+                            setParams(nextParams);
                             markChange();
                         }}
                     >

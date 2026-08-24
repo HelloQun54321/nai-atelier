@@ -22,11 +22,17 @@ const validateGenerationCapabilities = (params: NAIParams, runtime: Awaited<Retu
   if (canSendVibes && params.vibes?.enabled && params.vibes.slots.length > 0 && !modelInfo.supportsVibes) {
     throw new Error(`NovelAI ${modelInfo.label} 暂不支持 Vibe Transfer，请先移除 Vibe 或切换模型`);
   }
+  if (canSendVibes && params.vibes?.enabled && params.vibes.slots.length > 16) {
+    throw new Error('一次最多使用 16 个 Vibe');
+  }
   const canSendCharacterReferences = operation === 'inpaint' || operation === 'outpaint'
     ? modelInfo.supportsCharacterReferenceInpainting
     : modelInfo.supportsCharacterReferences;
   if (params.characterReferences?.enabled && params.characterReferences.slots.length > 0 && !canSendCharacterReferences) {
     throw new Error(`NovelAI ${modelInfo.label} 暂不支持角色参考，请先移除角色参考或切换模型`);
+  }
+  if (params.characterReferences?.enabled && params.characterReferences.slots.length > 4) {
+    throw new Error('一次最多使用 4 个角色参考');
   }
   if ((params.characters?.length || 0) > modelInfo.maxCharacters) {
     throw new Error(`NovelAI ${modelInfo.label} 最多支持 ${modelInfo.maxCharacters} 个角色提示词，请先删除多余角色或切换模型`);

@@ -486,7 +486,7 @@ const sanitizeParams = raw => {
     alphaMode: value.alphaMode === 'premultiplied' ? 'premultiplied' : 'straight',
   };
   if (Number.isInteger(Number(value.seed)) && Number(value.seed) >= 0) params.seed = Number(value.seed);
-  if (Array.isArray(value.characters)) params.characters = value.characters.slice(0, modelProfile.project.maxCharacterPrompts).map(character => ({
+  if (Array.isArray(value.characters)) params.characters = value.characters.map(character => ({
     id: text(character.id || randomBytes(8).toString('hex')).slice(0, 80),
     prompt: text(character.prompt),
     negativePrompt: text(character.negativePrompt),
@@ -2368,11 +2368,11 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'save_vibe_group', label: '保存 Vibe 组合', description: '新建或更新一个最多4项的Vibe组合。Vibe和编码ID必须来自Vibe库。',
-        parameters: Type.Object({ id: Type.Optional(Type.String()), name: Type.String(), normalizeStrengths: Type.Optional(Type.Boolean()), slots: Type.Array(Type.Object({ vibeId: Type.String(), encodingId: Type.String(), informationExtracted: Type.Number(), strength: Type.Number() }), { maxItems: 4 }) }),
+        name: 'save_vibe_group', label: '保存 Vibe 组合', description: '新建或更新一个最多16项的Vibe组合。Vibe和编码ID必须来自Vibe库。',
+        parameters: Type.Object({ id: Type.Optional(Type.String()), name: Type.String(), normalizeStrengths: Type.Optional(Type.Boolean()), slots: Type.Array(Type.Object({ vibeId: Type.String(), encodingId: Type.String(), informationExtracted: Type.Number(), strength: Type.Number() }), { maxItems: 16 }) }),
         execute: async (_id, args) => {
           if (!args.slots.length) throw new Error('Vibe组合至少需要一项');
-          const body = { name: text(args.name).slice(0, 100), normalizeStrengths: args.normalizeStrengths !== false, slots: args.slots.slice(0, 4).map(slot => ({ ...slot, strength: clamp(slot.strength, 0, 1, 0.6) })) };
+          const body = { name: text(args.name).slice(0, 100), normalizeStrengths: args.normalizeStrengths !== false, slots: args.slots.slice(0, 16).map(slot => ({ ...slot, strength: clamp(slot.strength, 0, 1, 0.6) })) };
           const result = args.id
             ? await readProject(`/api/vibe-groups/${encodeURIComponent(args.id)}`, { method: 'PUT', body })
             : await readProject('/api/vibe-groups', { method: 'POST', body });
@@ -2546,7 +2546,7 @@ export class PromptAgentService {
         name: 'set_generation_params', label: '调整生成参数', description: `调整当前 NovelAI ${getNovelAiModelProfile(draft.params?.model).label} 的尺寸、步数、引导、采样器和其他参数，只传需要修改的字段；模型能力以 get_lab_state 与官方知识工具为准。`,
         parameters: Type.Object({
           width: Type.Optional(Type.Number()), height: Type.Optional(Type.Number()), steps: Type.Optional(Type.Number()), scale: Type.Optional(Type.Number()),
-          sampler: Type.Optional(Type.String()), seed: Type.Optional(Type.Number()), qualityToggle: Type.Optional(Type.Boolean()), ucPreset: Type.Optional(Type.Number()),
+          sampler: Type.Optional(Type.String()), seed: Type.Optional(Type.Number()), qualityToggle: Type.Optional(Type.Boolean()), ucPreset: Type.Optional(Type.Number()), qualityPresetId: Type.Optional(Type.String()), ucPresetId: Type.Optional(Type.String()),
           useCoords: Type.Optional(Type.Boolean()), variety: Type.Optional(Type.Boolean()), cfgRescale: Type.Optional(Type.Number()),
           transparent: Type.Optional(Type.Boolean()),
         }),
@@ -2556,11 +2556,11 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'set_vibes', label: '设置 Vibe', description: '选择最多4个已编码 Vibe及强度。Vibe和编码ID必须来自 search_vibes。',
-        parameters: Type.Object({ normalizeStrengths: Type.Optional(Type.Boolean()), slots: Type.Array(Type.Object({ vibeId: Type.String(), vibeName: Type.Optional(Type.String()), encodingId: Type.String(), informationExtracted: Type.Number(), strength: Type.Number() }), { maxItems: 4 }) }),
+        name: 'set_vibes', label: '设置 Vibe', description: '选择最多16个已编码 Vibe及强度。Vibe和编码ID必须来自 search_vibes。',
+        parameters: Type.Object({ normalizeStrengths: Type.Optional(Type.Boolean()), slots: Type.Array(Type.Object({ vibeId: Type.String(), vibeName: Type.Optional(Type.String()), encodingId: Type.String(), informationExtracted: Type.Number(), strength: Type.Number() }), { maxItems: 16 }) }),
         execute: async (_id, args) => {
           const slots = [];
-          for (const slot of args.slots.slice(0, 4)) {
+          for (const slot of args.slots.slice(0, 16)) {
             let asset = (contextData.vibes || []).find(item => item.id === slot.vibeId);
             if (!asset) {
               try { const value = await readProject(`/api/vibes/${encodeURIComponent(slot.vibeId)}`); asset = value.item || value; } catch { /* invalid id */ }

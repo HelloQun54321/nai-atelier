@@ -1,7 +1,9 @@
 import { VibeSelection } from '../types';
 
+export const VIBE_MAX_SLOTS = 16;
+
 export const normalizeVibeSelections = (slots: VibeSelection[], enabled = true): VibeSelection[] => {
-  const clean = slots.slice(0, 4).map(slot => ({
+  const clean = slots.slice(0, VIBE_MAX_SLOTS).map(slot => ({
     ...slot,
     strength: Math.max(0, Math.min(1, Number(slot.strength) || 0)),
   }));
