@@ -46,14 +46,14 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
     const resolvedModelId = params.model?.trim() || DEFAULT_NAI_MODEL;
     const currentModelInfo = getRuntimeNaiModelInfo(resolvedModelId, runtime);
     const modelCapability = getNaiRuntimeModelCapability(runtime, resolvedModelId);
-    const qualityOptions = modelCapability?.qualityPresets?.filter(item => item.id !== 'none') || [];
+    const officialQualityOptions = modelCapability?.qualityPresets?.filter(item => item.id !== 'none') || [];
+    const qualityOptions = [{ id: 'none', name: 'none' }, ...officialQualityOptions];
     const ucOptions = modelCapability?.ucPresets?.length
         ? modelCapability.ucPresets
         : [{ id: 'none', name: 'none' }];
     const legacyQualityId = params.qualityToggle === false ? 'none' : 'standard';
     const requestedQualityId = params.qualityPresetId || legacyQualityId;
-    const qualityEnabled = requestedQualityId !== 'none' && qualityOptions.length > 0;
-    const qualityPresetId = qualityOptions.some(item => item.id === requestedQualityId) ? requestedQualityId : qualityOptions[0]?.id || 'standard';
+    const qualityPresetId = qualityOptions.some(item => item.id === requestedQualityId) ? requestedQualityId : qualityOptions[0].id;
     const legacyUcId = Number.isInteger(params.ucPreset) ? ['heavy', 'light', 'furryFocus', 'humanFocus', 'none'][Math.max(0, Math.min(4, params.ucPreset as number))] : 'heavy';
     const requestedUcId = params.ucPresetId || legacyUcId;
     const ucPresetId = ucOptions.some(item => item.id === requestedUcId) ? requestedUcId : ucOptions[0].id;
@@ -73,29 +73,18 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
             {/* Official model-specific quality and UC presets */}
             <div className="grid grid-cols-2 gap-4 mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex flex-col gap-3">
-                    {qualityOptions.length > 0 && <div className="space-y-2">
-                        <button
-                            type="button"
-                            role="switch"
+                    <div>
+                        <label className="mb-1 block text-xs text-gray-500 dark:text-gray-500">正面质量预设</label>
+                        <select
                             aria-label="正面质量预设"
-                            aria-checked={qualityEnabled}
-                            disabled={!canEdit}
-                            onClick={() => updatePreset({ qualityPresetId: qualityEnabled ? 'none' : qualityPresetId })}
-                            className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700"
-                        >
-                            <span className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-200">正面质量预设</b><span className="mt-0.5 block text-[10px] text-gray-400">{qualityEnabled ? qualityOptions.find(item => item.id === qualityPresetId)?.name || qualityPresetId : '关闭'}</span></span>
-                            <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${qualityEnabled ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${qualityEnabled ? 'translate-x-5' : ''}`} /></span>
-                        </button>
-                        {qualityEnabled && qualityOptions.length > 1 && <select
-                            aria-label="正面质量预设类型"
                             disabled={!canEdit}
                             className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm outline-none dark:border-gray-700 dark:bg-gray-900"
                             value={qualityPresetId}
                             onChange={event => updatePreset({ qualityPresetId: event.target.value })}
                         >
                             {qualityOptions.map(item => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}
-                        </select>}
-                    </div>}
+                        </select>
+                    </div>
                     {/* Variety+ Toggle */}
                     <div className="flex items-center gap-2">
                         <input

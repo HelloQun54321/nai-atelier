@@ -55,37 +55,31 @@ afterEach(() => cleanup());
 describe('ChainEditorParams', () => {
   it('未保存模型的旧数据按界面默认 V4.5 读取完整预设', () => {
     renderParams({ params: { ...params, model: undefined } });
-    expect(screen.getByRole('switch', { name: '正面质量预设' }).getAttribute('aria-checked')).toBe('true');
-    expect(screen.queryByRole('combobox', { name: '正面质量预设类型' })).toBeNull();
+    expect(screen.getByRole('combobox', { name: '正面质量预设' }).querySelectorAll('option')).toHaveLength(2);
     expect(screen.getByRole('combobox', { name: '负面预设' }).querySelectorAll('option')).toHaveLength(3);
   });
 
-  it('V4.5 用开关控制唯一质量预设，不显示单选项下拉框', () => {
+  it('V4.5 质量预设显示 standard 和 none', () => {
     const setParams = vi.fn();
     renderParams({ setParams });
-    const toggle = screen.getByRole('switch', { name: '正面质量预设' });
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
-    expect(screen.queryByRole('combobox', { name: '正面质量预设类型' })).toBeNull();
-    fireEvent.click(toggle);
+    const preset = screen.getByRole('combobox', { name: '正面质量预设' });
+    expect(Array.from(preset.querySelectorAll('option')).map(option => option.value)).toEqual(['none', 'standard']);
+    fireEvent.change(preset, { target: { value: 'none' } });
     expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ qualityPresetId: 'none' }));
   });
 
-  it('V5 开启质量标签后可以选择 standard 或 light', () => {
+  it('V5 质量预设显示 standard、light 和 none', () => {
     const setParams = vi.fn();
     renderParams({ params: { ...params, model: 'nai-diffusion-5-full' }, setParams });
-    const preset = screen.getByRole('combobox', { name: '正面质量预设类型' });
-    expect(preset.querySelectorAll('option')).toHaveLength(2);
+    const preset = screen.getByRole('combobox', { name: '正面质量预设' });
+    expect(Array.from(preset.querySelectorAll('option')).map(option => option.value)).toEqual(['none', 'standard', 'light']);
     fireEvent.change(preset, { target: { value: 'light' } });
     expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ qualityPresetId: 'light' }));
   });
 
-  it('关闭质量标签后仍可通过开关重新启用', () => {
-    const setParams = vi.fn();
-    renderParams({ params: { ...params, qualityPresetId: 'none' }, setParams });
-    const toggle = screen.getByRole('switch', { name: '正面质量预设' });
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
-    fireEvent.click(toggle);
-    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ qualityPresetId: 'standard' }));
+  it('旧版关闭状态在下拉框中保持 none', () => {
+    renderParams({ params: { ...params, qualityPresetId: undefined, qualityToggle: false } });
+    expect((screen.getByRole('combobox', { name: '正面质量预设' }) as HTMLSelectElement).value).toBe('none');
   });
 
   it('文生图保留可调图片尺寸', () => {
