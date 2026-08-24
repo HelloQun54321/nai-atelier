@@ -22,6 +22,16 @@ vi.mock('./ImageEditCanvas', () => ({
   ImageEditCanvas: () => React.createElement('div', { 'data-testid': 'edit-canvas' }, '画布'),
 }));
 
+vi.mock('./CloudQueueStatus', () => ({
+  InlineCloudQueueStatus: () => React.createElement('div', null, '队列'),
+  useCloudQueueStatus: () => null,
+}));
+
+vi.mock('./SmartImage', () => ({
+  OriginalImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => React.createElement('img', props),
+  SmartImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => React.createElement('img', props),
+}));
+
 const params = {
   width: 832,
   height: 1216,
@@ -37,10 +47,27 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
   const draft = createLabImageEditDraft(operation, 'blue bottle', 'low quality', params);
   const onManualMaskEditingChange = vi.fn();
   const onPromptChange = vi.fn();
+  const onSelectImageSource = vi.fn();
+  const historyItem = { id: 'history-1', imageUrl: 'data:image/png;base64,fixture', prompt: 'history prompt', negativePrompt: '', params, createdAt: 1 };
   return { ...render(React.createElement(ImageEditControls, {
     operation,
     draft,
     fileInputRef: React.createRef<HTMLInputElement>(),
+    canvasProps: {
+      imageCanvasRef: React.createRef<HTMLCanvasElement>(),
+      maskCanvasRef: React.createRef<HTMLCanvasElement>(),
+      overlayCanvasRef: React.createRef<HTMLCanvasElement>(),
+      width: 832,
+      height: 1216,
+      focusedRect: null,
+      focused: false,
+      isLoading: false,
+      onPointerDown: vi.fn(),
+      onPointerMove: vi.fn(),
+      onPointerUp: vi.fn(),
+    },
+    latestTextToImageItem: historyItem,
+    historyItems: [historyItem],
     selectableParams: draft.params,
     strength: draft.strength,
     noise: draft.noise,
@@ -59,6 +86,7 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     onPromptSource: vi.fn(),
     onDraftChange: vi.fn(),
     onFileChange: vi.fn(),
+    onSelectImageSource,
     onStrengthChange: vi.fn(),
     onNoiseChange: vi.fn(),
     onBrushSizeChange: vi.fn(),
@@ -72,7 +100,7 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     onRedo: vi.fn(),
     onExpansionChange: vi.fn(),
     onApplyOutpaint: vi.fn(),
-  })), onManualMaskEditingChange, onPromptChange };
+  })), onManualMaskEditingChange, onPromptChange, onSelectImageSource };
 };
 
 afterEach(() => cleanup());
@@ -90,8 +118,9 @@ describe('ImageEditControls', () => {
   it('图生图只显示底图、Strength 和 Noise，不显示蒙版或扩图控件', () => {
     renderControls('image-to-image');
 
-    expect(screen.getByText('底图')).toBeTruthy();
+    expect(screen.getByText('底图来源')).toBeTruthy();
     expect(screen.getByText('Strength')).toBeTruthy();
+    expect(screen.queryByTestId('edit-canvas')).toBeNull();
     expect(screen.queryByText('画笔')).toBeNull();
     expect(screen.queryByText('手动调整蒙版')).toBeNull();
     expect(screen.queryByText('Focused Inpainting')).toBeNull();
@@ -101,10 +130,23 @@ describe('ImageEditControls', () => {
   it('局部重绘显示蒙版工具和 Focused，但不显示扩图四边', () => {
     renderControls('inpaint');
 
+    expect(screen.getByTestId('edit-canvas')).toBeTruthy();
     expect(screen.getByText('Focused Inpainting')).toBeTruthy();
     expect(screen.getByText('画笔')).toBeTruthy();
     expect(screen.getByTitle('撤销')).toBeTruthy();
     expect(screen.queryByText('扩展画布（像素）')).toBeNull();
+  });
+
+  it('底图区域可选择文生图最新结果或历史图片', () => {
+    const { onSelectImageSource } = renderControls('image-to-image');
+
+    fireEvent.click(screen.getByRole('button', { name: /文生图最新/ }));
+    expect(onSelectImageSource).toHaveBeenCalledWith(expect.objectContaining({ id: 'history-1' }), 'generated');
+
+    fireEvent.click(screen.getByRole('button', { name: /选择历史图片/ }));
+    expect(screen.getByRole('dialog', { name: '选择历史图片' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /历史生成图片/ }));
+    expect(onSelectImageSource).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'history-1' }), 'history');
   });
 
   it('扩图默认只显示自动边缘扩展，不直接暴露画笔工具', () => {
@@ -143,34 +185,23 @@ describe('ImageEditControls', () => {
 });
 
 describe('ImageEditPreview', () => {
-  it('使用统一预览顺序，并只提供一个生成按钮', () => {
-    const canvasProps = {
-      imageCanvasRef: React.createRef<HTMLCanvasElement>(),
-      maskCanvasRef: React.createRef<HTMLCanvasElement>(),
-      overlayCanvasRef: React.createRef<HTMLCanvasElement>(),
-      width: 832,
-      height: 1216,
-      focusedRect: null,
-      focused: false,
-      isLoading: false,
-      onPointerDown: vi.fn(),
-      onPointerMove: vi.fn(),
-      onPointerUp: vi.fn(),
-    };
+  it('复用文生图规格的预览区域、下载按钮和生成按钮', () => {
     const { container } = render(React.createElement(ImageEditPreview, {
       operation: 'inpaint',
-      baseImage: 'data:image/png;base64,fixture',
+      image: 'data:image/png;base64,fixture',
       error: null,
       generationCostLabel: '预计消耗 12 Anlas',
       onGenerate: vi.fn(),
-      ...canvasProps,
+      onOpenLightbox: vi.fn(),
+      getDownloadFilename: () => 'fixture.png',
     }));
 
     const preview = container.querySelector('.chain-editor-preview');
     expect(preview?.className).toContain('order-1');
     expect(preview?.className).toContain('lg:order-2');
     expect(preview?.className).toContain('lg:w-1/2');
-    expect(screen.getAllByRole('button')).toHaveLength(1);
-    expect(screen.getByRole('button', { name: /生成编辑结果/ })).toBeTruthy();
+    expect(screen.queryByLabelText('图片编辑画布')).toBeNull();
+    expect(screen.getByRole('button', { name: '下载' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /生成局部重绘结果/ })).toBeTruthy();
   });
 });

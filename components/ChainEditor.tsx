@@ -275,6 +275,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const generationInFlightRef = useRef(false);
     const [imageEditBaseImage, setImageEditBaseImage] = useState<string | null>(null);
+    const [imageEditPreviewImage, setImageEditPreviewImage] = useState<string | null>(null);
     const workspaceKey = getLabWorkspaceSessionKey(chain.id);
     const workspaceFallback = createLabWorkspaceSession(chain.basePrompt || '', String(chain.variableValues?.subject || ''), chain.negativePrompt || '', chain.params || { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' }, Object.fromEntries((chain.modules || []).map(module => [module.id, module.isActive])));
     const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => loadLabWorkspaceSession(workspaceKey, workspaceFallback));
@@ -353,8 +354,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const activeEditOperation = activeGenerationMode === 'text-to-image' ? null : activeGenerationMode;
     const activeEditDraft = activeEditOperation ? workspaceSession.edits[activeEditOperation] : null;
     const activeLabLayout = labPageLayouts[activeGenerationMode];
+    const latestTextToImageItem = previewHistory.find(item => !item.edit);
     const selectedPreviewItem = previewMode === 'history' ? previewHistory[previewIndex] || null : null;
     const displayedPreviewImage = selectedPreviewItem?.imageUrl || generatedImage;
+    const imageEditPreviewHistoryIndex = imageEditPreviewImage ? previewHistory.findIndex(item => item.imageUrl === imageEditPreviewImage) : -1;
+    const imageEditPreviewHistoryLabel = imageEditPreviewHistoryIndex >= 0 ? `${imageEditPreviewHistoryIndex + 1} / ${previewHistory.length}` : undefined;
     const currentPreviewCover = decideCurrentPreviewCover(displayedPreviewImage, chain.previewImage);
     const hasPendingPreviewCover = chain.type === 'style' && currentPreviewCover.needsUpload;
     const canSaveCurrentChain = hasChanges || hasPendingPreviewCover;
@@ -389,6 +393,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setPreviewIndex(nextIndex);
         setPreviewMode('history');
         setGeneratedImage(nextImage);
+        if (activeEditOperation) setImageEditPreviewImage(nextImage);
         if (lightboxImg) {
             setLightboxImg(nextImage);
         }
@@ -410,6 +415,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 setPreviewIndex(0);
                 setPreviewMode('cover');
                 setGeneratedImage(null);
+                if (activeEditOperation) setImageEditPreviewImage(imageEditBaseImage);
                 if (lightboxImg) setLightboxImg(null);
             } else {
                 const nextIndex = Math.min(previewIndex, nextHistory.length - 1);
@@ -417,6 +423,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 setPreviewIndex(nextIndex);
                 setPreviewMode('history');
                 setGeneratedImage(nextImage);
+                if (activeEditOperation) setImageEditPreviewImage(nextImage);
                 if (lightboxImg) setLightboxImg(nextImage);
             }
 
@@ -442,6 +449,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setPreviewIndex(0);
             setPreviewMode('cover');
             setGeneratedImage(null);
+            if (activeEditOperation) setImageEditPreviewImage(imageEditBaseImage);
             setLightboxImg(null);
             notify(`已清除 ${count} 张图片的当前风格串归属，历史页仍会保留。`, 'success');
         } catch (error) {
@@ -500,6 +508,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (initialEditOperation) void resolveEditBaseImage(storedWorkspace.edits[initialEditOperation]);
         else {
             setImageEditBaseImage(null);
+            setImageEditPreviewImage(null);
             setImageEditMaskData(undefined);
         }
 
@@ -667,6 +676,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         editBaseResolveRevisionRef.current = resolveRevision;
         if (!draft?.baseImageRef) {
             setImageEditBaseImage(null);
+            setImageEditPreviewImage(null);
             setImageEditMaskData(undefined);
             return;
         }
@@ -674,7 +684,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         try {
             const blob = await readLabWorkspaceAsset(draft.baseImageRef);
             if (resolveRevision !== editBaseResolveRevisionRef.current) return;
-            setImageEditBaseImage(blob ? await blobToDataUrl(blob) : null);
+            const restoredBaseImage = blob ? await blobToDataUrl(blob) : null;
+            setImageEditBaseImage(restoredBaseImage);
+            setImageEditPreviewImage(restoredBaseImage);
             if (draft.maskRef) {
                 const maskBlob = await readLabWorkspaceAsset(draft.maskRef);
                 if (resolveRevision !== editBaseResolveRevisionRef.current) return;
@@ -702,9 +714,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (sourceImage) {
             draft.baseImageRef = await dataUrlToWorkspaceAsset(sourceImage, baseAssetId);
             setImageEditBaseImage(sourceImage);
+            setImageEditPreviewImage(sourceImage);
         } else {
             await deleteLabWorkspaceAsset(baseAssetId);
             setImageEditBaseImage(null);
+            setImageEditPreviewImage(null);
         }
         const maskAssetId = getLabWorkspaceAssetId(workspaceKey, operation, 'mask');
         await deleteLabWorkspaceAsset(maskAssetId);
@@ -724,6 +738,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (mode === 'text-to-image') {
             updateWorkspace(previous => ({ ...previous, activeMode: mode }));
             setImageEditBaseImage(null);
+            setImageEditPreviewImage(null);
             setImageEditMaskData(undefined);
             return;
         }
@@ -1361,6 +1376,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         clearPresetSources();
         setGeneratedImage(null);
         setImageEditBaseImage(null);
+        setImageEditPreviewImage(null);
         setImageEditMaskData(undefined);
         notify('实验室已重置');
     };
@@ -1683,6 +1699,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setPreviewIndex(0);
             setPreviewMode('history');
             setGeneratedImage(historyItem.imageUrl);
+            setImageEditPreviewImage(historyItem.imageUrl);
             notify('图片编辑完成，结果已保存为新的历史图片', 'success');
         } catch (editError) {
             const message = editError instanceof Error ? editError.message : '图片编辑失败';
@@ -2401,6 +2418,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
             </> : activeEditOperation && activeEditDraft ? <ImageEditPanel
                 baseImage={imageEditBaseImage}
+                previewImage={imageEditPreviewImage}
                 operation={activeEditOperation}
                 draft={activeEditDraft}
                 layout={activeLabLayout}
@@ -2409,6 +2427,24 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 isGenerating={isGenerating}
                 safeMode={safeMode}
                 tagAssistEnabled={tagAssistEnabled}
+                latestTextToImageItem={latestTextToImageItem}
+                historyItems={previewHistory}
+                onOpenLightbox={image => {
+                    const historyIndex = image ? previewHistory.findIndex(item => item.imageUrl === image) : -1;
+                    if (historyIndex >= 0) {
+                        setPreviewIndex(historyIndex);
+                        setPreviewMode('history');
+                    }
+                    setLightboxImg(image);
+                }}
+                getDownloadFilename={getDownloadFilename}
+                canNavigateHistory={previewHistory.length > 1}
+                historyLabel={imageEditPreviewHistoryLabel}
+                onPreviousHistory={() => showHistoryAt((imageEditPreviewHistoryIndex >= 0 ? imageEditPreviewHistoryIndex : previewIndex) - 1)}
+                onNextHistory={() => showHistoryAt((imageEditPreviewHistoryIndex >= 0 ? imageEditPreviewHistoryIndex : previewIndex) + 1)}
+                canManageHistoryGroup={Boolean(selectedPreviewItem && selectedPreviewItem.imageUrl === imageEditPreviewImage)}
+                onRemoveCurrentHistory={handleRemoveCurrentHistory}
+                onClearHistoryGroup={handleClearHistoryGroup}
                 apiKey={apiKey}
                 notify={notify}
                 onPromptChange={value => updateEditDraft(activeEditOperation, { prompt: value, promptSource: 'custom' })}
@@ -2425,14 +2461,22 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     updateEditDraft(activeEditOperation, { prompt: value, promptSource: source });
                 }}
                 onDraftChange={patch => updateEditDraft(activeEditOperation, patch)}
-                onBaseImageChange={(dataUrl, source) => {
+                onBaseImageChange={(dataUrl, source, parentHistoryId) => {
                     void (async () => {
                         cancelPendingMaskSave();
                         const ref = await dataUrlToWorkspaceAsset(dataUrl, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'base'));
                         await deleteLabWorkspaceAsset(getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'mask'));
-                        updateEditDraft(activeEditOperation, { baseImageRef: ref, baseImageSource: source, parentHistoryId: source === 'upload' ? undefined : activeEditDraft.parentHistoryId, maskRef: undefined, maskData: undefined, focusedRect: undefined });
+                        updateEditDraft(activeEditOperation, { baseImageRef: ref, baseImageSource: source, parentHistoryId: source === 'upload' ? undefined : parentHistoryId, maskRef: undefined, maskData: undefined, focusedRect: undefined });
                         setImageEditBaseImage(dataUrl);
+                        setImageEditPreviewImage(dataUrl);
                         setImageEditMaskData(undefined);
+                        if (parentHistoryId) {
+                            const selectedIndex = previewHistory.findIndex(item => item.id === parentHistoryId);
+                            if (selectedIndex >= 0) {
+                                setPreviewIndex(selectedIndex);
+                                setPreviewMode('history');
+                            }
+                        }
                     })();
                 }}
                 onCanvasChange={(imageData, maskData) => {
@@ -2444,6 +2488,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         ]);
                         updateEditDraft(activeEditOperation, { baseImageRef: baseRef, maskRef });
                         setImageEditBaseImage(imageData);
+                        setImageEditPreviewImage(imageData);
                         setImageEditMaskData(maskData);
                     })();
                 }}

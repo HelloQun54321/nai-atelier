@@ -6,6 +6,8 @@
 
 ## 2026-08-25
 
+- **Codex (GPT-5)**：统一四种实验室模式的右侧大图预览，将蒙版画板移入左侧底图区，并新增文生图最新与历史图片底图来源（feat: unify laboratory image editing workspace）。
+
 - **Codex (GPT-5)**：让 Tag 辅助、图片反推 Tag、元数据和预设导入跟随当前实验室页面，并避免编辑页误存不完整配置（fix: scope laboratory tools to active mode）。
 
 - **Codex (GPT-5)**：统一实验室 Variety+ 与 CFG 控件的主题强调色，并让四模式导航按桌面双栏、窄屏堆叠及手机布局自适应编辑区宽度（fix: align laboratory theme and mode navigation）。

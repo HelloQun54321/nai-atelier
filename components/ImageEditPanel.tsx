@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft } from '../types';
+import { ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem } from '../types';
 import { LabPageLayout } from '../services/appearancePreferences';
 import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, limitFocusedImageEditRect, normalizeMinimumContextArea, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions } from '../services/imageEdit';
 import { ImageEditControls } from './ImageEditControls';
@@ -26,6 +26,7 @@ export interface ImageEditRequest {
 
 interface ImageEditPanelProps {
   baseImage: string | null;
+  previewImage: string | null;
   operation: ImageEditOperation;
   draft: LabImageEditDraft;
   layout: LabPageLayout;
@@ -40,9 +41,20 @@ interface ImageEditPanelProps {
   onNegativePromptChange: (value: string) => void;
   onPromptSource: (source: LabImageEditDraft['promptSource']) => void;
   onDraftChange: (patch: Partial<LabImageEditDraft> & { maskData?: string }) => void;
-  onBaseImageChange: (dataUrl: string, source: 'generated' | 'history' | 'upload') => void;
+  onBaseImageChange: (dataUrl: string, source: 'generated' | 'history' | 'upload', parentHistoryId?: string) => void;
   onCanvasChange: (imageData: string, maskData: string) => void;
   onGenerate: (request: ImageEditRequest) => Promise<void>;
+  latestTextToImageItem?: LocalGenItem;
+  historyItems: LocalGenItem[];
+  onOpenLightbox: (image: string | null) => void;
+  getDownloadFilename: () => string;
+  canNavigateHistory?: boolean;
+  historyLabel?: string;
+  onPreviousHistory?: () => void;
+  onNextHistory?: () => void;
+  canManageHistoryGroup?: boolean;
+  onRemoveCurrentHistory?: () => void;
+  onClearHistoryGroup?: () => void;
 }
 
 type MaskSnapshot = { data: string; rect: { x: number; y: number; width: number; height: number } | null };
@@ -63,6 +75,7 @@ const emptyExpansion: ImageEditCanvasExpansion = { top: 0, right: 0, bottom: 0, 
 
 export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   baseImage,
+  previewImage,
   operation,
   draft,
   layout,
@@ -78,6 +91,17 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   onBaseImageChange,
   onCanvasChange,
   onGenerate,
+  latestTextToImageItem,
+  historyItems,
+  onOpenLightbox,
+  getDownloadFilename,
+  canNavigateHistory,
+  historyLabel,
+  onPreviousHistory,
+  onNextHistory,
+  canManageHistoryGroup,
+  onRemoveCurrentHistory,
+  onClearHistoryGroup,
   isGenerating = false,
   safeMode = false,
 }) => {
@@ -600,6 +624,26 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         draft={draft}
         layout={layout}
         fileInputRef={fileInputRef}
+        canvasProps={{
+          imageCanvasRef,
+          maskCanvasRef,
+          overlayCanvasRef,
+          width: state.width,
+          height: state.height,
+          focusedRect: state.focusedRect,
+          focused,
+          isLoading,
+          isBusy: isLoading || isGenerating,
+          maskEditable,
+          onPointerDown: handlePointerDown,
+          onPointerMove: handlePointerMove,
+          onPointerUp: handlePointerUp,
+          onFocusedInteractionStart: handleFocusedInteractionStart,
+          onFocusedInteractionMove: handleFocusedInteractionMove,
+          onFocusedInteractionEnd: handleFocusedInteractionEnd,
+        }}
+        latestTextToImageItem={latestTextToImageItem}
+        historyItems={historyItems}
         selectableParams={draft.params}
         strength={strength}
         noise={noise}
@@ -619,6 +663,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         onPromptSource={onPromptSource}
         onDraftChange={onDraftChange}
         onFileChange={handleUpload}
+        onSelectImageSource={(item, source) => onBaseImageChange(item.imageUrl, source, item.id)}
         onStrengthChange={value => { setStrength(value); onDraftChange({ strength: value }); }}
         onNoiseChange={value => { setNoise(value); onDraftChange({ noise: value }); }}
         onBrushSizeChange={value => { setBrushSize(value); onDraftChange({ brushSize: value }); }}
@@ -638,26 +683,21 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       />
       <ImageEditPreview
         operation={operation}
-        baseImage={baseImage}
+        image={previewImage || baseImage}
         error={error}
         generationCostLabel={generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea })}
         onGenerate={() => { void submit(); }}
-        imageCanvasRef={imageCanvasRef}
-        maskCanvasRef={maskCanvasRef}
-        overlayCanvasRef={overlayCanvasRef}
-        width={state.width}
-        height={state.height}
-        focusedRect={state.focusedRect}
-        focused={focused}
         isLoading={isLoading}
-        isBusy={isLoading || isGenerating}
-        maskEditable={maskEditable}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onFocusedInteractionStart={handleFocusedInteractionStart}
-        onFocusedInteractionMove={handleFocusedInteractionMove}
-        onFocusedInteractionEnd={handleFocusedInteractionEnd}
+        isGenerating={isGenerating}
+        onOpenLightbox={onOpenLightbox}
+        getDownloadFilename={getDownloadFilename}
+        canNavigateHistory={canNavigateHistory}
+        historyLabel={historyLabel}
+        onPreviousHistory={onPreviousHistory}
+        onNextHistory={onNextHistory}
+        canManageHistoryGroup={canManageHistoryGroup}
+        onRemoveCurrentHistory={onRemoveCurrentHistory}
+        onClearHistoryGroup={onClearHistoryGroup}
       />
     </div>
   );

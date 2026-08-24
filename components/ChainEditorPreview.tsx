@@ -27,6 +27,11 @@ interface ChainEditorPreviewProps {
     generationCostLabel: string;
     transparentPreview?: boolean;
     generationProgress?: { step: number; total: number } | null;
+    generateLabel?: string;
+    emptyLabel?: string;
+    resultAlt?: string;
+    showQueueStatus?: boolean;
+    generationDisabled?: boolean;
 }
 
 export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
@@ -52,6 +57,11 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     generationCostLabel,
     transparentPreview = false,
     generationProgress = null,
+    generateLabel = '生成图片',
+    emptyLabel = '暂无预览图，请从上方模式栏选择编辑模式',
+    resultAlt = '已生成',
+    showQueueStatus = true,
+    generationDisabled = false,
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDownloading, setIsDownloading] = useState(false);
@@ -154,7 +164,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
 
                     {generatedImage ? (
                         <>
-                            <OriginalImage src={generatedImage} alt="已生成" className="max-w-full max-h-full object-contain shadow-2xl" />
+                            <OriginalImage src={generatedImage} alt={resultAlt} className="max-w-full max-h-full object-contain shadow-2xl" />
                             {historyLabel && (
                                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1 text-xs text-white pointer-events-none">
                                     {historyLabel}
@@ -176,7 +186,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                                     <button onClick={(e) => { e.stopPropagation(); handleDownload(previewImage, getDownloadFilename()); }} disabled={isDownloading} className="bg-black/70 text-white px-3 py-1.5 rounded text-xs text-center cursor-pointer pointer-events-auto disabled:opacity-50 disabled:cursor-not-allowed">{isDownloading ? '下载中...' : '下载封面'}</button>
                                 </div>
                             </>
-                        ) : <div className="rounded-lg border border-dashed border-gray-300 px-4 py-3 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">暂无预览图，请从上方模式栏选择编辑模式</div>
+                        ) : <div className="rounded-lg border border-dashed border-gray-300 px-4 py-3 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">{emptyLabel}</div>
                     )}
 
                     {isGenerating && generationProgress && (
@@ -209,13 +219,13 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
 
                 <div className="mt-4 flex flex-none flex-col items-center">
                     {errorMsg && <div role="alert" className="mb-2 w-full max-w-sm rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center text-xs text-red-600 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{errorMsg}</div>}
-                    {queueStatus ? <InlineCloudQueueStatus className="w-full max-w-xs flex-shrink-0" /> : <button
+                    {showQueueStatus && queueStatus ? <InlineCloudQueueStatus className="w-full max-w-xs flex-shrink-0" /> : <button
                         onClick={handleGenerate}
-                        disabled={isGenerating}
-                        className={`generation-action-button flex h-11 w-full max-w-xs items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold ${isGenerating ? 'generation-action-button--loading' : ''}`}
+                        disabled={isGenerating || generationDisabled}
+                        className={`generation-action-button flex h-11 w-full max-w-xs items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${isGenerating ? 'generation-action-button--loading' : ''}`}
                     >
                         <ImageIcon aria-hidden="true" className="relative z-[1] h-4 w-4 shrink-0" strokeWidth={2.2} />
-                        <span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : '生成图片'}</span>
+                        <span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : generateLabel}</span>
                         {!isGenerating && <span className="generation-action-button__cost">{generationCostLabel}</span>}
                     </button>}
                 </div>
