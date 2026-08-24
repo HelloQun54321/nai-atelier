@@ -9,6 +9,7 @@ import { emitCloudQueueStatus, getCachedCloudQueuePreferences, getCloudQueuePref
 import { buildNaiGenerationPayload } from './naiPayload';
 import { buildNaiImageEditPayload } from './naiPayload';
 import { getNaiRuntimeConfig } from './naiRuntime';
+import { composeImageEditResult, prepareImageEdit } from './imageEdit';
 
 export interface NaiStreamPreview {
   image: string;
@@ -157,12 +158,15 @@ export const generateImageEdit = async (
     strength: number;
     noise: number;
     focused?: boolean;
+    focusedRect?: { x: number; y: number; width: number; height: number };
     minimumContextArea?: number;
   },
 ) => {
   const runtime = await getNaiRuntimeConfig();
-  const payload = buildNaiImageEditPayload(prompt, negative, params, { ...edit, runtimeModels: runtime.models });
-  validateGenerationCapabilities(params);
+  const prepared = await prepareImageEdit(edit);
+  const requestParams: NAIParams = { ...params, width: prepared.requestWidth, height: prepared.requestHeight };
+  const payload = buildNaiImageEditPayload(prompt, negative, requestParams, { ...edit, image: prepared.image, mask: prepared.mask, focused: edit.focused && edit.operation === 'inpaint', runtimeModels: runtime.models });
+  validateGenerationCapabilities(requestParams);
   const queue = await (async () => {
     try { return await getCloudQueuePreferences(); } catch { return getCachedCloudQueuePreferences(); }
   })();
@@ -199,7 +203,8 @@ export const generateImageEdit = async (
         if (typeof reportedSeed === 'number' && Number.isFinite(reportedSeed)) actualSeed = reportedSeed;
       } catch { /* 固定响应中可能不带 JSON 元数据。 */ }
     }
-    return { image: URL.createObjectURL(fileData), blob: fileData, seed: actualSeed, actualCost: binaryResult.actualCost };
+    const composed = await composeImageEditResult(fileData, prepared);
+    return { image: URL.createObjectURL(composed), blob: composed, seed: actualSeed, estimatedCost: binaryResult.estimatedCost, requestWidth: prepared.requestWidth, requestHeight: prepared.requestHeight, focusedGeometry: prepared.focusedGeometry };
   } catch (error) {
     terminalPhase = error instanceof Error && error.message.includes('已取消排队') ? 'cancelled' : 'error';
     terminalError = error instanceof Error ? error.message : '图片编辑失败';

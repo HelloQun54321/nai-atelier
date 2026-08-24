@@ -1301,4 +1301,7 @@ test('图像编辑费用：普通编辑不套用 V5 普通生图免费档，Focu
   assert.equal(estimateNovelAiGenerationCost(base, false, true), 0);
   assert.ok(estimateNovelAiGenerationCost(base, false, false) > 0);
   assert.equal(computeGenerationPersonalUsage(base, 0, false).opusImagesDelta, 0);
+  assert.ok(estimateNovelAiGenerationCost({ ...base, parameters: { ...base.parameters, _local_edit_operation: 'outpaint' } }, false, true) > 0);
+  assert.equal(computeGenerationPersonalUsage(base, 0, false, DEFAULT_NAI_RUNTIME, true, true).opusImagesDelta, 1);
+  assert.equal(computeGenerationPersonalUsage(base, 0, true, DEFAULT_NAI_RUNTIME, true, true).opusImagesDelta, 0);
 });

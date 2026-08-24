@@ -597,8 +597,10 @@ export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = fals
   // Precise Reference is a per-reference surcharge, not an img2img base image.
   const isPlainGeneration = payload?.action === 'generate' && !parameters.image && !parameters.mask;
   const focusedEdit = parameters._local_focused_inpainting === true
-    && (payload?.action === 'infill' || parameters._local_edit_operation === 'inpaint' || parameters._local_edit_operation === 'outpaint')
+    && payload?.action === 'infill'
+    && parameters._local_edit_operation === 'inpaint'
     && opusSubscriber
+    && !opusUsageExhausted
     && samples === 1
     && preciseReferences === 0
     && vibeCount === 0;
@@ -617,7 +619,7 @@ export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = fals
  * - opusImagesDelta：计入 Opus 免费额度的张数——仅“受限模型（V5 系）+ 免费档
  *   （单张、无底图、面积/步数达标）+ 未透支”的生成才消耗共享额度。
  */
-export const computeGenerationPersonalUsage = (payload, estimatedCost, usageExhausted, runtime = getNaiRuntime(), generationSucceeded = true) => {
+export const computeGenerationPersonalUsage = (payload, estimatedCost, usageExhausted, runtime = getNaiRuntime(), generationSucceeded = true, opusSubscriber = false) => {
   if (!generationSucceeded) return { anlasDelta: 0, opusImagesDelta: 0 };
   const parameters = payload?.parameters || {};
   const samples = Math.max(1, Math.floor(Number(parameters.n_samples) || 1));
@@ -627,8 +629,15 @@ export const computeGenerationPersonalUsage = (payload, estimatedCost, usageExha
   const steps = Math.max(1, Number(parameters.steps) || 1);
   const isPlainGeneration = payload?.action === 'generate' && !parameters.image && !parameters.mask;
   const isUsageLimitedModel = isNaiUsageLimitedModel(payload?.model, runtime);
-  const opusImagesDelta = isUsageLimitedModel && isPlainGeneration && !usageExhausted
-    && area <= runtime.freeMaxArea && steps <= runtime.freeMaxSteps ? samples : 0;
+  const isFocusedEdit = parameters._local_focused_inpainting === true
+    && payload?.action === 'infill'
+    && parameters._local_edit_operation === 'inpaint'
+    && opusSubscriber === true
+    && samples === 1;
+  const opusImagesDelta = !usageExhausted && (
+    (isUsageLimitedModel && isPlainGeneration && area <= runtime.freeMaxArea && steps <= runtime.freeMaxSteps)
+    || isFocusedEdit
+  ) ? samples : 0;
   return { anlasDelta: Math.max(0, Math.floor(Number(estimatedCost) || 0)), opusImagesDelta };
 };
 
@@ -813,7 +822,9 @@ const getOpusUsageSnapshot = keyHash => lastKnownOpusUsage.get(keyHash) || { exh
 const settleSuccessfulNovelAiGeneration = async ({ payload, authorization, keyHash, req, workerPort, requestRemote }) => {
   const runtime = getNaiRuntime();
   const isUsageLimitedModel = isNaiUsageLimitedModel(payload?.model, runtime);
-  const isFocusedImageEdit = payload?.parameters?._local_focused_inpainting === true;
+  const isFocusedImageEdit = payload?.parameters?._local_focused_inpainting === true
+    && payload?.action === 'infill'
+    && payload?.parameters?._local_edit_operation === 'inpaint';
   const opusSnapshot = getOpusUsageSnapshot(keyHash);
   if ((isUsageLimitedModel || isFocusedImageEdit) && Date.now() - opusSnapshot.updatedAt > OPUS_USAGE_STALE_MS) {
     try {
@@ -828,7 +839,7 @@ const settleSuccessfulNovelAiGeneration = async ({ payload, authorization, keyHa
   }
   const usageExhausted = getOpusUsageSnapshot(keyHash).exhausted;
   const estimatedCost = estimateNovelAiGenerationCost(payload, usageExhausted, getOpusUsageSnapshot(keyHash).opusSubscriber === true);
-  const personalUsage = computeGenerationPersonalUsage(payload, estimatedCost, usageExhausted, runtime, true);
+  const personalUsage = computeGenerationPersonalUsage(payload, estimatedCost, usageExhausted, runtime, true, getOpusUsageSnapshot(keyHash).opusSubscriber === true);
   const anlasBudget = estimatedCost > 0 || personalUsage.opusImagesDelta > 0
     ? await spendAnlasBudget(req, workerPort, estimatedCost, 'generation', { keyHash, ...personalUsage })
     : null;
@@ -1361,7 +1372,7 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
       'Content-Type': response.headers.get('content-type') || 'application/octet-stream',
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
-      ...(anlasBudget ? { 'X-Nai-Anlas-Remaining': String(anlasBudget.remaining), 'X-Nai-Anlas-Spent': String(estimatedCost) } : {}),
+      ...(anlasBudget ? { 'X-Nai-Anlas-Remaining': String(anlasBudget.remaining), 'X-Nai-Anlas-Estimated-Spent': String(estimatedCost) } : {}),
     };
     const contentLength = response.headers.get('content-length');
     const contentDisposition = response.headers.get('content-disposition');
@@ -1500,7 +1511,7 @@ const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, clou
       res.write(`\nevent: nai_usage\ndata: ${JSON.stringify({
         keyHash,
         remaining: anlasBudget?.remaining,
-        spent: estimatedCost,
+        estimatedSpent: estimatedCost,
         refreshPersonal: true,
       })}\n\n`);
     } catch (accountingError) {

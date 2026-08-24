@@ -29,7 +29,7 @@ interface BinaryRequestOptions {
 
 interface BinaryResponseDetails {
   blob: Blob;
-  actualCost?: number;
+  estimatedCost?: number;
   remaining?: number;
 }
 
@@ -153,9 +153,9 @@ export const api = {
     if (!res.ok) throw new Error(await res.text());
     const remaining = res.headers.get('x-nai-anlas-remaining');
     if (remaining !== null) emitBudgetChanged(Number(remaining), options.budgetKeyHash);
-    const spent = res.headers.get('x-nai-anlas-spent');
+    const spent = res.headers.get('x-nai-anlas-estimated-spent') ?? res.headers.get('x-nai-anlas-spent');
     const parsedCost = spent === null ? NaN : Number(spent);
-    return { blob: await res.blob(), actualCost: Number.isFinite(parsedCost) ? parsedCost : undefined, remaining: remaining === null ? undefined : Number(remaining) };
+    return { blob: await res.blob(), estimatedCost: Number.isFinite(parsedCost) ? parsedCost : undefined, remaining: remaining === null ? undefined : Number(remaining) };
   },
 
   postBinary: async (endpoint: string, data: any, headers?: Record<string, string>, options: BinaryRequestOptions = {}) => {

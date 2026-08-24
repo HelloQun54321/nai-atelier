@@ -3,6 +3,7 @@ import { ImageEditOperation, NAIParams } from '../types';
 import { api } from './api';
 import { getNaiModelInfo } from './naiModels';
 import { DEFAULT_NAI_RUNTIME, NaiRuntimeConfig } from './naiRuntime';
+import { imageEditRequestDimensions } from './imageEdit';
 
 export const DEFAULT_ANLAS_BUDGET = 1666;
 export const ANLAS_BUDGET_CHANGED_EVENT = 'nai-anlas-budget-changed';
@@ -80,15 +81,18 @@ export const estimateImageEditCost = (
   opusUsageExhausted = false,
   dimensions?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number },
 ) => {
-  const width = Math.max(1, Number(dimensions?.width ?? params.width) || 1);
-  const height = Math.max(1, Number(dimensions?.height ?? params.height) || 1);
+  const sourceWidth = Math.max(1, Number(dimensions?.width ?? params.width) || 1);
+  const sourceHeight = Math.max(1, Number(dimensions?.height ?? params.height) || 1);
+  const requestDimensions = imageEditRequestDimensions(sourceWidth, sourceHeight, operation, focused, dimensions?.focusedRect, dimensions?.minimumContextArea);
+  const width = Math.max(1, Number(requestDimensions.width) || 1);
+  const height = Math.max(1, Number(requestDimensions.height) || 1);
   const area = Math.max(65_536, width * height);
   const steps = Math.max(1, Number(params.steps) || 1);
   const raw = Math.ceil(estimatorRuntime.costCoefficientArea * area + estimatorRuntime.costCoefficientSteps * area * steps);
   const baseCost = Math.max(2, Math.ceil(raw * Math.max(0, Math.min(1, Number(strength) || 0))));
   const vibeCount = params.vibes?.enabled ? params.vibes.slots.length : 0;
   const preciseReferenceCount = params.characterReferences?.enabled ? params.characterReferences.slots.length : 0;
-  const focusedFree = (operation === 'inpaint' || operation === 'outpaint')
+  const focusedFree = operation === 'inpaint'
     && focused
     && opusTier === 4
     && !opusUsageExhausted
@@ -99,7 +103,7 @@ export const estimateImageEditCost = (
 };
 
 export const formatImageEditCostLabel = (cost: number, operation: ImageEditOperation, focused: boolean, opusTier?: number) => {
-  if (focused && (operation === 'inpaint' || operation === 'outpaint')) {
+  if (focused && operation === 'inpaint') {
     if (opusTier === 4 && cost === 0) return 'Opus 免费';
     if (opusTier === undefined) return '费用以官方返回为准';
   }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Contrast, Eraser, ImagePlus, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, NAIParams } from '../types';
+import { ImageEditNormalizationMode } from '../services/imageEdit';
 import { ChainEditorParams } from './ChainEditorParams';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { VibeManager } from './VibeManager';
@@ -39,6 +40,8 @@ interface ImageEditControlsProps {
   onExpansionChange: (value: ImageEditCanvasExpansion) => void;
   onApplyOutpaint: () => void;
   onResetFocusedRect?: () => void;
+  normalization?: { sourceWidth: number; sourceHeight: number; targetWidth: number; targetHeight: number } | null;
+  onNormalize?: (mode: ImageEditNormalizationMode) => void;
 }
 
 const getOperationLabel = (operation: ImageEditOperation) => operation === 'image-to-image' ? '图生图' : operation === 'inpaint' ? '局部重绘' : '扩图';
@@ -46,21 +49,22 @@ const getOperationLabel = (operation: ImageEditOperation) => operation === 'imag
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   operation, draft, fileInputRef, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, canvasSize = { width: 0, height: 0 }, isBusy = false, apiKey, notify,
   onPromptChange, onNegativePromptChange, onPromptSource, onDraftChange, onFileChange, onStrengthChange, onNoiseChange, onBrushSizeChange, onFocusedChange,
-  onMinimumContextAreaChange, onToolChange, onClearMask, onInvertMask, onUndo, onRedo, onExpansionChange, onApplyOutpaint, onResetFocusedRect = () => undefined,
+  onMinimumContextAreaChange, onToolChange, onClearMask, onInvertMask, onUndo, onRedo, onExpansionChange, onApplyOutpaint, onResetFocusedRect = () => undefined, normalization = null, onNormalize = () => undefined,
 }) => (
   <div className="chain-editor-main order-2 flex min-h-full w-full shrink-0 flex-col border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 lg:order-1 lg:w-1/2 lg:flex-1 lg:overflow-y-auto lg:border-b-0 lg:border-r">
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 pb-24 md:p-6 md:pb-24">
       <section className="space-y-4">
         <div>
           <div className="mb-2 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100">提示词输入</label><span className="text-[10px] text-gray-400">{getOperationLabel(operation)} · 本次编辑独立保存</span></div>
-          <textarea value={draft.prompt} onChange={event => onPromptChange(event.target.value)} className="min-h-28 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder="输入本次实际要生成的完整提示词" />
+          <textarea disabled={isBusy} value={draft.prompt} onChange={event => onPromptChange(event.target.value)} className="min-h-28 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder="输入本次实际要生成的完整提示词" />
           <div className="mt-2 flex flex-wrap gap-1.5"><button type="button" onClick={() => onPromptSource('current')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">当前完整 Prompt</button><button type="button" onClick={() => onPromptSource('style-only')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">仅保留风格串</button><button type="button" onClick={() => onPromptSource('history')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">历史 Prompt</button><button type="button" onClick={() => onPromptSource('custom')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">清空 Prompt</button></div>
         </div>
-        <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">全局负面提示词<textarea value={draft.negativePrompt} onChange={event => onNegativePromptChange(event.target.value)} className="mt-2 min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder="输入本次负面提示词" /></label>
+        <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">全局负面提示词<textarea disabled={isBusy} value={draft.negativePrompt} onChange={event => onNegativePromptChange(event.target.value)} className="mt-2 min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder="输入本次负面提示词" /></label>
       </section>
       <section className="rounded-lg border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/45">
         <div className="mb-3 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100">底图</label>{draft.baseImageSource === 'history' && <span className="truncate text-[10px] text-gray-400">历史图片</span>}</div>
-        <div className="flex items-center gap-2"><input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onFileChange} /><button type="button" onClick={() => fileInputRef.current?.click()} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-xs font-semibold text-gray-700 hover:border-indigo-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><ImagePlus className="h-4 w-4" />导入 PNG / JPEG / WebP</button><span className="text-[11px] text-gray-500 dark:text-gray-400">不会自动写入历史记录</span></div>
+        <div className="flex items-center gap-2"><input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onFileChange} /><button disabled={isBusy} type="button" onClick={() => fileInputRef.current?.click()} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-xs font-semibold text-gray-700 hover:border-indigo-400 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><ImagePlus className="h-4 w-4" />导入 PNG / JPEG / WebP</button><span className="text-[11px] text-gray-500 dark:text-gray-400">不会自动写入历史记录</span></div>
+        {normalization && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"><div className="font-semibold">底图尺寸需要规范化</div><div className="mt-1 leading-5">当前 {normalization.sourceWidth} × {normalization.sourceHeight}，编辑接口建议使用 {normalization.targetWidth} × {normalization.targetHeight}。请选择处理方式后再生成。</div><div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3"><button disabled={isBusy} type="button" onClick={() => onNormalize('crop')} className="rounded-md bg-amber-100 px-2 py-1.5 font-semibold hover:bg-amber-200 disabled:opacity-50 dark:bg-amber-900/50 dark:hover:bg-amber-900">居中裁剪（推荐）</button><button disabled={isBusy} type="button" onClick={() => onNormalize('contain')} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold hover:bg-white disabled:opacity-50 dark:bg-gray-900/60 dark:hover:bg-gray-900">完整保留并填充</button><button disabled={isBusy} type="button" onClick={() => onNormalize('stretch')} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold hover:bg-white disabled:opacity-50 dark:bg-gray-900/60 dark:hover:bg-gray-900">直接缩放</button></div></div>}
       </section>
       <ChainEditorParams params={selectableParams} setParams={params => onDraftChange({ params })} canEdit={!isBusy} markChange={() => undefined} hideResolution imageEditSize={canvasSize} />
       <section className="space-y-4 rounded-lg border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/45">

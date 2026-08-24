@@ -68,7 +68,7 @@ describe('NovelAI generation payload', () => {
     expect(editParameters.inpaintImg2ImgStrength).toBe(0.8);
   });
 
-  it('builds outpainting as infill and preserves the focused marker for local settlement', () => {
+  it('builds outpainting as ordinary infill without the Focused marker', () => {
     const payload = buildNaiImageEditPayload('landscape', '', baseParams, {
       operation: 'outpaint', image: 'data:image/png;base64,aW1hZ2U=', mask: 'data:image/png;base64,bWFzaw==',
       strength: 1, noise: 0, focused: true, minimumContextArea: 0.5, runtimeModels: ['nai-diffusion-5-full-inpainting'],
@@ -77,8 +77,18 @@ describe('NovelAI generation payload', () => {
     expect(payload.action).toBe('infill');
     expect(payload.model).toBe('nai-diffusion-5-full-inpainting');
     expect(editParameters._local_edit_operation).toBe('outpaint');
+    expect(editParameters._local_focused_inpainting).toBeUndefined();
+    expect(editParameters._local_minimum_context_area).toBeUndefined();
+  });
+
+  it('normalizes legacy Focused context values only for inpainting', () => {
+    const payload = buildNaiImageEditPayload('1girl', '', baseParams, {
+      operation: 'inpaint', image: 'data:image/png;base64,aW1hZ2U=', mask: 'data:image/png;base64,bWFzaw==',
+      strength: 1, noise: 0, focused: true, minimumContextArea: 0.5, runtimeModels: ['nai-diffusion-5-full-inpainting'],
+    });
+    const editParameters = payload.parameters as Record<string, any>;
     expect(editParameters._local_focused_inpainting).toBe(true);
-    expect(editParameters._local_minimum_context_area).toBe(0.5);
+    expect(editParameters._local_minimum_context_area).toBe(64);
   });
 
   it('rejects an edit when the runtime does not expose the inpainting variant', () => {

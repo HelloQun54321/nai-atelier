@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft } from '../types';
-import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, normalizeMinimumContextArea, validateImageEditDimensions } from '../services/imageEdit';
+import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, limitFocusedImageEditRect, normalizeMinimumContextArea, validateImageEditDimensions } from '../services/imageEdit';
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPreview } from './ImageEditPreview';
 
@@ -46,6 +46,13 @@ type ImageEditPanelState = {
   focusedRect: { x: number; y: number; width: number; height: number } | null;
 };
 
+type ImageEditNormalizationState = {
+  sourceWidth: number;
+  sourceHeight: number;
+  targetWidth: number;
+  targetHeight: number;
+};
+
 const emptyExpansion: ImageEditCanvasExpansion = { top: 0, right: 0, bottom: 0, left: 0 };
 
 export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
@@ -87,6 +94,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [tool, setTool] = useState<'brush' | 'eraser'>('brush');
   const [expansion, setExpansion] = useState<ImageEditCanvasExpansion>(draft.expansion || emptyExpansion);
   const [state, setState] = useState<ImageEditPanelState>({ width: 0, height: 0, focusedRect: draft.focusedRect || null });
+  const [normalization, setNormalization] = useState<ImageEditNormalizationState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -170,7 +178,10 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       const context = imageCanvas.getContext('2d');
       if (!context) throw new Error('无法创建图片画布');
       context.drawImage(bitmap, 0, 0);
+      const dimensionError = validateImageEditDimensions(bitmap.width, bitmap.height);
+      const normalizationTarget = getImageEditNormalizationTarget(bitmap.width, bitmap.height);
       bitmap.close();
+      setNormalization(dimensionError ? { sourceWidth: imageCanvas.width, sourceHeight: imageCanvas.height, targetWidth: normalizationTarget.width, targetHeight: normalizationTarget.height } : null);
       focusedRectRef.current = draft.focusedRect || null;
       setState({ width: imageCanvas.width, height: imageCanvas.height, focusedRect: draft.focusedRect || null });
       resetMask(imageCanvas.width, imageCanvas.height);
@@ -295,7 +306,12 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     if (selectingRef.current) {
       const point = getCanvasPoint(event);
       const start = startPointRef.current;
-      focusedRectRef.current = { x: Math.min(start.x, point.x), y: Math.min(start.y, point.y), width: Math.abs(point.x - start.x), height: Math.abs(point.y - start.y) };
+      focusedRectRef.current = limitFocusedImageEditRect(state.width, state.height, {
+        x: Math.min(start.x, point.x),
+        y: Math.min(start.y, point.y),
+        width: Math.abs(point.x - start.x),
+        height: Math.abs(point.y - start.y),
+      });
       setState(previous => ({ ...previous, focusedRect: focusedRectRef.current }));
       return;
     }
@@ -399,6 +415,63 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     }
   };
 
+  const applyNormalization = (mode: ImageEditNormalizationMode) => {
+    const imageCanvas = imageCanvasRef.current;
+    const maskCanvas = maskCanvasRef.current;
+    if (!imageCanvas || !maskCanvas || !normalization) return;
+    const { sourceWidth, sourceHeight, targetWidth, targetHeight } = normalization;
+    const image = document.createElement('canvas');
+    image.width = targetWidth;
+    image.height = targetHeight;
+    const imageContext = image.getContext('2d');
+    const mask = document.createElement('canvas');
+    mask.width = targetWidth;
+    mask.height = targetHeight;
+    const maskContext = mask.getContext('2d');
+    if (!imageContext || !maskContext) {
+      setError('无法创建尺寸规范化画布');
+      return;
+    }
+    imageContext.imageSmoothingEnabled = true;
+    imageContext.imageSmoothingQuality = 'high';
+    maskContext.imageSmoothingEnabled = false;
+    let sourceRect = { x: 0, y: 0, width: sourceWidth, height: sourceHeight };
+    let destinationRect = { x: 0, y: 0, width: targetWidth, height: targetHeight };
+    if (mode === 'crop') sourceRect = getCenteredImageEditCrop(sourceWidth, sourceHeight, targetWidth, targetHeight);
+    if (mode === 'contain') destinationRect = getContainedImageEditRect(sourceWidth, sourceHeight, targetWidth, targetHeight);
+    if (mode === 'contain') {
+      imageContext.fillStyle = '#ffffff';
+      imageContext.fillRect(0, 0, targetWidth, targetHeight);
+    }
+    imageContext.drawImage(imageCanvas, sourceRect.x, sourceRect.y, sourceRect.width, sourceRect.height, destinationRect.x, destinationRect.y, destinationRect.width, destinationRect.height);
+    maskContext.drawImage(maskCanvas, sourceRect.x, sourceRect.y, sourceRect.width, sourceRect.height, destinationRect.x, destinationRect.y, destinationRect.width, destinationRect.height);
+
+    const currentRect = focusedRectRef.current;
+    const nextFocusedRect = currentRect ? {
+      x: (currentRect.x - sourceRect.x) * destinationRect.width / Math.max(1, sourceRect.width) + destinationRect.x,
+      y: (currentRect.y - sourceRect.y) * destinationRect.height / Math.max(1, sourceRect.height) + destinationRect.y,
+      width: currentRect.width * destinationRect.width / Math.max(1, sourceRect.width),
+      height: currentRect.height * destinationRect.height / Math.max(1, sourceRect.height),
+    } : null;
+    imageCanvas.width = targetWidth;
+    imageCanvas.height = targetHeight;
+    imageCanvas.getContext('2d')?.drawImage(image, 0, 0);
+    maskCanvas.width = targetWidth;
+    maskCanvas.height = targetHeight;
+    maskCanvas.getContext('2d')?.drawImage(mask, 0, 0);
+    focusedRectRef.current = nextFocusedRect ? limitFocusedImageEditRect(targetWidth, targetHeight, nextFocusedRect) : null;
+    undoRef.current = [];
+    redoRef.current = [];
+    setState({ width: targetWidth, height: targetHeight, focusedRect: focusedRectRef.current });
+    setNormalization(null);
+    renderOverlay();
+    const imageData = canvasToDataUrl(imageCanvas);
+    const maskData = canvasToDataUrl(maskCanvas);
+    onCanvasChange(imageData, maskData);
+    onDraftChange({ maskData, focusedRect: focusedRectRef.current || undefined });
+    notify(`已将底图规范化为 ${targetWidth} × ${targetHeight}`, 'success');
+  };
+
   const submit = async () => {
     if (inFlightRef.current || isGenerating) return;
     const imageCanvas = imageCanvasRef.current;
@@ -406,7 +479,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     if (!imageCanvas || !maskCanvas) return;
     const dimensionError = validateImageEditDimensions(imageCanvas.width, imageCanvas.height);
     if (dimensionError) {
-      setError(dimensionError);
+      setError(`请先处理底图尺寸：${dimensionError}`);
       return;
     }
     if (operation === 'inpaint' && focused && (!state.focusedRect || state.focusedRect.width < 2 || state.focusedRect.height < 2)) {
@@ -473,6 +546,8 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         onExpansionChange={value => { setExpansion(value); onDraftChange({ expansion: value }); }}
         onApplyOutpaint={() => { void applyOutpaint(); }}
         onResetFocusedRect={resetFocusedRect}
+        normalization={normalization}
+        onNormalize={applyNormalization}
       />
       <ImageEditPreview
         operation={operation}
