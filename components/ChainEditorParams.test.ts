@@ -56,7 +56,7 @@ describe('ChainEditorParams', () => {
   it('未保存模型的旧数据按界面默认 V4.5 读取完整预设', () => {
     renderParams({ params: { ...params, model: undefined } });
     expect(screen.getByRole('combobox', { name: '正面质量预设' }).querySelectorAll('option')).toHaveLength(2);
-    expect(screen.getByRole('combobox', { name: '负面预设' }).querySelectorAll('option')).toHaveLength(3);
+    expect(Array.from(screen.getByRole('combobox', { name: '负面预设' }).querySelectorAll('option')).map(option => option.value)).toEqual(['none', 'heavy', 'light']);
   });
 
   it('V4.5 质量预设显示 standard 和 none', () => {
@@ -80,6 +80,15 @@ describe('ChainEditorParams', () => {
   it('旧版关闭状态在下拉框中保持 none', () => {
     renderParams({ params: { ...params, qualityPresetId: undefined, qualityToggle: false } });
     expect((screen.getByRole('combobox', { name: '正面质量预设' }) as HTMLSelectElement).value).toBe('none');
+  });
+
+  it('负面预设将 none 固定在首项并能切换其他模型预设', () => {
+    const setParams = vi.fn();
+    renderParams({ setParams });
+    const preset = screen.getByRole('combobox', { name: '负面预设' });
+    expect(Array.from(preset.querySelectorAll('option')).map(option => option.value)).toEqual(['none', 'heavy', 'light']);
+    fireEvent.change(preset, { target: { value: 'heavy' } });
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ ucPresetId: 'heavy' }));
   });
 
   it('文生图保留可调图片尺寸', () => {

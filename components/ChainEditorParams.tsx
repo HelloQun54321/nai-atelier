@@ -48,9 +48,9 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
     const modelCapability = getNaiRuntimeModelCapability(runtime, resolvedModelId);
     const officialQualityOptions = modelCapability?.qualityPresets?.filter(item => item.id !== 'none') || [];
     const qualityOptions = [{ id: 'none', name: 'none' }, ...officialQualityOptions];
-    const ucOptions = modelCapability?.ucPresets?.length
-        ? modelCapability.ucPresets
-        : [{ id: 'none', name: 'none' }];
+    const officialUcOptions = modelCapability?.ucPresets || [];
+    const noneUcOption = officialUcOptions.find(item => item.id === 'none') || { id: 'none', name: 'none' };
+    const ucOptions = [noneUcOption, ...officialUcOptions.filter(item => item.id !== 'none')];
     const legacyQualityId = params.qualityToggle === false ? 'none' : 'standard';
     const requestedQualityId = params.qualityPresetId || legacyQualityId;
     const qualityPresetId = qualityOptions.some(item => item.id === requestedQualityId) ? requestedQualityId : qualityOptions[0].id;

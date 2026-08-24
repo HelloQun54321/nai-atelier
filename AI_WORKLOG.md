@@ -6,6 +6,8 @@
 
 ## 2026-08-25
 
+- **Codex (GPT-5)**：统一正负面预设下拉框的关闭项排序，让四种实验室模式始终将 none 显示在首位（fix: prioritize none in preset dropdowns）。
+
 - **Codex (GPT-5)**：按模型恢复单一正面质量预设下拉框，并将 none 置于 V5 与 V4／V4.5 选项首位（fix: restore quality preset dropdown）。
 
 - **Codex (GPT-5)**：按 NovelAI 官方语义重做质量预设开关与 V5 类型选择，修复实时预设关闭失效及旧数据默认模型无法读取负面预设（fix: align official prompt preset controls）。
