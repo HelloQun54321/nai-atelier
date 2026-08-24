@@ -53,6 +53,13 @@ export const createLabWorkspaceSession = (
   updatedAt: Date.now(),
 });
 
+/** 只有实验室入口允许恢复图片编辑模式；风格串／角色串详情始终是文生图工作区。 */
+export const scopeLabWorkspaceSessionToEntry = (entryId: string, session: LabWorkspaceSession): LabWorkspaceSession => (
+  entryId === 'playground' || session.activeMode === 'text-to-image'
+    ? session
+    : { ...session, activeMode: 'text-to-image' }
+);
+
 const isEditDraft = (value: unknown): value is LabImageEditDraft => {
   if (!value || typeof value !== 'object') return false;
   const draft = value as Partial<LabImageEditDraft>;

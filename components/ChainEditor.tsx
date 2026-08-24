@@ -22,7 +22,7 @@ import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, useAnlasBudget } from '../services/anlasBudget';
-import { cleanupLabWorkspaceAssets, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, loadLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl } from '../services/labWorkspace';
+import { cleanupLabWorkspaceAssets, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, loadLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, scopeLabWorkspaceSessionToEntry } from '../services/labWorkspace';
 import { useNovelaiUsage } from '../services/naiUsage';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { DEFAULT_NAI_RUNTIME, getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
@@ -31,8 +31,8 @@ import { decideCurrentPreviewCover } from '../services/chainCover';
 import { LabPageLayouts } from '../services/appearancePreferences';
 import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildImageEditPresetPatch, canSaveLabModeToLibrary, LabPresetImportOptions } from '../services/labModeTools';
 import { LabModuleSection } from './LabModuleSection';
-import { GenerationModeNav } from './GenerationModeNav';
-import { Copy, FileDown, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, Tags, UserRound, X } from 'lucide-react';
+import { ChainEditorModeHeader } from './ChainEditorModeHeader';
+import { Copy, FileDown, ImagePlus, Palette, Quote, RotateCcw, Save, Tags, UserRound, X } from 'lucide-react';
 
 const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
 
@@ -278,7 +278,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [imageEditPreviewImage, setImageEditPreviewImage] = useState<string | null>(null);
     const workspaceKey = getLabWorkspaceSessionKey(chain.id);
     const workspaceFallback = createLabWorkspaceSession(chain.basePrompt || '', String(chain.variableValues?.subject || ''), chain.negativePrompt || '', chain.params || { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' }, Object.fromEntries((chain.modules || []).map(module => [module.id, module.isActive])));
-    const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => loadLabWorkspaceSession(workspaceKey, workspaceFallback));
+    const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => scopeLabWorkspaceSessionToEntry(chain.id, loadLabWorkspaceSession(workspaceKey, workspaceFallback)));
     const [imageEditMaskData, setImageEditMaskData] = useState<string | undefined>();
     const [imageEditBaseLoading, setImageEditBaseLoading] = useState(false);
     const maskSaveRevisionRef = useRef(0);
@@ -349,7 +349,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const sourceChainId = chain.id === 'playground' ? 'playground' : chain.id;
-    const activeGenerationMode = workspaceSession.activeMode;
+    const activeGenerationMode = chain.id === 'playground' ? workspaceSession.activeMode : 'text-to-image';
     const canSaveActiveModeToLibrary = canSaveLabModeToLibrary(activeGenerationMode);
     const activeEditOperation = activeGenerationMode === 'text-to-image' ? null : activeGenerationMode;
     const activeEditDraft = activeEditOperation ? workspaceSession.edits[activeEditOperation] : null;
@@ -468,7 +468,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         prevChainIdRef.current = chain.id;
         clearPresetSources();
 
-        const storedWorkspace = loadLabWorkspaceSession(workspaceKey, workspaceFallback);
+        const storedWorkspace = scopeLabWorkspaceSessionToEntry(chain.id, loadLabWorkspaceSession(workspaceKey, workspaceFallback));
         workspaceInitializedKeyRef.current = workspaceKey;
         workspaceSyncBlockedRef.current = true;
         setWorkspaceSession(storedWorkspace);
@@ -1850,16 +1850,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             {/* Top Bar */}
             <header className="chain-editor-header workspace-command-bar relative z-30 grid h-auto flex-shrink-0 grid-cols-1 items-center gap-1 overflow-visible border-b border-gray-200 bg-white px-2 py-1 dark:border-gray-800 dark:bg-gray-950 md:gap-2 md:px-6 lg:grid-cols-2 lg:gap-0 lg:py-0">
                 <div className="chain-editor-header-main relative flex min-w-0 items-center gap-2 md:gap-4">
-                    {chain.id !== 'playground' && <div className="flex min-w-0 flex-1 cursor-pointer items-center gap-2" onClick={() => isOwner && setIsEditingInfo(true)}>
-                        <div className="flex min-w-0 items-baseline gap-2 overflow-hidden">
-                            <span className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase ${isCharacterMode ? 'border-pink-200 bg-pink-100 text-pink-700' : 'border-blue-200 bg-blue-100 text-blue-700'}`}>{isCharacterMode ? '角色串' : '风格串'}</span>
-                            <h1 className="min-w-0 truncate text-base font-bold text-gray-900 dark:text-white md:text-lg">{chainName}</h1>
-                            <span className="hidden min-w-0 max-w-xs truncate text-xs text-gray-500 md:block">{chainDesc}</span>
-                        </div>
-                        {isOwner && <Pencil className="h-4 w-4 flex-shrink-0 text-gray-400 opacity-50" />}
-                    </div>}
-                    <GenerationModeNav activeMode={activeGenerationMode} onSelect={selectGenerationMode} />
-                    {chain.id !== 'playground' && isEditingInfo && isOwner && <div role="dialog" aria-label="编辑风格串信息" className="absolute left-9 top-[calc(100%+0.5rem)] z-50 w-[min(40rem,calc(100vw-2rem))] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+                    <ChainEditorModeHeader
+                        isLaboratory={chain.id === 'playground'}
+                        chainName={chainName}
+                        entityLabel={isCharacterMode ? '角色串' : '风格串'}
+                        isOwner={isOwner}
+                        activeMode={activeGenerationMode}
+                        onSelectMode={selectGenerationMode}
+                        onEditInfo={() => setIsEditingInfo(true)}
+                    />
+                    {chain.id !== 'playground' && isEditingInfo && isOwner && <div role="dialog" aria-label={`编辑${isCharacterMode ? '角色串' : '风格串'}信息`} className="absolute left-9 top-[calc(100%+0.5rem)] z-50 w-[min(40rem,calc(100vw-2rem))] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
                         <div className="grid gap-3 sm:grid-cols-2">
                             <label className="text-xs font-bold text-gray-500">名称<input type="text" value={chainName} onChange={e => { setChainName(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white" placeholder="名称" /></label>
                             <label className="text-xs font-bold text-gray-500">描述<input type="text" value={chainDesc} onChange={e => { setChainDesc(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-700 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" placeholder="描述" /></label>

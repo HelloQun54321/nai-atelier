@@ -6,6 +6,8 @@
 
 ## 2026-08-25
 
+- **Codex (GPT-5)**：将风格串与角色串详情限定为文生图，并将顶部改为可重命名的铅笔加截断名称布局，同时保留实验室四模式（fix: separate chain details from laboratory modes）。
+
 - **Codex (GPT-5)**：补回编辑模式右侧预览的历史管理操作，并将底图选择器接入历史页全量分页数据与完整比例缩略图（fix: restore edit preview actions and history picker）。
 
 - **Codex (GPT-5)**：统一四种实验室模式的右侧大图预览，将蒙版画板移入左侧底图区，并新增文生图最新与历史图片底图来源（feat: unify laboratory image editing workspace）。
