@@ -18,6 +18,7 @@ import {
   extractNaiCostCoefficients,
   extractNaiFreeTierLimits,
   extractNaiModelCapabilities,
+  extractNaiPromptPresets,
   extractNaiMetadataModelMappings,
   fetchNaiRuntimeText,
   computeNaiRuntimeSync,
@@ -832,6 +833,16 @@ test('官方 Web 应用常量提取器解析真实压缩代码片段', () => {
   assert.deepEqual(capabilities.streamedModels, [
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
   ]);
+  assert.equal(capabilities.modelCapabilities['nai-diffusion-5-full'].supportsTransparentBackground, false);
+  assert.equal(capabilities.modelCapabilities['nai-diffusion-5-full'].maxCharacters, 0);
+
+  const promptPresetTable = [
+    'case n.oM.naiDiffusionV5Full:return[{id:"standard",name:"standard",suffix:"very aesthetic"},{id:"light",name:"light",suffix:"amazing quality"},{id:"none",name:"none"}]',
+    'case n.oM.naiDiffusionV5Full:return[{id:"heavy",name:"heavy",category:"heavy",prefix:"lowres, bad hands"},{id:"none",name:"none",category:"none"}]',
+  ].join(';');
+  const promptPresets = extractNaiPromptPresets(promptPresetTable);
+  assert.equal(promptPresets.qualityPresets['nai-diffusion-5-full'][1].suffix, 'amazing quality');
+  assert.equal(promptPresets.ucPresets['nai-diffusion-5-full'][0].prefix, 'lowres, bad hands');
 
   const metadataModels = 'switch(e){case"NovelAI Diffusion V5 657484A5":case"NovelAI Diffusion V5 0ADF9AB7":return i.oM.naiDiffusionV5Full;case"NovelAI Diffusion V4.5 4BDE2A90":return i.oM.naiDiffusionV4_5Full;case"NovelAI Diffusion V4 7ABFFA2A":return i.oM.naiDiffusionV4CuratedPreview;case"NovelAI Diffusion V6 ABCDEF12":return i.oM.naiDiffusionV6Full}';
   assert.deepEqual(extractNaiMetadataModelMappings(metadataModels), {
@@ -879,6 +890,10 @@ test('同步健康记录：全部命中 / 全部失效 / 部分失效', () => {
     'return Math.ceil(2951823174884865e-21*i+5753298233447344e-22*i*a)',
     'function C(e){return!e.characterRef&&e.width*e.height<=1048576&&e.steps<=28}',
     'case"nai-diffusion-5-full":{streamedResponses:!0,opusUsageLimit:!0};case"nai-diffusion-4-5-full":{streamedResponses:!0,opusUsageLimit:!1}',
+    'case n.oM.naiDiffusionV5Full:return[{id:"standard",name:"standard",suffix:"very aesthetic"},{id:"none",name:"none"}]',
+    'case n.oM.naiDiffusionV5Full:return[{id:"heavy",name:"heavy",category:"heavy",prefix:"lowres"},{id:"none",name:"none",category:"none"}]',
+    'case n.oM.naiDiffusionV4_5Full:return[{id:"standard",name:"standard",suffix:"very aesthetic"},{id:"none",name:"none"}]',
+    'case n.oM.naiDiffusionV4_5Full:return[{id:"heavy",name:"heavy",category:"heavy",prefix:"lowres"},{id:"none",name:"none",category:"none"}]',
     'case"NovelAI Diffusion V5 657484A5":case"NovelAI Diffusion V5 0ADF9AB7":return i.oM.naiDiffusionV5Full',
   ].join('\n');
   const full = computeNaiRuntimeSync(fullBundle);
@@ -889,14 +904,14 @@ test('同步健康记录：全部命中 / 全部失效 / 部分失效', () => {
   // 官方改版后一项都提取不到：健康标记为失效，运行时保持内置默认值。
   const broken = computeNaiRuntimeSync('console.log("redesigned site")');
   assert.equal(broken.health.ok, false);
-  assert.equal(broken.health.missed.length, 6);
+  assert.equal(broken.health.missed.length, 8);
   assert.equal(broken.runtime.imagesPerPercent, DEFAULT_NAI_RUNTIME.imagesPerPercent);
   assert.deepEqual(broken.runtime.models, DEFAULT_NAI_RUNTIME.models);
 
   // 部分命中（例如只剩模型表）：正常可用但记录缺项，供前端示警。
   const partial = computeNaiRuntimeSync('case"nai-diffusion-5-full":{opusUsageLimit:!0}');
   assert.equal(partial.health.ok, true);
-  assert.deepEqual(partial.health.missed, ['imagesPerPercent', 'costCoefficients', 'freeTier', 'streamedModels', 'metadataModels']);
+  assert.deepEqual(partial.health.missed, ['imagesPerPercent', 'costCoefficients', 'freeTier', 'streamedModels', 'promptPresets', 'metadataModels']);
   assert.equal(partial.runtime.models.length, 1);
 });
 

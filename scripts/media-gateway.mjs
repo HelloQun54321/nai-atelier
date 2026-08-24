@@ -850,6 +850,87 @@ const settleSuccessfulNovelAiGeneration = async ({ payload, authorization, keyHa
 // 官方未提供这些规则的查询接口（模型清单、Opus 限额换算系数、免费档门槛、
 // 成本公式系数均打包在官方 Web 应用 JS 内），因此定期抓取官方页面提取并缓存；
 // 提取失败时回退内置默认值，扣费与展示始终有可用数值，官方调整后无需改代码。
+const promptPreset = (id, name, extra = {}) => ({ id, name, ...extra });
+const clonePromptPresets = presets => presets.map(item => ({ ...item }));
+const makeNaiRuntimeCapability = (overrides = {}) => ({
+  supportsVibes: false,
+  supportsCharacterReferences: false,
+  supportsCharacterReferenceInpainting: false,
+  supportsStreamedResponses: true,
+  supportsTransparentBackground: false,
+  maxCharacters: 6,
+  freeformCharacterPosition: false,
+  qualityPresets: [],
+  ucPresets: [],
+  ...overrides,
+});
+const QUALITY_V5 = clonePromptPresets([
+  promptPreset('standard', 'standard', { suffix: 'very aesthetic, masterpiece, no text' }),
+  promptPreset('light', 'light', { suffix: 'very aesthetic, amazing quality, no text' }),
+  promptPreset('none', 'none'),
+]);
+const QUALITY_V45_FULL = clonePromptPresets([
+  promptPreset('standard', 'standard', { suffix: 'very aesthetic, masterpiece, no text' }),
+  promptPreset('none', 'none'),
+]);
+const QUALITY_V45_CURATED = clonePromptPresets([
+  promptPreset('standard', 'standard', { suffix: 'very aesthetic, masterpiece, no text, -0.8::feet::, rating:general' }),
+  promptPreset('none', 'none'),
+]);
+const QUALITY_V4_FULL = clonePromptPresets([
+  promptPreset('standard', 'standard', { suffix: 'no text, best quality, very aesthetic, absurdres' }),
+  promptPreset('none', 'none'),
+]);
+const QUALITY_V4_CURATED = clonePromptPresets([
+  promptPreset('standard', 'standard', { suffix: 'rating:general, best quality, very aesthetic, absurdres' }),
+  promptPreset('none', 'none'),
+]);
+const UC_V5 = clonePromptPresets([
+  promptPreset('heavy', 'heavy', { category: 'heavy', prefix: 'lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page' }),
+  promptPreset('light', 'light', { category: 'light', prefix: 'lowres, bad hands, bad anatomy, artistic error, sepia, white haze, worst quality, very displeasing, jpeg artifacts, 0::ai-generated::' }),
+  promptPreset('furryFocus', 'furryFocus', { category: 'furry', prefix: '{worst quality}, distracting watermark, unfinished, bad quality, {widescreen}, upscale, {sequence}, {{grandfathered content}}, blurred foreground, chromatic aberration, sketch, everyone, [sketch background], simple, [flat colors], ych (character), outline, multiple scenes, [[horror (theme)]], comic' }),
+  promptPreset('humanFocus', 'humanFocus', { category: 'human', prefix: 'lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, @_@, mismatched pupils, glowing eyes, bad anatomy' }),
+  promptPreset('none', 'none', { category: 'none' }),
+]);
+const UC_V45_FULL = clonePromptPresets([
+  promptPreset('heavy', 'heavy', { category: 'heavy', prefix: 'lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page' }),
+  promptPreset('light', 'light', { category: 'light', prefix: 'lowres, artistic error, scan artifacts, worst quality, bad quality, jpeg artifacts, multiple views, very displeasing, too many watermarks, negative space, blank page' }),
+  promptPreset('furryFocus', 'furryFocus', { category: 'furry', prefix: '{worst quality}, distracting watermark, unfinished, bad quality, {widescreen}, upscale, {sequence}, {{grandfathered content}}, blurred foreground, chromatic aberration, sketch, everyone, [sketch background], simple, [flat colors], ych (character), outline, multiple scenes, [[horror (theme)]], comic' }),
+  promptPreset('humanFocus', 'humanFocus', { category: 'human', prefix: 'lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, @_@, mismatched pupils, glowing eyes, bad anatomy' }),
+  promptPreset('none', 'none', { category: 'none' }),
+]);
+const UC_V45_CURATED = clonePromptPresets([
+  promptPreset('heavy', 'heavy', { category: 'heavy', prefix: 'blurry, lowres, upscaled, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, halftone, multiple views, logo, too many watermarks, negative space, blank page' }),
+  promptPreset('light', 'light', { category: 'light', prefix: 'blurry, lowres, upscaled, artistic error, scan artifacts, jpeg artifacts, logo, too many watermarks, negative space, blank page' }),
+  promptPreset('humanFocus', 'humanFocus', { category: 'human', prefix: 'blurry, lowres, upscaled, artistic error, film grain, scan artifacts, bad anatomy, bad hands, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, halftone, multiple views, logo, too many watermarks, @_@, mismatched pupils, glowing eyes, negative space, blank page' }),
+  promptPreset('none', 'none', { category: 'none' }),
+]);
+const UC_V4_FULL = clonePromptPresets([
+  promptPreset('heavy', 'heavy', { category: 'heavy', prefix: 'blurry, lowres, error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, multiple views, logo, too many watermarks, white blank page, blank page' }),
+  promptPreset('light', 'light', { category: 'light', prefix: 'blurry, lowres, error, worst quality, bad quality, jpeg artifacts, very displeasing, white blank page, blank page' }),
+  promptPreset('none', 'none', { category: 'none' }),
+]);
+const UC_V4_CURATED = clonePromptPresets([
+  promptPreset('heavy', 'heavy', { category: 'heavy', prefix: 'blurry, lowres, error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, logo, dated, signature, multiple views, gigantic breasts, white blank page, blank page' }),
+  promptPreset('light', 'light', { category: 'light', prefix: 'blurry, lowres, error, worst quality, bad quality, jpeg artifacts, very displeasing, logo, dated, signature, white blank page, blank page' }),
+  promptPreset('none', 'none', { category: 'none' }),
+]);
+const V5_CAPABILITY = makeNaiRuntimeCapability({ maxCharacters: 32, freeformCharacterPosition: true, supportsTransparentBackground: true, qualityPresets: QUALITY_V5, ucPresets: UC_V5 });
+const V45_FULL_CAPABILITY = makeNaiRuntimeCapability({ supportsVibes: true, supportsCharacterReferences: true, supportsCharacterReferenceInpainting: true, qualityPresets: QUALITY_V45_FULL, ucPresets: UC_V45_FULL });
+const V45_CURATED_CAPABILITY = makeNaiRuntimeCapability({ supportsVibes: true, supportsCharacterReferences: true, supportsCharacterReferenceInpainting: true, qualityPresets: QUALITY_V45_CURATED, ucPresets: UC_V45_CURATED });
+const V4_FULL_CAPABILITY = makeNaiRuntimeCapability({ supportsVibes: true, qualityPresets: QUALITY_V4_FULL, ucPresets: UC_V4_FULL });
+const V4_CURATED_CAPABILITY = makeNaiRuntimeCapability({ supportsVibes: true, qualityPresets: QUALITY_V4_CURATED, ucPresets: UC_V4_CURATED });
+const pairNaiRuntimeCapability = (id, capability) => ({ [id]: capability, [`${id}-inpainting`]: capability });
+const DEFAULT_NAI_MODEL_CAPABILITIES = {
+  ...pairNaiRuntimeCapability('nai-diffusion-5-full', V5_CAPABILITY),
+  ...pairNaiRuntimeCapability('nai-diffusion-5-curated', V5_CAPABILITY),
+  ...pairNaiRuntimeCapability('nai-diffusion-4-5-full', V45_FULL_CAPABILITY),
+  ...pairNaiRuntimeCapability('nai-diffusion-4-5-curated', V45_CURATED_CAPABILITY),
+  ...pairNaiRuntimeCapability('nai-diffusion-4-full', V4_FULL_CAPABILITY),
+  'nai-diffusion-4-curated-preview': V4_CURATED_CAPABILITY,
+  'nai-diffusion-4-curated-inpainting': V4_CURATED_CAPABILITY,
+};
+
 export const DEFAULT_NAI_RUNTIME = {
   /** Opus 限额剩余张数换算系数（官方 round(系数 × 百分比)，2026-08 版为 17.3）。 */
   imagesPerPercent: 17.3,
@@ -899,6 +980,7 @@ export const DEFAULT_NAI_RUNTIME = {
     'NovelAI Diffusion V4 C1CCBA86': 'nai-diffusion-4-curated-preview',
     'NovelAI Diffusion V4 770A9E12': 'nai-diffusion-4-curated-preview',
   },
+  modelCapabilities: DEFAULT_NAI_MODEL_CAPABILITIES,
 };
 
 const NAI_WEBAPP_SOURCE = 'https://novelai.net/image';
@@ -959,23 +1041,120 @@ export const extractNaiModelCapabilities = text => {
   const models = [];
   const usageLimitedModels = [];
   const streamedModels = [];
+  const modelCapabilities = {};
   let buffered = [];
   let bufferedStart = 0;
+  const readBoolean = (source, key, fallback = false) => {
+    const match = source.match(new RegExp(`${key}:(!0|!1)`));
+    return match ? match[1] === '!0' : fallback;
+  };
+  const readNumber = (source, key, fallback = 0) => {
+    const match = source.match(new RegExp(`${key}:(\\d+)`));
+    return match ? Number(match[1]) : fallback;
+  };
   for (const event of [...events, ...limits].sort((a, b) => a.index - b.index)) {
     if (event.label) {
       if (!buffered.length) bufferedStart = event.index;
       buffered.push(event.label);
       continue;
     }
-    const streamed = /streamedResponses:!0/.test(text.slice(bufferedStart, event.index));
+    const source = text.slice(bufferedStart, event.index);
+    const streamed = /streamedResponses:!0/.test(source);
     for (const label of buffered) {
       if (!models.includes(label)) models.push(label);
       if (event.limited && !usageLimitedModels.includes(label)) usageLimitedModels.push(label);
       if (streamed && !streamedModels.includes(label)) streamedModels.push(label);
+      modelCapabilities[label] = {
+        supportsVibes: readBoolean(source, 'vibetransfer'),
+        supportsCharacterReferences: readBoolean(source, 'characterReferences'),
+        supportsCharacterReferenceInpainting: readBoolean(source, 'charRefInpainting'),
+        supportsStreamedResponses: streamed,
+        supportsTransparentBackground: readBoolean(source, 'transparency'),
+        maxCharacters: readNumber(source, 'maxCharacters', 0),
+        freeformCharacterPosition: readBoolean(source, 'freeformCharacterPosition'),
+        qualityPresets: [],
+        ucPresets: [],
+      };
     }
     buffered = [];
   }
-  return { models, usageLimitedModels, streamedModels };
+  return { models, usageLimitedModels, streamedModels, modelCapabilities };
+};
+
+const officialModelEnumToId = value => {
+  const raw = String(value || '').replace(/^.*\./, '');
+  const inpainting = /Inpainting$/i.test(raw);
+  const base = inpainting ? raw.slice(0, -'Inpainting'.length) : raw;
+  const match = base.match(/^naiDiffusionv?(\d+)(?:_(\d+))?(Full|Curated)(Preview)?$/i);
+  if (!match) return null;
+  return `nai-diffusion-${match[1]}${match[2] ? `-${match[2]}` : ''}-${match[3].toLowerCase()}${match[4] ? '-preview' : ''}${inpainting ? '-inpainting' : ''}`;
+};
+
+const findBalancedEnd = (text, start, open = '[', close = ']') => {
+  let depth = 0;
+  let quote = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const character = text[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') quote = false;
+      continue;
+    }
+    if (character === '"') { quote = true; continue; }
+    if (character === open) depth += 1;
+    else if (character === close) {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+};
+
+const parsePromptPresetObjects = body => {
+  const presets = [];
+  let index = 0;
+  while (index < body.length) {
+    const start = body.indexOf('{', index);
+    if (start < 0) break;
+    const end = findBalancedEnd(body, start, '{', '}');
+    if (end < 0) break;
+    const object = body.slice(start, end + 1);
+    const id = object.match(/id:"([^"]+)"/)?.[1];
+    const name = object.match(/name:"([^"]+)"/)?.[1];
+    if (id && name) {
+      const preset = { id, name };
+      for (const key of ['category', 'prefix', 'suffix']) {
+        const value = object.match(new RegExp(`${key}:"([^\"]*)"`))?.[1];
+        if (value !== undefined) preset[key] = value;
+      }
+      presets.push(preset);
+    }
+    index = end + 1;
+  }
+  return presets;
+};
+
+/** 从官方压缩 bundle 提取模型对应的质量预设和 Undesired Content 预设。 */
+export const extractNaiPromptPresets = text => {
+  const qualityPresets = {};
+  const ucPresets = {};
+  const matcher = /((?:case\s+[\w$.]+:)+)return\[/g;
+  for (const match of text.matchAll(matcher)) {
+    const arrayStart = match.index + match[0].lastIndexOf('[');
+    const arrayEnd = findBalancedEnd(text, arrayStart);
+    if (arrayEnd < 0) continue;
+    const presets = parsePromptPresetObjects(text.slice(arrayStart + 1, arrayEnd));
+    if (!presets.length) continue;
+    const target = presets.some(item => item.category) ? ucPresets : presets.some(item => item.id === 'standard') ? qualityPresets : null;
+    if (!target) continue;
+    const models = [...match[1].matchAll(/case\s+([\w$.]+):/g)]
+      .map(item => officialModelEnumToId(item[1]))
+      .filter(Boolean);
+    for (const model of models) target[model] = presets.map(item => ({ ...item }));
+  }
+  return { qualityPresets, ucPresets };
 };
 
 /**
@@ -1050,6 +1229,21 @@ export const computeNaiRuntimeSync = text => {
     next.streamedModels = capabilities.streamedModels;
     health.extracted.push('streamedModels');
   } else health.missed.push('streamedModels');
+  if (Object.keys(capabilities.modelCapabilities).length && capabilities.models.every(id => capabilities.modelCapabilities[id])) {
+    next.modelCapabilities = { ...DEFAULT_NAI_RUNTIME.modelCapabilities, ...capabilities.modelCapabilities };
+    health.extracted.push('modelCapabilities');
+  } else health.missed.push('modelCapabilities');
+  const promptPresets = extractNaiPromptPresets(text);
+  const presetModels = new Set([...Object.keys(promptPresets.qualityPresets), ...Object.keys(promptPresets.ucPresets)]);
+  const projectModelIds = capabilities.models.filter(id => /^nai-diffusion-\d+(?:-\d+)?-(?:full|curated)(?:-preview)?(?:-inpainting)?$/.test(id));
+  if (presetModels.size && projectModelIds.length && projectModelIds.every(id => presetModels.has(id))) {
+    next.modelCapabilities = Object.fromEntries(Object.entries(next.modelCapabilities).map(([id, capability]) => [id, {
+      ...capability,
+      ...(promptPresets.qualityPresets[id] ? { qualityPresets: promptPresets.qualityPresets[id] } : {}),
+      ...(promptPresets.ucPresets[id] ? { ucPresets: promptPresets.ucPresets[id] } : {}),
+    }]));
+    health.extracted.push('promptPresets');
+  } else health.missed.push('promptPresets');
   const metadataModelMappings = extractNaiMetadataModelMappings(text);
   if (Object.keys(metadataModelMappings).length) {
     next.metadataModelMappings = metadataModelMappings;
@@ -1075,6 +1269,7 @@ const persistNaiRuntimeState = async () => {
         usageLimitedModels: naiRuntimeState.usageLimitedModels,
         streamedModels: naiRuntimeState.streamedModels,
         metadataModelMappings: naiRuntimeState.metadataModelMappings,
+        modelCapabilities: naiRuntimeState.modelCapabilities,
       },
       health: naiRuntimeState.health,
     }, null, 2), 'utf8');

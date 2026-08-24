@@ -17,6 +17,27 @@ export interface NaiRuntimeHealth {
   attemptedAt?: number;
 }
 
+export interface NaiPromptPreset {
+  id: string;
+  name: string;
+  category?: string;
+  prefix?: string;
+  suffix?: string;
+}
+
+/** 官方 Web 应用按模型提供的图片生成能力与提示词预设。 */
+export interface NaiModelRuntimeCapability {
+  supportsVibes: boolean;
+  supportsCharacterReferences: boolean;
+  supportsCharacterReferenceInpainting: boolean;
+  supportsStreamedResponses: boolean;
+  supportsTransparentBackground: boolean;
+  maxCharacters: number;
+  freeformCharacterPosition: boolean;
+  qualityPresets: NaiPromptPreset[];
+  ucPresets: NaiPromptPreset[];
+}
+
 export interface NaiRuntimeConfig {
   /** Opus 限额剩余张数换算系数（剩余张数 ≈ 系数 × 百分比）。 */
   imagesPerPercent: number;
@@ -31,9 +52,119 @@ export interface NaiRuntimeConfig {
   streamedModels: string[];
   /** NovelAI PNG Source 文本到 API 模型标识的官方精确映射。 */
   metadataModelMappings: Record<string, string>;
+  /** 官方 Web 应用中的模型能力与质量/UC 预设。 */
+  modelCapabilities: Record<string, NaiModelRuntimeCapability>;
   syncedAt?: number;
   health?: NaiRuntimeHealth;
 }
+
+const qualityPresets = (items: NaiPromptPreset[]): NaiPromptPreset[] => items.map(item => ({ ...item }));
+const ucPresets = (items: NaiPromptPreset[]): NaiPromptPreset[] => items.map(item => ({ ...item }));
+
+const QUALITY_V5 = qualityPresets([
+  { id: 'standard', name: 'standard', suffix: 'very aesthetic, masterpiece, no text' },
+  { id: 'light', name: 'light', suffix: 'very aesthetic, amazing quality, no text' },
+  { id: 'none', name: 'none' },
+]);
+const QUALITY_V45_FULL = qualityPresets([
+  { id: 'standard', name: 'standard', suffix: 'very aesthetic, masterpiece, no text' },
+  { id: 'none', name: 'none' },
+]);
+const QUALITY_V45_CURATED = qualityPresets([
+  { id: 'standard', name: 'standard', suffix: 'very aesthetic, masterpiece, no text, -0.8::feet::, rating:general' },
+  { id: 'none', name: 'none' },
+]);
+const QUALITY_V4_FULL = qualityPresets([
+  { id: 'standard', name: 'standard', suffix: 'no text, best quality, very aesthetic, absurdres' },
+  { id: 'none', name: 'none' },
+]);
+const QUALITY_V4_CURATED = qualityPresets([
+  { id: 'standard', name: 'standard', suffix: 'rating:general, best quality, very aesthetic, absurdres' },
+  { id: 'none', name: 'none' },
+]);
+
+const UC_V5 = ucPresets([
+  { id: 'heavy', name: 'heavy', category: 'heavy', prefix: 'lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page' },
+  { id: 'light', name: 'light', category: 'light', prefix: 'lowres, bad hands, bad anatomy, artistic error, sepia, white haze, worst quality, very displeasing, jpeg artifacts, 0::ai-generated::' },
+  { id: 'furryFocus', name: 'furryFocus', category: 'furry', prefix: '{worst quality}, distracting watermark, unfinished, bad quality, {widescreen}, upscale, {sequence}, {{grandfathered content}}, blurred foreground, chromatic aberration, sketch, everyone, [sketch background], simple, [flat colors], ych (character), outline, multiple scenes, [[horror (theme)]], comic' },
+  { id: 'humanFocus', name: 'humanFocus', category: 'human', prefix: 'lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, @_@, mismatched pupils, glowing eyes, bad anatomy' },
+  { id: 'none', name: 'none', category: 'none' },
+]);
+const UC_V45_FULL = ucPresets([
+  { id: 'heavy', name: 'heavy', category: 'heavy', prefix: 'lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page' },
+  { id: 'light', name: 'light', category: 'light', prefix: 'lowres, artistic error, scan artifacts, worst quality, bad quality, jpeg artifacts, multiple views, very displeasing, too many watermarks, negative space, blank page' },
+  { id: 'furryFocus', name: 'furryFocus', category: 'furry', prefix: '{worst quality}, distracting watermark, unfinished, bad quality, {widescreen}, upscale, {sequence}, {{grandfathered content}}, blurred foreground, chromatic aberration, sketch, everyone, [sketch background], simple, [flat colors], ych (character), outline, multiple scenes, [[horror (theme)]], comic' },
+  { id: 'humanFocus', name: 'humanFocus', category: 'human', prefix: 'lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, @_@, mismatched pupils, glowing eyes, bad anatomy' },
+  { id: 'none', name: 'none', category: 'none' },
+]);
+const UC_V45_CURATED = ucPresets([
+  { id: 'heavy', name: 'heavy', category: 'heavy', prefix: 'blurry, lowres, upscaled, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, halftone, multiple views, logo, too many watermarks, negative space, blank page' },
+  { id: 'light', name: 'light', category: 'light', prefix: 'blurry, lowres, upscaled, artistic error, scan artifacts, jpeg artifacts, logo, too many watermarks, negative space, blank page' },
+  { id: 'humanFocus', name: 'humanFocus', category: 'human', prefix: 'blurry, lowres, upscaled, artistic error, film grain, scan artifacts, bad anatomy, bad hands, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, halftone, multiple views, logo, too many watermarks, @_@, mismatched pupils, glowing eyes, negative space, blank page' },
+  { id: 'none', name: 'none', category: 'none' },
+]);
+const UC_V4_FULL = ucPresets([
+  { id: 'heavy', name: 'heavy', category: 'heavy', prefix: 'blurry, lowres, error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, multiple views, logo, too many watermarks, white blank page, blank page' },
+  { id: 'light', name: 'light', category: 'light', prefix: 'blurry, lowres, error, worst quality, bad quality, jpeg artifacts, very displeasing, white blank page, blank page' },
+  { id: 'none', name: 'none', category: 'none' },
+]);
+const UC_V4_CURATED = ucPresets([
+  { id: 'heavy', name: 'heavy', category: 'heavy', prefix: 'blurry, lowres, error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, logo, dated, signature, multiple views, gigantic breasts, white blank page, blank page' },
+  { id: 'light', name: 'light', category: 'light', prefix: 'blurry, lowres, error, worst quality, bad quality, jpeg artifacts, very displeasing, logo, dated, signature, white blank page, blank page' },
+  { id: 'none', name: 'none', category: 'none' },
+]);
+
+const makeCapability = (
+  overrides: Partial<NaiModelRuntimeCapability> & Pick<NaiModelRuntimeCapability, 'qualityPresets' | 'ucPresets'>,
+): NaiModelRuntimeCapability => ({
+  supportsVibes: false,
+  supportsCharacterReferences: false,
+  supportsCharacterReferenceInpainting: false,
+  supportsStreamedResponses: true,
+  supportsTransparentBackground: false,
+  maxCharacters: 6,
+  freeformCharacterPosition: false,
+  ...overrides,
+});
+
+const V5_CAPABILITY = makeCapability({
+  maxCharacters: 32,
+  freeformCharacterPosition: true,
+  supportsTransparentBackground: true,
+  qualityPresets: QUALITY_V5,
+  ucPresets: UC_V5,
+});
+const V45_FULL_CAPABILITY = makeCapability({
+  supportsVibes: true,
+  supportsCharacterReferences: true,
+  supportsCharacterReferenceInpainting: true,
+  qualityPresets: QUALITY_V45_FULL,
+  ucPresets: UC_V45_FULL,
+});
+const V45_CURATED_CAPABILITY = makeCapability({
+  supportsVibes: true,
+  supportsCharacterReferences: true,
+  supportsCharacterReferenceInpainting: true,
+  qualityPresets: QUALITY_V45_CURATED,
+  ucPresets: UC_V45_CURATED,
+});
+const V4_FULL_CAPABILITY = makeCapability({ qualityPresets: QUALITY_V4_FULL, ucPresets: UC_V4_FULL, supportsVibes: true });
+const V4_CURATED_CAPABILITY = makeCapability({ qualityPresets: QUALITY_V4_CURATED, ucPresets: UC_V4_CURATED, supportsVibes: true });
+
+const pairCapability = (id: string, capability: NaiModelRuntimeCapability) => ({
+  [id]: capability,
+  [`${id}-inpainting`]: capability,
+});
+
+export const DEFAULT_NAI_MODEL_CAPABILITIES: Record<string, NaiModelRuntimeCapability> = {
+  ...pairCapability('nai-diffusion-5-full', V5_CAPABILITY),
+  ...pairCapability('nai-diffusion-5-curated', V5_CAPABILITY),
+  ...pairCapability('nai-diffusion-4-5-full', V45_FULL_CAPABILITY),
+  ...pairCapability('nai-diffusion-4-5-curated', V45_CURATED_CAPABILITY),
+  ...pairCapability('nai-diffusion-4-full', V4_FULL_CAPABILITY),
+  'nai-diffusion-4-curated-preview': V4_CURATED_CAPABILITY,
+  'nai-diffusion-4-curated-inpainting': V4_CURATED_CAPABILITY,
+};
 
 export const DEFAULT_NAI_RUNTIME: NaiRuntimeConfig = {
   imagesPerPercent: 17.3,
@@ -59,6 +190,7 @@ export const DEFAULT_NAI_RUNTIME: NaiRuntimeConfig = {
     'nai-diffusion-4-full', 'nai-diffusion-4-full-inpainting', 'nai-diffusion-4-curated-preview',
   ],
   metadataModelMappings: { ...DEFAULT_NAI_METADATA_MODEL_MAPPINGS },
+  modelCapabilities: DEFAULT_NAI_MODEL_CAPABILITIES,
 };
 
 let cachedConfig: NaiRuntimeConfig | null = null;
@@ -75,7 +207,13 @@ const requestNaiRuntimeConfig = async (): Promise<NaiRuntimeConfig> => {
     if (res.ok) {
       const next = await res.json();
       if (next && Array.isArray(next.models) && next.models.length) {
-        const resolved: NaiRuntimeConfig = { ...DEFAULT_NAI_RUNTIME, ...next };
+        const resolved: NaiRuntimeConfig = {
+          ...DEFAULT_NAI_RUNTIME,
+          ...next,
+          modelCapabilities: next.modelCapabilities && typeof next.modelCapabilities === 'object'
+            ? { ...DEFAULT_NAI_RUNTIME.modelCapabilities, ...next.modelCapabilities }
+            : DEFAULT_NAI_RUNTIME.modelCapabilities,
+        };
         cachedConfig = resolved;
         return resolved;
       }
@@ -128,6 +266,13 @@ export const describeNaiRuntimeSyncProblem = (config: NaiRuntimeConfig): string 
   }
   const hours = Math.floor((Date.now() - (config.syncedAt ?? 0)) / 3_600_000);
   return `官方常量已 ${hours} 小时未成功同步`;
+};
+
+export const getNaiRuntimeModelCapability = (config: NaiRuntimeConfig, model?: string): NaiModelRuntimeCapability | undefined => {
+  const id = String(model || '').trim();
+  if (!id) return undefined;
+  return config.modelCapabilities?.[id]
+    || (id.endsWith('-inpainting') ? config.modelCapabilities?.[id.slice(0, -'-inpainting'.length)] : undefined);
 };
 
 /** 读取（必要时拉取一次）网关同步的运行时常量，供组件展示。 */

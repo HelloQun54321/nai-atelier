@@ -4,6 +4,10 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-08-25
+
+- **Codex (GPT-5)**：扩展 NovelAI 官方运行时同步，提取模型能力、角色上限及按模型质量／Undesired Content 预设，为实验室能力对齐提供唯一数据源（feat: sync official model capabilities and prompt presets）。
+
 ## 2026-08-24
 
 - **Codex (GPT-5)**：将编辑历史蒙版迁移到独立 IndexedDB／R2 存储，补齐按需读取、旧数据迁移、历史恢复、资产清理、Focused 选区移动缩放与异步状态隔离（feat: isolate image edit masks and restore history）。
