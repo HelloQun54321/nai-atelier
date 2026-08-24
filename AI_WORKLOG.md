@@ -6,6 +6,8 @@
 
 ## 2026-08-25
 
+- **Codex (GPT-5)**：为文生图、图生图、局部重绘和扩图分别接入可排序、可配置默认展开状态的实验室模块布局，并兼容旧版文生图布局偏好（feat: add per-mode laboratory module layouts）。
+
 - **Codex (GPT-5)**：按当前模型与编辑模式隐藏不支持的 Vibe／角色参考，统一角色提示词 6／32 上限、Vibe 16 张限制、额外费用和网关校验，并补充实验室能力回归测试（feat: align laboratory controls with official capabilities）。
 
 - **Codex (GPT-5)**：按官方运行时能力改用模型专属质量／UC 预设，修复 Focused 与扩图的角色坐标换算、编辑请求能力校验和旧预设兼容（fix: align model presets and edit coordinate normalization）。

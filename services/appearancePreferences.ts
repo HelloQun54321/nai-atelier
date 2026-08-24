@@ -7,6 +7,15 @@ export type MotionStyle = 'full' | 'reduced' | 'off';
 export type FontScale = 'small' | 'standard' | 'large';
 export type LabModuleId = 'prompt' | 'characters' | 'params' | 'negative' | 'characterReference' | 'vibe';
 export type LabModuleCollapsedPreferences = Record<LabModuleId, boolean>;
+export type LabPageId = 'text-to-image' | 'image-to-image' | 'inpaint' | 'outpaint';
+export type LabPageModuleId = LabModuleId | 'baseImage' | 'editSettings';
+export interface LabPageLayout {
+  order: LabPageModuleId[];
+  collapsed: Partial<Record<LabPageModuleId, boolean>>;
+}
+export type LabPageLayouts = Record<LabPageId, LabPageLayout>;
+
+export const LAB_PAGE_IDS: LabPageId[] = ['text-to-image', 'image-to-image', 'inpaint', 'outpaint'];
 
 export const DEFAULT_LAB_MODULE_ORDER: LabModuleId[] = [
   'prompt',
@@ -26,6 +35,50 @@ export const DEFAULT_LAB_MODULE_COLLAPSED: LabModuleCollapsedPreferences = {
   vibe: true,
 };
 
+const DEFAULT_LAB_EDIT_MODULE_ORDER: LabPageModuleId[] = [
+  'prompt',
+  'baseImage',
+  'params',
+  'editSettings',
+  'characterReference',
+  'vibe',
+];
+
+const DEFAULT_LAB_EDIT_MODULE_COLLAPSED: LabPageLayout['collapsed'] = {
+  prompt: false,
+  baseImage: false,
+  params: false,
+  editSettings: false,
+  characterReference: true,
+  vibe: true,
+};
+
+export const DEFAULT_LAB_PAGE_LAYOUTS: LabPageLayouts = {
+  'text-to-image': {
+    order: [...DEFAULT_LAB_MODULE_ORDER],
+    collapsed: { ...DEFAULT_LAB_MODULE_COLLAPSED },
+  },
+  'image-to-image': {
+    order: [...DEFAULT_LAB_EDIT_MODULE_ORDER],
+    collapsed: { ...DEFAULT_LAB_EDIT_MODULE_COLLAPSED },
+  },
+  inpaint: {
+    order: [...DEFAULT_LAB_EDIT_MODULE_ORDER],
+    collapsed: { ...DEFAULT_LAB_EDIT_MODULE_COLLAPSED },
+  },
+  outpaint: {
+    order: [...DEFAULT_LAB_EDIT_MODULE_ORDER],
+    collapsed: { ...DEFAULT_LAB_EDIT_MODULE_COLLAPSED },
+  },
+};
+
+export const cloneDefaultLabPageLayouts = (): LabPageLayouts => Object.fromEntries(
+  LAB_PAGE_IDS.map(pageId => [pageId, {
+    order: [...DEFAULT_LAB_PAGE_LAYOUTS[pageId].order],
+    collapsed: { ...DEFAULT_LAB_PAGE_LAYOUTS[pageId].collapsed },
+  }]),
+) as LabPageLayouts;
+
 export interface AppearancePreferences {
   designTheme: DesignTheme;
   themeMode: ThemeMode;
@@ -41,6 +94,8 @@ export interface AppearancePreferences {
   generationStreamPreview: boolean;
   labModuleOrder: LabModuleId[];
   labModuleCollapsed: LabModuleCollapsedPreferences;
+  /** 四种实验室模式各自独立的模块顺序与默认展开状态。 */
+  labPageLayouts: LabPageLayouts;
 }
 
 const STORAGE_KEY = 'nai_appearance_preferences';
@@ -61,10 +116,32 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   generationStreamPreview: false,
   labModuleOrder: [...DEFAULT_LAB_MODULE_ORDER],
   labModuleCollapsed: { ...DEFAULT_LAB_MODULE_COLLAPSED },
+  labPageLayouts: cloneDefaultLabPageLayouts(),
 };
 
 const isOneOf = <T extends string>(value: unknown, values: readonly T[]): value is T =>
   typeof value === 'string' && values.includes(value as T);
+
+const normalizeLabPageLayout = (value: unknown, defaults: LabPageLayout): LabPageLayout => {
+  const input = value && typeof value === 'object' ? value as Partial<LabPageLayout> : {};
+  const persistedOrder = Array.isArray(input.order)
+    ? input.order.filter((item): item is LabPageModuleId => isOneOf(item, defaults.order))
+    : [];
+  const order = [
+    ...new Set(persistedOrder),
+    ...defaults.order.filter(item => !persistedOrder.includes(item)),
+  ];
+  const persistedCollapsed = input.collapsed && typeof input.collapsed === 'object'
+    ? input.collapsed as Partial<Record<LabPageModuleId, boolean>>
+    : {};
+  const collapsed = Object.fromEntries(defaults.order.map(moduleId => [
+    moduleId,
+    typeof persistedCollapsed[moduleId] === 'boolean'
+      ? persistedCollapsed[moduleId]
+      : Boolean(defaults.collapsed[moduleId]),
+  ])) as Partial<Record<LabPageModuleId, boolean>>;
+  return { order, collapsed };
+};
 
 export const normalizeAppearancePreferences = (value: unknown): AppearancePreferences => {
   const input = value && typeof value === 'object' ? value as Partial<AppearancePreferences> : {};
@@ -84,6 +161,21 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
       ? persistedCollapsed[moduleId]
       : DEFAULT_LAB_MODULE_COLLAPSED[moduleId],
   ])) as LabModuleCollapsedPreferences;
+  const persistedPageLayouts = input.labPageLayouts && typeof input.labPageLayouts === 'object'
+    ? input.labPageLayouts as Partial<Record<LabPageId, unknown>>
+    : {};
+  const hasPersistedPageLayouts = Object.keys(persistedPageLayouts).length > 0;
+  const labPageLayouts = Object.fromEntries(LAB_PAGE_IDS.map(pageId => [
+    pageId,
+    normalizeLabPageLayout(
+      hasPersistedPageLayouts
+        ? persistedPageLayouts[pageId]
+        : pageId === 'text-to-image'
+          ? { order: labModuleOrder, collapsed: labModuleCollapsed }
+          : undefined,
+      DEFAULT_LAB_PAGE_LAYOUTS[pageId],
+    ),
+  ])) as LabPageLayouts;
   return {
     designTheme: input.designTheme === 'nai-atelier' ? input.designTheme : DEFAULT_APPEARANCE_PREFERENCES.designTheme,
     themeMode: isOneOf(input.themeMode, ['light', 'dark', 'system']) ? input.themeMode : DEFAULT_APPEARANCE_PREFERENCES.themeMode,
@@ -104,8 +196,9 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     generationStreamPreview: typeof input.generationStreamPreview === 'boolean'
       ? input.generationStreamPreview
       : DEFAULT_APPEARANCE_PREFERENCES.generationStreamPreview,
-    labModuleOrder,
-    labModuleCollapsed,
+    labModuleOrder: labPageLayouts['text-to-image'].order as LabModuleId[],
+    labModuleCollapsed: labPageLayouts['text-to-image'].collapsed as LabModuleCollapsedPreferences,
+    labPageLayouts,
   };
 };
 

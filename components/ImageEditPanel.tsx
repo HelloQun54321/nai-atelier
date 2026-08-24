@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft } from '../types';
+import { LabPageLayout } from '../services/appearancePreferences';
 import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, limitFocusedImageEditRect, normalizeMinimumContextArea, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions } from '../services/imageEdit';
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPreview } from './ImageEditPreview';
@@ -27,6 +28,7 @@ interface ImageEditPanelProps {
   baseImage: string | null;
   operation: ImageEditOperation;
   draft: LabImageEditDraft;
+  layout: LabPageLayout;
   maskData?: string;
   generationCostLabel: (operation: ImageEditOperation, focused: boolean, context?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number }) => string;
   isGenerating?: boolean;
@@ -61,6 +63,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   baseImage,
   operation,
   draft,
+  layout,
   maskData,
   generationCostLabel,
   apiKey,
@@ -584,6 +587,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       <ImageEditControls
         operation={operation}
         draft={draft}
+        layout={layout}
         fileInputRef={fileInputRef}
         selectableParams={draft.params}
         strength={strength}

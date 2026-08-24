@@ -550,8 +550,7 @@ const App = () => {
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
-          labModuleOrder={appearancePreferences.labModuleOrder}
-          labModuleCollapsed={appearancePreferences.labModuleCollapsed}
+          labPageLayouts={appearancePreferences.labPageLayouts}
         />;
       case 'library':
         return <ArtistLibrary
@@ -616,8 +615,7 @@ const App = () => {
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
-          labModuleOrder={appearancePreferences.labModuleOrder}
-          labModuleCollapsed={appearancePreferences.labModuleCollapsed}
+          labPageLayouts={appearancePreferences.labPageLayouts}
         />;
       default:
         return <div>Unknown View</div>;
