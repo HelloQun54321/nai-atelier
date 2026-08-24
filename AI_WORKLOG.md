@@ -6,6 +6,8 @@
 
 ## 2026-08-25
 
+- **Codex (GPT-5)**：将实验室 Variety+ 从预设区归入 CFG 引导控制，统一开关样式与手机响应式布局并补充交互回归测试（fix: align variety guidance layout）。
+
 - **Codex (GPT-5)**：为 AGENTS.md 增加需求推演、同类项审计及自主修改边界，要求后续 AI 主动补齐明确相关的低风险改动（docs: require related-change reasoning）。
 
 - **Codex (GPT-5)**：统一正负面预设下拉框的关闭项排序，让四种实验室模式始终将 none 显示在首位（fix: prioritize none in preset dropdowns）。

@@ -91,6 +91,20 @@ describe('ChainEditorParams', () => {
     expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ ucPresetId: 'heavy' }));
   });
 
+  it('Variety+ 归入引导控制并使用可切换的开关', () => {
+    const setParams = vi.fn();
+    const markChange = vi.fn();
+    renderParams({ setParams, markChange });
+
+    expect(screen.getByText('引导控制')).toBeTruthy();
+    const varietySwitch = screen.getByRole('switch', { name: 'Variety+（多样性）' });
+    expect(varietySwitch.getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(varietySwitch);
+
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ variety: true }));
+    expect(markChange).toHaveBeenCalledOnce();
+  });
+
   it('文生图保留可调图片尺寸', () => {
     renderParams();
     expect(screen.getByText('图片尺寸')).toBeTruthy();

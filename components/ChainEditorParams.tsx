@@ -71,37 +71,18 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
             </div>
 
             {/* Official model-specific quality and UC presets */}
-            <div className="grid grid-cols-2 gap-4 mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
-                <div className="flex flex-col gap-3">
-                    <div>
-                        <label className="mb-1 block text-xs text-gray-500 dark:text-gray-500">正面质量预设</label>
-                        <select
-                            aria-label="正面质量预设"
-                            disabled={!canEdit}
-                            className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm outline-none dark:border-gray-700 dark:bg-gray-900"
-                            value={qualityPresetId}
-                            onChange={event => updatePreset({ qualityPresetId: event.target.value })}
-                        >
-                            {qualityOptions.map(item => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}
-                        </select>
-                    </div>
-                    {/* Variety+ Toggle */}
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="checkbox"
-                            id="variety"
-                            disabled={!canEdit}
-                            checked={params.variety ?? false}
-                            onChange={(e) => {
-                                setParams({ ...params, variety: e.target.checked });
-                                markChange();
-                            }}
-                            className="w-4 h-4 text-pink-600 rounded focus:ring-pink-500"
-                        />
-                        <label htmlFor="variety" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none flex items-center gap-1">
-                            <span>Variety+ (多样性)</span>
-                        </label>
-                    </div>
+            <div className="mb-4 grid grid-cols-1 gap-4 border-b border-gray-200 pb-4 dark:border-gray-700 sm:grid-cols-2">
+                <div>
+                    <label className="mb-1 block text-xs text-gray-500 dark:text-gray-500">正面质量预设</label>
+                    <select
+                        aria-label="正面质量预设"
+                        disabled={!canEdit}
+                        className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm outline-none dark:border-gray-700 dark:bg-gray-900"
+                        value={qualityPresetId}
+                        onChange={event => updatePreset({ qualityPresetId: event.target.value })}
+                    >
+                        {qualityOptions.map(item => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}
+                    </select>
                 </div>
                 <div>
                     <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">负面预设</label>
@@ -247,34 +228,58 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 )}
             </div>
 
-            {/* Advanced Scales */}
-            <div className="md:col-span-2 grid grid-cols-2 gap-4 pt-2 border-t border-gray-100 dark:border-gray-700">
-                {/* Scale Controls */}
-                <div>
-                    <div className="flex justify-between items-center mb-1">
-                        <label className="text-xs text-gray-500 dark:text-gray-500 block">CFG Scale</label>
-                        <span className="text-xs font-mono text-indigo-600 dark:text-indigo-400">{params.scale}</span>
+            {/* Guidance controls */}
+            <div>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-300">引导控制</h4>
+                        <p className="mt-0.5 text-[10px] text-gray-400">调整提示词引导强度与结果变化。</p>
                     </div>
-                    <input
-                        type="range" min="0" max="10" step="0.1"
+                    <button
+                        type="button"
+                        role="switch"
+                        aria-checked={params.variety ?? false}
                         disabled={!canEdit}
-                        value={params.scale}
-                        onChange={(e) => { setParams({ ...params, scale: parseFloat(e.target.value) }); markChange(); }}
-                        className="w-full cursor-pointer accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-                    />
+                        onClick={() => {
+                            setParams({ ...params, variety: !(params.variety ?? false) });
+                            markChange();
+                        }}
+                        className="flex min-h-9 w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-left transition hover:border-pink-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-pink-700 sm:w-[calc(50%-0.5rem)]"
+                    >
+                        <span className="text-xs font-medium text-gray-700 dark:text-gray-200">Variety+（多样性）</span>
+                        <span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${params.variety ? 'bg-pink-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                            <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${params.variety ? 'translate-x-4' : ''}`} />
+                        </span>
+                    </button>
                 </div>
-                <div>
-                    <div className="flex justify-between items-center mb-1">
-                        <label className="text-xs text-gray-500 dark:text-gray-500 block">CFG Rescale</label>
-                        <span className="text-xs font-mono text-pink-600 dark:text-pink-400">{params.cfgRescale ?? 0}</span>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                        <div className="mb-1 flex items-center justify-between">
+                            <label className="block text-xs text-gray-500 dark:text-gray-500">CFG Scale</label>
+                            <span className="font-mono text-xs text-indigo-600 dark:text-indigo-400">{params.scale}</span>
+                        </div>
+                        <input
+                            type="range" min="0" max="10" step="0.1"
+                            disabled={!canEdit}
+                            value={params.scale}
+                            onChange={(e) => { setParams({ ...params, scale: parseFloat(e.target.value) }); markChange(); }}
+                            className="w-full cursor-pointer accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        />
                     </div>
-                    <input
-                        type="range" min="0" max="1" step="0.05"
-                        disabled={!canEdit}
-                        value={params.cfgRescale ?? 0}
-                        onChange={(e) => { setParams({ ...params, cfgRescale: parseFloat(e.target.value) }); markChange(); }}
-                        className="w-full cursor-pointer accent-pink-600 disabled:cursor-not-allowed disabled:opacity-50"
-                    />
+                    <div>
+                        <div className="mb-1 flex items-center justify-between">
+                            <label className="block text-xs text-gray-500 dark:text-gray-500">CFG Rescale</label>
+                            <span className="font-mono text-xs text-pink-600 dark:text-pink-400">{params.cfgRescale ?? 0}</span>
+                        </div>
+                        <input
+                            type="range" min="0" max="1" step="0.05"
+                            disabled={!canEdit}
+                            value={params.cfgRescale ?? 0}
+                            onChange={(e) => { setParams({ ...params, cfgRescale: parseFloat(e.target.value) }); markChange(); }}
+                            className="w-full cursor-pointer accent-pink-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        />
+                    </div>
                 </div>
             </div>
         </section>
