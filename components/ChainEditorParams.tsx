@@ -265,7 +265,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                         disabled={!canEdit}
                         value={params.scale}
                         onChange={(e) => { setParams({ ...params, scale: parseFloat(e.target.value) }); markChange(); }}
-                        className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-indigo-600"
+                        className="w-full cursor-pointer accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                 </div>
                 <div>
@@ -278,7 +278,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                         disabled={!canEdit}
                         value={params.cfgRescale ?? 0}
                         onChange={(e) => { setParams({ ...params, cfgRescale: parseFloat(e.target.value) }); markChange(); }}
-                        className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-pink-600"
+                        className="w-full cursor-pointer accent-pink-600 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                 </div>
             </div>
