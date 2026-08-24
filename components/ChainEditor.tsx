@@ -29,6 +29,7 @@ import { DEFAULT_NAI_RUNTIME, getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, de
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
 import { LabPageLayouts } from '../services/appearancePreferences';
+import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildImageEditPresetPatch, canSaveLabModeToLibrary, LabPresetImportOptions } from '../services/labModeTools';
 import { LabModuleSection } from './LabModuleSection';
 import { GenerationModeNav } from './GenerationModeNav';
 import { Copy, FileDown, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, Tags, UserRound, X } from 'lucide-react';
@@ -225,7 +226,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [quickImportMode, setQuickImportMode] = useState(true); // 快速导入模式：默认开启，跳过模块选择
     // Detailed Import Config State
     const [importCandidate, setImportCandidate] = useState<PromptChain | null>(null);
-    const [importOptions, setImportOptions] = useState({
+    const [importOptions, setImportOptions] = useState<LabPresetImportOptions>({
         importBasePrompt: true,  // Renamed from importPrompt
         importSubject: true,     // New: Subject Prompt
         importNegative: true,    // Negative Prompt
@@ -348,6 +349,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const sourceChainId = chain.id === 'playground' ? 'playground' : chain.id;
     const activeGenerationMode = workspaceSession.activeMode;
+    const canSaveActiveModeToLibrary = canSaveLabModeToLibrary(activeGenerationMode);
     const activeEditOperation = activeGenerationMode === 'text-to-image' ? null : activeGenerationMode;
     const activeEditDraft = activeEditOperation ? workspaceSession.edits[activeEditOperation] : null;
     const activeLabLayout = labPageLayouts[activeGenerationMode];
@@ -860,10 +862,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // 执行导入的核心逻辑（提取为独立函数）
     const executeImport = (
         target: PromptChain,
-        options: typeof importOptions,
+        options: LabPresetImportOptions,
         moduleIds: Set<string>
     ) => {
         if (!canEdit) return;
+        if (activeEditOperation && activeEditDraft) {
+            updateEditDraft(activeEditOperation, buildImageEditPresetPatch(activeEditDraft, target, options, moduleIds, createUuid));
+            notify(`已将 "${target.name}" 导入当前${activeEditOperation === 'image-to-image' ? '图生图' : activeEditOperation === 'inpaint' ? '局部重绘' : '扩图'}配置`);
+            setImportCandidate(null);
+            setShowImportPreset(false);
+            return;
+        }
         const source: PresetSource = { name: target.name, modified: false };
 
         // 1. Prompt (Base + Subject)
@@ -991,7 +1000,32 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
 
         try {
-            const parsed = parseNovelAIMetadata(rawMeta, params, naiRuntimeConfig?.metadataModelMappings);
+            const parsed = parseNovelAIMetadata(rawMeta, activeEditDraft?.params || params, naiRuntimeConfig?.metadataModelMappings);
+            if (activeEditOperation && activeEditDraft) {
+                updateEditDraft(activeEditOperation, buildImageEditMetadataPatch(parsed.prompt, parsed.negativePrompt, parsed.params));
+                const modeLabel = activeEditOperation === 'image-to-image' ? '图生图' : activeEditOperation === 'inpaint' ? '局部重绘' : '扩图';
+                notify(`已将完整提示词、角色与生成参数导入当前${modeLabel}页面。`);
+                void db.logClientEvent({
+                    category: 'client',
+                    action: 'metadata_import',
+                    resourceType: chain.id === 'playground' ? 'playground' : 'chain',
+                    resourceId: chain.id,
+                    message: `从${sourceLabel}导入元数据到${modeLabel}`,
+                    metadata: {
+                        source: sourceLabel,
+                        splitMode: 'edit-full',
+                        generationMode: activeEditOperation,
+                        chainName,
+                        promptLength: parsed.prompt.length,
+                        negativeLength: parsed.negativePrompt.length,
+                        model: parsed.params.model,
+                        width: parsed.params.width,
+                        height: parsed.params.height,
+                        seed: parsed.params.seed ?? 'random',
+                    },
+                }).catch(console.error);
+                return;
+            }
             const importedPrompts = splitPromptFields
                 ? await splitNovelAiPrompt(parsed.prompt)
                 : { basePrompt: parsed.prompt, subjectPrompt: '' };
@@ -1292,7 +1326,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const handleReset = async () => {
         if (!await confirmAction({
             title: '重置生图实验室？',
-            message: '基础画风、模块、角色、正负面提示词和参数将恢复默认值，此操作无法撤销。',
+            message: '文生图、图生图、局部重绘与扩图的提示词和参数都会恢复默认值；三个编辑页的底图与蒙版也会清空。此操作无法撤销。',
             confirmLabel: '确认重置',
             tone: 'danger',
         })) return;
@@ -1937,7 +1971,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         </button>
                     )}
                     {/* Fork / Save to Library Button */}
-                    {((!isOwner && !isGuest) || chain.id === 'playground') && (
+                    {canSaveActiveModeToLibrary && ((!isOwner && !isGuest) || chain.id === 'playground') && (
                         <button
                             onClick={handleFork}
                             disabled={isUploading}
@@ -1951,7 +1985,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             {chain.id !== 'playground' && <span>Fork</span>}
                         </button>
                     )}
-                    {isOwner && chain.id !== 'playground' && (
+                    {canSaveActiveModeToLibrary && isOwner && chain.id !== 'playground' && (
                         <button
                             type="button"
                             onClick={handleSaveAll}
@@ -1992,16 +2026,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onClose={() => setTaggerOpen(false)}
                 notify={notify}
                 onInsert={(tags) => {
-                    if (splitPromptFields) {
+                    if (activeEditOperation && activeEditDraft) {
+                        updateEditDraft(activeEditOperation, appendTagsToImageEditDraft(activeEditDraft, tags));
+                    } else if (splitPromptFields) {
                         setSubjectPrompt(current => mergePromptFields(current, tags));
                         markPresetSectionModified('subject');
+                        markChange();
                     } else {
                         setBasePrompt(current => mergePromptFields(mergePromptFields(current, subjectPrompt), tags));
                         setSubjectPrompt('');
                         markPresetSectionModified('base');
                         markPresetSectionModified('subject');
+                        markChange();
                     }
-                    markChange();
                     notify(`已追加 ${tags.split(',').length} 个识别 Tag`);
                 }}
             />
@@ -2371,6 +2408,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 generationCostLabel={imageEditCostLabel}
                 isGenerating={isGenerating}
                 safeMode={safeMode}
+                tagAssistEnabled={tagAssistEnabled}
                 apiKey={apiKey}
                 notify={notify}
                 onPromptChange={value => updateEditDraft(activeEditOperation, { prompt: value, promptSource: 'custom' })}

@@ -33,6 +33,7 @@ interface ImageEditPanelProps {
   generationCostLabel: (operation: ImageEditOperation, focused: boolean, context?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number }) => string;
   isGenerating?: boolean;
   safeMode?: boolean;
+  tagAssistEnabled: boolean;
   apiKey: string;
   notify: (message: string, type?: 'success' | 'error') => void;
   onPromptChange: (value: string) => void;
@@ -67,6 +68,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   layout,
   maskData,
   generationCostLabel,
+  tagAssistEnabled,
   apiKey,
   notify,
   onPromptChange,
@@ -609,6 +611,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         expansion={expansion}
         isBusy={isLoading || isGenerating}
         safeMode={safeMode}
+        tagAssistEnabled={tagAssistEnabled}
         apiKey={apiKey}
         notify={notify}
         onPromptChange={onPromptChange}

@@ -33,9 +33,10 @@ const params = {
   ucPreset: 4,
 };
 
-const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', manualMaskEditing = false, safeMode = false) => {
+const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', manualMaskEditing = false, safeMode = false, tagAssistEnabled = false) => {
   const draft = createLabImageEditDraft(operation, 'blue bottle', 'low quality', params);
   const onManualMaskEditingChange = vi.fn();
+  const onPromptChange = vi.fn();
   return { ...render(React.createElement(ImageEditControls, {
     operation,
     draft,
@@ -49,10 +50,11 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     tool: 'brush',
     manualMaskEditing,
     safeMode,
+    tagAssistEnabled,
     expansion: draft.expansion,
     apiKey: 'test-key',
     notify: vi.fn(),
-    onPromptChange: vi.fn(),
+    onPromptChange,
     onNegativePromptChange: vi.fn(),
     onPromptSource: vi.fn(),
     onDraftChange: vi.fn(),
@@ -70,12 +72,21 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     onRedo: vi.fn(),
     onExpansionChange: vi.fn(),
     onApplyOutpaint: vi.fn(),
-  })), onManualMaskEditingChange };
+  })), onManualMaskEditingChange, onPromptChange };
 };
 
 afterEach(() => cleanup());
 
 describe('ImageEditControls', () => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('在 %s 的正负面提示词中启用 Tag 辅助', operation => {
+    const { onPromptChange } = renderControls(operation, false, false, true);
+
+    const assistedInputs = screen.getAllByRole('combobox');
+    expect(assistedInputs).toHaveLength(2);
+    fireEvent.change(assistedInputs[0], { target: { value: 'blue bottle, 1girl' } });
+    expect(onPromptChange).toHaveBeenCalledWith('blue bottle, 1girl');
+  });
+
   it('图生图只显示底图、Strength 和 Noise，不显示蒙版或扩图控件', () => {
     renderControls('image-to-image');
 
