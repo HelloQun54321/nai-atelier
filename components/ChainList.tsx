@@ -11,6 +11,7 @@ import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isInternalC
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
+import { useRestoreListAnchor } from './useRestoreListAnchor';
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -22,6 +23,7 @@ interface ChainListProps {
   isLoading: boolean;
   notify: (msg: string, type?: 'success' | 'error') => void;
   isGuest?: boolean;
+  returnTargetId?: string;
 }
 
 // Internal Component: Smart Copy Modal
@@ -153,7 +155,7 @@ const CopyModal: React.FC<{
     );
 };
 
-export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onRefresh, isLoading, notify, isGuest = false }) => {
+export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onRefresh, isLoading, notify, isGuest = false, returnTargetId }) => {
   const RENDER_BATCH_SIZE = 60;
   const imageDisplay = useMobileImageDisplayPreferences();
   const masonryColumns = useMasonryColumnCount(imageDisplay);
@@ -267,11 +269,17 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   }, [chains, type, searchTerm, favOnly, favorites, selectedModel, selectedTags, sortOption]);
 
   useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, selectedModel, selectedTags, sortOption]);
+  useEffect(() => {
+    if (!returnTargetId) return;
+    const targetIndex = filteredChains.findIndex(chain => chain.id === returnTargetId);
+    if (targetIndex >= 0) setVisibleCount(count => Math.max(count, targetIndex + 1));
+  }, [filteredChains, returnTargetId]);
   const visibleChains = filteredChains.slice(0, visibleCount);
 
   // 滚动接近列表底部自动追加一批；按钮保留作兜底。
   const chainScrollRef = useRef<HTMLDivElement>(null);
   const chainLoadSentinelRef = useRef<HTMLDivElement>(null);
+  useRestoreListAnchor(chainScrollRef, returnTargetId, `${visibleCount}:${filteredChains.length}`);
   useEffect(() => {
     const sentinel = chainLoadSentinelRef.current;
     const root = chainScrollRef.current;
@@ -294,7 +302,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   );
 
   const renderChainCard = (chain: PromptChain) => (
-    <div key={chain.id} data-safe-mode-work="true" onClick={() => onSelect(chain.id)} className="mobile-gallery-item group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative">
+    <div key={chain.id} data-safe-mode-work="true" data-return-item-id={chain.id} onClick={() => onSelect(chain.id)} className="mobile-gallery-item group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative">
       {/* Copy Button Overlay - Trigger Modal */}
       <div className="absolute right-2 top-2 z-10 hidden items-center gap-1 opacity-0 transition-opacity md:group-hover:flex md:group-hover:opacity-100">
           {!isGuest && <button

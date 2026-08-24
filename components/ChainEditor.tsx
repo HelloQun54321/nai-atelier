@@ -63,6 +63,7 @@ interface ChainEditorProps {
     generationStreamPreview: boolean;
     labPageLayouts: LabPageLayouts;
     safeMode: boolean;
+    onBack: () => void | Promise<void>;
 }
 
 type PresetSource = { name: string; modified: boolean };
@@ -152,7 +153,7 @@ const PromptAgentOverlayController: React.FC<PromptAgentOverlayControllerProps> 
     );
 };
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, splitPromptFields, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, labPageLayouts, safeMode }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, splitPromptFields, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, labPageLayouts, safeMode, onBack }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
     const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
@@ -1858,8 +1859,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         activeMode={activeGenerationMode}
                         onSelectMode={selectGenerationMode}
                         onEditInfo={() => setIsEditingInfo(true)}
+                        onBack={onBack}
                     />
-                    {chain.id !== 'playground' && isEditingInfo && isOwner && <div role="dialog" aria-label={`编辑${isCharacterMode ? '角色串' : '风格串'}信息`} className="absolute left-9 top-[calc(100%+0.5rem)] z-50 w-[min(40rem,calc(100vw-2rem))] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+                    {chain.id !== 'playground' && isEditingInfo && isOwner && <div role="dialog" aria-label={`编辑${isCharacterMode ? '角色串' : '风格串'}信息`} className="absolute left-12 top-[calc(100%+0.5rem)] z-50 w-[min(40rem,calc(100vw-2rem))] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
                         <div className="grid gap-3 sm:grid-cols-2">
                             <label className="text-xs font-bold text-gray-500">名称<input type="text" value={chainName} onChange={e => { setChainName(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white" placeholder="名称" /></label>
                             <label className="text-xs font-bold text-gray-500">描述<input type="text" value={chainDesc} onChange={e => { setChainDesc(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-700 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" placeholder="描述" /></label>

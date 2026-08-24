@@ -391,7 +391,7 @@ const App = () => {
     setPlaygroundAgentOpenToken(value => value + 1);
   };
 
-  const handleNavigate = async (newView: ViewState, id?: string, options: { externalImport?: boolean } = {}) => {
+  const handleNavigate = async (newView: ViewState, id?: string, options: { externalImport?: boolean; refreshData?: boolean } = {}) => {
     if (isEditorDirty) {
       if (!await confirmAction({
         title: '放弃未保存的更改？',
@@ -416,7 +416,7 @@ const App = () => {
     });
 
     // Auto-load data based on view, respecting cache
-    if (newView === 'list' || newView === 'characters') refreshData();
+    if ((newView === 'list' || newView === 'characters') && options.refreshData !== false) refreshData();
     if (newView === 'library') loadArtists();
     if (newView === 'inspiration') loadInspirations();
 
@@ -496,6 +496,10 @@ const App = () => {
   };
 
   const getSelectedChain = () => chains.find(c => c.id === selectedId);
+  const handleReturnFromEditor = () => {
+    const selectedChain = getSelectedChain();
+    return handleNavigate(selectedChain?.type === 'character' ? 'characters' : 'list', selectedChain?.id || selectedId, { refreshData: false });
+  };
 
   if (!currentUser && !dbConfigError) {
     return <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 text-gray-500">正在启动本地应用…</div>;
@@ -529,6 +533,7 @@ const App = () => {
           isLoading={loading}
           notify={notify}
           isGuest={false}
+          returnTargetId={view === 'list' ? selectedId : undefined}
         />;
       case 'characters':
         return <CharacterLibrary
@@ -539,6 +544,7 @@ const App = () => {
           onRefresh={async () => { await refreshData(true); }}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
           notify={notify}
+          returnTargetId={view === 'characters' ? selectedId : undefined}
         />;
       case 'edit':
         const editChain = getSelectedChain();
@@ -557,6 +563,7 @@ const App = () => {
           generationStreamPreview={appearancePreferences.generationStreamPreview}
           labPageLayouts={appearancePreferences.labPageLayouts}
           safeMode={safeMode}
+          onBack={handleReturnFromEditor}
         />;
       case 'library':
         return <ArtistLibrary
@@ -623,6 +630,7 @@ const App = () => {
           generationStreamPreview={appearancePreferences.generationStreamPreview}
           labPageLayouts={appearancePreferences.labPageLayouts}
           safeMode={safeMode}
+          onBack={() => handleNavigate('list')}
         />;
       default:
         return <div>Unknown View</div>;

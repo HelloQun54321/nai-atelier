@@ -24,6 +24,7 @@ import { danbooruService } from '../services/danbooruService';
 import type { DanbooruCoverCandidate } from '../services/danbooruService';
 import { importDanbooruCoverAsDataUrl } from '../services/danbooruCoverImport';
 import { TagCoverActions } from './TagCoverActions';
+import { useRestoreListAnchor } from './useRestoreListAnchor';
 
 const CATALOG_MARKER = '__character_catalog__';
 const getDanbooruPostsUrl = (tagName: string) =>
@@ -63,6 +64,7 @@ interface CharacterLibraryProps {
   onRefresh: () => Promise<void>;
   onNavigateToPlayground: () => void;
   notify: (message: string, type?: 'success' | 'error') => void;
+  returnTargetId?: string;
 }
 
 const LazyImage = SmartImage;
@@ -75,6 +77,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   onRefresh,
   onNavigateToPlayground,
   notify,
+  returnTargetId,
 }) => {
   const imageDisplay = useMobileImageDisplayPreferences();
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
@@ -90,7 +93,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             const selected = selectedKeys.has(card.key);
             const showPin = card.kind === 'catalog' && Boolean(coverCandidates[card.key]);
             return (
-              <article key={card.key} data-safe-mode-work="true" onClick={() => toggleSelect(card)} aria-pressed={selected} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors cursor-pointer dark:bg-gray-800 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-500 dark:border-gray-700'}`}>
+              <article key={card.key} data-safe-mode-work="true" data-return-item-id={card.kind === 'custom' ? card.chain?.id : undefined} onClick={() => toggleSelect(card)} aria-pressed={selected} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors cursor-pointer dark:bg-gray-800 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-500 dark:border-gray-700'}`}>
                 <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': cardRatios[card.key] ? `${Math.round(cardRatios[card.key] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
                   {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} onCandidateChange={candidate => rememberCoverCandidate(card.key, candidate)} onImageLoad={(width, height) => { const r = width / Math.max(1, height); if (Number.isFinite(r) && r > 0) setCardRatios(previous => (previous[card.key] === r ? previous : { ...previous, [card.key]: r })); }} /> : card.previewImage ? <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} onLoad={event => { const img = event.currentTarget; if (img.naturalWidth > 0 && img.naturalHeight > 0) { const r = img.naturalWidth / img.naturalHeight; if (Number.isFinite(r) && r > 0) setCardRatios(previous => (previous[card.key] === r ? previous : { ...previous, [card.key]: r })); } }} /></button> : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
@@ -292,6 +295,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     if (tab === 'favorites') cards = [...custom, ...catalog].filter(card => favorites.has(card.key));
     return cards;
   }, [catalogToCard, customChains, customToCard, favorites, gachaCards, loadedCatalog, searchResults, searchTerm, tab]);
+  useRestoreListAnchor(scrollRef, returnTargetId, `${visibleCards.length}:${isLoading ? 1 : 0}`);
 
   // 目录预取：当前页可见目录角色（前 40 个）的封面候选提前请求并固定保存（pin），
   // 滚动/浏览时封面秒出；getCoverSet 自带 14 天缓存与 300ms 串行限流，不重复打 Danbooru API。
@@ -641,7 +645,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              {lightbox.tagName && <div className="mt-1 break-all font-mono text-xs text-gray-500">{lightbox.tagName}</div>}
              <div className="mt-3 grid grid-cols-2 gap-2">
                <button disabled={generatingKey === lightbox.key} onClick={() => void generatePreview(lightbox)} className="mobile-touch rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-300">{generatingKey === lightbox.key ? '生成中…' : '生成预览'}</button>
-               {lightbox.kind === 'custom' ? <button onClick={() => onSelect(lightbox.chain!.id)} className="mobile-touch rounded-xl bg-gray-100 dark:bg-gray-700">编辑还原</button> : <a href={getDanbooruPostsUrl(lightbox.tagName || '')} target="_blank" rel="noreferrer" className="mobile-touch flex items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40">Danbooru</a>}
+               {lightbox.kind === 'custom' ? <button onClick={() => { const id = lightbox.chain!.id; setLightbox(null); onSelect(id); }} className="mobile-touch rounded-xl bg-gray-100 dark:bg-gray-700">编辑还原</button> : <a href={getDanbooruPostsUrl(lightbox.tagName || '')} target="_blank" rel="noreferrer" className="mobile-touch flex items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40">Danbooru</a>}
              </div>
              {lightbox.kind === 'custom' && <button onClick={() => void deleteCustom(lightbox)} className="mobile-touch mt-2 w-full rounded-xl bg-red-50 font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">删除这个自定义角色</button>}
            </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pencil } from 'lucide-react';
+import { ArrowLeft, Pencil } from 'lucide-react';
 import { GenerationMode } from '../types';
 import { GenerationModeNav } from './GenerationModeNav';
 
@@ -11,6 +11,7 @@ interface ChainEditorModeHeaderProps {
   activeMode: GenerationMode;
   onSelectMode: (mode: GenerationMode) => void | Promise<void>;
   onEditInfo: () => void;
+  onBack: () => void | Promise<void>;
 }
 
 export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
@@ -21,11 +22,21 @@ export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
   activeMode,
   onSelectMode,
   onEditInfo,
+  onBack,
 }) => {
   if (isLaboratory) return <GenerationModeNav activeMode={activeMode} onSelect={onSelectMode} />;
 
   return (
     <div className="flex w-full min-w-0 items-center gap-2">
+      <button
+        type="button"
+        onClick={() => void onBack()}
+        className="mobile-touch flex h-10 w-10 flex-none items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-indigo-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+        aria-label={`返回${entityLabel}列表`}
+        title={`返回${entityLabel}列表`}
+      >
+        <ArrowLeft className="h-5 w-5" />
+      </button>
       {isOwner && (
         <button
           type="button"

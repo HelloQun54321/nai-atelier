@@ -48,6 +48,8 @@
 
 ## 2026-08-24
 
+- **Codex (GPT-5)**：为风格串与角色串详情增加返回箭头，保留列表滚动位置并在排序变化后恢复目标卡片，补齐桌面、手机及角色串同类验证（fix: restore chain list position on return）。
+
 - **Codex (GPT-5)**：将编辑历史蒙版迁移到独立 IndexedDB／R2 存储，补齐按需读取、旧数据迁移、历史恢复、资产清理、Focused 选区移动缩放与异步状态隔离（feat: isolate image edit masks and restore history）。
 
 - **Codex (GPT-5)**：让图片编辑费用确认与最终请求共用底图真实尺寸，并将提示改为本地结算估算语义（fix: align image edit settlement and request dimensions）。
