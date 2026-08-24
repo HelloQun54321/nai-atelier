@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildNaiGenerationPayload, buildNaiImageEditPayload, withTransparentPromptTags } from './naiPayload';
+import { DEFAULT_NAI_RUNTIME } from './naiRuntime';
 
 const baseParams = {
   model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28,
@@ -116,6 +117,29 @@ describe('NovelAI generation payload', () => {
     });
     expect(curated.input).toContain('rating:general');
     expect((curated.parameters.v4_negative_prompt as any).caption.base_caption).toContain('bad anatomy');
+  });
+
+  it('keeps the independent quality toggle off when live presets do not contain none', () => {
+    const model = 'nai-diffusion-4-5-full';
+    const runtime = {
+      ...DEFAULT_NAI_RUNTIME,
+      modelCapabilities: {
+        ...DEFAULT_NAI_RUNTIME.modelCapabilities,
+        [model]: {
+          ...DEFAULT_NAI_RUNTIME.modelCapabilities[model],
+          qualityPresets: DEFAULT_NAI_RUNTIME.modelCapabilities[model].qualityPresets.filter(item => item.id !== 'none'),
+        },
+      },
+    };
+    const payload = buildNaiGenerationPayload('1girl', '', {
+      ...baseParams,
+      model,
+      qualityToggle: undefined,
+      qualityPresetId: 'none',
+    }, { runtime });
+
+    expect(payload.input).toBe('1girl');
+    expect(payload.parameters.qualityPresetId).toBe('none');
   });
 
   it('transforms character centers before a Focused local request', () => {

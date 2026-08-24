@@ -54,13 +54,15 @@ export const resolveNaiPromptPresets = (params: NAIParams, runtime: NaiRuntimeCo
   const capability = getNaiRuntimeModelCapability(runtime, modelId);
   const requestedQualityId = resolvePresetId(params, 'quality');
   const requestedUcId = resolvePresetId(params, 'uc');
-  const qualityId = capability?.qualityPresets.length
-    ? capability.qualityPresets.some(item => item.id === requestedQualityId) ? requestedQualityId : capability.qualityPresets[0].id
-    : 'none';
+  const qualityId = requestedQualityId === 'none'
+    ? 'none'
+    : capability?.qualityPresets.length
+      ? capability.qualityPresets.some(item => item.id === requestedQualityId) ? requestedQualityId : capability.qualityPresets[0].id
+      : 'none';
   const ucId = capability?.ucPresets.length
     ? capability.ucPresets.some(item => item.id === requestedUcId) ? requestedUcId : capability.ucPresets[0].id
     : 'none';
-  const qualityPreset = capability?.qualityPresets.find(item => item.id === qualityId);
+  const qualityPreset = qualityId === 'none' ? undefined : capability?.qualityPresets.find(item => item.id === qualityId);
   const ucPreset = capability?.ucPresets.find(item => item.id === ucId);
   return { modelId, capability, qualityId, ucId, qualityPreset, ucPreset };
 };

@@ -6,6 +6,8 @@
 
 ## 2026-08-25
 
+- **Codex (GPT-5)**：按 NovelAI 官方语义重做质量预设开关与 V5 类型选择，修复实时预设关闭失效及旧数据默认模型无法读取负面预设（fix: align official prompt preset controls）。
+
 - **Codex (GPT-5)**：移除图生图、局部重绘和扩图参数区中不可调节的画布尺寸伪输入框，并清理无用尺寸传参（fix: remove read-only image edit fields）。
 
 - **Codex (GPT-5)**：修复实验室 CFG 滑块误显为灰色禁用状态，并统一四种模式提示词输入框的字体与字重（fix: align laboratory input styling）。
