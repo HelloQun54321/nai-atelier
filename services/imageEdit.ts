@@ -1,4 +1,4 @@
-import { ImageEditCanvasExpansion, ImageEditOperation } from '../types';
+import { CharacterParams, ImageEditCanvasExpansion, ImageEditOperation } from '../types';
 
 export const IMAGE_EDIT_MODEL_SUFFIX = '-inpainting';
 export const IMAGE_EDIT_MIN_DIMENSION = 64;
@@ -40,6 +40,46 @@ export interface ImageEditFocusedGeometry {
   requestHeight: number;
   fullSizeMask: boolean;
 }
+
+const clampUnit = (value: number) => Math.max(0, Math.min(1, value));
+
+/** 将整张底图上的角色中心换算为 Focused 局部请求画布中的 0–1 坐标。 */
+export const transformCharacterCoordinatesForFocused = (
+  characters: CharacterParams[] | undefined,
+  geometry: ImageEditFocusedGeometry,
+  sourceWidth: number,
+  sourceHeight: number,
+): CharacterParams[] | undefined => {
+  if (!characters) return undefined;
+  const width = Math.max(1, Number(sourceWidth) || 1);
+  const height = Math.max(1, Number(sourceHeight) || 1);
+  return characters.map(character => ({
+    ...character,
+    x: clampUnit((Number(character.x) * width - geometry.crop.x) / Math.max(1, geometry.crop.width)),
+    y: clampUnit((Number(character.y) * height - geometry.crop.y) / Math.max(1, geometry.crop.height)),
+  }));
+};
+
+/** 扩图后把角色中心从旧画布坐标换算到新画布坐标。 */
+export const transformCharacterCoordinatesForOutpaint = (
+  characters: CharacterParams[] | undefined,
+  sourceWidth: number,
+  sourceHeight: number,
+  expansion: ImageEditCanvasExpansion,
+): CharacterParams[] | undefined => {
+  if (!characters) return undefined;
+  const width = Math.max(1, Number(sourceWidth) || 1);
+  const height = Math.max(1, Number(sourceHeight) || 1);
+  const top = Math.max(0, Math.floor(Number(expansion.top) || 0));
+  const left = Math.max(0, Math.floor(Number(expansion.left) || 0));
+  const nextWidth = width + left + Math.max(0, Math.floor(Number(expansion.right) || 0));
+  const nextHeight = height + top + Math.max(0, Math.floor(Number(expansion.bottom) || 0));
+  return characters.map(character => ({
+    ...character,
+    x: clampUnit((Number(character.x) * width + left) / Math.max(1, nextWidth)),
+    y: clampUnit((Number(character.y) * height + top) / Math.max(1, nextHeight)),
+  }));
+};
 
 const clampRect = (width: number, height: number, rect: ImageEditRect): ImageEditRect => {
   const x = Math.max(0, Math.min(Math.floor(width - 1), Math.floor(rect.x)));
@@ -369,6 +409,8 @@ export interface PreparedImageEdit {
   compositeMask?: Blob;
   requestWidth: number;
   requestHeight: number;
+  sourceWidth: number;
+  sourceHeight: number;
   focusedGeometry?: ImageEditFocusedGeometry;
 }
 
@@ -459,6 +501,8 @@ export const prepareImageEdit = async (edit: {
     compositeMask: compositeMaskCanvas ? await canvasToBlob(compositeMaskCanvas) : undefined,
     requestWidth,
     requestHeight,
+    sourceWidth: originalWidth,
+    sourceHeight: originalHeight,
     focusedGeometry,
   };
 };

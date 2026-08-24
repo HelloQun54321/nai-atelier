@@ -1,11 +1,14 @@
 import { ImageEditOperation, NAIParams } from '../types';
-import { DEFAULT_NAI_MODEL, findNaiModelInfo } from './naiModels';
-import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
-import { buildImageEditParameters, resolveImageEditModel, validateImageEditSampler } from './imageEdit';
+import { DEFAULT_NAI_MODEL, getRuntimeNaiModelInfo } from './naiModels';
+import { buildImageEditParameters, ImageEditFocusedGeometry, resolveImageEditModel, transformCharacterCoordinatesForFocused, validateImageEditSampler } from './imageEdit';
+import { DEFAULT_NAI_RUNTIME, getNaiRuntimeModelCapability, NaiRuntimeConfig } from './naiRuntime';
 
 export interface NaiPayloadOptions {
   stream?: boolean;
   runtimeStreamSupported?: boolean;
+  runtime?: NaiRuntimeConfig;
+  /** 图片编辑的 Inpainting／Outpainting 不发送 Vibe，即使草稿中仍保留旧选择。 */
+  allowVibes?: boolean;
 }
 
 export interface NaiImageEditPayloadOptions {
@@ -17,9 +20,50 @@ export interface NaiImageEditPayloadOptions {
   focused?: boolean;
   minimumContextArea?: number;
   runtimeModels?: string[];
+  runtime?: NaiRuntimeConfig;
+  focusedGeometry?: ImageEditFocusedGeometry;
+  sourceWidth?: number;
+  sourceHeight?: number;
 }
 
 const TRANSPARENT_PROMPT_TAGS = 'transparent background, has alpha';
+
+const LEGACY_QUALITY_DEFAULT = 'standard';
+const LEGACY_UC_IDS = ['heavy', 'light', 'furryFocus', 'humanFocus', 'none'];
+
+const appendPromptPart = (prompt: string, part: string | undefined, position: 'prefix' | 'suffix') => {
+  const value = String(part || '').trim();
+  if (!value) return prompt;
+  const source = String(prompt || '').trim();
+  if (!source) return value;
+  return position === 'prefix' ? `${value}, ${source}` : `${source}, ${value}`;
+};
+
+const resolvePresetId = (params: NAIParams, field: 'quality' | 'uc') => {
+  if (field === 'quality') {
+    if (typeof params.qualityPresetId === 'string' && params.qualityPresetId.trim()) return params.qualityPresetId.trim();
+    return params.qualityToggle === false ? 'none' : LEGACY_QUALITY_DEFAULT;
+  }
+  if (typeof params.ucPresetId === 'string' && params.ucPresetId.trim()) return params.ucPresetId.trim();
+  const legacyId = Number.isInteger(params.ucPreset) ? LEGACY_UC_IDS[Math.max(0, Math.min(4, params.ucPreset as number))] : undefined;
+  return legacyId || 'heavy';
+};
+
+export const resolveNaiPromptPresets = (params: NAIParams, runtime: NaiRuntimeConfig = DEFAULT_NAI_RUNTIME) => {
+  const modelId = params.model?.trim() || DEFAULT_NAI_MODEL;
+  const capability = getNaiRuntimeModelCapability(runtime, modelId);
+  const requestedQualityId = resolvePresetId(params, 'quality');
+  const requestedUcId = resolvePresetId(params, 'uc');
+  const qualityId = capability?.qualityPresets.length
+    ? capability.qualityPresets.some(item => item.id === requestedQualityId) ? requestedQualityId : capability.qualityPresets[0].id
+    : 'none';
+  const ucId = capability?.ucPresets.length
+    ? capability.ucPresets.some(item => item.id === requestedUcId) ? requestedUcId : capability.ucPresets[0].id
+    : 'none';
+  const qualityPreset = capability?.qualityPresets.find(item => item.id === qualityId);
+  const ucPreset = capability?.ucPresets.find(item => item.id === ucId);
+  return { modelId, capability, qualityId, ucId, qualityPreset, ucPreset };
+};
 
 /** 只改实际请求，不污染用户在编辑器中保存的原始提示词。 */
 export const withTransparentPromptTags = (prompt: string): string => {
@@ -40,18 +84,19 @@ export const buildNaiGenerationPayload = (
     ? params.seed
     : undefined;
   const modelId = params.model?.trim() || DEFAULT_NAI_MODEL;
-  const modelInfo = findNaiModelInfo(modelId);
-  const useTransparent = params.transparent === true && modelInfo?.supportsTransparentBackground === true;
+  const runtime = options.runtime || DEFAULT_NAI_RUNTIME;
+  const modelInfo = getRuntimeNaiModelInfo(modelId, runtime);
+  const presetState = resolveNaiPromptPresets(params, runtime);
+  const useTransparent = params.transparent === true && modelInfo.supportsTransparentBackground === true;
 
   let finalPrompt = useTransparent ? withTransparentPromptTags(prompt) : prompt;
-  if (params.qualityToggle ?? true) finalPrompt += NAI_QUALITY_TAGS;
+  if (presetState.qualityPreset) {
+    finalPrompt = appendPromptPart(finalPrompt, presetState.qualityPreset.prefix, 'prefix');
+    finalPrompt = appendPromptPart(finalPrompt, presetState.qualityPreset.suffix, 'suffix');
+  }
 
   let finalNegative = negative;
-  const presetId = params.ucPreset ?? 0;
-  if (presetId !== 4) {
-    const presetString = NAI_UC_PRESETS[presetId as keyof typeof NAI_UC_PRESETS];
-    if (presetString) finalNegative = presetString + finalNegative;
-  }
+  if (presetState.ucPreset?.prefix) finalNegative = appendPromptPart(finalNegative, presetState.ucPreset.prefix, 'prefix');
 
   const characters = params.characters ?? [];
   const hasCharacters = characters.length > 0;
@@ -65,7 +110,7 @@ export const buildNaiGenerationPayload = (
   }));
 
   const parameters: Record<string, unknown> = {
-    params_version: 3,
+    params_version: 4,
     width: params.width,
     height: params.height,
     scale: params.scale,
@@ -74,8 +119,8 @@ export const buildNaiGenerationPayload = (
     n_samples: 1,
     skip_cfg_above_sigma: params.variety ? 58 : null,
     cfg_rescale: params.cfgRescale ?? 0,
-    qualityToggle: params.qualityToggle ?? true,
-    ucPreset: params.ucPreset ?? 0,
+    qualityPresetId: presetState.qualityId,
+    ucPresetId: presetState.ucId,
     sm: false,
     sm_dyn: false,
     dynamic_thresholding: false,
@@ -94,7 +139,7 @@ export const buildNaiGenerationPayload = (
       caption: { base_caption: finalNegative, char_captions: charNegativeCaptions },
       legacy_uc: false,
     },
-    _local_vibes: params.vibes?.enabled && params.vibes.slots.length > 0 ? params.vibes : undefined,
+    _local_vibes: options.allowVibes !== false && params.vibes?.enabled && params.vibes.slots.length > 0 ? params.vibes : undefined,
     _local_character_references: params.characterReferences?.enabled && params.characterReferences.slots.length > 0
       ? params.characterReferences
       : undefined,
@@ -103,7 +148,7 @@ export const buildNaiGenerationPayload = (
   };
 
   if (seed !== undefined) parameters.seed = seed;
-  if (options.stream && (modelInfo?.supportsStreamedResponses || options.runtimeStreamSupported)) parameters.stream = 'sse';
+  if (options.stream && (modelInfo.supportsStreamedResponses || options.runtimeStreamSupported)) parameters.stream = 'sse';
   if (useTransparent) {
     parameters.tag_hint_transparent_background = true;
     parameters.straight_alpha = params.alphaMode !== 'premultiplied';
@@ -119,7 +164,21 @@ export const buildNaiImageEditPayload = (
   options: NaiImageEditPayloadOptions,
 ) => {
   validateImageEditSampler(params.sampler);
-  const base = buildNaiGenerationPayload(prompt, negative, params);
+  const requestParams: NAIParams = options.focusedGeometry && options.sourceWidth && options.sourceHeight
+    ? {
+      ...params,
+      characters: transformCharacterCoordinatesForFocused(
+        params.characters,
+        options.focusedGeometry,
+        options.sourceWidth,
+        options.sourceHeight,
+      ),
+    }
+    : params;
+  const base = buildNaiGenerationPayload(prompt, negative, requestParams, {
+    runtime: options.runtime,
+    allowVibes: options.operation === 'image-to-image',
+  });
   const isInpaintOperation = options.operation === 'inpaint' || options.operation === 'outpaint';
   const model = isInpaintOperation
     ? resolveImageEditModel(base.model, options.runtimeModels || [])

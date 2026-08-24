@@ -104,7 +104,10 @@ export interface NAIParams {
   scale: number; // CFG Scale
   sampler: string;
   seed?: number;
-  // V4.5 Specifics
+  // NovelAI 质量/UC 预设：新数据保存 ID，旧数据仍读取下面两个兼容字段。
+  qualityPresetId?: string;
+  ucPresetId?: string;
+  // Legacy UI fields
   qualityToggle?: boolean; // Default true
   ucPreset?: number; // 0: Heavy, 1: Light, 2: Furry, 3: Human, 4: None
   characters?: CharacterParams[]; // Multi-character support

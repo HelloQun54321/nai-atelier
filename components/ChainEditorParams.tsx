@@ -1,8 +1,8 @@
 
 import React from 'react';
 import { NAIParams } from '../types';
-import { getNaiModelInfo, getSelectableNaiModels } from '../services/naiModels';
-import { useNaiRuntime } from '../services/naiRuntime';
+import { getRuntimeNaiModelInfo, getSelectableNaiModels } from '../services/naiModels';
+import { getNaiRuntimeModelCapability, useNaiRuntime } from '../services/naiRuntime';
 
 interface ChainEditorParamsProps {
     params: NAIParams;
@@ -43,13 +43,25 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
         return 'Custom';
     };
 
-    const currentModelInfo = getNaiModelInfo(params.model);
-    const missingModelFeatures = currentModelInfo.id === (params.model ?? currentModelInfo.id)
-        ? [
-            !currentModelInfo.supportsVibes ? 'Vibe Transfer' : null,
-            !currentModelInfo.supportsCharacterReferences ? '角色参考' : null,
-        ].filter((value): value is string => Boolean(value))
-        : [];
+    const currentModelInfo = getRuntimeNaiModelInfo(params.model, runtime);
+    const modelCapability = getNaiRuntimeModelCapability(runtime, params.model);
+    const qualityOptions = modelCapability?.qualityPresets?.length
+        ? modelCapability.qualityPresets
+        : [{ id: 'none', name: 'none' }];
+    const ucOptions = modelCapability?.ucPresets?.length
+        ? modelCapability.ucPresets
+        : [{ id: 'none', name: 'none' }];
+    const legacyQualityId = params.qualityToggle === false ? 'none' : 'standard';
+    const requestedQualityId = params.qualityPresetId || legacyQualityId;
+    const qualityPresetId = qualityOptions.some(item => item.id === requestedQualityId) ? requestedQualityId : qualityOptions[0].id;
+    const legacyUcId = Number.isInteger(params.ucPreset) ? ['heavy', 'light', 'furryFocus', 'humanFocus', 'none'][Math.max(0, Math.min(4, params.ucPreset as number))] : 'heavy';
+    const requestedUcId = params.ucPresetId || legacyUcId;
+    const ucPresetId = ucOptions.some(item => item.id === requestedUcId) ? requestedUcId : ucOptions[0].id;
+    const updatePreset = (patch: Partial<NAIParams>) => {
+        const { qualityToggle: _qualityToggle, ucPreset: _ucPreset, ...rest } = params;
+        setParams({ ...rest, ...patch });
+        markChange();
+    };
 
     return (
         <section className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
@@ -58,24 +70,19 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 {presetSource && <span className="max-w-28 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-40" title={`来自：${presetSource.name}${presetSource.modified ? ' · 已修改' : ''}`}>来自：{presetSource.name}{presetSource.modified ? ' · 已修改' : ''}</span>}
             </div>
 
-            {/* V4.5 Quality & Preset */}
+            {/* Official model-specific quality and UC presets */}
             <div className="grid grid-cols-2 gap-4 mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex flex-col gap-3">
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="checkbox"
-                            id="qualityToggle"
+                    <div>
+                        <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">正面质量预设</label>
+                        <select
                             disabled={!canEdit}
-                            checked={params.qualityToggle ?? true}
-                            onChange={(e) => {
-                                setParams({ ...params, qualityToggle: e.target.checked });
-                                markChange();
-                            }}
-                            className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-                        />
-                        <label htmlFor="qualityToggle" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                            正面质量预设
-                        </label>
+                            className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
+                            value={qualityPresetId}
+                            onChange={event => updatePreset({ qualityPresetId: event.target.value })}
+                        >
+                            {qualityOptions.map(item => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}
+                        </select>
                     </div>
                     {/* Variety+ Toggle */}
                     <div className="flex items-center gap-2">
@@ -100,17 +107,10 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                     <select
                         disabled={!canEdit}
                         className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
-                        value={params.ucPreset ?? 0}
-                        onChange={(e) => {
-                            setParams({ ...params, ucPreset: parseInt(e.target.value) });
-                            markChange();
-                        }}
+                        value={ucPresetId}
+                        onChange={e => updatePreset({ ucPresetId: e.target.value })}
                     >
-                        <option value={0}>Heavy (Default)</option>
-                        <option value={1}>Light</option>
-                        <option value={2}>Furry Focus</option>
-                        <option value={3}>Human Focus</option>
-                        <option value={4}>None</option>
+                        {ucOptions.map(item => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}
                     </select>
                 </div>
             </div>
@@ -226,9 +226,9 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                     </button>
                 )}
 
-                {missingModelFeatures.length > 0 && (
+                {(params.characters?.length || 0) > currentModelInfo.maxCharacters && (
                     <p className="col-span-full rounded-md bg-amber-50 px-2.5 py-1.5 text-[11px] leading-4 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-                        {currentModelInfo.label} 暂不支持 {missingModelFeatures.join(' / ')}
+                        {currentModelInfo.label} 最多支持 {currentModelInfo.maxCharacters} 个角色提示词；当前保留了 {params.characters?.length} 个，请删除多余角色后再生成。
                     </p>
                 )}
             </div>

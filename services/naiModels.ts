@@ -1,8 +1,10 @@
+import type { NaiModelRuntimeCapability, NaiRuntimeConfig } from './naiRuntime';
+
 /**
  * NovelAI 生成模型注册表。
  *
  * 模型标识与能力均对照 2026-08-22 抓取的官方 Web 应用（novelai.net）模型注册表核对：
- * - V5 于 2026-08-21 发布，未引入 v5_prompt，继续使用 v4_prompt 结构与 params_version 3；
+ * - V5 于 2026-08-21 发布，未引入 v5_prompt，继续使用 v4_prompt 结构与 params_version 4；
  * - V4 / V4.5 / V5 在官方成本计算中共用同一公式（见 services/anlasBudget.ts）；
  * - 官方无公开的“列出模型”接口，注册表同样打包在官方前端内，故此处内置同样清单。
  */
@@ -14,13 +16,18 @@ export interface NaiModelInfo {
   /** 是否受 Opus 免费生成限额约束（官方仅对高于 V4.5 的模型启用限额）。 */
   opusUsageLimit: boolean;
   /**
-   * 是否支持本项目的永久 Vibe Transfer 管线。本项目 Vibe 编码固定使用
-   * V4.5 Full（网关校验），跨模型可用性未经官方确认，且官方公告 V5 暂未开放
-   * Vibe Transfer，因此仅 V4.5 Full 开放。
+   * 是否支持本项目的永久 Vibe Transfer 管线；能力由官方运行时表同步，编码资产
+   * 仍按项目的 V4.5 Full 永久编码管线生成。
    */
   supportsVibes: boolean;
-  /** 是否支持 Precise/Character Reference（官方仅 V4.5 Full 支持）。 */
+  /** 是否支持 Precise/Character Reference。 */
   supportsCharacterReferences: boolean;
+  /** 是否允许在当前模型的局部重绘／扩图请求中发送角色参考。 */
+  supportsCharacterReferenceInpainting: boolean;
+  /** 当前模型允许保存并提交的角色提示词槽数量。 */
+  maxCharacters: number;
+  /** 是否支持 V5 风格的自由画布角色定位。 */
+  freeformCharacterPosition: boolean;
   /** 官方流式接口是否会返回采样中间帧。 */
   supportsStreamedResponses: boolean;
   /** 是否支持原生 Alpha 透明 PNG。 */
@@ -28,12 +35,12 @@ export interface NaiModelInfo {
 }
 
 export const NAI_MODELS: NaiModelInfo[] = [
-  { id: 'nai-diffusion-5-full', label: 'V5 Full', opusUsageLimit: true, supportsVibes: false, supportsCharacterReferences: false, supportsStreamedResponses: true, supportsTransparentBackground: true },
-  { id: 'nai-diffusion-5-curated', label: 'V5 Curated', opusUsageLimit: true, supportsVibes: false, supportsCharacterReferences: false, supportsStreamedResponses: true, supportsTransparentBackground: true },
-  { id: 'nai-diffusion-4-5-full', label: 'V4.5 Full', opusUsageLimit: false, supportsVibes: true, supportsCharacterReferences: true, supportsStreamedResponses: true, supportsTransparentBackground: false },
-  { id: 'nai-diffusion-4-5-curated', label: 'V4.5 Curated', opusUsageLimit: false, supportsVibes: false, supportsCharacterReferences: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
-  { id: 'nai-diffusion-4-full', label: 'V4 Full', opusUsageLimit: false, supportsVibes: false, supportsCharacterReferences: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
-  { id: 'nai-diffusion-4-curated-preview', label: 'V4 Curated', opusUsageLimit: false, supportsVibes: false, supportsCharacterReferences: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
+  { id: 'nai-diffusion-5-full', label: 'V5 Full', opusUsageLimit: true, supportsVibes: false, supportsCharacterReferences: false, supportsCharacterReferenceInpainting: false, maxCharacters: 32, freeformCharacterPosition: true, supportsStreamedResponses: true, supportsTransparentBackground: true },
+  { id: 'nai-diffusion-5-curated', label: 'V5 Curated', opusUsageLimit: true, supportsVibes: false, supportsCharacterReferences: false, supportsCharacterReferenceInpainting: false, maxCharacters: 32, freeformCharacterPosition: true, supportsStreamedResponses: true, supportsTransparentBackground: true },
+  { id: 'nai-diffusion-4-5-full', label: 'V4.5 Full', opusUsageLimit: false, supportsVibes: true, supportsCharacterReferences: true, supportsCharacterReferenceInpainting: true, maxCharacters: 6, freeformCharacterPosition: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
+  { id: 'nai-diffusion-4-5-curated', label: 'V4.5 Curated', opusUsageLimit: false, supportsVibes: true, supportsCharacterReferences: true, supportsCharacterReferenceInpainting: true, maxCharacters: 6, freeformCharacterPosition: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
+  { id: 'nai-diffusion-4-full', label: 'V4 Full', opusUsageLimit: false, supportsVibes: true, supportsCharacterReferences: false, supportsCharacterReferenceInpainting: false, maxCharacters: 6, freeformCharacterPosition: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
+  { id: 'nai-diffusion-4-curated-preview', label: 'V4 Curated', opusUsageLimit: false, supportsVibes: true, supportsCharacterReferences: false, supportsCharacterReferenceInpainting: false, maxCharacters: 6, freeformCharacterPosition: false, supportsStreamedResponses: true, supportsTransparentBackground: false },
 ];
 
 export const DEFAULT_NAI_MODEL = 'nai-diffusion-4-5-full';
@@ -130,12 +137,45 @@ const deriveModelLabel = (id: string) => id
  * 选择器可用的模型列表：内置注册表优先，网关从官方 Web 应用同步到的新模型
  * （例如未来发布的 V6）自动追加到末尾，能力标志按保守值处理。
  */
-export const getSelectableNaiModels = (runtime?: { models: string[]; usageLimitedModels: string[]; streamedModels?: string[] }): NaiModelInfo[] => {
+const applyRuntimeCapability = (model: NaiModelInfo, capability?: NaiModelRuntimeCapability): NaiModelInfo => capability ? {
+  ...model,
+  supportsVibes: capability.supportsVibes,
+  supportsCharacterReferences: capability.supportsCharacterReferences,
+  supportsCharacterReferenceInpainting: capability.supportsCharacterReferenceInpainting,
+  maxCharacters: capability.maxCharacters || model.maxCharacters,
+  freeformCharacterPosition: capability.freeformCharacterPosition,
+  supportsStreamedResponses: capability.supportsStreamedResponses,
+  supportsTransparentBackground: capability.supportsTransparentBackground,
+} : model;
+
+export const getRuntimeNaiModelInfo = (model: string | undefined, runtime?: NaiRuntimeConfig): NaiModelInfo => {
+  const unknown = Boolean(model && !findNaiModelInfo(model));
+  const base = unknown ? {
+    ...getNaiModelInfo(),
+    id: model as string,
+    label: getNaiModelDisplayLabel(model),
+    opusUsageLimit: runtime?.usageLimitedModels.includes(model as string) ?? false,
+    supportsVibes: false,
+    supportsCharacterReferences: false,
+    supportsCharacterReferenceInpainting: false,
+    maxCharacters: 6,
+    freeformCharacterPosition: false,
+    supportsStreamedResponses: runtime?.streamedModels.includes(model as string) ?? false,
+    supportsTransparentBackground: false,
+  } : getNaiModelInfo(model);
+  const capability = runtime?.modelCapabilities?.[model || '']
+    || (model?.endsWith('-inpainting') ? runtime?.modelCapabilities?.[model.slice(0, -'-inpainting'.length)] : undefined);
+  if (capability) return applyRuntimeCapability(base, capability);
+  return base;
+};
+
+export const getSelectableNaiModels = (runtime?: Pick<NaiRuntimeConfig, 'models' | 'usageLimitedModels' | 'streamedModels' | 'modelCapabilities'>): NaiModelInfo[] => {
   if (!runtime?.models?.length) return NAI_MODELS;
   // 官方运行时 bundle 还会带出旧版短名、Furry/Anime 旧模型和 inpainting
   // 变体；它们不是本项目当前生图模型选择器应展示的独立选项。保留数字版本
   // 的 Full/Curated 形态，未来新增 V6 等模型时仍可自动进入列表。
   const selectableModelId = /^nai-diffusion-\d+(?:-\d+)?-(?:full|curated)(?:-preview)?$/;
+  const known = NAI_MODELS.map(model => applyRuntimeCapability(model, runtime.modelCapabilities?.[model.id]));
   const extras = runtime.models
     .filter(id => selectableModelId.test(id) && !NAI_MODELS.some(model => model.id === id))
     .map(id => ({
@@ -144,9 +184,12 @@ export const getSelectableNaiModels = (runtime?: { models: string[]; usageLimite
       opusUsageLimit: runtime.usageLimitedModels.includes(id),
       supportsVibes: false,
       supportsCharacterReferences: false,
+      supportsCharacterReferenceInpainting: false,
+      maxCharacters: 6,
+      freeformCharacterPosition: false,
       supportsStreamedResponses: runtime.streamedModels?.includes(id) ?? false,
       // 官方当前仅 V5 暴露 Alpha 输出；未来未知模型默认关闭，避免发送不兼容字段。
       supportsTransparentBackground: /^nai-diffusion-5-/.test(id),
     }));
-  return [...NAI_MODELS, ...extras];
+  return [...known, ...extras.map(model => applyRuntimeCapability(model, runtime.modelCapabilities?.[model.id]))];
 };

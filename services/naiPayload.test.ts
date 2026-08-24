@@ -91,6 +91,74 @@ describe('NovelAI generation payload', () => {
     expect(editParameters._local_minimum_context_area).toBe(64);
   });
 
+  it('uses model-specific runtime presets and never injects the removed nsfw tag', () => {
+    const v5 = buildNaiGenerationPayload('1girl', '', {
+      ...baseParams,
+      qualityToggle: undefined,
+      ucPreset: undefined,
+      qualityPresetId: 'light',
+      ucPresetId: 'light',
+    });
+    expect(v5.parameters.qualityPresetId).toBe('light');
+    expect(v5.parameters.ucPresetId).toBe('light');
+    expect(v5.input).toContain('amazing quality');
+    const v5Negative = (v5.parameters.v4_negative_prompt as any).caption.base_caption as string;
+    expect(v5Negative).toContain('bad hands');
+    expect(v5Negative).not.toContain('nsfw');
+
+    const curated = buildNaiGenerationPayload('1girl', '', {
+      ...baseParams,
+      model: 'nai-diffusion-4-5-curated',
+      qualityToggle: undefined,
+      ucPreset: undefined,
+      qualityPresetId: 'standard',
+      ucPresetId: 'humanFocus',
+    });
+    expect(curated.input).toContain('rating:general');
+    expect((curated.parameters.v4_negative_prompt as any).caption.base_caption).toContain('bad anatomy');
+  });
+
+  it('transforms character centers before a Focused local request', () => {
+    const payload = buildNaiImageEditPayload('1girl', '', {
+      ...baseParams,
+      characters: [{ id: 'c1', prompt: 'girl', x: 0.5, y: 0.5 }],
+    }, {
+      operation: 'inpaint',
+      image: 'data:image/png;base64,aW1hZ2U=',
+      mask: 'data:image/png;base64,bWFzaw==',
+      strength: 0.8,
+      noise: 0.1,
+      focused: true,
+      focusedGeometry: {
+        crop: { x: 200, y: 100, width: 400, height: 300 },
+        inner: { x: 264, y: 164, width: 272, height: 172 },
+        requestWidth: 768,
+        requestHeight: 576,
+        fullSizeMask: false,
+      },
+      sourceWidth: 1000,
+      sourceHeight: 800,
+      runtimeModels: ['nai-diffusion-5-full-inpainting'],
+    });
+    const captions = (payload.parameters as any).v4_prompt.caption.char_captions;
+    expect(captions[0].centers[0]).toEqual({ x: 0.75, y: 1 });
+  });
+
+  it('does not send retained Vibe selections for inpainting or outpainting', () => {
+    const payload = buildNaiImageEditPayload('1girl', '', {
+      ...baseParams,
+      vibes: { enabled: true, normalizeStrengths: true, slots: [{ vibeId: 'v1', encodingId: 'e1', informationExtracted: 1, strength: 0.6 }] },
+    }, {
+      operation: 'outpaint',
+      image: 'data:image/png;base64,aW1hZ2U=',
+      mask: 'data:image/png;base64,bWFzaw==',
+      strength: 1,
+      noise: 0,
+      runtimeModels: ['nai-diffusion-5-full-inpainting'],
+    });
+    expect((payload.parameters as any)._local_vibes).toBeUndefined();
+  });
+
   it('rejects an edit when the runtime does not expose the inpainting variant', () => {
     expect(() => buildNaiImageEditPayload('1girl', '', baseParams, {
       operation: 'inpaint', image: 'data:image/png;base64,aW1hZ2U=', mask: 'data:image/png;base64,bWFzaw==',

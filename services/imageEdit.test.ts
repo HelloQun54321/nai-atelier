@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildImageEditParameters, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, limitFocusedImageEditRect, normalizeMinimumContextArea, resolveImageEditModel, validateImageEditDimensions, validateImageEditSampler } from './imageEdit';
+import { buildImageEditParameters, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, limitFocusedImageEditRect, normalizeMinimumContextArea, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from './imageEdit';
 
 describe('image edit helpers', () => {
   it('validates NovelAI canvas dimensions and 64 pixel alignment', () => {
@@ -61,5 +61,20 @@ describe('image edit helpers', () => {
     expect(contained.width).toBe(1024);
     expect(contained.height).toBe(576);
     expect(contained.y).toBe(224);
+  });
+
+  it('transforms character centers into Focused and outpaint coordinate spaces', () => {
+    const character = { id: 'c1', prompt: 'girl', x: 0.5, y: 0.5 };
+    const geometry = {
+      crop: { x: 200, y: 100, width: 400, height: 300 },
+      inner: { x: 264, y: 164, width: 272, height: 172 },
+      requestWidth: 768,
+      requestHeight: 576,
+      fullSizeMask: false,
+    };
+    expect(transformCharacterCoordinatesForFocused([character], geometry, 1000, 800)?.[0]).toMatchObject({ x: 0.75, y: 1 });
+    const outpainted = transformCharacterCoordinatesForOutpaint([character], 1000, 800, { top: 64, right: 128, bottom: 0, left: 64 })?.[0];
+    expect(outpainted?.x).toBeCloseTo(0.473154, 5);
+    expect(outpainted?.y).toBeCloseTo(0.537037, 5);
   });
 });

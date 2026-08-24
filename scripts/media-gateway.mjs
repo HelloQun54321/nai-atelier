@@ -571,6 +571,14 @@ export const clearPreciseReferenceParameters = parameters => {
 export const isNaiUsageLimitedModel = (model, runtime = getNaiRuntime()) =>
   typeof model === 'string' && runtime.usageLimitedModels.includes(model);
 
+const getNaiModelCapability = (model, runtime = getNaiRuntime()) => {
+  const id = String(model || '').trim();
+  const direct = runtime.modelCapabilities?.[id];
+  if (direct) return direct;
+  if (id.endsWith('-inpainting')) return runtime.modelCapabilities?.[id.slice(0, -'-inpainting'.length)];
+  return undefined;
+};
+
 /** NovelAI's current V4/V4.5 cost formula for the generation features supported here. */
 export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = false, opusSubscriber = false) => {
   const parameters = payload?.parameters || {};
@@ -1469,14 +1477,44 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
     try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
     const localVibes = payload?.parameters?._local_vibes;
     const localCharacterReferences = payload?.parameters?._local_character_references;
+    const runtime = getNaiRuntime();
+    const capability = getNaiModelCapability(payload?.model, runtime) || {
+      supportsVibes: false,
+      supportsCharacterReferences: false,
+      supportsCharacterReferenceInpainting: false,
+      maxCharacters: 6,
+    };
+    const editOperation = String(payload?.parameters?._local_edit_operation || '');
+    const isImageEdit = payload?.action === 'infill' || payload?.action === 'img2img'
+      || editOperation === 'inpaint' || editOperation === 'outpaint' || editOperation === 'image-to-image';
+    const allowsVibes = !isImageEdit || editOperation === 'image-to-image';
+    const allowsCharacterReferences = isImageEdit && editOperation !== 'image-to-image'
+      ? capability.supportsCharacterReferenceInpainting === true
+      : capability.supportsCharacterReferences === true;
+    const characterPromptCount = Array.isArray(payload?.parameters?.v4_prompt?.caption?.char_captions)
+      ? payload.parameters.v4_prompt.caption.char_captions.length
+      : 0;
+    const maxCharacters = Math.max(1, Number(capability.maxCharacters) || 6);
+    if (characterPromptCount > maxCharacters) {
+      return sendJson(res, 400, { error: `当前模型最多支持 ${maxCharacters} 个角色提示词` });
+    }
+    if (localVibes?.enabled && localVibes?.slots?.length && !capability.supportsVibes) {
+      return sendJson(res, 400, { error: '当前模型不支持 Vibe Transfer' });
+    }
+    if (localVibes?.enabled && localVibes?.slots?.length && !allowsVibes) {
+      return sendJson(res, 400, { error: '局部重绘和扩图不发送 Vibe Transfer' });
+    }
+    if (localCharacterReferences?.enabled && localCharacterReferences?.slots?.length && !allowsCharacterReferences) {
+      return sendJson(res, 400, { error: '当前模型或编辑模式不支持角色参考' });
+    }
     if (localVibes?.enabled && localVibes?.slots?.length && localCharacterReferences?.enabled && localCharacterReferences?.slots?.length) {
       return sendJson(res, 400, { error: 'Vibe Transfer 与角色参考不能同时使用' });
     }
     let resolvedVibeEncodings = null;
     let vibeCacheKeysSentWithData = new Set();
     if (localVibes?.enabled && Array.isArray(localVibes.slots) && localVibes.slots.length) {
-      const slots = localVibes.slots.slice(0, 4);
-      if (localVibes.slots.length > 4) return sendJson(res, 400, { error: '一次最多使用 4 个 Vibe' });
+      const slots = localVibes.slots.slice(0, 16);
+      if (localVibes.slots.length > 16) return sendJson(res, 400, { error: '一次最多使用 16 个 Vibe' });
       const resolved = await Promise.all(slots.map(slot => vibeEncodingMemoryCache.get(
         `${slot.vibeId}:${slot.encodingId}`,
         () => requestWorkerJson(`/api/vibes/${encodeURIComponent(slot.vibeId)}/encodings/${encodeURIComponent(slot.encodingId)}/data`, req, workerPort)
@@ -1508,7 +1546,7 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
         : [];
       clearPreciseReferenceParameters(payload.parameters);
       if (characterSlots.length) {
-        if (payload.model !== 'nai-diffusion-4-5-full') return sendJson(res, 400, { error: '角色参考仅支持 NovelAI V4.5 Full' });
+        if (!allowsCharacterReferences) return sendJson(res, 400, { error: '当前模型或编辑模式不支持角色参考' });
         if (characterSlots.length > 4) return sendJson(res, 400, { error: '一次最多使用 4 个角色参考' });
         if (characterSlots.some(slot => typeof slot?.assetId !== 'string' || !slot.assetId.trim())) {
           return sendJson(res, 400, { error: '角色参考缺少有效的本地资产 ID' });

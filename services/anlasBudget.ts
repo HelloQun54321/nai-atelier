@@ -90,7 +90,7 @@ export const estimateImageEditCost = (
   const steps = Math.max(1, Number(params.steps) || 1);
   const raw = Math.ceil(estimatorRuntime.costCoefficientArea * area + estimatorRuntime.costCoefficientSteps * area * steps);
   const baseCost = Math.max(2, Math.ceil(raw * Math.max(0, Math.min(1, Number(strength) || 0))));
-  const vibeCount = params.vibes?.enabled ? params.vibes.slots.length : 0;
+  const vibeCount = operation === 'image-to-image' && params.vibes?.enabled ? params.vibes.slots.length : 0;
   const preciseReferenceCount = params.characterReferences?.enabled ? params.characterReferences.slots.length : 0;
   const focusedFree = operation === 'inpaint'
     && focused

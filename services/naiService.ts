@@ -2,7 +2,7 @@
 import JSZip from 'jszip';
 import { ImageEditOperation, NAIParams } from '../types';
 import { api } from './api';
-import { findNaiModelInfo, getNaiModelInfo } from './naiModels';
+import { getRuntimeNaiModelInfo } from './naiModels';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 import { hashNaiApiKey } from './anlasBudget';
 import { emitCloudQueueStatus, getCachedCloudQueuePreferences, getCloudQueuePreferences, scheduleCloudQueueStatusClear, watchCloudQueueTask } from './cloudQueue';
@@ -16,13 +16,20 @@ export interface NaiStreamPreview {
   step?: number;
 }
 
-const validateGenerationCapabilities = (params: NAIParams) => {
-  const modelInfo = getNaiModelInfo(params.model);
-  if (params.vibes?.enabled && params.vibes.slots.length > 0 && !modelInfo.supportsVibes) {
+const validateGenerationCapabilities = (params: NAIParams, runtime: Awaited<ReturnType<typeof getNaiRuntimeConfig>>, operation: 'text-to-image' | ImageEditOperation = 'text-to-image') => {
+  const modelInfo = getRuntimeNaiModelInfo(params.model, runtime);
+  const canSendVibes = operation === 'text-to-image' || operation === 'image-to-image';
+  if (canSendVibes && params.vibes?.enabled && params.vibes.slots.length > 0 && !modelInfo.supportsVibes) {
     throw new Error(`NovelAI ${modelInfo.label} 暂不支持 Vibe Transfer，请先移除 Vibe 或切换模型`);
   }
-  if (params.characterReferences?.enabled && params.characterReferences.slots.length > 0 && !modelInfo.supportsCharacterReferences) {
+  const canSendCharacterReferences = operation === 'inpaint' || operation === 'outpaint'
+    ? modelInfo.supportsCharacterReferenceInpainting
+    : modelInfo.supportsCharacterReferences;
+  if (params.characterReferences?.enabled && params.characterReferences.slots.length > 0 && !canSendCharacterReferences) {
     throw new Error(`NovelAI ${modelInfo.label} 暂不支持角色参考，请先移除角色参考或切换模型`);
+  }
+  if ((params.characters?.length || 0) > modelInfo.maxCharacters) {
+    throw new Error(`NovelAI ${modelInfo.label} 最多支持 ${modelInfo.maxCharacters} 个角色提示词，请先删除多余角色或切换模型`);
   }
   return modelInfo;
 };
@@ -43,9 +50,10 @@ const blobFromDataUri = (uri: string): Blob => {
 };
 
 export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams) => {
-  const payload = buildNaiGenerationPayload(prompt, negative, params);
+  const runtime = await getNaiRuntimeConfig();
+  const payload = buildNaiGenerationPayload(prompt, negative, params, { runtime });
   const seed = typeof payload.parameters.seed === 'number' ? payload.parameters.seed : undefined;
-  validateGenerationCapabilities(params);
+  validateGenerationCapabilities(params, runtime);
 
   // 调用 Worker Proxy, 传递 API Key Header
   // Queue status is auxiliary.  A temporary failure to read its preference
@@ -165,8 +173,18 @@ export const generateImageEdit = async (
   const runtime = await getNaiRuntimeConfig();
   const prepared = await prepareImageEdit(edit);
   const requestParams: NAIParams = { ...params, width: prepared.requestWidth, height: prepared.requestHeight };
-  const payload = buildNaiImageEditPayload(prompt, negative, requestParams, { ...edit, image: prepared.image, mask: prepared.mask, focused: edit.focused && edit.operation === 'inpaint', runtimeModels: runtime.models });
-  validateGenerationCapabilities(requestParams);
+  const payload = buildNaiImageEditPayload(prompt, negative, requestParams, {
+    ...edit,
+    image: prepared.image,
+    mask: prepared.mask,
+    focused: edit.focused && edit.operation === 'inpaint',
+    focusedGeometry: prepared.focusedGeometry,
+    sourceWidth: prepared.sourceWidth,
+    sourceHeight: prepared.sourceHeight,
+    runtimeModels: runtime.models,
+    runtime,
+  });
+  validateGenerationCapabilities(requestParams, runtime, edit.operation);
   const queue = await (async () => {
     try { return await getCloudQueuePreferences(); } catch { return getCachedCloudQueuePreferences(); }
   })();
@@ -229,9 +247,10 @@ export const generateImageStream = async (
   onPreview?: (preview: NaiStreamPreview) => void,
   runtimeStreamSupported = false,
 ) => {
-  const modelInfo = validateGenerationCapabilities(params);
-  if (!findNaiModelInfo(params.model)?.supportsStreamedResponses && !runtimeStreamSupported) throw new Error(`NovelAI ${modelInfo.label} 暂不支持生成过程预览`);
-  const payload = buildNaiGenerationPayload(prompt, negative, params, { stream: true, runtimeStreamSupported });
+  const runtime = await getNaiRuntimeConfig();
+  const modelInfo = validateGenerationCapabilities(params, runtime);
+  if (!modelInfo.supportsStreamedResponses && !runtimeStreamSupported) throw new Error(`NovelAI ${modelInfo.label} 暂不支持生成过程预览`);
+  const payload = buildNaiGenerationPayload(prompt, negative, params, { stream: true, runtimeStreamSupported, runtime });
   const fallbackSeed = typeof payload.parameters.seed === 'number' ? payload.parameters.seed : undefined;
   let queue = getCachedCloudQueuePreferences();
   try { queue = await getCloudQueuePreferences(); } catch { /* 由真实生成请求触发统一解锁和错误处理。 */ }

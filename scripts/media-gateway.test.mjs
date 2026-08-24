@@ -48,7 +48,7 @@ test('prompt agent official knowledge is model-aware and release-first', () => {
   assert.equal(resolveNovelAiModelFamily('nai-diffusion-5-full'), 'v5');
   assert.equal(resolveNovelAiModelFamily('nai-diffusion-4-5-curated'), 'v4.5');
   const v5Profile = getNovelAiModelProfile('nai-diffusion-5-full');
-  assert.equal(v5Profile.project.maxCharacterPrompts, 22);
+  assert.equal(v5Profile.project.maxCharacterPrompts, 32);
   assert.equal(v5Profile.project.supportsVibes, false);
   assert.equal(v5Profile.project.supportsAlphaTransparency, true);
   assert.match(v5Profile.officialPromptCapacity, /未给出精确 Token/);
@@ -79,7 +79,7 @@ test('prompt agent exposes official knowledge and current laboratory interface c
   assert.match(readPayload.sourceUrl, /^https:\/\/journal\.novelai\.net\//);
   const labPayload = JSON.parse((await labTool.execute('lab', {})).content[0].text);
   assert.deepEqual(labPayload.interface, { splitPromptFields: false, tagAssistEnabled: false });
-  assert.equal(labPayload.modelProfile.project.maxCharacterPrompts, 22);
+  assert.equal(labPayload.modelProfile.project.maxCharacterPrompts, 32);
 });
 
 test('prompt agent character slot sanitizing follows the selected NovelAI model', async () => {

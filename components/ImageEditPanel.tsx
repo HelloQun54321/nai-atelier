@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft } from '../types';
-import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, limitFocusedImageEditRect, normalizeMinimumContextArea, validateImageEditDimensions } from '../services/imageEdit';
+import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, limitFocusedImageEditRect, normalizeMinimumContextArea, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions } from '../services/imageEdit';
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPreview } from './ImageEditPreview';
 
@@ -469,7 +469,13 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       setState({ width: result.width, height: result.height, focusedRect: null });
       renderOverlay();
       onCanvasChange(canvasToDataUrl(imageCanvas), canvasToDataUrl(mask));
-      onDraftChange({ maskData: canvasToDataUrl(mask), focusedRect: undefined, expansion });
+      const nextCharacters = transformCharacterCoordinatesForOutpaint(draft.params.characters, state.width, state.height, expansion);
+      onDraftChange({
+        maskData: canvasToDataUrl(mask),
+        focusedRect: undefined,
+        expansion,
+        ...(nextCharacters ? { params: { ...draft.params, characters: nextCharacters } } : {}),
+      });
     } catch (applyError) {
       setError(applyError instanceof Error ? applyError.message : '扩图尺寸无效');
     }
