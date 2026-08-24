@@ -32,6 +32,7 @@ interface ImageEditPanelProps {
   maskData?: string;
   generationCostLabel: (operation: ImageEditOperation, focused: boolean, context?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number }) => string;
   isGenerating?: boolean;
+  safeMode?: boolean;
   apiKey: string;
   notify: (message: string, type?: 'success' | 'error') => void;
   onPromptChange: (value: string) => void;
@@ -76,6 +77,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   onCanvasChange,
   onGenerate,
   isGenerating = false,
+  safeMode = false,
 }) => {
   const imageCanvasRef = useRef<HTMLCanvasElement>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -106,7 +108,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [normalization, setNormalization] = useState<ImageEditNormalizationState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const maskEditable = operation === 'inpaint' || (operation === 'outpaint' && manualMaskEditing);
+  const maskEditable = !safeMode && (operation === 'inpaint' || (operation === 'outpaint' && manualMaskEditing));
 
   const snapshot = (): MaskSnapshot | null => {
     const canvas = maskCanvasRef.current;
@@ -607,6 +609,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         expansion={expansion}
         canvasSize={{ width: state.width, height: state.height }}
         isBusy={isLoading || isGenerating}
+        safeMode={safeMode}
         apiKey={apiKey}
         notify={notify}
         onPromptChange={onPromptChange}

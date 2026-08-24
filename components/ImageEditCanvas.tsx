@@ -53,7 +53,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       />
-      {focused && focusedRect && <div className="pointer-events-none absolute border-2 border-amber-300 bg-amber-300/10" style={{ left: `${focusedRect.x / Math.max(1, width) * 100}%`, top: `${focusedRect.y / Math.max(1, height) * 100}%`, width: `${focusedRect.width / Math.max(1, width) * 100}%`, height: `${focusedRect.height / Math.max(1, height) * 100}%` }}>
+      {maskEditable && focused && focusedRect && <div className="pointer-events-none absolute border-2 border-amber-300 bg-amber-300/10" style={{ left: `${focusedRect.x / Math.max(1, width) * 100}%`, top: `${focusedRect.y / Math.max(1, height) * 100}%`, width: `${focusedRect.width / Math.max(1, width) * 100}%`, height: `${focusedRect.height / Math.max(1, height) * 100}%` }}>
         <div
           role="button"
           tabIndex={0}

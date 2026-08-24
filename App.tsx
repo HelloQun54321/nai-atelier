@@ -556,6 +556,7 @@ const App = () => {
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
           labPageLayouts={appearancePreferences.labPageLayouts}
+          safeMode={safeMode}
         />;
       case 'library':
         return <ArtistLibrary
@@ -621,6 +622,7 @@ const App = () => {
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
           labPageLayouts={appearancePreferences.labPageLayouts}
+          safeMode={safeMode}
         />;
       default:
         return <div>Unknown View</div>;

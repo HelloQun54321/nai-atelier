@@ -60,6 +60,7 @@ interface ChainEditorProps {
     onTagAssistEnabledChange: (enabled: boolean) => void;
     generationStreamPreview: boolean;
     labPageLayouts: LabPageLayouts;
+    safeMode: boolean;
 }
 
 type PresetSource = { name: string; modified: boolean };
@@ -149,7 +150,7 @@ const PromptAgentOverlayController: React.FC<PromptAgentOverlayControllerProps> 
     );
 };
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, splitPromptFields, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, labPageLayouts }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, splitPromptFields, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, labPageLayouts, safeMode }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
     const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
@@ -2370,6 +2371,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 maskData={imageEditMaskData}
                 generationCostLabel={imageEditCostLabel}
                 isGenerating={isGenerating}
+                safeMode={safeMode}
                 apiKey={apiKey}
                 notify={notify}
                 onPromptChange={value => updateEditDraft(activeEditOperation, { prompt: value, promptSource: 'custom' })}

@@ -33,7 +33,7 @@ const params = {
   ucPreset: 4,
 };
 
-const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', manualMaskEditing = false) => {
+const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', manualMaskEditing = false, safeMode = false) => {
   const draft = createLabImageEditDraft(operation, 'blue bottle', 'low quality', params);
   const onManualMaskEditingChange = vi.fn();
   return { ...render(React.createElement(ImageEditControls, {
@@ -48,6 +48,7 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     minimumContextArea: draft.minimumContextArea,
     tool: 'brush',
     manualMaskEditing,
+    safeMode,
     expansion: draft.expansion,
     apiKey: 'test-key',
     notify: vi.fn(),
@@ -114,6 +115,19 @@ describe('ImageEditControls', () => {
 
     expect(screen.getByText('画笔')).toBeTruthy();
     expect(screen.getByTitle('撤销')).toBeTruthy();
+  });
+
+  it('安全模式开启时禁用局部重绘和扩图的全部蒙版交互', () => {
+    renderControls('inpaint', false, true);
+
+    expect(screen.getByRole('status').textContent).toContain('安全模式已开启');
+    expect((screen.getByRole('button', { name: '画笔' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'Focused Inpainting' }) as HTMLInputElement).disabled).toBe(true);
+    cleanup();
+
+    renderControls('outpaint', true, true);
+    expect((screen.getByRole('switch', { name: /手动调整蒙版/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '画笔' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

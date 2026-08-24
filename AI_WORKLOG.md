@@ -6,6 +6,8 @@
 
 ## 2026-08-25
 
+- **Codex (GPT-5)**：让安全模式同时禁用实验室蒙版工具、透明画布和 Focused 选区交互，并在关闭后无损恢复编辑（fix: block mask painting in safe mode）。
+
 - **Codex (GPT-5)**：按模式隔离图片编辑蒙版交互，禁用图生图画笔，并让扩图画笔仅在“手动调整蒙版”开启后可用（fix: isolate image edit mask tools）。
 
 - **Codex (GPT-5)**：修复全局设置实验室布局折叠块读取失效事件对象导致的白屏，清理同类状态更新隐患并补充设置页交互回归测试（fix: prevent settings event state crashes）。

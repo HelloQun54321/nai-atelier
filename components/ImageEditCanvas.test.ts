@@ -32,8 +32,8 @@ describe('ImageEditCanvas', () => {
       overlayCanvasRef: React.createRef<HTMLCanvasElement>(),
       width: 832,
       height: 1216,
-      focusedRect: null,
-      focused: false,
+      focusedRect: { x: 100, y: 100, width: 300, height: 400 },
+      focused: true,
       isLoading: false,
       maskEditable: false,
       onPointerDown: vi.fn(),
@@ -46,5 +46,6 @@ describe('ImageEditCanvas', () => {
     expect(mask?.getAttribute('aria-disabled')).toBe('true');
     expect(mask?.className).toContain('pointer-events-none');
     expect(mask?.className).toContain('cursor-default');
+    expect(container.querySelector('[aria-label="移动 Focused 选区"]')).toBeNull();
   });
 });
