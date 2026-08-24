@@ -24,4 +24,27 @@ describe('ImageEditCanvas', () => {
     expect(target?.getAttribute('data-safe-mode-work')).toBe('true');
     expect(target?.querySelector('canvas[data-safe-mode-image="true"]')).toBeTruthy();
   });
+
+  it('不可编辑蒙版时让透明画布退出焦点并停止接收指针', () => {
+    const { container } = render(React.createElement(ImageEditCanvas, {
+      imageCanvasRef: React.createRef<HTMLCanvasElement>(),
+      maskCanvasRef: React.createRef<HTMLCanvasElement>(),
+      overlayCanvasRef: React.createRef<HTMLCanvasElement>(),
+      width: 832,
+      height: 1216,
+      focusedRect: null,
+      focused: false,
+      isLoading: false,
+      maskEditable: false,
+      onPointerDown: vi.fn(),
+      onPointerMove: vi.fn(),
+      onPointerUp: vi.fn(),
+    }));
+
+    const mask = container.querySelector('canvas[aria-label="图片编辑画布"]');
+    expect(mask?.getAttribute('tabindex')).toBe('-1');
+    expect(mask?.getAttribute('aria-disabled')).toBe('true');
+    expect(mask?.className).toContain('pointer-events-none');
+    expect(mask?.className).toContain('cursor-default');
+  });
 });

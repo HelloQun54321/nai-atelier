@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createLabImageEditDraft } from '../services/labWorkspace';
 import { ImageEditControls } from './ImageEditControls';
@@ -33,9 +33,10 @@ const params = {
   ucPreset: 4,
 };
 
-const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint') => {
+const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', manualMaskEditing = false) => {
   const draft = createLabImageEditDraft(operation, 'blue bottle', 'low quality', params);
-  return render(React.createElement(ImageEditControls, {
+  const onManualMaskEditingChange = vi.fn();
+  return { ...render(React.createElement(ImageEditControls, {
     operation,
     draft,
     fileInputRef: React.createRef<HTMLInputElement>(),
@@ -46,6 +47,7 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint') =>
     focused: draft.focused,
     minimumContextArea: draft.minimumContextArea,
     tool: 'brush',
+    manualMaskEditing,
     expansion: draft.expansion,
     apiKey: 'test-key',
     notify: vi.fn(),
@@ -60,13 +62,14 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint') =>
     onFocusedChange: vi.fn(),
     onMinimumContextAreaChange: vi.fn(),
     onToolChange: vi.fn(),
+    onManualMaskEditingChange,
     onClearMask: vi.fn(),
     onInvertMask: vi.fn(),
     onUndo: vi.fn(),
     onRedo: vi.fn(),
     onExpansionChange: vi.fn(),
     onApplyOutpaint: vi.fn(),
-  }));
+  })), onManualMaskEditingChange };
 };
 
 afterEach(() => cleanup());
@@ -77,6 +80,8 @@ describe('ImageEditControls', () => {
 
     expect(screen.getByText('底图')).toBeTruthy();
     expect(screen.getByText('Strength')).toBeTruthy();
+    expect(screen.queryByText('画笔')).toBeNull();
+    expect(screen.queryByText('手动调整蒙版')).toBeNull();
     expect(screen.queryByText('Focused Inpainting')).toBeNull();
     expect(screen.queryByText('扩展画布（像素）')).toBeNull();
   });
@@ -90,15 +95,25 @@ describe('ImageEditControls', () => {
     expect(screen.queryByText('扩展画布（像素）')).toBeNull();
   });
 
-  it('扩图显示四边扩展并保留局部重绘蒙版工具', () => {
-    renderControls('outpaint');
+  it('扩图默认只显示自动边缘扩展，不直接暴露画笔工具', () => {
+    const { onManualMaskEditingChange } = renderControls('outpaint');
 
     expect(screen.getByText('扩展画布（像素）')).toBeTruthy();
     expect(screen.getByText('上')).toBeTruthy();
     expect(screen.getByText('右')).toBeTruthy();
     expect(screen.getByText('下')).toBeTruthy();
     expect(screen.getByText('左')).toBeTruthy();
+    expect(screen.getByText('手动调整蒙版')).toBeTruthy();
+    expect(screen.queryByText('画笔')).toBeNull();
+    fireEvent.click(screen.getByRole('switch', { name: /手动调整蒙版/ }));
+    expect(onManualMaskEditingChange).toHaveBeenCalledWith(true);
+  });
+
+  it('扩图开启手动调整蒙版后才显示画笔工具', () => {
+    renderControls('outpaint', true);
+
     expect(screen.getByText('画笔')).toBeTruthy();
+    expect(screen.getByTitle('撤销')).toBeTruthy();
   });
 });
 

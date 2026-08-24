@@ -10,6 +10,7 @@ export interface ImageEditCanvasProps {
   focused: boolean;
   isLoading: boolean;
   isBusy?: boolean;
+  maskEditable?: boolean;
   onPointerDown: (event: React.PointerEvent<HTMLCanvasElement>) => void;
   onPointerMove: (event: React.PointerEvent<HTMLCanvasElement>) => void;
   onPointerUp: (event: React.PointerEvent<HTMLCanvasElement>) => void;
@@ -28,6 +29,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
   focused,
   isLoading,
   isBusy = false,
+  maskEditable = true,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -42,9 +44,10 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
       <canvas ref={overlayCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full object-contain" />
       <canvas
         ref={maskCanvasRef}
-        tabIndex={0}
+        tabIndex={maskEditable ? 0 : -1}
         aria-label="图片编辑画布"
-        className={`absolute inset-0 h-full w-full cursor-crosshair opacity-0 touch-none ${isBusy ? 'pointer-events-none' : ''}`}
+        aria-disabled={!maskEditable || isBusy}
+        className={`absolute inset-0 h-full w-full opacity-0 ${maskEditable && !isBusy ? 'cursor-crosshair touch-none' : 'pointer-events-none cursor-default'}`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
