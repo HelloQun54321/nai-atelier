@@ -6,6 +6,8 @@
 
 ## 2026-08-25
 
+- **Codex (GPT-5)**：修复全局设置实验室布局折叠块读取失效事件对象导致的白屏，清理同类状态更新隐患并补充设置页交互回归测试（fix: prevent settings event state crashes）。
+
 - **Codex (GPT-5)**：为实验室 Canvas 底图接入安全模式遮挡与临时揭示，并让大图查看器豁免安全模式（fix: align laboratory safe mode behavior）。
 
 - **Codex (GPT-5)**：为文生图、图生图、局部重绘和扩图分别接入可排序、可配置默认展开状态的实验室模块布局，并兼容旧版文生图布局偏好（feat: add per-mode laboratory module layouts）。

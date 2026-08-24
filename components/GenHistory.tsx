@@ -978,8 +978,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             <MobileBottomSheet open={showDateFilter} title="筛选历史日期" onClose={() => setShowDateFilter(false)}>
                 <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
-                        <label className="text-sm font-bold dark:text-white">开始日期<input type="date" value={dateFilter.from} onChange={event => setDateFilter(previous => ({ ...previous, from: event.target.value }))} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-600 dark:bg-gray-800" /></label>
-                        <label className="text-sm font-bold dark:text-white">结束日期<input type="date" value={dateFilter.to} onChange={event => setDateFilter(previous => ({ ...previous, to: event.target.value }))} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-600 dark:bg-gray-800" /></label>
+                        <label className="text-sm font-bold dark:text-white">开始日期<input type="date" value={dateFilter.from} onChange={event => { const from = event.currentTarget.value; setDateFilter(previous => ({ ...previous, from })); }} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-600 dark:bg-gray-800" /></label>
+                        <label className="text-sm font-bold dark:text-white">结束日期<input type="date" value={dateFilter.to} onChange={event => { const to = event.currentTarget.value; setDateFilter(previous => ({ ...previous, to })); }} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-600 dark:bg-gray-800" /></label>
                     </div>
                     <div className="grid grid-cols-3 gap-2">
                         <button onClick={() => { const today = toDateInputValue(new Date()); setDateFilter({ from: today, to: today }); }} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">今天</button>
@@ -1000,8 +1000,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                     </header>
                     <div className="space-y-4 p-5">
                         <div className="grid grid-cols-2 gap-3">
-                            <label className="text-sm font-bold dark:text-white">开始日期<input type="date" value={dateFilter.from} onChange={event => setDateFilter(previous => ({ ...previous, from: event.target.value }))} className="mt-2 h-11 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-600 dark:bg-gray-800" /></label>
-                            <label className="text-sm font-bold dark:text-white">结束日期<input type="date" value={dateFilter.to} onChange={event => setDateFilter(previous => ({ ...previous, to: event.target.value }))} className="mt-2 h-11 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-600 dark:bg-gray-800" /></label>
+                            <label className="text-sm font-bold dark:text-white">开始日期<input type="date" value={dateFilter.from} onChange={event => { const from = event.currentTarget.value; setDateFilter(previous => ({ ...previous, from })); }} className="mt-2 h-11 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-600 dark:bg-gray-800" /></label>
+                            <label className="text-sm font-bold dark:text-white">结束日期<input type="date" value={dateFilter.to} onChange={event => { const to = event.currentTarget.value; setDateFilter(previous => ({ ...previous, to })); }} className="mt-2 h-11 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-600 dark:bg-gray-800" /></label>
                         </div>
                         <div className="grid grid-cols-3 gap-2">
                             <button type="button" onClick={() => { const today = toDateInputValue(new Date()); setDateFilter({ from: today, to: today }); }} className="h-10 rounded-xl bg-gray-100 text-sm font-bold hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700">今天</button>
