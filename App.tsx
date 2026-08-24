@@ -194,8 +194,8 @@ const App = () => {
   }, []);
 
   const resetSafeModeReveals = () => {
-    document.querySelectorAll<HTMLImageElement>('img[data-safe-revealed="true"]').forEach(image => {
-      delete image.dataset.safeRevealed;
+    document.querySelectorAll<HTMLElement>('[data-safe-revealed="true"]').forEach(target => {
+      delete target.dataset.safeRevealed;
     });
     document.querySelectorAll<HTMLElement>('[data-safe-title-revealed="true"]').forEach(title => {
       delete title.dataset.safeTitleRevealed;
@@ -235,13 +235,13 @@ const App = () => {
       if (pointerFrame !== null) return;
       pointerFrame = window.requestAnimationFrame(() => {
         pointerFrame = null;
-        document.querySelectorAll<HTMLImageElement>('img[data-safe-revealed="true"]').forEach(image => {
-          const rect = image.getBoundingClientRect();
+        document.querySelectorAll<HTMLElement>('[data-safe-revealed="true"]').forEach(target => {
+          const rect = target.getBoundingClientRect();
           const isInsideImage = pointerPosition.x >= rect.left && pointerPosition.x <= rect.right
             && pointerPosition.y >= rect.top && pointerPosition.y <= rect.bottom;
           if (!isInsideImage) {
-            delete image.dataset.safeRevealed;
-            const work = image.closest<HTMLElement>('[data-safe-mode-work="true"]');
+            delete target.dataset.safeRevealed;
+            const work = target.closest<HTMLElement>('[data-safe-mode-work="true"]');
             if (work) delete work.dataset.safeWorkRevealed;
           }
         });
@@ -271,8 +271,13 @@ const App = () => {
     if (safeMode) resetSafeModeReveals();
   }, [view, safeMode]);
 
-  const findImageAtPointer = (target: HTMLElement, clientX: number, clientY: number) => {
+  const findSafeModeTarget = (target: HTMLElement, clientX: number, clientY: number): HTMLElement | null => {
     if (target instanceof HTMLImageElement) return target;
+
+    const canvasTarget = target.closest<HTMLElement>('[data-safe-mode-canvas="true"]');
+    if (canvasTarget && !target.closest<HTMLElement>('button, a, input, textarea, select, [role="button"], [contenteditable="true"]')) {
+      return canvasTarget;
+    }
 
     // Interactive controls are a hard lookup boundary. Mobile floating actions
     // (for example Generate) can share a wrapper with a preview thumbnail; the
@@ -313,27 +318,27 @@ const App = () => {
       title.dataset.safeTitleRevealed = 'true';
       return;
     }
-    const image = findImageAtPointer(event.target, event.clientX, event.clientY);
-    if (!image) {
+    const target = findSafeModeTarget(event.target, event.clientX, event.clientY);
+    if (!target) {
       resetSafeModeReveals();
       return;
     }
-    if (image.dataset.safeModeIgnore === 'true' || image.dataset.safeRevealed === 'true') return;
+    if (target.dataset.safeModeIgnore === 'true' || target.dataset.safeRevealed === 'true') return;
 
     event.preventDefault();
     event.stopPropagation();
     resetSafeModeReveals();
     // SmartImage 会在同一容器内渲染主图 + 渐进升级高清叠加图，CSS 对每张 img
     // 独立判断 data-safe-revealed；只标记一张会导致叠加图残留模糊，必须整组解除。
-    const images = [image];
-    if (image.parentElement) {
-      images.push(...Array.from(image.parentElement.querySelectorAll<HTMLImageElement>('img')));
+    const targets: HTMLElement[] = [target];
+    if (target instanceof HTMLImageElement && target.parentElement) {
+      targets.push(...Array.from(target.parentElement.querySelectorAll<HTMLImageElement>('img')));
     }
-    for (const candidate of new Set(images)) {
+    for (const candidate of new Set(targets)) {
       if (candidate.dataset.safeModeIgnore === 'true') continue;
       candidate.dataset.safeRevealed = 'true';
     }
-    const work = image.closest<HTMLElement>('[data-safe-mode-work="true"]');
+    const work = target.closest<HTMLElement>('[data-safe-mode-work="true"]');
     if (work) work.dataset.safeWorkRevealed = 'true';
   };
 

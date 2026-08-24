@@ -1077,6 +1077,17 @@ html[data-motion='full'] .queue-status-spinner {
   filter: blur(24px) brightness(0.4) saturate(0.65) !important;
 }
 
+/* 实验室图片编辑使用 canvas 绘制底图，沿用同一套安全模式遮挡与临时揭示逻辑。 */
+.safe-mode [data-safe-mode-canvas="true"]:not([data-safe-revealed="true"]) canvas[data-safe-mode-image="true"] {
+  filter: blur(24px) brightness(1.08) saturate(0.45) !important;
+  cursor: pointer;
+  user-select: none;
+}
+
+.dark .safe-mode [data-safe-mode-canvas="true"]:not([data-safe-revealed="true"]) canvas[data-safe-mode-image="true"] {
+  filter: blur(24px) brightness(0.4) saturate(0.65) !important;
+}
+
 /* 作品名称默认遮挡；可单独点击名称，或随所属作品图片一起临时显示。 */
 .safe-mode.safe-mode-hide-titles [data-safe-mode-title="true"]:not(input) {
   color: transparent !important;

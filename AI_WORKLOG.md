@@ -6,6 +6,8 @@
 
 ## 2026-08-25
 
+- **Codex (GPT-5)**：为实验室 Canvas 底图接入安全模式遮挡与临时揭示，并让大图查看器豁免安全模式（fix: align laboratory safe mode behavior）。
+
 - **Codex (GPT-5)**：为文生图、图生图、局部重绘和扩图分别接入可排序、可配置默认展开状态的实验室模块布局，并兼容旧版文生图布局偏好（feat: add per-mode laboratory module layouts）。
 
 - **Codex (GPT-5)**：按当前模型与编辑模式隐藏不支持的 Vibe／角色参考，统一角色提示词 6／32 上限、Vibe 16 张限制、额外费用和网关校验，并补充实验室能力回归测试（feat: align laboratory controls with official capabilities）。
