@@ -1489,8 +1489,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         return handleGenerateDraft();
     };
 
-    const imageEditCostLabel = (operation: ImageEditOperation, focused: boolean) => {
-        const cost = estimateImageEditCost(activeEditDraft?.params || params, operation, activeEditDraft?.strength || (operation === 'image-to-image' ? 0.7 : 1), focused, novelaiSubscription?.tier, opusUsageExhausted);
+    const imageEditCostLabel = (operation: ImageEditOperation, focused: boolean, context?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number }) => {
+        const cost = estimateImageEditCost(activeEditDraft?.params || params, operation, activeEditDraft?.strength || (operation === 'image-to-image' ? 0.7 : 1), focused, novelaiSubscription?.tier, opusUsageExhausted, context);
         return formatImageEditCostLabel(cost, operation, focused, novelaiSubscription?.tier);
     };
 
@@ -2267,6 +2267,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 draft={activeEditDraft}
                 maskData={imageEditMaskData}
                 generationCostLabel={imageEditCostLabel}
+                isGenerating={isGenerating}
                 apiKey={apiKey}
                 notify={notify}
                 onPromptChange={value => updateEditDraft(activeEditOperation, { prompt: value, promptSource: 'custom' })}
@@ -2305,7 +2306,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onGenerate={handleImageEditGenerate}
             /> : null}
 
-            {!lightboxImg && !showImportPreset && !importCandidate && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
+            {!activeEditOperation && !lightboxImg && !showImportPreset && !importCandidate && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
                 {(displayedPreviewImage || chain.previewImage) && <button type="button" onClick={() => setLightboxImg(displayedPreviewImage || chain.previewImage || null)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-700" aria-label="查看最近生成结果"><SmartImage src={displayedPreviewImage || chain.previewImage || ''} alt="最近生成结果" /></button>}
                 {queueStatus
                     ? <InlineCloudQueueStatus compact className="min-w-64 max-w-[calc(100vw-5rem)]" />

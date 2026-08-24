@@ -5,6 +5,20 @@ export const IMAGE_EDIT_MIN_DIMENSION = 64;
 export const IMAGE_EDIT_MAX_DIMENSION = 4096;
 export const IMAGE_EDIT_MAX_AREA = 4_194_304;
 export const IMAGE_EDIT_SUPPORTED_SAMPLERS = new Set(['k_euler_ancestral', 'k_euler']);
+export const IMAGE_EDIT_FOCUSED_MIN_CONTEXT = 32;
+export const IMAGE_EDIT_FOCUSED_MAX_CONTEXT = 96;
+export const IMAGE_EDIT_FOCUSED_CONTEXT_STEP = 8;
+
+/** 兼容旧版 0–1 百分比设置，并统一到官方 32–96 像素步进。 */
+export const normalizeMinimumContextArea = (value: number | undefined) => {
+  const numeric = Number(value);
+  const pixels = Number.isFinite(numeric) && numeric >= 0 && numeric <= 1
+    ? IMAGE_EDIT_FOCUSED_MIN_CONTEXT + numeric * (IMAGE_EDIT_FOCUSED_MAX_CONTEXT - IMAGE_EDIT_FOCUSED_MIN_CONTEXT)
+    : numeric;
+  if (!Number.isFinite(pixels)) return 64;
+  const stepped = Math.round((pixels - IMAGE_EDIT_FOCUSED_MIN_CONTEXT) / IMAGE_EDIT_FOCUSED_CONTEXT_STEP) * IMAGE_EDIT_FOCUSED_CONTEXT_STEP + IMAGE_EDIT_FOCUSED_MIN_CONTEXT;
+  return Math.max(IMAGE_EDIT_FOCUSED_MIN_CONTEXT, Math.min(IMAGE_EDIT_FOCUSED_MAX_CONTEXT, stepped));
+};
 
 export interface ImageEditCanvasResult {
   image: HTMLCanvasElement;

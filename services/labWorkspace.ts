@@ -1,9 +1,10 @@
 import { GenerationMode, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LabWorkspaceSession, NAIParams } from '../types';
+import { normalizeMinimumContextArea } from './imageEdit';
 
 const SESSION_PREFIX = 'nai-lab-workspace-v1:';
 const ASSET_DB_NAME = 'NAI_Lab_Workspace_DB';
 const ASSET_STORE_NAME = 'assets';
-const ASSET_DB_VERSION = 1;
+const ASSET_DB_VERSION = 2;
 
 const emptyExpansion: ImageEditCanvasExpansion = { top: 0, right: 0, bottom: 0, left: 0 };
 
@@ -28,7 +29,7 @@ export const createLabImageEditDraft = (
   noise: 0,
   brushSize: 64,
   focused: false,
-  minimumContextArea: 0.5,
+  minimumContextArea: 64,
   expansion: { ...emptyExpansion },
   promptSource: 'current',
   ...patch,
@@ -76,7 +77,7 @@ const normalizeSession = (value: unknown, fallback: LabWorkspaceSession): LabWor
       ...Object.fromEntries((Object.keys(fallback.edits) as ImageEditOperation[]).map(operation => [
         operation,
         isEditDraft(source.edits?.[operation])
-          ? { ...fallback.edits[operation], ...source.edits[operation], params: cloneParams(source.edits[operation]!.params), expansion: { ...emptyExpansion, ...(source.edits[operation]!.expansion || {}) } }
+        ? { ...fallback.edits[operation], ...source.edits[operation], minimumContextArea: normalizeMinimumContextArea(source.edits[operation]!.minimumContextArea), params: cloneParams(source.edits[operation]!.params), expansion: { ...emptyExpansion, ...(source.edits[operation]!.expansion || {}) } }
           : fallback.edits[operation],
       ])),
     },

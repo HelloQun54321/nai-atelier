@@ -78,9 +78,10 @@ export const estimateImageEditCost = (
   focused: boolean,
   opusTier?: number,
   opusUsageExhausted = false,
+  dimensions?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number },
 ) => {
-  const width = Math.max(1, Number(params.width) || 1);
-  const height = Math.max(1, Number(params.height) || 1);
+  const width = Math.max(1, Number(dimensions?.width ?? params.width) || 1);
+  const height = Math.max(1, Number(dimensions?.height ?? params.height) || 1);
   const area = Math.max(65_536, width * height);
   const steps = Math.max(1, Number(params.steps) || 1);
   const raw = Math.ceil(estimatorRuntime.costCoefficientArea * area + estimatorRuntime.costCoefficientSteps * area * steps);

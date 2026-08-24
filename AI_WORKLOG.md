@@ -4,6 +4,10 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-08-24
+
+- **Codex (GPT-5)**：修复图片编辑器底图重载、撤销快捷键、笔刷断点、Focused 模式范围、编辑期间重复提交和移动端错误生成入口（fix: stabilize image edit interactions）。
+
 ## 2026-08-23
 
 - **Codex (GPT-5)**：让图生图、局部重绘和扩图复用文生图的左右布局外壳，补齐调用接口、模式控件与预览按钮布局测试（fix: unify image edit workspace shell）。

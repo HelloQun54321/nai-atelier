@@ -169,6 +169,7 @@ export interface LabImageEditDraft {
   noise: number;
   brushSize: number;
   focused: boolean;
+  /** Focused Inpainting 的官方上下文像素值（32–96，旧版 0–1 值会在读取时转换）。 */
   minimumContextArea: number;
   expansion: ImageEditCanvasExpansion;
   focusedRect?: { x: number; y: number; width: number; height: number };

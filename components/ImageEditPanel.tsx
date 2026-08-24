@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft } from '../types';
-import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, validateImageEditDimensions } from '../services/imageEdit';
+import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, normalizeMinimumContextArea, validateImageEditDimensions } from '../services/imageEdit';
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPreview } from './ImageEditPreview';
 
@@ -26,7 +26,8 @@ interface ImageEditPanelProps {
   operation: ImageEditOperation;
   draft: LabImageEditDraft;
   maskData?: string;
-  generationCostLabel: (operation: ImageEditOperation, focused: boolean) => string;
+  generationCostLabel: (operation: ImageEditOperation, focused: boolean, context?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number }) => string;
+  isGenerating?: boolean;
   apiKey: string;
   notify: (message: string, type?: 'success' | 'error') => void;
   onPromptChange: (value: string) => void;
@@ -62,6 +63,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   onBaseImageChange,
   onCanvasChange,
   onGenerate,
+  isGenerating = false,
 }) => {
   const imageCanvasRef = useRef<HTMLCanvasElement>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -69,6 +71,10 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const drawingRef = useRef(false);
   const selectingRef = useRef(false);
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const lastAppliedMaskRef = useRef<string | undefined>(undefined);
+  const focusedSelectionArmedRef = useRef(!draft.focusedRect);
+  const inFlightRef = useRef(false);
   const startPointRef = useRef({ x: 0, y: 0 });
   const focusedRectRef = useRef<ImageEditPanelState['focusedRect']>(draft.focusedRect || null);
   const undoRef = useRef<MaskSnapshot[]>([]);
@@ -77,7 +83,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [noise, setNoise] = useState(draft.noise);
   const [brushSize, setBrushSize] = useState(draft.brushSize);
   const [focused, setFocused] = useState(draft.focused);
-  const [minimumContextArea, setMinimumContextArea] = useState(draft.minimumContextArea);
+  const [minimumContextArea, setMinimumContextArea] = useState(normalizeMinimumContextArea(draft.minimumContextArea));
   const [tool, setTool] = useState<'brush' | 'eraser'>('brush');
   const [expansion, setExpansion] = useState<ImageEditCanvasExpansion>(draft.expansion || emptyExpansion);
   const [state, setState] = useState<ImageEditPanelState>({ width: 0, height: 0, focusedRect: draft.focusedRect || null });
@@ -124,18 +130,21 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     image.src = item.data;
   };
 
-  const resetMask = (width: number, height: number) => {
+  const resetMask = (width: number, height: number, clearHistory = true) => {
     const canvas = maskCanvasRef.current;
     if (!canvas) return;
     canvas.width = width;
     canvas.height = height;
     canvas.getContext('2d')?.clearRect(0, 0, width, height);
-    undoRef.current = [];
-    redoRef.current = [];
+    if (clearHistory) {
+      undoRef.current = [];
+      redoRef.current = [];
+    }
     renderOverlay();
   };
 
   const restoreMask = (data: string | undefined) => {
+    lastAppliedMaskRef.current = data;
     if (!data || !maskCanvasRef.current) return;
     const image = new Image();
     image.onload = () => {
@@ -178,16 +187,25 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     setNoise(draft.noise);
     setBrushSize(draft.brushSize);
     setFocused(draft.focused);
-    setMinimumContextArea(draft.minimumContextArea);
+    setMinimumContextArea(normalizeMinimumContextArea(draft.minimumContextArea));
+    focusedSelectionArmedRef.current = !draft.focusedRect;
     setExpansion(draft.expansion || emptyExpansion);
   }, [operation, draft.baseImageRef]);
 
   useEffect(() => {
     if (baseImage) void loadBaseImage(baseImage);
-  }, [baseImage, operation, draft.baseImageRef, maskData]);
+  }, [baseImage, operation, draft.baseImageRef]);
+
+  useEffect(() => {
+    if (!maskData || maskData === lastAppliedMaskRef.current || drawingRef.current || selectingRef.current) return;
+    restoreMask(maskData);
+  }, [maskData]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLElement && target.isContentEditable) return;
+      if (document.activeElement !== maskCanvasRef.current) return;
       if (!(event.ctrlKey || event.metaKey)) return;
       if (event.key.toLowerCase() === 'z') {
         event.preventDefault();
@@ -200,7 +218,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  });
+  }, []);
 
   const getCanvasPoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = maskCanvasRef.current;
@@ -220,29 +238,46 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
 
   const persistMask = () => {
     const canvas = maskCanvasRef.current;
-    if (canvas) onDraftChange({ maskData: canvasToDataUrl(canvas), focusedRect: focusedRectRef.current || undefined });
+    if (canvas) {
+      const data = canvasToDataUrl(canvas);
+      lastAppliedMaskRef.current = data;
+      onDraftChange({ maskData: data, focusedRect: focusedRectRef.current || undefined });
+    }
   };
 
   const drawMask = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = maskCanvasRef.current;
-    if (!canvas || focused) return;
+    if (!canvas || (focused && !focusedRectRef.current)) return;
     const point = getCanvasPoint(event);
+    const focusedRect = focusedRectRef.current;
+    if (focused && focusedRect) {
+      point.x = Math.max(focusedRect.x, Math.min(focusedRect.x + focusedRect.width, point.x));
+      point.y = Math.max(focusedRect.y, Math.min(focusedRect.y + focusedRect.height, point.y));
+    }
     const context = canvas.getContext('2d');
     if (!context) return;
+    const previous = lastPointRef.current || point;
+    const distance = Math.max(1, Math.ceil(Math.hypot(point.x - previous.x, point.y - previous.y) / Math.max(1, brushSize / 2)));
     context.save();
     context.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
     context.fillStyle = '#ffffff';
-    context.beginPath();
-    context.arc(point.x, point.y, brushSize / 2, 0, Math.PI * 2);
-    context.fill();
+    for (let step = 0; step <= distance; step += 1) {
+      const ratio = step / distance;
+      const x = previous.x + (point.x - previous.x) * ratio;
+      const y = previous.y + (point.y - previous.y) * ratio;
+      context.beginPath();
+      context.arc(x, y, brushSize / 2, 0, Math.PI * 2);
+      context.fill();
+    }
     context.restore();
+    lastPointRef.current = point;
     renderOverlay();
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = getCanvasPoint(event);
-    if (focused) {
+    if (focused && (focusedSelectionArmedRef.current || !focusedRectRef.current || event.shiftKey)) {
       selectingRef.current = true;
       startPointRef.current = point;
       focusedRectRef.current = { x: point.x, y: point.y, width: 1, height: 1 };
@@ -251,6 +286,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       return;
     }
     drawingRef.current = true;
+    lastPointRef.current = null;
     commitSnapshot();
     drawMask(event);
   };
@@ -266,26 +302,18 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     if (drawingRef.current) drawMask(event);
   };
 
-  const handlePointerUp = () => {
-    if (selectingRef.current && focused) {
-      const canvas = maskCanvasRef.current;
-      const rect = focusedRectRef.current;
-      const context = canvas?.getContext('2d');
-      if (canvas && context && rect && rect.width >= 2 && rect.height >= 2) {
-        context.clearRect(0, 0, canvas.width, canvas.height);
-        context.fillStyle = '#ffffff';
-        context.fillRect(rect.x, rect.y, rect.width, rect.height);
-        renderOverlay();
-      }
-    }
+  const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (drawingRef.current || selectingRef.current) persistMask();
     drawingRef.current = false;
     selectingRef.current = false;
+    lastPointRef.current = null;
+    focusedSelectionArmedRef.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
   const clearMask = () => {
     commitSnapshot();
-    resetMask(state.width, state.height);
+    resetMask(state.width, state.height, false);
     focusedRectRef.current = null;
     setState(previous => ({ ...previous, focusedRect: null }));
     onDraftChange({ maskData: undefined, maskRef: undefined, focusedRect: undefined });
@@ -309,6 +337,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     if (!current || !previous) return;
     redoRef.current.push(current);
     restoreSnapshot(previous);
+    lastAppliedMaskRef.current = previous.data;
     onDraftChange({ maskData: previous.data, focusedRect: previous.rect || undefined });
   };
 
@@ -318,7 +347,18 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     if (!current || !next) return;
     undoRef.current.push(current);
     restoreSnapshot(next);
+    lastAppliedMaskRef.current = next.data;
     onDraftChange({ maskData: next.data, focusedRect: next.rect || undefined });
+  };
+
+  const resetFocusedRect = () => {
+    focusedSelectionArmedRef.current = true;
+    focusedRectRef.current = null;
+    setState(previous => ({ ...previous, focusedRect: null }));
+    const canvas = maskCanvasRef.current;
+    canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+    renderOverlay();
+    persistMask();
   };
 
   const handleUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -360,6 +400,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   };
 
   const submit = async () => {
+    if (inFlightRef.current || isGenerating) return;
     const imageCanvas = imageCanvasRef.current;
     const maskCanvas = maskCanvasRef.current;
     if (!imageCanvas || !maskCanvas) return;
@@ -368,12 +409,14 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       setError(dimensionError);
       return;
     }
-    if ((operation === 'inpaint' || operation === 'outpaint') && focused && (!state.focusedRect || state.focusedRect.width < 2 || state.focusedRect.height < 2)) {
+    if (operation === 'inpaint' && focused && (!state.focusedRect || state.focusedRect.width < 2 || state.focusedRect.height < 2)) {
       setError('请先在画布上框选 Focused Inpainting 区域');
       return;
     }
     setError(null);
-    await onGenerate({
+    inFlightRef.current = true;
+    try {
+      await onGenerate({
       operation,
       image: canvasToDataUrl(imageCanvas),
       parentHistoryId: draft.baseImageSource === 'upload' ? undefined : draft.parentHistoryId,
@@ -381,14 +424,17 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       mask: operation === 'image-to-image' ? undefined : canvasToDataUrl(maskCanvas),
       strength,
       noise,
-      focused: focused && operation !== 'image-to-image',
-      minimumContextArea: focused && operation !== 'image-to-image' ? minimumContextArea : undefined,
+      focused: focused && operation === 'inpaint',
+      minimumContextArea: focused && operation === 'inpaint' ? minimumContextArea : undefined,
       expansion: operation === 'outpaint' ? expansion : undefined,
-      focusedRect: state.focusedRect || undefined,
+      focusedRect: focused && operation === 'inpaint' ? state.focusedRect || undefined : undefined,
       prompt: draft.prompt,
       negativePrompt: draft.negativePrompt,
       promptSource: draft.promptSource,
-    });
+      });
+    } finally {
+      inFlightRef.current = false;
+    }
   };
 
   return (
@@ -405,6 +451,8 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         minimumContextArea={minimumContextArea}
         tool={tool}
         expansion={expansion}
+        canvasSize={{ width: state.width, height: state.height }}
+        isBusy={isLoading || isGenerating}
         apiKey={apiKey}
         notify={notify}
         onPromptChange={onPromptChange}
@@ -415,7 +463,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         onStrengthChange={value => { setStrength(value); onDraftChange({ strength: value }); }}
         onNoiseChange={value => { setNoise(value); onDraftChange({ noise: value }); }}
         onBrushSizeChange={value => { setBrushSize(value); onDraftChange({ brushSize: value }); }}
-        onFocusedChange={value => { setFocused(value); onDraftChange({ focused: value }); }}
+        onFocusedChange={value => { setFocused(value); focusedSelectionArmedRef.current = value; if (!value) { focusedRectRef.current = null; setState(previous => ({ ...previous, focusedRect: null })); } onDraftChange({ focused: value, ...(value ? {} : { focusedRect: undefined }) }); }}
         onMinimumContextAreaChange={value => { setMinimumContextArea(value); onDraftChange({ minimumContextArea: value }); }}
         onToolChange={setTool}
         onClearMask={clearMask}
@@ -424,12 +472,13 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         onRedo={redo}
         onExpansionChange={value => { setExpansion(value); onDraftChange({ expansion: value }); }}
         onApplyOutpaint={() => { void applyOutpaint(); }}
+        onResetFocusedRect={resetFocusedRect}
       />
       <ImageEditPreview
         operation={operation}
         baseImage={baseImage}
         error={error}
-        generationCostLabel={generationCostLabel(operation, focused)}
+        generationCostLabel={generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea })}
         onGenerate={() => { void submit(); }}
         imageCanvasRef={imageCanvasRef}
         maskCanvasRef={maskCanvasRef}
@@ -439,6 +488,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         focusedRect={state.focusedRect}
         focused={focused}
         isLoading={isLoading}
+        isBusy={isLoading || isGenerating}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
