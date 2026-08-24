@@ -7,6 +7,8 @@ import { ImageEditPreview } from './ImageEditPreview';
 export interface ImageEditRequest {
   operation: ImageEditOperation;
   image: string;
+  canvasWidth: number;
+  canvasHeight: number;
   parentHistoryId?: string;
   baseImageSource?: 'generated' | 'history' | 'upload';
   mask?: string;
@@ -492,6 +494,8 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       await onGenerate({
       operation,
       image: canvasToDataUrl(imageCanvas),
+      canvasWidth: imageCanvas.width,
+      canvasHeight: imageCanvas.height,
       parentHistoryId: draft.baseImageSource === 'upload' ? undefined : draft.parentHistoryId,
       baseImageSource: draft.baseImageSource,
       mask: operation === 'image-to-image' ? undefined : canvasToDataUrl(maskCanvas),

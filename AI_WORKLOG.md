@@ -6,6 +6,8 @@
 
 ## 2026-08-24
 
+- **Codex (GPT-5)**：让图片编辑费用确认与最终请求共用底图真实尺寸，并将提示改为本地结算估算语义（fix: align image edit settlement and request dimensions）。
+
 - **Codex (GPT-5)**：重建图片编辑的官方请求链，补齐 1/8 蒙版、Focused 局部裁切回贴、Seed/采样器/估算费用一致性与任意尺寸底图规范化（feat: implement official image edit pipeline）。
 
 - **Codex (GPT-5)**：修复图片编辑器底图重载、撤销快捷键、笔刷断点、Focused 模式范围、编辑期间重复提交和移动端错误生成入口（fix: stabilize image edit interactions）。

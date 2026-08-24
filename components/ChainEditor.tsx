@@ -1502,23 +1502,33 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             return;
         }
         const editParamsSource = activeEditDraft?.params || params;
+        let sourceWidth = request.canvasWidth;
+        let sourceHeight = request.canvasHeight;
+        try {
+            const bitmap = await createImageBitmap(await dataUrlToBlob(request.image));
+            sourceWidth = bitmap.width;
+            sourceHeight = bitmap.height;
+            bitmap.close();
+        } catch {
+            const message = '无法读取图片编辑底图尺寸';
+            setErrorMsg(message);
+            notify(message, 'error');
+            return;
+        }
         const editCost = estimateImageEditCost(editParamsSource, request.operation, request.strength, Boolean(request.focused), novelaiSubscription?.tier, opusUsageExhausted, {
-            width: editParamsSource.width,
-            height: editParamsSource.height,
+            width: sourceWidth,
+            height: sourceHeight,
             focusedRect: request.focusedRect,
             minimumContextArea: request.minimumContextArea,
         });
         if (editCost > 0 && anlasBudget.remaining <= 0) {
             if (!await confirmAction({ title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return;
-        } else if (editCost > 0 && !await confirmAction({ title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}预计消耗 ${editCost} Anlas，最终以 NovelAI 实际返回为准。`, confirmLabel: `消耗 ${editCost} 点并生成` })) return;
+        } else if (editCost > 0 && !await confirmAction({ title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。`, confirmLabel: `消耗 ${editCost} 点并生成` })) return;
 
         setIsGenerating(true);
         setErrorMsg(null);
         try {
-            const imageBlob = await dataUrlToBlob(request.image);
-            const bitmap = await createImageBitmap(imageBlob);
-            const editParams: NAIParams = { ...editParamsSource, width: bitmap.width, height: bitmap.height, seed: editParamsSource.seed };
-            bitmap.close();
+            const editParams: NAIParams = { ...editParamsSource, width: sourceWidth, height: sourceHeight, seed: editParamsSource.seed };
             const result = await generateImageEdit(apiKey, request.prompt, request.negativePrompt, editParams, request);
             setGeneratedImage(result.image);
             setPreviewMode('result');
