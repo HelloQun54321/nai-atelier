@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Clock3, Contrast, Eraser, ImagePlus, Images, RotateCcw, RotateCw, Trash2, X } from 'lucide-react';
+import { Clock3, Contrast, Eraser, ImagePlus, Images, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem, NAIParams } from '../types';
 import { DEFAULT_LAB_PAGE_LAYOUTS, LabPageLayout } from '../services/appearancePreferences';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
@@ -7,9 +7,9 @@ import { useNaiRuntime } from '../services/naiRuntime';
 import { ImageEditNormalizationMode } from '../services/imageEdit';
 import { ChainEditorParams } from './ChainEditorParams';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
+import { HistoryImagePicker } from './HistoryImagePicker';
 import { ImageEditCanvas, ImageEditCanvasProps } from './ImageEditCanvas';
 import { LabModuleSection } from './LabModuleSection';
-import { SmartImage } from './SmartImage';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { VibeManager } from './VibeManager';
 
@@ -20,7 +20,6 @@ interface ImageEditControlsProps {
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   canvasProps: ImageEditCanvasProps;
   latestTextToImageItem?: LocalGenItem;
-  historyItems: LocalGenItem[];
   selectableParams: NAIParams;
   strength: number;
   noise: number;
@@ -65,7 +64,7 @@ const getModuleOrder = (layout: LabPageLayout, moduleId: keyof LabPageLayout['co
 const isModuleCollapsed = (layout: LabPageLayout, moduleId: keyof LabPageLayout['collapsed']) => Boolean(layout.collapsed[moduleId]);
 
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
-  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, historyItems, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, isBusy = false, safeMode = false, tagAssistEnabled, apiKey, notify,
+  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, isBusy = false, safeMode = false, tagAssistEnabled, apiKey, notify,
   onPromptChange, onNegativePromptChange, onPromptSource, onDraftChange, onFileChange, onSelectImageSource, onStrengthChange, onNoiseChange, onBrushSizeChange, onFocusedChange,
   onMinimumContextAreaChange, onToolChange, manualMaskEditing = false, onManualMaskEditingChange = () => undefined, onClearMask, onInvertMask, onUndo, onRedo, onExpansionChange, onApplyOutpaint, onResetFocusedRect = () => undefined, normalization = null, onNormalize = () => undefined,
 }) => {
@@ -97,7 +96,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
             <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onFileChange} />
             <button disabled={isBusy} type="button" onClick={() => fileInputRef.current?.click()} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><ImagePlus className="h-4 w-4" />上传图片</button>
             <button disabled={isBusy || !latestTextToImageItem} type="button" onClick={() => latestTextToImageItem && onSelectImageSource(latestTextToImageItem, 'generated')} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" title={latestTextToImageItem ? '使用文生图最近一次生成结果' : '当前没有可用的文生图结果'}><Images className="h-4 w-4" />文生图最新</button>
-            <button disabled={isBusy || historyItems.length === 0} type="button" onClick={() => setHistoryPickerOpen(true)} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><Clock3 className="h-4 w-4" />选择历史图片</button>
+            <button disabled={isBusy} type="button" onClick={() => setHistoryPickerOpen(true)} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><Clock3 className="h-4 w-4" />选择历史图片</button>
           </div>
           <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">切换底图不会覆盖当前提示词和编辑参数，也不会自动新增历史记录。</div>
           {operation === 'image-to-image' ? <>
@@ -144,11 +143,13 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
       </LabModuleSection>}
     </div>
   </div>
-  {historyPickerOpen && <div className="fixed inset-0 z-[1200] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-label="选择历史图片" onMouseDown={event => { if (event.target === event.currentTarget) setHistoryPickerOpen(false); }}>
-    <div className="flex max-h-[88vh] w-full max-w-5xl flex-col rounded-t-2xl bg-white shadow-2xl dark:bg-gray-900 sm:rounded-2xl">
-      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800"><div><h3 className="font-bold text-gray-900 dark:text-white">选择历史图片</h3><p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">选择后只替换当前底图，提示词与参数保持不变。</p></div><button type="button" onClick={() => setHistoryPickerOpen(false)} className="mobile-touch flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="关闭历史图片选择"><X className="h-5 w-5" /></button></div>
-      <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto p-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">{historyItems.map(item => <button key={item.id} type="button" onClick={() => { onSelectImageSource(item, 'history'); setHistoryPickerOpen(false); }} className="group overflow-hidden rounded-xl border border-gray-200 bg-gray-50 text-left transition hover:border-indigo-400 hover:ring-2 hover:ring-indigo-200 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-indigo-600 dark:hover:ring-indigo-900/50"><div className="aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-950"><SmartImage src={item.imageUrl} alt="历史生成图片" className="h-full w-full object-cover transition-transform group-hover:scale-[1.03]" /></div><div className="truncate px-2 py-2 text-[11px] text-gray-600 dark:text-gray-300">{item.edit ? (item.edit.operation === 'image-to-image' ? '图生图' : item.edit.operation === 'inpaint' ? '局部重绘' : '扩图') : '文生图'} · {new Date(item.createdAt).toLocaleString('zh-CN')}</div></button>)}</div>
-    </div>
-  </div>}
+  <HistoryImagePicker
+    open={historyPickerOpen}
+    onClose={() => setHistoryPickerOpen(false)}
+    onSelect={item => {
+      onSelectImageSource(item, 'history');
+      setHistoryPickerOpen(false);
+    }}
+  />
   </>;
 };

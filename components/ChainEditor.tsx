@@ -358,6 +358,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const selectedPreviewItem = previewMode === 'history' ? previewHistory[previewIndex] || null : null;
     const displayedPreviewImage = selectedPreviewItem?.imageUrl || generatedImage;
     const imageEditPreviewHistoryIndex = imageEditPreviewImage ? previewHistory.findIndex(item => item.imageUrl === imageEditPreviewImage) : -1;
+    const imageEditPreviewItem = imageEditPreviewHistoryIndex >= 0 ? previewHistory[imageEditPreviewHistoryIndex] : null;
     const imageEditPreviewHistoryLabel = imageEditPreviewHistoryIndex >= 0 ? `${imageEditPreviewHistoryIndex + 1} / ${previewHistory.length}` : undefined;
     const currentPreviewCover = decideCurrentPreviewCover(displayedPreviewImage, chain.previewImage);
     const hasPendingPreviewCover = chain.type === 'style' && currentPreviewCover.needsUpload;
@@ -402,13 +403,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const showPreviousHistory = () => showHistoryAt(previewIndex - 1);
     const showNextHistory = () => showHistoryAt(previewIndex + 1);
 
-    const handleRemoveCurrentHistory = async () => {
-        if (!selectedPreviewItem) return;
+    const handleRemoveCurrentHistory = async (targetItem = selectedPreviewItem) => {
+        if (!targetItem) return;
 
         try {
-            await localHistory.unlinkFromSourceChain(selectedPreviewItem.id);
+            await localHistory.unlinkFromSourceChain(targetItem.id);
 
-            const nextHistory = previewHistory.filter(item => item.id !== selectedPreviewItem.id);
+            const removedIndex = previewHistory.findIndex(item => item.id === targetItem.id);
+            const nextHistory = previewHistory.filter(item => item.id !== targetItem.id);
             setPreviewHistory(nextHistory);
 
             if (nextHistory.length === 0) {
@@ -418,7 +420,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 if (activeEditOperation) setImageEditPreviewImage(imageEditBaseImage);
                 if (lightboxImg) setLightboxImg(null);
             } else {
-                const nextIndex = Math.min(previewIndex, nextHistory.length - 1);
+                const nextIndex = Math.min(Math.max(0, removedIndex), nextHistory.length - 1);
                 const nextImage = nextHistory[nextIndex].imageUrl;
                 setPreviewIndex(nextIndex);
                 setPreviewMode('history');
@@ -2428,7 +2430,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 safeMode={safeMode}
                 tagAssistEnabled={tagAssistEnabled}
                 latestTextToImageItem={latestTextToImageItem}
-                historyItems={previewHistory}
                 onOpenLightbox={image => {
                     const historyIndex = image ? previewHistory.findIndex(item => item.imageUrl === image) : -1;
                     if (historyIndex >= 0) {
@@ -2442,8 +2443,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 historyLabel={imageEditPreviewHistoryLabel}
                 onPreviousHistory={() => showHistoryAt((imageEditPreviewHistoryIndex >= 0 ? imageEditPreviewHistoryIndex : previewIndex) - 1)}
                 onNextHistory={() => showHistoryAt((imageEditPreviewHistoryIndex >= 0 ? imageEditPreviewHistoryIndex : previewIndex) + 1)}
-                canManageHistoryGroup={Boolean(selectedPreviewItem && selectedPreviewItem.imageUrl === imageEditPreviewImage)}
-                onRemoveCurrentHistory={handleRemoveCurrentHistory}
+                canManageHistoryGroup={Boolean(imageEditPreviewItem)}
+                onRemoveCurrentHistory={() => { void handleRemoveCurrentHistory(imageEditPreviewItem); }}
                 onClearHistoryGroup={handleClearHistoryGroup}
                 apiKey={apiKey}
                 notify={notify}

@@ -29,7 +29,17 @@ vi.mock('./CloudQueueStatus', () => ({
 
 vi.mock('./SmartImage', () => ({
   OriginalImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => React.createElement('img', props),
-  SmartImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => React.createElement('img', props),
+  SmartImage: ({ thumbnailVariant: _thumbnailVariant, ...props }: React.ImgHTMLAttributes<HTMLImageElement> & { thumbnailVariant?: string }) => React.createElement('img', props),
+}));
+
+vi.mock('../services/localHistory', () => ({
+  localHistory: {
+    getPage: vi.fn(async (page: number) => ({
+      items: [{ id: page === 0 ? 'history-1' : 'history-21', imageUrl: `data:image/png;base64,fixture-${page}`, prompt: 'history prompt', negativePrompt: '', params: { width: 832, height: 1216 }, createdAt: page + 1 }],
+      count: 21,
+    })),
+    subscribe: vi.fn(() => () => undefined),
+  },
 }));
 
 const params = {
@@ -67,7 +77,6 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
       onPointerUp: vi.fn(),
     },
     latestTextToImageItem: historyItem,
-    historyItems: [historyItem],
     selectableParams: draft.params,
     strength: draft.strength,
     noise: draft.noise,
@@ -137,7 +146,7 @@ describe('ImageEditControls', () => {
     expect(screen.queryByText('扩展画布（像素）')).toBeNull();
   });
 
-  it('底图区域可选择文生图最新结果或历史图片', () => {
+  it('底图区域可选择文生图最新结果或历史页图片', async () => {
     const { onSelectImageSource } = renderControls('image-to-image');
 
     fireEvent.click(screen.getByRole('button', { name: /文生图最新/ }));
@@ -145,8 +154,22 @@ describe('ImageEditControls', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /选择历史图片/ }));
     expect(screen.getByRole('dialog', { name: '选择历史图片' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /历史生成图片/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /选择历史生成图片/ }));
     expect(onSelectImageSource).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'history-1' }), 'history');
+  });
+
+  it('历史选择器读取全局分页数据并完整显示缩略图', async () => {
+    const { onSelectImageSource } = renderControls('inpaint');
+
+    fireEvent.click(screen.getByRole('button', { name: /选择历史图片/ }));
+    expect(await screen.findByText('全部 21 张')).toBeTruthy();
+    expect(screen.getByText('第 1 / 2 页 · 每页 20 张')).toBeTruthy();
+    expect(screen.getByRole('img', { name: '历史生成图片' }).className).toContain('object-contain');
+
+    fireEvent.click(screen.getByRole('button', { name: '下一页历史图片' }));
+    expect(await screen.findByText('第 2 / 2 页 · 每页 20 张')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /选择历史生成图片/ }));
+    expect(onSelectImageSource).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'history-21' }), 'history');
   });
 
   it('扩图默认只显示自动边缘扩展，不直接暴露画笔工具', () => {
@@ -203,5 +226,34 @@ describe('ImageEditPreview', () => {
     expect(screen.queryByLabelText('图片编辑画布')).toBeNull();
     expect(screen.getByRole('button', { name: '下载' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /生成局部重绘结果/ })).toBeTruthy();
+  });
+
+  it('与文生图一致显示历史管理按钮、切换按钮和计数', () => {
+    const onRemoveCurrentHistory = vi.fn();
+    const onClearHistoryGroup = vi.fn();
+    render(React.createElement(ImageEditPreview, {
+      operation: 'image-to-image',
+      image: 'data:image/png;base64,fixture',
+      error: null,
+      generationCostLabel: '免费',
+      onGenerate: vi.fn(),
+      onOpenLightbox: vi.fn(),
+      getDownloadFilename: () => 'fixture.png',
+      canNavigateHistory: true,
+      historyLabel: '2 / 21',
+      canManageHistoryGroup: true,
+      onPreviousHistory: vi.fn(),
+      onNextHistory: vi.fn(),
+      onRemoveCurrentHistory,
+      onClearHistoryGroup,
+    }));
+
+    expect(screen.getByText('2 / 21')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '上一张历史图' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下一张历史图' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(screen.getByRole('button', { name: '清除' }));
+    expect(onRemoveCurrentHistory).toHaveBeenCalledOnce();
+    expect(onClearHistoryGroup).toHaveBeenCalledOnce();
   });
 });

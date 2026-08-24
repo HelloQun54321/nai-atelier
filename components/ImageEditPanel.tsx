@@ -45,7 +45,6 @@ interface ImageEditPanelProps {
   onCanvasChange: (imageData: string, maskData: string) => void;
   onGenerate: (request: ImageEditRequest) => Promise<void>;
   latestTextToImageItem?: LocalGenItem;
-  historyItems: LocalGenItem[];
   onOpenLightbox: (image: string | null) => void;
   getDownloadFilename: () => string;
   canNavigateHistory?: boolean;
@@ -92,7 +91,6 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   onCanvasChange,
   onGenerate,
   latestTextToImageItem,
-  historyItems,
   onOpenLightbox,
   getDownloadFilename,
   canNavigateHistory,
@@ -643,7 +641,6 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           onFocusedInteractionEnd: handleFocusedInteractionEnd,
         }}
         latestTextToImageItem={latestTextToImageItem}
-        historyItems={historyItems}
         selectableParams={draft.params}
         strength={strength}
         noise={noise}
