@@ -105,6 +105,17 @@ describe('ChainEditorParams', () => {
     expect(markChange).toHaveBeenCalledOnce();
   });
 
+  it('Variety+ 与两个 CFG 控件统一使用主题强调色', () => {
+    renderParams({ params: { ...params, variety: true } });
+
+    const varietySwitch = screen.getByRole('switch', { name: 'Variety+（多样性）' });
+    expect(varietySwitch.className).toContain('hover:border-indigo-300');
+    expect(varietySwitch.querySelector('.bg-indigo-500')).toBeTruthy();
+    const sliders = screen.getAllByRole('slider');
+    expect(sliders).toHaveLength(2);
+    expect(sliders.every(slider => slider.className.includes('accent-indigo-600'))).toBe(true);
+  });
+
   it('文生图保留可调图片尺寸', () => {
     renderParams();
     expect(screen.getByText('图片尺寸')).toBeTruthy();

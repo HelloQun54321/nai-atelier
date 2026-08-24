@@ -461,6 +461,11 @@ body,
 .workspace-aitag-grid { --workspace-card-min: 175px; }
 .workspace-manager-grid { --workspace-card-min: 160px; }
 
+/* 实验室命令栏与正文使用同一列结构：桌面左右等分，窄屏上下排列。 */
+.chain-editor-header {
+  height: auto;
+}
+
 .workspace-card-grid > * {
   content-visibility: auto;
   contain-intrinsic-size: auto 320px;
@@ -509,6 +514,10 @@ body,
 }
 
 @container workspace (max-width: 1180px) {
+  .agent-panel-docked .chain-editor-header {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
   .agent-panel-docked .chain-editor-body {
     flex-direction: column !important;
     overflow-x: hidden !important;
@@ -556,6 +565,10 @@ body,
   flex-direction: column !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
+}
+
+.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-header {
+  grid-template-columns: minmax(0, 1fr) !important;
 }
 
 .agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-main {

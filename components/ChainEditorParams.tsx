@@ -244,10 +244,10 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                             setParams({ ...params, variety: !(params.variety ?? false) });
                             markChange();
                         }}
-                        className="flex min-h-9 w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-left transition hover:border-pink-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-pink-700 sm:w-[calc(50%-0.5rem)]"
+                        className="flex min-h-9 w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-left transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700 sm:w-[calc(50%-0.5rem)]"
                     >
                         <span className="text-xs font-medium text-gray-700 dark:text-gray-200">Variety+（多样性）</span>
-                        <span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${params.variety ? 'bg-pink-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                        <span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${params.variety ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
                             <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${params.variety ? 'translate-x-4' : ''}`} />
                         </span>
                     </button>
@@ -270,14 +270,14 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                     <div>
                         <div className="mb-1 flex items-center justify-between">
                             <label className="block text-xs text-gray-500 dark:text-gray-500">CFG Rescale</label>
-                            <span className="font-mono text-xs text-pink-600 dark:text-pink-400">{params.cfgRescale ?? 0}</span>
+                            <span className="font-mono text-xs text-indigo-600 dark:text-indigo-400">{params.cfgRescale ?? 0}</span>
                         </div>
                         <input
                             type="range" min="0" max="1" step="0.05"
                             disabled={!canEdit}
                             value={params.cfgRescale ?? 0}
                             onChange={(e) => { setParams({ ...params, cfgRescale: parseFloat(e.target.value) }); markChange(); }}
-                            className="w-full cursor-pointer accent-pink-600 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="w-full cursor-pointer accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
                         />
                     </div>
                 </div>

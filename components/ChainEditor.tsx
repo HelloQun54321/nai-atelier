@@ -30,6 +30,7 @@ import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
 import { LabPageLayouts } from '../services/appearancePreferences';
 import { LabModuleSection } from './LabModuleSection';
+import { GenerationModeNav } from './GenerationModeNav';
 import { Copy, FileDown, ImagePlus, Palette, Pencil, Quote, RotateCcw, Save, Tags, UserRound, X } from 'lucide-react';
 
 const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
@@ -1794,8 +1795,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
             )}
             {/* Top Bar */}
-            <header className="chain-editor-header workspace-command-bar relative z-30 flex h-auto flex-shrink-0 items-center justify-between gap-1 overflow-visible border-b border-gray-200 bg-white px-2 py-0 dark:border-gray-800 dark:bg-gray-950 md:gap-4 md:px-6">
-                <div className="relative flex min-w-0 flex-1 items-center gap-2 md:gap-4">
+            <header className="chain-editor-header workspace-command-bar relative z-30 grid h-auto flex-shrink-0 grid-cols-1 items-center gap-1 overflow-visible border-b border-gray-200 bg-white px-2 py-1 dark:border-gray-800 dark:bg-gray-950 md:gap-2 md:px-6 lg:grid-cols-2 lg:gap-0 lg:py-0">
+                <div className="chain-editor-header-main relative flex min-w-0 items-center gap-2 md:gap-4">
                     {chain.id !== 'playground' && <div className="flex min-w-0 flex-1 cursor-pointer items-center gap-2" onClick={() => isOwner && setIsEditingInfo(true)}>
                         <div className="flex min-w-0 items-baseline gap-2 overflow-hidden">
                             <span className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase ${isCharacterMode ? 'border-pink-200 bg-pink-100 text-pink-700' : 'border-blue-200 bg-blue-100 text-blue-700'}`}>{isCharacterMode ? '角色串' : '风格串'}</span>
@@ -1804,9 +1805,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         </div>
                         {isOwner && <Pencil className="h-4 w-4 flex-shrink-0 text-gray-400 opacity-50" />}
                     </div>}
-                    <nav className="generation-mode-nav flex min-w-0 max-w-[52vw] shrink-0 items-center gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1 dark:bg-gray-900" aria-label="生成模式">
-                        {([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const).map(([mode, label]) => <button key={mode} type="button" onClick={() => void selectGenerationMode(mode)} className={`mobile-touch shrink-0 rounded-lg px-2 py-1.5 text-[11px] font-bold transition md:px-3 md:text-xs ${activeGenerationMode === mode ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}>{label}</button>)}
-                    </nav>
+                    <GenerationModeNav activeMode={activeGenerationMode} onSelect={selectGenerationMode} />
                     {chain.id !== 'playground' && isEditingInfo && isOwner && <div role="dialog" aria-label="编辑风格串信息" className="absolute left-9 top-[calc(100%+0.5rem)] z-50 w-[min(40rem,calc(100vw-2rem))] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
                         <div className="grid gap-3 sm:grid-cols-2">
                             <label className="text-xs font-bold text-gray-500">名称<input type="text" value={chainName} onChange={e => { setChainName(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white" placeholder="名称" /></label>
@@ -1862,7 +1861,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     </div>}
                 </div>
 
-                <div className="chain-editor-actions ml-auto flex flex-shrink-0 items-center gap-2">
+                <div className="chain-editor-actions ml-auto flex w-full flex-shrink-0 items-center justify-end gap-2 overflow-x-auto lg:w-auto">
                     {canEdit && (
                         <>
                             <input
