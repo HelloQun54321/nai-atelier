@@ -6,6 +6,8 @@
 
 ## 2026-08-25
 
+- **Codex (GPT-5)**：为 AGENTS.md 增加需求推演、同类项审计及自主修改边界，要求后续 AI 主动补齐明确相关的低风险改动（docs: require related-change reasoning）。
+
 - **Codex (GPT-5)**：统一正负面预设下拉框的关闭项排序，让四种实验室模式始终将 none 显示在首位（fix: prioritize none in preset dropdowns）。
 
 - **Codex (GPT-5)**：按模型恢复单一正面质量预设下拉框，并将 none 置于 V5 与 V4／V4.5 选项首位（fix: restore quality preset dropdown）。
