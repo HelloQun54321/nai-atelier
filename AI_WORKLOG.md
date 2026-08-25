@@ -7,6 +7,7 @@
 ## 2026-08-26
 
 - **DeepSeek (V4 Flash)**：将生图实验室重置按钮的作用域严格限定为当前激活的页面——文生图仅重置提示词/模块/参数与预设来源徽章，图生图/局部重绘/扩图仅清空当前模式的底图、蒙版与草稿，并补充默认参数常量与重置定向单测（fix: scope laboratory reset to active mode）。
+- **DeepSeek (V4 Flash)**：将 Worker 后端 4481 行超级文件按业务域拆分为 8 个路由模块（settings/history/vibe/aitag/danbooru/stBridge/pixiv/types），`worker/index.ts` 精简至约 200 行仅保留初始化、CORS、错误捕获与按原顺序分发，纯结构重构行为不变，130 个 gateway 测试与 tsc、esbuild 全部通过（refactor: split worker/index.ts into domain route modules）。
 - **Gemini (Flash)**：在 AGENTS.md 中新增 AI 协作生命周期与会话管理规范（Director-Worker 规范），约束跨会话上下文继承基于项目文档、同模块连续调整禁止随意销毁 Worker、新建任务保持 Brief 自包含（docs: codify agent lifecycle and session management rules）。
 
 
