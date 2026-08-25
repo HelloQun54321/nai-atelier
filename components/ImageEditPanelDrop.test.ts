@@ -63,4 +63,34 @@ describe('ImageEditPanel base image drop', () => {
     await waitFor(() => expect(onBaseImageChange).toHaveBeenCalledWith(expect.stringMatching(/^data:image\/png;base64,/), 'upload'));
     expect(onParentDrop).not.toHaveBeenCalled();
   });
+
+  it('向 generateBarRef 写入移动端悬浮生成入口与费用标签', () => {
+    const generateBarRef: { current: { generate: () => void; costLabel: string } | null } = { current: null };
+    const draft = createLabImageEditDraft('inpaint', 'overall prompt', '', params);
+    render(React.createElement(ImageEditPanel, {
+      baseImage: null,
+      previewImage: null,
+      operation: 'inpaint',
+      layout: DEFAULT_LAB_PAGE_LAYOUTS.inpaint,
+      draft,
+      generationCostLabel: (operation, focused, context) => focused && context?.focusedRect ? 'Opus 免费' : '12 点',
+      tagAssistEnabled: false,
+      apiKey: '',
+      notify: vi.fn(),
+      onPromptChange: vi.fn(),
+      onNegativePromptChange: vi.fn(),
+      onPromptSource: vi.fn(),
+      onDraftChange: vi.fn(),
+      onBaseImageChange: vi.fn(),
+      onCanvasChange: vi.fn(),
+      onGenerate: vi.fn(async () => undefined),
+      onOpenLightbox: vi.fn(),
+      getDownloadFilename: () => 'test.png',
+      generateBarRef,
+    }));
+
+    expect(generateBarRef.current).not.toBeNull();
+    expect(typeof generateBarRef.current?.generate).toBe('function');
+    expect(generateBarRef.current?.costLabel).toBe('12 点');
+  });
 });

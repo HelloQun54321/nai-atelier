@@ -6,6 +6,7 @@
 
 ## 2026-08-26
 
+- **DeepSeek (V4 Flash)**：为图生图、局部重绘和扩图统一移动端交互——底部大矩形生成按钮改为与文生图一致的悬浮胶囊「生成 · 点数」，并修复预览卡固定高度溢出遮挡底图说明的问题（fix: align mobile image edit actions and preview flow）。
 - **Claude (Omni)**：新增 Viber 创作意志与产品哲学宪章 VIBER_INTENT.md，并让 AGENTS.md 将其列为最高优先级必读，同步递增补丁版本至 0.115.1（docs: document viber creator intent and design philosophy）。
 
 ## 2026-08-25

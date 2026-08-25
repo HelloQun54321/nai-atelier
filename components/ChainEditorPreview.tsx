@@ -32,6 +32,7 @@ interface ChainEditorPreviewProps {
     resultAlt?: string;
     showQueueStatus?: boolean;
     generationDisabled?: boolean;
+    hideGenerateButtonOnMobile?: boolean;
 }
 
 export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
@@ -61,6 +62,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     emptyLabel = '暂无预览图，请从上方模式栏选择编辑模式',
     resultAlt = '已生成',
     showQueueStatus = true,
+    hideGenerateButtonOnMobile = false,
     generationDisabled = false,
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -222,7 +224,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                     {showQueueStatus && queueStatus ? <InlineCloudQueueStatus className="w-full max-w-xs flex-shrink-0" /> : <button
                         onClick={handleGenerate}
                         disabled={isGenerating || generationDisabled}
-                        className={`generation-action-button flex h-11 w-full max-w-xs items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${isGenerating ? 'generation-action-button--loading' : ''}`}
+                        className={`generation-action-button flex h-11 w-full max-w-xs items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${isGenerating ? 'generation-action-button--loading' : ''} ${hideGenerateButtonOnMobile ? 'lg:hidden' : ''}`}
                     >
                         <ImageIcon aria-hidden="true" className="relative z-[1] h-4 w-4 shrink-0" strokeWidth={2.2} />
                         <span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : generateLabel}</span>

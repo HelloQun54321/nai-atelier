@@ -228,6 +228,21 @@ describe('ImageEditPreview', () => {
     expect(screen.getByRole('button', { name: /生成局部重绘结果/ })).toBeTruthy();
   });
 
+  it('移动端编辑预览卡带 image-edit-preview-shell 标记并隐藏内嵌生成按钮', () => {
+    const { container } = render(React.createElement(ImageEditPreview, {
+      operation: 'inpaint',
+      image: 'data:image/png;base64,fixture',
+      error: null,
+      generationCostLabel: '预计消耗 12 Anlas',
+      onGenerate: vi.fn(),
+      onOpenLightbox: vi.fn(),
+      getDownloadFilename: () => 'fixture.png',
+    }));
+
+    expect(container.querySelector('.image-edit-preview-shell')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /生成局部重绘结果/ }).className).toContain('lg:hidden');
+  });
+
   it('与文生图一致显示历史管理按钮、切换按钮和计数', () => {
     const onRemoveCurrentHistory = vi.fn();
     const onClearHistoryGroup = vi.fn();

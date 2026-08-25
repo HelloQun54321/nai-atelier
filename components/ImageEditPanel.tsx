@@ -54,6 +54,8 @@ interface ImageEditPanelProps {
   canManageHistoryGroup?: boolean;
   onRemoveCurrentHistory?: () => void;
   onClearHistoryGroup?: () => void;
+  /** 移动端悬浮生成栏通过该 ref 获取编辑模式的生成入口与费用标签。 */
+  generateBarRef?: React.MutableRefObject<{ generate: () => void; costLabel: string } | null>;
 }
 
 type MaskSnapshot = { data: string; rect: { x: number; y: number; width: number; height: number } | null };
@@ -102,6 +104,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   onClearHistoryGroup,
   isGenerating = false,
   safeMode = false,
+  generateBarRef,
 }) => {
   const imageCanvasRef = useRef<HTMLCanvasElement>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -135,6 +138,15 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isBaseImageDragActive, setIsBaseImageDragActive] = useState(false);
   const maskEditable = !safeMode && (operation === 'inpaint' || (operation === 'outpaint' && manualMaskEditing));
+
+  // 每次渲染同步移动端悬浮生成栏入口，保证 ChainEditor 拿到的费用标签与预览卡一致。
+  useEffect(() => {
+    if (!generateBarRef) return;
+    generateBarRef.current = {
+      generate: () => { void submit(); },
+      costLabel: generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea }),
+    };
+  });
 
   const snapshot = (): MaskSnapshot | null => {
     const canvas = maskCanvasRef.current;

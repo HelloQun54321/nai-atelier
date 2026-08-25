@@ -550,6 +550,17 @@ body,
     border-bottom-width: 0 !important;
   }
 
+  /* 编辑模式（图生图/局部重绘/扩图）预览卡在窄容器下按内容自适应，避免固定高度遮挡下方控制区。 */
+  .agent-panel-docked .image-edit-preview-shell {
+    height: auto;
+    min-height: 0;
+  }
+
+  .agent-panel-docked .image-edit-preview-shell .chain-editor-preview {
+    height: auto;
+    min-height: 0;
+  }
+
   .agent-panel-docked .chain-editor-param-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
@@ -595,6 +606,17 @@ body,
   min-height: 0;
   width: 100% !important;
   border-bottom-width: 0 !important;
+}
+
+/* 编辑模式（图生图/局部重绘/扩图）预览卡在窄容器下按内容自适应，避免固定高度遮挡下方控制区。 */
+.agent-panel-docked .workspace-container.workspace-editor-compact .image-edit-preview-shell {
+  height: auto;
+  min-height: 0;
+}
+
+.agent-panel-docked .workspace-container.workspace-editor-compact .image-edit-preview-shell .chain-editor-preview {
+  height: auto;
+  min-height: 0;
 }
 
 .agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-param-grid {
@@ -810,6 +832,8 @@ body,
   .dark .mobile-page-header { border-color: rgb(55 65 81); background: rgb(31 41 55 / .96); }
   .mobile-toolbar { display: flex; align-items: center; gap: .5rem; padding: .625rem .75rem; }
   .mobile-safe-bottom { padding-bottom: max(.75rem, env(safe-area-inset-bottom)); }
+  .image-edit-preview-shell .chain-editor-preview { min-height: 0; }
+  .image-edit-preview-shell .chain-editor-preview > div { min-height: 240px; }
   .mobile-layer { position: fixed; inset: 0; z-index: 1100; background: rgb(0 0 0 / .5); backdrop-filter: blur(2px); animation: ui-fade-in 140ms ease-out; }
   .mobile-sheet { position: absolute; inset-inline: 0; bottom: 0; display: flex; max-height: min(82dvh, 44rem); flex-direction: column; overflow: hidden; border-radius: 1.5rem 1.5rem 0 0; background: white; box-shadow: 0 -16px 40px rgb(0 0 0 / .25); animation: ui-sheet-in 180ms cubic-bezier(.2,.8,.2,1); }
   .dark .mobile-sheet { background: rgb(17 24 39); }
