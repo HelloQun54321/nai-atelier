@@ -2,6 +2,13 @@
 
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
+### 重构：将 ChainEditor 巨石组件拆分为模块化子组件
+
+- 将 `components/ChainEditor.tsx`（2849 行）按功能域拆分为 `components/chain/` 下的 6 个子组件：`ChainEditorHeader.tsx`（顶部标题栏 + 操作按钮 + 信息编辑弹窗）、`ChainEditorPromptInputs.tsx`（基础画风/主体提示词输入区）、`ChainEditorModules.tsx`（提示词模块列表）、`ChainEditorCharacters.tsx`（多角色提示词管理）、`ChainEditorPresetModal.tsx`（引用预设弹窗：列表 + 详情确认）、`ChainEditorForkModal.tsx`（保存到库 / Fork 弹窗）。
+- 共享展示件（`PresetSourceBadge`/`PresetSourceBadges`/`PromptCopyButton`）与 `PromptAgentOverlayController` 移入 `components/chain/PresetSourceBadges.tsx` 供各子组件复用；主组件 `ChainEditor.tsx` 精简至约 2200 行，仅保留全部状态、处理函数与未拆分区域的编排。
+- 全部状态与处理器仍留在主组件，子组件为纯展示组件；JSX 逐字迁移、DOM 结构逐节点保持一致，四种实验室模式、移动端胶囊、灯箱、拖拽导入、预设导入与 Fork 行为 100% 不变，属纯结构重构。
+- 递增补丁版本至 0.115.8（refactor: split ChainEditor monolith into modular chain subcomponents）。
+
 ### 重构：将 Worker 后端超级文件按业务域拆分为独立路由模块
 
 - 将 `worker/index.ts`（4481 行）按业务域拆分为 8 个模块：`routes/settingsRoutes.ts`（局域网访问、Anlas 点数、管理端、NAI 代理、Chains/Artists）、`routes/historyRoutes.ts`（本地生图历史 D1+R2、灵感看板/灵感库、Agent 概览）、`routes/vibeRoutes.ts`（Vibe Transfer 与角色参考图库）、`routes/aitagRoutes.ts`（AITag 抓取与反代）、`routes/danbooruRoutes.ts`（Danbooru 搜索）、`routes/stBridgeRoutes.ts`（st-chatu8 历史互通）、`routes/pixivRoutes.ts`（占位模块，Pixiv 实现在本地网关侧）、`routes/types.ts`（公共 Env/RouteContext 与共享工具）。

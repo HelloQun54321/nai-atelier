@@ -9,7 +9,6 @@ import { api } from '../services/api';
 import { db } from '../services/dbService';
 import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData, extractRawMetadataFromJsonText } from '../services/metadataService';
 import { ChainEditorParams } from './ChainEditorParams';
-import { isInternalChainTag } from './DesignSystem';
 import { ChainEditorPreview } from './ChainEditorPreview';
 import { ImageEditPanel, ImageEditRequest } from './ImageEditPanel';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
@@ -30,23 +29,14 @@ import { cleanupLabWorkspaceAssets, createLabImageEditDraft, createLabWorkspaceS
 import { DEFAULT_NAI_RUNTIME, getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
-import { ChainEditorModeHeader } from './ChainEditorModeHeader';
 import { LabModuleSection } from './LabModuleSection';
-import { Copy, FileDown, ImagePlus, Palette, Quote, RotateCcw, Save, Tags, UserRound, X } from 'lucide-react';
-
-const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
-
-const PromptCopyButton: React.FC<{ onClick: () => void; title: string }> = ({ onClick, title }) => (
-    <button
-        type="button"
-        onClick={onClick}
-        className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-200"
-        title={title}
-    >
-        <Copy className="h-4 w-4" />
-        复制
-    </button>
-);
+import { FileDown } from 'lucide-react';
+import { ChainEditorHeader } from './chain/ChainEditorHeader';
+import { ChainEditorPromptInputs } from './chain/ChainEditorPromptInputs';
+import { ChainEditorCharacters } from './chain/ChainEditorCharacters';
+import { ChainEditorPresetModal } from './chain/ChainEditorPresetModal';
+import { ChainEditorForkModal } from './chain/ChainEditorForkModal';
+import { PresetSection, PresetSource, PresetSourceBadge, PromptCopyButton, PromptAgentOverlayController } from './chain/PresetSourceBadges';
 
 interface ChainEditorProps {
     chain: PromptChain;
@@ -65,93 +55,6 @@ interface ChainEditorProps {
     safeMode: boolean;
     onBack: () => void | Promise<void>;
 }
-
-type PresetSource = { name: string; modified: boolean };
-type PresetSection = 'base' | 'subject' | 'negative' | 'settings';
-
-const PresetSourceBadge: React.FC<{ source?: PresetSource }> = ({ source }) => source ? (
-    <span className="max-w-28 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-40" title={`来自：${source.name}${source.modified ? ' · 已修改' : ''}`}>
-        来自：{source.name}{source.modified ? ' · 已修改' : ''}
-    </span>
-) : null;
-
-const PresetSourceBadges: React.FC<{ sources: Record<string, PresetSource> }> = ({ sources }) => {
-    const merged = Object.values(sources).reduce<Record<string, PresetSource>>((result, source) => {
-        result[source.name] = {
-            name: source.name,
-            modified: Boolean(result[source.name]?.modified || source.modified),
-        };
-        return result;
-    }, {});
-    const values = Object.values(merged);
-    return values.length > 0 ? <div className="flex min-w-0 flex-wrap items-center gap-1">{values.map(source => <PresetSourceBadge key={source.name} source={source} />)}</div> : null;
-};
-
-interface PromptAgentOverlayControllerProps {
-    chainId: string;
-    openToken?: number;
-    draft: PromptAgentDraft;
-    apiKey: string;
-    onRunStart: (snapshot: PromptAgentDraft) => void;
-    onFinalDraft: (draft: PromptAgentDraft) => void;
-    onRequestGeneration: (draft: PromptAgentDraft, reason?: string) => Promise<boolean>;
-    canUndo: boolean;
-    onUndo: () => void;
-    splitPromptFields: boolean;
-    tagAssistEnabled: boolean;
-}
-
-/** Keep the overlay's visibility local so opening it does not rerender the editor. */
-const PromptAgentOverlayController: React.FC<PromptAgentOverlayControllerProps> = ({
-    chainId,
-    openToken,
-    draft,
-    apiKey,
-    onRunStart,
-    onFinalDraft,
-    onRequestGeneration,
-    canUndo,
-    onUndo,
-    splitPromptFields,
-    tagAssistEnabled,
-}) => {
-    const [open, setOpen] = useState(false);
-
-    useEffect(() => {
-        if (openToken) setOpen(true);
-    }, [openToken]);
-
-    useEffect(() => {
-        const handleOpen = (event: Event) => {
-            const requestedChainId = (event as CustomEvent<{ chainId?: string }>).detail?.chainId;
-            if (requestedChainId === chainId) setOpen(true);
-        };
-        window.addEventListener('nai-open-prompt-agent', handleOpen);
-        return () => window.removeEventListener('nai-open-prompt-agent', handleOpen);
-    }, [chainId]);
-
-    if (!open) return null;
-
-    return (
-        <React.Suspense fallback={null}><PromptAgentPanel
-            open={open}
-            onClose={() => setOpen(false)}
-            draft={draft}
-            apiKey={apiKey}
-            onRunStart={onRunStart}
-            onFinalDraft={onFinalDraft}
-            onRequestGeneration={async (nextDraft, reason) => {
-                const started = await onRequestGeneration(nextDraft, reason);
-                if (started) setOpen(false);
-                return started;
-            }}
-            canUndo={canUndo}
-            onUndo={onUndo}
-            splitPromptFields={splitPromptFields}
-            tagAssistEnabled={tagAssistEnabled}
-        /></React.Suspense>
-    );
-};
 
 export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, splitPromptFields, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, labPageLayouts, safeMode, onBack }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -1869,180 +1772,40 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
             )}
             {/* Top Bar */}
-            <header className="chain-editor-header workspace-command-bar relative z-30 grid h-auto flex-shrink-0 grid-cols-1 items-center gap-1 overflow-visible border-b border-gray-200 bg-white px-2 py-1 dark:border-gray-800 dark:bg-gray-950 md:gap-2 md:px-6 lg:grid-cols-2 lg:gap-0 lg:py-0">
-                <div className="chain-editor-header-main relative flex min-w-0 items-center gap-2 md:gap-4">
-                    <ChainEditorModeHeader
-                        isLaboratory={chain.id === 'playground'}
-                        chainName={chainName}
-                        entityLabel={isCharacterMode ? '角色串' : '风格串'}
-                        isOwner={isOwner}
-                        activeMode={activeGenerationMode}
-                        onSelectMode={selectGenerationMode}
-                        onEditInfo={() => setIsEditingInfo(true)}
-                        onBack={onBack}
-                    />
-                    {chain.id !== 'playground' && isEditingInfo && isOwner && <div role="dialog" aria-label={`编辑${isCharacterMode ? '角色串' : '风格串'}信息`} className="absolute left-12 top-[calc(100%+0.5rem)] z-50 w-[min(40rem,calc(100vw-2rem))] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
-                        <div className="grid gap-3 sm:grid-cols-2">
-                            <label className="text-xs font-bold text-gray-500">名称<input type="text" value={chainName} onChange={e => { setChainName(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white" placeholder="名称" /></label>
-                            <label className="text-xs font-bold text-gray-500">描述<input type="text" value={chainDesc} onChange={e => { setChainDesc(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-700 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" placeholder="描述" /></label>
-                        </div>
-                        <div className="mt-3 text-xs font-bold text-gray-500">标签</div>
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                              {chainTags.map((tag, idx) => (
-                                <span key={idx} className="px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 flex items-center gap-1">
-                                  {tag}
-                                  {canEdit && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setChainTags(chainTags.filter((_, i) => i !== idx));
-                                        markChange();
-                                      }}
-                                      className="text-indigo-500 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
-                                    >
-                                      ✕
-                                    </button>
-                                  )}
-                                </span>
-                              ))}
-                              {canEdit && <input
-                                  type="text"
-                                  placeholder="添加标签..."
-                                  className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-full bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                                      const newTag = e.currentTarget.value.trim();
-                                      if (!chainTags.includes(newTag)) {
-                                        setChainTags([...chainTags, newTag]);
-                                        markChange();
-                                      }
-                                      e.currentTarget.value = '';
-                                    }
-                                  }}
-                                  onBlur={(e) => {
-                                    if (e.target.value.trim()) {
-                                      const newTag = e.target.value.trim();
-                                      if (!chainTags.includes(newTag)) {
-                                        setChainTags([...chainTags, newTag]);
-                                        markChange();
-                                      }
-                                      e.target.value = '';
-                                    }
-                                  }}
-                                />}
-                        </div>
-                        <div className="mt-4 flex justify-end"><button type="button" onClick={() => setIsEditingInfo(false)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-500">完成</button></div>
-                    </div>}
-                </div>
+            <ChainEditorHeader
+                chainId={chain.id}
+                chainName={chainName}
+                chainDesc={chainDesc}
+                chainTags={chainTags}
+                setChainName={setChainName}
+                setChainDesc={setChainDesc}
+                setChainTags={setChainTags}
+                isCharacterMode={isCharacterMode}
+                isOwner={isOwner}
+                isGuest={isGuest}
+                canEdit={canEdit}
+                isEditingInfo={isEditingInfo}
+                setIsEditingInfo={setIsEditingInfo}
+                canSaveActiveModeToLibrary={canSaveActiveModeToLibrary}
+                canSaveCurrentChain={canSaveCurrentChain}
+                isUploading={isUploading}
+                hasChanges={hasChanges}
+                hasPendingPreviewCover={hasPendingPreviewCover}
+                tagAssistEnabled={tagAssistEnabled}
+                onTagAssistEnabledChange={onTagAssistEnabledChange}
+                activeGenerationMode={activeGenerationMode}
+                selectGenerationMode={selectGenerationMode}
+                onBack={onBack}
+                markChange={markChange}
+                handleReset={handleReset}
+                handleFork={handleFork}
+                handleSaveAll={handleSaveAll}
+                handleImportImage={handleImportImage}
+                setShowImportPreset={setShowImportPreset}
+                setTaggerOpen={setTaggerOpen}
+                notify={notify}
+            />
 
-                <div className="chain-editor-actions ml-auto flex w-full flex-shrink-0 items-center justify-end gap-2 overflow-x-auto lg:w-auto">
-                    {canEdit && (
-                        <>
-                            <input
-                                type="file"
-                                ref={importInputRef}
-                                className="hidden"
-                                accept="image/png,application/json,.json"
-                                onChange={handleImportImage}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => importInputRef.current?.click()}
-                                className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
-                                title="导入图片或 JSON 配置"
-                                aria-label="导入图片或 JSON 配置"
-                            >
-                                <FileDown className="h-[18px] w-[18px] md:h-5 md:w-5" />
-                            </button>
-                        </>
-                    )}
-                    {canEdit && (
-                        <button
-                            type="button"
-                            onClick={() => setShowImportPreset(true)}
-                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
-                            title="引用预设"
-                            aria-label="引用预设"
-                        >
-                            <Quote className="h-[18px] w-[18px] md:h-5 md:w-5" />
-                        </button>
-                    )}
-                    {canEdit && (
-                        <button
-                            type="button"
-                            onClick={() => setTaggerOpen(true)}
-                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
-                            title="图片反推 Tag"
-                            aria-label="图片反推 Tag"
-                        >
-                            <ImagePlus className="h-[18px] w-[18px] md:h-5 md:w-5" />
-                        </button>
-                    )}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            const enabled = !tagAssistEnabled;
-                            onTagAssistEnabledChange(enabled);
-                            notify(`Tag 辅助已${enabled ? '开启' : '关闭'}`);
-                        }}
-                        aria-pressed={tagAssistEnabled}
-                        className={`mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border p-0 transition-colors ${tagAssistEnabled
-                            ? 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/60'
-                            : 'border-gray-200 bg-gray-100 text-gray-500 hover:border-gray-300 hover:bg-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-700'}`}
-                        title={tagAssistEnabled ? '关闭 Tag 辅助' : '开启 Tag 辅助'}
-                        aria-label={tagAssistEnabled ? '关闭 Tag 辅助' : '开启 Tag 辅助'}
-                    >
-                        <span className="relative block">
-                            <Tags className="h-[18px] w-[18px] md:h-5 md:w-5" />
-                            <span aria-hidden="true" className="absolute -bottom-1.5 -right-1.5 text-[9px] font-black leading-none">
-                                {tagAssistEnabled ? 'o' : '−'}
-                            </span>
-                        </span>
-                    </button>
-                    {chain.id === 'playground' && (
-                        <button
-                            type="button"
-                            onClick={handleReset}
-                            className="mobile-touch ml-1 flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-red-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:bg-gray-800 dark:text-red-400 dark:hover:border-red-900/60 dark:hover:bg-red-950/30"
-                            title="重置实验室"
-                            aria-label="重置实验室"
-                        >
-                            <RotateCcw className="h-[18px] w-[18px] md:h-5 md:w-5" />
-                        </button>
-                    )}
-                    {/* Fork / Save to Library Button */}
-                    {canSaveActiveModeToLibrary && ((!isOwner && !isGuest) || chain.id === 'playground') && (
-                        <button
-                            onClick={handleFork}
-                            disabled={isUploading}
-                            className={`mobile-touch flex h-11 items-center justify-center rounded-xl border p-0 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${chain.id === 'playground'
-                                ? 'w-11 border-emerald-200 bg-emerald-50 text-emerald-600 hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/35 dark:text-emerald-300 dark:hover:border-emerald-800 dark:hover:bg-emerald-950/60'
-                                : 'w-auto border-gray-200 bg-gray-100 px-4 text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40'}`}
-                            title={chain.id === 'playground' ? '保存到库' : 'Fork'}
-                            aria-label={chain.id === 'playground' ? '保存到库' : 'Fork'}
-                        >
-                            <Save className={`block h-[18px] w-[18px] md:h-5 md:w-5 ${chain.id === 'playground' ? '' : 'mr-1'}`} />
-                            {chain.id !== 'playground' && <span>Fork</span>}
-                        </button>
-                    )}
-                    {canSaveActiveModeToLibrary && isOwner && chain.id !== 'playground' && (
-                        <button
-                            type="button"
-                            onClick={handleSaveAll}
-                            disabled={!canSaveCurrentChain || isUploading}
-                            className={`mobile-touch flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-bold transition-colors lg:w-11 lg:px-0 ${canSaveCurrentChain && !isUploading
-                                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20 hover:bg-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500'
-                                : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}
-                            title={isUploading ? '正在保存' : hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存'}
-                            aria-label={isUploading ? '正在保存' : hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存'}
-                        >
-                            <Save className="h-[18px] w-[18px] md:h-5 md:w-5" />
-                            <span className="lg:hidden">{isUploading ? '保存中' : canSaveCurrentChain ? '保存' : '已保存'}</span>
-                        </button>
-                    )}
-                </div>
-            </header>
             <PromptAgentOverlayController
                 chainId={chain.id}
                 openToken={agentOpenToken}
@@ -2102,240 +1865,48 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             </div>
                         )}
 
-                        <LabModuleSection
-                            moduleId="prompt"
-                            label="提示词输入"
-                            order={activeLabLayout.order.indexOf('prompt')}
-                            defaultCollapsed={Boolean(activeLabLayout.collapsed.prompt)}
-                            className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}
-                        >
-                        {/* Base Prompt */}
-                        <section className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
-                            <div className="mb-2 flex items-end justify-between gap-2">
-                                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                    <label className="flex flex-col items-center text-sm font-semibold text-indigo-500 dark:text-indigo-400 md:block md:text-left">
-                                        {splitPromptFields ? <><span>基础画风</span><span className="text-[10px] font-normal opacity-70 md:inline md:text-sm md:font-semibold md:opacity-100">（风格串）</span></> : <span>全局提示词</span>}
-                                    </label>
-                                    {splitPromptFields
-                                        ? <PresetSourceBadge source={presetSources.base} />
-                                        : <PresetSourceBadges sources={Object.fromEntries(Object.entries({ base: presetSources.base, subject: presetSources.subject }).filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />}
-                                </div>
+                        <ChainEditorPromptInputs
+                            splitPromptFields={splitPromptFields}
+                            basePrompt={basePrompt}
+                            setBasePrompt={setBasePrompt}
+                            subjectPrompt={subjectPrompt}
+                            setSubjectPrompt={setSubjectPrompt}
+                            globalPrompt={globalPrompt}
+                            presetSources={presetSources}
+                            modulePresetSources={modulePresetSources}
+                            tagAssistEnabled={tagAssistEnabled}
+                            canEdit={canEdit}
+                            copyPromptToClipboard={copyPromptToClipboard}
+                            markPresetSectionModified={markPresetSectionModified}
+                            markChange={markChange}
+                            activeLabLayout={activeLabLayout}
+                            mobileEditorTab={mobileEditorTab}
+                            modules={modules}
+                            activeModules={activeModules}
+                            handleModuleChange={handleModuleChange}
+                            addModule={addModule}
+                            removeModule={removeModule}
+                            toggleModuleActive={toggleModuleActive}
+                        />
 
-                                <PromptCopyButton
-                                    onClick={() => copyPromptToClipboard(splitPromptFields ? basePrompt : globalPrompt, splitPromptFields ? '基础画风' : '全局提示词')}
-                                    title={splitPromptFields ? '复制基础画风' : '复制全局提示词'}
-                                />
-                            </div>
-                            <TagAutocompleteTextarea
-                                tagAssistEnabled={tagAssistEnabled}
-                                disabled={!canEdit}
-                                className={`w-full border rounded-lg p-3 outline-none font-mono text-sm font-normal leading-relaxed min-h-[100px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500'}`}
-                                value={splitPromptFields ? basePrompt : globalPrompt}
-                                placeholder={splitPromptFields ? '画风标签，如 masterpiece、best quality、画师tag等，英文逗号分隔' : '输入完整的正面提示词，英文逗号分隔'}
-                                onValueChange={(nextValue) => {
-                                    setBasePrompt(nextValue);
-                                    if (!splitPromptFields) setSubjectPrompt('');
-                                    markPresetSectionModified('base');
-                                    if (!splitPromptFields) markPresetSectionModified('subject');
-                                    markChange();
-                                }}
-                            />
-                        </section>
-
-                        {splitPromptFields && <section className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
-                            <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-                                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                    <label className="text-sm font-semibold text-indigo-500 dark:text-indigo-400">主体／变量提示词</label>
-                                    <PresetSourceBadge source={presetSources.subject} />
-                                </div>
-                                <PromptCopyButton onClick={() => copyPromptToClipboard(subjectPrompt, '主体／变量提示词')} title="复制主体／变量提示词" />
-                            </div>
-                            <p className="mb-2 text-[10px] text-gray-400">放置风格串固定提示词以外的内容，比如人物、场景。</p>
-                            <TagAutocompleteTextarea
-                                tagAssistEnabled={tagAssistEnabled}
-                                disabled={!canEdit}
-                                className={`min-h-[100px] w-full resize-none rounded-lg border p-3 font-mono text-sm font-normal leading-relaxed outline-none ${!canEdit ? 'cursor-not-allowed bg-gray-100 text-gray-500 dark:bg-gray-800' : 'border-gray-300 bg-gray-50 text-gray-900 focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'}`}
-                                placeholder="输入动态主体描述，例如：1girl, blue hair, sitting..."
-                                value={subjectPrompt}
-                                onValueChange={(value) => { setSubjectPrompt(value); markPresetSectionModified('subject'); markChange(); }}
-                            />
-                        </section>}
-
-                        {/* Modules */}
-                        <section className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
-                            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                    <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">提示词模块</label>
-                                    <PresetSourceBadges sources={modulePresetSources} />
-                                </div>
-                                {canEdit && (
-                                    <button onClick={addModule} className="text-xs flex items-center bg-gray-200 dark:bg-gray-800 px-2 py-1 rounded hover:bg-gray-300 dark:hover:bg-gray-700">
-                                        添加
-                                    </button>
-                                )}
-                            </div>
-                            <div className="space-y-3">
-                                {(modules || []).map((mod, idx) => (
-                                    <div key={mod.id} className={`bg-gray-50 dark:bg-gray-800/40 border rounded-lg p-3 ${activeModules[mod.id] !== false ? 'border-gray-300 dark:border-gray-700' : 'border-gray-200 dark:border-gray-800 opacity-60'}`}>
-                                        <div className="flex flex-wrap gap-2 mb-2 items-center">
-                                            <input type="checkbox" checked={activeModules[mod.id] !== false} onChange={() => toggleModuleActive(mod.id)} className="rounded bg-gray-100 dark:bg-gray-900 text-indigo-600 focus:ring-0 flex-shrink-0" />
-                                            <input
-                                                type="text"
-                                                disabled={!canEdit}
-                                                className="bg-transparent border-b border-transparent focus:border-indigo-500 text-indigo-600 dark:text-indigo-300 font-medium text-sm outline-none px-1 flex-1 min-w-[120px]"
-                                                value={mod.name}
-                                                onChange={(e) => handleModuleChange(idx, 'name', e.target.value)}
-                                            />
-                                            {/* Mobile optimized: Group Input and Position Toggles together on right */}
-                                            <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
-                                                <input
-                                                    type="text"
-                                                    placeholder="分组"
-                                                    disabled={!canEdit}
-                                                    className="bg-transparent border-b border-gray-200 dark:border-gray-700 focus:border-indigo-500 text-gray-500 dark:text-gray-400 text-xs outline-none px-1 w-12 text-center"
-                                                    value={mod.group || ''}
-                                                    onChange={(e) => handleModuleChange(idx, 'group', e.target.value)}
-                                                    title="分组 (Group)"
-                                                />
-                                                <div className="flex bg-gray-200 dark:bg-gray-700 rounded p-0.5">
-                                                    <button
-                                                        onClick={() => handleModuleChange(idx, 'position', 'pre')}
-                                                        disabled={!canEdit}
-                                                        className={`px-2 py-0.5 text-[10px] rounded transition-colors ${mod.position === 'pre' ? 'bg-white dark:bg-gray-600 shadow text-indigo-600 dark:text-indigo-300 font-bold' : 'text-gray-500'}`}
-                                                    >
-                                                        前
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleModuleChange(idx, 'position', 'post')}
-                                                        disabled={!canEdit}
-                                                        className={`px-2 py-0.5 text-[10px] rounded transition-colors ${(mod.position === 'post' || !mod.position) ? 'bg-white dark:bg-gray-600 shadow text-indigo-600 dark:text-indigo-300 font-bold' : 'text-gray-500'}`}
-                                                    >
-                                                        后
-                                                    </button>
-                                                </div>
-                                                {canEdit && (
-                                                    <button onClick={() => removeModule(idx)} className="text-gray-400 hover:text-red-500 ml-1">
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <TagAutocompleteTextarea
-                                            tagAssistEnabled={tagAssistEnabled}
-                                            disabled={!canEdit}
-                                            className={`w-full rounded p-2 outline-none font-mono text-xs h-16 resize-none ${!canEdit ? 'bg-transparent text-gray-500' : 'bg-white dark:bg-gray-900/50 border border-gray-300 dark:border-gray-700/30 text-gray-800 dark:text-gray-300 focus:ring-1 focus:ring-indigo-500/50'}`}
-                                            value={mod.content}
-                                            onValueChange={(nextValue) => handleModuleChange(idx, 'content', nextValue)}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                        </LabModuleSection>
 
                         {/* Character Management (New V4.5) */}
-                        <LabModuleSection
-                            moduleId="characters"
-                            label="角色专属提示词"
-                            order={activeLabLayout.order.indexOf('characters')}
-                            defaultCollapsed={Boolean(activeLabLayout.collapsed.characters)}
-                            className={mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'}
-                        >
-                        <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'} rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40`}>
-                            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                    <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">角色专属提示词</label>
-                                    <PresetSourceBadges sources={characterPresetSources} />
-                                </div>
-                                <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-                                    {/* AI Choice Toggle */}
-                                    <label className="flex items-center gap-1.5 cursor-pointer bg-white dark:bg-gray-700 px-2 py-1 rounded shadow-sm hover:bg-gray-100 dark:hover:bg-gray-600 border border-transparent dark:border-gray-600">
-                                        <input
-                                            type="checkbox"
-                                            disabled={!canEdit}
-                                            checked={!(params.useCoords ?? true)}
-                                            onChange={(e) => {
-                                                setParams({ ...params, useCoords: !e.target.checked });
-                                                markPresetSectionModified('settings');
-                                                markChange();
-                                            }}
-                                            className="w-3.5 h-3.5 text-indigo-600 rounded focus:ring-0"
-                                        />
-                                        <span className="text-xs font-medium text-gray-700 dark:text-gray-200">AI 自动构图</span>
-                                    </label>
+                        <ChainEditorCharacters
+                            params={params}
+                            setParams={setParams}
+                            characters={params.characters || []}
+                            canEdit={canEdit}
+                            tagAssistEnabled={tagAssistEnabled}
+                            characterPresetSources={characterPresetSources}
+                            markPresetSectionModified={markPresetSectionModified}
+                            markChange={markChange}
+                            addCharacter={addCharacter}
+                            updateCharacter={updateCharacter}
+                            removeCharacter={removeCharacter}
+                            activeLabLayout={activeLabLayout}
+                            mobileEditorTab={mobileEditorTab}
+                        />
 
-                                    {canEdit && (
-                                        <button onClick={addCharacter} className="text-xs flex items-center bg-white dark:bg-gray-700 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-200">
-                                            + 添加角色
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="space-y-3">
-                                {(params.characters || []).length === 0 && (
-                                    <div className="text-xs text-gray-400 text-center py-2">暂无角色定义，提示词将作为整体处理。</div>
-                                )}
-                                {(params.characters || []).map((char, idx) => (
-                                    <div key={char.id} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700 shadow-sm relative">
-                                        <div className="flex gap-3 items-start">
-                                            <div className="flex-1 space-y-2">
-                                                <div>
-                                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">人物描述</label>
-                                                    <TagAutocompleteTextarea
-                                                        tagAssistEnabled={tagAssistEnabled}
-                                                        disabled={!canEdit}
-                                                        value={char.prompt}
-                                                        onValueChange={(nextValue) => updateCharacter(idx, { prompt: nextValue })}
-                                                        className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-16 resize-none focus:ring-1 focus:ring-indigo-500 outline-none"
-                                                        placeholder="人物描述"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">专属负面</label>
-                                                    <TagAutocompleteTextarea
-                                                        tagAssistEnabled={tagAssistEnabled}
-                                                        disabled={!canEdit}
-                                                        value={char.negativePrompt || ''}
-                                                        onValueChange={(nextValue) => updateCharacter(idx, { negativePrompt: nextValue })}
-                                                        className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-10 resize-none focus:ring-1 focus:ring-indigo-500 outline-none placeholder-gray-400"
-                                                        placeholder="选填"
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="w-24 flex flex-col gap-2">
-                                                <div className={!(params.useCoords ?? true) ? "opacity-40 pointer-events-none grayscale" : ""}>
-                                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Center X</label>
-                                                    <input
-                                                        type="number" step="0.1" min="0" max="1"
-                                                        disabled={!canEdit}
-                                                        value={char.x}
-                                                        onChange={(e) => updateCharacter(idx, { x: parseFloat(e.target.value) })}
-                                                        className="w-full text-xs p-1 border rounded bg-gray-50 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
-                                                    />
-                                                </div>
-                                                <div className={!(params.useCoords ?? true) ? "opacity-40 pointer-events-none grayscale" : ""}>
-                                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Center Y</label>
-                                                    <input
-                                                        type="number" step="0.1" min="0" max="1"
-                                                        disabled={!canEdit}
-                                                        value={char.y}
-                                                        onChange={(e) => updateCharacter(idx, { y: parseFloat(e.target.value) })}
-                                                        className="w-full text-xs p-1 border rounded bg-gray-50 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
-                                                    />
-                                                </div>
-                                            </div>
-                                            {canEdit && (
-                                                <button onClick={() => removeCharacter(idx)} className="text-gray-400 hover:text-red-500 mt-6">
-                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                        </LabModuleSection>
 
                         {activeModelInfo.supportsCharacterReferences && <LabModuleSection
                             moduleId="characterReference"
@@ -2571,279 +2142,37 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
             )}
 
-            {/* Import Preset List Modal */}
-            {showImportPreset && !importCandidate && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 backdrop-blur-sm md:p-4">
-                    <div className="flex max-h-[90dvh] w-full max-w-4xl flex-col rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-800 md:max-h-[85vh] md:max-w-5xl lg:max-w-6xl">
-                        <div className="relative flex flex-shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 p-3 dark:border-gray-700 md:justify-between md:gap-4 md:p-4">
-                            <h3 className="pr-10 font-bold dark:text-white md:pr-0">引用预设</h3>
+            <ChainEditorPresetModal
+                showImportPreset={showImportPreset}
+                importCandidate={importCandidate}
+                setImportCandidate={setImportCandidate}
+                quickImportMode={quickImportMode}
+                setQuickImportMode={setQuickImportMode}
+                importTab={importTab}
+                setImportTab={setImportTab}
+                setShowImportPreset={setShowImportPreset}
+                allChains={allChains}
+                importModalSearch={importModalSearch}
+                setImportModalSearch={setImportModalSearch}
+                importModalSelectedTags={importModalSelectedTags}
+                setImportModalSelectedTags={setImportModalSelectedTags}
+                favorites={favorites}
+                initiateImport={initiateImport}
+                importOptions={importOptions}
+                setImportOptions={setImportOptions}
+                selectedImportModuleIds={selectedImportModuleIds}
+                setSelectedImportModuleIds={setSelectedImportModuleIds}
+                confirmImport={confirmImport}
+            />
 
-                            {/* 快速导入开关 */}
-                            <label className="order-2 flex w-full flex-shrink-0 cursor-pointer select-none items-center gap-2 group md:order-none md:w-auto">
-                                <span className="text-xs text-gray-500 dark:text-gray-400">快速导入</span>
-                                <button
-                                    type="button"
-                                    role="switch"
-                                    aria-checked={quickImportMode}
-                                    onClick={() => setQuickImportMode(!quickImportMode)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setQuickImportMode(!quickImportMode); } }}
-                                    className="mobile-touch flex h-11 w-11 items-center justify-center border-0 bg-transparent p-0 outline-none shadow-none"
-                                >
-                                    <span className={`relative block h-5 w-10 rounded-full transition-colors ${quickImportMode ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'}`}>
-                                        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${quickImportMode ? 'left-5' : 'left-0.5'}`} />
-                                    </span>
-                                </button>
-                                <span className="relative">
-                                    <svg className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                                        开启后点击预设直接导入，关闭则显示详细选项
-                                    </span>
-                                </span>
-                            </label>
+            <ChainEditorForkModal
+                showForkModal={showForkModal}
+                setShowForkModal={setShowForkModal}
+                confirmFork={confirmFork}
+                isUploading={isUploading}
+                currentPreviewCover={currentPreviewCover}
+            />
 
-                            <div className="order-3 flex w-full max-w-none rounded-lg bg-gray-100 p-1 dark:bg-gray-700/50 md:order-none md:max-w-xs md:flex-1">
-                                <button
-                                    onClick={() => setImportTab('style')}
-                                    className={`flex-1 py-1 text-xs font-medium rounded-md transition-all ${importTab === 'style' ? 'bg-white dark:bg-gray-600 shadow text-indigo-600 dark:text-white' : 'text-gray-500'}`}
-                                >
-                                    画师/风格串
-                                </button>
-                                <button
-                                    onClick={() => setImportTab('character')}
-                                    className={`flex-1 py-1 text-xs font-medium rounded-md transition-all ${importTab === 'character' ? 'bg-white dark:bg-gray-600 shadow text-indigo-600 dark:text-white' : 'text-gray-500'}`}
-                                >
-                                    Character (角色)
-                                </button>
-                            </div>
-
-                            <button onClick={() => setShowImportPreset(false)} className="mobile-touch absolute right-3 top-3 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 md:static" aria-label="关闭引用预设"><X className="h-[18px] w-[18px] md:h-5 md:w-5" /></button>
-                        </div>
-                        <div className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4">
-                            {/* Extract all unique tags from the filtered list for this modal */}
-                            {(() => {
-                              const filteredForTags = allChains.filter(c => (importTab === 'character' ? c.type === 'character' : (c.type === 'style' || !c.type)));
-                              const allModalTags = Array.from(
-                                new Set(
-                                  filteredForTags.flatMap(chain => chain.tags || []).filter(tag => !isInternalChainTag(tag))
-                                )
-                              ).sort();
-
-                              // Filter the list based on search and tags
-                              const filteredChains = filteredForTags
-                                .filter(c =>
-                                  (c.name.toLowerCase().includes(importModalSearch.toLowerCase()) ||
-                                   c.description.toLowerCase().includes(importModalSearch.toLowerCase()))
-                                )
-                                .filter(c => {
-                                  if (importModalSelectedTags.size === 0) return true;
-                                  const chainTagSet = new Set(c.tags || []);
-                                  return Array.from(importModalSelectedTags).every(tag => chainTagSet.has(tag));
-                                })
-                                .sort((a, b) => {
-                                  const aFav = favorites.has(a.id); const bFav = favorites.has(b.id);
-                                  if (aFav && !bFav) return -1; if (!aFav && bFav) return 1; return 0;
-                                });
-
-                              return (
-                                <>
-                                  {/* Search Input for Modal */}
-                                  <div className="flex gap-2 w-full mb-4">
-                                    <input
-                                      type="text"
-                                      placeholder="搜索预设..."
-                                      className="w-full bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                                      value={importModalSearch}
-                                      onChange={(e) => setImportModalSearch(e.target.value)}
-                                    />
-                                  </div>
-                                  {/* Tag Filter Bar for Modal */}
-                                  {allModalTags.length > 0 && (
-                                    <div className="flex flex-wrap gap-2 p-2 bg-gray-100 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600 mb-4 max-h-20 overflow-y-auto">
-                                      {allModalTags.map(tag => (
-                                        <button
-                                          key={tag}
-                                          type="button"
-                                          onClick={() => {
-                                            const newSelected = new Set(importModalSelectedTags);
-                                            if (newSelected.has(tag)) {
-                                              newSelected.delete(tag);
-                                            } else {
-                                              newSelected.add(tag);
-                                            }
-                                            setImportModalSelectedTags(newSelected);
-                                          }}
-                                          className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${
-                                            importModalSelectedTags.has(tag)
-                                              ? 'bg-indigo-600 text-white'
-                                              : 'bg-white dark:bg-gray-600 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-500'
-                                          }`}
-                                        >
-                                          {tag}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                  <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                                    {filteredChains.map(c => (
-                                      <button
-                                        key={c.id}
-                                        type="button"
-                                        onClick={() => initiateImport(c)}
-                                        className="flex flex-col rounded-xl border border-gray-200 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-gray-50 dark:hover:bg-gray-700/50 bg-white dark:bg-gray-800/80 overflow-hidden text-left transition-colors"
-                                      >
-                                        <div className="aspect-square w-full bg-black/5 dark:bg-black/20 flex-shrink-0 relative">
-                                          {c.previewImage ? (
-                                            <SmartImage src={c.previewImage} alt="" className="absolute inset-0 w-full h-full object-contain" />
-                                          ) : (
-                                            <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-xs">无图</div>
-                                          )}
-                                          {favorites.has(c.id) && (
-                                            <span className="absolute top-1 right-1 text-amber-500 text-lg drop-shadow-md" title="已收藏">★</span>
-                                          )}
-                                        </div>
-                                        <div className="p-2 flex-1 min-h-0 flex flex-col">
-                                          <div className="font-semibold text-sm dark:text-gray-200 truncate">{c.name}</div>
-                                          <div className="text-xs text-gray-500 truncate mt-0.5 flex-1">{c.description || '无描述'}</div>
-                                          <span className="text-xs text-indigo-600 dark:text-indigo-400 mt-1">选择</span>
-                                        </div>
-                                      </button>
-                                    ))}
-                                  </div>
-                                  {filteredChains.length === 0 && (
-                                    <div className="text-center text-gray-400 py-12 text-sm">暂无匹配的预设</div>
-                                  )}
-                                </>
-                              );
-                            })()}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Import Detail/Confirm Modal */}
-            {importCandidate && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-sm shadow-2xl border border-gray-200 dark:border-gray-700">
-                        <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 rounded-t-xl">
-                            <h3 className="font-bold text-gray-900 dark:text-white truncate" title={importCandidate.name}>
-                                导入: {importCandidate.name}
-                            </h3>
-                        </div>
-                        <div className="p-5 space-y-3">
-                            <label className="flex items-center gap-3 cursor-pointer select-none">
-                                <input type="checkbox" checked={importOptions.importBasePrompt} onChange={e => setImportOptions({ ...importOptions, importBasePrompt: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                <span className="text-sm font-medium dark:text-gray-200">基础画风</span>
-                            </label>
-
-                            <label className="flex items-center gap-3 cursor-pointer select-none">
-                                <input type="checkbox" checked={importOptions.importSubject} onChange={e => setImportOptions({ ...importOptions, importSubject: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                <span className="text-sm font-medium dark:text-gray-200">主体提示词</span>
-                            </label>
-
-                            <label className="flex items-center gap-3 cursor-pointer select-none">
-                                <input type="checkbox" checked={importOptions.importNegative} onChange={e => setImportOptions({ ...importOptions, importNegative: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                <span className="text-sm font-medium dark:text-gray-200">负面提示词</span>
-                            </label>
-
-                            <div className="space-y-2">
-                                <label className="flex items-center gap-3 cursor-pointer select-none">
-                                    <input type="checkbox" checked={importOptions.importModules} onChange={e => setImportOptions({ ...importOptions, importModules: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                    <span className="text-sm font-medium dark:text-gray-200">增强模块</span>
-                                </label>
-                                {importOptions.importModules && (
-                                    <label className="flex items-center gap-3 cursor-pointer select-none pl-8">
-                                        <input type="checkbox" checked={importOptions.appendModules} onChange={e => setImportOptions({ ...importOptions, appendModules: e.target.checked })} className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                        <span className="text-xs text-gray-500 dark:text-gray-400">追加</span>
-                                    </label>
-                                )}
-                                {importOptions.importModules && importCandidate.modules && importCandidate.modules.length > 0 && (
-                                    <div className="ml-8 mt-2 border border-gray-200 dark:border-gray-700 rounded p-2 max-h-40 overflow-y-auto bg-gray-50 dark:bg-gray-900 custom-scrollbar">
-                                        {importCandidate.modules.map(m => (
-                                            <label key={m.id} className="flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-800 p-1 rounded cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedImportModuleIds.has(m.id)}
-                                                    onChange={e => {
-                                                        const next = new Set(selectedImportModuleIds);
-                                                        if (e.target.checked) next.add(m.id);
-                                                        else next.delete(m.id);
-                                                        setSelectedImportModuleIds(next);
-                                                    }}
-                                                    className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-0 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
-                                                />
-                                                <span className="text-xs text-gray-700 dark:text-gray-300 truncate flex-1" title={m.content}>{m.name || '未命名模块'}</span>
-                                                {m.group && <span className="text-[9px] bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-gray-500 uppercase">{m.group}</span>}
-                                            </label>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="space-y-2">
-                                <label className="flex items-center gap-3 cursor-pointer select-none">
-                                    <input type="checkbox" checked={importOptions.importCharacters} onChange={e => setImportOptions({ ...importOptions, importCharacters: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                    <span className="text-sm font-medium dark:text-gray-200">多角色管理</span>
-                                </label>
-                                {importOptions.importCharacters && (
-                                    <label className="flex items-center gap-3 cursor-pointer select-none pl-8">
-                                        <input type="checkbox" checked={importOptions.appendCharacters} onChange={e => setImportOptions({ ...importOptions, appendCharacters: e.target.checked })} className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                        <span className="text-xs text-gray-500 dark:text-gray-400">追加</span>
-                                    </label>
-                                )}
-                            </div>
-
-                            <label className="flex items-center gap-3 cursor-pointer select-none">
-                                <input type="checkbox" checked={importOptions.importSettings} onChange={e => setImportOptions({ ...importOptions, importSettings: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                <span className="text-sm font-medium dark:text-gray-200">生成参数</span>
-                            </label>
-
-                            <label className="flex items-center gap-3 cursor-pointer select-none">
-                                <input type="checkbox" checked={importOptions.importSeed} onChange={e => setImportOptions({ ...importOptions, importSeed: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                <span className="text-sm font-medium dark:text-gray-200">种子</span>
-                            </label>
-                        </div>
-                        <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
-                            <button onClick={() => setImportCandidate(null)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-800 dark:hover:text-white transition-colors">取消</button>
-                            <button onClick={confirmImport} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded shadow-lg shadow-indigo-500/20 transition-all">导入</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-            {/* Fork Type Selection Modal */}
-            {showForkModal && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-sm shadow-2xl border border-gray-200 dark:border-gray-700 p-6">
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1 text-center">选择保存类型</h3>
-                        {currentPreviewCover.source && <p className="mb-4 text-center text-xs text-gray-500 dark:text-gray-400">保存为风格串时，当前显示图片会自动成为封面。</p>}
-                        <div className="grid grid-cols-2 gap-4">
-                            <button
-                                onClick={() => void confirmFork('style')}
-                                disabled={isUploading}
-                                className="flex flex-col items-center justify-center p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors gap-2"
-                            >
-                                <Palette className="h-6 w-6 text-indigo-500" />
-                                <span className="font-bold text-blue-700 dark:text-blue-300">{isUploading ? '保存中…' : '画师/风格串'}</span>
-                            </button>
-                            <button
-                                onClick={() => void confirmFork('character')}
-                                disabled={isUploading}
-                                className="flex flex-col items-center justify-center p-4 rounded-lg bg-pink-50 dark:bg-pink-900/20 border-2 border-pink-200 dark:border-pink-800 hover:bg-pink-100 dark:hover:bg-pink-900/40 transition-colors gap-2"
-                            >
-                                <UserRound className="h-6 w-6 text-indigo-500" />
-                                <span className="font-bold text-pink-700 dark:text-pink-300">角色串</span>
-                            </button>
-                        </div>
-                        <button
-                            onClick={() => setShowForkModal(false)}
-                            className="mt-6 w-full py-2 text-gray-500 hover:text-gray-800 dark:hover:text-white text-sm font-medium"
-                        >
-                            取消
-                        </button>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };
