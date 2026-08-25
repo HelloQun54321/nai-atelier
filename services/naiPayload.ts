@@ -1,6 +1,6 @@
 import { ImageEditOperation, NAIParams } from '../types';
 import { DEFAULT_NAI_MODEL, getRuntimeNaiModelInfo } from './naiModels';
-import { buildImageEditParameters, ImageEditFocusedGeometry, resolveImageEditModel, transformCharacterCoordinatesForFocused, validateImageEditSampler } from './imageEdit';
+import { buildImageEditParameters, resolveImageEditModel, validateImageEditSampler } from './imageEdit';
 import { DEFAULT_NAI_RUNTIME, getNaiRuntimeModelCapability, NaiRuntimeConfig } from './naiRuntime';
 
 export interface NaiPayloadOptions {
@@ -21,9 +21,6 @@ export interface NaiImageEditPayloadOptions {
   minimumContextArea?: number;
   runtimeModels?: string[];
   runtime?: NaiRuntimeConfig;
-  focusedGeometry?: ImageEditFocusedGeometry;
-  sourceWidth?: number;
-  sourceHeight?: number;
 }
 
 const TRANSPARENT_PROMPT_TAGS = 'transparent background, has alpha';
@@ -166,17 +163,8 @@ export const buildNaiImageEditPayload = (
   options: NaiImageEditPayloadOptions,
 ) => {
   validateImageEditSampler(params.sampler);
-  const requestParams: NAIParams = options.focusedGeometry && options.sourceWidth && options.sourceHeight
-    ? {
-      ...params,
-      characters: transformCharacterCoordinatesForFocused(
-        params.characters,
-        options.focusedGeometry,
-        options.sourceWidth,
-        options.sourceHeight,
-      ),
-    }
-    : params;
+  // 编辑模式只使用整图提示词；文生图草稿中保留的多角色提示词与坐标不得泄漏到请求。
+  const requestParams: NAIParams = { ...params, characters: [], useCoords: false };
   const base = buildNaiGenerationPayload(prompt, negative, requestParams, {
     runtime: options.runtime,
     allowVibes: options.operation === 'image-to-image',

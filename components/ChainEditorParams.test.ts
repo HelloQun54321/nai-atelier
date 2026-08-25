@@ -122,6 +122,27 @@ describe('ChainEditorParams', () => {
     expect(screen.getByRole('option', { name: '横屏 (1216x832)' })).toBeTruthy();
   });
 
+  it('自定义分辨率按 64 像素步进，并联动另一边最大化 Opus 免费像素', () => {
+    const setParams = vi.fn();
+    renderParams({ setParams });
+    fireEvent.change(screen.getByRole('combobox', { name: '图片尺寸' }), { target: { value: 'Custom' } });
+
+    const width = screen.getByRole('spinbutton', { name: '自定义宽度' });
+    const height = screen.getByRole('spinbutton', { name: '自定义高度' });
+    expect(width.getAttribute('step')).toBe('64');
+    expect(height.getAttribute('max')).toBe('4096');
+    expect(screen.getByRole('switch', { name: 'Opus 免费像素联动' }).getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.change(width, { target: { value: '512' } });
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ width: 512, height: 1920 }));
+  });
+
+  it('自定义分辨率清晰显示当前像素是否超过 Opus 免费范围', () => {
+    renderParams({ params: { ...params, width: 2048, height: 2048 } });
+    expect(screen.getByRole('status').textContent).toContain('4,194,304');
+    expect(screen.getByRole('status').textContent).toContain('超过免费像素上限 1,011,712');
+  });
+
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 不显示不可调节的图片尺寸', mode => {
     renderParams({ hideResolution: true, mode });
     expect(screen.queryByText('图片尺寸')).toBeNull();

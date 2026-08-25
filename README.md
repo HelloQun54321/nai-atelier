@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.114.4-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.115.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -133,7 +133,10 @@ flowchart LR
 
 #### 参数与预览
 
-- 图片尺寸、采样器、Steps、CFG、CFG Rescale、Variety+ 和 Seed
+- 图片尺寸支持竖屏、横屏、方形与 64 像素步进的自定义宽高；可联动另一边，最大化利用 Opus 免费像素范围并实时显示总像素
+- 图生图、局部重绘与扩图支持上传、从历史选择或直接拖入 PNG／JPEG／WebP 底图，尺寸不符合编辑接口时提供规范化处理
+- 图片编辑使用独立的整图提示词，不会携带文生图中的多角色提示词与坐标
+- 采样器、Steps、CFG、CFG Rescale、Variety+ 和 Seed
 - NovelAI V4.5 正面质量标签与负面预设
 - 生成结果预览、本地历史切换、下载和封面设置
 - 从 NovelAI PNG / JSON 元数据恢复 Prompt、对应模型与参数；可在全局设置中选择自动拆分风格与主体，或使用单一“全局提示词”原样导入

@@ -184,9 +184,6 @@ export const generateImageEdit = async (
     image: prepared.image,
     mask: prepared.mask,
     focused: edit.focused && edit.operation === 'inpaint',
-    focusedGeometry: prepared.focusedGeometry,
-    sourceWidth: prepared.sourceWidth,
-    sourceHeight: prepared.sourceHeight,
     runtimeModels: runtime.models,
     runtime,
   });

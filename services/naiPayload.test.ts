@@ -142,30 +142,27 @@ describe('NovelAI generation payload', () => {
     expect(payload.parameters.qualityPresetId).toBe('none');
   });
 
-  it('transforms character centers before a Focused local request', () => {
-    const payload = buildNaiImageEditPayload('1girl', '', {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('does not send text-to-image characters in %s payloads', operation => {
+    const payload = buildNaiImageEditPayload('overall prompt', '', {
       ...baseParams,
-      characters: [{ id: 'c1', prompt: 'girl', x: 0.5, y: 0.5 }],
+      useCoords: true,
+      characters: [{ id: 'c1', prompt: 'retained text-to-image character', negativePrompt: 'character negative', x: 0.5, y: 0.5 }],
     }, {
-      operation: 'inpaint',
+      operation,
       image: 'data:image/png;base64,aW1hZ2U=',
-      mask: 'data:image/png;base64,bWFzaw==',
+      mask: operation === 'image-to-image' ? undefined : 'data:image/png;base64,bWFzaw==',
       strength: 0.8,
       noise: 0.1,
-      focused: true,
-      focusedGeometry: {
-        crop: { x: 200, y: 100, width: 400, height: 300 },
-        inner: { x: 264, y: 164, width: 272, height: 172 },
-        requestWidth: 768,
-        requestHeight: 576,
-        fullSizeMask: false,
-      },
-      sourceWidth: 1000,
-      sourceHeight: 800,
+      focused: operation === 'inpaint',
       runtimeModels: ['nai-diffusion-5-full-inpainting'],
     });
-    const captions = (payload.parameters as any).v4_prompt.caption.char_captions;
-    expect(captions[0].centers[0]).toEqual({ x: 0.75, y: 1 });
+    const parameters = payload.parameters as Record<string, unknown>;
+    const v4Prompt = parameters.v4_prompt as { caption: { base_caption: string; char_captions: unknown[] }; use_coords: boolean };
+    const v4NegativePrompt = parameters.v4_negative_prompt as { caption: { char_captions: unknown[] } };
+    expect(v4Prompt.caption.base_caption).toBe('overall prompt');
+    expect(v4Prompt.caption.char_captions).toEqual([]);
+    expect(v4NegativePrompt.caption.char_captions).toEqual([]);
+    expect(v4Prompt.use_coords).toBe(false);
   });
 
   it('does not send retained Vibe selections for inpainting or outpainting', () => {

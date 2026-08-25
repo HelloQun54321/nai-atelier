@@ -19,28 +19,57 @@ const RESOLUTIONS = {
     Landscape: { width: 1216, height: 832, label: "横屏 (1216x832)" },
     Square: { width: 1024, height: 1024, label: "方形 (1024x1024)" },
 };
+const RESOLUTION_STEP = 64;
+const GENERATION_MAX_DIMENSION = 4096;
+// 标准竖图／横图恰好使用 1,011,712 像素；联动模式保持在这一 Opus 免费像素档内。
+export const OPUS_FREE_PIXEL_LIMIT = 832 * 1216;
+
+const resolutionModeFor = (params: NAIParams) => {
+    if (params.width === 832 && params.height === 1216) return 'Portrait';
+    if (params.width === 1216 && params.height === 832) return 'Landscape';
+    if (params.width === 1024 && params.height === 1024) return 'Square';
+    return 'Custom';
+};
+
+const normalizeCustomDimension = (value: number) => {
+    const finite = Number.isFinite(value) ? value : RESOLUTION_STEP;
+    return Math.min(GENERATION_MAX_DIMENSION, Math.max(RESOLUTION_STEP, Math.floor(finite / RESOLUTION_STEP) * RESOLUTION_STEP));
+};
+
+const linkedDimensionFor = (dimension: number) => normalizeCustomDimension(Math.floor(OPUS_FREE_PIXEL_LIMIT / dimension / RESOLUTION_STEP) * RESOLUTION_STEP);
 
 export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, setParams, canEdit, markChange, presetSource, hideResolution = false, mode = 'text-to-image' }) => {
     // 网关自动同步的官方模型清单（未来新模型无需改代码即可出现在下拉里）。
     const runtime = useNaiRuntime();
     const selectableModels = getSelectableNaiModels(runtime);
+    const [resolutionMode, setResolutionMode] = React.useState(() => resolutionModeFor(params));
+    const [linkCustomDimensions, setLinkCustomDimensions] = React.useState(true);
 
-    const handleResolutionChange = (mode: string) => {
-        if (!canEdit && mode !== 'Custom') return;
-        if (canEdit && mode !== 'Custom') {
-            const res = RESOLUTIONS[mode as keyof typeof RESOLUTIONS];
+    React.useEffect(() => {
+        const nextMode = resolutionModeFor(params);
+        if (nextMode !== 'Custom') setResolutionMode(nextMode);
+    }, [params.width, params.height]);
+
+    const handleResolutionChange = (nextMode: string) => {
+        if (!canEdit) return;
+        setResolutionMode(nextMode);
+        if (nextMode !== 'Custom') {
+            const res = RESOLUTIONS[nextMode as keyof typeof RESOLUTIONS];
             setParams({ ...params, width: res.width, height: res.height });
             markChange();
         }
     };
 
-    const getCurrentResolutionMode = () => {
-        const w = params.width;
-        const h = params.height;
-        if (w === 832 && h === 1216) return 'Portrait';
-        if (w === 1216 && h === 832) return 'Landscape';
-        if (w === 1024 && h === 1024) return 'Square';
-        return 'Custom';
+    const updateCustomDimension = (field: 'width' | 'height', rawValue: number) => {
+        if (!canEdit) return;
+        const value = normalizeCustomDimension(rawValue);
+        const counterpart = field === 'width' ? 'height' : 'width';
+        setParams({
+            ...params,
+            [field]: value,
+            ...(linkCustomDimensions ? { [counterpart]: linkedDimensionFor(value) } : {}),
+        });
+        markChange();
     };
 
     const resolvedModelId = params.model?.trim() || DEFAULT_NAI_MODEL;
@@ -137,18 +166,37 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                     </select>
                 </div>
 
-                {!hideResolution && <div className="flex flex-col gap-1">
+                {!hideResolution && <div className="col-span-full flex flex-col gap-2 lg:col-span-1">
                     <label className="text-xs text-gray-500 dark:text-gray-500 block">图片尺寸</label>
                     <select
+                        aria-label="图片尺寸"
                         disabled={!canEdit}
                         className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
-                        value={getCurrentResolutionMode()}
+                        value={resolutionMode}
                         onChange={(e) => handleResolutionChange(e.target.value)}
                     >
                         {Object.entries(RESOLUTIONS).map(([key, val]) => (
                             <option key={key} value={key}>{val.label}</option>
                         ))}
+                        <option value="Custom">自定义</option>
                     </select>
+                    {resolutionMode === 'Custom' && <div className="col-span-full space-y-2 rounded-lg border border-gray-200 bg-white p-2.5 dark:border-gray-700 dark:bg-gray-900">
+                        <div className="grid grid-cols-2 gap-2">
+                            <label className="text-[11px] text-gray-500 dark:text-gray-400">宽度
+                                <input aria-label="自定义宽度" type="number" min={RESOLUTION_STEP} max={GENERATION_MAX_DIMENSION} step={RESOLUTION_STEP} disabled={!canEdit} value={params.width} onChange={event => updateCustomDimension('width', Number(event.target.value))} className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950" />
+                            </label>
+                            <label className="text-[11px] text-gray-500 dark:text-gray-400">高度
+                                <input aria-label="自定义高度" type="number" min={RESOLUTION_STEP} max={GENERATION_MAX_DIMENSION} step={RESOLUTION_STEP} disabled={!canEdit} value={params.height} onChange={event => updateCustomDimension('height', Number(event.target.value))} className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950" />
+                            </label>
+                        </div>
+                        <button type="button" role="switch" aria-label="Opus 免费像素联动" aria-checked={linkCustomDimensions} disabled={!canEdit} onClick={() => setLinkCustomDimensions(previous => !previous)} className="flex w-full items-center justify-between gap-2 text-left text-[11px] text-gray-600 disabled:opacity-60 dark:text-gray-300">
+                            <span>Opus 免费像素联动</span>
+                            <span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${linkCustomDimensions ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${linkCustomDimensions ? 'translate-x-4' : ''}`} /></span>
+                        </button>
+                        <div role="status" className={`rounded px-2 py-1.5 text-[11px] font-medium tabular-nums ${params.width * params.height <= OPUS_FREE_PIXEL_LIMIT ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300'}`}>
+                            当前 {params.width.toLocaleString()} × {params.height.toLocaleString()} = {(params.width * params.height).toLocaleString()} 像素 · {params.width * params.height <= OPUS_FREE_PIXEL_LIMIT ? '在 Opus 免费像素范围内' : `超过免费像素上限 ${OPUS_FREE_PIXEL_LIMIT.toLocaleString()}`}
+                        </div>
+                    </div>}
                 </div>}
 
                 <div className="flex flex-col gap-1">

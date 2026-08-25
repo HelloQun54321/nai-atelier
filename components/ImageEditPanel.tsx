@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem } from '../types';
 import { LabPageLayout } from '../services/appearancePreferences';
-import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, limitFocusedImageEditRect, normalizeMinimumContextArea, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions } from '../services/imageEdit';
+import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, limitFocusedImageEditRect, normalizeMinimumContextArea, validateImageEditDimensions } from '../services/imageEdit';
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPreview } from './ImageEditPreview';
 
@@ -107,6 +107,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const maskCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
   const drawingRef = useRef(false);
   const selectingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -132,6 +133,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [normalization, setNormalization] = useState<ImageEditNormalizationState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isBaseImageDragActive, setIsBaseImageDragActive] = useState(false);
   const maskEditable = !safeMode && (operation === 'inpaint' || (operation === 'outpaint' && manualMaskEditing));
 
   const snapshot = (): MaskSnapshot | null => {
@@ -472,17 +474,67 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     persistMask();
   };
 
-  const handleUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
+  const importBaseImageFile = (file: File) => {
+    const isSupportedImage = ['image/png', 'image/jpeg', 'image/webp'].includes(file.type)
+      || /\.(?:png|jpe?g|webp)$/i.test(file.name);
+    if (!isSupportedImage) {
+      setError('请拖入 PNG、JPEG 或 WebP 图片作为底图');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = String(reader.result || '');
+      if (!dataUrl) {
+        setError('底图读取失败');
+        return;
+      }
       onBaseImageChange(dataUrl, 'upload');
       void loadBaseImage(dataUrl, { maskData: undefined, focusedRect: undefined });
     };
+    reader.onerror = () => setError('底图读取失败');
     reader.readAsDataURL(file);
+  };
+
+  const handleUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) importBaseImageFile(file);
+  };
+
+  const hasDraggedImage = (dataTransfer: DataTransfer) => Array.from(dataTransfer.items || []).some(item => item.kind === 'file' && (item.type.startsWith('image/') || !item.type));
+
+  const handleBaseImageDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!hasDraggedImage(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current += 1;
+    setIsBaseImageDragActive(true);
+  };
+
+  const handleBaseImageDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!hasDraggedImage(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleBaseImageDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!hasDraggedImage(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsBaseImageDragActive(false);
+  };
+
+  const handleBaseImageDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    const imageFile = Array.from(event.dataTransfer.files || []).find(file => file.type.startsWith('image/') || /\.(?:png|jpe?g|webp)$/i.test(file.name));
+    if (!imageFile && !hasDraggedImage(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current = 0;
+    setIsBaseImageDragActive(false);
+    if (imageFile) importBaseImageFile(imageFile);
+    else setError('请拖入 PNG、JPEG 或 WebP 图片作为底图');
   };
 
   const applyOutpaint = async () => {
@@ -505,12 +557,10 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       setState({ width: result.width, height: result.height, focusedRect: null });
       renderOverlay();
       onCanvasChange(canvasToDataUrl(imageCanvas), canvasToDataUrl(mask));
-      const nextCharacters = transformCharacterCoordinatesForOutpaint(draft.params.characters, state.width, state.height, expansion);
       onDraftChange({
         maskData: canvasToDataUrl(mask),
         focusedRect: undefined,
         expansion,
-        ...(nextCharacters ? { params: { ...draft.params, characters: nextCharacters } } : {}),
       });
     } catch (applyError) {
       setError(applyError instanceof Error ? applyError.message : '扩图尺寸无效');
@@ -616,7 +666,15 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   };
 
   return (
-    <div className="chain-editor-body flex min-h-0 flex-1 flex-col overflow-y-auto bg-white dark:bg-gray-900 lg:flex-row lg:overflow-hidden">
+    <div
+      data-image-edit-drop-zone="true"
+      className="chain-editor-body relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-white dark:bg-gray-900 lg:flex-row lg:overflow-hidden"
+      onDragEnter={handleBaseImageDragEnter}
+      onDragOver={handleBaseImageDragOver}
+      onDragLeave={handleBaseImageDragLeave}
+      onDrop={handleBaseImageDrop}
+    >
+      {isBaseImageDragActive && <div className="pointer-events-none absolute inset-0 z-[90] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm"><div className="rounded-xl border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center text-sm font-bold text-indigo-700 shadow-2xl dark:bg-gray-900/95 dark:text-indigo-300">松手导入为当前编辑底图<br /><span className="mt-1 block text-xs font-normal text-gray-500 dark:text-gray-400">支持 PNG、JPEG、WebP；导入后自动检查并提示规范化尺寸</span></div></div>}
       <ImageEditControls
         operation={operation}
         draft={draft}

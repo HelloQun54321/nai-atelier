@@ -1662,7 +1662,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setIsGenerating(true);
         setErrorMsg(null);
         try {
-            const editParams: NAIParams = { ...editParamsSource, width: sourceWidth, height: sourceHeight, seed: editParamsSource.seed };
+            const editParams: NAIParams = { ...editParamsSource, width: sourceWidth, height: sourceHeight, seed: editParamsSource.seed, characters: [], useCoords: false };
             const result = await generateImageEdit(apiKey, request.prompt, request.negativePrompt, editParams, request);
             setGeneratedImage(result.image);
             setPreviewMode('result');
