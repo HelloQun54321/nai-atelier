@@ -6,6 +6,10 @@
 
 ## 2026-08-25
 
+- **Codex (GPT-5)**：修正返回位置修复记录的日期归档，并同步递增项目补丁版本至 0.114.4。
+
+- **Codex (GPT-5)**：为风格串与角色串详情增加返回箭头，保留列表滚动位置并在排序变化后恢复目标卡片，补齐桌面、手机及角色串同类验证（fix: restore chain list position on return）。
+
 - **Codex (GPT-5)**：将风格串与角色串详情限定为文生图，并将顶部改为可重命名的铅笔加截断名称布局，同时保留实验室四模式（fix: separate chain details from laboratory modes）。
 
 - **Codex (GPT-5)**：补回编辑模式右侧预览的历史管理操作，并将底图选择器接入历史页全量分页数据与完整比例缩略图（fix: restore edit preview actions and history picker）。
@@ -47,8 +51,6 @@
 - **Codex (GPT-5)**：扩展 NovelAI 官方运行时同步，提取模型能力、角色上限及按模型质量／Undesired Content 预设，为实验室能力对齐提供唯一数据源（feat: sync official model capabilities and prompt presets）。
 
 ## 2026-08-24
-
-- **Codex (GPT-5)**：为风格串与角色串详情增加返回箭头，保留列表滚动位置并在排序变化后恢复目标卡片，补齐桌面、手机及角色串同类验证（fix: restore chain list position on return）。
 
 - **Codex (GPT-5)**：将编辑历史蒙版迁移到独立 IndexedDB／R2 存储，补齐按需读取、旧数据迁移、历史恢复、资产清理、Focused 选区移动缩放与异步状态隔离（feat: isolate image edit masks and restore history）。
 
