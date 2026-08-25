@@ -8,6 +8,24 @@ const ASSET_DB_VERSION = 3;
 
 const emptyExpansion: ImageEditCanvasExpansion = { top: 0, right: 0, bottom: 0, left: 0 };
 
+/** 实验室重置与新建会话共用的默认参数：832×1216（约百万像素免费面积上限）、28 步、随机种子、UC 预设 None。 */
+export const LAB_DEFAULT_PARAMS: NAIParams = {
+    width: 832,
+    height: 1216,
+    steps: 28,
+    scale: 5,
+    sampler: 'k_euler_ancestral',
+    seed: undefined,
+    qualityToggle: true,
+    ucPreset: 4,
+    characters: [],
+};
+
+/** 生成模式的中文名，用于重置确认弹窗与提示语。 */
+export const getLabModeLabel = (mode: GenerationMode): string => (
+    mode === 'text-to-image' ? '文生图' : mode === 'image-to-image' ? '图生图' : mode === 'inpaint' ? '局部重绘' : '扩图'
+);
+
 const cloneParams = (params: NAIParams): NAIParams => ({
   ...params,
   characters: params.characters?.map(character => ({ ...character })) || [],

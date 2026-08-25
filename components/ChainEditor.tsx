@@ -12,26 +12,26 @@ import { ChainEditorParams } from './ChainEditorParams';
 import { isInternalChainTag } from './DesignSystem';
 import { ChainEditorPreview } from './ChainEditorPreview';
 import { ImageEditPanel, ImageEditRequest } from './ImageEditPanel';
-import { dataUrlToBlob } from '../services/imageEdit';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
+import { dataUrlToBlob } from '../services/imageEdit';
 import { ImageTaggerPanel } from './ImageTaggerPanel';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
+import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildImageEditPresetPatch, canSaveLabModeToLibrary, LabPresetImportOptions } from '../services/labModeTools';
 import { normalizeVibeSelections } from '../services/vibeUtils';
-import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, useAnlasBudget } from '../services/anlasBudget';
-import { cleanupLabWorkspaceAssets, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, loadLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, scopeLabWorkspaceSessionToEntry } from '../services/labWorkspace';
+import { LabPageLayouts } from '../services/appearancePreferences';
 import { useNovelaiUsage } from '../services/naiUsage';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
+import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, useAnlasBudget } from '../services/anlasBudget';
+import { cleanupLabWorkspaceAssets, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, scopeLabWorkspaceSessionToEntry, getLabModeLabel } from '../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME, getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
-import { LabPageLayouts } from '../services/appearancePreferences';
-import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildImageEditPresetPatch, canSaveLabModeToLibrary, LabPresetImportOptions } from '../services/labModeTools';
-import { LabModuleSection } from './LabModuleSection';
 import { ChainEditorModeHeader } from './ChainEditorModeHeader';
+import { LabModuleSection } from './LabModuleSection';
 import { Copy, FileDown, ImagePlus, Palette, Quote, RotateCcw, Save, Tags, UserRound, X } from 'lucide-react';
 
 const PromptAgentPanel = React.lazy(() => import('./PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
@@ -706,6 +706,21 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
     };
 
+    /** 仅重置单个编辑模式的持久化底图/蒙版资产与草稿；不触碰文生图与其他编辑模式。 */
+    const resetEditOperation = async (operation: ImageEditOperation) => {
+        const baseAssetId = getLabWorkspaceAssetId(workspaceKey, operation, 'base');
+        const maskAssetId = getLabWorkspaceAssetId(workspaceKey, operation, 'mask');
+        const previousDraft = workspaceSession.edits[operation];
+        const currentEditDraft = activeEditOperation === operation && activeEditDraft ? activeEditDraft : previousDraft;
+        const defaultDraft = createLabImageEditDraft(operation, '', '', LAB_DEFAULT_PARAMS);
+        await Promise.all([
+            deleteLabWorkspaceAsset(baseAssetId),
+            deleteLabWorkspaceAsset(previousDraft.maskRef !== maskAssetId ? maskAssetId : undefined),
+            deleteLabWorkspaceAsset(currentEditDraft.maskRef !== maskAssetId ? currentEditDraft.maskRef : undefined),
+        ]).catch(error => console.warn('重置编辑模式资产失败:', error));
+        updateWorkspace(previous => ({ ...previous, edits: { ...previous.edits, [operation]: defaultDraft } }));
+    };
+
     const createEditDraftFromSource = async (operation: ImageEditOperation, sourceImage: string | undefined, source: 'generated' | 'history' | 'upload', parentHistoryId?: string, sourcePrompt = finalPrompt, sourceNegativePrompt = negativePrompt, sourceParams = params, editMetadata?: ImageEditMetadata, reuseEditMask = false) => {
         const draft = createLabImageEditDraft(operation, sourcePrompt, sourceNegativePrompt, sourceParams, {
             baseImageSource: source,
@@ -1348,46 +1363,45 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const handleReset = async () => {
+        if (activeEditOperation) {
+            const modeLabel = getLabModeLabel(activeEditOperation);
+            if (!await confirmAction({
+                title: `重置${modeLabel}？`,
+                message: `将清空${modeLabel}的底图、蒙版与提示词。此操作无法撤销。`,
+                confirmLabel: '确认重置',
+                tone: 'danger',
+            })) return;
+
+            await flushMaskSave(activeEditOperation, false).catch(error => console.warn('重置编辑模式前保存蒙版失败:', error));
+            cancelPendingMaskSave();
+            editBaseResolveRevisionRef.current += 1;
+            await resetEditOperation(activeEditOperation);
+            setImageEditBaseImage(null);
+            setImageEditPreviewImage(null);
+            setImageEditMaskData(undefined);
+            setGeneratedImage(null);
+            setPreviewMode('cover');
+            notify(`${modeLabel}已重置`);
+            return;
+        }
+
         if (!await confirmAction({
-            title: '重置生图实验室？',
-            message: '文生图、图生图、局部重绘与扩图的提示词和参数都会恢复默认值；三个编辑页的底图与蒙版也会清空。此操作无法撤销。',
+            title: '重置文生图？',
+            message: '将恢复文生图的提示词、模块与参数为默认值。此操作无法撤销。',
             confirmLabel: '确认重置',
             tone: 'danger',
         })) return;
 
-        if (activeEditOperation) await flushMaskSave(activeEditOperation, false).catch(error => console.warn('重置实验室前保存蒙版失败:', error));
-        cancelPendingMaskSave();
-        editBaseResolveRevisionRef.current += 1;
-        await Promise.all((Object.keys(workspaceSession.edits) as ImageEditOperation[]).flatMap(operation => [
-            deleteLabWorkspaceAsset(getLabWorkspaceAssetId(workspaceKey, operation, 'base')),
-            deleteLabWorkspaceAsset(getLabWorkspaceAssetId(workspaceKey, operation, 'mask')),
-        ])).catch(error => console.warn('清理实验室编辑资产失败:', error));
-        const resetWorkspace = createLabWorkspaceSession(
-            '',
-            '',
-            '',
-            { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: undefined, qualityToggle: true, ucPreset: 4, characters: [] },
-            {},
-        );
-        setWorkspaceSession(resetWorkspace);
-        saveLabWorkspaceSession(workspaceKey, resetWorkspace);
-
-        setChainName('生图实验室');
-        setChainDesc('临时生图实验，点击 Fork 可保存到库');
         setBasePrompt('');
         setNegativePrompt('');
-        setParams({
-            width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: undefined, qualityToggle: true, ucPreset: 4, characters: []
-        });
         setSubjectPrompt('');
         setModules([]);
         setActiveModules({});
+        setParams({ ...LAB_DEFAULT_PARAMS });
         clearPresetSources();
         setGeneratedImage(null);
-        setImageEditBaseImage(null);
-        setImageEditPreviewImage(null);
-        setImageEditMaskData(undefined);
-        notify('实验室已重置');
+        setPreviewMode('cover');
+        notify('文生图已重置');
     };
 
     const confirmFork = async (targetType: 'style' | 'character') => {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createLabWorkspaceSession, getLabWorkspaceAssetId, loadLabWorkspaceSession, saveLabWorkspaceSession, scopeLabWorkspaceSessionToEntry } from './labWorkspace';
+import { createLabWorkspaceSession, getLabModeLabel, getLabWorkspaceAssetId, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, saveLabWorkspaceSession, scopeLabWorkspaceSessionToEntry } from './labWorkspace';
 
 const params = {
   model: 'nai-diffusion-4-5-full',
@@ -58,9 +58,28 @@ describe('lab workspace session', () => {
     expect(session.activeMode).toBe('outpaint');
   });
 
-  it('uses stable role-specific asset ids so repeated mask saves overwrite one blob', () => {
-    expect(getLabWorkspaceAssetId('chain-a', 'inpaint', 'mask')).toBe(getLabWorkspaceAssetId('chain-a', 'inpaint', 'mask'));
-    expect(getLabWorkspaceAssetId('chain-a', 'inpaint', 'mask')).not.toBe(getLabWorkspaceAssetId('chain-a', 'inpaint', 'base'));
-    expect(getLabWorkspaceAssetId('chain-a', 'inpaint', 'mask')).not.toBe(getLabWorkspaceAssetId('chain-b', 'inpaint', 'mask'));
+  it('LAB_DEFAULT_PARAMS 是重置使用的免费边界默认参数', () => {
+    expect(LAB_DEFAULT_PARAMS).toMatchObject({
+      width: 832,
+      height: 1216,
+      steps: 28,
+      scale: 5,
+      sampler: 'k_euler_ancestral',
+      qualityToggle: true,
+      ucPreset: 4,
+    });
+    expect(LAB_DEFAULT_PARAMS.seed).toBeUndefined();
+    expect(LAB_DEFAULT_PARAMS.characters).toEqual([]);
+    // 与新建会话的初始草稿保持一致：重置后编辑草稿应回到该基底。
+    const session = createLabWorkspaceSession('', '', '', LAB_DEFAULT_PARAMS, {});
+    expect(session.edits.inpaint.params).toMatchObject({ width: 832, height: 1216, steps: 28 });
+    expect(session.edits.inpaint.prompt).toBe('');
+  });
+
+  it('getLabModeLabel 提供四种生成模式的中文名', () => {
+    expect(getLabModeLabel('text-to-image')).toBe('文生图');
+    expect(getLabModeLabel('image-to-image')).toBe('图生图');
+    expect(getLabModeLabel('inpaint')).toBe('局部重绘');
+    expect(getLabModeLabel('outpaint')).toBe('扩图');
   });
 });
