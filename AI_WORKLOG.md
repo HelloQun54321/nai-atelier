@@ -6,6 +6,10 @@
 
 ## 2026-08-26
 
+- **Claude (Omni)**：新增 Viber 创作意志与产品哲学宪章 VIBER_INTENT.md，并让 AGENTS.md 将其列为最高优先级必读，同步递增补丁版本至 0.115.1（docs: document viber creator intent and design philosophy）。
+
+## 2026-08-25
+
 - **OpenAI (GPT-5.6)**：为实验室图片编辑新增拖拽底图导入，为文生图增加 Opus 免费像素联动的自定义分辨率，并隔离编辑请求中的文生图多角色参数（feat: enhance laboratory image workflows）。
 
 ## 2026-08-25
