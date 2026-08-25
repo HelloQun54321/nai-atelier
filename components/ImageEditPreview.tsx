@@ -24,7 +24,7 @@ interface ImageEditPreviewProps {
 const getOperationLabel = (operation: ImageEditOperation) => operation === 'image-to-image' ? '图生图' : operation === 'inpaint' ? '局部重绘' : '扩图';
 
 export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({ operation, image, error, generationCostLabel, isGenerating = false, isLoading = false, onGenerate, onOpenLightbox, getDownloadFilename, canNavigateHistory, historyLabel, onPreviousHistory, onNextHistory, canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup }) => (
-  <div className="image-edit-preview-shell chain-editor-preview-wrapper order-1 flex min-h-0 flex-1 lg:contents">
+  <div className="image-edit-preview-shell chain-editor-preview-wrapper order-1 flex min-h-0 lg:flex-1 lg:contents">
     <ChainEditorPreview
       isGenerating={isGenerating}
       handleGenerate={onGenerate}

@@ -64,8 +64,8 @@ describe('ImageEditPanel base image drop', () => {
     expect(onParentDrop).not.toHaveBeenCalled();
   });
 
-  it('向 generateBarRef 写入移动端悬浮生成入口与费用标签', () => {
-    const generateBarRef: { current: { generate: () => void; costLabel: string } | null } = { current: null };
+  it('通过 onGenerateBarChange 上报移动端悬浮生成入口与费用标签', () => {
+    const onGenerateBarChange = vi.fn();
     const draft = createLabImageEditDraft('inpaint', 'overall prompt', '', params);
     render(React.createElement(ImageEditPanel, {
       baseImage: null,
@@ -86,11 +86,13 @@ describe('ImageEditPanel base image drop', () => {
       onGenerate: vi.fn(async () => undefined),
       onOpenLightbox: vi.fn(),
       getDownloadFilename: () => 'test.png',
-      generateBarRef,
+      onGenerateBarChange,
     }));
 
-    expect(generateBarRef.current).not.toBeNull();
-    expect(typeof generateBarRef.current?.generate).toBe('function');
-    expect(generateBarRef.current?.costLabel).toBe('12 点');
+    const lastCall = onGenerateBarChange.mock.calls.at(-1)?.[0];
+    expect(lastCall).toBeDefined();
+    expect(typeof lastCall.generate).toBe('function');
+    expect(lastCall.costLabel).toBe('12 点');
+    expect(lastCall.canGenerate).toBe(false);
   });
 });

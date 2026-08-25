@@ -240,7 +240,11 @@ describe('ImageEditPreview', () => {
     }));
 
     expect(container.querySelector('.image-edit-preview-shell')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /生成局部重绘结果/ }).className).toContain('lg:hidden');
+    const generateButton = screen.getByRole('button', { name: /生成局部重绘结果/ });
+    // 移动端隐藏内嵌生成按钮（hidden），桌面端显示（lg:flex）——绝不允许写成 lg:hidden（桌面隐藏/移动显示）。
+    expect(generateButton.className).toContain('hidden');
+    expect(generateButton.className).toContain('lg:flex');
+    expect(generateButton.className).not.toContain('lg:hidden');
   });
 
   it('与文生图一致显示历史管理按钮、切换按钮和计数', () => {

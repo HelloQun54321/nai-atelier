@@ -54,8 +54,8 @@ interface ImageEditPanelProps {
   canManageHistoryGroup?: boolean;
   onRemoveCurrentHistory?: () => void;
   onClearHistoryGroup?: () => void;
-  /** 移动端悬浮生成栏通过该 ref 获取编辑模式的生成入口与费用标签。 */
-  generateBarRef?: React.MutableRefObject<{ generate: () => void; costLabel: string } | null>;
+  /** 移动端悬浮生成栏状态变更回调：父组件据此驱动右下角悬浮胶囊按钮（每次渲染都会回调，内容不变时父组件自行去重）。 */
+  onGenerateBarChange?: (bar: { generate: () => void; costLabel: string; canGenerate: boolean }) => void;
 }
 
 type MaskSnapshot = { data: string; rect: { x: number; y: number; width: number; height: number } | null };
@@ -104,7 +104,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   onClearHistoryGroup,
   isGenerating = false,
   safeMode = false,
-  generateBarRef,
+  onGenerateBarChange,
 }) => {
   const imageCanvasRef = useRef<HTMLCanvasElement>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -139,13 +139,15 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [isBaseImageDragActive, setIsBaseImageDragActive] = useState(false);
   const maskEditable = !safeMode && (operation === 'inpaint' || (operation === 'outpaint' && manualMaskEditing));
 
-  // 每次渲染同步移动端悬浮生成栏入口，保证 ChainEditor 拿到的费用标签与预览卡一致。
+  // 每次渲染同步移动端悬浮生成栏入口，保证 ChainEditor 拿到的费用标签与预览卡一致；
+  // 通过回调上报而非可变 ref，父组件才能在自己渲染时拿到最新状态。
   useEffect(() => {
-    if (!generateBarRef) return;
-    generateBarRef.current = {
+    if (!onGenerateBarChange) return;
+    onGenerateBarChange({
       generate: () => { void submit(); },
       costLabel: generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea }),
-    };
+      canGenerate: Boolean(imageCanvasRef.current && maskCanvasRef.current),
+    });
   });
 
   const snapshot = (): MaskSnapshot | null => {

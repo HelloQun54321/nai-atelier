@@ -281,7 +281,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const workspaceFallback = createLabWorkspaceSession(chain.basePrompt || '', String(chain.variableValues?.subject || ''), chain.negativePrompt || '', chain.params || { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' }, Object.fromEntries((chain.modules || []).map(module => [module.id, module.isActive])));
     const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => scopeLabWorkspaceSessionToEntry(chain.id, loadLabWorkspaceSession(workspaceKey, workspaceFallback)));
     const [imageEditMaskData, setImageEditMaskData] = useState<string | undefined>();
-  const imageEditGenerateBarRef = useRef<{ generate: () => void; costLabel: string } | null>(null);
+  const imageEditGenerateFnRef = useRef<(() => void) | null>(null);
+  const [imageEditGenerateBar, setImageEditGenerateBar] = useState<{ costLabel: string; canGenerate: boolean } | null>(null);
+  const handleImageEditGenerateBarChange = React.useCallback((bar: { generate: () => void; costLabel: string; canGenerate: boolean }) => {
+    imageEditGenerateFnRef.current = bar.generate;
+    setImageEditGenerateBar(previous => previous && previous.costLabel === bar.costLabel && previous.canGenerate === bar.canGenerate ? previous : { costLabel: bar.costLabel, canGenerate: bar.canGenerate });
+  }, []);
     const [imageEditBaseLoading, setImageEditBaseLoading] = useState(false);
     const maskSaveRevisionRef = useRef(0);
     const maskSaveTimerRef = useRef<number | null>(null);
@@ -2497,14 +2502,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     })();
                 }}
                 onGenerate={handleImageEditGenerate}
-                generateBarRef={imageEditGenerateBarRef}
+                onGenerateBarChange={handleImageEditGenerateBarChange}
             /> : null}
 
             {!lightboxImg && !showImportPreset && !importCandidate && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
                 {(displayedPreviewImage || chain.previewImage) && <button type="button" onClick={() => setLightboxImg(displayedPreviewImage || chain.previewImage || null)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-700" aria-label="查看最近生成结果"><SmartImage src={displayedPreviewImage || chain.previewImage || ''} alt="最近生成结果" /></button>}
                 {queueStatus
                     ? <InlineCloudQueueStatus compact className="min-w-64 max-w-[calc(100vw-5rem)]" />
-                    : <button onClick={activeEditOperation ? () => imageEditGenerateBarRef.current?.generate() : handleGenerate} disabled={isGenerating} className={`generation-action-button mobile-touch rounded-full px-6 text-sm font-bold text-white shadow-xl disabled:opacity-60 ${isGenerating ? 'generation-action-button--loading' : ''}`}><span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : `生成 · ${activeEditOperation ? imageEditGenerateBarRef.current?.costLabel ?? '' : generationCostLabel}`}</span></button>}
+                    : <button onClick={activeEditOperation ? () => imageEditGenerateFnRef.current?.() : handleGenerate} disabled={isGenerating || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canGenerate)} className={`generation-action-button mobile-touch rounded-full px-6 text-sm font-bold text-white shadow-xl disabled:opacity-60 ${isGenerating ? 'generation-action-button--loading' : ''}`}><span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : activeEditOperation && !imageEditGenerateBar?.canGenerate ? '请先选择底图' : `生成 · ${activeEditOperation ? imageEditGenerateBar?.costLabel ?? '' : generationCostLabel}`}</span></button>}
             </div>}
 
             {/* Lightbox Modal */}

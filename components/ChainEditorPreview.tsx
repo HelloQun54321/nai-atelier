@@ -98,11 +98,11 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     };
 
     return (
-        <div className="chain-editor-preview w-full lg:w-1/2 flex flex-col bg-gray-100 dark:bg-black/20 order-1 lg:order-2 border-b lg:border-b-0 border-gray-200 dark:border-gray-800 shrink-0">
-            <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden min-h-[400px]">
+        <div className="chain-editor-preview w-full lg:w-1/2 flex flex-col bg-gray-100 dark:bg-black/20 order-1 lg:order-2 border-b lg:border-b-0 border-gray-200 dark:border-gray-800 lg:shrink-0">
+            <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden lg:min-h-[400px]">
                 {/* Generated Image */}
                 <div
-                    className={`flex-1 min-h-[300px] lg:min-h-0 rounded-xl border border-gray-200 dark:border-gray-800 flex items-center justify-center relative group overflow-hidden cursor-zoom-in ${transparentPreview ? 'nai-alpha-checker' : 'bg-white dark:bg-gray-950/50'}`}
+                    className={`flex-1 min-h-0 lg:min-h-[300px] rounded-xl border border-gray-200 dark:border-gray-800 flex items-center justify-center relative group overflow-hidden cursor-zoom-in ${transparentPreview ? 'nai-alpha-checker' : 'bg-white dark:bg-gray-950/50'}`}
                     onClick={() => {
                         const img = generatedImage || previewImage;
                         if (img) setLightboxImg(img);
@@ -224,7 +224,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                     {showQueueStatus && queueStatus ? <InlineCloudQueueStatus className="w-full max-w-xs flex-shrink-0" /> : <button
                         onClick={handleGenerate}
                         disabled={isGenerating || generationDisabled}
-                        className={`generation-action-button flex h-11 w-full max-w-xs items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${isGenerating ? 'generation-action-button--loading' : ''} ${hideGenerateButtonOnMobile ? 'lg:hidden' : ''}`}
+                        className={`generation-action-button flex h-11 w-full max-w-xs items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${isGenerating ? 'generation-action-button--loading' : ''} ${hideGenerateButtonOnMobile ? 'hidden lg:flex' : ''}`}
                     >
                         <ImageIcon aria-hidden="true" className="relative z-[1] h-4 w-4 shrink-0" strokeWidth={2.2} />
                         <span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : generateLabel}</span>
