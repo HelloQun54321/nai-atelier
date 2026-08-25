@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-26
+- **Gemini (Flash)**：在 AGENTS.md 中新增 AI 协作生命周期与会话管理规范（Director-Worker 规范），约束跨会话上下文继承基于项目文档、同模块连续调整禁止随意销毁 Worker、新建任务保持 Brief 自包含（docs: codify agent lifecycle and session management rules）。
+
 
 - **Gemini (Flash)**：在 VIBER_INTENT.md 与 AGENTS.md 中补充 AI 协作效率与分级验证梯度准绳（Pragmatic Verification），确立轻量敏捷反馈与重型全流程验收的边界，并强调避免断点逻辑倒置与单测假阳性（docs: document verification gradient and efficiency principles）。
 - **DeepSeek (V4 Flash)**：彻底修正移动端生成按钮逻辑倒置——`hideGenerateButtonOnMobile` 由错误的 `lg:hidden`（手机显示）改为 `hidden lg:flex`（手机隐藏）；编辑模式悬浮胶囊改为 `onGenerateBarChange` 回调驱动父组件状态，费用标签与禁用态即时同步；移动端编辑预览卡壳按内容自适应，修复塌缩为 1px 与遮挡底图控制区的问题（fix: fix mobile generate button inversion and capsule sync）。
