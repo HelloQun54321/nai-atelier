@@ -6,6 +6,7 @@
 
 ## 2026-08-26
 
+- **Gemini (Flash)**：在 VIBER_INTENT.md 与 AGENTS.md 中补充 AI 协作效率与分级验证梯度准绳（Pragmatic Verification），确立轻量敏捷反馈与重型全流程验收的边界，并强调避免断点逻辑倒置与单测假阳性（docs: document verification gradient and efficiency principles）。
 - **DeepSeek (V4 Flash)**：彻底修正移动端生成按钮逻辑倒置——`hideGenerateButtonOnMobile` 由错误的 `lg:hidden`（手机显示）改为 `hidden lg:flex`（手机隐藏）；编辑模式悬浮胶囊改为 `onGenerateBarChange` 回调驱动父组件状态，费用标签与禁用态即时同步；移动端编辑预览卡壳按内容自适应，修复塌缩为 1px 与遮挡底图控制区的问题（fix: fix mobile generate button inversion and capsule sync）。
 - **DeepSeek (V4 Flash)**：为图生图、局部重绘和扩图统一移动端交互——底部大矩形生成按钮改为与文生图一致的悬浮胶囊「生成 · 点数」，并修复预览卡固定高度溢出遮挡底图说明的问题（fix: align mobile image edit actions and preview flow）。
 - **Claude (Omni)**：新增 Viber 创作意志与产品哲学宪章 VIBER_INTENT.md，并让 AGENTS.md 将其列为最高优先级必读，同步递增补丁版本至 0.115.1（docs: document viber creator intent and design philosophy）。
