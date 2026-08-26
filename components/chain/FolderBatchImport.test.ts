@@ -43,19 +43,23 @@ describe('FolderBatchImport & Untested Tag Lifecycle', () => {
     expect(parsed.params.seed).toBe(123456789);
   });
 
-  it('正确根据提示词与生成参数计算指纹并识别重复预设（忽略随机种子变化）', async () => {
+  it('正确根据提示词计算指纹并识别重复预设（只识别正负提示词，忽略尺寸/步数/模型/种子）', async () => {
     const { computeChainFingerprint } = await import('./FolderBatchImportModal');
-    // 相同提示词和参数，即使种子不同（或一个有种子一个已清空为 undefined），指纹应完全相同
-    const fpWithSeed = computeChainFingerprint('1girl, scenic', 'low quality', { seed: 123456789, steps: 28, model: 'nai-diffusion-4-5-full', width: 832, height: 1216 });
-    const fpEmptySeed = computeChainFingerprint('1girl, scenic', 'low quality', { seed: undefined, steps: 28, model: 'nai-diffusion-4-5-full', width: 832, height: 1216 });
-    const fpChangedSeed = computeChainFingerprint('1girl, scenic', 'low quality', { seed: 999999999, steps: 28, model: 'nai-diffusion-4-5-full', width: 832, height: 1216 });
+    // 相同提示词，即使尺寸、步数、模型、种子等全部不同，指纹也完全相同
+    const fpBase = computeChainFingerprint('1girl, scenic', 'low quality', { seed: 123456789, steps: 28, model: 'nai-diffusion-4-5-full', width: 832, height: 1216 });
+    const fpDifferentDimensions = computeChainFingerprint('1girl, scenic', 'low quality', { seed: undefined, steps: 23, model: 'nai-diffusion-5-full', width: 1216, height: 832 });
+    const fpSquareDimension = computeChainFingerprint('1girl, scenic', 'low quality', { width: 1024, height: 1024 });
 
-    expect(fpWithSeed).toBe(fpEmptySeed);
-    expect(fpWithSeed).toBe(fpChangedSeed);
+    expect(fpBase).toBe(fpDifferentDimensions);
+    expect(fpBase).toBe(fpSquareDimension);
 
-    // 参数或提示词不同时，指纹不同
-    const fpDifferentPrompt = computeChainFingerprint('1boy, scenic', 'low quality', { steps: 28, model: 'nai-diffusion-4-5-full', width: 832, height: 1216 });
-    expect(fpWithSeed).not.toBe(fpDifferentPrompt);
+    // 正向提示词不同
+    const fpDifferentPrompt = computeChainFingerprint('1boy, scenic', 'low quality', { width: 832, height: 1216 });
+    expect(fpBase).not.toBe(fpDifferentPrompt);
+
+    // 负向提示词不同
+    const fpDifferentNegative = computeChainFingerprint('1girl, scenic', 'worst quality, bad anatomy', { width: 832, height: 1216 });
+    expect(fpBase).not.toBe(fpDifferentNegative);
   });
 });
 

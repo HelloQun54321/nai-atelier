@@ -31,15 +31,11 @@ interface FolderBatchImportModalProps {
 export const computeChainFingerprint = (
   prompt: string,
   negativePrompt?: string,
-  params?: Partial<NAIParams>
+  _params?: Partial<NAIParams>
 ): string => {
   const p = (prompt || '').trim();
   const np = (negativePrompt || '').trim();
-  const steps = params?.steps ?? '';
-  const model = params?.model ?? '';
-  const w = params?.width ?? '';
-  const h = params?.height ?? '';
-  return `${p}:::${np}:::${steps}:::${model}:::${w}x${h}`;
+  return `${p}:::${np}`;
 };
 
 const getCleanPresetName = (fileName: string): string => {
