@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：为文件夹批量导入增加内容指纹智能去重机制，自动识别并排除已入库的重复预设（feat: add generation fingerprint deduplication to folder batch import）。
+
 - **Gemini (Flash)**：支持从本地文件夹批量读取原图为风格串，智能识别 NovelAI 元数据并直出封面，引入「待实测」状态与生成后自动销标闭环（feat: add folder batch import to style chains with untested tag lifecycle）。
 
 ## 2026-08-26

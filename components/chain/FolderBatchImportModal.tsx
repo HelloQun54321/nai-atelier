@@ -1,13 +1,13 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, CheckSquare, EyeOff, FolderOpen, FolderUp, Loader2, Sparkles, Square, Trash2, X } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Check, CheckSquare, EyeOff, FolderOpen, FolderUp, Layers, Loader2, Sparkles, Square, Trash2, X } from 'lucide-react';
 import { extractMetadata, parseNovelAIMetadata } from '../../services/metadataService';
 import { api } from '../../services/api';
 import { db } from '../../services/dbService';
 import { UNTESTED_CHAIN_TAG } from '../DesignSystem';
 import { getNaiModelDisplayLabel } from '../../services/naiModels';
-import { NAIParams } from '../../types';
+import { NAIParams, PromptChain } from '../../types';
 
-interface DetectedChainItem {
+export interface DetectedChainItem {
   id: string;
   file: File;
   name: string;
@@ -16,14 +16,32 @@ interface DetectedChainItem {
   params: NAIParams;
   previewUrl: string;
   selected: boolean;
+  isDuplicate?: boolean;
+  duplicateOfName?: string;
 }
 
 interface FolderBatchImportModalProps {
   isOpen: boolean;
+  existingChains?: PromptChain[];
   onClose: () => void;
   onSuccess: () => void;
   notify: (msg: string, type?: 'success' | 'error') => void;
 }
+
+export const computeChainFingerprint = (
+  prompt: string,
+  negativePrompt?: string,
+  params?: Partial<NAIParams>
+): string => {
+  const p = (prompt || '').trim();
+  const np = (negativePrompt || '').trim();
+  const seed = params?.seed ?? '';
+  const steps = params?.steps ?? '';
+  const model = params?.model ?? '';
+  const w = params?.width ?? '';
+  const h = params?.height ?? '';
+  return `${p}:::${np}:::${seed}:::${steps}:::${model}:::${w}x${h}`;
+};
 
 const getCleanPresetName = (fileName: string): string => {
   return fileName.replace(/\.[^/.]+$/, '').trim() || '未命名预设';
@@ -31,6 +49,7 @@ const getCleanPresetName = (fileName: string): string => {
 
 export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
   isOpen,
+  existingChains = [],
   onClose,
   onSuccess,
   notify,
@@ -58,6 +77,20 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
     total: 0,
     name: '',
   });
+
+  // 构建已有风格串指纹索引表
+  const existingFingerprintsMap = useMemo(() => {
+    const map = new Map<string, PromptChain>();
+    existingChains.forEach(chain => {
+      if (chain.type === 'style' || !chain.type) {
+        const fp = computeChainFingerprint(chain.basePrompt, chain.negativePrompt, chain.params);
+        if (fp && !map.has(fp)) {
+          map.set(fp, chain);
+        }
+      }
+    });
+    return map;
+  }, [existingChains]);
 
   // 释放 ObjectURL 防止内存泄漏
   const detectedItemsRef = useRef<DetectedChainItem[]>([]);
@@ -120,6 +153,10 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
               // 检查是否包含有效的生成提示词或参数
               if (parsed.prompt || parsed.params.steps || parsed.negativePrompt) {
                 const previewUrl = URL.createObjectURL(file);
+                const fp = computeChainFingerprint(parsed.prompt, parsed.negativePrompt, parsed.params);
+                const existing = existingFingerprintsMap.get(fp);
+                const isDuplicate = Boolean(existing);
+
                 newDetected.push({
                   id: `${file.name}-${file.size}-${currentIndex}-${Math.random().toString(36).slice(2, 6)}`,
                   file,
@@ -128,7 +165,9 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                   negativePrompt: parsed.negativePrompt,
                   params: parsed.params,
                   previewUrl,
-                  selected: true,
+                  selected: !isDuplicate, // 新图片默认勾选，已有预设默认不勾选去重
+                  isDuplicate,
+                  duplicateOfName: existing?.name,
                 });
                 return;
               }
@@ -222,6 +261,10 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
     setDetectedItems(prev => prev.map(item => (item.id === id ? { ...item, selected: !item.selected } : item)));
   };
 
+  const selectOnlyNewItems = () => {
+    setDetectedItems(prev => prev.map(item => ({ ...item, selected: !item.isDuplicate })));
+  };
+
   const toggleSelectAll = () => {
     const allSelected = detectedItems.every(item => item.selected);
     setDetectedItems(prev => prev.map(item => ({ ...item, selected: !allSelected })));
@@ -241,6 +284,8 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
     });
   };
 
+  const newItemsCount = detectedItems.filter(item => !item.isDuplicate).length;
+  const duplicateItemsCount = detectedItems.filter(item => item.isDuplicate).length;
   const selectedCount = detectedItems.filter(item => item.selected).length;
 
   // 执行批量导入
@@ -319,7 +364,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-gray-900 dark:text-white">批量导入文件夹图片为风格串</h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">自动提取 NovelAI 生成参数并使用原图作为封面</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">智能过滤已存在预设并使用原图作为封面</p>
             </div>
           </div>
           <button
@@ -356,7 +401,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                 将图片文件夹或多张图片拖到此处
               </h3>
               <p className="mb-6 max-w-md text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                系统将自动过滤并解析所有含 NovelAI 元数据（tEXt 或 Stealth 隐写）的原图，并直接以原图为封面沉淀为风格串
+                自动提取 NovelAI 生成参数、智能排除已存在的相同预设，并以原图为封面沉淀为风格串
               </p>
 
               <div className="flex flex-wrap items-center justify-center gap-3">
@@ -402,7 +447,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
             <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
               <Loader2 className="h-10 w-10 animate-spin text-indigo-600 dark:text-indigo-400" />
               <div>
-                <h4 className="text-base font-bold text-gray-800 dark:text-gray-200">正在分析图片元数据...</h4>
+                <h4 className="text-base font-bold text-gray-800 dark:text-gray-200">正在分析图片元数据并比对现有库...</h4>
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   已扫描 {scanProgress.current} / {scanProgress.total} 张
                 </p>
@@ -425,11 +470,28 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
                   <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">
-                    成功识别 <b className="text-indigo-600 dark:text-indigo-400">{detectedItems.length}</b> 张 NovelAI 图片
-                    {ignoredCount > 0 && `（已自动忽略 ${ignoredCount} 张无元数据或非 PNG 文件）`}
+                    成功识别 <b className="text-indigo-600 dark:text-indigo-400">{detectedItems.length}</b> 张图片
+                    {duplicateItemsCount > 0 ? (
+                      <>
+                        （含 <b className="text-emerald-600 dark:text-emerald-400">{newItemsCount}</b> 张新素材，
+                        <span className="text-gray-500 dark:text-gray-400">{duplicateItemsCount} 张已在库中已自动排除</span>）
+                      </>
+                    ) : (
+                      <span>（全部为新素材）</span>
+                    )}
+                    {ignoredCount > 0 && `，跳过 ${ignoredCount} 张无生成参数的文件`}
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
+                  {duplicateItemsCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={selectOnlyNewItems}
+                      className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
+                    >
+                      <Layers className="h-3.5 w-3.5" /> 仅选新素材 ({newItemsCount})
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={toggleSelectAll}
@@ -468,7 +530,9 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                     className={`group relative flex flex-col rounded-xl border p-2.5 transition cursor-pointer select-none ${
                       item.selected
                         ? 'border-indigo-500 bg-indigo-50/30 dark:border-indigo-500/80 dark:bg-indigo-950/20 shadow-sm'
-                        : 'border-gray-200 bg-gray-50/50 opacity-60 hover:opacity-100 dark:border-gray-800 dark:bg-gray-850'
+                        : item.isDuplicate
+                          ? 'border-gray-200 bg-gray-100/60 dark:border-gray-800 dark:bg-gray-900/60 opacity-60 hover:opacity-90'
+                          : 'border-gray-200 bg-gray-50/50 opacity-60 hover:opacity-100 dark:border-gray-800 dark:bg-gray-850'
                     }`}
                   >
                     <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-gray-200 dark:bg-gray-900 border border-gray-100 dark:border-gray-800 flex items-center justify-center">
@@ -484,19 +548,29 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                           {item.selected ? <Check className="h-3.5 w-3.5" /> : null}
                         </div>
                       </div>
+                      {item.isDuplicate && (
+                        <div
+                          className="absolute right-1.5 top-1.5 max-w-[65%] truncate rounded bg-gray-900/85 px-1.5 py-0.5 text-[9px] font-medium text-amber-300 border border-gray-700/60 backdrop-blur-sm"
+                          title={`已存在同参数预设: ${item.duplicateOfName || '现有预设'}`}
+                        >
+                          已在库中
+                        </div>
+                      )}
                       <span className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-mono text-gray-200 backdrop-blur-sm">
                         {item.params.width}×{item.params.height}
                       </span>
                     </div>
 
                     <div className="mt-2 flex-1 min-w-0" onClick={e => e.stopPropagation()}>
-                      <input
-                        type="text"
-                        value={item.name}
-                        onChange={e => updateItemName(item.id, e.target.value)}
-                        placeholder="预设名称"
-                        className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-bold text-gray-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-                      />
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={item.name}
+                          onChange={e => updateItemName(item.id, e.target.value)}
+                          placeholder="预设名称"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-bold text-gray-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                        />
+                      </div>
                       <div className="mt-1 flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400">
                         <span className="truncate">{getNaiModelDisplayLabel(item.params.model)}</span>
                         <span className="flex-none font-mono">{item.params.steps} 步</span>
@@ -581,6 +655,9 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
             {detectedItems.length > 0 && !isScanning && !isImporting && (
               <span>
                 已选中 <b className="text-indigo-600 dark:text-indigo-400">{selectedCount}</b> / {detectedItems.length} 个预设
+                {duplicateItemsCount > 0 && (
+                  <span className="ml-1 text-gray-400">（已自动排除 {duplicateItemsCount} 个已有预设）</span>
+                )}
               </span>
             )}
           </div>

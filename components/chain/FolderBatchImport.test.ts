@@ -42,4 +42,15 @@ describe('FolderBatchImport & Untested Tag Lifecycle', () => {
     expect(parsed.params.height).toBe(1216);
     expect(parsed.params.seed).toBe(123456789);
   });
+
+  it('正确根据提示词与生成参数计算指纹并识别重复预设', async () => {
+    const { computeChainFingerprint } = await import('./FolderBatchImportModal');
+    const fp1 = computeChainFingerprint('1girl, scenic', 'low quality', { seed: 100, steps: 28, model: 'nai-diffusion-4-5-full', width: 832, height: 1216 });
+    const fp2 = computeChainFingerprint('1girl, scenic', 'low quality', { seed: 100, steps: 28, model: 'nai-diffusion-4-5-full', width: 832, height: 1216 });
+    const fp3 = computeChainFingerprint('1girl, scenic', 'low quality', { seed: 101, steps: 28, model: 'nai-diffusion-4-5-full', width: 832, height: 1216 });
+
+    expect(fp1).toBe(fp2);
+    expect(fp1).not.toBe(fp3);
+  });
 });
+

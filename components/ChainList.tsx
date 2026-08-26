@@ -509,6 +509,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       {/* Folder Batch Import Modal */}
       <FolderBatchImportModal
         isOpen={isFolderImportOpen}
+        existingChains={chains}
         onClose={() => setIsFolderImportOpen(false)}
         onSuccess={onRefresh}
         notify={notify}
