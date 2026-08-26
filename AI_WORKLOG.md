@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-26
+- **Gemini (Flash)**：将实验室角色参考与 Vibe 氛围参考从全屏覆盖层重构为精致居中模态大弹窗，支持磨砂遮罩透光、点击外部/ESC关闭与底部快捷应用（refactor: convert character reference and vibe managers from full-screen overlays to centered modal dialogs）。
+
 - **Gemini (Flash)**：建立全局视口层叠 Z-Index 六级阶梯体系（收敛至 z-[900/1100/1250/1500/1800/2000]），并全面收敛卡片/弹窗/控件的 Design Token 边框与圆角规范（style: unify z-index stacking hierarchy and standardize design tokens across all components）。
 
 - **Gemini (Flash)**：重塑侧栏为现代连贯纵向立柱（移除 Logo 下方多余横线）并将主工作区顶栏恢复至精炼干练的 56px（style: adopt modern seamless vertical rail sidebar and restore 56px workspace toolbar）。
