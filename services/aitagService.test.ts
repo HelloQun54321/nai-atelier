@@ -7,6 +7,8 @@ import {
   getAitagMetadataText,
   buildAitagImageUrl,
   buildAitagPreviewUrl,
+  extractAitagPrompt,
+  hasAitagImagePrompt,
 } from './aitagService';
 
 describe('parseMaybeJsonArray', () => {
@@ -89,6 +91,7 @@ describe('buildAitagPreviewUrl', () => {
   });
 });
 
+
 describe('getAitagMetadataText', () => {
   it('屏蔽 UTF-8 字节数少于 30 的短元数据', () => {
     expect(getAitagMetadataText({ ai_json: JSON.stringify({ Comment: '👻👻👻' }) } as any)).toBe('');
@@ -99,6 +102,68 @@ describe('getAitagMetadataText', () => {
     expect(getAitagMetadataText({ ai_json: JSON.stringify({ Comment: 'a'.repeat(30) }) } as any)).toBe('a'.repeat(30));
     expect(getAitagMetadataText({ ai_json: JSON.stringify({ Comment: { prompt: '1girl, masterpiece, detailed eyes' } }) } as any))
       .toBe(JSON.stringify({ prompt: '1girl, masterpiece, detailed eyes' }));
+  });
+});
+
+describe('extractAitagPrompt', () => {
+  it('优先 Comment.v4_prompt.caption.base_caption，其次 Comment.prompt', () => {
+    const image = {
+      ai_json: JSON.stringify({
+        Comment: {
+          v4_prompt: { caption: { base_caption: 'masterpiece, 1girl' } },
+          prompt: 'legacy prompt',
+        },
+      }),
+    } as any;
+    expect(extractAitagPrompt(image)).toBe('masterpiece, 1girl');
+    expect(extractAitagPrompt({ ai_json: JSON.stringify({ Comment: { prompt: 'legacy prompt' } }) } as any)).toBe('legacy prompt');
+  });
+
+  it('顶层 v4_prompt / prompt / Description 依次兜底', () => {
+    expect(extractAitagPrompt({ ai_json: JSON.stringify({ v4_prompt: { caption: { base_caption: 'v4 top' } } }) } as any)).toBe('v4 top');
+    expect(extractAitagPrompt({ ai_json: JSON.stringify({ prompt: 'plain prompt' }) } as any)).toBe('plain prompt');
+    expect(extractAitagPrompt({ ai_json: JSON.stringify({ Description: 'desc prompt' }) } as any)).toBe('desc prompt');
+  });
+
+  it('最后回退 prompt_text（原样返回，不裁剪），缺失时返回空串', () => {
+    expect(extractAitagPrompt({ ai_json: '{}', prompt_text: 'from prompt_text' } as any)).toBe('from prompt_text');
+    expect(extractAitagPrompt({ ai_json: '{}', prompt_text: '   ' } as any)).toBe('   ');
+    expect(extractAitagPrompt({ ai_json: '{}' } as any)).toBe('');
+  });
+});
+
+describe('hasAitagImagePrompt', () => {
+  it('与 extractAitagPrompt 判定一致：有有效 prompt 为 true', () => {
+    const cases: any[] = [
+      { ai_json: JSON.stringify({ Comment: { v4_prompt: { caption: { base_caption: '1girl' } } } }) },
+      { ai_json: JSON.stringify({ Comment: { prompt: 'legacy' } }) },
+      { ai_json: JSON.stringify({ v4_prompt: { caption: { base_caption: 'v4' } } }) },
+      { ai_json: JSON.stringify({ prompt: 'plain' }) },
+      { ai_json: JSON.stringify({ Description: 'desc' }) },
+      { ai_json: '{}', prompt_text: 'pt' },
+    ];
+    for (const image of cases) {
+      expect(hasAitagImagePrompt(image)).toBe(true);
+      expect(extractAitagPrompt(image).trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it('无 prompt（空串/缺失/空白元数据）判定为 false', () => {
+    const cases: any[] = [
+      { ai_json: JSON.stringify({ Comment: { prompt: '', v4_prompt: { caption: { base_caption: '  ' } } } }) },
+      { ai_json: JSON.stringify({ Description: '' }) },
+      { ai_json: '{}', prompt_text: '' },
+      { ai_json: '{}', prompt_text: '   ' },
+      { ai_json: JSON.stringify({ Comment: { prompt: '', steps: '', seed: '' } }) },
+    ];
+    for (const image of cases) {
+      expect(hasAitagImagePrompt(image)).toBe(false);
+    }
+  });
+
+  it('null / undefined / 非对象安全返回 false', () => {
+    expect(hasAitagImagePrompt(null as any)).toBe(false);
+    expect(hasAitagImagePrompt(undefined as any)).toBe(false);
   });
 });
 

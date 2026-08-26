@@ -3,6 +3,14 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-26
+### 修复：AITag 画廊过滤无有效 Prompt 的作品
+
+- AITag 作品列表（搜索、本地缓存、滚动追加）现在会过滤掉首图没有有效 prompt 的作品：这类条目打开详情后只会显示「无 prompt_text」、无法导入或生成，是用户明确不要的垃圾数据，不再进入画廊；
+- 判定标准与导入逻辑完全一致：`Comment.v4_prompt` → `Comment.prompt` → `v4_prompt` → `prompt` → `Description` → `prompt_text` 任一字段存在非空白内容即视为有效 prompt，全部为空（或无任何元数据）的作品从列表剔除；
+- 详情面板同步过滤无有效 prompt 的图片，首图快速预览壳（`buildPreviewDetail`）在首图无有效 prompt 时直接跳过，彻底消除「无 prompt_text」空壳展示；
+- 若某一整页作品全部被过滤，滚动追加流会自动连续拉取后续分页填补空白（最多额外连拉 6 页），列表不会卡住或出现大段空白；
+- 新增 `hasAitagImagePrompt` 判定函数（与 `extractAitagPrompt` 同一提取顺序、直接基于原始字段判定）及 `extractAitagPrompt` / `hasAitagImagePrompt` 定向单测。
+
 ### 修复：V5 模型切换时步数未正确跟随官方默认（28 → 23）
 
 - 修复实验室切换生成模型时步数停留在 28 的问题：旧会话或旧数据可能保存了「V5 模型 + 28 步」的过期组合（28 步是 V5 发布前的默认步数），此时再次选择 V5（含 V5 Full ⇄ V5 Curated 系列内部切换）会因当前步数不等于前一模型默认值而保留 28，无法自动转为 23；

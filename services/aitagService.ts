@@ -378,6 +378,31 @@ export const extractAitagPrompt = (image: AitagImage) => {
   return image.prompt_text || '';
 };
 
+/**
+ * 判定图片是否携带可用于生图/导入的有效 prompt。
+ * 与 extractAitagPrompt 使用同一套提取顺序（Comment.v4_prompt → Comment.prompt →
+ * v4_prompt → prompt → Description → prompt_text），但直接基于原始字段判定，
+ * 避免为了过滤而构造中间字符串。
+ */
+export const hasAitagImagePrompt = (image: AitagImage): boolean => {
+  if (!image) return false;
+
+  const parsed = parseAitagAiJson(image.ai_json);
+  const comment = parsed?.Comment;
+
+  if (comment && typeof comment === 'object') {
+    const prompt = comment.v4_prompt?.caption?.base_caption || comment.prompt;
+    if (typeof prompt === 'string' && prompt.trim()) return true;
+  }
+
+  const v4Prompt = parsed?.v4_prompt?.caption?.base_caption;
+  if (typeof v4Prompt === 'string' && v4Prompt.trim()) return true;
+
+  if (typeof parsed?.prompt === 'string' && parsed.prompt.trim()) return true;
+  if (typeof parsed?.Description === 'string' && parsed.Description.trim()) return true;
+  return typeof image.prompt_text === 'string' && image.prompt_text.trim().length > 0;
+};
+
 export const extractAitagNegativePrompt = (image: AitagImage) => {
   const parsed = parseAitagAiJson(image.ai_json);
   const comment = parsed?.Comment;

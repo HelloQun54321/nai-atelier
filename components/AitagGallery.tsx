@@ -12,6 +12,7 @@ import {
   getAitagMetadataText,
   getAitagModelLabel,
   getAitagType,
+  hasAitagImagePrompt,
 } from '../services/aitagService';
 import { db } from '../services/dbService';
 import { IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../services/metadataService';
@@ -125,6 +126,9 @@ const needsFirstImageCacheRefresh = (work: AitagWorkSummary) => {
 const buildPreviewDetail = (work: AitagWorkSummary): AitagWorkDetail | null => {
   const firstImage = work.firstImage || work.first_image;
   if (!firstImage) return null;
+  // 首图没有有效 prompt 时不展示预览壳：详情加载后同样会被过滤，这里直接跳过，
+  // 避免详情面板出现「无 prompt_text」的空壳。
+  if (!hasAitagImagePrompt(firstImage)) return null;
   return {
     work,
     images: [firstImage],
@@ -447,13 +451,24 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       const currentVisibleCount = visibleItems.length;
       const targetVisibleCount = modelFilter ? currentVisibleCount + 15 : currentVisibleCount + 1;
       const maxBatchPages = modelFilter ? 4 : 1;
+      // 无有效 prompt 的作品被过滤后，整页可能零贡献；此时突破 maxBatchPages 继续连拉，
+      // 直到拿到至少一条有效条目（另有上限保护），避免列表空白卡住。
+      const maxSkippedPages = 6;
       let pagesFetched = 0;
+      let skippedPages = 0;
 
-      while (currentPageToLoad <= currentTotalPages && pagesFetched < maxBatchPages) {
+      while (currentPageToLoad <= currentTotalPages && pagesFetched < maxBatchPages + (skippedPages > 0 ? maxSkippedPages : 0)) {
+        const itemsBefore = aitagPageCache.items.length;
         const loadedCount = await loadWorks(currentPageToLoad, { append: true, silent: true });
         pagesFetched++;
         currentPageToLoad++;
         if (loadedCount === 0) break;
+        // 该页条目全部因无有效 prompt 被过滤（零新增）：继续拉下一页填补空白
+        if (aitagPageCache.items.length - itemsBefore === 0) {
+          skippedPages++;
+          currentTotalPages = Math.max(1, Math.ceil(aitagPageCache.total / PAGE_SIZE));
+          continue;
+        }
         // 如果在筛选模式下已凑足目标增量，则停止连续拉取
         if (!modelFilter || (aitagPageCache.items.filter(work => getWorkModelLabel(work) === modelFilter).length >= targetVisibleCount)) {
           break;
@@ -559,13 +574,24 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       const nextStatus = data.status || null;
       const nextError = offline ? 'aitag.win 暂时不可用，正在使用本地缓存' : null;
 
+      // 过滤掉没有有效 prompt（或无首图元数据）的作品：这类条目在详情里只会显示
+      // 「无 prompt_text」，无法导入/生成，是用户明确不要的垃圾数据，不应进入画廊列表。
+      // 过滤后若当前页全部被滤除，前端追加/搜索逻辑会自动续拉后续分页填补空白。
+      const filteredItems = nextItems.filter((item: AitagWorkSummary) => {
+        const firstImage = item.firstImage || item.first_image;
+        return firstImage ? hasAitagImagePrompt(firstImage) : false;
+      });
+      if (filteredItems.length < nextItems.length) {
+        console.info(`[aitag] 已过滤 ${nextItems.length - filteredItems.length} 个无有效 prompt 的作品`);
+      }
+
       // 追加期间用户搜索/筛选/跳页（querySignature 已变化）：丢弃本次结果，避免拼接到错误列表上。
       if (isAppend && querySignatureRef.current !== getQuerySignature()) return;
 
       hasLoadedRef.current = true;
       aitagPageCache = {
         ...aitagPageCache,
-        items: isAppend ? [...aitagPageCache.items, ...nextItems] : nextItems,
+        items: isAppend ? [...aitagPageCache.items, ...filteredItems] : filteredItems,
         total: nextTotal,
         page: nextPage,
         error: nextError,
@@ -575,7 +601,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       };
 
       if (!isAppend) querySignatureRef.current = getQuerySignature();
-      setItems(previous => (isAppend ? [...previous, ...nextItems] : nextItems));
+      setItems(previous => (isAppend ? [...previous, ...filteredItems] : filteredItems));
       setTotal(nextTotal);
       setPage(nextPage);
       setCacheStatus(nextStatus);
@@ -1289,6 +1315,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
               {selectedDetail.images
                 .slice()
                 .sort((a, b) => a.file_name.localeCompare(b.file_name, undefined, { numeric: true }))
+                .filter(hasAitagImagePrompt)
                 .map((image, index) => {
                     const promptText = extractAitagPrompt(image);
                     const generationLabels = getAitagGenerationLabels(image);
