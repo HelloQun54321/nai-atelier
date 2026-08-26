@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：修复风格串常规保存时自动覆盖已有封面的问题，保护既有封面并限定仅在无封面时自动设置初始封面（fix: preserve existing chain cover on general save and only auto-set cover when none exists）。
+
 - **Gemini (Flash)**：修复元数据解析时普通 V5 非透明图片因存在 straight_alpha 字段被误开启透明背景开关的问题（fix: prevent v5 non-transparent metadata from mistakenly enabling transparent background）。
 
 - **Gemini (Flash)**：为文件夹批量导入增加内容指纹智能去重机制，自动识别并排除已入库的重复预设（feat: add generation fingerprint deduplication to folder batch import）。
