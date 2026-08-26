@@ -21,6 +21,7 @@ describe('appearance preferences', () => {
       fontScale: 'large',
       tagAssistEnabled: false,
       generationStreamPreview: true,
+      forceEmptySeed: true,
       labModuleOrder: ['params', 'prompt', 'negative', 'vibe', 'characters', 'characterReference'],
       labModuleCollapsed: {
         prompt: true,
@@ -42,6 +43,7 @@ describe('appearance preferences', () => {
       fontScale: 'large',
       tagAssistEnabled: false,
       generationStreamPreview: true,
+      forceEmptySeed: true,
       labModuleOrder: ['params', 'prompt', 'negative', 'vibe', 'characters', 'characterReference'],
       labModuleCollapsed: {
         prompt: true,

@@ -51,12 +51,13 @@ interface ChainEditorProps {
     tagAssistEnabled: boolean;
     onTagAssistEnabledChange: (enabled: boolean) => void;
     generationStreamPreview: boolean;
+    forceEmptySeed?: boolean;
     labPageLayouts: LabPageLayouts;
     safeMode: boolean;
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, labPageLayouts, safeMode, onBack }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, labPageLayouts, safeMode, onBack }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
     const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
@@ -1367,6 +1368,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         try {
             const activeParams: NAIParams = {
                 ...generationParams,
+                ...(forceEmptySeed ? { seed: undefined } : {}),
                 vibes: generationParams.vibes ? {
                     ...generationParams.vibes,
                     slots: normalizeVibeSelections(generationParams.vibes.slots, generationParams.vibes.normalizeStrengths),
@@ -1572,7 +1574,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setIsGenerating(true);
         setErrorMsg(null);
         try {
-            const editParams: NAIParams = { ...editParamsSource, width: sourceWidth, height: sourceHeight, seed: editParamsSource.seed, characters: [], useCoords: false };
+            const editParams: NAIParams = {
+                ...editParamsSource,
+                width: sourceWidth,
+                height: sourceHeight,
+                seed: forceEmptySeed ? undefined : editParamsSource.seed,
+                characters: [],
+                useCoords: false,
+            };
             const result = await generateImageEdit(apiKey, request.prompt, request.negativePrompt, editParams, request);
             setGeneratedImage(result.image);
             setPreviewMode('result');
@@ -1974,6 +1983,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             canEdit={canEdit}
                             markChange={markChange}
                             presetSource={presetSources.settings}
+                            forceEmptySeed={forceEmptySeed}
                         />
                         </LabModuleSection>
                     </div>
@@ -2020,6 +2030,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 isGenerating={isGenerating}
                 safeMode={safeMode}
                 tagAssistEnabled={tagAssistEnabled}
+                forceEmptySeed={forceEmptySeed}
                 latestTextToImageItem={latestTextToImageItem}
                 onOpenLightbox={image => {
                     const historyIndex = image ? previewHistory.findIndex(item => item.imageUrl === image) : -1;

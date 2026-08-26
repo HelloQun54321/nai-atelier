@@ -35,6 +35,7 @@ interface ImageEditPanelProps {
   isGenerating?: boolean;
   safeMode?: boolean;
   tagAssistEnabled: boolean;
+  forceEmptySeed?: boolean;
   apiKey: string;
   notify: (message: string, type?: 'success' | 'error') => void;
   onPromptChange: (value: string) => void;
@@ -83,6 +84,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   maskData,
   generationCostLabel,
   tagAssistEnabled,
+  forceEmptySeed = false,
   apiKey,
   notify,
   onPromptChange,
@@ -694,6 +696,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         draft={draft}
         layout={layout}
         fileInputRef={fileInputRef}
+        forceEmptySeed={forceEmptySeed}
         canvasProps={{
           imageCanvasRef,
           maskCanvasRef,

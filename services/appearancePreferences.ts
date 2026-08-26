@@ -119,6 +119,8 @@ export interface AppearancePreferences {
   tagAssistEnabled: boolean;
   /** 在支持的模型上显示采样过程；这是当前设备的观看偏好，不写入风格串。 */
   generationStreamPreview: boolean;
+  /** 强制清空随机种子；开启后在工坊与实验室中暂时忽略并留空随机种子（不修改预设保存的原值），关闭后恢复。 */
+  forceEmptySeed: boolean;
   labModuleOrder: LabModuleId[];
   labModuleCollapsed: LabModuleCollapsedPreferences;
   /** 四种实验室模式各自独立的模块顺序与默认展开状态。 */
@@ -142,6 +144,7 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   fontScale: 'standard',
   tagAssistEnabled: true,
   generationStreamPreview: false,
+  forceEmptySeed: false,
   labModuleOrder: [...DEFAULT_LAB_MODULE_ORDER],
   labModuleCollapsed: { ...DEFAULT_LAB_MODULE_COLLAPSED },
   labPageLayouts: cloneDefaultLabPageLayouts(),
@@ -278,6 +281,9 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     generationStreamPreview: typeof input.generationStreamPreview === 'boolean'
       ? input.generationStreamPreview
       : DEFAULT_APPEARANCE_PREFERENCES.generationStreamPreview,
+    forceEmptySeed: typeof input.forceEmptySeed === 'boolean'
+      ? input.forceEmptySeed
+      : DEFAULT_APPEARANCE_PREFERENCES.forceEmptySeed,
     labModuleOrder: labPageLayouts['text-to-image'].order as LabModuleId[],
     labModuleCollapsed: labPageLayouts['text-to-image'].collapsed as LabModuleCollapsedPreferences,
     labPageLayouts,

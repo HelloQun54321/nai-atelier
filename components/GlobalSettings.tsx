@@ -857,6 +857,18 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">生成过程预览</b><span className="mt-0.5 block text-[10px] leading-4 text-gray-500 dark:text-gray-400">生图过程中逐步显示采样画面。</span></span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.generationStreamPreview ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.generationStreamPreview ? 'translate-x-5' : 'translate-x-0'}`} /></span>
               </button>
+
+              <button type="button" onClick={() => updateAppearance({ forceEmptySeed: !appearancePreferences.forceEmptySeed })} aria-pressed={appearancePreferences.forceEmptySeed} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+                <span className="min-w-0">
+                  <b className="block text-xs text-gray-800 dark:text-gray-100">强制清空随机种子（始终随机）</b>
+                  <span className="mt-0.5 block text-[10px] leading-4 text-gray-500 dark:text-gray-400">
+                    开启后，工坊与实验室的随机种子输入框将暂时置空并使用全随机种子生图，不会修改预设原本保存的数值；关闭后立即恢复。
+                  </span>
+                </span>
+                <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.forceEmptySeed ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                  <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.forceEmptySeed ? 'translate-x-5' : 'translate-x-0'}`} />
+                </span>
+              </button>
               <div className="rounded-2xl border border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35">
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>

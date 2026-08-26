@@ -1,7 +1,7 @@
 {
   "name": "nai-atelier",
   "private": true,
-  "version": "0.117.3",
+  "version": "0.118.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

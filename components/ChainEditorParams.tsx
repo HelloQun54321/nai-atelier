@@ -12,6 +12,7 @@ interface ChainEditorParamsProps {
     presetSource?: { name: string; modified: boolean };
     hideResolution?: boolean;
     mode?: 'text-to-image' | ImageEditOperation;
+    forceEmptySeed?: boolean;
 }
 
 const RESOLUTIONS = {
@@ -38,7 +39,7 @@ const normalizeCustomDimension = (value: number) => {
 
 const linkedDimensionFor = (dimension: number) => normalizeCustomDimension(Math.floor(OPUS_FREE_PIXEL_LIMIT / dimension / RESOLUTION_STEP) * RESOLUTION_STEP);
 
-export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, setParams, canEdit, markChange, presetSource, hideResolution = false, mode = 'text-to-image' }) => {
+export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, setParams, canEdit, markChange, presetSource, hideResolution = false, mode = 'text-to-image', forceEmptySeed = false }) => {
     // 网关自动同步的官方模型清单（未来新模型无需改代码即可出现在下拉里）。
     const runtime = useNaiRuntime();
     const selectableModels = getSelectableNaiModels(runtime);
@@ -297,13 +298,20 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 </div>
 
                 <div className="flex flex-col gap-1">
-                    <label className="text-xs text-gray-500 dark:text-gray-500 block">随机种子</label>
+                    <label className="text-xs text-gray-500 dark:text-gray-500 flex items-center justify-between">
+                        <span>随机种子</span>
+                        {forceEmptySeed && (
+                            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-normal" title={params.seed !== undefined && params.seed !== null ? `原保存种子: ${params.seed}（关闭设置后恢复）` : '当前已在全局设置中强制随机'}>
+                                已强制置空
+                            </span>
+                        )}
+                    </label>
                     <input
                         type="number"
-                        className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
+                        className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none ${forceEmptySeed ? 'bg-amber-50/40 dark:bg-amber-950/20' : ''}`}
                         disabled={!canEdit}
-                        placeholder="随机"
-                        value={params.seed === undefined || params.seed === null ? '' : params.seed}
+                        placeholder={forceEmptySeed ? '已强制置空 (随机)' : '随机'}
+                        value={forceEmptySeed ? '' : (params.seed === undefined || params.seed === null ? '' : params.seed)}
                         onChange={(e) => {
                             const val = e.target.value;
                             if (val === '') {

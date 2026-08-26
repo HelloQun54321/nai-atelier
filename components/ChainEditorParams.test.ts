@@ -208,4 +208,20 @@ describe('ChainEditorParams', () => {
       steps: 16,
     }));
   });
+
+  it('开启 forceEmptySeed 时随机种子输入框显示为空，关闭时显示原种子数值', () => {
+    const { rerender } = renderParams({ params: { ...params, seed: 987654321 }, forceEmptySeed: true });
+    const seedInput = screen.getByPlaceholderText('已强制置空 (随机)') as HTMLInputElement;
+    expect(seedInput.value).toBe('');
+
+    rerender(React.createElement(ChainEditorParams, {
+      params: { ...params, seed: 987654321 },
+      setParams: vi.fn(),
+      canEdit: true,
+      markChange: vi.fn(),
+      forceEmptySeed: false,
+    }));
+    const restoredInput = screen.getByPlaceholderText('随机') as HTMLInputElement;
+    expect(restoredInput.value).toBe('987654321');
+  });
 });
