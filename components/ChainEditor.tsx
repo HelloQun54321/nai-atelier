@@ -1983,7 +1983,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         >
                         <section className="mb-8">
                             <div className="mb-2 flex items-center justify-between gap-3">
-                                <div className="flex min-w-0 flex-wrap items-center gap-2"><label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">全局负面提示词</label><PresetSourceBadge source={presetSources.negative} /></div>
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                    <PresetSourceBadge source={presetSources.negative} />
+                                </div>
                                 <PromptCopyButton onClick={() => copyPromptToClipboard(negativePrompt, '全局负面提示词')} title="复制全局负面提示词" />
                             </div>
                             <TagAutocompleteTextarea

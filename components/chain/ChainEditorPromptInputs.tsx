@@ -62,11 +62,13 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
     >
         {/* Base Prompt */}
         <section className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
-            <div className="mb-2 flex items-end justify-between gap-2">
+            <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <label className="flex flex-col items-center text-sm font-semibold text-indigo-500 dark:text-indigo-400 md:block md:text-left">
-                        {splitPromptFields ? <><span>基础画风</span><span className="text-[10px] font-normal opacity-70 md:inline md:text-sm md:font-semibold md:opacity-100">（风格串）</span></> : <span>全局提示词</span>}
-                    </label>
+                    {splitPromptFields && (
+                        <label className="flex flex-col items-center text-sm font-semibold text-indigo-500 dark:text-indigo-400 md:block md:text-left">
+                            <span>基础画风</span><span className="text-[10px] font-normal opacity-70 md:inline md:text-sm md:font-semibold md:opacity-100">（风格串）</span>
+                        </label>
+                    )}
                     {splitPromptFields
                         ? <PresetSourceBadge source={presetSources.base} />
                         : <PresetSourceBadges sources={Object.fromEntries(Object.entries({ base: presetSources.base, subject: presetSources.subject }).filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />}

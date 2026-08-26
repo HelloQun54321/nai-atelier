@@ -46,7 +46,6 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
         <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'} rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40`}>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">角色专属提示词</label>
                     <PresetSourceBadges sources={characterPresetSources} />
                 </div>
                 <div className="ml-auto flex flex-wrap items-center justify-end gap-2">

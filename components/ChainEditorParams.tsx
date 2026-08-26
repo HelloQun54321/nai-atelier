@@ -94,10 +94,11 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
 
     return (
         <section className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-            <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">参数设置</h3>
-                {presetSource && <span className="max-w-28 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-40" title={`来自：${presetSource.name}${presetSource.modified ? ' · 已修改' : ''}`}>来自：{presetSource.name}{presetSource.modified ? ' · 已修改' : ''}</span>}
-            </div>
+            {presetSource && (
+                <div className="mb-3 flex min-w-0 items-center gap-2">
+                    <span className="max-w-48 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-64" title={`来自：${presetSource.name}${presetSource.modified ? ' · 已修改' : ''}`}>来自：{presetSource.name}{presetSource.modified ? ' · 已修改' : ''}</span>
+                </div>
+            )}
 
             {/* Official model-specific quality and UC presets */}
             <div className="mb-4 grid grid-cols-1 gap-4 border-b border-gray-200 pb-4 dark:border-gray-700 sm:grid-cols-2">
