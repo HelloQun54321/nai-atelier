@@ -1687,9 +1687,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const handleSavePreview = async () => {
         if (!generatedImage || !isOwner || chain.id === 'playground') return;
         if (await confirmAction({
-            title: '将当前图片设为封面？',
-            message: '当前生成图片将成为该串的新封面；原有上传封面将被永久删除。',
-            confirmLabel: '更换封面',
+            title: '将当前图片设为封面并保存？',
+            message: '当前生成图片将成为该串的新封面，并自动保存当前所有提示词与参数改动；原有上传封面将被替换。',
+            confirmLabel: '更换封面并保存',
             tone: 'danger',
         })) {
             setIsUploading(true);
@@ -1698,18 +1698,35 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 const blob = await res.blob();
                 const file = new File([blob], getDownloadFilename(), { type: 'image/png' });
                 const uploadRes = await api.uploadFile(file, 'covers');
-                await onUpdateChain(chain.id, { previewImage: uploadRes.url });
-                notify('封面已更新 (刷新列表查看效果)');
+                const updatedModules = modules.map(m => ({
+                    ...m,
+                    isActive: activeModules[m.id] ?? true
+                }));
+                await onUpdateChain(chain.id, {
+                    name: chainName,
+                    description: chainDesc,
+                    tags: chainTags,
+                    basePrompt,
+                    negativePrompt,
+                    modules: updatedModules,
+                    params,
+                    variableValues: { 'subject': subjectPrompt },
+                    previewImage: uploadRes.url,
+                });
+                setHasChanges(false);
+                setIsEditingInfo(false);
+                notify(`${isCharacterMode ? '角色串' : '风格串'}已保存，封面已更新`);
                 void db.logClientEvent({
                     category: 'chain',
                     action: 'chain_cover_update',
                     resourceType: chain.type === 'character' ? 'character_chain' : 'style_chain',
                     resourceId: chain.id,
-                    message: `用当前生成图更新封面：${chainName}`,
+                    message: `用当前生成图更新封面并保存：${chainName}`,
                     metadata: { chainName, coverUrl: uploadRes.url, fileSize: uploadRes.size },
                 }).catch(console.error);
-            } catch (e: any) {
-                notify('设置封面失败: ' + e.message, 'error');
+            } catch (e: unknown) {
+                const errMessage = e instanceof Error ? e.message : String(e);
+                notify('设置封面失败: ' + errMessage, 'error');
             } finally {
                 setIsUploading(false);
             }
@@ -1721,26 +1738,43 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const file = e.target.files?.[0];
         if (!file) return;
         if (await confirmAction({
-            title: '上传并更换封面？',
-            message: `将使用“${file.name}”作为新封面，原有上传封面文件将被永久删除。`,
-            confirmLabel: '上传并更换',
+            title: '上传更换封面并保存？',
+            message: `将使用“${file.name}”作为新封面，并自动保存当前所有提示词与参数改动；原有上传封面文件将被替换。`,
+            confirmLabel: '上传并保存',
             tone: 'danger',
         })) {
             setIsUploading(true);
             try {
                 const res = await api.uploadFile(file, 'covers');
-                await onUpdateChain(chain.id, { previewImage: res.url });
-                notify('封面已更新');
+                const updatedModules = modules.map(m => ({
+                    ...m,
+                    isActive: activeModules[m.id] ?? true
+                }));
+                await onUpdateChain(chain.id, {
+                    name: chainName,
+                    description: chainDesc,
+                    tags: chainTags,
+                    basePrompt,
+                    negativePrompt,
+                    modules: updatedModules,
+                    params,
+                    variableValues: { 'subject': subjectPrompt },
+                    previewImage: res.url,
+                });
+                setHasChanges(false);
+                setIsEditingInfo(false);
+                notify(`${isCharacterMode ? '角色串' : '风格串'}已保存，封面已更新`);
                 void db.logClientEvent({
                     category: 'chain',
                     action: 'chain_cover_upload',
                     resourceType: chain.type === 'character' ? 'character_chain' : 'style_chain',
                     resourceId: chain.id,
-                    message: `上传新封面：${chainName}`,
+                    message: `上传新封面并保存：${chainName}`,
                     metadata: { chainName, fileName: file.name, fileSize: file.size, coverUrl: res.url },
                 }).catch(console.error);
-            } catch (err: any) {
-                notify('上传失败: ' + err.message, 'error');
+            } catch (err: unknown) {
+                const errMessage = err instanceof Error ? err.message : String(err);
+                notify('上传失败: ' + errMessage, 'error');
             } finally {
                 setIsUploading(false);
             }

@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-26
+- **Gemini (Flash)**：为风格串与角色串新增设为封面/上传封面时自动保存全部改动的功能，消除更换封面后的二次保存负担（feat: auto-save chain on cover update）。
+
 
 - **Gemini (Flash)**：优化 AITag 页面在模型筛选（如 V5）时的瀑布流加载机制，增加自适应多页自动批拉填充（凑满 15 张目标增量或最多连拉 4 页），消除稀疏命中时的串行等待（perf: auto-fill batches on sparse aitag model filter）。
 
