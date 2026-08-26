@@ -110,12 +110,55 @@ html[data-design-theme='nai-atelier'] {
 }
 
 html[data-design-theme='nai-atelier'].dark {
-  --nai-canvas: #101624;
-  --nai-sidebar-surface: #0b111d;
-  --nai-toolbar-surface: rgb(17 24 39 / 0.92);
-  --nai-panel-surface: #171f2f;
-  --nai-panel-border: rgb(89 102 128 / 0.42);
-  --nai-panel-shadow: 0 22px 65px rgb(0 0 0 / 0.34), 0 2px 10px rgb(0 0 0 / 0.18);
+  --nai-canvas: #0d0f14;
+  --nai-sidebar-surface: #12151c;
+  --nai-toolbar-surface: rgb(18 21 28 / 0.88);
+  --nai-panel-surface: #171b24;
+  --nai-panel-border: rgb(255 255 255 / 0.08);
+  --nai-panel-shadow: 0 20px 50px rgb(0 0 0 / 0.45), 0 2px 10px rgb(0 0 0 / 0.25);
+
+  --color-gray-50: #f8f9fd;
+  --color-gray-100: #f0f2f8;
+  --color-gray-200: #dde1ee;
+  --color-gray-300: #c2c9db;
+  --color-gray-400: #939db5;
+  --color-gray-500: #68728a;
+  --color-gray-600: #495268;
+  --color-gray-700: #2f3647;
+  --color-gray-750: #242b3a;
+  --color-gray-800: #1b202c;
+  --color-gray-850: #161922;
+  --color-gray-900: #11141b;
+  --color-gray-950: #0a0c10;
+
+  --color-indigo-50: color-mix(in srgb, var(--nai-accent) 12%, #0d0f14);
+  --color-indigo-100: color-mix(in srgb, var(--nai-accent) 18%, #0d0f14);
+  --color-indigo-200: color-mix(in srgb, var(--nai-accent) 28%, #0d0f14);
+  --color-indigo-300: color-mix(in srgb, var(--nai-accent) 60%, white);
+  --color-indigo-400: color-mix(in srgb, var(--nai-accent) 80%, white);
+  --color-indigo-500: var(--nai-accent);
+  --color-indigo-600: color-mix(in srgb, var(--nai-accent) 72%, #11141b);
+  --color-indigo-700: color-mix(in srgb, var(--nai-accent) 58%, #0d0f14);
+  --color-indigo-800: color-mix(in srgb, var(--nai-accent) 42%, #0d0f14);
+  --color-indigo-900: color-mix(in srgb, var(--nai-accent) 28%, #0d0f14);
+  --color-indigo-950: color-mix(in srgb, var(--nai-accent) 16%, #0d0f14);
+  --color-violet-50: var(--color-indigo-50);
+  --color-violet-100: var(--color-indigo-100);
+  --color-violet-200: var(--color-indigo-200);
+  --color-violet-300: var(--color-indigo-300);
+  --color-violet-400: var(--color-indigo-400);
+  --color-violet-500: var(--color-indigo-500);
+  --color-violet-600: var(--color-indigo-600);
+  --color-violet-700: var(--color-indigo-700);
+  --color-violet-800: var(--color-indigo-800);
+  --color-violet-900: var(--color-indigo-900);
+  --color-violet-950: var(--color-indigo-950);
+
+  --nai-action-deep: color-mix(in srgb, var(--nai-accent) 55%, #0d0f14);
+  --nai-action-mid: var(--nai-accent);
+  --nai-action-light: color-mix(in srgb, var(--nai-accent) 60%, white);
+  --nai-action-glow: color-mix(in srgb, var(--nai-accent) 40%, white);
+  --nai-action-shadow: color-mix(in srgb, var(--nai-accent) 20%, transparent);
 }
 
 html[data-design-theme='nai-atelier'] body {
@@ -316,10 +359,20 @@ html[data-design-theme='nai-atelier'] .app-sidebar {
   box-shadow: 1px 0 0 rgb(20 28 48 / 0.025);
 }
 
+html[data-design-theme='nai-atelier'].dark .app-sidebar {
+  background-image: radial-gradient(circle at 24px 28px, color-mix(in srgb, var(--nai-accent) 6%, transparent), transparent 160px);
+  box-shadow: 1px 0 0 rgb(255 255 255 / 0.06);
+}
+
 html[data-design-theme='nai-atelier'] .workspace-command-bar,
 html[data-design-theme='nai-atelier'] .app-mobile-nav {
   background-color: var(--nai-toolbar-surface) !important;
   backdrop-filter: blur(18px) saturate(125%);
+}
+
+html[data-design-theme='nai-atelier'].dark .workspace-command-bar,
+html[data-design-theme='nai-atelier'].dark .app-mobile-nav {
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.06);
 }
 
 html[data-design-theme='nai-atelier'] .media-card {
@@ -328,7 +381,13 @@ html[data-design-theme='nai-atelier'] .media-card {
 }
 
 html[data-design-theme='nai-atelier'].dark .media-card {
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2), 0 10px 28px rgb(0 0 0 / 0.08);
+  border-color: var(--nai-panel-border);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.35), 0 8px 24px rgb(0 0 0 / 0.2);
+}
+
+html[data-design-theme='nai-atelier'].dark .media-card:hover {
+  border-color: rgb(255 255 255 / 0.16);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.45), 0 12px 32px rgb(0 0 0 / 0.25);
 }
 
 html[data-design-theme='nai-atelier'] .settings-dialog {
@@ -348,9 +407,9 @@ html[data-surfaces='translucent'] {
 }
 
 html[data-surfaces='translucent'].dark {
-  --nai-sidebar-surface: rgb(11 17 29 / 0.84);
-  --nai-toolbar-surface: rgb(17 24 39 / 0.76);
-  --nai-panel-surface: rgb(23 31 47 / 0.86);
+  --nai-sidebar-surface: rgb(18 21 28 / 0.82);
+  --nai-toolbar-surface: rgb(18 21 28 / 0.78);
+  --nai-panel-surface: rgb(23 27 36 / 0.85);
 }
 
 html[data-surfaces='translucent'] .app-sidebar,
@@ -1112,7 +1171,7 @@ html[data-motion='full'] .queue-status-spinner {
 }
 
 .dark .safe-mode img:not([data-safe-mode-ignore="true"]):not([data-safe-revealed="true"]) {
-  filter: blur(24px) brightness(0.4) saturate(0.65) !important;
+  filter: blur(22px) brightness(0.68) saturate(0.5) contrast(0.92) !important;
 }
 
 /* 实验室图片编辑使用 canvas 绘制底图，沿用同一套安全模式遮挡与临时揭示逻辑。 */
@@ -1123,7 +1182,7 @@ html[data-motion='full'] .queue-status-spinner {
 }
 
 .dark .safe-mode [data-safe-mode-canvas="true"]:not([data-safe-revealed="true"]) canvas[data-safe-mode-image="true"] {
-  filter: blur(24px) brightness(0.4) saturate(0.65) !important;
+  filter: blur(22px) brightness(0.68) saturate(0.5) contrast(0.92) !important;
 }
 
 /* 作品名称默认遮挡；可单独点击名称，或随所属作品图片一起临时显示。 */
