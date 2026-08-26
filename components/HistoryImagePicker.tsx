@@ -84,13 +84,13 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
 
   return (
     <div
-      className="fixed inset-0 z-[1200] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+      className="fixed inset-0 z-[1250] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-label="选择历史图片"
       onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}
     >
-      <section className="flex h-[100dvh] w-full max-w-6xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-900 sm:h-auto sm:max-h-[90vh] sm:rounded-2xl">
+      <section className="flex h-[100dvh] w-full max-w-6xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-900 sm:h-auto sm:max-h-[90vh] sm:rounded-2xl sm:border sm:border-gray-200 sm:dark:border-gray-800">
         <header className="flex flex-none items-center justify-between gap-4 border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-5">
           <div className="min-w-0">
             <div className="flex items-center gap-2">

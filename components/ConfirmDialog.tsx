@@ -53,7 +53,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
             {children}
             {options && (
                 <div
-                    className="ui-backdrop-enter fixed inset-0 z-[2000] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm md:items-center md:p-4"
+                    className="ui-backdrop-enter fixed inset-0 z-[1800] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm md:items-center md:p-4"
                     onClick={() => closeDialog(false)}
                 >
                     <div
@@ -61,7 +61,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                         aria-modal="true"
                         aria-labelledby="confirm-dialog-title"
                         aria-describedby="confirm-dialog-description"
-                        className="ui-sheet-enter mobile-safe-bottom w-full max-w-md rounded-t-3xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-850 md:rounded-2xl md:p-6"
+                        className="ui-sheet-enter mobile-safe-bottom w-full max-w-md rounded-t-3xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-800 dark:bg-gray-900 md:rounded-2xl md:p-6"
                         onClick={event => event.stopPropagation()}
                     >
                         <div className="flex items-start gap-4">
@@ -77,7 +77,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                                 ) : (
                                     <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.25 9a3.75 3.75 0 1 1 6.55 2.5c-.9.95-1.8 1.45-1.8 2.75M12 18h.01" />
-                                        <circle cx="12" cy="12" r="9" strokeWidth="2" />
+                                        <circle cx="12" cy="12" r="9" strokeWidth={2} />
                                     </svg>
                                 )}
                             </div>
@@ -93,7 +93,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                                 type="button"
                                 autoFocus
                                 onClick={() => closeDialog(false)}
-                                className="mobile-touch rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 dark:focus:ring-offset-gray-850"
+                                className="mobile-touch rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-750 dark:focus:ring-offset-gray-900"
                             >
                                 {options.cancelLabel || '取消'}
                             </button>

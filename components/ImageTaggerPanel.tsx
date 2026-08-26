@@ -143,8 +143,8 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
 
   if (!open) return null;
 
-  return <div className="fixed inset-0 z-[1800] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
-    <div className="flex max-h-[94dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl dark:bg-gray-950 md:rounded-3xl">
+  return <div className="fixed inset-0 z-[1250] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+    <div className="flex max-h-[94dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl dark:bg-gray-950 md:rounded-2xl">
       <header className="flex h-14 flex-none items-center justify-between border-b border-gray-200 px-4 dark:border-gray-800">
         <div><h2 className="text-sm font-black">图片反推 Danbooru Tag</h2><p className="text-[10px] text-gray-500">WD Tagger V3 · 图片只在你的电脑上处理</p></div>
         <button type="button" disabled={busy} onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800" aria-label="关闭"><X className="h-4 w-4" /></button>
@@ -152,7 +152,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
       <div className="grid min-h-0 flex-1 overflow-y-auto md:grid-cols-[300px_minmax(0,1fr)] md:overflow-hidden">
         <section className="space-y-4 border-b border-gray-200 p-4 dark:border-gray-800 md:overflow-y-auto md:border-b-0 md:border-r">
           <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => chooseFile(event.target.files?.[0])} />
-          <button type="button" disabled={busy} onClick={() => inputRef.current?.click()} className="relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-2xl border border-dashed border-gray-300 bg-gray-50 text-gray-400 hover:border-violet-400 dark:border-gray-700 dark:bg-gray-900">
+          <button type="button" disabled={busy} onClick={() => inputRef.current?.click()} className="relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-gray-400 hover:border-violet-400 dark:border-gray-800 dark:bg-gray-900">
             {preview ? <img src={preview} alt="待识别图片" className="h-full w-full object-contain" /> : <span className="flex flex-col items-center gap-2 text-xs"><ImagePlus className="h-8 w-8" />选择图片</span>}
             {busy && <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 px-6 text-center text-xs text-white"><LoaderCircle className="h-7 w-7 animate-spin" />{downloaded === false ? '首次使用正在下载约 379 MB 模型，请稍候…' : '正在本地识别图片…'}</span>}
           </button>

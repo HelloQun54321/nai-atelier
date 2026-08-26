@@ -95,8 +95,8 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
       </div>
 
       {isOpen && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-4" onMouseDown={() => !isRunning && setIsOpen(false)}>
-          <div className="w-full max-w-md rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+        <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 p-4" onMouseDown={() => !isRunning && setIsOpen(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 px-5 py-4">
               <div>
                 <h2 className="font-bold text-gray-900 dark:text-white">Tag 补全词库</h2>
@@ -109,11 +109,11 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
 
             <div className="space-y-4 px-5 py-5">
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="rounded-lg bg-gray-50 dark:bg-gray-800 p-3">
+                <div className="rounded-xl bg-gray-50 dark:bg-gray-800 p-3">
                   <div className="text-xs text-gray-500 dark:text-gray-400">当前 Tag 数量</div>
                   <div className="mt-1 font-semibold text-gray-900 dark:text-white">{status ? status.manifest.count.toLocaleString('zh-CN') : '—'}</div>
                 </div>
-                <div className="rounded-lg bg-gray-50 dark:bg-gray-800 p-3">
+                <div className="rounded-xl bg-gray-50 dark:bg-gray-800 p-3">
                   <div className="text-xs text-gray-500 dark:text-gray-400">词库生成时间</div>
                   <div className="mt-1 text-xs font-medium text-gray-900 dark:text-white">{formatDate(status?.manifest.generatedAt || null)}</div>
                 </div>
@@ -136,8 +136,8 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
             </div>
 
             <div className="flex justify-end gap-2 border-t border-gray-200 dark:border-gray-800 px-5 py-4">
-              <button type="button" disabled={isRunning} onClick={() => setIsOpen(false)} className="rounded px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40">关闭</button>
-              <button type="button" disabled={isRunning} onClick={handleUpdate} className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="button" disabled={isRunning} onClick={() => setIsOpen(false)} className="rounded-xl px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40">关闭</button>
+              <button type="button" disabled={isRunning} onClick={handleUpdate} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
                 {isRunning ? '更新中…' : '检查并更新'}
               </button>
             </div>

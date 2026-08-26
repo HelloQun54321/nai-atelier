@@ -53,9 +53,9 @@ export const ChainEditorPresetModal: React.FC<ChainEditorPresetModalProps> = ({
     <>
         {/* Import Preset List Modal */}
         {showImportPreset && !importCandidate && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 backdrop-blur-sm md:p-4">
-                <div className="flex max-h-[90dvh] w-full max-w-4xl flex-col rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-800 md:max-h-[85vh] md:max-w-5xl lg:max-w-6xl">
-                    <div className="relative flex flex-shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 p-3 dark:border-gray-700 md:justify-between md:gap-4 md:p-4">
+            <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 p-2 backdrop-blur-sm md:p-4">
+                <div className="flex max-h-[90dvh] w-full max-w-4xl flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900 md:max-h-[85vh] md:max-w-5xl lg:max-w-6xl">
+                    <div className="relative flex flex-shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 p-3 dark:border-gray-800 md:justify-between md:gap-4 md:p-4">
                         <h3 className="pr-10 font-bold dark:text-white md:pr-0">引用预设</h3>
 
                         {/* 快速导入开关 */}
@@ -204,9 +204,9 @@ export const ChainEditorPresetModal: React.FC<ChainEditorPresetModalProps> = ({
 
         {/* Import Detail/Confirm Modal */}
         {importCandidate && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-sm shadow-2xl border border-gray-200 dark:border-gray-700">
-                    <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 rounded-t-xl">
+            <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-sm shadow-2xl border border-gray-200 dark:border-gray-800">
+                    <div className="p-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 rounded-t-2xl">
                         <h3 className="font-bold text-gray-900 dark:text-white truncate" title={importCandidate.name}>
                             导入: {importCandidate.name}
                         </h3>
@@ -239,7 +239,7 @@ export const ChainEditorPresetModal: React.FC<ChainEditorPresetModalProps> = ({
                                 </label>
                             )}
                             {importOptions.importModules && importCandidate.modules && importCandidate.modules.length > 0 && (
-                                <div className="ml-8 mt-2 border border-gray-200 dark:border-gray-700 rounded p-2 max-h-40 overflow-y-auto bg-gray-50 dark:bg-gray-900 custom-scrollbar">
+                                <div className="ml-8 mt-2 border border-gray-200 dark:border-gray-800 rounded-xl p-2 max-h-40 overflow-y-auto bg-gray-50 dark:bg-gray-900 custom-scrollbar">
                                     {importCandidate.modules.map(m => (
                                         <label key={m.id} className="flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-800 p-1 rounded cursor-pointer">
                                             <input
@@ -284,7 +284,7 @@ export const ChainEditorPresetModal: React.FC<ChainEditorPresetModalProps> = ({
                             <span className="text-sm font-medium dark:text-gray-200">种子</span>
                         </label>
                     </div>
-                    <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+                    <div className="p-4 border-t border-gray-200 dark:border-gray-800 flex justify-end gap-3">
                         <button onClick={() => setImportCandidate(null)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-800 dark:hover:text-white transition-colors">取消</button>
                         <button onClick={confirmImport} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded shadow-lg shadow-indigo-500/20 transition-all">导入</button>
                     </div>

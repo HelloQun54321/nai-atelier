@@ -79,9 +79,9 @@ const CopyModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-            <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
-                <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900 rounded-t-xl">
+        <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+            <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+                <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-900 rounded-t-2xl">
                     <h3 className="font-bold text-gray-900 dark:text-white truncate pr-4">{chain.name}</h3>
                     <button onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white">✕</button>
                 </div>
@@ -89,7 +89,7 @@ const CopyModal: React.FC<{
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                     {/* Description Section (Full View) */}
                     {chain.description && (
-                         <div className="bg-yellow-50 dark:bg-yellow-900/10 p-3 rounded-lg border border-yellow-100 dark:border-yellow-900/30 text-sm text-gray-700 dark:text-gray-300">
+                         <div className="bg-yellow-50 dark:bg-yellow-900/10 p-3 rounded-xl border border-yellow-100 dark:border-yellow-900/30 text-sm text-gray-700 dark:text-gray-300">
                              <div className="font-bold text-xs text-yellow-600 dark:text-yellow-500 mb-1 uppercase">说明</div>
                              <div className="whitespace-pre-wrap break-words">{chain.description}</div>
                          </div>
@@ -99,7 +99,7 @@ const CopyModal: React.FC<{
                         <h4 className="font-bold text-xs text-indigo-500 uppercase tracking-wider">选择要复制的内容</h4>
 
                         {/* Base Prompt */}
-                        <label className="flex items-start gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
+                        <label className="flex items-start gap-2 p-3 rounded-xl border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer">
                             <input type="checkbox" checked={checkBase} onChange={e => setCheckBase(e.target.checked)} className="mt-1" />
                             <div className="flex-1 min-w-0">
                                 <div className="font-bold text-sm dark:text-white">基础 Prompt (Base)</div>
@@ -109,7 +109,7 @@ const CopyModal: React.FC<{
 
                         {/* Modules */}
                         {chain.modules && chain.modules.length > 0 && (
-                            <div className="space-y-2 pl-4 border-l-2 border-gray-100 dark:border-gray-700">
+                            <div className="space-y-2 pl-4 border-l-2 border-gray-200 dark:border-gray-800">
                                 {chain.modules.map(m => (
                                     <label key={m.id} className="flex items-center gap-2 cursor-pointer">
                                         <input
@@ -125,7 +125,7 @@ const CopyModal: React.FC<{
                         )}
 
                         {/* Subject */}
-                        <label className="flex items-start gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
+                        <label className="flex items-start gap-2 p-3 rounded-xl border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer">
                             <input type="checkbox" checked={checkSubject} onChange={e => setCheckSubject(e.target.checked)} className="mt-1" />
                             <div className="flex-1 min-w-0">
                                 <div className="font-bold text-sm dark:text-white">变量/主体 (Subject)</div>
@@ -135,20 +135,20 @@ const CopyModal: React.FC<{
                     </div>
 
                     {/* Negative Prompt Quick Copy */}
-                    <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                    <div className="pt-4 border-t border-gray-200 dark:border-gray-800">
                         <div className="flex justify-between items-center mb-1">
                             <span className="font-bold text-xs text-red-500 uppercase">负面 Prompt</span>
                             <button onClick={copyNegative} className="text-xs text-indigo-600 hover:underline">仅复制负面</button>
                         </div>
-                        <div className="text-xs text-gray-400 bg-gray-50 dark:bg-gray-900 p-2 rounded font-mono max-h-20 overflow-y-auto">
+                        <div className="text-xs text-gray-400 bg-gray-50 dark:bg-gray-900 p-2 rounded-xl font-mono max-h-20 overflow-y-auto">
                             {chain.negativePrompt || '(空)'}
                         </div>
                     </div>
                 </div>
 
-                <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 rounded-b-xl flex justify-end gap-2">
+                <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 rounded-b-2xl flex justify-end gap-2">
                     <button onClick={onClose} className="px-4 py-2 text-gray-500 hover:text-gray-800 dark:hover:text-white">关闭</button>
-                    <button onClick={handleCopy} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold shadow-lg">复制选中组合</button>
+                    <button onClick={handleCopy} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg">复制选中组合</button>
                 </div>
             </div>
         </div>
@@ -386,20 +386,20 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
             {allTags.length > 0 && <div className="relative ml-auto flex-none">
               <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} className={selectedTags.size > 0 ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!bg-indigo-950/40' : ''} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" />标签{selectedTags.size > 0 ? ` ${selectedTags.size}` : ''}</ToolbarButton>
-              {showDesktopFilters && <div role="dialog" aria-label="标签筛选" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(30rem,calc(100vw-2rem))] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
+              {showDesktopFilters && <div role="dialog" aria-label="标签筛选" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(30rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                 <div className="mb-3 flex items-center justify-between"><b className="text-sm dark:text-white">标签筛选</b>{selectedTags.size > 0 && <button type="button" onClick={() => setSelectedTags(new Set())} className="text-xs font-bold text-indigo-600">清除</button>}</div>
                 <div className="flex max-h-52 flex-wrap gap-2 overflow-y-auto">{allTags.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`rounded-full px-3 py-1.5 text-xs font-medium ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>{tag}</button>)}</div>
               </div>}
             </div>}
-            <select value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className={`${allTags.length > 0 ? '' : 'ml-auto'} h-10 w-36 rounded-xl border border-gray-200 bg-white px-2 text-xs text-gray-600 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300`}><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option></select>
-            <select value={selectedModel} onChange={event => setSelectedModel(event.target.value)} aria-label="模型筛选" className="h-10 w-36 rounded-xl border border-gray-200 bg-white px-2 text-xs text-gray-600 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><option value="">全部模型</option>{modelFilterOptions.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}</select>
+            <select value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className={`${allTags.length > 0 ? '' : 'ml-auto'} h-10 w-36 rounded-xl border border-gray-200 bg-white px-2 text-xs text-gray-600 outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300`}><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option></select>
+            <select value={selectedModel} onChange={event => setSelectedModel(event.target.value)} aria-label="模型筛选" className="h-10 w-36 rounded-xl border border-gray-200 bg-white px-2 text-xs text-gray-600 outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"><option value="">全部模型</option>{modelFilterOptions.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}</select>
             <IconButton label="仅显示收藏" onClick={() => setFavOnly(value => !value)} className={favOnly ? '!border-indigo-200 !bg-indigo-50 !text-indigo-600 dark:!bg-indigo-950/40' : ''}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} /></IconButton>
             <IconButton label="刷新列表" onClick={onRefresh} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
             <ImageTaggerAction notify={notify} />
             {!isGuest && <ToolbarButton tone="primary" onClick={() => setIsModalOpen(true)}><Plus className="h-4 w-4" />{createLabel}</ToolbarButton>}
           </div>
           <div className="flex gap-2 md:hidden">
-            <MobileIconButton label="筛选与排序" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><Menu className="h-5 w-5" /></MobileIconButton>
+            <MobileIconButton label="筛选与排序" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"><Menu className="h-5 w-5" /></MobileIconButton>
             <ImageTaggerAction notify={notify} />
             {!isGuest && <MobileIconButton label={createLabel} onClick={() => setIsModalOpen(true)} className="bg-indigo-600 text-white"><Plus className="h-5 w-5" /></MobileIconButton>}
           </div>

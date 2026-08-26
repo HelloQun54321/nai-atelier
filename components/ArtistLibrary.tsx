@@ -1162,20 +1162,20 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                             {isGachaLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Dice5 className="h-4 w-4" />}{gachaArtists ? '再抽一批' : '随机抽卡'}
                         </ToolbarButton>
                         <IconButton label="抽卡设置" onClick={() => setShowGachaTools(value => !value)} className="!rounded-l-none" aria-expanded={showGachaTools}><ChevronDown /></IconButton>
-                        {showGachaTools && <div role="dialog" aria-label="随机抽卡设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
-                            <div className="grid grid-cols-2 gap-2"><label className="text-xs text-gray-500">抽卡方式<select value={gachaMode} onChange={event => setGachaMode(event.target.value as ArtistGachaMode)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-600 dark:bg-gray-900"><option value="mixed">惊喜混合</option><option value="uniform">完全随机</option><option value="popular">热门画师</option></select></label><label className="text-xs text-gray-500">数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-600 dark:bg-gray-900"><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label></div>
-                            {gachaArtists && <button type="button" onClick={() => { returnToCatalog(); setShowGachaTools(false); }} className="mt-3 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-600">返回完整目录</button>}
+                        {showGachaTools && <div role="dialog" aria-label="随机抽卡设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                            <div className="grid grid-cols-2 gap-2"><label className="text-xs text-gray-500">抽卡方式<select value={gachaMode} onChange={event => setGachaMode(event.target.value as ArtistGachaMode)} className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"><option value="mixed">惊喜混合</option><option value="uniform">完全随机</option><option value="popular">热门画师</option></select></label><label className="text-xs text-gray-500">数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label></div>
+                            {gachaArtists && <button type="button" onClick={() => { returnToCatalog(); setShowGachaTools(false); }} className="mt-3 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-800">返回完整目录</button>}
                         </div>}
                     </div>
 
                     <div className="relative flex-none">
                         <IconButton label="显示设置" onClick={() => setShowDisplayTools(value => !value)} aria-expanded={showDisplayTools}><SlidersHorizontal /></IconButton>
-                        {showDisplayTools && <div role="dialog" aria-label="画师显示设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-72 rounded-xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
-                            <div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setLayoutMode('grid')} className={`rounded-lg px-3 py-2 text-sm ${layoutMode === 'grid' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700'}`}><Grid3X3 className="mr-1 inline h-4 w-4" />网格</button><button type="button" onClick={() => setLayoutMode('list')} className={`rounded-lg px-3 py-2 text-sm ${layoutMode === 'list' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700'}`}><List className="mr-1 inline h-4 w-4" />展开</button></div>
-                            {layoutMode === 'grid' && <div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={() => setViewMode('original')} className={`rounded-lg px-3 py-2 text-sm ${viewMode === 'original' ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-950/40' : 'bg-gray-100 dark:bg-gray-700'}`}>原图</button><button type="button" onClick={() => setViewMode('benchmark')} className={`rounded-lg px-3 py-2 text-sm ${viewMode === 'benchmark' ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-950/40' : 'bg-gray-100 dark:bg-gray-700'}`}>实装</button></div>}
+                        {showDisplayTools && <div role="dialog" aria-label="画师显示设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-72 rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                            <div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setLayoutMode('grid')} className={`rounded-lg px-3 py-2 text-sm ${layoutMode === 'grid' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}><Grid3X3 className="mr-1 inline h-4 w-4" />网格</button><button type="button" onClick={() => setLayoutMode('list')} className={`rounded-lg px-3 py-2 text-sm ${layoutMode === 'list' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}><List className="mr-1 inline h-4 w-4" />展开</button></div>
+                            {layoutMode === 'grid' && <div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={() => setViewMode('original')} className={`rounded-lg px-3 py-2 text-sm ${viewMode === 'original' ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-950/40' : 'bg-gray-100 dark:bg-gray-800'}`}>原图</button><button type="button" onClick={() => setViewMode('benchmark')} className={`rounded-lg px-3 py-2 text-sm ${viewMode === 'benchmark' ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-950/40' : 'bg-gray-100 dark:bg-gray-800'}`}>实装</button></div>}
                             <label className="mt-3 block text-xs text-gray-500">{layoutMode === 'grid' ? `每行 ${gridCols} 列` : `图片宽度 ${listImgWidth}px`}<input type="range" min={layoutMode === 'grid' ? 3 : 80} max={layoutMode === 'grid' ? 15 : 400} step={layoutMode === 'grid' ? 1 : 10} value={layoutMode === 'grid' ? gridCols : listImgWidth} onChange={event => layoutMode === 'grid' ? (setGridCols(Number(event.target.value)), localStorage.setItem('nai_artist_grid_columns', event.target.value)) : setListImgWidth(Number(event.target.value))} className="mt-2 w-full accent-indigo-500" /></label>
-                            {layoutMode === 'grid' && viewMode === 'benchmark' && <label className="mt-3 block text-xs text-gray-500">实装槽位<select value={activeSlot} onChange={event => setActiveSlot(Number(event.target.value))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-600 dark:bg-gray-900">{config.slots.map((slot, index) => <option key={index} value={index}>{index + 1}. {slot.label}</option>)}</select></label>}
-                            <button type="button" onClick={() => { setShowDisplayTools(false); setShowConfig(true); }} className="mt-3 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-600"><Settings2 className="mr-1 inline h-4 w-4" />管理分组与槽位</button>
+                            {layoutMode === 'grid' && viewMode === 'benchmark' && <label className="mt-3 block text-xs text-gray-500">实装槽位<select value={activeSlot} onChange={event => setActiveSlot(Number(event.target.value))} className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-800">{config.slots.map((slot, index) => <option key={index} value={index}>{index + 1}. {slot.label}</option>)}</select></label>}
+                            <button type="button" onClick={() => { setShowDisplayTools(false); setShowConfig(true); }} className="mt-3 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-800"><Settings2 className="mr-1 inline h-4 w-4" />管理分组与槽位</button>
                         </div>}
                     </div>
 
@@ -1185,7 +1185,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     <IconButton label={showFavOnly ? '显示全部画师' : '只看收藏'} onClick={() => setShowFavOnly(value => !value)} className={showFavOnly ? '!border-yellow-300 !bg-yellow-50 !text-yellow-600 dark:!bg-yellow-950/30' : ''}><Heart className={showFavOnly ? 'fill-current' : ''} /></IconButton>
                     <div className="relative flex-none">
                         <IconButton label="更多工具" onClick={() => setShowMoreTools(value => !value)} aria-expanded={showMoreTools}><MoreHorizontal /></IconButton>
-                        {showMoreTools && <div role="menu" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-52 rounded-xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
+                        {showMoreTools && <div role="menu" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-52 rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                             {isAdmin && (layoutMode === 'list' || viewMode === 'benchmark') && apiKey && <button type="button" onClick={() => { queueMissingGenerations(); setShowMoreTools(false); }} className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700">补全缺失预览</button>}
                             <button type="button" onClick={() => { setShowImport(true); setShowMoreTools(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"><Download className="h-4 w-4" />批量导入</button>
                             <button type="button" onClick={() => { setShowHistory(true); setShowMoreTools(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"><Clock3 className="h-4 w-4" />历史记录</button>
@@ -1433,30 +1433,30 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
             )}
 
             {/* History, Logs, Import Modal rendering kept ... */}
-            <div className={`fixed top-0 right-0 w-80 h-full bg-white dark:bg-gray-800 shadow-2xl z-40 transform transition-transform duration-300 border-l border-gray-200 dark:border-gray-700 flex flex-col ${showHistory ? 'translate-x-0' : 'translate-x-full'}`}>
-                <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
+            <div className={`fixed top-0 right-0 w-80 h-full bg-white dark:bg-gray-900 shadow-2xl z-40 transform transition-transform duration-300 border-l border-gray-200 dark:border-gray-800 flex flex-col ${showHistory ? 'translate-x-0' : 'translate-x-full'}`}>
+                <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
                     <h3 className="flex items-center gap-2 font-bold text-gray-800 dark:text-white"><ClipboardList className="h-4 w-4" />复制历史</h3>
                     <button onClick={() => setShowHistory(false)} className="text-gray-500 hover:text-gray-800 dark:hover:text-white">×</button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-2">
                     {history.map((h, i) => (
-                        <div key={i} onClick={() => { navigator.clipboard.writeText(h.text); notify('已复制') }} className="p-3 bg-gray-100 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-indigo-500 cursor-pointer transition-colors">
+                        <div key={i} onClick={() => { navigator.clipboard.writeText(h.text); notify('已复制') }} className="p-3 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-indigo-500 cursor-pointer transition-colors">
                             <div className="text-xs text-gray-800 dark:text-gray-200 break-all line-clamp-3 font-mono">{h.text}</div>
                             <div className="text-[10px] text-gray-400 mt-2 text-right">{h.time}</div>
                         </div>
                     ))}
                     {history.length === 0 && <div className="text-center text-gray-400 mt-10">暂无历史</div>}
                 </div>
-                <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                <div className="p-3 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
                     <button onClick={() => { setHistory([]); localStorage.setItem('nai_copy_history', '[]') }} className="w-full py-2 text-sm text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400">清空历史</button>
                 </div>
             </div>
             {showHistory && <div className="fixed inset-0 z-30 bg-black/20 dark:bg-black/50 backdrop-blur-[1px]" onClick={() => setShowHistory(false)} />}
 
             {showLogs && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-700 p-6 flex flex-col max-h-[80vh]">
-                        <div className="flex justify-between items-center mb-4 border-b border-gray-200 dark:border-gray-700 pb-2">
+                <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-800 p-6 flex flex-col max-h-[80vh]">
+                        <div className="flex justify-between items-center mb-4 border-b border-gray-200 dark:border-gray-800 pb-2">
                             <h3 className="text-lg font-bold text-gray-900 dark:text-white">任务日志</h3>
                             <button onClick={() => setShowLogs(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white">✕</button>
                         </div>
@@ -1476,7 +1476,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                             {logs.map((log, i) => (
                                 <div key={i} className={`p-2 rounded text-xs font-mono border ${log.type === 'error' ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400' :
                                     log.type === 'success' ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-900/50 text-green-600 dark:text-green-400' :
-                                        'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
+                                        'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400'
                                     }`}>
                                     <span className="opacity-50 mr-2">[{log.time}]</span>
                                     {log.message}
@@ -1488,19 +1488,19 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
             )}
 
             {showImport && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-700 p-6">
+                <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-800 p-6">
                         <h3 className="mb-2 flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white"><Download className="h-5 w-5" />批量导入画师</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">粘贴你的风格串，支持 artist: 前缀和 {'{}'} [] 权重符号</p>
                         <textarea
-                            className="w-full h-32 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg p-3 text-sm text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                            className="w-full h-32 bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
                             placeholder="例如：artist:wlop, {artist:nixeu}, [[shaluo]]"
                             value={importText}
                             onChange={e => setImportText(e.target.value)}
                         />
                         <div className="flex justify-end gap-3 mt-4">
-                            <button onClick={() => setShowImport(false)} className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">取消</button>
-                            <button onClick={handleImport} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-lg transition-colors">导入</button>
+                            <button onClick={() => setShowImport(false)} className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">取消</button>
+                            <button onClick={handleImport} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg transition-colors">导入</button>
                         </div>
                     </div>
                 </div>

@@ -376,7 +376,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
           ref={listboxRef}
           id={listboxId}
           role="listbox"
-          className={`absolute left-0 right-0 z-[150] max-h-[min(18rem,42dvh)] touch-pan-y overflow-y-auto rounded-lg border border-gray-200 bg-white select-none shadow-2xl dark:border-gray-700 dark:bg-gray-900 ${dropUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}
+          className={`absolute left-0 right-0 z-[150] max-h-[min(18rem,42dvh)] touch-pan-y overflow-y-auto rounded-xl border border-gray-200 bg-white select-none shadow-2xl dark:border-gray-800 dark:bg-gray-900 ${dropUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}
         >
           {isLoading && suggestions.length === 0 ? (
             <div className="px-3 py-2 text-xs text-gray-400">正在加载 Tag…</div>

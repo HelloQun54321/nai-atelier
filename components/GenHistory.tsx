@@ -990,18 +990,18 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 </div>
             </MobileBottomSheet>
 
-            {showDateFilter && <div className="fixed inset-0 z-[1100] hidden items-center justify-center bg-slate-950/35 p-6 backdrop-blur-sm md:flex" onPointerDown={event => {
+            {showDateFilter && <div className="fixed inset-0 z-[1250] hidden items-center justify-center bg-slate-950/35 p-6 backdrop-blur-sm md:flex" onPointerDown={event => {
                 if (event.target === event.currentTarget) setShowDateFilter(false);
             }}>
-                <section role="dialog" aria-modal="true" aria-label="筛选历史日期" className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900" onPointerDown={event => event.stopPropagation()}>
-                    <header className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+                <section role="dialog" aria-modal="true" aria-label="筛选历史日期" className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900" onPointerDown={event => event.stopPropagation()}>
+                    <header className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                         <h2 className="font-bold text-gray-900 dark:text-white">筛选历史日期</h2>
                         <button type="button" onClick={() => setShowDateFilter(false)} className="rounded-lg px-2.5 py-1.5 text-sm font-bold text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">关闭</button>
                     </header>
                     <div className="space-y-4 p-5">
                         <div className="grid grid-cols-2 gap-3">
-                            <label className="text-sm font-bold dark:text-white">开始日期<input type="date" value={dateFilter.from} onChange={event => { const from = event.currentTarget.value; setDateFilter(previous => ({ ...previous, from })); }} className="mt-2 h-11 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-600 dark:bg-gray-800" /></label>
-                            <label className="text-sm font-bold dark:text-white">结束日期<input type="date" value={dateFilter.to} onChange={event => { const to = event.currentTarget.value; setDateFilter(previous => ({ ...previous, to })); }} className="mt-2 h-11 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-600 dark:bg-gray-800" /></label>
+                            <label className="text-sm font-bold dark:text-white">开始日期<input type="date" value={dateFilter.from} onChange={event => { const from = event.currentTarget.value; setDateFilter(previous => ({ ...previous, from })); }} className="mt-2 h-11 w-full rounded-xl border border-gray-200 bg-white px-3 dark:border-gray-800 dark:bg-gray-800" /></label>
+                            <label className="text-sm font-bold dark:text-white">结束日期<input type="date" value={dateFilter.to} onChange={event => { const to = event.currentTarget.value; setDateFilter(previous => ({ ...previous, to })); }} className="mt-2 h-11 w-full rounded-xl border border-gray-200 bg-white px-3 dark:border-gray-800 dark:bg-gray-800" /></label>
                         </div>
                         <div className="grid grid-cols-3 gap-2">
                             <button type="button" onClick={() => { const today = toDateInputValue(new Date()); setDateFilter({ from: today, to: today }); }} className="h-10 rounded-xl bg-gray-100 text-sm font-bold hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700">今天</button>
@@ -1110,7 +1110,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
             {/* Lightbox */}
             {lightbox && (
-                <div className="fixed inset-0 z-[1050] bg-black/90 backdrop-blur-sm flex items-center justify-center p-0 md:p-8" onClick={closeLightbox}>
+                <div className="fixed inset-0 z-[1500] bg-black/90 backdrop-blur-sm flex items-center justify-center p-0 md:p-8" onClick={closeLightbox}>
                     <div className="bg-white dark:bg-gray-900 w-full max-w-6xl h-[100dvh] md:h-[90vh] rounded-none md:rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row" onClick={e => e.stopPropagation()}>
                         {/* Image Area */}
                         <div className="flex-1 bg-gray-100 dark:bg-black/50 flex items-center justify-center p-4 relative h-[45%] md:h-auto border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800">
@@ -1183,8 +1183,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
             {/* Clean Modal */}
             {showCleanModal && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-sm w-full shadow-2xl">
+                <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200 dark:border-gray-800">
                         <h3 className="mb-4 flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white"><AlertTriangle className="h-5 w-5 text-amber-500" />确认清理</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                             {cleanMode === 'days' 
@@ -1211,7 +1211,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                                 setCleanPreviewCount(0);
                                             }
                                         }}
-                                        className="w-full px-3 py-2 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm outline-none dark:text-white"
+                                        className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm outline-none dark:text-white"
                                     />
                                 </div>
                             ) : (
@@ -1232,7 +1232,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                                 setCleanPreviewCount(0);
                                             }
                                         }}
-                                        className="w-full px-3 py-2 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm outline-none dark:text-white"
+                                        className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm outline-none dark:text-white"
                                     />
                                 </div>
                             )}
@@ -1241,14 +1241,14 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                         <div className="flex gap-2">
                             <button
                                 onClick={() => setShowCleanModal(false)}
-                                className="flex-1 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg font-bold"
+                                className="flex-1 py-2 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-xl font-bold"
                             >
                                 取消
                             </button>
                             <button
                                 onClick={handleCleanConfirm}
                                 disabled={!Number.isFinite(cleanMode === 'days' ? cleanDays : cleanCount) || (cleanMode === 'days' ? cleanDays : cleanCount) < 1}
-                                className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 确认删除
                             </button>
@@ -1259,8 +1259,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
             {/* Success Modal */}
             {showSuccessModal && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-sm w-full shadow-2xl flex flex-col items-center text-center animate-bounce-in">
+                <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col items-center text-center animate-bounce-in">
                         <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-500 rounded-full flex items-center justify-center text-3xl mb-4">
                             ✨
                         </div>
@@ -1270,7 +1270,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                         </p>
                         <button
                             onClick={() => setShowSuccessModal(false)}
-                            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-lg transition-all"
+                            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg transition-all"
                         >
                             确定
                         </button>

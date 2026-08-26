@@ -73,26 +73,26 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
     if (!show) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col max-h-[90vh] relative">
+        <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-2xl shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col max-h-[90vh] relative">
                 
                 {/* Delete Confirmation Overlay */}
                 {slotToDelete !== null && (
-                    <div className="absolute inset-0 z-50 bg-white/80 dark:bg-black/80 backdrop-blur flex items-center justify-center rounded-xl p-4">
-                        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 max-w-sm text-center">
+                    <div className="absolute inset-0 z-50 bg-white/80 dark:bg-black/80 backdrop-blur flex items-center justify-center rounded-2xl p-4">
+                        <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 max-w-sm text-center">
                             <h4 className="text-lg font-bold text-red-600 dark:text-red-400 mb-2">确认删除此分组？</h4>
                             <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
                                 删除第 {slotToDelete + 1} 组 ({draftConfig.slots[slotToDelete]?.label}) 会导致后续分组序号前移，可能会使已生成的实装图错位。
                             </p>
                             <div className="flex gap-3 justify-center">
-                                <button onClick={() => setSlotToDelete(null)} className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">取消</button>
-                                <button onClick={confirmDeleteSlot} className="px-6 py-2 bg-red-600 hover:bg-red-500 text-white rounded font-bold shadow-lg transition-colors">确认删除</button>
+                                <button onClick={() => setSlotToDelete(null)} className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">取消</button>
+                                <button onClick={confirmDeleteSlot} className="px-6 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold shadow-lg transition-colors">确认删除</button>
                             </div>
                         </div>
                     </div>
                 )}
 
-                <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <div className="p-6 border-b border-gray-200 dark:border-gray-800">
                     <div className="flex justify-between items-center">
                     <h3 className="flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white"><Settings2 className="h-5 w-5" />实装测试配置</h3>
                     <span className="text-xs bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 px-2 py-0.5 rounded">编辑模式</span>
@@ -141,7 +141,7 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
                         </div>
                         
                         {draftConfig.slots.map((slot, i) => (
-                            <div key={i} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-gray-50 dark:bg-gray-900/50 relative group/slot">
+                            <div key={i} className="border border-gray-200 dark:border-gray-800 rounded-xl p-3 bg-gray-50 dark:bg-gray-900/50 relative group/slot">
                                 <div className="flex justify-between mb-2 gap-2">
                                     <div className="flex items-center gap-2 flex-1">
                                         <span className="text-xs font-mono text-gray-400 w-4">{i + 1}.</span>
@@ -162,7 +162,7 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
                                     </button>
                                 </div>
                                 <textarea 
-                                    className="w-full h-16 p-2 bg-white dark:bg-gray-950 border border-gray-300 dark:border-gray-600 rounded text-xs dark:text-white font-mono resize-none focus:ring-1 focus:ring-indigo-500 outline-none"
+                                    className="w-full h-16 p-2 bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg text-xs dark:text-white font-mono resize-none focus:ring-1 focus:ring-indigo-500 outline-none"
                                     value={slot.prompt}
                                     onChange={e => updateSlot(i, 'prompt', e.target.value)}
                                     placeholder="输入测试 Prompt..."
@@ -174,7 +174,7 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
                     <div>
                         <label className="block text-xs font-bold text-red-500 dark:text-red-400 mb-1 uppercase">通用负面 (Negative Prompt)</label>
                         <textarea 
-                            className="w-full h-16 p-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs dark:text-white font-mono resize-none focus:ring-1 focus:ring-red-500 outline-none"
+                            className="w-full h-16 p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-xs dark:text-white font-mono resize-none focus:ring-1 focus:ring-red-500 outline-none"
                             value={draftConfig.negative}
                             onChange={e => setDraftConfig({...draftConfig, negative: e.target.value})}
                         />
@@ -186,13 +186,13 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
                             <div className="flex gap-2">
                             <input 
                                 type="number" 
-                                className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-sm dark:text-white"
+                                className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-sm dark:text-white"
                                 value={draftConfig.seed}
                                 onChange={e => setDraftConfig({...draftConfig, seed: parseInt(e.target.value)})}
                             />
                             <button
                                 onClick={() => setDraftConfig({...draftConfig, seed: -1})}
-                                className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 flex items-center justify-center text-xs whitespace-nowrap"
+                                className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 flex items-center justify-center text-xs whitespace-nowrap"
                                 title="设置为 -1 (随机)"
                             >
                                 随机
@@ -204,13 +204,13 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
                             <div className="flex gap-2">
                                 <input 
                                     type="number" placeholder="Steps"
-                                    className="w-1/2 p-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-sm dark:text-white"
+                                    className="w-1/2 p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-sm dark:text-white"
                                     value={draftConfig.steps}
                                     onChange={e => setDraftConfig({...draftConfig, steps: parseInt(e.target.value)})}
                                 />
                                 <input 
                                     type="number" placeholder="Scale"
-                                    className="w-1/2 p-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-sm dark:text-white"
+                                    className="w-1/2 p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-sm dark:text-white"
                                     value={draftConfig.scale}
                                     onChange={e => setDraftConfig({...draftConfig, scale: parseFloat(e.target.value)})}
                                 />
@@ -220,7 +220,7 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
                             <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">队列间隔 (ms)</label>
                             <input 
                                 type="number" 
-                                className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-sm dark:text-white"
+                                className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-sm dark:text-white"
                                 value={draftConfig.interval ?? 3000}
                                 min={500}
                                 onChange={e => setDraftConfig({...draftConfig, interval: parseInt(e.target.value)})}
@@ -229,9 +229,9 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
                     </div>
                 </div>
 
-                <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3 bg-gray-50 dark:bg-gray-900 rounded-b-xl">
+                <div className="p-6 border-t border-gray-200 dark:border-gray-800 flex justify-end gap-3 bg-gray-50 dark:bg-gray-900 rounded-b-2xl">
                     <button onClick={onClose} className="px-4 py-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white">取消</button>
-                    <button onClick={handleSave} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold shadow-lg">保存配置</button>
+                    <button onClick={handleSave} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg">保存配置</button>
                 </div>
             </div>
         </div>

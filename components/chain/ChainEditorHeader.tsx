@@ -86,10 +86,10 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     onEditInfo={() => setIsEditingInfo(true)}
                     onBack={onBack}
                 />
-                {!isPlayground && isEditingInfo && isOwner && <div role="dialog" aria-label={`编辑${isCharacterMode ? '角色串' : '风格串'}信息`} className="absolute left-12 top-[calc(100%+0.5rem)] z-50 w-[min(40rem,calc(100vw-2rem))] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+                {!isPlayground && isEditingInfo && isOwner && <div role="dialog" aria-label={`编辑${isCharacterMode ? '角色串' : '风格串'}信息`} className="absolute left-12 top-[calc(100%+0.5rem)] z-50 w-[min(40rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                     <div className="grid gap-3 sm:grid-cols-2">
-                        <label className="text-xs font-bold text-gray-500">名称<input type="text" value={chainName} onChange={e => { setChainName(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white" placeholder="名称" /></label>
-                        <label className="text-xs font-bold text-gray-500">描述<input type="text" value={chainDesc} onChange={e => { setChainDesc(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-700 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" placeholder="描述" /></label>
+                        <label className="text-xs font-bold text-gray-500">名称<input type="text" value={chainName} onChange={e => { setChainName(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-800 dark:text-white" placeholder="名称" /></label>
+                        <label className="text-xs font-bold text-gray-500">描述<input type="text" value={chainDesc} onChange={e => { setChainDesc(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-300" placeholder="描述" /></label>
                     </div>
                     <div className="mt-3 text-xs font-bold text-gray-500">标签</div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
@@ -154,7 +154,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                         <button
                             type="button"
                             onClick={() => importInputRef.current?.click()}
-                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
+                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
                             title="导入图片或 JSON 配置"
                             aria-label="导入图片或 JSON 配置"
                         >
@@ -166,7 +166,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     <button
                         type="button"
                         onClick={() => setShowImportPreset(true)}
-                        className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
+                        className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
                         title="引用预设"
                         aria-label="引用预设"
                     >
@@ -177,7 +177,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     <button
                         type="button"
                         onClick={() => setTaggerOpen(true)}
-                        className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
+                        className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
                         title="图片反推 Tag"
                         aria-label="图片反推 Tag"
                     >
@@ -194,7 +194,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     aria-pressed={tagAssistEnabled}
                     className={`mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border p-0 transition-colors ${tagAssistEnabled
                         ? 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/60'
-                        : 'border-gray-200 bg-gray-100 text-gray-500 hover:border-gray-300 hover:bg-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-700'}`}
+                        : 'border-gray-200 bg-gray-100 text-gray-500 hover:border-gray-300 hover:bg-gray-200 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-700'}`}
                     title={tagAssistEnabled ? '关闭 Tag 辅助' : '开启 Tag 辅助'}
                     aria-label={tagAssistEnabled ? '关闭 Tag 辅助' : '开启 Tag 辅助'}
                 >
@@ -209,7 +209,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     <button
                         type="button"
                         onClick={handleReset}
-                        className="mobile-touch ml-1 flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-red-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:bg-gray-800 dark:text-red-400 dark:hover:border-red-900/60 dark:hover:bg-red-950/30"
+                        className="mobile-touch ml-1 flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-red-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-gray-800 dark:bg-gray-800 dark:text-red-400 dark:hover:border-red-900/60 dark:hover:bg-red-950/30"
                         title="重置实验室"
                         aria-label="重置实验室"
                     >
@@ -223,7 +223,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                         disabled={isUploading}
                         className={`mobile-touch flex h-11 items-center justify-center rounded-xl border p-0 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isPlayground
                             ? 'w-11 border-emerald-200 bg-emerald-50 text-emerald-600 hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/35 dark:text-emerald-300 dark:hover:border-emerald-800 dark:hover:bg-emerald-950/60'
-                            : 'w-auto border-gray-200 bg-gray-100 px-4 text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40'}`}
+                            : 'w-auto border-gray-200 bg-gray-100 px-4 text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40'}`}
                         title={isPlayground ? '保存到库' : 'Fork'}
                         aria-label={isPlayground ? '保存到库' : 'Fork'}
                     >
