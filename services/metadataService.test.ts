@@ -231,7 +231,8 @@ describe('NovelAI Stealth PNG 元数据', () => {
     }).params.model).toBe('nai-diffusion-6-full');
   });
 
-  it('导入 V5 Alpha 元数据时恢复透明输出参数', () => {
+  it('导入 V5 Alpha 元数据时仅在明确开启透明时恢复 transparent 标志', () => {
+    // 明确开启透明背景
     expect(parseNovelAIMetadata(JSON.stringify({
       prompt: '1girl, transparent background',
       model: 'nai-diffusion-5-full',
@@ -243,8 +244,22 @@ describe('NovelAI Stealth PNG 元数据', () => {
       alphaMode: 'straight',
     });
     expect(parseNovelAIMetadata(JSON.stringify({
-      prompt: 'effect', model: 'nai-diffusion-5-full', straight_alpha: false,
-    })).params.alphaMode).toBe('premultiplied');
+      prompt: 'effect',
+      model: 'nai-diffusion-5-full',
+      tag_hint_transparent_background: true,
+      straight_alpha: false,
+    })).params).toMatchObject({
+      model: 'nai-diffusion-5-full',
+      transparent: true,
+      alphaMode: 'premultiplied',
+    });
+
+    // 普通 V5 非透明图片：即使携带 straight_alpha 字段，transparent 必须为 false
+    expect(parseNovelAIMetadata(JSON.stringify({
+      prompt: 'scenery, mountain',
+      model: 'nai-diffusion-5-full',
+      straight_alpha: false,
+    })).params.transparent).toBe(false);
   });
 
   it('拒绝声明长度超过图片容量的载荷', async () => {
