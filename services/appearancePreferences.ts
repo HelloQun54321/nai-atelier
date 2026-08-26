@@ -104,7 +104,7 @@ const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   designTheme: 'nai-atelier',
   themeMode: 'system',
-  accentColor: '#6366f1',
+  accentColor: '#0ea5e9',
   density: 'standard',
   corners: 'standard',
   surfaces: 'solid',

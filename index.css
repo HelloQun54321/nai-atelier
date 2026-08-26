@@ -182,9 +182,9 @@ html[data-design-theme='nai-atelier'] ::selection {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--nai-accent, #6366f1) 28%, transparent);
-  color: color-mix(in srgb, var(--nai-accent, #6366f1) 76%, black);
-  background-color: color-mix(in srgb, var(--nai-accent, #6366f1) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--nai-accent, #0ea5e9) 28%, transparent);
+  color: color-mix(in srgb, var(--nai-accent, #0ea5e9) 76%, black);
+  background-color: color-mix(in srgb, var(--nai-accent, #0ea5e9) 9%, transparent);
   background-image: none;
   box-shadow: 0 1px 2px rgb(15 23 42 / .06);
   transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease, filter 180ms ease, box-shadow 180ms ease, transform 180ms ease;
@@ -224,9 +224,9 @@ html[data-design-theme='nai-atelier'] ::selection {
 .generation-action-button:hover:not(:disabled) {
   color: white;
   border-color: transparent;
-  background-color: var(--nai-action-deep, #4f46e5);
+  background-color: var(--nai-action-deep, #0284c7);
   filter: saturate(1.05) brightness(1.04);
-  box-shadow: 0 8px 18px var(--nai-action-shadow, rgb(79 70 229 / .28));
+  box-shadow: 0 8px 18px var(--nai-action-shadow, rgb(14 165 233 / .28));
   transform: translateY(-1px);
 }
 
@@ -244,8 +244,8 @@ html[data-design-theme='nai-atelier'] ::selection {
   z-index: 1;
   padding: .125rem .5rem;
   border-radius: 999px;
-  color: color-mix(in srgb, var(--nai-accent, #6366f1) 82%, black);
-  background: color-mix(in srgb, var(--nai-accent, #6366f1) 13%, transparent);
+  color: color-mix(in srgb, var(--nai-accent, #0ea5e9) 82%, black);
+  background: color-mix(in srgb, var(--nai-accent, #0ea5e9) 13%, transparent);
   font-size: .6875rem;
   font-weight: 700;
   line-height: 1.25rem;
@@ -262,14 +262,14 @@ html[data-design-theme='nai-atelier'] ::selection {
   color: white;
   border-color: transparent;
   filter: saturate(1.05);
-  box-shadow: 0 8px 18px var(--nai-action-shadow, rgb(79 70 229 / .28));
+  box-shadow: 0 8px 18px var(--nai-action-shadow, rgb(14 165 233 / .28));
   background-image: linear-gradient(
     108deg,
-    var(--nai-action-deep, #4f46e5) 0%,
-    var(--nai-action-mid, #6366f1) 24%,
-    var(--nai-action-light, #a5b4fc) 48%,
-    var(--nai-action-mid, #6366f1) 72%,
-    var(--nai-action-deep, #4f46e5) 100%
+    var(--nai-action-deep, #0284c7) 0%,
+    var(--nai-action-mid, #0ea5e9) 24%,
+    var(--nai-action-light, #7dd3fc) 48%,
+    var(--nai-action-mid, #0ea5e9) 72%,
+    var(--nai-action-deep, #0284c7) 100%
   );
   background-position: 0% 50%;
   background-size: 220% 100%;
@@ -1023,11 +1023,11 @@ body,
 
 /* 公共队列状态：活动状态跟随生成按钮主题，结果状态保留语义色。 */
 .queue-status-surface {
-  --queue-status-deep: var(--nai-action-deep, #4f46e5);
-  --queue-status-mid: var(--nai-action-mid, #6366f1);
-  --queue-status-light: var(--nai-action-light, #a5b4fc);
+  --queue-status-deep: var(--nai-action-deep, #0284c7);
+  --queue-status-mid: var(--nai-action-mid, #0ea5e9);
+  --queue-status-light: var(--nai-action-light, #7dd3fc);
   --queue-status-glow: var(--nai-action-glow, rgb(255 255 255 / .48));
-  --queue-status-shadow: var(--nai-action-shadow, rgb(79 70 229 / .28));
+  --queue-status-shadow: var(--nai-action-shadow, rgb(14 165 233 / .28));
   isolation: isolate;
   overflow: hidden;
   background-size: 100% 100%;
