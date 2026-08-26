@@ -1907,7 +1907,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             setSubjectPrompt={setSubjectPrompt}
                             globalPrompt={globalPrompt}
                             presetSources={presetSources}
-                            modulePresetSources={modulePresetSources}
                             tagAssistEnabled={tagAssistEnabled}
                             canEdit={canEdit}
                             copyPromptToClipboard={copyPromptToClipboard}
@@ -1915,12 +1914,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             markChange={markChange}
                             activeLabLayout={activeLabLayout}
                             mobileEditorTab={mobileEditorTab}
-                            modules={modules}
-                            activeModules={activeModules}
-                            handleModuleChange={handleModuleChange}
-                            addModule={addModule}
-                            removeModule={removeModule}
-                            toggleModuleActive={toggleModuleActive}
                         />
 
 

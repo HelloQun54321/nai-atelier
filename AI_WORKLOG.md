@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-26
+- **Gemini (Flash)**：移除实验室提示词输入区域中冗余过时的「提示词模块」组件与对应文件，消除视觉噪音与过度设计（refactor: remove legacy prompt modules component from lab editor）。
+
 - **Gemini (Flash)**：将实验室折叠栏重构为一体化手风琴卡片，并剥离参数设置、角色专属提示词、Vibe 与图片编辑模块内的冗余嵌套外框与边距，消除视觉断层与多层套框（style: integrate laboratory accordion card and strip nested module borders）。
 
 - **Gemini (Flash)**：消除实验室各功能模块（参数设置、角色专属提示词、提示词输入、负面提示词、图片编辑）在 LabModuleSection 折叠栏与内层卡片间的同名重复标题，精简纵向空间（style: deduplicate laboratory module headers and card titles）。

@@ -1,10 +1,8 @@
 import React from 'react';
-import { PromptModule } from '../../types';
 import { LabPageLayout } from '../../services/appearancePreferences';
 import { LabModuleSection } from '../LabModuleSection';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 import { PresetSection, PresetSource, PresetSourceBadge, PresetSourceBadges, PromptCopyButton } from './PresetSourceBadges';
-import { ChainEditorModules } from './ChainEditorModules';
 
 export interface ChainEditorPromptInputsProps {
     splitPromptFields: boolean;
@@ -14,7 +12,6 @@ export interface ChainEditorPromptInputsProps {
     setSubjectPrompt: (value: string) => void;
     globalPrompt: string;
     presetSources: Partial<Record<PresetSection, PresetSource>>;
-    modulePresetSources: Record<string, PresetSource>;
     tagAssistEnabled: boolean;
     canEdit: boolean;
     copyPromptToClipboard: (value: string, label: string) => void;
@@ -22,14 +19,7 @@ export interface ChainEditorPromptInputsProps {
     markChange: () => void;
     activeLabLayout: LabPageLayout;
     mobileEditorTab: 'global' | 'character' | 'params';
-    modules: PromptModule[];
-    activeModules: Record<string, boolean>;
-    handleModuleChange: (index: number, key: keyof PromptModule, value: any) => void;
-    addModule: () => void;
-    removeModule: (index: number) => void;
-    toggleModuleActive: (id: string) => void;
 }
-
 export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = ({
     splitPromptFields,
     basePrompt,
@@ -38,7 +28,6 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
     setSubjectPrompt,
     globalPrompt,
     presetSources,
-    modulePresetSources,
     tagAssistEnabled,
     canEdit,
     copyPromptToClipboard,
@@ -46,12 +35,6 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
     markChange,
     activeLabLayout,
     mobileEditorTab,
-    modules,
-    activeModules,
-    handleModuleChange,
-    addModule,
-    removeModule,
-    toggleModuleActive,
 }) => (
     <LabModuleSection
         moduleId="prompt"
@@ -113,18 +96,5 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                 onValueChange={(value) => { setSubjectPrompt(value); markPresetSectionModified('subject'); markChange(); }}
             />
         </section>}
-
-        <ChainEditorModules
-            modules={modules}
-            activeModules={activeModules}
-            handleModuleChange={handleModuleChange}
-            addModule={addModule}
-            removeModule={removeModule}
-            toggleModuleActive={toggleModuleActive}
-            canEdit={canEdit}
-            tagAssistEnabled={tagAssistEnabled}
-            modulePresetSources={modulePresetSources}
-            mobileEditorTab={mobileEditorTab}
-        />
     </LabModuleSection>
 );
