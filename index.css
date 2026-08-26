@@ -5,7 +5,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --workspace-toolbar-height: 56px;
+  --workspace-toolbar-height: 64px;
   --workspace-control-radius: 0.75rem;
   --workspace-card-radius: 1rem;
 }
@@ -418,9 +418,9 @@ html[data-surfaces='translucent'] .settings-navigation {
   backdrop-filter: blur(22px) saturate(130%);
 }
 
-html[data-density='comfortable'] { --spacing: 0.275rem; --workspace-toolbar-height: 60px; }
-html[data-density='standard'] { --spacing: 0.25rem; --workspace-toolbar-height: 56px; }
-html[data-density='compact'] { --spacing: 0.225rem; --workspace-toolbar-height: 52px; }
+html[data-density='comfortable'] { --spacing: 0.275rem; --workspace-toolbar-height: 68px; }
+html[data-density='standard'] { --spacing: 0.25rem; --workspace-toolbar-height: 64px; }
+html[data-density='compact'] { --spacing: 0.225rem; --workspace-toolbar-height: 56px; }
 
 html[data-corners='soft'] {
   --radius-xs: 0.25rem;
