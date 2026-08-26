@@ -35,12 +35,11 @@ export const computeChainFingerprint = (
 ): string => {
   const p = (prompt || '').trim();
   const np = (negativePrompt || '').trim();
-  const seed = params?.seed ?? '';
   const steps = params?.steps ?? '';
   const model = params?.model ?? '';
   const w = params?.width ?? '';
   const h = params?.height ?? '';
-  return `${p}:::${np}:::${seed}:::${steps}:::${model}:::${w}x${h}`;
+  return `${p}:::${np}:::${steps}:::${model}:::${w}x${h}`;
 };
 
 const getCleanPresetName = (fileName: string): string => {
