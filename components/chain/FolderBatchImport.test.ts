@@ -61,5 +61,12 @@ describe('FolderBatchImport & Untested Tag Lifecycle', () => {
     const fpDifferentNegative = computeChainFingerprint('1girl, scenic', 'worst quality, bad anatomy', { width: 832, height: 1216 });
     expect(fpBase).not.toBe(fpDifferentNegative);
   });
+
+  it('正确解析有效预设的提示词与负面提示词', async () => {
+    const validMetaJson = JSON.stringify({ prompt: '1girl, anime', uc: 'low quality' });
+    const parsedValid = parseNovelAIMetadata(validMetaJson);
+    expect(parsedValid.prompt).toContain('1girl');
+    expect(parsedValid.negativePrompt).toContain('low quality');
+  });
 });
 

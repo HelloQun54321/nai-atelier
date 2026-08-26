@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：批量导入新增「清理无意义图片」面板，支持分类筛选并物理删除无元数据/非NAI/重复图片（feat: add junk file cleanup panel and disk deletion to batch import）。
+
 - **Gemini (Flash)**：文件夹批量导入查重规则改为纯提示词识别，排除尺寸/步数/模型/种子等非提示词参数干扰（refactor: refine batch import fingerprint to match purely on prompts）。
 
 - **Gemini (Flash)**：文件夹批量导入查重指纹排除随机种子维度，确保预设清空或修改种子后依然能被准确识别为同一预设（fix: exclude seed from batch import fingerprint to prevent false duplication on seed change）。
