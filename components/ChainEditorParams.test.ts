@@ -16,6 +16,7 @@ vi.mock('../services/naiRuntime', () => ({
 
 vi.mock('../services/naiModels', () => ({
   DEFAULT_NAI_MODEL: 'nai-diffusion-4-5-full',
+  getDefaultStepsForModel: (model: string) => (model?.startsWith('nai-diffusion-5-') ? 23 : 28),
   getSelectableNaiModels: () => [
     { id: 'nai-diffusion-5-full', label: 'V5 Full' },
     { id: 'nai-diffusion-4-5-full', label: 'V4.5 Full' },
@@ -147,5 +148,27 @@ describe('ChainEditorParams', () => {
     renderParams({ hideResolution: true, mode });
     expect(screen.queryByText('图片尺寸')).toBeNull();
     expect(screen.queryByText(/当前画布|等待底图/)).toBeNull();
+  });
+
+  it('切换到 V5 系列模型时自动将默认步数调整为 23', () => {
+    const setParams = vi.fn();
+    renderParams({ setParams, params: { ...params, model: 'nai-diffusion-4-5-full', steps: 28 } });
+    const modelSelect = screen.getByRole('combobox', { name: '生成模型' });
+    fireEvent.change(modelSelect, { target: { value: 'nai-diffusion-5-full' } });
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({
+      model: 'nai-diffusion-5-full',
+      steps: 23,
+    }));
+  });
+
+  it('切换模型时保留用户自定义的非默认步数', () => {
+    const setParams = vi.fn();
+    renderParams({ setParams, params: { ...params, model: 'nai-diffusion-4-5-full', steps: 16 } });
+    const modelSelect = screen.getByRole('combobox', { name: '生成模型' });
+    fireEvent.change(modelSelect, { target: { value: 'nai-diffusion-5-full' } });
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({
+      model: 'nai-diffusion-5-full',
+      steps: 16,
+    }));
   });
 });

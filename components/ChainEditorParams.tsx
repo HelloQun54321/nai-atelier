@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { ImageEditOperation, NAIParams } from '../types';
-import { DEFAULT_NAI_MODEL, getRuntimeNaiModelInfo, getSelectableNaiModels } from '../services/naiModels';
+import { DEFAULT_NAI_MODEL, getDefaultStepsForModel, getRuntimeNaiModelInfo, getSelectableNaiModels } from '../services/naiModels';
 import { getNaiRuntimeModelCapability, useNaiRuntime } from '../services/naiRuntime';
 
 interface ChainEditorParamsProps {
@@ -133,20 +133,30 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 <div className="flex min-w-0 flex-col gap-1">
                     <label className="text-xs text-gray-500 dark:text-gray-500 block">生成模型</label>
                     <select
+                        aria-label="生成模型"
                         disabled={!canEdit}
                         className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
                         value={resolvedModelId}
                         onChange={(e) => {
-                            const nextModel = getRuntimeNaiModelInfo(e.target.value, runtime);
+                            const prevModel = resolvedModelId;
+                            const nextModelId = e.target.value;
+                            const nextModel = getRuntimeNaiModelInfo(nextModelId, runtime);
                             const nextSupportsVibes = mode === 'text-to-image' || mode === 'image-to-image'
                                 ? nextModel.supportsVibes
                                 : false;
                             const nextSupportsCharacterReferences = mode === 'inpaint' || mode === 'outpaint'
                                 ? nextModel.supportsCharacterReferenceInpainting
                                 : nextModel.supportsCharacterReferences;
+                            const prevDefaultSteps = getDefaultStepsForModel(prevModel);
+                            const nextDefaultSteps = getDefaultStepsForModel(nextModelId);
+                            // 如果用户处于前一个模型的默认步数，切换到新模型时自动跟进新模型的默认步数；若是自定义步数则保留。
+                            const nextSteps = (params.steps === undefined || params.steps === prevDefaultSteps)
+                                ? nextDefaultSteps
+                                : params.steps;
                             const nextParams: NAIParams = {
                                 ...params,
-                                model: e.target.value,
+                                model: nextModelId,
+                                steps: nextSteps,
                                 ...(nextModel.supportsTransparentBackground ? {} : { transparent: false }),
                                 ...(nextSupportsVibes || !params.vibes?.enabled
                                     ? {}
@@ -259,6 +269,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 <div className="flex flex-col gap-1">
                     <label className="text-xs text-gray-500 dark:text-gray-500 block">采样器</label>
                     <select
+                        aria-label="采样器"
                         disabled={!canEdit}
                         className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
                         value={params.sampler || 'k_euler_ancestral'}

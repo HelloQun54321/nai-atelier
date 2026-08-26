@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-26
+- **Gemini (Flash)**：为实验室模型切换增加步数自适应逻辑（V5 系列默认 23 步，其他 28 步，保留自定义步数与外部导入元数据），并补充单测（feat: adapt default steps on model switch to 23 for v5）。
+
 - **Gemini (Flash)**：彻底统一正面提示词为纯净单框输入流，移除 splitPromptFields 偏好设置及相关双框状态与导入拆分逻辑（refactor: unify prompt input to single field and remove splitPromptFields）。
 
 - **Gemini (Flash)**：移除实验室提示词输入区域中冗余过时的「提示词模块」组件与对应文件，消除视觉噪音与过度设计（refactor: remove legacy prompt modules component from lab editor）。

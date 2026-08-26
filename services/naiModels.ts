@@ -45,6 +45,12 @@ export const NAI_MODELS: NaiModelInfo[] = [
 
 export const DEFAULT_NAI_MODEL = 'nai-diffusion-4-5-full';
 
+/** 获取模型的官方推荐默认采样步数：V5 系列为 23 步，其他版本为 28 步。 */
+export const getDefaultStepsForModel = (modelId?: string): number => {
+  if (!modelId) return 28;
+  return /^nai-diffusion-5(?:-|$)/i.test(modelId) ? 23 : 28;
+};
+
 /**
  * NovelAI PNG 的 Source / model_name + model_hash 与 API model_version 的对应关系。
  * 精确哈希会由网关从官方 Web 应用同步；这里保留当前官方映射作为离线回退。
