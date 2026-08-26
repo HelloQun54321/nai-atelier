@@ -4,6 +4,8 @@ import {
   DEFAULT_LAB_MODULE_COLLAPSED,
   DEFAULT_LAB_PAGE_LAYOUTS,
   normalizeAppearancePreferences,
+  parseAppearancePresetsFromJson,
+  validateAppearancePreset,
 } from './appearancePreferences';
 
 describe('appearance preferences', () => {
@@ -63,6 +65,8 @@ describe('appearance preferences', () => {
           },
         },
       },
+      customPresets: [],
+      activePresetId: 'builtin-default',
     });
   });
 
@@ -142,5 +146,74 @@ describe('appearance preferences', () => {
     ]);
     expect(normalized.labPageLayouts.inpaint.collapsed.editSettings).toBe(true);
     expect(normalized.labPageLayouts.outpaint.order).toEqual(DEFAULT_LAB_PAGE_LAYOUTS.outpaint.order);
+  });
+
+  it('validates and normalizes appearance presets', () => {
+    expect(validateAppearancePreset(null)).toBeNull();
+    expect(validateAppearancePreset({})).toBeNull();
+    expect(validateAppearancePreset({ name: '   ' })).toBeNull();
+
+    const valid = validateAppearancePreset({
+      name: '深夜极客',
+      accentColor: '#14B8A6',
+      themeMode: 'dark',
+      density: 'compact',
+      corners: 'sharp',
+      surfaces: 'translucent',
+      motion: 'reduced',
+      fontScale: 'small',
+    });
+    expect(valid).not.toBeNull();
+    expect(valid?.name).toBe('深夜极客');
+    expect(valid?.accentColor).toBe('#14b8a6');
+    expect(valid?.density).toBe('compact');
+    expect(valid?.corners).toBe('sharp');
+    expect(valid?.surfaces).toBe('translucent');
+  });
+
+  it('parses appearance presets from various JSON formats safely', () => {
+    expect(parseAppearancePresetsFromJson('invalid json')).toEqual([]);
+
+    const singleJson = JSON.stringify({
+      name: '单项预设',
+      accentColor: '#8b5cf6',
+      themeMode: 'light',
+    });
+    const parsedSingle = parseAppearancePresetsFromJson(singleJson);
+    expect(parsedSingle).toHaveLength(1);
+    expect(parsedSingle[0].name).toBe('单项预设');
+    expect(parsedSingle[0].accentColor).toBe('#8b5cf6');
+
+    const arrayJson = JSON.stringify([
+      { name: '预设 1', accentColor: '#0ea5e9' },
+      { name: '预设 2', accentColor: '#e11d48' },
+      { invalid: true },
+    ]);
+    const parsedArray = parseAppearancePresetsFromJson(arrayJson);
+    expect(parsedArray).toHaveLength(2);
+    expect(parsedArray[0].name).toBe('预设 1');
+    expect(parsedArray[1].name).toBe('预设 2');
+
+    const wrappedJson = JSON.stringify({
+      presets: [
+        { name: '包装预设', accentColor: '#d97706' },
+      ],
+    });
+    const parsedWrapped = parseAppearancePresetsFromJson(wrappedJson);
+    expect(parsedWrapped).toHaveLength(1);
+    expect(parsedWrapped[0].name).toBe('包装预设');
+  });
+
+  it('preserves custom presets and active preset id in preferences', () => {
+    const normalized = normalizeAppearancePreferences({
+      customPresets: [
+        { id: 'custom-1', name: '我的预设', accentColor: '#0ea5e9', createdAt: 1000 },
+      ],
+      activePresetId: 'custom-1',
+    });
+    expect(normalized.customPresets).toHaveLength(1);
+    expect(normalized.customPresets[0].id).toBe('custom-1');
+    expect(normalized.customPresets[0].name).toBe('我的预设');
+    expect(normalized.activePresetId).toBe('custom-1');
   });
 });

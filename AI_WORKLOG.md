@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-26
+- **Gemini (Flash)**：新增外观与主题预设管理系统——支持将当前外观配置保存为新预设、一键切换、JSON 导入/导出、重命名与删除，并锁定出厂默认预设（feat: add appearance preset management with json import export and builtin lock）。
+
 - **Gemini (Flash)**：将默认主题强调色由偏紫的靛蓝（#6366f1）调整为预设选项中的晴空蓝（#0ea5e9），并在设置面板中排在预设首位（style: set default accent color to sky blue preset）。
 
 - **Gemini (Flash)**：修复本地服务启动时内部 Worker 端口冲突导致 workerd 抛出 std::terminate 异常崩溃的问题——自动探测可用端口并与网关动态同步（fix: dynamically resolve available worker port on local startup）。

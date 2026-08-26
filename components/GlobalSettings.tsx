@@ -17,6 +17,8 @@ import { naiKeyVault, NaiKeyEntry } from '../services/naiKeyVault';
 import { PromptAgentSettings } from './PromptAgentSettings';
 import {
   AppearancePreferences,
+  AppearancePreset,
+  BUILTIN_APPEARANCE_PRESET,
   CornerStyle,
   DEFAULT_APPEARANCE_PREFERENCES,
   DEFAULT_LAB_PAGE_LAYOUTS,
@@ -28,10 +30,12 @@ import {
   LabPageLayout,
   LabPageModuleId,
   MotionStyle,
+  parseAppearancePresetsFromJson,
   SurfaceStyle,
   ThemeMode,
+  validateAppearancePreset,
 } from '../services/appearancePreferences';
-import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Database, ExternalLink, GripVertical, KeyRound, Monitor, Moon, Palette, RefreshCw, RotateCcw, Server, Shield, SlidersHorizontal, Smartphone, Sun, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Database, Download, Edit2, ExternalLink, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RefreshCw, RotateCcw, Server, Shield, SlidersHorizontal, Smartphone, Sun, Trash2, Upload, X } from 'lucide-react';
 
 type SettingsSection = 'appearance' | 'novelai' | 'agent' | 'maintenance';
 type SettingsPage = 'home' | SettingsSection;
@@ -153,6 +157,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [maintenanceStatus, setMaintenanceStatus] = useState<LocalMaintenanceStatus | null>(null);
   const [maintenanceStatusError, setMaintenanceStatusError] = useState('');
   const [maintenanceStatusLoading, setMaintenanceStatusLoading] = useState(false);
+  const [isCreatingPreset, setIsCreatingPreset] = useState(false);
+  const [newPresetName, setNewPresetName] = useState('');
+  const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
+  const [editingPresetName, setEditingPresetName] = useState('');
+  const importFileRef = React.useRef<HTMLInputElement | null>(null);
   const requestClose = useMobileHistoryLayer(open, onClose, 'settings');
 
   useEffect(() => {
@@ -395,6 +404,150 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     });
   };
 
+  const customPresets = appearancePreferences.customPresets || [];
+  const allPresets: AppearancePreset[] = [BUILTIN_APPEARANCE_PRESET, ...customPresets];
+  const activePresetId = appearancePreferences.activePresetId || 'builtin-default';
+
+  const downloadJson = (filename: string, data: unknown) => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const applyPreset = (preset: AppearancePreset) => {
+    updateAppearance({
+      accentColor: preset.accentColor,
+      themeMode: preset.themeMode,
+      density: preset.density,
+      corners: preset.corners,
+      surfaces: preset.surfaces,
+      motion: preset.motion,
+      fontScale: preset.fontScale,
+      activePresetId: preset.id,
+    });
+    if (preset.themeMode !== themeMode) {
+      setThemeMode(preset.themeMode);
+    }
+    notify?.('已应用外观预设「' + preset.name + '」', 'success');
+  };
+
+  const handleSaveCurrentPreset = () => {
+    const trimmed = newPresetName.trim();
+    const finalName = trimmed || `自定义外观 ${customPresets.length + 1}`;
+    const newPreset: AppearancePreset = {
+      id: `preset-${Date.now()}`,
+      name: finalName,
+      createdAt: Date.now(),
+      accentColor: appearancePreferences.accentColor,
+      themeMode,
+      density: appearancePreferences.density,
+      corners: appearancePreferences.corners,
+      surfaces: appearancePreferences.surfaces,
+      motion: appearancePreferences.motion,
+      fontScale: appearancePreferences.fontScale,
+    };
+    updateAppearance({
+      customPresets: [...customPresets, newPreset],
+      activePresetId: newPreset.id,
+    });
+    setIsCreatingPreset(false);
+    setNewPresetName('');
+    notify?.('已保存新外观预设「' + newPreset.name + '」', 'success');
+  };
+
+  const handleDeletePreset = async (preset: AppearancePreset) => {
+    if (preset.isBuiltin) return;
+    const confirmed = await confirmAction({
+      title: '删除外观预设',
+      message: `确定要删除外观预设「${preset.name}」吗？此操作无法撤销。`,
+      confirmLabel: '删除预设',
+      tone: 'danger',
+    });
+    if (confirmed) {
+      const nextPresets = customPresets.filter(p => p.id !== preset.id);
+      updateAppearance({
+        customPresets: nextPresets,
+        ...(activePresetId === preset.id ? { activePresetId: 'builtin-default' } : {}),
+      });
+      notify?.('已删除外观预设「' + preset.name + '」', 'success');
+    }
+  };
+
+  const handleRenamePreset = (presetId: string) => {
+    const trimmed = editingPresetName.trim();
+    if (!trimmed) {
+      setEditingPresetId(null);
+      return;
+    }
+    const nextPresets = customPresets.map(p => p.id === presetId ? { ...p, name: trimmed.slice(0, 30) } : p);
+    updateAppearance({ customPresets: nextPresets });
+    setEditingPresetId(null);
+    notify?.('已重命名为「' + trimmed + '」', 'success');
+  };
+
+  const handleExportSinglePreset = (preset: AppearancePreset) => {
+    const filename = `nai-preset-${preset.name.toLowerCase().replace(/[^a-z0-9_\u4e00-\u9fa5]/gi, '_')}.json`;
+    downloadJson(filename, [preset]);
+    notify?.('已导出预设「' + preset.name + '」', 'success');
+  };
+
+  const handleExportAllPresets = () => {
+    if (customPresets.length === 0) {
+      notify?.('暂无自定义预设可导出');
+      return;
+    }
+    downloadJson(`nai-appearance-presets-${new Date().toISOString().slice(0, 10)}.json`, {
+      version: 1,
+      exportedAt: Date.now(),
+      presets: customPresets,
+    });
+    notify?.(`已导出 ${customPresets.length} 个自定义预设`, 'success');
+  };
+
+  const handleImportPresets = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = String(e.target?.result || '');
+      const parsed = parseAppearancePresetsFromJson(text);
+      if (parsed.length === 0) {
+        notify?.('导入失败：未找到有效的外观预设数据', 'error');
+        return;
+      }
+      const existingNames = new Set(customPresets.map(p => p.name));
+      const nextPresets = [...customPresets];
+      let added = 0;
+      for (const item of parsed) {
+        let name = item.name;
+        if (existingNames.has(name)) {
+          name = `${name} (导入)`;
+        }
+        existingNames.add(name);
+        nextPresets.push({
+          ...item,
+          id: `preset-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          name,
+          createdAt: Date.now(),
+        });
+        added++;
+      }
+      updateAppearance({ customPresets: nextPresets });
+      notify?.(`成功导入 ${added} 个外观预设`, 'success');
+      if (importFileRef.current) importFileRef.current.value = '';
+    };
+    reader.onerror = () => {
+      notify?.('读取文件失败', 'error');
+    };
+    reader.readAsText(file);
+  };
+
   if (!open) return null;
 
   const activeSectionMeta = activeSection === 'home' ? null : settingsSections.find(section => section.id === activeSection);
@@ -482,6 +635,227 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
                 <button type="button" onClick={resetThemeCustomization} className="mobile-touch mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"><RotateCcw className="h-3.5 w-3.5" />恢复 NAI Atelier 默认外观</button>
               </div>
+
+              {/* 外观配置预设管理 */}
+              <div className="rounded-2xl border border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35">
+                <input
+                  type="file"
+                  ref={importFileRef}
+                  accept=".json,application/json"
+                  onChange={handleImportPresets}
+                  className="hidden"
+                />
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Palette className="h-4 w-4 text-indigo-500" />
+                      <h4 className="text-xs font-bold text-gray-800 dark:text-gray-100">外观预设库</h4>
+                      <span className="rounded-full bg-gray-200/70 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                        {allPresets.length} 个预设
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+                      保存、切换当前整套外观或在多设备间导入导出分享配置。
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => importFileRef.current?.click()}
+                      className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+                      title="从 JSON 文件导入外观预设"
+                    >
+                      <Upload className="h-3 w-3" />导入
+                    </button>
+                    {customPresets.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleExportAllPresets}
+                        className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+                        title="导出全部自定义预设为 JSON 文件"
+                      >
+                        <Download className="h-3 w-3" />导出全部
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsCreatingPreset(true)}
+                      className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-700 shadow-sm transition hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300 dark:hover:bg-indigo-900/60"
+                    >
+                      <Plus className="h-3 w-3" />另存当前外观
+                    </button>
+                  </div>
+                </div>
+
+                {isCreatingPreset && (
+                  <div className="mb-3 rounded-xl border border-indigo-200 bg-indigo-50/50 p-2.5 dark:border-indigo-900/60 dark:bg-indigo-950/30">
+                    <div className="text-[11px] font-bold text-indigo-900 dark:text-indigo-200 mb-1.5">
+                      保存当前外观配置为新预设
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={newPresetName}
+                        onChange={e => setNewPresetName(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') handleSaveCurrentPreset();
+                          if (e.key === 'Escape') setIsCreatingPreset(false);
+                        }}
+                        placeholder={`例如：晴空午夜、舒适大字（默认：自定义外观 ${customPresets.length + 1}）`}
+                        maxLength={30}
+                        autoFocus
+                        className="h-8 flex-1 rounded-lg border border-indigo-300 bg-white px-2.5 text-xs text-gray-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-indigo-700 dark:bg-gray-900 dark:text-gray-100"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveCurrentPreset}
+                        className="h-8 rounded-lg bg-indigo-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-indigo-500"
+                      >
+                        保存
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCreatingPreset(false);
+                          setNewPresetName('');
+                        }}
+                        className="h-8 rounded-lg border border-gray-300 bg-white px-2.5 text-xs font-bold text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {allPresets.map(preset => {
+                    const isActive = activePresetId === preset.id;
+                    const isEditing = editingPresetId === preset.id;
+                    return (
+                      <div
+                        key={preset.id}
+                        className={`group relative flex flex-col justify-between rounded-xl border p-2.5 transition ${
+                          isActive
+                            ? 'border-indigo-500 bg-white shadow-sm ring-2 ring-indigo-500/15 dark:border-indigo-500/70 dark:bg-gray-900'
+                            : 'border-gray-200 bg-white hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900/80 dark:hover:border-gray-700'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <span
+                              className="h-3.5 w-3.5 flex-none rounded-full ring-2 ring-white dark:ring-gray-800 shadow-sm"
+                              style={{ backgroundColor: preset.accentColor }}
+                              title={`强调色：${preset.accentColor}`}
+                            />
+                            {isEditing ? (
+                              <div className="flex items-center gap-1 min-w-0 flex-1">
+                                <input
+                                  type="text"
+                                  value={editingPresetName}
+                                  onChange={e => setEditingPresetName(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') handleRenamePreset(preset.id);
+                                    if (e.key === 'Escape') setEditingPresetId(null);
+                                  }}
+                                  maxLength={30}
+                                  autoFocus
+                                  className="h-6 w-full rounded border border-indigo-400 bg-white px-1.5 text-xs font-bold text-gray-900 outline-none dark:border-indigo-600 dark:bg-gray-950 dark:text-white"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRenamePreset(preset.id)}
+                                  className="rounded px-1.5 py-0.5 text-[10px] font-bold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950"
+                                >
+                                  确定
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingPresetId(null)}
+                                  className="rounded px-1.5 py-0.5 text-[10px] font-bold text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                                >
+                                  取消
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="truncate text-xs font-bold text-gray-800 dark:text-gray-100">
+                                    {preset.name}
+                                  </span>
+                                  {preset.isBuiltin && (
+                                    <span className="flex items-center gap-0.5 rounded bg-gray-100 px-1 py-0.2 text-[9px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400" title="出厂默认预设（锁定保护不可删除）">
+                                      <Lock className="h-2.5 w-2.5" />默认锁定
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-0.5 truncate text-[10px] text-gray-400">
+                                  {preset.themeMode === 'dark' ? '黑夜' : preset.themeMode === 'light' ? '白天' : '跟随系统'} · {preset.density === 'compact' ? '紧凑' : preset.density === 'comfortable' ? '舒展' : '标准'}密度 · {preset.corners === 'sharp' ? '锐利' : preset.corners === 'soft' ? '柔和' : '标准'}圆角
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          {isActive && !isEditing && (
+                            <span className="flex flex-none items-center gap-0.5 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">
+                              <Check className="h-3 w-3" />使用中
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="mt-2.5 flex items-center justify-between border-t border-gray-100 pt-2 dark:border-gray-800/80">
+                          <div>
+                            {!isActive && (
+                              <button
+                                type="button"
+                                onClick={() => applyPreset(preset)}
+                                className="mobile-touch rounded-lg bg-gray-100 px-2.5 py-1 text-[11px] font-bold text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-indigo-950 dark:hover:text-indigo-300"
+                              >
+                                应用外观
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleExportSinglePreset(preset)}
+                              aria-label={`导出预设「${preset.name}」`}
+                              title="导出此预设为 JSON 文件"
+                              className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                            </button>
+                            {!preset.isBuiltin && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingPresetId(preset.id);
+                                    setEditingPresetName(preset.name);
+                                  }}
+                                  aria-label={`重命名预设「${preset.name}」`}
+                                  title="重命名预设"
+                                  className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+                                >
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeletePreset(preset)}
+                                  aria-label={`删除预设「${preset.name}」`}
+                                  title="删除预设"
+                                  className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               <button type="button" onClick={() => updateAppearance({ generationStreamPreview: !appearancePreferences.generationStreamPreview })} aria-pressed={appearancePreferences.generationStreamPreview} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                 <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">生成过程预览</b><span className="mt-0.5 block text-[10px] leading-4 text-gray-500 dark:text-gray-400">支持时逐步显示采样中的图片；关闭后等待最终成品。流式不可用会自动回退普通生成。</span></span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.generationStreamPreview ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.generationStreamPreview ? 'translate-x-5' : 'translate-x-0'}`} /></span>

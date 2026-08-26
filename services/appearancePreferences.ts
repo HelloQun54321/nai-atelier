@@ -79,6 +79,34 @@ export const cloneDefaultLabPageLayouts = (): LabPageLayouts => Object.fromEntri
   }]),
 ) as LabPageLayouts;
 
+export interface AppearancePreset {
+  id: string;
+  name: string;
+  createdAt: number;
+  isBuiltin?: boolean;
+  accentColor: string;
+  themeMode: ThemeMode;
+  density: InterfaceDensity;
+  corners: CornerStyle;
+  surfaces: SurfaceStyle;
+  motion: MotionStyle;
+  fontScale: FontScale;
+}
+
+export const BUILTIN_APPEARANCE_PRESET: AppearancePreset = {
+  id: 'builtin-default',
+  name: 'NAI Atelier 默认',
+  createdAt: 0,
+  isBuiltin: true,
+  accentColor: '#0ea5e9',
+  themeMode: 'system',
+  density: 'standard',
+  corners: 'standard',
+  surfaces: 'solid',
+  motion: 'full',
+  fontScale: 'standard',
+};
+
 export interface AppearancePreferences {
   designTheme: DesignTheme;
   themeMode: ThemeMode;
@@ -95,6 +123,8 @@ export interface AppearancePreferences {
   labModuleCollapsed: LabModuleCollapsedPreferences;
   /** 四种实验室模式各自独立的模块顺序与默认展开状态。 */
   labPageLayouts: LabPageLayouts;
+  customPresets: AppearancePreset[];
+  activePresetId?: string;
 }
 
 const STORAGE_KEY = 'nai_appearance_preferences';
@@ -115,6 +145,63 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   labModuleOrder: [...DEFAULT_LAB_MODULE_ORDER],
   labModuleCollapsed: { ...DEFAULT_LAB_MODULE_COLLAPSED },
   labPageLayouts: cloneDefaultLabPageLayouts(),
+  customPresets: [],
+  activePresetId: 'builtin-default',
+};
+
+export const validateAppearancePreset = (input: unknown): AppearancePreset | null => {
+  if (!input || typeof input !== 'object') return null;
+  const obj = input as Partial<AppearancePreset>;
+  if (typeof obj.name !== 'string' || !obj.name.trim()) return null;
+
+  const id = typeof obj.id === 'string' && obj.id.trim()
+    ? obj.id.trim()
+    : `preset-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const name = obj.name.trim().slice(0, 30);
+  const createdAt = typeof obj.createdAt === 'number' && Number.isFinite(obj.createdAt) ? obj.createdAt : Date.now();
+  const isBuiltin = obj.isBuiltin === true;
+  const accentColor = typeof obj.accentColor === 'string' && HEX_COLOR_PATTERN.test(obj.accentColor) ? obj.accentColor.toLowerCase() : '#0ea5e9';
+  const themeMode = isOneOf(obj.themeMode, ['light', 'dark', 'system']) ? obj.themeMode : 'system';
+  const density = isOneOf(obj.density, ['comfortable', 'standard', 'compact']) ? obj.density : 'standard';
+  const corners = isOneOf(obj.corners, ['soft', 'standard', 'sharp']) ? obj.corners : 'standard';
+  const surfaces = isOneOf(obj.surfaces, ['solid', 'translucent']) ? obj.surfaces : 'solid';
+  const motion = isOneOf(obj.motion, ['full', 'reduced', 'off']) ? obj.motion : 'full';
+  const fontScale = isOneOf(obj.fontScale, ['small', 'standard', 'large']) ? obj.fontScale : 'standard';
+
+  return {
+    id,
+    name,
+    createdAt,
+    ...(isBuiltin ? { isBuiltin: true } : {}),
+    accentColor,
+    themeMode,
+    density,
+    corners,
+    surfaces,
+    motion,
+    fontScale,
+  };
+};
+
+export const parseAppearancePresetsFromJson = (jsonText: string): AppearancePreset[] => {
+  try {
+    const parsed = JSON.parse(jsonText);
+    const rawList = Array.isArray(parsed)
+      ? parsed
+      : (parsed && typeof parsed === 'object' && Array.isArray((parsed as Record<string, unknown>).presets))
+        ? (parsed as Record<string, unknown>).presets as unknown[]
+        : [parsed];
+    const results: AppearancePreset[] = [];
+    for (const item of rawList) {
+      const valid = validateAppearancePreset(item);
+      if (valid && !valid.isBuiltin) {
+        results.push(valid);
+      }
+    }
+    return results;
+  } catch {
+    return [];
+  }
 };
 
 const isOneOf = <T extends string>(value: unknown, values: readonly T[]): value is T =>
@@ -194,6 +281,14 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     labModuleOrder: labPageLayouts['text-to-image'].order as LabModuleId[],
     labModuleCollapsed: labPageLayouts['text-to-image'].collapsed as LabModuleCollapsedPreferences,
     labPageLayouts,
+    customPresets: Array.isArray(input.customPresets)
+      ? input.customPresets
+          .map(validateAppearancePreset)
+          .filter((item): item is AppearancePreset => item !== null && !item.isBuiltin)
+      : [],
+    activePresetId: typeof input.activePresetId === 'string' && input.activePresetId.trim()
+      ? input.activePresetId.trim()
+      : 'builtin-default',
   };
 };
 
