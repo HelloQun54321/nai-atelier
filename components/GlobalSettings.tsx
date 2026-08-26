@@ -596,15 +596,232 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           <div className={activeSection === 'home' ? 'hidden' : 'space-y-3'}>
           <section id={`settings-appearance`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'appearance' ? 'hidden' : ''}`}>
             {activeSection === 'appearance' && <div className="space-y-3">
+              {/* 设计主题与预设管理 */}
               <div>
-                <div className="mb-2 flex items-end justify-between gap-3"><div><div className="text-xs font-bold text-gray-700 dark:text-gray-200">设计主题</div><p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">主题决定整套界面的设计语言；明暗模式独立配合。</p></div><span className="flex-none text-[10px] font-medium text-gray-400">1 个可用主题</span></div>
-                <button type="button" aria-pressed="true" className="atelier-theme-card group relative w-full overflow-hidden rounded-2xl border border-indigo-400/70 bg-gray-50 p-3 text-left ring-2 ring-indigo-500/10 dark:bg-gray-950">
-                  <span className="absolute right-3 top-3 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-white"><Check className="h-3 w-3" /></span>
-                  <span className="flex min-w-0 items-center gap-3">
-                    <span className="atelier-theme-preview grid h-20 w-28 flex-none grid-cols-[1.8rem_1fr] overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-sm dark:border-gray-700 dark:bg-gray-900" aria-hidden="true"><span className="border-r border-gray-200 bg-white p-1 dark:border-gray-700 dark:bg-gray-950"><span className="mt-1 block h-1 w-3 rounded-full bg-indigo-400" /><span className="mt-2 block h-1 w-4 rounded-full bg-gray-300 dark:bg-gray-600" /><span className="mt-1 block h-1 w-4 rounded-full bg-gray-400 dark:bg-gray-700" /></span><span className="p-1.5"><span className="block h-2 w-8 rounded bg-indigo-500/70" /><span className="mt-1.5 block h-5 rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800" /><span className="mt-1.5 grid grid-cols-2 gap-1"><span className="h-7 rounded bg-gray-200 dark:bg-gray-800" /><span className="h-7 rounded bg-gray-200 dark:bg-gray-800" /></span></span></span>
-                    <span className="min-w-0"><b className="block text-sm text-gray-900 dark:text-white">NAI Atelier</b><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">安静的创作工作台、克制分层与作品优先的现代工坊语言。</span><span className="mt-1 block text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">当前：{isDark ? '黑夜版本' : '白天版本'}</span></span>
-                  </span>
-                </button>
+                <input
+                  type="file"
+                  ref={importFileRef}
+                  accept=".json,application/json"
+                  onChange={handleImportPresets}
+                  className="hidden"
+                />
+                <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs font-bold text-gray-700 dark:text-gray-200">设计主题</div>
+                      <span className="flex-none text-[10px] font-medium text-gray-400">{allPresets.length} 个可用主题</span>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">选择预设主题或保存您调配的专属风格；明暗模式独立配合。</p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => importFileRef.current?.click()}
+                      className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+                      title="从 JSON 文件导入主题预设"
+                    >
+                      <Upload className="h-3 w-3" />导入
+                    </button>
+                    {customPresets.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleExportAllPresets}
+                        className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+                        title="导出全部自定义主题为 JSON 文件"
+                      >
+                        <Download className="h-3 w-3" />导出全部
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsCreatingPreset(true)}
+                      className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-700 shadow-sm transition hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300 dark:hover:bg-indigo-900/60"
+                    >
+                      <Plus className="h-3 w-3" />另存当前主题
+                    </button>
+                  </div>
+                </div>
+
+                {isCreatingPreset && (
+                  <div className="mb-3 rounded-xl border border-indigo-200 bg-indigo-50/50 p-2.5 dark:border-indigo-900/60 dark:bg-indigo-950/30">
+                    <div className="text-[11px] font-bold text-indigo-900 dark:text-indigo-200 mb-1.5">
+                      保存当前外观配置为新主题
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={newPresetName}
+                        onChange={e => setNewPresetName(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') handleSaveCurrentPreset();
+                          if (e.key === 'Escape') setIsCreatingPreset(false);
+                        }}
+                        placeholder={`例如：晴空午夜、舒适大字（默认：自定义主题 ${customPresets.length + 1}）`}
+                        maxLength={30}
+                        autoFocus
+                        className="h-8 flex-1 rounded-lg border border-indigo-300 bg-white px-2.5 text-xs text-gray-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-indigo-700 dark:bg-gray-900 dark:text-gray-100"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveCurrentPreset}
+                        className="h-8 rounded-lg bg-indigo-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-indigo-500"
+                      >
+                        保存
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCreatingPreset(false);
+                          setNewPresetName('');
+                        }}
+                        className="h-8 rounded-lg border border-gray-300 bg-white px-2.5 text-xs font-bold text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className={`grid gap-3 ${allPresets.length > 1 ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
+                  {allPresets.map(preset => {
+                    const isSelected = activePresetId === preset.id;
+                    const isEditing = editingPresetId === preset.id;
+                    const presetAccent = preset.accentColor || '#0ea5e9';
+                    return (
+                      <div
+                        key={preset.id}
+                        onClick={() => !isEditing && applyPreset(preset)}
+                        className={`atelier-theme-card group relative flex flex-col justify-between overflow-hidden rounded-2xl border p-3 text-left transition cursor-pointer ${
+                          isSelected
+                            ? 'border-indigo-500 bg-indigo-50/40 ring-2 ring-indigo-500/15 dark:border-indigo-500/80 dark:bg-indigo-950/20'
+                            : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/70 dark:hover:border-gray-700'
+                        }`}
+                      >
+                        {isSelected && !isEditing && (
+                          <span className="absolute right-3 top-3 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-white">
+                            <Check className="h-3 w-3" />
+                          </span>
+                        )}
+
+                        <div className="flex min-w-0 items-center gap-3">
+                          {/* 微缩界面骨架 */}
+                          <div
+                            className="atelier-theme-preview grid h-20 w-28 flex-none grid-cols-[1.8rem_1fr] overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-sm dark:border-gray-700 dark:bg-gray-900"
+                            aria-hidden="true"
+                          >
+                            <div className="border-r border-gray-200 bg-white p-1 dark:border-gray-700 dark:bg-gray-950">
+                              <span className="mt-1 block h-1 w-3 rounded-full" style={{ backgroundColor: presetAccent }} />
+                              <span className="mt-2 block h-1 w-4 rounded-full bg-gray-300 dark:bg-gray-600" />
+                              <span className="mt-1 block h-1 w-4 rounded-full bg-gray-400 dark:bg-gray-700" />
+                            </div>
+                            <div className="p-1.5">
+                              <span className="block h-2 w-8 rounded opacity-85" style={{ backgroundColor: presetAccent }} />
+                              <span className="mt-1.5 block h-5 rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800" />
+                              <span className="mt-1.5 grid grid-cols-2 gap-1">
+                                <span className="h-7 rounded bg-gray-200 dark:bg-gray-800" />
+                                <span className="h-7 rounded bg-gray-200 dark:bg-gray-800" />
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            {isEditing ? (
+                              <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                <input
+                                  type="text"
+                                  value={editingPresetName}
+                                  onChange={e => setEditingPresetName(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') handleRenamePreset(preset.id);
+                                    if (e.key === 'Escape') setEditingPresetId(null);
+                                  }}
+                                  maxLength={30}
+                                  autoFocus
+                                  className="h-7 w-full rounded border border-indigo-400 bg-white px-2 text-xs font-bold text-gray-900 outline-none dark:border-indigo-600 dark:bg-gray-950 dark:text-white"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRenamePreset(preset.id)}
+                                  className="rounded bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-indigo-500"
+                                >
+                                  确定
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingPresetId(null)}
+                                  className="rounded px-1.5 py-1 text-[10px] font-bold text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                                >
+                                  取消
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-1.5">
+                                  <b className="truncate text-sm text-gray-900 dark:text-white">{preset.name}</b>
+                                  {preset.isBuiltin && (
+                                    <span className="flex items-center gap-0.5 rounded bg-gray-100 px-1 py-0.2 text-[9px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400" title="出厂默认主题（锁定保护不可删除）">
+                                      <Lock className="h-2.5 w-2.5" />默认锁定
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">
+                                  {preset.isBuiltin ? '安静的创作工作台、克制分层与作品优先的现代工坊语言。' : `${preset.themeMode === 'dark' ? '黑夜模式' : preset.themeMode === 'light' ? '白天模式' : '跟随系统'} · ${preset.density === 'compact' ? '紧凑' : preset.density === 'comfortable' ? '舒展' : '标准'}密度 · ${preset.corners === 'sharp' ? '锐利' : preset.corners === 'soft' ? '柔和' : '标准'}圆角`}
+                                </span>
+                                <span className="mt-1 block text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">
+                                  {isSelected ? `当前使用（${isDark ? '黑夜版本' : '白天版本'}）` : `强调色：${presetAccent}`}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 卡片底部操作栏 */}
+                        <div className="mt-2.5 flex items-center justify-between border-t border-gray-100 pt-2 dark:border-gray-800/80" onClick={e => e.stopPropagation()}>
+                          <span className="text-[10px] font-medium text-gray-400 flex items-center gap-1">
+                            <span className="h-2 w-2 rounded-full inline-block" style={{ backgroundColor: presetAccent }} />
+                            <span className="font-mono">{presetAccent}</span>
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleExportSinglePreset(preset)}
+                              aria-label={`导出「${preset.name}」`}
+                              title="导出此主题为 JSON 文件"
+                              className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                            </button>
+                            {!preset.isBuiltin && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingPresetId(preset.id);
+                                    setEditingPresetName(preset.name);
+                                  }}
+                                  aria-label={`重命名「${preset.name}」`}
+                                  title="重命名"
+                                  className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+                                >
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeletePreset(preset)}
+                                  aria-label={`删除「${preset.name}」`}
+                                  title="删除"
+                                  className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
@@ -634,226 +851,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 </div>
 
                 <button type="button" onClick={resetThemeCustomization} className="mobile-touch mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"><RotateCcw className="h-3.5 w-3.5" />恢复 NAI Atelier 默认外观</button>
-              </div>
-
-              {/* 外观配置预设管理 */}
-              <div className="rounded-2xl border border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35">
-                <input
-                  type="file"
-                  ref={importFileRef}
-                  accept=".json,application/json"
-                  onChange={handleImportPresets}
-                  className="hidden"
-                />
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <Palette className="h-4 w-4 text-indigo-500" />
-                      <h4 className="text-xs font-bold text-gray-800 dark:text-gray-100">外观预设库</h4>
-                      <span className="rounded-full bg-gray-200/70 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                        {allPresets.length} 个预设
-                      </span>
-                    </div>
-                    <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">
-                      保存、切换当前整套外观或在多设备间导入导出分享配置。
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => importFileRef.current?.click()}
-                      className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
-                      title="从 JSON 文件导入外观预设"
-                    >
-                      <Upload className="h-3 w-3" />导入
-                    </button>
-                    {customPresets.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={handleExportAllPresets}
-                        className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
-                        title="导出全部自定义预设为 JSON 文件"
-                      >
-                        <Download className="h-3 w-3" />导出全部
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setIsCreatingPreset(true)}
-                      className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-700 shadow-sm transition hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300 dark:hover:bg-indigo-900/60"
-                    >
-                      <Plus className="h-3 w-3" />另存当前外观
-                    </button>
-                  </div>
-                </div>
-
-                {isCreatingPreset && (
-                  <div className="mb-3 rounded-xl border border-indigo-200 bg-indigo-50/50 p-2.5 dark:border-indigo-900/60 dark:bg-indigo-950/30">
-                    <div className="text-[11px] font-bold text-indigo-900 dark:text-indigo-200 mb-1.5">
-                      保存当前外观配置为新预设
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={newPresetName}
-                        onChange={e => setNewPresetName(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') handleSaveCurrentPreset();
-                          if (e.key === 'Escape') setIsCreatingPreset(false);
-                        }}
-                        placeholder={`例如：晴空午夜、舒适大字（默认：自定义外观 ${customPresets.length + 1}）`}
-                        maxLength={30}
-                        autoFocus
-                        className="h-8 flex-1 rounded-lg border border-indigo-300 bg-white px-2.5 text-xs text-gray-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-indigo-700 dark:bg-gray-900 dark:text-gray-100"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleSaveCurrentPreset}
-                        className="h-8 rounded-lg bg-indigo-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-indigo-500"
-                      >
-                        保存
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsCreatingPreset(false);
-                          setNewPresetName('');
-                        }}
-                        className="h-8 rounded-lg border border-gray-300 bg-white px-2.5 text-xs font-bold text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                      >
-                        取消
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {allPresets.map(preset => {
-                    const isActive = activePresetId === preset.id;
-                    const isEditing = editingPresetId === preset.id;
-                    return (
-                      <div
-                        key={preset.id}
-                        className={`group relative flex flex-col justify-between rounded-xl border p-2.5 transition ${
-                          isActive
-                            ? 'border-indigo-500 bg-white shadow-sm ring-2 ring-indigo-500/15 dark:border-indigo-500/70 dark:bg-gray-900'
-                            : 'border-gray-200 bg-white hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900/80 dark:hover:border-gray-700'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            <span
-                              className="h-3.5 w-3.5 flex-none rounded-full ring-2 ring-white dark:ring-gray-800 shadow-sm"
-                              style={{ backgroundColor: preset.accentColor }}
-                              title={`强调色：${preset.accentColor}`}
-                            />
-                            {isEditing ? (
-                              <div className="flex items-center gap-1 min-w-0 flex-1">
-                                <input
-                                  type="text"
-                                  value={editingPresetName}
-                                  onChange={e => setEditingPresetName(e.target.value)}
-                                  onKeyDown={e => {
-                                    if (e.key === 'Enter') handleRenamePreset(preset.id);
-                                    if (e.key === 'Escape') setEditingPresetId(null);
-                                  }}
-                                  maxLength={30}
-                                  autoFocus
-                                  className="h-6 w-full rounded border border-indigo-400 bg-white px-1.5 text-xs font-bold text-gray-900 outline-none dark:border-indigo-600 dark:bg-gray-950 dark:text-white"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => handleRenamePreset(preset.id)}
-                                  className="rounded px-1.5 py-0.5 text-[10px] font-bold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950"
-                                >
-                                  确定
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingPresetId(null)}
-                                  className="rounded px-1.5 py-0.5 text-[10px] font-bold text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-                                >
-                                  取消
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="truncate text-xs font-bold text-gray-800 dark:text-gray-100">
-                                    {preset.name}
-                                  </span>
-                                  {preset.isBuiltin && (
-                                    <span className="flex items-center gap-0.5 rounded bg-gray-100 px-1 py-0.2 text-[9px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400" title="出厂默认预设（锁定保护不可删除）">
-                                      <Lock className="h-2.5 w-2.5" />默认锁定
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="mt-0.5 truncate text-[10px] text-gray-400">
-                                  {preset.themeMode === 'dark' ? '黑夜' : preset.themeMode === 'light' ? '白天' : '跟随系统'} · {preset.density === 'compact' ? '紧凑' : preset.density === 'comfortable' ? '舒展' : '标准'}密度 · {preset.corners === 'sharp' ? '锐利' : preset.corners === 'soft' ? '柔和' : '标准'}圆角
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                          {isActive && !isEditing && (
-                            <span className="flex flex-none items-center gap-0.5 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">
-                              <Check className="h-3 w-3" />使用中
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="mt-2.5 flex items-center justify-between border-t border-gray-100 pt-2 dark:border-gray-800/80">
-                          <div>
-                            {!isActive && (
-                              <button
-                                type="button"
-                                onClick={() => applyPreset(preset)}
-                                className="mobile-touch rounded-lg bg-gray-100 px-2.5 py-1 text-[11px] font-bold text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-indigo-950 dark:hover:text-indigo-300"
-                              >
-                                应用外观
-                              </button>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => handleExportSinglePreset(preset)}
-                              aria-label={`导出预设「${preset.name}」`}
-                              title="导出此预设为 JSON 文件"
-                              className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                            </button>
-                            {!preset.isBuiltin && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingPresetId(preset.id);
-                                    setEditingPresetName(preset.name);
-                                  }}
-                                  aria-label={`重命名预设「${preset.name}」`}
-                                  title="重命名预设"
-                                  className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
-                                >
-                                  <Edit2 className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeletePreset(preset)}
-                                  aria-label={`删除预设「${preset.name}」`}
-                                  title="删除预设"
-                                  className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
 
               <button type="button" onClick={() => updateAppearance({ generationStreamPreview: !appearancePreferences.generationStreamPreview })} aria-pressed={appearancePreferences.generationStreamPreview} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
