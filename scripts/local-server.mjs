@@ -1,5 +1,6 @@
 import { spawn, execSync, spawnSync } from 'child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'fs';
+import { createServer as createNetServer } from 'net';
 import { randomBytes, randomInt } from 'crypto';
 import { networkInterfaces, platform } from 'os';
 import { startTagUpdateServer } from './tag-update-server.mjs';
@@ -233,10 +234,30 @@ function terminateProcessTree(pid) {
   try { process.kill(pid, 'SIGTERM'); } catch { /* Already stopped. */ }
 }
 
+function isPortAvailable(port, host = '127.0.0.1') {
+  return new Promise(resolve => {
+    const server = createNetServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, host);
+  });
+}
+
+async function findAvailableWorkerPort(preferredPort = 3001) {
+  for (let port = preferredPort; port < preferredPort + 50; port++) {
+    if (port === 3000 || port === 3002) continue;
+    if (await isPortAvailable(port)) return port;
+  }
+  return preferredPort;
+}
+
 async function startServer() {
   const lanAccess = loadLanAccessConfig();
   const outboundProxyUrl = getOutboundProxyUrl();
   const lanUrls = getLanUrls();
+  const workerPort = await findAvailableWorkerPort(3001);
   console.log('\x1b[32m启动本地服务 (端口 3000)...\x1b[0m');
   console.log('\x1b[90m数据存储位置: ./local-data/\x1b[0m');
   console.log('\x1b[90m电脑访问地址: http://localhost:3000\x1b[0m');
@@ -259,7 +280,7 @@ async function startServer() {
     '--binding', 'AITAG_LOCAL_PROXY_URL=http://127.0.0.1:3000/__internal/aitag-fetch',
     '--binding', 'DANBOORU_LOCAL_PROXY_URL=http://127.0.0.1:3000/__internal/danbooru-fetch',
     '--ip', '127.0.0.1',
-    '--port', '3001',
+    '--port', String(workerPort),
     '--compatibility-date', '2024-04-01',
     '--show-interactive-dev-session=false'
   ];
@@ -309,10 +330,10 @@ async function startServer() {
   });
 
   try {
-    await waitForWorker(3001);
+    await waitForWorker(workerPort);
     console.log(`\x1b[32m核心页面服务已就绪（耗时 ${bootElapsedSec()} 秒，含本地 D1/R2 存储恢复）。\x1b[0m`);
     const gatewayStartedAt = Date.now();
-    mediaGateway = await createMediaGateway({ port: 3000, workerPort: 3001, lanSecret: lanAccess.secret, outboundProxyUrl });
+    mediaGateway = await createMediaGateway({ port: 3000, workerPort, lanSecret: lanAccess.secret, outboundProxyUrl });
     console.log(`\x1b[32m图片网关已就绪（耗时 ${((Date.now() - gatewayStartedAt) / 1000).toFixed(1)} 秒），手机列表将按需使用缩略图。\x1b[0m`);
     console.log(`\x1b[32m全部就绪，总耗时 ${bootElapsedSec()} 秒。\x1b[0m`);
     openWhenReady();

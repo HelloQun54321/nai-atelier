@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-26
+- **Gemini (Flash)**：修复本地服务启动时内部 Worker 端口冲突导致 workerd 抛出 std::terminate 异常崩溃的问题——自动探测可用端口并与网关动态同步（fix: dynamically resolve available worker port on local startup）。
+
 - **Gemini (Flash)**：全面重构默认主题 NAI Atelier 黑夜模式——将底色升级为沉静石墨灰、拉开侧栏与卡片表面明度差建立清晰立体层级、对自定义强调色实施暗色自适应音调映射（消除荧光蓝眩光刺眼感）、升级安全模式暗色磨砂遮罩质感（style: redesign default dark mode theme tokens and visual contrast）。
 
 - **Claude (Sonnet)**：AITag 画廊过滤掉首图没有有效 prompt（无 prompt_text）的作品——列表加载/搜索/缓存/滚动追加统一按 `hasAitagImagePrompt`（与 `extractAitagPrompt` 同一提取顺序）过滤，详情面板同步过滤无 prompt 图片、预览壳直接跳过，整页被过滤时追加流自动连拉后续分页填补空白，并补充 extractAitagPrompt/hasAitagImagePrompt 定向单测（fix: filter aitag works without valid prompt）。
