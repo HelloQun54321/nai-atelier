@@ -2,6 +2,12 @@
 
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
+## 2026-08-26
+
+### 优化：AITag 模型筛选（如 V5）自适应批量填充
+
+- 修复 AITag 页面在筛选较新或稀疏模型（如 V5）时滚动到底部加载等待慢的问题：当开启模型筛选且单页有效条目不足以填满视口时，前端自动连续批拉后续分页（最多 4 页或凑满 15 张目标增量），消除多次串行触底等待，让模型筛选下的瀑布流滚动同样流畅。
+
 ### 重构：将 ChainEditor 巨石组件拆分为模块化子组件
 
 - 将 `components/ChainEditor.tsx`（2849 行）按功能域拆分为 `components/chain/` 下的 6 个子组件：`ChainEditorHeader.tsx`（顶部标题栏 + 操作按钮 + 信息编辑弹窗）、`ChainEditorPromptInputs.tsx`（基础画风/主体提示词输入区）、`ChainEditorModules.tsx`（提示词模块列表）、`ChainEditorCharacters.tsx`（多角色提示词管理）、`ChainEditorPresetModal.tsx`（引用预设弹窗：列表 + 详情确认）、`ChainEditorForkModal.tsx`（保存到库 / Fork 弹窗）。

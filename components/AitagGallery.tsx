@@ -440,7 +440,26 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     if (!force && visibleItems.length >= AITAG_APPEND_LIMIT) return;
     appendingRef.current = true;
     try {
-      await loadWorks(page + 1, { append: true, silent: true });
+      // 当开启模型筛选（如 V5）时，稀疏命中文档会导致单页有效结果过少。
+      // 采用自适应自动连拉（最多连续批拉 4 页，或满足新增至少 15 个符合筛选的作品），填补视口空白。
+      let currentPageToLoad = page + 1;
+      let currentTotalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      const currentVisibleCount = visibleItems.length;
+      const targetVisibleCount = modelFilter ? currentVisibleCount + 15 : currentVisibleCount + 1;
+      const maxBatchPages = modelFilter ? 4 : 1;
+      let pagesFetched = 0;
+
+      while (currentPageToLoad <= currentTotalPages && pagesFetched < maxBatchPages) {
+        const loadedCount = await loadWorks(currentPageToLoad, { append: true, silent: true });
+        pagesFetched++;
+        currentPageToLoad++;
+        if (loadedCount === 0) break;
+        // 如果在筛选模式下已凑足目标增量，则停止连续拉取
+        if (!modelFilter || (aitagPageCache.items.filter(work => getWorkModelLabel(work) === modelFilter).length >= targetVisibleCount)) {
+          break;
+        }
+        currentTotalPages = Math.max(1, Math.ceil(aitagPageCache.total / PAGE_SIZE));
+      }
     } finally {
       appendingRef.current = false;
     }
@@ -575,12 +594,15 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           promise: fetchPrefetchPage(nextPage + 1).catch(() => null),
         };
       }
-    } catch (e: any) {
-      if (!loadGuard.isCurrent(mySeq)) return;
-      const nextError = e.message || '本地没有这一页，且当前无法联网获取';
+      return nextItems.length;
+    } catch (e: unknown) {
+      if (!loadGuard.isCurrent(mySeq)) return 0;
+      const errMessage = e instanceof Error ? e.message : String(e);
+      const nextError = errMessage || '本地没有这一页，且当前无法联网获取';
       aitagPageCache = { ...aitagPageCache, error: nextError };
       setError(nextError);
-      notify('aitag 加载失败: ' + (e.message || '未知错误'), 'error');
+      notify('aitag 加载失败: ' + (errMessage || '未知错误'), 'error');
+      return 0;
     } finally {
       if (!options.silent) setIsLoading(false);
     }
