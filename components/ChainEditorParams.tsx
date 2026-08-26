@@ -127,8 +127,9 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 </div>
             </div>
 
-            <div className="chain-editor-param-grid mb-4 grid grid-cols-2 gap-2 border-b border-gray-100 pb-4 dark:border-gray-700 md:gap-4 lg:grid-cols-3">
-                <div className="col-span-2 flex min-w-0 flex-col gap-1">
+            {/* Model and Resolution row (2 columns symmetric) */}
+            <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="flex min-w-0 flex-col gap-1">
                     <label className="text-xs text-gray-500 dark:text-gray-500 block">生成模型</label>
                     <select
                         disabled={!canEdit}
@@ -166,39 +167,94 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                     </select>
                 </div>
 
-                {!hideResolution && <div className="col-span-full flex flex-col gap-2 lg:col-span-1">
-                    <label className="text-xs text-gray-500 dark:text-gray-500 block">图片尺寸</label>
-                    <select
-                        aria-label="图片尺寸"
-                        disabled={!canEdit}
-                        className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
-                        value={resolutionMode}
-                        onChange={(e) => handleResolutionChange(e.target.value)}
-                    >
-                        {Object.entries(RESOLUTIONS).map(([key, val]) => (
-                            <option key={key} value={key}>{val.label}</option>
-                        ))}
-                        <option value="Custom">自定义</option>
-                    </select>
-                    {resolutionMode === 'Custom' && <div className="col-span-full space-y-2 rounded-lg border border-gray-200 bg-white p-2.5 dark:border-gray-700 dark:bg-gray-900">
-                        <div className="grid grid-cols-2 gap-2">
-                            <label className="text-[11px] text-gray-500 dark:text-gray-400">宽度
-                                <input aria-label="自定义宽度" type="number" min={RESOLUTION_STEP} max={GENERATION_MAX_DIMENSION} step={RESOLUTION_STEP} disabled={!canEdit} value={params.width} onChange={event => updateCustomDimension('width', Number(event.target.value))} className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950" />
-                            </label>
-                            <label className="text-[11px] text-gray-500 dark:text-gray-400">高度
-                                <input aria-label="自定义高度" type="number" min={RESOLUTION_STEP} max={GENERATION_MAX_DIMENSION} step={RESOLUTION_STEP} disabled={!canEdit} value={params.height} onChange={event => updateCustomDimension('height', Number(event.target.value))} className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950" />
-                            </label>
-                        </div>
-                        <button type="button" role="switch" aria-label="Opus 免费像素联动" aria-checked={linkCustomDimensions} disabled={!canEdit} onClick={() => setLinkCustomDimensions(previous => !previous)} className="flex w-full items-center justify-between gap-2 text-left text-[11px] text-gray-600 disabled:opacity-60 dark:text-gray-300">
-                            <span>Opus 免费像素联动</span>
-                            <span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${linkCustomDimensions ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${linkCustomDimensions ? 'translate-x-4' : ''}`} /></span>
-                        </button>
-                        <div role="status" className={`rounded px-2 py-1.5 text-[11px] font-medium tabular-nums ${params.width * params.height <= OPUS_FREE_PIXEL_LIMIT ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300'}`}>
-                            当前 {params.width.toLocaleString()} × {params.height.toLocaleString()} = {(params.width * params.height).toLocaleString()} 像素 · {params.width * params.height <= OPUS_FREE_PIXEL_LIMIT ? '在 Opus 免费像素范围内' : `超过免费像素上限 ${OPUS_FREE_PIXEL_LIMIT.toLocaleString()}`}
-                        </div>
-                    </div>}
-                </div>}
+                {!hideResolution && (
+                    <div className="flex min-w-0 flex-col gap-1">
+                        <label className="text-xs text-gray-500 dark:text-gray-500 block">图片尺寸</label>
+                        <select
+                            aria-label="图片尺寸"
+                            disabled={!canEdit}
+                            className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
+                            value={resolutionMode}
+                            onChange={(e) => handleResolutionChange(e.target.value)}
+                        >
+                            {Object.entries(RESOLUTIONS).map(([key, val]) => (
+                                <option key={key} value={key}>{val.label}</option>
+                            ))}
+                            <option value="Custom">自定义</option>
+                        </select>
+                    </div>
+                )}
+            </div>
 
+            {/* Full-width custom resolution expandable panel */}
+            {!hideResolution && resolutionMode === 'Custom' && (
+                <div className="mb-4 rounded-xl border border-gray-200 bg-white/70 p-3.5 dark:border-gray-700/80 dark:bg-gray-900/60 sm:p-4">
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        {/* Left column: Width & Height inputs */}
+                        <div className="grid grid-cols-2 gap-3">
+                            <label className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                                宽度 (px)
+                                <input
+                                    aria-label="自定义宽度"
+                                    type="number"
+                                    min={RESOLUTION_STEP}
+                                    max={GENERATION_MAX_DIMENSION}
+                                    step={RESOLUTION_STEP}
+                                    disabled={!canEdit}
+                                    value={params.width}
+                                    onChange={event => updateCustomDimension('width', Number(event.target.value))}
+                                    className="mt-1 w-full rounded border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-950 outline-none focus:border-indigo-500 dark:focus:border-indigo-500"
+                                />
+                            </label>
+                            <label className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                                高度 (px)
+                                <input
+                                    aria-label="自定义高度"
+                                    type="number"
+                                    min={RESOLUTION_STEP}
+                                    max={GENERATION_MAX_DIMENSION}
+                                    step={RESOLUTION_STEP}
+                                    disabled={!canEdit}
+                                    value={params.height}
+                                    onChange={event => updateCustomDimension('height', Number(event.target.value))}
+                                    className="mt-1 w-full rounded border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-950 outline-none focus:border-indigo-500 dark:focus:border-indigo-500"
+                                />
+                            </label>
+                        </div>
+
+                        {/* Right column: Opus free pixel link & status */}
+                        <div className="flex flex-col justify-between gap-2.5">
+                            <button
+                                type="button"
+                                role="switch"
+                                aria-label="Opus 免费像素联动"
+                                aria-checked={linkCustomDimensions}
+                                disabled={!canEdit}
+                                onClick={() => setLinkCustomDimensions(previous => !previous)}
+                                className="flex items-center justify-between gap-2 text-left text-xs text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors disabled:opacity-60"
+                            >
+                                <span className="font-medium">Opus 免费像素联动</span>
+                                <span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${linkCustomDimensions ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                                    <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${linkCustomDimensions ? 'translate-x-4' : ''}`} />
+                                </span>
+                            </button>
+                            <div
+                                role="status"
+                                className={`rounded-lg px-2.5 py-1.5 text-[11px] font-medium leading-relaxed tabular-nums border ${
+                                    params.width * params.height <= OPUS_FREE_PIXEL_LIMIT
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800/40'
+                                        : 'bg-amber-50 text-amber-700 border-amber-200/60 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800/40'
+                                }`}
+                            >
+                                当前 {params.width.toLocaleString()} × {params.height.toLocaleString()} = {(params.width * params.height).toLocaleString()} 像素 · {params.width * params.height <= OPUS_FREE_PIXEL_LIMIT ? '在 Opus 免费像素范围内' : `超过免费像素上限 ${OPUS_FREE_PIXEL_LIMIT.toLocaleString()}`}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Generation parameters: Sampler, Steps, Seed (3 columns) */}
+            <div className="chain-editor-param-grid mb-4 grid grid-cols-1 gap-3 border-b border-gray-100 pb-4 dark:border-gray-700 sm:grid-cols-3 md:gap-4">
                 <div className="flex flex-col gap-1">
                     <label className="text-xs text-gray-500 dark:text-gray-500 block">采样器</label>
                     <select
