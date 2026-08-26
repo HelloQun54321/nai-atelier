@@ -28,7 +28,7 @@ export const ChainEditorForkModal: React.FC<ChainEditorForkModalProps> = ({
                     className="flex flex-col items-center justify-center p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors gap-2"
                 >
                     <Palette className="h-6 w-6 text-indigo-500" />
-                    <span className="font-bold text-blue-700 dark:text-blue-300">{isUploading ? '保存中…' : '画师/风格串'}</span>
+                    <span className="font-bold text-blue-700 dark:text-blue-300">{isUploading ? '保存中…' : '风格串'}</span>
                 </button>
                 <button
                     onClick={() => void confirmFork('character')}

@@ -375,7 +375,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             </DetailImageStage>
             <div className="grid grid-cols-2 gap-2">
               <ToolbarButton tone="primary" onClick={() => importToPlayground(selected)}><FlaskConical />导入实验室</ToolbarButton>
-              <ToolbarButton disabled={saving} onClick={() => void saveToInspiration(selected)}><Heart />{saving ? '保存中…' : '加入灵感'}</ToolbarButton>
+              <ToolbarButton disabled={saving} onClick={() => void saveToInspiration(selected)}><Heart />{saving ? '保存中…' : '加入灵感库'}</ToolbarButton>
               <ToolbarButton onClick={() => void copyPrompt(selected)}><Copy />复制生图 Tag</ToolbarButton>
               <ToolbarLink href={selected.postUrl} target="_blank" rel="noreferrer"><ExternalLink />查看原帖</ToolbarLink>
             </div>

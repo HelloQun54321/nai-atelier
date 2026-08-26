@@ -116,8 +116,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       { id: 'playground', label: '实验室', icon: icons.lab },
     ] },
     { label: '资源库', items: [
-      { id: 'library', label: '画师 Tag', icon: icons.artist },
-      { id: 'characters', label: '角色 Tag', icon: icons.character },
+      { id: 'library', label: '画师库', icon: icons.artist },
+      { id: 'characters', label: '角色库', icon: icons.character },
       { id: 'aitag', label: 'AITag', icon: icons.tag },
       { id: 'danbooru', label: 'Danbooru', icon: icons.danbooru },
       { id: 'pixiv', label: 'Pixiv', icon: icons.pixiv },
@@ -156,7 +156,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     };
   }, [currentView]);
   const resourceItems = [
-    { id: 'library', label: '画师 Tag', icon: icons.artist },
+    { id: 'library', label: '画师库', icon: icons.artist },
     { id: 'characters', label: '角色库', icon: icons.character },
     { id: 'aitag', label: 'AITag', icon: icons.tag },
     { id: 'danbooru', label: 'Danbooru', icon: icons.danbooru },

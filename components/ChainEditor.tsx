@@ -1861,15 +1861,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 {/* Left Panel - Editor */}
                 <div className="chain-editor-main flex w-full lg:w-1/2 min-h-full flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
                     <div className="flex w-full max-w-3xl flex-col gap-6 p-4 pb-24 md:p-6 md:pb-24 mx-auto">
-                        {!isOwner && (
-                            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded mb-4 text-sm text-yellow-700 dark:text-yellow-400">
-                                {isGuest
-                                    ? '您正在以游客身份浏览。您可以自由修改 Prompt 进行测试，但无法保存更改。'
-                                    : '您正在查看他人的串，无法直接修改。您可以调整参数进行测试，或点击右上角“Fork”保存到您的列表。'
-                                }
-                            </div>
-                        )}
-
                         <ChainEditorPromptInputs
                             prompt={basePrompt}
                             setPrompt={setBasePrompt}

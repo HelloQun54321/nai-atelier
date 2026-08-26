@@ -958,13 +958,13 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                         onClick={() => handleCleanMenuClick('days')} 
                                         className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
                                     >
-                                        <Clock3 className="h-4 w-4" />删除 X 天前的...
+                                        <Clock3 className="h-4 w-4" />按时间清理历史…
                                     </button>
                                     <button 
                                         onClick={() => handleCleanMenuClick('count')} 
                                         className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 rounded-b-lg"
                                     >
-                                        <SlidersHorizontal className="h-4 w-4" />只保留最近 N 张...
+                                        <SlidersHorizontal className="h-4 w-4" />按数量保留最新…
                                     </button>
                                 </div>
                             )}
@@ -1052,7 +1052,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                     <div className="h-full flex flex-col items-center justify-center text-gray-400">
                         {favoriteOnly ? <Heart className="mb-3 h-10 w-10" /> : <Clock3 className="mb-3 h-10 w-10" />}
                         <p>{favoriteOnly ? '还没有收藏历史图片' : '暂无生成记录'}</p>
-                        <p className="text-sm mt-2">{favoriteOnly ? '点击图片右上角的爱心即可收藏' : '在 Chain 编辑器中生成图片会自动保存到这里'}</p>
+                        <p className="text-sm mt-2">{favoriteOnly ? '点击图片右上角的爱心即可收藏' : '在实验室中生成的图片会自动保存到历史记录'}</p>
                     </div>
                 ) : (
                     <>
@@ -1099,7 +1099,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                 ) : (
                                     <div className="text-sm text-gray-500 dark:text-gray-400 text-center">
                                         <p>当前显示第 {getDisplayedRange().start} - {getDisplayedRange().end} 张</p>
-                                        <p className="mt-1">共 {totalCount} 张{favoriteOnly ? '收藏' : ''}，已缓存 {Object.keys(pageCache).length} 页</p>
+                                        <p className="mt-1">共 {totalCount} 张{favoriteOnly ? '收藏' : ''}</p>
                                     </div>
                                 )}
                             </div>

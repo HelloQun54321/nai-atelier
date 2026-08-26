@@ -283,7 +283,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 </div>
 
                 <div className="flex flex-col gap-1">
-                    <label className="text-xs text-gray-500 dark:text-gray-500 block">步数 (Max 28)</label>
+                    <label className="text-xs text-gray-500 dark:text-gray-500 block">生成步数</label>
                     <input type="number" className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
                         disabled={!canEdit}
                         value={params.steps}
@@ -297,7 +297,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 </div>
 
                 <div className="flex flex-col gap-1">
-                    <label className="text-xs text-gray-500 dark:text-gray-500 block">Seed (空=随机)</label>
+                    <label className="text-xs text-gray-500 dark:text-gray-500 block">随机种子</label>
                     <input
                         type="number"
                         className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
@@ -327,7 +327,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                         }}
                         className="col-span-full flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700"
                     >
-                        <span className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-200">透明背景</b><span className="mt-0.5 block text-[10px] text-gray-400">生成带 Alpha 通道的 PNG；自动保留原图，不转换为 JPG。</span></span>
+                        <span className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-200">透明背景</b><span className="mt-0.5 block text-[10px] text-gray-400">生成透明背景 PNG 图片</span></span>
                         <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${params.transparent ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${params.transparent ? 'translate-x-5' : ''}`} /></span>
                     </button>
                 )}
@@ -344,7 +344,6 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <div>
                         <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-300">引导控制</h4>
-                        <p className="mt-0.5 text-[10px] text-gray-400">调整提示词引导强度与结果变化。</p>
                     </div>
                     <button
                         type="button"

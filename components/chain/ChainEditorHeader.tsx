@@ -223,12 +223,12 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                         disabled={isUploading}
                         className={`mobile-touch flex h-11 items-center justify-center rounded-xl border p-0 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isPlayground
                             ? 'w-11 border-emerald-200 bg-emerald-50 text-emerald-600 hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/35 dark:text-emerald-300 dark:hover:border-emerald-800 dark:hover:bg-emerald-950/60'
-                            : 'w-auto border-gray-200 bg-gray-100 px-4 text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40'}`}
-                        title={isPlayground ? '保存到库' : 'Fork'}
-                        aria-label={isPlayground ? '保存到库' : 'Fork'}
+                            : 'w-auto border-gray-200 bg-gray-100 px-3 text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40'}`}
+                        title={isPlayground ? '保存到库' : '复制为新串'}
+                        aria-label={isPlayground ? '保存到库' : '复制为新串'}
                     >
                         <Save className={`block h-[18px] w-[18px] md:h-5 md:w-5 ${isPlayground ? '' : 'mr-1'}`} />
-                        {!isPlayground && <span>Fork</span>}
+                        {!isPlayground && <span>复制为新串</span>}
                     </button>
                 )}
                 {canSaveActiveModeToLibrary && isOwner && !isPlayground && (

@@ -1353,7 +1353,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                             </div>
                           </div>
                           <div className="text-xs font-mono text-gray-700 dark:text-gray-300 leading-relaxed bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded p-2 max-h-28 overflow-y-auto custom-scrollbar break-words">
-                            {promptText || <span className="text-gray-400">无 prompt_text</span>}
+                            {promptText || <span className="text-gray-400">暂无提示词</span>}
                           </div>
                         </div>
                       </div>

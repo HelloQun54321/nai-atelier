@@ -75,25 +75,25 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
 
             <div className="space-y-3">
                 {(characters || []).length === 0 && (
-                    <div className="text-xs text-gray-400 text-center py-2">暂无角色定义，提示词将作为整体处理。</div>
+                    <div className="text-xs text-gray-400 text-center py-2">暂无角色，点击上方添加</div>
                 )}
                 {(characters || []).map((char, idx) => (
                     <div key={char.id} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700 shadow-sm relative">
                         <div className="flex gap-3 items-start">
                             <div className="flex-1 space-y-2">
                                 <div>
-                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">人物描述</label>
+                                    <label className="text-[10px] text-gray-500 font-bold mb-1 block">角色提示词</label>
                                     <TagAutocompleteTextarea
                                         tagAssistEnabled={tagAssistEnabled}
                                         disabled={!canEdit}
                                         value={char.prompt}
                                         onValueChange={(nextValue) => updateCharacter(idx, { prompt: nextValue })}
                                         className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-16 resize-none focus:ring-1 focus:ring-indigo-500 outline-none"
-                                        placeholder="人物描述"
+                                        placeholder="角色提示词"
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">专属负面</label>
+                                    <label className="text-[10px] text-gray-500 font-bold mb-1 block">角色负面提示词</label>
                                     <TagAutocompleteTextarea
                                         tagAssistEnabled={tagAssistEnabled}
                                         disabled={!canEdit}
@@ -106,7 +106,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                             </div>
                             <div className="w-24 flex flex-col gap-2">
                                 <div className={!(params.useCoords ?? true) ? "opacity-40 pointer-events-none grayscale" : ""}>
-                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Center X</label>
+                                    <label className="text-[10px] text-gray-500 font-bold mb-1 block">水平位置 (X)</label>
                                     <input
                                         type="number" step="0.1" min="0" max="1"
                                         disabled={!canEdit}
@@ -116,7 +116,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                     />
                                 </div>
                                 <div className={!(params.useCoords ?? true) ? "opacity-40 pointer-events-none grayscale" : ""}>
-                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Center Y</label>
+                                    <label className="text-[10px] text-gray-500 font-bold mb-1 block">垂直位置 (Y)</label>
                                     <input
                                         type="number" step="0.1" min="0" max="1"
                                         disabled={!canEdit}

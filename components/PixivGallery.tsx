@@ -678,7 +678,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             </div>
             <div className="grid grid-cols-2 gap-2">
               <ToolbarButton tone="primary" onClick={() => importToPlayground(selected)}><FlaskConical />导入实验室</ToolbarButton>
-              <ToolbarButton disabled={saving} onClick={() => void saveToInspiration(selected)}><Heart />{saving ? '保存中…' : '加入灵感'}</ToolbarButton>
+              <ToolbarButton disabled={saving} onClick={() => void saveToInspiration(selected)}><Heart />{saving ? '保存中…' : '加入灵感库'}</ToolbarButton>
               <ToolbarButton onClick={() => openAuthorWorks(selected.user.id, selected.user.name)}><CircleUserRound />作者作品</ToolbarButton>
               <ToolbarLink href={pixivArtworkUrl(selected)} target="_blank" rel="noreferrer"><ExternalLink />打开 Pixiv</ToolbarLink>
             </div>

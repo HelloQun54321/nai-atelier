@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-26
+- **Gemini (Flash)**：全面重构与净化前端文案体系，消除底层字段/Git/SaaS技术术语泄露，统一全局资产/提示词/模式概念，精简冗余操作说明（refactor: overhaul user-facing copywriting and unify terminology across frontend）。
+
 - **Gemini (Flash)**：将实验室角色参考与 Vibe 氛围参考从全屏覆盖层重构为精致居中模态大弹窗，支持磨砂遮罩透光、点击外部/ESC关闭与底部快捷应用（refactor: convert character reference and vibe managers from full-screen overlays to centered modal dialogs）。
 
 - **Gemini (Flash)**：建立全局视口层叠 Z-Index 六级阶梯体系（收敛至 z-[900/1100/1250/1500/1800/2000]），并全面收敛卡片/弹窗/控件的 Design Token 边框与圆角规范（style: unify z-index stacking hierarchy and standardize design tokens across all components）。

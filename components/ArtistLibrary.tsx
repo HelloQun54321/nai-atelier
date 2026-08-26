@@ -174,9 +174,9 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                                 {isTaskRunning ? (
                                                     <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-white"></div>
                                                 ) : isTaskFailed ? (
-                                                    <div className="text-white text-xs font-bold bg-red-500 px-2 py-1 rounded">Failed</div>
+                                                    <div className="text-white text-xs font-bold bg-red-500 px-2 py-1 rounded">生成失败</div>
                                                 ) : (
-                                                    <div className="text-white text-xs font-bold bg-indigo-500 px-2 py-1 rounded">Queue</div>
+                                                    <div className="text-white text-xs font-bold bg-indigo-500 px-2 py-1 rounded">排队中</div>
                                                 )}
                                             </div>
                                         )}
@@ -193,14 +193,14 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                                     <button
                                                         onClick={(e) => queueGeneration(artist, [activeSlot], e)}
                                                         className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm pointer-events-auto text-purple-600 hover:text-purple-500"
-                                                        title={`生成当前组 (Slot ${activeSlot + 1})`}
+                                                        title={`生成当前测试组 (${config.slots[activeSlot]?.label || `第 ${activeSlot + 1} 组`})`}
                                                     >
                                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                                                     </button>
                                                     <button
                                                         onClick={(e) => queueGeneration(artist, config.slots.map((_, i) => i), e)}
                                                         className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm pointer-events-auto text-green-600 hover:text-green-500"
-                                                        title={`一键生成全部 ${config.slots.length} 组`}
+                                                        title={`生成全部 ${config.slots.length} 组测试图`}
                                                     >
                                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z" /></svg>
                                                     </button>
