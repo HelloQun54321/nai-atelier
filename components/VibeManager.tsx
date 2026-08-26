@@ -283,7 +283,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
       </div>
 
       {open && <div className="workspace-manager fixed inset-0 z-[1200] flex flex-col bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
-        <header className="workspace-command-bar flex flex-none items-center gap-2 border-b border-gray-200 bg-white px-3 dark:border-gray-800 dark:bg-gray-900 md:px-5">
+        <header className="workspace-command-bar flex h-16 flex-none items-center gap-2 border-b border-gray-200 bg-white px-3 dark:border-gray-800 dark:bg-gray-900 md:px-5">
           <button type="button" onClick={closeLayer} className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="返回"><BackIcon /></button>
           <div className="min-w-0 flex-1"><h2 className="truncate text-base font-bold">{detail ? detail.name : 'Vibe Transfer'}</h2><p className="text-[11px] text-gray-500">永久 Vibe · V4.5 Full</p></div>
           {!detail && <span className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-300">已选 {vibes.slots.length}/{VIBE_MAX_SLOTS}</span>}

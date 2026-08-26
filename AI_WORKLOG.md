@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-26
+- **Gemini (Flash)**：统一定义全局工作区顶栏与指令条高度为 h-16（64px），与侧边栏标题栏严格对齐消除 8px 水平断阶（style: align workspace toolbar height with sidebar header at 64px）。
+
 - **Gemini (Flash)**：优化主题导入与导出按钮图标为语义无歧义的 FolderInput（装入）与 FolderOutput（输出）（style: update theme import and export icons to FolderInput and FolderOutput）。
 
 - **Gemini (Flash)**：将外观预设管理能力直接融合进设置顶层「设计主题」区域，所有预设均以界面骨架卡片统一呈现，移除多余的独立预设块（refactor: unify theme preset management into main design theme section）。
