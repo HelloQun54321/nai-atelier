@@ -35,7 +35,7 @@ import {
   ThemeMode,
   validateAppearancePreset,
 } from '../services/appearancePreferences';
-import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Database, Download, Edit2, ExternalLink, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RefreshCw, RotateCcw, Server, Shield, SlidersHorizontal, Smartphone, Sun, Trash2, Upload, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Database, Edit2, ExternalLink, FileDown, FileUp, FolderInput, FolderOutput, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RefreshCw, RotateCcw, Server, Shield, SlidersHorizontal, Smartphone, Sun, Trash2, X } from 'lucide-react';
 
 type SettingsSection = 'appearance' | 'novelai' | 'agent' | 'maintenance';
 type SettingsPage = 'home' | SettingsSection;
@@ -620,7 +620,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
                       title="从 JSON 文件导入主题预设"
                     >
-                      <Upload className="h-3 w-3" />导入
+                      <FolderInput className="h-3 w-3" />导入
                     </button>
                     {customPresets.length > 0 && (
                       <button
@@ -629,7 +629,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                         className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
                         title="导出全部自定义主题为 JSON 文件"
                       >
-                        <Download className="h-3 w-3" />导出全部
+                        <FolderOutput className="h-3 w-3" />导出全部
                       </button>
                     )}
                     <button
@@ -789,7 +789,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                               title="导出此主题为 JSON 文件"
                               className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
                             >
-                              <Download className="h-3.5 w-3.5" />
+                              <FolderOutput className="h-3.5 w-3.5" />
                             </button>
                             {!preset.isBuiltin && (
                               <>

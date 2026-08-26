@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-26
+- **Gemini (Flash)**：优化主题导入与导出按钮图标为语义无歧义的 FolderInput（装入）与 FolderOutput（输出）（style: update theme import and export icons to FolderInput and FolderOutput）。
+
 - **Gemini (Flash)**：将外观预设管理能力直接融合进设置顶层「设计主题」区域，所有预设均以界面骨架卡片统一呈现，移除多余的独立预设块（refactor: unify theme preset management into main design theme section）。
 
 - **Gemini (Flash)**：新增外观与主题预设管理系统——支持将当前外观配置保存为新预设、一键切换、JSON 导入/导出、重命名与删除，并锁定出厂默认预设（feat: add appearance preset management with json import export and builtin lock）。
