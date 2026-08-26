@@ -160,7 +160,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
   if (!supportsReferences) return null;
 
   return <>
-    <section className="mt-4 rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40">
+    <div>
       <button type="button" onClick={() => setOpen(true)} className="mobile-touch flex w-full items-center justify-between gap-3 text-left">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -174,7 +174,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
         </div>
         <span className="flex-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300">管理</span>
       </button>
-    </section>
+    </div>
 
     {open && <div className="workspace-manager fixed inset-0 z-[10000] flex flex-col bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
       <header className="workspace-command-bar flex flex-none items-center gap-2 border-b border-gray-200 bg-white px-3 dark:border-gray-800 dark:bg-gray-900 sm:px-5">

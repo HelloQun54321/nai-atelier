@@ -272,15 +272,15 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
 
   return (
     <>
-      <section className="rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40">
+      <div>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-          <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-800 dark:text-gray-100">Vibe Transfer</span>{vibes.enabled && vibes.slots.length > 0 && <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">{vibes.slots.length} / {VIBE_MAX_SLOTS}</span>}</div>
+            <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-800 dark:text-gray-100">Vibe Transfer</span>{vibes.enabled && vibes.slots.length > 0 && <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">{vibes.slots.length} / {VIBE_MAX_SLOTS}</span>}</div>
             {vibes.enabled && vibes.slots.length ? <><p className="mt-1 truncate text-xs text-gray-700 dark:text-gray-300">{vibes.slots.map(slot => slot.vibeName || '未知 Vibe').join(' · ')}</p><p className="mt-0.5 text-[11px] text-gray-500">实际总强度 {total.toFixed(2)}{vibes.sourceGroupName ? ` · ${vibes.sourceGroupName}` : ''}</p></> : <p className="mt-1 text-xs text-gray-500">未启用 · 永久编码后可免费重复用于生图</p>}
           </div>
-          <button type="button" onClick={() => setOpen(true)} className="mobile-touch flex-none rounded-lg border border-gray-200 bg-white px-3 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300">管理</button>
+          <button type="button" onClick={() => setOpen(true)} className="mobile-touch flex-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300">管理</button>
         </div>
-      </section>
+      </div>
 
       {open && <div className="workspace-manager fixed inset-0 z-[1200] flex flex-col bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
         <header className="workspace-command-bar flex flex-none items-center gap-2 border-b border-gray-200 bg-white px-3 dark:border-gray-800 dark:bg-gray-900 md:px-5">

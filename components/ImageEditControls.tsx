@@ -90,7 +90,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
       </LabModuleSection>
 
       <LabModuleSection moduleId="baseImage" label="底图与导入" order={getModuleOrder(layout, 'baseImage')} defaultCollapsed={isModuleCollapsed(layout, 'baseImage')}>
-        <section className="rounded-lg border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/45">
+        <section className="space-y-3">
           <div className="mb-3 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100">底图来源</label><span className="truncate text-[10px] text-gray-400">{draft.baseImageSource === 'history' ? '历史图片' : draft.baseImageSource === 'generated' ? '文生图结果' : draft.baseImageSource === 'upload' ? '本地上传' : '尚未选择'}</span></div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onFileChange} />
@@ -115,7 +115,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
       </LabModuleSection>
 
       <LabModuleSection moduleId="editSettings" label="编辑参数" order={getModuleOrder(layout, 'editSettings')} defaultCollapsed={isModuleCollapsed(layout, 'editSettings')}>
-        <section className="space-y-4 rounded-lg border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/45">
+        <section className="space-y-4">
           <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">Strength <span className="float-right font-mono">{strength.toFixed(2)}</span><input disabled={isBusy} type="range" min="0" max="1" step="0.01" value={strength} onChange={event => onStrengthChange(Number(event.target.value))} className="mt-2 w-full accent-indigo-500" /></label>
           <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">Noise <span className="float-right font-mono">{noise.toFixed(2)}</span><input disabled={isBusy} type="range" min="0" max="1" step="0.01" value={noise} onChange={event => onNoiseChange(Number(event.target.value))} className="mt-2 w-full accent-indigo-500" /></label>
           {operation === 'outpaint' && <>

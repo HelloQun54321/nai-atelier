@@ -1981,7 +1981,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.negative)}
                             className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}
                         >
-                        <section className="mb-8">
+                        <section>
                             <div className="mb-2 flex items-center justify-between gap-3">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <PresetSourceBadge source={presetSources.negative} />

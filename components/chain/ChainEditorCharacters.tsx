@@ -43,7 +43,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
         defaultCollapsed={Boolean(activeLabLayout.collapsed.characters)}
         className={mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'}
     >
-        <section className={`${mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'} rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40`}>
+        <section className={mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'}>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <PresetSourceBadges sources={characterPresetSources} />

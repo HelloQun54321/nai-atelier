@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-26
+- **Gemini (Flash)**：将实验室折叠栏重构为一体化手风琴卡片，并剥离参数设置、角色专属提示词、Vibe 与图片编辑模块内的冗余嵌套外框与边距，消除视觉断层与多层套框（style: integrate laboratory accordion card and strip nested module borders）。
+
 - **Gemini (Flash)**：消除实验室各功能模块（参数设置、角色专属提示词、提示词输入、负面提示词、图片编辑）在 LabModuleSection 折叠栏与内层卡片间的同名重复标题，精简纵向空间（style: deduplicate laboratory module headers and card titles）。
 
 - **Gemini (Flash)**：优化 ChainEditorParams 布局结构，将生成模型与图片尺寸对称平分，自定义分辨率改为全宽展开卡片，采样器/步数/Seed 恢复干净 3 列栅格，消除视觉高低失衡（style: optimize chain editor params grid and custom resolution card）。
