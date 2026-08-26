@@ -17,8 +17,13 @@ vi.mock('../services/naiRuntime', () => ({
 vi.mock('../services/naiModels', () => ({
   DEFAULT_NAI_MODEL: 'nai-diffusion-4-5-full',
   getDefaultStepsForModel: (model: string) => (model?.startsWith('nai-diffusion-5-') ? 23 : 28),
+  getModelFollowDefaultSteps: (model: string, steps: number | undefined) => {
+    if (steps === undefined || steps === 23 || steps === 28) return model?.startsWith('nai-diffusion-5-') ? 23 : 28;
+    return steps;
+  },
   getSelectableNaiModels: () => [
     { id: 'nai-diffusion-5-full', label: 'V5 Full' },
+    { id: 'nai-diffusion-5-curated', label: 'V5 Curated' },
     { id: 'nai-diffusion-4-5-full', label: 'V4.5 Full' },
   ],
   getRuntimeNaiModelInfo: (model: string) => ({
@@ -168,6 +173,38 @@ describe('ChainEditorParams', () => {
     fireEvent.change(modelSelect, { target: { value: 'nai-diffusion-5-full' } });
     expect(setParams).toHaveBeenCalledWith(expect.objectContaining({
       model: 'nai-diffusion-5-full',
+      steps: 16,
+    }));
+  });
+  it('已处于 V5 模型时重新选择 V5（含过期 28 步会话）也会纠正为 23', () => {
+    const setParams = vi.fn();
+    renderParams({ setParams, params: { ...params, model: 'nai-diffusion-5-full', steps: 28 } });
+    const modelSelect = screen.getByRole('combobox', { name: '生成模型' });
+    fireEvent.change(modelSelect, { target: { value: 'nai-diffusion-5-curated' } });
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({
+      model: 'nai-diffusion-5-curated',
+      steps: 23,
+    }));
+  });
+
+  it('从 V5 切回 V4.5 时把默认 23 步恢复为 28 步', () => {
+    const setParams = vi.fn();
+    renderParams({ setParams, params: { ...params, model: 'nai-diffusion-5-full', steps: 23 } });
+    const modelSelect = screen.getByRole('combobox', { name: '生成模型' });
+    fireEvent.change(modelSelect, { target: { value: 'nai-diffusion-4-5-full' } });
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({
+      model: 'nai-diffusion-4-5-full',
+      steps: 28,
+    }));
+  });
+
+  it('从 V5 切回 V4.5 时保留自定义非默认步数', () => {
+    const setParams = vi.fn();
+    renderParams({ setParams, params: { ...params, model: 'nai-diffusion-5-full', steps: 16 } });
+    const modelSelect = screen.getByRole('combobox', { name: '生成模型' });
+    fireEvent.change(modelSelect, { target: { value: 'nai-diffusion-4-5-full' } });
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({
+      model: 'nai-diffusion-4-5-full',
       steps: 16,
     }));
   });

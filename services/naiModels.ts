@@ -52,6 +52,20 @@ export const getDefaultStepsForModel = (modelId?: string): number => {
 };
 
 /**
+ * 切换生成模型时按目标模型默认值的稳健步数规则：
+ * - 当前步数是官方默认值之一（23/28）或未设置时，跟随新模型的官方默认
+ *   （V5 系列 23 步、其他模型 28 步）——旧会话可能存有 V5 模型 + 28 步的
+ *   过期组合（V5 发布前的默认步数），再次选择 V5 时也会被纠正为 23；
+ * - 其余自定义步数（既非 23 也非 28）一律原样保留。
+ */
+export const getModelFollowDefaultSteps = (modelId: string | undefined, currentSteps: number | undefined): number => {
+  if (currentSteps === undefined || currentSteps === 23 || currentSteps === 28) {
+    return getDefaultStepsForModel(modelId);
+  }
+  return currentSteps;
+};
+
+/**
  * NovelAI PNG 的 Source / model_name + model_hash 与 API model_version 的对应关系。
  * 精确哈希会由网关从官方 Web 应用同步；这里保留当前官方映射作为离线回退。
  */

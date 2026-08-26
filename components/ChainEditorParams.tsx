@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { ImageEditOperation, NAIParams } from '../types';
-import { DEFAULT_NAI_MODEL, getDefaultStepsForModel, getRuntimeNaiModelInfo, getSelectableNaiModels } from '../services/naiModels';
+import { DEFAULT_NAI_MODEL, getModelFollowDefaultSteps, getRuntimeNaiModelInfo, getSelectableNaiModels } from '../services/naiModels';
 import { getNaiRuntimeModelCapability, useNaiRuntime } from '../services/naiRuntime';
 
 interface ChainEditorParamsProps {
@@ -138,7 +138,6 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                         className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
                         value={resolvedModelId}
                         onChange={(e) => {
-                            const prevModel = resolvedModelId;
                             const nextModelId = e.target.value;
                             const nextModel = getRuntimeNaiModelInfo(nextModelId, runtime);
                             const nextSupportsVibes = mode === 'text-to-image' || mode === 'image-to-image'
@@ -147,12 +146,8 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                             const nextSupportsCharacterReferences = mode === 'inpaint' || mode === 'outpaint'
                                 ? nextModel.supportsCharacterReferenceInpainting
                                 : nextModel.supportsCharacterReferences;
-                            const prevDefaultSteps = getDefaultStepsForModel(prevModel);
-                            const nextDefaultSteps = getDefaultStepsForModel(nextModelId);
-                            // 如果用户处于前一个模型的默认步数，切换到新模型时自动跟进新模型的默认步数；若是自定义步数则保留。
-                            const nextSteps = (params.steps === undefined || params.steps === prevDefaultSteps)
-                                ? nextDefaultSteps
-                                : params.steps;
+                            // 当前步数是官方默认之一（23/28）或未设置时跟随新模型的默认步数（V5 系列 23 步、其他 28 步）；自定义步数原样保留。
+                            const nextSteps = getModelFollowDefaultSteps(nextModelId, params.steps);
                             const nextParams: NAIParams = {
                                 ...params,
                                 model: nextModelId,

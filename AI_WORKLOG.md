@@ -4,7 +4,8 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
-## 2026-08-26
+- **Gemini (Flash)**：修复实验室切换 V5 模型时步数仍停留 28 的问题——旧会话「V5 模型 + 28 步」过期组合在 V5 系列内部切换或重选时不再卡住，改为按目标模型判断的稳健步数规则（默认值 23/28 自动跟随、自定义值保留），`LAB_DEFAULT_PARAMS` 步数改由默认模型推导，并补充 naiModels 与 ChainEditorParams 单测（fix: ensure v5 model switch correctly updates default steps to 23）。
+
 - **Gemini (Flash)**：为实验室模型切换增加步数自适应逻辑（V5 系列默认 23 步，其他 28 步，保留自定义步数与外部导入元数据），并补充单测（feat: adapt default steps on model switch to 23 for v5）。
 
 - **Gemini (Flash)**：彻底统一正面提示词为纯净单框输入流，移除 splitPromptFields 偏好设置及相关双框状态与导入拆分逻辑（refactor: unify prompt input to single field and remove splitPromptFields）。

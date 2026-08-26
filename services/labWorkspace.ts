@@ -1,5 +1,6 @@
 import { GenerationMode, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LabWorkspaceSession, NAIParams } from '../types';
 import { normalizeMinimumContextArea } from './imageEdit';
+import { getDefaultStepsForModel } from './naiModels';
 
 const SESSION_PREFIX = 'nai-lab-workspace-v1:';
 const ASSET_DB_NAME = 'NAI_Lab_Workspace_DB';
@@ -8,11 +9,11 @@ const ASSET_DB_VERSION = 3;
 
 const emptyExpansion: ImageEditCanvasExpansion = { top: 0, right: 0, bottom: 0, left: 0 };
 
-/** 实验室重置与新建会话共用的默认参数：832×1216（约百万像素免费面积上限）、28 步、随机种子、UC 预设 None。 */
+/** 实验室重置与新建会话共用的默认参数：832×1216（约百万像素免费面积上限）、随机种子、UC 预设 None；步数跟随默认模型（未设置模型时按 V4.5 为 28 步）。 */
 export const LAB_DEFAULT_PARAMS: NAIParams = {
     width: 832,
     height: 1216,
-    steps: 28,
+    steps: getDefaultStepsForModel(),
     scale: 5,
     sampler: 'k_euler_ancestral',
     seed: undefined,
