@@ -557,7 +557,6 @@ const App = () => {
           setIsDirty={setIsEditorDirty}
           notify={notify}
           agentOpenToken={editorAgentOpenToken}
-          splitPromptFields={appearancePreferences.splitPromptFields}
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
@@ -624,7 +623,6 @@ const App = () => {
           notify={notify}
           externalImportToken={playgroundImportToken}
           agentOpenToken={playgroundAgentOpenToken}
-          splitPromptFields={appearancePreferences.splitPromptFields}
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}

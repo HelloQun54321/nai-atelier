@@ -19,7 +19,6 @@ interface PromptAgentPanelProps {
   onRequestGeneration: (draft: PromptAgentDraft, reason?: string) => Promise<boolean> | void;
   onUndo: () => void;
   canUndo: boolean;
-  splitPromptFields: boolean;
   tagAssistEnabled: boolean;
 }
 
@@ -491,7 +490,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       await promptAgentService.run({ apiKey: props.apiKey, sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], draft: props.draft, context: { clientSettings: {
         themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true', safeModeStartup: localStorage.getItem('nai_safe_mode_startup') !== 'false',
         imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey), artistFavorites: Array.isArray(artistFavorites) ? artistFavorites.slice(0, 2000) : [],
-        splitPromptFields: props.splitPromptFields, tagAssistEnabled: props.tagAssistEnabled,
+        tagAssistEnabled: props.tagAssistEnabled,
       } } }, event => {
         if (event.type === 'response_start') {
           if (responseStartedRef.current) {

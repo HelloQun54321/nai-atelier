@@ -47,7 +47,6 @@ interface ChainEditorProps {
     notify: (msg: string, type?: 'success' | 'error') => void;
     externalImportToken?: number;
     agentOpenToken?: number;
-    splitPromptFields: boolean;
     tagAssistEnabled: boolean;
     onTagAssistEnabledChange: (enabled: boolean) => void;
     generationStreamPreview: boolean;
@@ -56,7 +55,7 @@ interface ChainEditorProps {
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, splitPromptFields, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, labPageLayouts, safeMode, onBack }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, labPageLayouts, safeMode, onBack }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
     const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
@@ -488,12 +487,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             }))
         } as any;
 
-        const compiled = compilePrompt(
-            { ...tempChain, basePrompt: splitPromptFields ? basePrompt : globalPrompt },
-            splitPromptFields ? subjectPrompt : '',
-        );
+        const compiled = compilePrompt(tempChain, subjectPrompt);
         setFinalPrompt(compiled);
-    }, [basePrompt, modules, activeModules, subjectPrompt, splitPromptFields, globalPrompt]);
+    }, [basePrompt, modules, activeModules, subjectPrompt]);
 
     useEffect(() => {
         if (workspaceInitializedKeyRef.current !== workspaceKey) return;
@@ -968,18 +964,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 }).catch(console.error);
                 return;
             }
-            const importedPrompts = splitPromptFields
-                ? await splitNovelAiPrompt(parsed.prompt)
-                : { basePrompt: parsed.prompt, subjectPrompt: '' };
-            setBasePrompt(importedPrompts.basePrompt);
-            setSubjectPrompt(importedPrompts.subjectPrompt);
+            setBasePrompt(parsed.prompt);
+            setSubjectPrompt('');
             setNegativePrompt(parsed.negativePrompt);
             setParams(parsed.params);
             clearPresetSources();
             markChange();
-            notify(splitPromptFields
-                ? '已按设置自动拆分提示词，并恢复角色与生成参数。'
-                : '已将完整提示词导入全局提示词，并恢复角色与生成参数。');
+            notify('已将完整提示词导入全局提示词，并恢复角色与生成参数。');
             void db.logClientEvent({
                 category: 'client',
                 action: 'metadata_import',
@@ -988,7 +979,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 message: `从${sourceLabel}导入元数据`,
                 metadata: {
                     source: sourceLabel,
-                    splitMode: splitPromptFields ? 'smart' : 'global',
+                    splitMode: 'global',
                     chainName,
                     promptLength: parsed.prompt.length,
                     negativeLength: parsed.negativePrompt.length,
@@ -1150,21 +1141,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             return;
         }
         if (data.mode === 'append-prompt') {
-            if (splitPromptFields) setSubjectPrompt(current => mergePromptFields(current, data.prompt));
-            else {
-                setBasePrompt(current => mergePromptFields(mergePromptFields(current, subjectPrompt), data.prompt));
-                setSubjectPrompt('');
-            }
+            setBasePrompt(current => mergePromptFields(current, data.prompt));
+            setSubjectPrompt('');
             markChange();
-            notify(splitPromptFields ? '已把灵感 Prompt 追加到主体／变量区域。' : '已把灵感 Prompt 追加到全局提示词。');
+            notify('已把灵感 Prompt 追加到全局提示词。');
             return;
         }
         if (data.mode === 'prompt-only') {
-            if (splitPromptFields) setSubjectPrompt(data.prompt || '');
-            else {
-                setBasePrompt(data.prompt || '');
-                setSubjectPrompt('');
-            }
+            setBasePrompt(data.prompt || '');
+            setSubjectPrompt('');
             markChange();
             notify('已使用灵感的正面 Prompt。');
             return;
@@ -1189,22 +1174,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setModules(importedModules);
             setActiveModules(Object.fromEntries(importedModules.map(module => [module.id, module.isActive])));
         } else {
-            // 旧图片只保存了最终提示词，原有风格/主体边界已不存在；按当前
-            // 编辑模式放入主体或全局字段，不再凭空推断结构。
-            setBasePrompt(splitPromptFields ? '' : data.prompt);
-            setSubjectPrompt(splitPromptFields ? data.prompt : '');
+            setBasePrompt(data.prompt || '');
+            setSubjectPrompt('');
         }
         setNegativePrompt(data.negativePrompt);
         setParams(data.params);
         clearPresetSources();
         markChange();
-        notify(hasPromptStructure
-            ? splitPromptFields
-                ? '已按原结构恢复全局画风、模块和主体／变量提示词。'
-                : '已恢复全局提示词、模块与生成参数。'
-            : splitPromptFields
-                ? '这张旧历史图未保存提示词结构，完整提示词已放入主体／变量区域。'
-                : '这张旧历史图未保存提示词结构，完整提示词已放入全局提示词。');
+        notify(hasPromptStructure ? '已按原结构恢复提示词与生成参数。' : '已恢复全局提示词与生成参数。');
     };
 
 
@@ -1856,7 +1833,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onRequestGeneration={(draft, reason) => requestAgentGeneration(draft, reason)}
                 canUndo={Boolean(agentUndoSnapshot)}
                 onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次 Agent 修改'); } }}
-                splitPromptFields={splitPromptFields}
                 tagAssistEnabled={tagAssistEnabled}
             />
             <ImageTaggerPanel
@@ -1866,15 +1842,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onInsert={(tags) => {
                     if (activeEditOperation && activeEditDraft) {
                         updateEditDraft(activeEditOperation, appendTagsToImageEditDraft(activeEditDraft, tags));
-                    } else if (splitPromptFields) {
-                        setSubjectPrompt(current => mergePromptFields(current, tags));
-                        markPresetSectionModified('subject');
-                        markChange();
                     } else {
-                        setBasePrompt(current => mergePromptFields(mergePromptFields(current, subjectPrompt), tags));
+                        setBasePrompt(current => mergePromptFields(current, tags));
                         setSubjectPrompt('');
                         markPresetSectionModified('base');
-                        markPresetSectionModified('subject');
                         markChange();
                     }
                     notify(`已追加 ${tags.split(',').length} 个识别 Tag`);
@@ -1900,12 +1871,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         )}
 
                         <ChainEditorPromptInputs
-                            splitPromptFields={splitPromptFields}
-                            basePrompt={basePrompt}
-                            setBasePrompt={setBasePrompt}
-                            subjectPrompt={subjectPrompt}
-                            setSubjectPrompt={setSubjectPrompt}
-                            globalPrompt={globalPrompt}
+                            prompt={basePrompt}
+                            setPrompt={setBasePrompt}
                             presetSources={presetSources}
                             tagAssistEnabled={tagAssistEnabled}
                             canEdit={canEdit}

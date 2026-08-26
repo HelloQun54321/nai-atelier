@@ -88,7 +88,6 @@ export interface AppearancePreferences {
   surfaces: SurfaceStyle;
   motion: MotionStyle;
   fontScale: FontScale;
-  splitPromptFields: boolean;
   tagAssistEnabled: boolean;
   /** 在支持的模型上显示采样过程；这是当前设备的观看偏好，不写入风格串。 */
   generationStreamPreview: boolean;
@@ -111,7 +110,6 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   surfaces: 'solid',
   motion: 'full',
   fontScale: 'standard',
-  splitPromptFields: true,
   tagAssistEnabled: true,
   generationStreamPreview: false,
   labModuleOrder: [...DEFAULT_LAB_MODULE_ORDER],
@@ -187,9 +185,6 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     surfaces: isOneOf(input.surfaces, ['solid', 'translucent']) ? input.surfaces : DEFAULT_APPEARANCE_PREFERENCES.surfaces,
     motion: isOneOf(input.motion, ['full', 'reduced', 'off']) ? input.motion : DEFAULT_APPEARANCE_PREFERENCES.motion,
     fontScale: isOneOf(input.fontScale, ['small', 'standard', 'large']) ? input.fontScale : DEFAULT_APPEARANCE_PREFERENCES.fontScale,
-    splitPromptFields: typeof input.splitPromptFields === 'boolean'
-      ? input.splitPromptFields
-      : DEFAULT_APPEARANCE_PREFERENCES.splitPromptFields,
     tagAssistEnabled: typeof input.tagAssistEnabled === 'boolean'
       ? input.tagAssistEnabled
       : DEFAULT_APPEARANCE_PREFERENCES.tagAssistEnabled,

@@ -47,7 +47,6 @@ interface PromptAgentOverlayControllerProps {
     onRequestGeneration: (draft: PromptAgentDraft, reason?: string) => Promise<boolean>;
     canUndo: boolean;
     onUndo: () => void;
-    splitPromptFields: boolean;
     tagAssistEnabled: boolean;
 }
 
@@ -62,7 +61,6 @@ export const PromptAgentOverlayController: React.FC<PromptAgentOverlayController
     onRequestGeneration,
     canUndo,
     onUndo,
-    splitPromptFields,
     tagAssistEnabled,
 }) => {
     const [open, setOpen] = useState(false);
@@ -97,7 +95,6 @@ export const PromptAgentOverlayController: React.FC<PromptAgentOverlayController
             }}
             canUndo={canUndo}
             onUndo={onUndo}
-            splitPromptFields={splitPromptFields}
             tagAssistEnabled={tagAssistEnabled}
         /></React.Suspense>
     );
