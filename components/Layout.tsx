@@ -305,7 +305,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       <CloudQueueStatus hidden={Boolean(hideNav)} />
 
       <aside style={{ width: sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth }} className={`app-sidebar relative hidden flex-shrink-0 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:flex ${isSidebarResizing ? '' : 'transition-[width] duration-200'}`}>
-        <div className={`workspace-command-bar flex flex-none items-center border-b border-gray-200 dark:border-gray-800 ${sidebarCollapsed ? 'justify-center gap-1 px-2' : 'gap-2 px-3'}`}>
+        <div className={`flex h-14 flex-none items-center ${sidebarCollapsed ? 'justify-center gap-1 px-2' : 'gap-2 px-3'}`}>
           <img src="/artist-palette-3d.png" alt="" className={`${sidebarCollapsed ? 'h-6 w-6' : 'h-7 w-7'} flex-none object-contain`} data-safe-mode-ignore="true" aria-hidden="true" />
           {!sidebarCollapsed && <span className="min-w-0 flex-1 truncate text-sm font-bold tracking-wide text-gray-800 dark:text-gray-200">NAI Atelier</span>}
           <button type="button" onClick={() => setSidebarCollapsed(value => !value)} className="flex h-7 w-7 flex-none items-center justify-center rounded-lg text-gray-400 outline-none transition hover:bg-gray-100 hover:text-indigo-600 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 dark:hover:bg-gray-800" aria-label={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'} title={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}>
