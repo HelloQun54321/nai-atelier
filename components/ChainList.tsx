@@ -6,12 +6,13 @@ import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { SmartImage } from './SmartImage';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Copy, Filter, Heart, Menu, Plus, RefreshCw, Trash2 } from 'lucide-react';
-import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isInternalChainTag } from './DesignSystem';
+import { Copy, EyeOff, Filter, FolderUp, Heart, Menu, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isInternalChainTag, isUntestedChain } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
+import { FolderBatchImportModal } from './chain/FolderBatchImportModal';
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -170,6 +171,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [copyModalChain, setCopyModalChain] = useState<PromptChain | null>(null);
   const [sortOption, setSortOption] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
   const [favOnly, setFavOnly] = useState(false);
+  const [untestedOnly, setUntestedOnly] = useState(false);
+  const [isFolderImportOpen, setIsFolderImportOpen] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showDesktopFilters, setShowDesktopFilters] = useState(false);
@@ -240,6 +243,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
          c.description.toLowerCase().includes(searchTerm.toLowerCase()))
       )
       .filter(c => !favOnly || favorites.has(c.id))
+      .filter(c => !untestedOnly || isUntestedChain(c))
       .filter(c => !selectedModel || (c.params?.model?.trim() || DEFAULT_NAI_MODEL) === selectedModel)
       .filter(c => {
         // If no tags are selected, show all
@@ -266,9 +270,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             return ub - ua;
         }
       });
-  }, [chains, type, searchTerm, favOnly, favorites, selectedModel, selectedTags, sortOption]);
+  }, [chains, type, searchTerm, favOnly, untestedOnly, favorites, selectedModel, selectedTags, sortOption]);
 
-  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, selectedModel, selectedTags, sortOption]);
+  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, untestedOnly, selectedModel, selectedTags, sortOption]);
   useEffect(() => {
     if (!returnTargetId) return;
     const targetIndex = filteredChains.findIndex(chain => chain.id === returnTargetId);
@@ -328,6 +332,15 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           className="mobile-gallery-frame md:aspect-square bg-gray-200 dark:bg-gray-900 relative border-b border-gray-200 dark:border-gray-700 overflow-hidden flex items-center justify-center"
           style={{ '--mobile-image-ratio': String(previewRatios[chain.id] || 4 / 3) } as React.CSSProperties}
       >
+          {isUntestedChain(chain) && (
+            <div
+              className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-md bg-black/65 px-1.5 py-0.5 text-[10px] font-medium text-amber-300 backdrop-blur-md shadow-sm border border-amber-400/20"
+              title="待实测：在工坊使用该预设生成后自动去除"
+            >
+              <EyeOff className="h-3 w-3 text-amber-400 shrink-0" />
+              <span>待实测</span>
+            </div>
+          )}
           {chain.previewImage ? (
               <div className="w-full h-full relative group/img">
                   <SmartImage
@@ -393,14 +406,17 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             </div>}
             <select value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className={`${allTags.length > 0 ? '' : 'ml-auto'} h-10 w-36 rounded-xl border border-gray-200 bg-white px-2 text-xs text-gray-600 outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300`}><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option></select>
             <select value={selectedModel} onChange={event => setSelectedModel(event.target.value)} aria-label="模型筛选" className="h-10 w-36 rounded-xl border border-gray-200 bg-white px-2 text-xs text-gray-600 outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"><option value="">全部模型</option>{modelFilterOptions.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}</select>
+            <IconButton label="仅看待实测" onClick={() => setUntestedOnly(value => !value)} className={untestedOnly ? '!border-amber-300 !bg-amber-50 !text-amber-600 dark:!bg-amber-950/40 dark:!text-amber-400' : ''}><EyeOff className={`h-4 w-4 ${untestedOnly ? 'stroke-[2.5]' : ''}`} /></IconButton>
             <IconButton label="仅显示收藏" onClick={() => setFavOnly(value => !value)} className={favOnly ? '!border-indigo-200 !bg-indigo-50 !text-indigo-600 dark:!bg-indigo-950/40' : ''}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} /></IconButton>
             <IconButton label="刷新列表" onClick={onRefresh} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
             <ImageTaggerAction notify={notify} />
+            {!isGuest && type === 'style' && <ToolbarButton onClick={() => setIsFolderImportOpen(true)} title="从本地文件夹批量读取 NovelAI 原图为风格串"><FolderUp className="h-4 w-4" />批量导入</ToolbarButton>}
             {!isGuest && <ToolbarButton tone="primary" onClick={() => setIsModalOpen(true)}><Plus className="h-4 w-4" />{createLabel}</ToolbarButton>}
           </div>
           <div className="flex gap-2 md:hidden">
             <MobileIconButton label="筛选与排序" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"><Menu className="h-5 w-5" /></MobileIconButton>
             <ImageTaggerAction notify={notify} />
+            {!isGuest && type === 'style' && <MobileIconButton label="批量导入" onClick={() => setIsFolderImportOpen(true)} className="border border-gray-200 bg-white text-indigo-600 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-400"><FolderUp className="h-5 w-5" /></MobileIconButton>}
             {!isGuest && <MobileIconButton label={createLabel} onClick={() => setIsModalOpen(true)} className="bg-indigo-600 text-white"><Plus className="h-5 w-5" /></MobileIconButton>}
           </div>
         </WorkspaceToolbar>
@@ -408,7 +424,10 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         <MobileBottomSheet open={showMobileFilters} title="筛选与排序" onClose={() => setShowMobileFilters(false)}>
           <div className="space-y-5">
             <label className="block text-sm font-bold dark:text-white">排序<select value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option></select></label>
-            <button onClick={() => setFavOnly(value => !value)} className={`mobile-touch w-full rounded-xl px-4 text-left font-bold ${favOnly ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-300' : 'bg-gray-100 dark:bg-gray-800'}`}>★ 只看收藏</button>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => setUntestedOnly(value => !value)} className={`mobile-touch w-full rounded-xl px-3 py-2 text-center text-xs font-bold ${untestedOnly ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-gray-100 dark:bg-gray-800'}`}>👁‍🗨 只看待实测</button>
+              <button onClick={() => setFavOnly(value => !value)} className={`mobile-touch w-full rounded-xl px-3 py-2 text-center text-xs font-bold ${favOnly ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-300' : 'bg-gray-100 dark:bg-gray-800'}`}>★ 只看收藏</button>
+            </div>
             <label className="block text-sm font-bold dark:text-white">模型版本<select value={selectedModel} onChange={event => setSelectedModel(event.target.value)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="">全部模型</option>{modelFilterOptions.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}</select></label>
             {allTags.length > 0 && <div><div className="mb-2 text-sm font-bold dark:text-white">Tag</div><div className="flex flex-wrap gap-2">{allTags.map(tag => <button key={tag} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`mobile-touch rounded-full px-3 text-xs ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}>{tag}</button>)}</div></div>}
             <button onClick={() => { void onRefresh(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl border border-gray-300 dark:border-gray-600">刷新列表</button>
@@ -486,6 +505,14 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             notify={notify}
           />
       )}
+
+      {/* Folder Batch Import Modal */}
+      <FolderBatchImportModal
+        isOpen={isFolderImportOpen}
+        onClose={() => setIsFolderImportOpen(false)}
+        onSuccess={onRefresh}
+        notify={notify}
+      />
     </div>
   );
 };

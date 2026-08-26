@@ -9,6 +9,11 @@ const INTERNAL_TAG_NAMES: Record<string, true> = { nai: true, aitag: true };
 export const isInternalChainTag = (tag: string): boolean =>
   (tag.startsWith('__') && tag.endsWith('__')) || INTERNAL_TAG_NAMES[tag.toLowerCase()] === true;
 
+/** 批量导入后未亲自实测的风格串标识 */
+export const UNTESTED_CHAIN_TAG = '待实测';
+export const isUntestedChain = (chain: { tags?: string[] } | null | undefined): boolean =>
+  Boolean(chain && Array.isArray(chain.tags) && chain.tags.includes(UNTESTED_CHAIN_TAG));
+
 export const WorkspaceToolbar: React.FC<{
   children: React.ReactNode;
   className?: string;

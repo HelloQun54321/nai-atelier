@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-08-27
+- **Gemini (Flash)**：支持从本地文件夹批量读取原图为风格串，智能识别 NovelAI 元数据并直出封面，引入「待实测」状态与生成后自动销标闭环（feat: add folder batch import to style chains with untested tag lifecycle）。
+
 ## 2026-08-26
 - **Gemini (Flash)**：全面重构与净化前端文案体系，消除底层字段/Git/SaaS技术术语泄露，统一全局资产/提示词/模式概念，精简冗余操作说明（refactor: overhaul user-facing copywriting and unify terminology across frontend）。
 

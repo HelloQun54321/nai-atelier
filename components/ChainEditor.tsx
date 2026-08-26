@@ -31,6 +31,7 @@ import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
 import { LabModuleSection } from './LabModuleSection';
 import { FileDown } from 'lucide-react';
+import { UNTESTED_CHAIN_TAG } from './DesignSystem';
 import { ChainEditorHeader } from './chain/ChainEditorHeader';
 import { ChainEditorPromptInputs } from './chain/ChainEditorPromptInputs';
 import { ChainEditorCharacters } from './chain/ChainEditorCharacters';
@@ -1337,6 +1338,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         });
     };
 
+    const checkAndRemoveUntestedTag = () => {
+        if (chain.id && chain.id !== 'playground' && chainTags.includes(UNTESTED_CHAIN_TAG)) {
+            const updatedTags = chainTags.filter(t => t !== UNTESTED_CHAIN_TAG);
+            setChainTags(updatedTags);
+            void onUpdateChain(chain.id, { tags: updatedTags });
+        }
+    };
+
     const handleGenerateDraft = async (override?: PromptAgentDraft) => {
         if (!apiKey) {
             const message = '请先在“全局设置”中配置 NovelAI API Key';
@@ -1421,6 +1430,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 setPreviewMode('history');
                 setGeneratedImage(historyItem.imageUrl);
                 setLightboxImg(current => current === result.image ? historyItem.imageUrl : current);
+                checkAndRemoveUntestedTag();
             } catch (historyError: any) {
                 // Generation has already succeeded. Keep the in-memory image
                 // visible and report only the persistence failure.
@@ -1603,6 +1613,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setPreviewMode('history');
             setGeneratedImage(historyItem.imageUrl);
             setImageEditPreviewImage(historyItem.imageUrl);
+            checkAndRemoveUntestedTag();
             notify('图片编辑完成，结果已保存为新的历史图片', 'success');
         } catch (editError) {
             const message = editError instanceof Error ? editError.message : '图片编辑失败';
