@@ -14,7 +14,7 @@ interface GenerationModeNavProps {
 }
 
 export const GenerationModeNav: React.FC<GenerationModeNavProps> = ({ activeMode, onSelect }) => (
-  <nav className="generation-mode-nav mx-auto grid w-full max-w-3xl grid-cols-4 gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-900" aria-label="生成模式">
+  <nav className="generation-mode-nav mx-auto grid w-full max-w-3xl grid-cols-4 gap-1 rounded-xl border border-gray-200/60 bg-gray-100/90 p-1 dark:border-gray-800/80 dark:bg-gray-900/90" aria-label="生成模式">
     {GENERATION_MODES.map(({ mode, label }) => (
       <button
         key={mode}

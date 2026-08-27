@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：执行自检轮次三：强化 SegmentedControl、FilterPill 与 GenerationModeNav 在暗色模式下的边缘对比度与外框契约（style: refine dark mode contrast and border contracts for segmented controls）。
 - **Gemini (Flash)**：执行自检轮次二：为角色库、画师库、串列表、灵感库与 AITag 全局下拉气泡与浮动菜单补充点击外部自动关闭（feat: add click-outside dismiss backdrops for top bar popovers across galleries）。
 - **Gemini (Flash)**：执行自检轮次一：优化 AITag 移动端顶栏纵向居中对齐，规范化灵感智能分类 CollectionButton 图标选择器（style: harmonize mobile toolbar alignment and collection button icon selectors）。
 - **Gemini (Flash)**：全面统一 DesignSystem 按钮内部图标尺寸（升级为后代选择器 [&_svg]:h-4，彻底消除包裹 span 导致回退 24px 与硬编码尺寸冲突）（fix: strictly unify button icon sizes to standard 16px across design system）。

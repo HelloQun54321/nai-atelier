@@ -122,7 +122,7 @@ export const SegmentedControl = <T extends string = string>({
   <div
     role="tablist"
     aria-label={ariaLabel}
-    className={`inline-flex items-center rounded-xl bg-gray-100 p-1 dark:bg-gray-900/90 ${className}`}
+    className={`inline-flex items-center rounded-xl border border-gray-200/60 bg-gray-100/90 p-1 dark:border-gray-800/80 dark:bg-gray-900/90 ${className}`}
   >
     {options.map(option => {
       const active = option.value === value;
@@ -162,10 +162,10 @@ export const FilterPill: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> 
 }> = ({ active = false, className = '', children, ...props }) => (
   <button
     type="button"
-    className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
+    className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
       active
-        ? 'bg-indigo-600 text-white font-semibold shadow-sm'
-        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+        ? 'border-indigo-600 bg-indigo-600 text-white font-semibold shadow-sm'
+        : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 dark:bg-gray-800/80 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
     } ${className}`}
     {...props}
   >
