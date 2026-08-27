@@ -1157,6 +1157,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
           <span title={isAitagConnected ? 'aitag.win 连接正常' : 'aitag.win 暂时不可用'} className={`h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]' : 'bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.14)]'}`} />
           <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') handleSearch(); }} placeholder="作品、作者、标题或标签" containerClassName="min-w-[14rem] flex-1 md:max-w-none!" />
+          <ToolbarButton tone="primary" onClick={handleSearch} disabled={isLoading}><Search className="h-4 w-4" />搜索</ToolbarButton>
           <div className="relative flex-none">
             <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} className={showDesktopFilters ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600' : ''} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" />筛选</ToolbarButton>
             {showDesktopFilters && <div role="dialog" aria-label="AITag 筛选" className="absolute left-1/2 top-[calc(100%+0.5rem)] z-50 hidden w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900 md:block">
@@ -1171,7 +1172,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
               <button type="button" onClick={() => { handleSearch(); setShowDesktopFilters(false); }} className="mt-4 h-10 w-full rounded-lg bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-500">应用筛选</button>
             </div>}
           </div>
-          <ToolbarButton tone="primary" onClick={handleSearch} disabled={isLoading}><Search className="h-4 w-4" />搜索</ToolbarButton>
           <div className="ml-auto hidden items-center gap-2 text-xs text-gray-500 xl:flex"><span>已加载 {formatCount(visibleItems.length)} 条</span><span>共 {formatCount(total)} 条</span></div>
           <IconButton label="刷新" onClick={() => loadWorks(page, { resetScroll: true })} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
           <ImageTaggerAction notify={notify} />

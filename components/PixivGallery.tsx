@@ -788,12 +788,13 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             </ToolbarButton>
           </form>
         </div>
+        <IconButton label="断开 Pixiv 连接" tone="danger" onClick={() => void handleDisconnect()} title="断开 Pixiv 连接">
+          <Unplug />
+        </IconButton>
         <IconButton label="刷新当前列表" onClick={() => void refreshCurrent()} disabled={loading}>
           <RefreshCw className={loading ? 'animate-spin' : ''} />
         </IconButton>
-        <IconButton label="断开 Pixiv 连接" tone="danger" onClick={() => void handleDisconnect()}>
-          <Unplug />
-        </IconButton>
+        <ImageTaggerAction notify={notify} />
       </WorkspaceToolbar>
 
       {/* 排行榜二级工具栏（子模式 + 历史日期穿越） */}

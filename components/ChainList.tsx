@@ -408,9 +408,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             <select value={selectedModel} onChange={event => setSelectedModel(event.target.value)} aria-label="模型筛选" className="h-10 w-36 rounded-xl border border-gray-200 bg-white px-2 text-xs text-gray-600 outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"><option value="">全部模型</option>{modelFilterOptions.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}</select>
             <IconButton label="仅看待实测" onClick={() => setUntestedOnly(value => !value)} className={untestedOnly ? '!border-amber-300 !bg-amber-50 !text-amber-600 dark:!bg-amber-950/40 dark:!text-amber-400' : ''}><EyeOff className={`h-4 w-4 ${untestedOnly ? 'stroke-[2.5]' : ''}`} /></IconButton>
             <IconButton label="仅显示收藏" tone={favOnly ? 'favorite' : 'neutral'} onClick={() => setFavOnly(value => !value)}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} /></IconButton>
+            {!isGuest && type === 'style' && <ToolbarButton onClick={() => setIsFolderImportOpen(true)} title="从本地文件夹批量读取 NovelAI 原图为风格串"><FolderUp className="h-4 w-4" />批量导入</ToolbarButton>}
             <IconButton label="刷新列表" onClick={onRefresh} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
             <ImageTaggerAction notify={notify} />
-            {!isGuest && type === 'style' && <ToolbarButton onClick={() => setIsFolderImportOpen(true)} title="从本地文件夹批量读取 NovelAI 原图为风格串"><FolderUp className="h-4 w-4" />批量导入</ToolbarButton>}
             {!isGuest && <ToolbarButton tone="primary" onClick={() => setIsModalOpen(true)}><Plus className="h-4 w-4" />{createLabel}</ToolbarButton>}
           </div>
           <div className="flex gap-2 md:hidden">

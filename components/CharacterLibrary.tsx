@@ -16,7 +16,7 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
-import { Check, Dice5, Menu, Plus, Settings2, Tag, UserRound } from 'lucide-react';
+import { Check, Dice5, Menu, Plus, RefreshCw, Settings2, Tag, UserRound } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
@@ -557,7 +557,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
               <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">{searchTerm.trim() ? '相关性优先 · 名称 A → Z' : '名称 A → Z'}</option><option value="name-desc">{searchTerm.trim() ? '相关性优先 · 名称 Z → A' : '名称 Z → A'}</option>
             </select>
             <div className="relative ml-auto flex flex-none items-center justify-end gap-2">
-              <ToolbarButton tone="primary" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4" />自定义角色</ToolbarButton>
               <ToolbarButton onClick={() => void drawGacha()} disabled={isGachaLoading}><Dice5 className="h-4 w-4" />{gachaCards ? '再抽一批' : '随机抽卡'}</ToolbarButton>
               {gachaCards && <ToolbarButton onClick={() => setGachaCards(null)}>返回目录</ToolbarButton>}
               <div className="relative flex-none">
@@ -569,7 +568,9 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                   <label className="block text-xs text-gray-500 dark:text-gray-400">抽卡数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white"><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label>
                 </div>}
               </div>
+              <IconButton label="刷新列表" onClick={() => void onRefresh()} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
               <ImageTaggerAction notify={notify} />
+              <ToolbarButton tone="primary" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4" />自定义角色</ToolbarButton>
             </div>
          </div>
        </WorkspaceToolbar>

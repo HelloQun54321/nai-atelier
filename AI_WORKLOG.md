@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：建立全页面顶栏统一空间网格（Zone A/B/C/D）与固定操作区契约，补齐角色库桌面刷新与 Pixiv 反推入口（feat: unify top bar spatial grid and action layouts across all workspace pages）。
 - **Gemini (Flash)**：优化全局控件与交互设计语言一致性，统一 `<select>` 尺寸与动态圆角适配、收敛收藏高亮色系、规范浮层圆角并清理 Danbooru 冗余引用（style: align control styling and popovers across galleries with dynamic corner adaptation）。
 - **qianlian/deepseek-v4-flash-0731**：修复启动器回归——恢复被误删的 gatewayStartedAt 声明,启动恢复 2.2 秒就绪（fix: restore gatewayStartedAt declaration in launcher）。
 - **qianlian/deepseek-v4-flash-0731**：启动偶发卡住排查与加固——网关 init 逐点计时证明偶发性,新增「图片网关初始化中…」提示与 90 秒超时保护,不再无限静默（fix: surface gateway init progress and add timeout guard）。

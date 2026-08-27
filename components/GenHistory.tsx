@@ -929,8 +929,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             <WorkspaceToolbar>
                     {migrationProgress && <span className="hidden truncate text-xs text-indigo-600 dark:text-indigo-400 md:block">{migrationProgress.total > 0 ? `正在迁移浏览器历史 ${migrationProgress.current}/${migrationProgress.total}，请勿关闭页面…` : '正在检查浏览器历史…'}</span>}
                     <div className="ml-auto flex items-center gap-2">
-                        <ToolbarButton tone={favoriteOnly ? 'favorite' : 'neutral'} onClick={toggleFavoriteFilter} aria-pressed={favoriteOnly} title={favoriteOnly ? '显示全部历史图片' : '只看收藏图片'}><Heart className={favoriteOnly ? 'fill-current' : ''} />收藏</ToolbarButton>
                         <ToolbarButton onClick={() => setShowDateFilter(true)}><CalendarDays className="h-4 w-4" />筛选日期</ToolbarButton>
+                        <ToolbarButton tone={favoriteOnly ? 'favorite' : 'neutral'} onClick={toggleFavoriteFilter} aria-pressed={favoriteOnly} title={favoriteOnly ? '显示全部历史图片' : '只看收藏图片'}><Heart className={favoriteOnly ? 'fill-current' : ''} />收藏</ToolbarButton>
+                        <div className="hidden rounded-full bg-gray-100 px-3 py-1.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400 md:flex">{favoriteOnly ? '收藏 ' : ''}{totalCount} 张</div>
                         <button onClick={() => setShowCleanMenu(true)} className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white p-0 text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden" aria-label="历史管理"><SlidersHorizontal className="h-[18px] w-[18px]" /></button>
                         <div className="relative hidden md:block">
                             <button 
@@ -975,7 +976,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                         </div>
                         <IconButton label="刷新历史" onClick={handleRefresh} disabled={isLoading || migrationProgress !== null}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
                         <ImageTaggerAction notify={notify} />
-                        <div className="hidden rounded-full bg-gray-100 px-3 py-1.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400 md:flex">{favoriteOnly ? '收藏 ' : ''}{totalCount} 张</div>
                     </div>
             </WorkspaceToolbar>
 
