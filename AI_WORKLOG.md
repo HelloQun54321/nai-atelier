@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：角色库抽卡升级为 Split-Button 组合控件，解耦纯视图列数与抽卡配置，引入画廊统一 Active State Banner 探索状态横幅（feat: standardize gacha split button and active state exploration banner across galleries）。
 - **Gemini (Flash)**：规范生成历史顶栏管理按钮视觉样式，纠偏清理管理菜单中的图标语义（refactor: normalize history toolbar layout and cleanup menu icon semantics）。
 - **Gemini (Flash)**：重构生图实验室顶层命令栏接入 WorkspaceToolbar 契约，收敛所有散装操作按钮至 DesignSystem 标准 IconButton / ToolbarButton 规范（refactor: align laboratory command bar with design system toolbar standards）。
 - **Gemini (Flash)**：建立全页面顶栏统一空间网格（Zone A/B/C/D）与固定操作区契约，补齐角色库桌面刷新与 Pixiv 反推入口（feat: unify top bar spatial grid and action layouts across all workspace pages）。

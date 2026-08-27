@@ -20,6 +20,7 @@ import type { DanbooruCoverCandidate } from '../services/danbooruService';
 import { danbooruService } from '../services/danbooruService';
 import { importDanbooruCoverAsDataUrl } from '../services/danbooruCoverImport';
 import { TagCoverActions } from './TagCoverActions';
+import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
 
 interface CartItem {
     name: string;
@@ -1218,6 +1219,16 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     <div className="rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">当前显示 {filteredArtists.length.toLocaleString('zh-CN')} · 手机固定双列</div>
                 </div>
             </MobileBottomSheet>
+
+            {gachaArtists && (
+                <GalleryActiveStateBanner
+                    count={filteredArtists.length}
+                    entityName="画师"
+                    onDrawAgain={() => void drawGacha()}
+                    onExit={returnToCatalog}
+                    isLoading={isGachaLoading}
+                />
+            )}
 
             {/* --- Main Content Area --- */}
             <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
