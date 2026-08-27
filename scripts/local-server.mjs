@@ -1,6 +1,6 @@
 import { spawn, execSync, spawnSync } from 'child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs';
-import { createServer as createNetServer } from 'net';
+import { connect as connectNet, createServer as createNetServer } from 'net';
 import { randomBytes, randomInt } from 'crypto';
 import { networkInterfaces, platform } from 'os';
 import { startTagUpdateServer } from './tag-update-server.mjs';
@@ -82,6 +82,38 @@ function getOutboundProxyUrl() {
   } catch {
     return '';
   }
+}
+/** 常见本机代理软件（Clash Verge / mihomo / v2rayN 等）的混合端口。 */
+const LOCAL_PROXY_PORTS = [7897, 7890, 10809, 10808, 2080, 8888, 1080, 6152, 7891, 10801];
+
+/**
+ * wrangler 启动时会外连做版本检查；Windows 系统代理若指向失效的 TUN 网关
+ * （198.18.0.0/15 保留网段，mihomo/Clash 常见），该请求会被黑洞挂起近两分钟，
+ * 表现为启动窗口长时间停在“核心页面服务正在启动”且无 wrangler 输出。
+ * 这里统一注入指向本地空端口的快速失败代理，强制外连检查毫秒级失败跳过——
+ * 无论代理软件健康与否，本地 pages dev 启动都不应依赖出站网络。
+ */
+function resolveWranglerProxyEnv() {
+  const noProxy = [process.env.NO_PROXY, process.env.no_proxy, '127.0.0.1', 'localhost'].filter(Boolean).join(',');
+  return { HTTPS_PROXY: 'http://127.0.0.1:1', HTTP_PROXY: 'http://127.0.0.1:1', NO_PROXY: noProxy };
+}
+
+async function findLocalProxyPort() {
+  return Promise.any(
+    LOCAL_PROXY_PORTS.map(port => new Promise((resolve, reject) => {
+      const socket = connectNet({ host: '127.0.0.1', port });
+      const timer = setTimeout(() => { socket.destroy(); reject(new Error('timeout')); }, 300);
+      socket.once('connect', () => { clearTimeout(timer); socket.destroy(); resolve(port); });
+      socket.once('error', () => { clearTimeout(timer); reject(new Error('refused')); });
+    }))
+  ).catch(() => null);
+}
+
+/** 系统代理指向 TUN 网关时优先换用本机真实代理端口，避免网关出站请求被黑洞。 */
+async function resolveGatewayProxyUrl(systemProxyUrl) {
+  if (!systemProxyUrl || !/^[a-z][a-z\d+.-]*:\/\/(?:198\.1[89]\.)/i.test(systemProxyUrl)) return systemProxyUrl;
+  const port = await findLocalProxyPort();
+  return port ? `http://127.0.0.1:${port}` : systemProxyUrl;
 }
 
 function ensureDependencies() {
@@ -299,6 +331,9 @@ async function startServer() {
   ];
   
   const tagUpdateServer = startTagUpdateServer();
+  const wranglerEnv = resolveWranglerProxyEnv();
+  const gatewayOutboundProxy = await resolveGatewayProxyUrl(outboundProxyUrl);
+  console.log(`\x1b[90mWrangler 出站代理: ${wranglerEnv.HTTPS_PROXY}（快速失败，跳过启动期外连检查）\x1b[0m`);
   // Tag 数据不再随仓库分发（上游未声明许可）：缺失时提示用户自行安装。
   try {
     if (!existsSync('public/tag-data/manifest.json')) {
@@ -311,7 +346,7 @@ async function startServer() {
   // chain left Miniflare descendants behind when startup failed on Windows.
   const wranglerCli = 'node_modules/wrangler/wrangler-dist/cli.js';
   console.log('\x1b[36m核心页面服务正在启动，请稍候（需恢复本地 D1/R2 存储，数据量越大耗时越长）...\x1b[0m');
-  const child = spawn(process.execPath, ['--no-warnings', '--experimental-vm-modules', wranglerCli, ...args], { stdio: 'inherit', shell: false });
+  const child = spawn(process.execPath, ['--no-warnings', '--experimental-vm-modules', wranglerCli, ...args], { stdio: 'inherit', shell: false, env: { ...process.env, ...wranglerEnv } });
   let mediaGateway = null;
   let shuttingDown = false;
 
@@ -346,7 +381,7 @@ async function startServer() {
     await waitForWorker(workerPort);
     console.log(`\x1b[32m核心页面服务已就绪（耗时 ${bootElapsedSec()} 秒，含本地 D1/R2 存储恢复）。\x1b[0m`);
     const gatewayStartedAt = Date.now();
-    mediaGateway = await createMediaGateway({ port: 3000, workerPort, lanSecret: lanAccess.secret, outboundProxyUrl });
+    mediaGateway = await createMediaGateway({ port: 3000, workerPort, lanSecret: lanAccess.secret, outboundProxyUrl: gatewayOutboundProxy });
     console.log(`\x1b[32m图片网关已就绪（耗时 ${((Date.now() - gatewayStartedAt) / 1000).toFixed(1)} 秒），手机列表将按需使用缩略图。\x1b[0m`);
     console.log(`\x1b[32m全部就绪，总耗时 ${bootElapsedSec()} 秒。\x1b[0m`);
     openWhenReady();
