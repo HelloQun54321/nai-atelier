@@ -26,6 +26,7 @@ import type { DanbooruCoverCandidate } from '../services/danbooruService';
 import { importDanbooruCoverAsDataUrl } from '../services/danbooruCoverImport';
 import { TagCoverActions } from './TagCoverActions';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
+import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 
 const CATALOG_MARKER = '__character_catalog__';
 const getDanbooruPostsUrl = (tagName: string) =>
@@ -305,6 +306,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     return cards;
   }, [catalogToCard, customChains, customToCard, favorites, gachaCards, loadedCatalog, searchResults, searchTerm, showFavOnly, tab]);
   useRestoreListAnchor(scrollRef, returnTargetId, `${visibleCards.length}:${isLoading ? 1 : 0}`);
+  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'characters', { skipRestore: Boolean(returnTargetId) });
 
   // 目录预取：当前页可见目录角色（前 40 个）的封面候选提前请求并固定保存（pin），
   // 滚动/浏览时封面秒出；getCoverSet 自带 14 天缓存与 300ms 串行限流，不重复打 Danbooru API。
@@ -734,7 +736,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
          </div>
        </MobileBottomSheet>
 
-      <div ref={scrollRef} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
+      <div ref={scrollRef} onScroll={onScrollRestore} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
         <div className="mb-3 hidden items-center gap-1.5 text-[11px] text-gray-400 dark:text-gray-500 md:flex">
           <span>显示 {visibleCards.length.toLocaleString('zh-CN')}</span><span className="opacity-50">·</span><span>目录 {catalogTotal.toLocaleString('zh-CN')}</span><span className="opacity-50">·</span><span>自定义 {customChains.length}</span>
         </div>

@@ -13,6 +13,7 @@ import { SmartImage } from './SmartImage';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { InspirationDetail } from './inspiration/InspirationDetail';
 import { MobileBottomSheet } from './MobileUI';
+import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { BOARD_COLORS, canEditItem, CollectionButton, SmartCollection, SortMode, sourceIcon, splitTags } from './inspiration/InspirationShared';
 
 interface InspirationGalleryProps {
@@ -33,6 +34,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const confirmAction = useConfirmDialog();
   const imageDisplay = useMobileImageDisplayPreferences();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+  const onMainScrollRestore = useKeepAliveScrollRestore(mainScrollRef, 'inspiration');
   const [boards, setBoards] = useState<InspirationBoard[]>([]);
   const [collection, setCollection] = useState<SmartCollection>('all');
   const [boardId, setBoardId] = useState('');
@@ -233,7 +236,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         <div className="space-y-1">{(['history', 'aitag', 'upload', 'agent', 'other'] as InspirationSourceType[]).map(source => { const SourceIcon = sourceIcon(source); return <CollectionButton key={source} active={collection === `source:${source}`} count={sourceCounts[source] || 0} icon={<SourceIcon />} label={sourceLabel(source)} onClick={() => { setCollection(`source:${source}`); setBoardId(''); }} />; })}</div>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-y-auto">
+      <main ref={mainScrollRef} onScroll={onMainScrollRestore} className="min-w-0 flex-1 overflow-y-auto">
         {selectedIds.size > 0 && <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-900 dark:bg-indigo-950/70 md:px-5">
           <b className="mr-1 text-sm text-indigo-800 dark:text-indigo-200">已选 {selectedIds.size} 项</b>
           <select defaultValue="" onChange={event => { if (event.target.value) void runBulkUpdate({ boardId: event.target.value === '__none' ? '' : event.target.value }, '已移动到灵感板'); event.target.value = ''; }} className="h-9 rounded-lg border border-indigo-200 bg-white px-2 text-xs dark:border-indigo-800 dark:bg-gray-900"><option value="" disabled>移动到…</option><option value="__none">未整理</option>{boards.map(board => <option key={board.id} value={board.id}>{board.name}</option>)}</select>

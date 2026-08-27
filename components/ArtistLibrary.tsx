@@ -22,6 +22,7 @@ import { danbooruService } from '../services/danbooruService';
 import { importDanbooruCoverAsDataUrl } from '../services/danbooruCoverImport';
 import { TagCoverActions } from './TagCoverActions';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
+import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 
 interface CartItem {
     name: string;
@@ -237,6 +238,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     const [usePrefix, setUsePrefix] = useState(true);
     const [lightboxState, setLightboxState] = useState<{ artistIdx: number, slotIdx: number } | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const onScrollRestore = useKeepAliveScrollRestore(scrollContainerRef, 'library');
     const [isLoading, setIsLoading] = useState(false);
     const [loadedCatalogArtists, setLoadedCatalogArtists] = useState<ArtistDictionaryEntry[]>([]);
     const [catalogSearchResults, setCatalogSearchResults] = useState<ArtistDictionaryEntry[]>([]);
@@ -1209,7 +1211,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
             )}
 
             {/* --- Main Content Area --- */}
-            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
+            <div ref={scrollContainerRef} onScroll={onScrollRestore} className="flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
                 {isLoading && (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-50/80 dark:bg-gray-900/80 z-20">
                         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>

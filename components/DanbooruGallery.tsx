@@ -24,6 +24,7 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { buildMediaUrl } from '../services/mobileImageCache';
 import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHistoryService';
 import { Clock, Filter, Flame } from 'lucide-react';
+import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 
 interface DanbooruGalleryProps {
   active: boolean;
@@ -81,6 +82,7 @@ type DanbooruRatio = 'all' | 'portrait' | 'landscape' | 'square';
 export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, currentUser, notify, onNavigateToPlayground, onRefreshInspiration }) => {
   const imageDisplay = useMobileImageDisplayPreferences();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'danbooru');
   const [input, setInput] = useState('');
   const [query, setQuery] = useState('order:rank');
   const [sort, setSort] = useState<DanbooruSort>('rank');
@@ -466,7 +468,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       )}
 
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
-        <main ref={scrollRef} className={`${selected ? 'hidden xl:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
+        <main ref={scrollRef} onScroll={onScrollRestore} className={`${selected ? 'hidden xl:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
           {showHistory ? (
             <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
               <span className="font-bold text-gray-700 dark:text-gray-200">本地浏览足迹 ({historyItems.length} 条)</span>

@@ -5,7 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-28
-- **Gemini (Flash)**：为角色库多角色槽位面板增加拖拽调整顺序能力（feat: add drag-and-drop reordering to character slot panel）。
+- **Gemini (Flash)**：新增 keep-alive 图库滚动位置保持 hook，修复侧边栏切换页面跳回顶部问题（fix: restore scroll position across keep-alive gallery views）。
 - **Gemini (Flash)**：重构画师库多选栏为居中悬浮胶囊 Dock 并为角色库增强多角色槽位调序与自动装载导入（feat: align artist cart dock and enhance character slots ordering and auto-import）。
 - **Gemini (Flash)**：规范角色库来源筛选下拉文案为「自定义角色」并为卡片增加「Tag 词库/自定义」来源徽标（fix: clean character library filter labels and add card source badges）。
 

@@ -30,6 +30,7 @@ import { useMobileHistoryLayer } from './MobileUI';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { SmartImage } from './SmartImage';
+import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import {
   PixivConnectionStatus,
   PixivLoginError,
@@ -103,6 +104,7 @@ const formatCount = (value: number) => new Intl.NumberFormat('zh-CN', {
 export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser, notify, onNavigateToPlayground, onRefreshInspiration }) => {
   const imageDisplay = useMobileImageDisplayPreferences();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'pixiv');
   const [status, setStatus] = useState<PixivConnectionStatus | null>(null);
   const [statusError, setStatusError] = useState('');
   const [refreshToken, setRefreshToken] = useState('');
@@ -882,7 +884,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       )}
 
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
-        <main ref={scrollRef} className={`${selected ? 'hidden xl:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
+        <main ref={scrollRef} onScroll={onScrollRestore} className={`${selected ? 'hidden xl:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
           {showHistory ? (
             <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
               <span className="font-bold text-gray-700 dark:text-gray-200">本地 Pixiv 浏览足迹 ({historyItems.length} 条)</span>

@@ -26,6 +26,7 @@ import { useStaleGuard } from './useStaleGuard';
 import { ExternalLink, Filter, FlaskConical, Menu, Package, RefreshCw, Search, Star } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
+import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { buildMediaUrl } from '../services/mobileImageCache';
 
@@ -235,6 +236,7 @@ const defaultParams: NAIParams = {
 export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser, notify, onNavigateToPlayground, onCreateArtistChain, onRefreshInspiration }) => {
   const imageDisplay = useMobileImageDisplayPreferences();
   const mainScrollRef = useRef<HTMLElement | null>(null);
+  const onMainScrollRestore = useKeepAliveScrollRestore(mainScrollRef, 'aitag');
   const detailScrollRef = useRef<HTMLDivElement | null>(null);
   const hasLoadedRef = useRef(aitagPageCache.hasLoaded);
   const didRestoreScrollRef = useRef(false);
@@ -1197,7 +1199,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selectedWork ? 'xl:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main
           ref={mainScrollRef}
-          onScroll={cacheScrollPositions}
+          onScroll={event => { cacheScrollPositions(); onMainScrollRestore(); }}
           className={`${selectedWork ? 'hidden xl:block' : 'block'} min-h-0 overflow-y-auto p-4 md:p-6`}
         >
           {error && (

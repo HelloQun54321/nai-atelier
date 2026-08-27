@@ -12,6 +12,7 @@ import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
+import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { FolderBatchImportModal } from './chain/FolderBatchImportModal';
 
 interface ChainListProps {
@@ -284,6 +285,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const chainScrollRef = useRef<HTMLDivElement>(null);
   const chainLoadSentinelRef = useRef<HTMLDivElement>(null);
   useRestoreListAnchor(chainScrollRef, returnTargetId, `${visibleCount}:${filteredChains.length}`);
+  const onScrollRestore = useKeepAliveScrollRestore(chainScrollRef, 'list', { skipRestore: Boolean(returnTargetId) });
   useEffect(() => {
     const sentinel = chainLoadSentinelRef.current;
     const root = chainScrollRef.current;
@@ -439,7 +441,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           </div>
         </MobileBottomSheet>
 
-        <div ref={chainScrollRef} className="min-h-0 flex-1 overflow-y-auto p-3 md:p-5">
+        <div ref={chainScrollRef} onScroll={onScrollRestore} className="min-h-0 flex-1 overflow-y-auto p-3 md:p-5">
           {filteredChains.length === 0 ? (
             <div className="text-center py-20 bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700">
               <p className="text-gray-500 text-lg mb-4">暂无数据</p>
