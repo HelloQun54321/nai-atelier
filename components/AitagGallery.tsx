@@ -1147,8 +1147,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   return (
     <div className="aitag-workspace flex-1 min-h-0 flex flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceToolbar>
-        <div className="flex gap-2 md:hidden">
-          <span title={isAitagConnected ? '连接正常' : '当前使用本地缓存'} className={`mt-4 h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
+        <div className="flex w-full min-w-0 items-center gap-2 md:hidden">
+          <span title={isAitagConnected ? '连接正常' : '当前使用本地缓存'} className={`h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
           <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') handleSearch(); }} placeholder="搜索 AITag 作品" />
           <MobileIconButton label="AITag 筛选" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"><Menu className="h-5 w-5" /></MobileIconButton>
           <MobileIconButton label="刷新" onClick={() => loadWorks(page, { resetScroll: true })} disabled={isLoading} className="border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"><RefreshCw className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} /></MobileIconButton>
