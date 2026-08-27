@@ -15,6 +15,7 @@ import { ImageTaggerService } from './image-tagger.mjs';
 import { MEDIA_REMOTE_HOSTS, LAN_ACCESS_COOKIE } from '../worker/sharedWhitelist.mjs';
 import { PIXIV_IMAGE_HOST, PIXIV_REFERER, PixivGalleryService } from './pixiv-local.mjs';
 import { PixivWebLoginOrchestrator } from './pixiv-web-login.mjs';
+import { localBackupService, saveBackupConfig, openInExplorer } from './local-backup.mjs';
 
 const CACHE_VERSION = 'v1';
 const HISTORY_THUMBNAIL_CACHE_VERSION = 'v2';
@@ -2886,6 +2887,50 @@ const serveDistFile = async (req, res, url) => {
         // 媒体网关仍可回应时，向设置页如实报告核心 Worker 未就绪。
       }
       return sendJson(res, 200, { gatewayReady: true, workerReady, thumbnailCache: cache.stats() });
+    }
+    if (url.pathname === '/api/local-maintenance/backup/status') {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      try {
+        const status = await localBackupService.getStatus();
+        return sendJson(res, 200, status);
+      } catch (error) {
+        return sendJson(res, 500, { error: error.message || '无法获取备份状态' });
+      }
+    }
+    if (url.pathname === '/api/local-maintenance/backup/start') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      try {
+        const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
+        const result = await localBackupService.startBackup(body);
+        return sendJson(res, 200, result);
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 500, { error: error.message || '启动备份失败' });
+      }
+    }
+    if (url.pathname === '/api/local-maintenance/backup/config') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      try {
+        const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
+        const updated = await saveBackupConfig(body);
+        return sendJson(res, 200, updated);
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 400, { error: error.message || '保存备份配置失败' });
+      }
+    }
+    if (url.pathname === '/api/local-maintenance/backup/open-folder') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      try {
+        const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
+        const targetPath = body.path || (await localBackupService.getStatus()).targetDir;
+        const result = await openInExplorer(targetPath);
+        return sendJson(res, 200, result);
+      } catch (error) {
+        return sendJson(res, 400, { error: error.message || '无法打开目录' });
+      }
     }
     if (url.pathname === '/api/tag-dictionary') {
       if (req.method !== 'GET' && req.method !== 'POST') return sendJson(res, 405, { error: '仅支持 GET 或 POST 请求' });
