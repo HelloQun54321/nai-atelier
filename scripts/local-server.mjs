@@ -1,4 +1,5 @@
 import { spawn, execSync, spawnSync } from 'child_process';
+import { createInterface } from 'node:readline';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs';
 import { connect as connectNet, createServer as createNetServer } from 'net';
 import { randomBytes, randomInt } from 'crypto';
@@ -174,6 +175,15 @@ function cleanupStaleWranglerTmp() {
   }
 }
 
+/** 隐藏 wrangler 高频请求日志（[wrangler:info] GET/POST/...），保留横幅、Ready 与错误。 */
+function quietWranglerRequests(stream) {
+  const rl = createInterface({ input: stream });
+  rl.on('line', line => {
+    if (/^\[wrangler:info\] (GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD) /.test(line)) return;
+    process.stdout.write(`${line}\n`);
+  });
+}
+
 function buildLatest() {
   if (!needsBuild()) {
     console.log('\x1b[90m代码未变化，跳过构建。\x1b[0m');
@@ -346,7 +356,9 @@ async function startServer() {
   // chain left Miniflare descendants behind when startup failed on Windows.
   const wranglerCli = 'node_modules/wrangler/wrangler-dist/cli.js';
   console.log('\x1b[36m核心页面服务正在启动，请稍候（需恢复本地 D1/R2 存储，数据量越大耗时越长）...\x1b[0m');
-  const child = spawn(process.execPath, ['--no-warnings', '--experimental-vm-modules', wranglerCli, ...args], { stdio: 'inherit', shell: false, env: { ...process.env, ...wranglerEnv } });
+  const child = spawn(process.execPath, ['--no-warnings', '--experimental-vm-modules', wranglerCli, ...args], { stdio: ['inherit', 'pipe', 'inherit'], shell: false, env: { ...process.env, ...wranglerEnv } });
+  // 默认过滤高频请求日志；需要完整输出时设置 NAI_WRANGLER_LOG=all
+  if (process.env.NAI_WRANGLER_LOG !== 'all') quietWranglerRequests(child.stdout);
   let mediaGateway = null;
   let shuttingDown = false;
 
