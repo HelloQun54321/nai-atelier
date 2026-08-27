@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **qianlian/deepseek-v4-flash-0731**：修复 Pixiv「我的收藏」Invalid request.—— 根因为 bookmarks 接口必须真实数字 user_id 而代码写死 'me';OAuth 刷新响应提取并持久化 uid,收藏 Feed 自动携带（fix: use real pixiv user id for bookmarks feed）。
 - **qianlian/deepseek-v4-flash-0731**：Pixiv 收藏失败诊断与文案——加收藏诊断日志、Invalid request. 文案友好化、TS lib 升 ES2024（fix: diagnose pixiv bookmark failures and localize error message）。
 - **qianlian/deepseek-v4-flash-0731**：按用户决定移除 Danbooru 抽卡漫游（order:random 上游不稳定）;保留 worker 手动输入兼容与通用超时重试,画师抽卡不受影响（refactor: remove danbooru gacha feature due to upstream instability）。
 - **qianlian/deepseek-v4-flash-0731**：修复官方常量同步临时失效（琥珀圆点）—— 根因为 TUN 出口抖动引发 chunk 部分抓取失败,同步改走网关代理分流并验证 health 恢复（fix: route official runtime sync through gateway proxy to avoid TUN black-hole partial fetches）。

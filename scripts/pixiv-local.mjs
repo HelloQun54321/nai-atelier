@@ -275,6 +275,8 @@ export class PixivTokenStore {
       refreshToken: String(tokens.refreshToken || ''),
       accessToken: String(tokens.accessToken || ''),
       accessTokenExpiresAt: Number(tokens.accessTokenExpiresAt) || 0,
+      // 收藏列表等接口需要当前账号的真实数字 user_id（app-api 拒绝 'me'/省略）。
+      userId: tokens.userId ? String(tokens.userId) : undefined,
       updatedAt: Number(tokens.updatedAt) || Date.now(),
     };
     return this.mutate(async () => {
@@ -385,6 +387,8 @@ export class PixivOAuthClient {
       refreshToken: String(tokenPayload.refresh_token || current?.refreshToken || '').trim(),
       accessToken: String(tokenPayload.access_token || '').trim(),
       accessTokenExpiresAt: Number(tokenPayload.expires_in) > 0 ? Date.now() + Number(tokenPayload.expires_in) * 1000 : 0,
+      // OAuth 刷新响应携带当前账号信息，收藏列表等接口需要这个真实数字 ID。
+      userId: tokenPayload.user?.id ? String(tokenPayload.user.id) : undefined,
       updatedAt: Date.now(),
     };
     if (!refreshed.refreshToken) throw pixivError('Pixiv 刷新响应缺少 refresh_token', 'PIXIV_REFRESH_FAILED', 502);
@@ -582,6 +586,10 @@ export class PixivGalleryService {
       target = sanitizePixivNextUrl(cursor);
       if (!target) throw pixivError('Pixiv cursor 不在允许列表内', 'PIXIV_INVALID_CURSOR', 400);
     } else {
+      // 收藏列表需要真实数字 user_id（app-api 拒绝 'me'/省略）；刷新令牌响应携带的 userId 兜底。
+      if (selectedMode === 'bookmarks' && !/^\d+$/.test(String(params.user_id || '')) && !this.store.tokens?.userId) {
+        await this.oauth.refresh();
+      }
       target = this.buildFeedUrl(selectedMode, params);
     }
     return this.fetchFeedCached(selectedMode, target);
@@ -683,7 +691,7 @@ export class PixivGalleryService {
       return `https://${PIXIV_API_HOST}/v2/illust/follow${search.size ? `?${search}` : ''}`;
     }
     if (mode === 'bookmarks') {
-      set('user_id', params.user_id || 'me');
+      set('user_id', params.user_id || this.store.tokens?.userId);
       set('restrict', params.restrict || 'public');
       set('tag', params.tag);
       set('offset', params.offset);
