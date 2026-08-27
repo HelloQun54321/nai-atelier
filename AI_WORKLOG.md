@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **qianlian/deepseek-v4-flash-0731**：修复官方常量同步临时失效（琥珀圆点）—— 根因为 TUN 出口抖动引发 chunk 部分抓取失败,同步改走网关代理分流并验证 health 恢复（fix: route official runtime sync through gateway proxy to avoid TUN black-hole partial fetches）。
 - **qianlian/deepseek-v4-flash-0731**：启动窗口日志静音——过滤 wrangler 高频请求日志;弃用实测会拖慢启动 25 倍的 --log-level warn 方案（fix: quiet wrangler request logs via output filtering）。
 - **Gemini (Flash)**：设置中新增本地数据备份功能，支持异步将 local-data 备份至指定目录、实时进度反馈、历史备份扫描与唤起资源管理器打开目录（feat: add local data backup management with async progress and explorer integration）。
 - **qianlian/deepseek-v4-flash-0731**：标注数据边界——AGENTS.md 新增保护区强制节（local-data 禁删禁改、database_id 为存储键）、README 补 local-data 内部构成清单、.gitignore 补性质注释（docs: mark data boundaries and local-data inventory as do-not-delete）。

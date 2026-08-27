@@ -1337,22 +1337,22 @@ export const syncNaiRuntime = (requestRemote = fetch) => {
   return naiRuntimeSyncPromise;
 };
 
-const scheduleNaiRuntimeSync = (delay) => {
+const scheduleNaiRuntimeSync = (delay, requestRemote = fetch) => {
   if (naiRuntimeSyncTimer !== null) clearTimeout(naiRuntimeSyncTimer);
   naiRuntimeSyncTimer = setTimeout(async () => {
     naiRuntimeSyncTimer = null;
     let succeeded = false;
     try {
-      succeeded = await syncNaiRuntime();
+      succeeded = await syncNaiRuntime(requestRemote);
     } catch (error) {
       console.warn('[nai-runtime] 同步任务异常，将稍后重试：', error.message || error);
     }
-    scheduleNaiRuntimeSync(succeeded ? NAI_RUNTIME_SYNC_INTERVAL : NAI_RUNTIME_RETRY_INTERVAL);
+    scheduleNaiRuntimeSync(succeeded ? NAI_RUNTIME_SYNC_INTERVAL : NAI_RUNTIME_RETRY_INTERVAL, requestRemote);
   }, delay);
   if (typeof naiRuntimeSyncTimer.unref === 'function') naiRuntimeSyncTimer.unref();
 };
 
-const initNaiRuntimeSync = async () => {
+const initNaiRuntimeSync = async (requestRemote = fetch) => {
   if (naiRuntimeSyncInitialized) return;
   naiRuntimeSyncInitialized = true;
   try {
@@ -1371,7 +1371,7 @@ const initNaiRuntimeSync = async () => {
     // 无历史同步时直接使用内置默认值。
   }
   // 启动后延迟同步，失败时改为短间隔重试，完整成功后再恢复每日同步。
-  scheduleNaiRuntimeSync(NAI_RUNTIME_SYNC_STARTUP_DELAY_MS);
+  scheduleNaiRuntimeSync(NAI_RUNTIME_SYNC_STARTUP_DELAY_MS, requestRemote);
 };
 
 export const generateWithVibeCacheRetry = async (
@@ -2521,7 +2521,8 @@ const serveDistFile = async (req, res, url) => {
   await recoverPendingVibeEncodings(workerPort);
   stChatu8Bridge.startHistorySync();
   // 后台同步官方 Web 应用常量（模型清单、限额换算、免费门槛、成本系数）。
-  void initNaiRuntimeSync();
+  // 走网关代理分流（remoteFetch）：与订阅接口一致，避免直连被 TUN 出口抖动黑洞导致部分提取失败。
+  void initNaiRuntimeSync(remoteFetch);
 
   // 用户会话最近一次请求时间：历史缩略图预热必须让行，避免抢占真实浏览的并发槽。
   let lastUserTrafficAt = 0;
