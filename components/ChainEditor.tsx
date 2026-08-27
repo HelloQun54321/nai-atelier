@@ -1210,8 +1210,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
 
     /** 离开编辑页前，若风格串尚未设置封面且当前有可见图片，自动将该图设为封面。
-     *  已有封面或非风格串时不改动；失败静默，不阻塞返回。 */
+     *  已有封面或非风格串时不改动；失败静默，不阻塞返回。
+     *  已通过保存设过封面（coverAutoSaveTriggeredRef）时不重复上传。 */
+    const coverAutoSaveTriggeredRef = useRef(false);
     const autoSaveCoverOnExit = async () => {
+        if (coverAutoSaveTriggeredRef.current) return;
         if (chain.type !== 'style' || chain.previewImage) return;
         if (!displayedPreviewImage || isUploading) return;
         try {
@@ -1220,15 +1223,20 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 await onUpdateChain(chain.id, { previewImage: cover.previewImage });
                 notify('已自动将当前图片设为封面');
             }
+            coverAutoSaveTriggeredRef.current = true;
         } catch (error) {
             console.warn('离开时自动保存封面失败:', error);
         }
     };
 
-    const handleBack = async () => {
-        await autoSaveCoverOnExit();
-        await onBack();
-    };
+    /** 组件卸载（离开编辑页：左箭头返回、侧边栏切页、点风格串图标等任意路径）时触发自动补封面。 */
+    const autoSaveCoverOnExitRef = useRef(autoSaveCoverOnExit);
+    autoSaveCoverOnExitRef.current = autoSaveCoverOnExit;
+    useEffect(() => () => {
+        void autoSaveCoverOnExitRef.current();
+    }, []);
+
+
 
 
     const handleSaveAll = async () => {
@@ -1257,6 +1265,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             if (cover.changed) {
                 setPreviewMode('cover');
                 setGeneratedImage(null);
+                coverAutoSaveTriggeredRef.current = true;
             }
             setHasChanges(false);
             setIsEditingInfo(false);
@@ -1854,7 +1863,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onTagAssistEnabledChange={onTagAssistEnabledChange}
                 activeGenerationMode={activeGenerationMode}
                 selectGenerationMode={selectGenerationMode}
-                onBack={handleBack}
+                onBack={onBack}
                 markChange={markChange}
                 handleReset={handleReset}
                 handleFork={handleFork}
