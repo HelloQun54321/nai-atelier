@@ -164,7 +164,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   });
   const [gachaCards, setGachaCards] = useState<CharacterCard[] | null>(null);
   const [isGachaLoading, setIsGachaLoading] = useState(false);
-  const [gridColumns, setGridColumns] = useState(() => Number(localStorage.getItem('nai_character_grid_columns')) || 6);
+  const gridColumns = 6;
   const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
   const [lightbox, setLightbox] = useState<CharacterCard | null>(null);
   const [showCreate, setShowCreate] = useState(false);

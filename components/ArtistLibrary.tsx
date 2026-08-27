@@ -12,7 +12,7 @@ import { createUuid } from '../services/id';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
-import { Bot, ChevronDown, ClipboardList, Clock3, Dice5, Download, Grid3X3, Heart, List, LoaderCircle, Menu, RefreshCw, Settings2 } from 'lucide-react';
+import { Bot, ChevronDown, ClipboardList, Clock3, Dice5, Download, Heart, LoaderCircle, Menu, RefreshCw, Settings2 } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
@@ -272,12 +272,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     const recentGachaIndicesRef = useRef<number[][]>([]);
     const catalogScrollTopRef = useRef(0);
 
-    // Layout State
-    const [layoutMode, setLayoutMode] = useState<'grid' | 'list'>('grid');
-
     // View Settings
-    // Grid: Columns (3-15)
-    const [gridCols, setGridCols] = useState(() => Number(localStorage.getItem('nai_artist_grid_columns')) || 6);
+    const gridCols = 6;
     const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
     const [showMobileTools, setShowMobileTools] = useState(false);
     const [showGachaTools, setShowGachaTools] = useState(false);
@@ -301,8 +297,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         window.addEventListener('nai-agent-artist-favorites-change', syncAgentFavorites);
         return () => window.removeEventListener('nai-agent-artist-favorites-change', syncAgentFavorites);
     }, []);
-    // List: Image Width (px)
-    const [listImgWidth, setListImgWidth] = useState(128);
 
     // Benchmark / Preview Mode State
     const [viewMode, setViewMode] = useState<'original' | 'benchmark'>('original');
@@ -996,10 +990,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         let existsCount = 0;
 
         // Determine target slots to check
-        // If List mode, check ALL slots. If Grid mode, only check activeSlot.
-        const targetSlots = layoutMode === 'list'
-            ? config.slots.map((_, i) => i)
-            : [activeSlot];
+        const targetSlots = [activeSlot];
 
         // Scan currently filtered list
         for (const artist of filteredArtists) {
@@ -1049,40 +1040,17 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     const navigateLightbox = useCallback((direction: 'next' | 'prev') => {
         setLightboxState(current => {
             if (!current) return null;
-            let { artistIdx, slotIdx } = current;
+            const { slotIdx } = current;
+            let { artistIdx } = current;
             const totalArtists = filteredArtists.length;
-            const totalSlots = config.slots.length;
-
-            if (layoutMode === 'grid') {
-                // Grid Mode: Iterate Artists, Keep Slot Context
-                // If we are in 'original' view, keep slotIdx as -1.
-                // If we are in 'benchmark' view, keep slotIdx as current (usually activeSlot, which is handled by setLightboxState logic)
-                if (direction === 'next') {
-                    artistIdx = (artistIdx + 1) % totalArtists;
-                } else {
-                    artistIdx = (artistIdx - 1 + totalArtists) % totalArtists;
-                }
+            if (direction === 'next') {
+                artistIdx = (artistIdx + 1) % totalArtists;
             } else {
-                // List Mode: Iterate Slots then Artists
-                if (direction === 'next') {
-                    if (slotIdx < totalSlots - 1) {
-                        slotIdx++;
-                    } else {
-                        artistIdx = (artistIdx + 1) % totalArtists;
-                        slotIdx = -1; // Reset to Original of next artist
-                    }
-                } else {
-                    if (slotIdx > -1) {
-                        slotIdx--;
-                    } else {
-                        artistIdx = (artistIdx - 1 + totalArtists) % totalArtists;
-                        slotIdx = totalSlots - 1; // Go to last slot of prev artist
-                    }
-                }
+                artistIdx = (artistIdx - 1 + totalArtists) % totalArtists;
             }
             return { artistIdx, slotIdx };
         });
-    }, [filteredArtists.length, config.slots.length, layoutMode]);
+    }, [filteredArtists.length]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -1234,145 +1202,20 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     </div>
                 )}
 
-                {layoutMode === 'grid' ? (
-                    /* --- GRID LAYOUT (Dynamic Columns using gridCols) --- */
-                    imageDisplay.layout === 'masonry' ? (
-                        <ShortestColumnMasonry<Artist>
-                            items={filteredArtists}
-                            columns={gridCols}
-                            getItemKey={artist => String(artist.id)}
-                            estimateItemHeight={estimateArtistCardHeight}
-                            renderItem={renderArtistCard}
-                        />
-                    ) : (
-                        <div
-                            className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid md:pr-6`}
-                            style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { '--mobile-gallery-columns': gridCols }) }}
-                        >
-                            {filteredArtists.map(renderArtistCard)}
-                        </div>
-                    )
+                {imageDisplay.layout === 'masonry' ? (
+                    <ShortestColumnMasonry<Artist>
+                        items={filteredArtists}
+                        columns={gridCols}
+                        getItemKey={artist => String(artist.id)}
+                        estimateItemHeight={estimateArtistCardHeight}
+                        renderItem={renderArtistCard}
+                    />
                 ) : (
-                    /* --- EXPANDED LIST LAYOUT --- */
-                    <div className="flex flex-col gap-4 md:pr-6">
-                        {filteredArtists.map((artist, idx) => {
-                            const isSelected = !!cart.find(c => c.name === artist.name);
-                            const isFav = favorites.has(artist.name);
-
-                            return (
-                                <div
-                                    key={artist.id}
-                                    data-safe-mode-work="true"
-                                    className={`bg-white dark:bg-gray-800 rounded-lg border p-4 ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
-                                    onClick={() => toggleCart(artist.name)}
-                                >
-                                    <div className="flex justify-between items-center mb-3">
-                                        <div className="flex items-center gap-3">
-                                            <h3
-                                                data-safe-mode-title="true"
-                                                className={`font-bold text-lg md:text-xl cursor-pointer hover:underline ${isSelected ? 'text-indigo-600' : 'text-gray-900 dark:text-white'}`}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    toggleCart(artist.name);
-                                                }}
-                                            >
-                                                {artist.name}
-                                            </h3>
-                                            {artist.chineseName && <span data-safe-mode-title="true" className="text-sm text-gray-400">{artist.chineseName}</span>}
-                                            {typeof artist.postCount === 'number' && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-mono text-gray-600 dark:bg-gray-800 dark:text-gray-300">作品 {artist.postCount.toLocaleString('zh-CN')}</span>}
-                                            <button onClick={(e) => toggleFav(artist.name, e)} className={`${isFav ? 'text-yellow-500' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}>
-                                                <svg className="w-5 h-5" fill={isFav ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.563.044.8.77.38 1.178l-4.244 4.134a.563.563 0 00-.153.476l1.24 5.376c.13.565-.487 1.01-.967.756L12 18.232l-4.894 3.08c-.48.254-1.097-.19-.967-.756l1.24-5.376a.563.563 0 00-.153-.476L2.985 10.575c-.42-.408-.183-1.134.38-1.178l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" /></svg>
-                                            </button>
-                                            <a href={`https://danbooru.donmai.us/posts?tags=${artist.name}`} target="_blank" rel="noreferrer" className="text-blue-500 hover:text-blue-600 dark:text-blue-400">
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                            </a>
-                                        </div>
-                                        {isAdmin && apiKey && (
-                                            <button
-                                                onClick={(e) => queueGeneration(artist, config.slots.map((_, i) => i), e)}
-                                                className="text-xs bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-1 rounded hover:bg-green-100 dark:hover:bg-green-900/50 flex items-center gap-1 border border-green-200 dark:border-green-800"
-                                                title="生成所有实装"
-                                            >
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                                Generate All
-                                            </button>
-                                        )}
-                                    </div>
-                                    <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar flex-nowrap items-stretch">
-                                        <div
-                                            className="flex flex-col gap-1 flex-shrink-0 group relative transition-all"
-                                            style={{ width: `${listImgWidth}px` }}
-                                        >
-                                            <div className="aspect-[2/3] rounded-lg overflow-hidden relative cursor-zoom-in" onClick={() => setLightboxState({ artistIdx: idx, slotIdx: -1 })}>
-                                                {artist.imageUrl || artist.benchmarks?.[0] || artist.previewUrl ? (
-                                                    <LazyImage src={artist.imageUrl || artist.benchmarks?.[0] || artist.previewUrl || ''} alt="本地预览" />
-                                                ) : (
-                                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100 text-gray-400 dark:bg-gray-900">
-                                                        <span className="text-xs">尚无预览</span>
-                                                        {apiKey && (
-                                                            <button type="button" onClick={(event) => queueGeneration(artist, [0], event)} className="mt-2 rounded bg-indigo-600 px-2 py-1 text-[10px] text-white">生成</button>
-                                                        )}
-                                                    </div>
-                                                )}
-                                                <div className="pointer-events-none absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-                                            </div>
-                                            <span className="text-[10px] text-center font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">本地预览</span>
-                                        </div>
-
-                                        {config.slots.map((slot, i) => {
-                                            const img = artist.benchmarks?.[i];
-                                            const taskRunning = currentTask?.artistId === artist.id && currentTask?.slot === i;
-                                            const taskPending = taskQueue.some(t => t.artistId === artist.id && t.slot === i);
-                                            const taskFailed = failedTasks.some(t => t.artistId === artist.id && t.slot === i);
-                                            const displayImg = img || (i === 0 ? artist.previewUrl : null);
-
-                                            return (
-                                                <div
-                                                    key={i}
-                                                    className="flex flex-col gap-1 flex-shrink-0 group relative transition-all"
-                                                    style={{ width: `${listImgWidth}px` }}
-                                                >
-                                                    <div className="aspect-[2/3] bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden relative border border-gray-200 dark:border-gray-700">
-                                                        {displayImg ? (
-                                                            <div className="w-full h-full cursor-zoom-in" onClick={() => setLightboxState({ artistIdx: idx, slotIdx: i })}>
-                                                                <LazyImage src={displayImg} alt={slot.label} />
-                                                            </div>
-                                                        ) : (
-                                                            <div className="absolute inset-0 flex items-center justify-center text-gray-300 dark:text-gray-600">
-                                                                <span className="text-xl">?</span>
-                                                            </div>
-                                                        )}
-                                                        {(taskPending || taskRunning || taskFailed) && (
-                                                            <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center z-10 pointer-events-none">
-                                                                {taskRunning ? (
-                                                                    <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-white"></div>
-                                                                ) : taskFailed ? (
-                                                                    <span className="text-[10px] bg-red-500 text-white px-1 rounded">Failed</span>
-                                                                ) : (
-                                                                    <span className="text-[10px] bg-indigo-500 text-white px-1 rounded">Queue</span>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                        {isAdmin && apiKey && !taskRunning && !taskPending && (
-                                                            <div className="absolute bottom-1 right-1 transition-opacity opacity-0 group-hover:opacity-100 z-10">
-                                                                <button
-                                                                    onClick={(e) => queueGeneration(artist, [i], e)}
-                                                                    className="p-1.5 bg-black/60 hover:bg-black/80 backdrop-blur rounded-full text-white transition-colors shadow-sm"
-                                                                    title={`生成 ${slot.label}`}
-                                                                >
-                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                                                </button>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <span className="text-[11px] text-center text-gray-500 dark:text-gray-400 truncate px-1 font-medium" title={slot.label}>{slot.label}</span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            );
-                        })}
+                    <div
+                        className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid md:pr-6`}
+                        style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { '--mobile-gallery-columns': gridCols }) }}
+                    >
+                        {filteredArtists.map(renderArtistCard)}
                     </div>
                 )}
 
