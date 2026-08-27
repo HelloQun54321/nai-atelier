@@ -132,11 +132,11 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
             {/* Model and Resolution row (2 columns symmetric) */}
             <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="flex min-w-0 flex-col gap-1">
-                    <label className="text-xs text-gray-500 dark:text-gray-500 block">生成模型</label>
+                    <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">生成模型</label>
                     <select
                         aria-label="生成模型"
                         disabled={!canEdit}
-                        className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
+                        className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                         value={resolvedModelId}
                         onChange={(e) => {
                             const nextModelId = e.target.value;
@@ -176,11 +176,11 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
 
                 {!hideResolution && (
                     <div className="flex min-w-0 flex-col gap-1">
-                        <label className="text-xs text-gray-500 dark:text-gray-500 block">图片尺寸</label>
+                        <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">图片尺寸</label>
                         <select
                             aria-label="图片尺寸"
                             disabled={!canEdit}
-                            className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
+                            className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                             value={resolutionMode}
                             onChange={(e) => handleResolutionChange(e.target.value)}
                         >
@@ -195,7 +195,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
 
             {/* Full-width custom resolution expandable panel */}
             {!hideResolution && resolutionMode === 'Custom' && (
-                <div className="mb-4 rounded-xl border border-gray-200 bg-white/70 p-3.5 dark:border-gray-700/80 dark:bg-gray-900/60 sm:p-4">
+                <div className="mb-4 rounded-2xl border border-gray-200 bg-white/70 p-3.5 dark:border-gray-800 dark:bg-gray-900/60 sm:p-4">
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         {/* Left column: Width & Height inputs */}
                         <div className="grid grid-cols-2 gap-3">
@@ -210,7 +210,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                                     disabled={!canEdit}
                                     value={params.width}
                                     onChange={event => updateCustomDimension('width', Number(event.target.value))}
-                                    className="mt-1 w-full rounded border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-950 outline-none focus:border-indigo-500 dark:focus:border-indigo-500"
+                                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs md:text-sm font-normal text-gray-800 dark:text-gray-200 dark:border-gray-800 dark:bg-gray-950 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                                 />
                             </label>
                             <label className="text-xs font-medium text-gray-600 dark:text-gray-300">
@@ -224,7 +224,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                                     disabled={!canEdit}
                                     value={params.height}
                                     onChange={event => updateCustomDimension('height', Number(event.target.value))}
-                                    className="mt-1 w-full rounded border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-950 outline-none focus:border-indigo-500 dark:focus:border-indigo-500"
+                                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs md:text-sm font-normal text-gray-800 dark:text-gray-200 dark:border-gray-800 dark:bg-gray-950 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                                 />
                             </label>
                         </div>
@@ -247,7 +247,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                             </button>
                             <div
                                 role="status"
-                                className={`rounded-lg px-2.5 py-1.5 text-[11px] font-medium leading-relaxed tabular-nums border ${
+                                className={`rounded-xl px-2.5 py-1.5 text-[11px] font-medium leading-relaxed tabular-nums border ${
                                     params.width * params.height <= OPUS_FREE_PIXEL_LIMIT
                                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800/40'
                                         : 'bg-amber-50 text-amber-700 border-amber-200/60 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800/40'
@@ -261,13 +261,13 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
             )}
 
             {/* Generation parameters: Sampler, Steps, Seed (3 columns) */}
-            <div className="chain-editor-param-grid mb-4 grid grid-cols-1 gap-3 border-b border-gray-100 pb-4 dark:border-gray-700 sm:grid-cols-3 md:gap-4">
+            <div className="chain-editor-param-grid mb-4 grid grid-cols-1 gap-3 border-b border-gray-100 pb-4 dark:border-gray-800 sm:grid-cols-3 md:gap-4">
                 <div className="flex flex-col gap-1">
-                    <label className="text-xs text-gray-500 dark:text-gray-500 block">采样器</label>
+                    <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">采样器</label>
                     <select
                         aria-label="采样器"
                         disabled={!canEdit}
-                        className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
+                        className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                         value={params.sampler || 'k_euler_ancestral'}
                         onChange={(e) => {
                             setParams({ ...params, sampler: e.target.value });
@@ -284,8 +284,8 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 </div>
 
                 <div className="flex flex-col gap-1">
-                    <label className="text-xs text-gray-500 dark:text-gray-500 block">生成步数</label>
-                    <input type="number" className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
+                    <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">生成步数</label>
+                    <input type="number" className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                         disabled={!canEdit}
                         value={params.steps}
                         max={28}
@@ -298,7 +298,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 </div>
 
                 <div className="flex flex-col gap-1">
-                    <label className="text-xs text-gray-500 dark:text-gray-500 flex items-center justify-between">
+                    <label className="text-xs text-gray-500 dark:text-gray-500 flex items-center justify-between font-medium">
                         <span>随机种子</span>
                         {forceEmptySeed && (
                             <span className="text-[10px] text-amber-600 dark:text-amber-400 font-normal" title={params.seed !== undefined && params.seed !== null ? `原保存种子: ${params.seed}（关闭设置后恢复）` : '当前已在全局设置中强制随机'}>
@@ -308,7 +308,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                     </label>
                     <input
                         type="number"
-                        className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none ${forceEmptySeed ? 'bg-amber-50/40 dark:bg-amber-950/20' : ''}`}
+                        className={`w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50 ${forceEmptySeed ? 'bg-amber-50/40 dark:bg-amber-950/20' : ''}`}
                         disabled={!canEdit}
                         placeholder={forceEmptySeed ? '已强制置空 (随机)' : '随机'}
                         value={forceEmptySeed ? '' : (params.seed === undefined || params.seed === null ? '' : params.seed)}

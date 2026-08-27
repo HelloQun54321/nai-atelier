@@ -3,6 +3,10 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-27
+### 优化:生图实验室参数调优表单视觉与聚焦光晕系统化收敛（审查阶段二）
+
+- **参数表单规范化**：全面升级生图实验室（`ChainEditorParams`）的生成模型下拉框、图片尺寸预设与自定义宽高输入框、采样器、步数与随机种子输入框为设计系统标准的 `rounded-xl` 圆角，并补充统一的 `focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20` 键盘与鼠标聚焦光晕，彻底消除旧版 4px 细碎生硬输入框风格。
+
 ### 优化:全站弹窗（Modal）ESC 键盘监听与遮罩点击关闭交互闭环（审查阶段一）
 
 - **弹窗关闭交互契约**：为预设引用弹窗（`ChainEditorPresetModal`）、保存类型分支弹窗（`ChainEditorForkModal`）、文件夹批量导入弹窗（`FolderBatchImportModal`）、图片反推面板（`ImageTaggerPanel`）、画师库配置弹窗（`ArtistLibraryConfig`）与词库更新弹窗（`TagDictionaryUpdater`）补齐全量 `Escape` 按键监听与背景遮罩点击自动收起，实现与原生桌面一致的弹窗交互闭环。
