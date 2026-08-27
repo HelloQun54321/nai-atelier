@@ -511,7 +511,12 @@ export const searchCharacterDictionary = async (rawQuery: string, limit = 200, s
 };
 
 export const preloadTagDictionary = () => {
-  void loadManifest().catch(error => console.warn('Tag autocomplete is unavailable:', error));
+  void loadManifest().then(async manifest => {
+    // 预热中文角色补全所需的大文件：角色搜索记录（数 MB），聚焦输入框时提前加载，减少首字联想等待
+    if (manifest.characterSearchRecords && !characterSearchRecordsPromise) {
+      await loadCharacterSearchRecords(manifest).catch(error => console.warn('Character search records preload failed:', error));
+    }
+  }).catch(error => console.warn('Tag autocomplete is unavailable:', error));
 };
 
 export const resetTagDictionaryCache = () => {

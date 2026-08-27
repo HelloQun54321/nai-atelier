@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Languages, LoaderCircle } from 'lucide-react';
 import { normalizeTagQuery, preloadTagDictionary, searchTagDictionary, TagSuggestion } from '../services/tagDictionary';
 import {
@@ -94,6 +95,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [target, setTarget] = useState<CompletionTarget | null>(null);
+  const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({});
   const [isLoading, setIsLoading] = useState(false);
   const [dropUp, setDropUp] = useState(false);
   const [translations, setTranslations] = useState<PromptTagTranslation[]>([]);
@@ -225,19 +227,34 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
 
   useEffect(() => {
     if (!isOpen) return;
-    const updateDirection = () => {
+    const updatePosition = () => {
       const rect = textareaRef.current?.getBoundingClientRect();
       if (!rect) return;
       const viewportHeight = window.visualViewport?.height || window.innerHeight;
       const below = viewportHeight - rect.bottom;
-      setDropUp(below < 240 && rect.top > below);
+      const showUp = below < 240 && rect.top > below;
+      setDropUp(showUp);
+      const width = Math.min(560, Math.max(280, rect.width));
+      // 弹窗以固定定位渲染到 body 顶层，随 textarea 位置绝对对齐，宽度与输入框一致
+      setPopupStyle({
+        position: 'fixed',
+        left: Math.max(8, rect.left),
+        top: showUp ? undefined : rect.bottom + 4,
+        bottom: showUp ? viewportHeight - rect.top + 4 : undefined,
+        width,
+        maxHeight: 'min(18rem, 42dvh)',
+        zIndex: 9999,
+      });
     };
-    updateDirection();
-    window.visualViewport?.addEventListener('resize', updateDirection);
-    window.addEventListener('resize', updateDirection);
+    updatePosition();
+    window.visualViewport?.addEventListener('resize', updatePosition);
+    window.addEventListener('resize', updatePosition);
+    // 捕获阶段监听滚动：容器滚动时弹窗跟随输入框移动，不被裁切
+    window.addEventListener('scroll', updatePosition, true);
     return () => {
-      window.visualViewport?.removeEventListener('resize', updateDirection);
-      window.removeEventListener('resize', updateDirection);
+      window.visualViewport?.removeEventListener('resize', updatePosition);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
     };
   }, [isOpen]);
 
@@ -371,12 +388,13 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         </div>
       )}
 
-      {isOpen && (
+      {isOpen && createPortal(
         <div
           ref={listboxRef}
           id={listboxId}
           role="listbox"
-          className={`absolute left-0 right-0 z-[150] max-h-[min(18rem,42dvh)] touch-pan-y overflow-y-auto rounded-xl border border-gray-200 bg-white select-none shadow-2xl dark:border-gray-800 dark:bg-gray-900 ${dropUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}
+          style={popupStyle}
+          className={`touch-pan-y overflow-y-auto rounded-xl border border-gray-200 bg-white select-none shadow-2xl dark:border-gray-800 dark:bg-gray-900 ${dropUp ? 'mb-1' : 'mt-1'}`}
         >
           {isLoading && suggestions.length === 0 ? (
             <div className="px-3 py-2 text-xs text-gray-400">正在加载 Tag…</div>
@@ -407,6 +425,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             </button>
           ))}
         </div>
+        ,
+        document.body
       )}
     </div>
   );
