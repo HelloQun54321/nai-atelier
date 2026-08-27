@@ -3,6 +3,12 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-27
+### 修复：恢复 wrangler.toml 的 D1 database_id，修正“启动后数据消失”事故
+
+- 事故原因：前一次清理把 `wrangler.toml` 的 `[[d1_databases]] database_id` 当作云端残留删除，但该 ID 实际是本地 `--persist-to` 存储键的一部分（f(database_name + database_id) 决定加载哪个 SQLite 文件）——ID 移除后本地模式改加载全新的空库，界面表现为风格串、历史、灵感全部消失；
+- 真实数据从未受损：`local-data/v3/d1/.../d3e11673….sqlite`（270MB）原封未动，恢复 database_id 后立即重新加载，实测 chains 243 / artists 2 / inspirations 36 / history 8,924 与清理前完全一致；
+- 已删除误生成的空库文件，并在 wrangler.toml 标注该 ID 不可移除的原因；启动闪回归正常。
+
 ### 清理：移除上游多用户与云端部署遗留（quota 列、sessions 表、角色策略、管理路由死代码）
 
 - INIT_SQL 移除无任何读写的 `sessions` 表,以及 `users` 表的 `storage_usage / last_login / max_storage` 配额列;旧库已有列不受影响(CREATE IF NOT EXISTS + 幂等 ALTER),新库不再建死表;

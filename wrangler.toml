@@ -3,11 +3,12 @@ compatibility_date = "2024-04-01"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "dist"
 
-# 本地个人模式：wrangler pages dev 仅按 binding 名与 database_name / bucket_name
-# 在 --persist-to 目录中生成本地模拟存储，不需要云端资源 ID。
+# D1 本地存储键 = f(database_name + database_id)：此 ID 决定 --persist-to 下加载
+# 哪一个 SQLite 文件。请勿删除或更改，否则本地模式会改加载全新的空库。
 [[d1_databases]]
 binding = "DB"
 database_name = "nai-db"
+database_id = "04b0c4f6-8b3b-4e1d-a880-2dfe4f7d75f7"
 
 [[r2_buckets]]
 binding = "BUCKET"
