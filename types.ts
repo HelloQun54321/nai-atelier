@@ -8,9 +8,6 @@ export interface User {
   username: string;
   role: UserRole;
   createdAt: number;
-  lastLogin?: number; // 最后登录时间
-  storageUsage?: number; // Bytes used
-  maxStorage?: number; // 最大存储配额（字节）
 }
 
 export interface PromptModule {

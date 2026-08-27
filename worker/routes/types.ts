@@ -42,7 +42,6 @@ export interface Env {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
   DB?: D1Database;
   BUCKET?: R2Bucket; // R2 Binding
-  MASTER_KEY: string; 
   R2_PUBLIC_URL?: string; // Kept for legacy compatibility if needed
   LOCAL_HISTORY_ENABLED?: string;
   PERSONAL_MODE_ENABLED?: string;
@@ -56,36 +55,6 @@ export interface Env {
 export interface WorkerContext {
   waitUntil(promise: Promise<any>): void;
 }
-
-// ==================== 角色策略配置 ====================
-// 统一的角色策略定义，前后端应共用此语义
-export const ROLE_POLICY = {
-  // 有效角色列表
-  VALID_ROLES: ['user', 'vip', 'admin', 'guest'] as const,
-  
-  // 可管理画师的角色（admin + vip）
-  CAN_MANAGE_ARTISTS: ['admin', 'vip'] as const,
-  
-  // 默认存储配额（字节）
-  DEFAULT_QUOTA: {
-    user: 314572800,    // 300MB
-    vip: 524288000,     // 500MB
-    admin: null,        // admin 无限制，使用 null 表示
-    guest: 104857600,   // 100MB
-  } as const,
-  
-  // 判断是否可管理画师
-  canManageArtists: (role: string) => ['admin', 'vip'].includes(role),
-  
-  // 判断是否不受存储配额限制
-  isUnlimitedStorage: (role: string) => role === 'admin',
-  
-  // 获取默认配额，admin 返回 null 表示无限制
-  getDefaultQuota: (role: string): number | null => {
-    if (role === 'admin') return null;
-    return (ROLE_POLICY.DEFAULT_QUOTA as Record<string, number | null>)[role] ?? 314572800;
-  }
-};
 
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -138,16 +107,7 @@ export const INIT_SQL = `
     username TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
     role TEXT DEFAULT 'user',
-    created_at INTEGER,
-    last_login INTEGER,
-    storage_usage INTEGER DEFAULT 0,
-    max_storage INTEGER DEFAULT 314572800
-  );
-  CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    expires_at INTEGER NOT NULL,
-    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    created_at INTEGER
   );
   CREATE TABLE IF NOT EXISTS chains (
     id TEXT PRIMARY KEY,

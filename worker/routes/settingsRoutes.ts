@@ -3,7 +3,7 @@
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
 import { LAN_ACCESS_COOKIE } from '../sharedWhitelist.mjs';
 import { MEDIA_VARIANTS, validateMediaSource } from '../mediaValidation';
-import { json, error, parseStoredJson, ROLE_POLICY, MAX_MANAGED_IMAGE_BYTES, corsHeaders, type D1Database, type Env, type RouteContext } from './types';
+import { json, error, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, corsHeaders, type D1Database, type Env, type RouteContext } from './types';
 
 const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const lanAccessAttempts = new Map<string, { failures: number; blockedUntil: number }>();
@@ -122,14 +122,14 @@ export async function getLocalOwner(db: D1Database) {
   const savedOwner = await db.prepare("SELECT value FROM settings WHERE key = 'personal_owner_id_v2'")
     .first<{value: string}>();
   let owner = savedOwner?.value
-    ? await db.prepare('SELECT id, username, role, storage_usage, max_storage FROM users WHERE id = ?')
+    ? await db.prepare('SELECT id, username, role FROM users WHERE id = ?')
         .bind(savedOwner.value).first<any>()
     : null;
 
   if (!owner) {
     try {
       owner = await db.prepare(`
-        SELECT id, username, role, storage_usage, max_storage
+        SELECT id, username, role
         FROM users u WHERE role != 'guest'
         ORDER BY
           (SELECT COUNT(*) FROM local_generation_history h WHERE h.user_id = u.id) DESC,
@@ -141,7 +141,7 @@ export async function getLocalOwner(db: D1Database) {
       `).first<any>();
     } catch {
       owner = await db.prepare(`
-        SELECT id, username, role, storage_usage, max_storage
+        SELECT id, username, role
         FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1
       `).first<any>();
     }
@@ -149,10 +149,10 @@ export async function getLocalOwner(db: D1Database) {
   if (!owner) {
     const id = 'local-owner';
     await db.prepare(`
-      INSERT OR IGNORE INTO users (id, username, password, role, created_at, storage_usage)
-      VALUES (?, 'local', '', 'admin', ?, 0)
+      INSERT OR IGNORE INTO users (id, username, password, role, created_at)
+      VALUES (?, 'local', '', 'admin', ?)
     `).bind(id, Date.now()).run();
-    owner = await db.prepare('SELECT id, username, role, storage_usage, max_storage FROM users WHERE id = ?')
+    owner = await db.prepare('SELECT id, username, role FROM users WHERE id = ?')
       .bind(id).first<any>();
   }
   await db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('personal_owner_id_v2', ?)")
@@ -202,50 +202,6 @@ function isMissingColumnError(e: any): boolean {
   const msg = e.message;
   // SQLite 可能报 'no column named xxx' 或 'no such column: xxx'
   return msg.includes('no column named') || msg.includes('no such column');
-}
-
-async function ensureAccessLogsSchema(db: D1Database) {
-  await db.prepare(`
-    CREATE TABLE IF NOT EXISTS access_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT,
-      username TEXT,
-      role TEXT,
-      ip TEXT,
-      user_agent TEXT,
-      action TEXT,
-      category TEXT DEFAULT 'auth',
-      status TEXT DEFAULT 'success',
-      method TEXT,
-      path TEXT,
-      resource_type TEXT,
-      resource_id TEXT,
-      message TEXT,
-      metadata TEXT,
-      duration_ms INTEGER,
-      created_at INTEGER
-    )
-  `).run();
-
-  const columns = [
-    "ALTER TABLE access_logs ADD COLUMN category TEXT DEFAULT 'auth'",
-    "ALTER TABLE access_logs ADD COLUMN status TEXT DEFAULT 'success'",
-    "ALTER TABLE access_logs ADD COLUMN method TEXT",
-    "ALTER TABLE access_logs ADD COLUMN path TEXT",
-    "ALTER TABLE access_logs ADD COLUMN resource_type TEXT",
-    "ALTER TABLE access_logs ADD COLUMN resource_id TEXT",
-    "ALTER TABLE access_logs ADD COLUMN message TEXT",
-    "ALTER TABLE access_logs ADD COLUMN metadata TEXT",
-    "ALTER TABLE access_logs ADD COLUMN duration_ms INTEGER",
-  ];
-  for (const sql of columns) {
-    try { await db.prepare(sql).run(); } catch (e) {}
-  }
-
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_access_logs_created_at ON access_logs(created_at)').run();
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_access_logs_role ON access_logs(role)').run();
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_access_logs_category ON access_logs(category)').run();
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_access_logs_status ON access_logs(status)').run();
 }
 
 // Helper: Delete File from R2
@@ -321,7 +277,7 @@ export async function processImageUpload(
     imageData: string,
     folder: string,
     id: string,
-    user?: { id: string, role: string, storage_usage?: number, max_storage?: number }
+    user?: { id: string, role: string }
 ): Promise<string> {
     if (imageData.startsWith('http') || imageData.startsWith('/api/')) return imageData;
 
@@ -344,27 +300,14 @@ export async function processImageUpload(
         bytes[i] = binaryString.charCodeAt(i);
     }
     
-    const fileSize = bytes.length;
+        const fileSize = bytes.length;
     if (fileSize > MAX_MANAGED_IMAGE_BYTES) {
         throw new Error(`图片不能超过 ${Math.floor(MAX_MANAGED_IMAGE_BYTES / 1024 / 1024)}MB`);
-    }
-
-    if (user && user.role !== 'admin') {
-        const currentUsage = user.storage_usage || 0;
-        const maxStorage = user.max_storage || 314572800; // 默认300MB
-        if (currentUsage + fileSize > maxStorage) {
-            throw new Error(`Storage quota exceeded (limit: ${Math.round(maxStorage / 1024 / 1024)}MB).`);
-        }
     }
 
     await env.BUCKET.put(filename, bytes.buffer, {
         httpMetadata: { contentType: `image/${ext}` }
     });
-    
-    if (user && env.DB) {
-        await env.DB.prepare('UPDATE users SET storage_usage = COALESCE(storage_usage, 0) + ? WHERE id = ?')
-            .bind(fileSize, user.id).run();
-    }
 
     return `/api/assets/${filename}`;
 }
@@ -375,7 +318,7 @@ export async function fetchAndUploadImage(
     imageUrl: string,
     folder: string,
     id: string,
-    user?: { id: string, role: string, storage_usage?: number, max_storage?: number }
+    user?: { id: string, role: string }
 ): Promise<string> {
     if (!imageUrl.startsWith('http')) return imageUrl;
     
@@ -408,22 +351,9 @@ export async function fetchAndUploadImage(
         const safeId = String(id).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'asset';
         const filename = `${folder}/${safeId}_${Date.now()}.${ext}`;
 
-        if (user && user.role !== 'admin') {
-            const currentUsage = user.storage_usage || 0;
-            const maxStorage = user.max_storage || 314572800; // 默认 300MB
-            if (currentUsage + fileSize > maxStorage) {
-                throw new Error(`Storage quota exceeded (limit: ${Math.round(maxStorage / 1024 / 1024)}MB).`);
-            }
-        }
-
         await env.BUCKET.put(filename, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, {
             httpMetadata: { contentType }
         });
-        
-        if (user && env.DB) {
-            await env.DB.prepare('UPDATE users SET storage_usage = COALESCE(storage_usage, 0) + ? WHERE id = ?')
-                .bind(fileSize, user.id).run();
-        }
 
         return `/api/assets/${filename}`;
     } catch (error: any) {
@@ -581,168 +511,6 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
       return json({ success: true });
   }
 
-  // --- Admin Guest Setting ---
-  if (path === '/api/admin/guest-setting' && method === 'GET') {
-      if (currentUser.role !== 'admin') return error('Forbidden', 403);
-      let guest = await db.prepare('SELECT password FROM users WHERE role = ?').bind('guest').first<{password: string}>();
-      if (!guest) { await initDB(); guest = await db.prepare('SELECT password FROM users WHERE role = ?').bind('guest').first<{password: string}>(); }
-      return json({ passcode: guest?.password });
-  }
-  if (path === '/api/admin/guest-setting' && method === 'PUT') {
-      if (currentUser.role !== 'admin') return error('Forbidden', 403);
-      const { passcode } = await request.json() as any;
-      await db.prepare('UPDATE users SET password = ? WHERE role = ?').bind(passcode, 'guest').run();
-      return json({ success: true });
-  }
-
-  // --- ADMIN: Usage Statistics ---
-  if (path === '/api/admin/stats' && method === 'GET') {
-      if (currentUser.role !== 'admin') return error('Forbidden', 403);
-      await ensureAccessLogsSchema(db);
-      
-      // 近 30 天的每日统计
-      const dailyStatsResult = await db.prepare(`
-          SELECT * FROM daily_stats 
-          WHERE date >= date('now', '-30 days')
-          ORDER BY date DESC
-      `).all();
-      
-      // 最近 50 条登录日志
-      const recentLogsResult = await db.prepare(`
-          SELECT * FROM access_logs 
-          ORDER BY created_at DESC 
-          LIMIT 50
-      `).all();
-      
-      // 存储统计
-      const userStorageStats = await db.prepare(`
-          SELECT SUM(storage_usage) as total_storage, COUNT(*) as user_count 
-          FROM users WHERE role != 'guest'
-      `).first<{total_storage: number, user_count: number}>();
-      
-      const chainsCount = await db.prepare('SELECT COUNT(*) as count FROM chains').first<{count: number}>();
-      const inspirationsCount = await db.prepare('SELECT COUNT(*) as count FROM inspirations').first<{count: number}>();
-      const artistsCount = await db.prepare('SELECT COUNT(*) as count FROM artists').first<{count: number}>();
-      
-      return json({
-          dailyStats: dailyStatsResult.results.map((s: any) => ({
-              date: s.date,
-              totalRequests: s.total_requests || 0,
-              apiRequests: s.api_requests || 0,
-              guestLogins: s.guest_logins || 0,
-              userLogins: s.user_logins || 0,
-              generateRequests: s.generate_requests || 0
-          })),
-          recentLogs: recentLogsResult.results.map((l: any) => ({
-              id: l.id,
-              userId: l.user_id,
-              username: l.username,
-              role: l.role,
-              ip: l.ip,
-              userAgent: l.user_agent,
-              action: l.action,
-              category: l.category || 'auth',
-              status: l.status || 'success',
-              method: l.method,
-              path: l.path,
-              resourceType: l.resource_type,
-              resourceId: l.resource_id,
-              message: l.message,
-              metadata: l.metadata,
-              durationMs: l.duration_ms,
-              createdAt: l.created_at
-          })),
-          storage: {
-              totalUserStorage: userStorageStats?.total_storage || 0,
-              userCount: userStorageStats?.user_count || 0,
-              chainsCount: chainsCount?.count || 0,
-              inspirationsCount: inspirationsCount?.count || 0,
-              artistsCount: artistsCount?.count || 0
-          }
-      });
-  }
-
-  if (path === '/api/admin/logs' && method === 'GET') {
-      if (currentUser.role !== 'admin') return error('Forbidden', 403);
-      await ensureAccessLogsSchema(db);
-
-      const page = Math.max(0, parseInt(url.searchParams.get('page') || '0', 10));
-      const pageSize = Math.min(Math.max(parseInt(url.searchParams.get('pageSize') || '100', 10), 20), 200);
-      const category = (url.searchParams.get('category') || '').trim();
-      const status = (url.searchParams.get('status') || '').trim();
-      const q = (url.searchParams.get('q') || '').trim();
-
-      const conditions: string[] = [];
-      const values: any[] = [];
-
-      if (category) {
-        conditions.push("COALESCE(category, 'auth') = ?");
-        values.push(category);
-      }
-      if (status) {
-        conditions.push("COALESCE(status, 'success') = ?");
-        values.push(status);
-      }
-      if (q) {
-        const like = `%${q}%`;
-        conditions.push(`(
-          username LIKE ? OR action LIKE ? OR COALESCE(message, '') LIKE ? OR
-          COALESCE(resource_type, '') LIKE ? OR COALESCE(resource_id, '') LIKE ? OR
-          COALESCE(path, '') LIKE ? OR COALESCE(metadata, '') LIKE ?
-        )`);
-        values.push(like, like, like, like, like, like, like);
-      }
-
-      const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-      const countResult = await db.prepare(`SELECT COUNT(*) as total FROM access_logs ${whereSql}`)
-        .bind(...values)
-        .first<{total: number}>();
-      const total = countResult?.total || 0;
-      const logsResult = await db.prepare(`
-          SELECT * FROM access_logs
-          ${whereSql}
-          ORDER BY created_at DESC
-          LIMIT ? OFFSET ?
-      `).bind(...values, pageSize, page * pageSize).all();
-
-      return json({
-        data: logsResult.results.map((l: any) => ({
-          id: l.id,
-          userId: l.user_id,
-          username: l.username,
-          role: l.role,
-          ip: l.ip,
-          userAgent: l.user_agent,
-          action: l.action,
-          category: l.category || 'auth',
-          status: l.status || 'success',
-          method: l.method,
-          path: l.path,
-          resourceType: l.resource_type,
-          resourceId: l.resource_id,
-          message: l.message,
-          metadata: l.metadata,
-          durationMs: l.duration_ms,
-          createdAt: l.created_at
-        })),
-        pagination: {
-          page,
-          pageSize,
-          total,
-          totalPages: Math.ceil(total / pageSize)
-        }
-      });
-  }
-
-  // --- ADMIN: Clear Old Logs ---
-  if (path === '/api/admin/clear-logs' && method === 'POST') {
-      if (currentUser.role !== 'admin') return error('Forbidden', 403);
-      await ensureAccessLogsSchema(db);
-      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-      await db.prepare('DELETE FROM access_logs WHERE created_at < ?').bind(thirtyDaysAgo).run();
-      return json({ success: true });
-  }
-
   // --- NAI Proxy ---
   if (path === '/api/generate' && method === 'POST') {
     const startedAt = Date.now();
@@ -811,16 +579,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
       const ext = String(file.name.split('.').pop() || 'png').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || 'bin';
       const filename = `${folder}/${currentUser.id}_${Date.now()}.${ext}`;
       const fileSize = file.size;
-      // 使用统一的角色策略检查存储配额
-      if (!ROLE_POLICY.isUnlimitedStorage(currentUser.role)) {
-          const currentUsage = currentUser.storage_usage || 0;
-          const maxStorage = currentUser.max_storage || ROLE_POLICY.getDefaultQuota(currentUser.role) || 314572800;
-          if (currentUsage + fileSize > maxStorage) {
-            return error(`Storage quota exceeded`, 413);
-          }
-      }
       await env.BUCKET.put(filename, file.stream(), { httpMetadata: { contentType: file.type } });
-      await db.prepare('UPDATE users SET storage_usage = COALESCE(storage_usage, 0) + ? WHERE id = ?').bind(fileSize, currentUser.id).run();
       return json({ url: `/api/assets/${filename}`, size: fileSize });
   }
 
@@ -985,8 +744,6 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
      return json(res.results.map((a: any) => ({ id: a.id, name: a.name, imageUrl: a.image_url, previewUrl: a.preview_url, benchmarks: parseStoredJson(a.benchmarks, []) })));
   }
   if (path === '/api/artists' && method === 'POST') {
-    // 使用统一的角色策略检查画师管理权限（admin + vip）
-    if (!ROLE_POLICY.canManageArtists(currentUser.role)) return error('Forbidden', 403);
     const body = await request.json() as any;
     const id = body.id || crypto.randomUUID();
     
@@ -1039,8 +796,6 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     return json({ success: true, benchmarks });
   }
   if (path.startsWith('/api/artists/') && method === 'DELETE') {
-    // 使用统一的角色策略检查画师管理权限（admin + vip）
-    if (!ROLE_POLICY.canManageArtists(currentUser.role)) return error('Forbidden', 403);
     const id = path.split('/').pop();
     const artist = await db.prepare('SELECT name, benchmarks, preview_url, image_url FROM artists WHERE id = ?').bind(id).first<{name: string, benchmarks: string, preview_url: string, image_url: string}>();
     if (artist) {

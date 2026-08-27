@@ -3,6 +3,14 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-27
+### 清理：移除上游多用户与云端部署遗留（quota 列、sessions 表、角色策略、管理路由死代码）
+
+- INIT_SQL 移除无任何读写的 `sessions` 表,以及 `users` 表的 `storage_usage / last_login / max_storage` 配额列;旧库已有列不受影响(CREATE IF NOT EXISTS + 幂等 ALTER),新库不再建死表;
+- 删除全部不可达的 `/api/admin/stats`、`/api/admin/logs`、`/api/admin/clear-logs`、`/api/admin/guest-setting` 路由及 access_logs 建表辅助函数(这些路径已在个人模式下被 410 拦截,永不触发);
+- 移除 `ROLE_POLICY` 角色策略常量与个人模式下恒真的权限检查(画师库管理、上传存储配额),上传路径不再写无意义的 `storage_usage` 记账;
+- `/api/auth/me` 与前端 `User` 类型同步收窄,仅保留 `id / username / role`；`schema.sql` 参考快照同步更新;
+- 补充一条关键约定:本地 `wrangler pages dev` 直接使用 `dist/_worker.js`(不编译 worker 源码),改动 worker 代码后必须重新执行 `npm run build:worker` 才能生效(已固化到本次验证流程)。
+
 ### 修复：本地启动偶发卡死 1~2 分钟 —— wrangler 启动期外连检查被失效的系统代理黑洞
 
 - 根因：系统代理指向 Clash/mihomo TUN 网关（198.18.0.0/15 保留网段）的机器上，代理出口异常时 wrangler 启动时的外连版本检查会被黑洞挂起约两分钟，启动窗口长时间停在“核心页面服务正在启动”且无任何输出，超时后一切正常；

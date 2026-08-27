@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **qianlian/deepseek-v4-flash-0731**：移除上游多用户与云端遗留——sessions 表、users 配额列、ROLE_POLICY、admin 管理路由死代码,auth/me 收窄,并查明 pages dev 直接使用 dist/_worker.js 的加载机制（refactor: remove upstream multi-user remnants from worker database layer）。
 - **qianlian/deepseek-v4-flash-0731**：修复本地启动偶发卡死 —— 为 wrangler 注入快速失败代理跳过启动期外连检查，网关出站代理在 TUN 系统代理失效时改用本机真实端口（fix: prevent wrangler startup hang by fast-failing outbound check when the system proxy is black-holed）。
 - **qianlian/deepseek-v4-flash-0731**：本地启动提速 —— 历史缩略图预热延迟 35 秒且用户浏览时让行、前端静态资源改由网关直出、启动时清理过期 Wrangler 临时目录（perf: speed up local startup by deferring history prewarm, serving static assets from the gateway, and cleaning stale wrangler temp dirs）。
 - **Gemini (Flash)**：修复 Pixiv 收藏 400 状态平滑兼容、移除顶栏冗余搜索 Tab、修复 Danbooru 抽卡漫游 500 报错与高级搜索符号支持（fix: handle pixiv bookmark already bookmarked state, remove redundant search tab, and fix danbooru random pagination 500 error with advanced query symbols）。

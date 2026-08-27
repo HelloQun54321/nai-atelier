@@ -80,9 +80,6 @@ export default {
       for (const sql of statements) {
           try { await db.prepare(sql).run(); } catch(e) {}
       }
-      try { await db.prepare("ALTER TABLE users ADD COLUMN storage_usage INTEGER DEFAULT 0").run(); } catch (e) {}
-      try { await db.prepare("ALTER TABLE users ADD COLUMN last_login INTEGER").run(); } catch (e) {}
-      try { await db.prepare("ALTER TABLE users ADD COLUMN max_storage INTEGER DEFAULT 314572800").run(); } catch (e) {}
       try { await db.prepare("ALTER TABLE chains ADD COLUMN user_id TEXT").run(); } catch (e) {}
       try { await db.prepare("ALTER TABLE chains ADD COLUMN username TEXT").run(); } catch (e) {}
       try { await db.prepare("ALTER TABLE inspirations ADD COLUMN user_id TEXT").run(); } catch (e) {}
@@ -123,8 +120,6 @@ export default {
             id: owner.id,
             username: '本机用户',
             role: 'admin',
-            storageUsage: owner.storage_usage || 0,
-            maxStorage: owner.max_storage || null,
           });
         }
         return error('Account authentication is disabled in personal mode', 410);

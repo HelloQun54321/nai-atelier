@@ -10,16 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT UNIQUE NOT NULL,
   password TEXT NOT NULL,
   role TEXT DEFAULT 'user',
-  created_at INTEGER,
-  last_login INTEGER,
-  storage_usage INTEGER DEFAULT 0,
-  max_storage INTEGER DEFAULT 314572800
-);
-CREATE TABLE IF NOT EXISTS sessions (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  expires_at INTEGER NOT NULL,
-  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  created_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS chains (
   id TEXT PRIMARY KEY,
@@ -160,9 +151,6 @@ CREATE TABLE IF NOT EXISTS character_reference_assets (
 -- ---------------------------------------------------------------------------
 -- initDB 的自愈补列（已存在的库执行时静默跳过）
 -- ---------------------------------------------------------------------------
--- ALTER TABLE users ADD COLUMN storage_usage INTEGER DEFAULT 0;
--- ALTER TABLE users ADD COLUMN last_login INTEGER;
--- ALTER TABLE users ADD COLUMN max_storage INTEGER DEFAULT 314572800;
 -- ALTER TABLE chains ADD COLUMN user_id TEXT;
 -- ALTER TABLE chains ADD COLUMN username TEXT;
 -- ALTER TABLE chains ADD COLUMN variable_values TEXT DEFAULT '{}';
