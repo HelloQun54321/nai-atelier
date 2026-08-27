@@ -1149,7 +1149,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                         value={artistSort}
                         onChange={event => setArtistSort(event.target.value as ArtistDictionarySort)}
                         disabled={!!gachaArtists}
-                        className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-700 outline-none hover:border-indigo-400 focus:border-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"
+                        className="h-10 rounded-xl border border-gray-200 bg-white px-2.5 text-xs text-gray-700 outline-none hover:border-gray-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700"
                         title={gachaArtists ? '返回目录后可调整排序' : '画师目录排序'}
                     >
                         <option value="popular">热度：高到低</option>
@@ -1182,7 +1182,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     {(taskQueue.length > 0 || failedTasks.length > 0) && <div className={`flex h-9 flex-none items-center overflow-hidden rounded-lg border text-xs font-bold ${failedTasks.length ? 'border-red-200 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/30' : 'border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-800 dark:bg-indigo-950/30'}`}><button type="button" onClick={() => setShowLogs(true)} className="h-full px-2">等待 {taskQueue.length}{failedTasks.length ? ` · 失败 ${failedTasks.length}` : ''}</button><button type="button" onClick={() => setIsPaused(value => !value)} className={`flex h-full w-8 items-center justify-center border-l border-current/15 ${isPaused ? 'bg-amber-100 text-amber-600 dark:bg-amber-950/40' : ''}`} aria-label={isPaused ? '恢复画师预览队列' : '暂停画师预览队列'} title={isPaused ? '恢复队列' : '暂停队列'}>{isPaused ? <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg> : <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>}</button></div>}
                     {canManageArtists && <IconButton label="刷新画师列表" onClick={handleRefresh} disabled={isLoading}><RefreshCw className={isLoading ? 'animate-spin' : ''} /></IconButton>}
                     <ImageTaggerAction notify={notify} />
-                    <IconButton label={showFavOnly ? '显示全部画师' : '只看收藏'} onClick={() => setShowFavOnly(value => !value)} className={showFavOnly ? '!border-yellow-300 !bg-yellow-50 !text-yellow-600 dark:!bg-yellow-950/30' : ''}><Heart className={showFavOnly ? 'fill-current' : ''} /></IconButton>
+                    <IconButton label={showFavOnly ? '显示全部画师' : '只看收藏'} tone={showFavOnly ? 'favorite' : 'neutral'} onClick={() => setShowFavOnly(value => !value)}><Heart className={`h-4 w-4 ${showFavOnly ? 'fill-current' : ''}`} /></IconButton>
                     <div className="relative flex-none">
                         <IconButton label="更多工具" onClick={() => setShowMoreTools(value => !value)} aria-expanded={showMoreTools}><MoreHorizontal /></IconButton>
                         {showMoreTools && <div role="menu" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-52 rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
@@ -1207,7 +1207,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                         <button onClick={() => setViewMode(value => value === 'original' ? 'benchmark' : 'original')} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">{viewMode === 'original' ? '原始预览' : '基准图模式'}</button>
-                        <button onClick={() => setShowFavOnly(value => !value)} className={`mobile-touch rounded-xl text-sm ${showFavOnly ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40' : 'bg-gray-100 dark:bg-gray-800'}`}>★ 只看收藏</button>
+                        <button onClick={() => setShowFavOnly(value => !value)} className={`mobile-touch rounded-xl text-sm ${showFavOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'bg-gray-100 dark:bg-gray-800'}`}>★ 只看收藏</button>
                         <button onClick={() => { setShowMobileTools(false); setShowConfig(true); }} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">画师配置</button>
                         <button onClick={() => { setShowMobileTools(false); setShowHistory(true); }} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">复制历史</button>
                         <button onClick={() => { setShowMobileTools(false); setShowImport(true); }} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">批量导入</button>

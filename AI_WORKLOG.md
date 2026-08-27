@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：优化全局控件与交互设计语言一致性，统一 `<select>` 尺寸与动态圆角适配、收敛收藏高亮色系、规范浮层圆角并清理 Danbooru 冗余引用（style: align control styling and popovers across galleries with dynamic corner adaptation）。
 - **qianlian/deepseek-v4-flash-0731**：修复启动器回归——恢复被误删的 gatewayStartedAt 声明,启动恢复 2.2 秒就绪（fix: restore gatewayStartedAt declaration in launcher）。
 - **qianlian/deepseek-v4-flash-0731**：启动偶发卡住排查与加固——网关 init 逐点计时证明偶发性,新增「图片网关初始化中…」提示与 90 秒超时保护,不再无限静默（fix: surface gateway init progress and add timeout guard）。
 - **qianlian/deepseek-v4-flash-0731**：修复 Pixiv「我的收藏」Invalid request.—— 根因为 bookmarks 接口必须真实数字 user_id 而代码写死 'me';OAuth 刷新响应提取并持久化 uid,收藏 Feed 自动携带（fix: use real pixiv user id for bookmarks feed）。

@@ -23,7 +23,7 @@ import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMa
 import { OriginalImage, SmartImage } from './SmartImage';
 import { buildMediaUrl } from '../services/mobileImageCache';
 import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHistoryService';
-import { Clock, Filter, Flame, Sparkles, Star } from 'lucide-react';
+import { Clock, Filter, Flame } from 'lucide-react';
 
 interface DanbooruGalleryProps {
   active: boolean;

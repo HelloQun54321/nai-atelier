@@ -941,28 +941,32 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                 <Trash2 className="h-4 w-4" />管理<ChevronDown className="h-3.5 w-3.5" />
                             </button>
                             {showCleanMenu && (
-                                <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50">
+                                <div role="menu" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-48 rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                                     <button
+                                        type="button"
                                         onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }}
-                                        className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 rounded-t-lg"
+                                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
                                     >
                                         <ListChecks className="h-4 w-4" />批量选择图片
                                     </button>
                                     <button 
+                                        type="button"
                                         onClick={handleClearAll} 
-                                        className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
                                     >
                                         <Trash2 className="h-4 w-4" />清空全部
                                     </button>
                                     <button 
+                                        type="button"
                                         onClick={() => handleCleanMenuClick('days')} 
-                                        className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
                                     >
                                         <Clock3 className="h-4 w-4" />按时间清理历史…
                                     </button>
                                     <button 
+                                        type="button"
                                         onClick={() => handleCleanMenuClick('count')} 
-                                        className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 rounded-b-lg"
+                                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
                                     >
                                         <SlidersHorizontal className="h-4 w-4" />按数量保留最新…
                                     </button>
