@@ -1120,7 +1120,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
 
             {/* --- Controls Header --- */}
             <WorkspaceToolbar>
-
                 <div className="flex gap-2 md:hidden">
                     <div className="relative min-w-0 flex-1">
                         <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="搜索画师 Tag" />
@@ -1213,9 +1212,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                 </div>
             </WorkspaceToolbar>
 
-            {/* ... rest of the component (sidebar, main content, lightbox, logs, modals) remains mostly the same, 
-          only ensure variable names match and the file is complete ... */}
-
             <MobileBottomSheet open={showMobileTools} title="画师 Tag 工具" onClose={() => setShowMobileTools(false)}>
                 <div className="space-y-5">
                     <label className="block text-sm font-bold dark:text-white">排序<select value={artistSort} onChange={event => setArtistSort(event.target.value as ArtistDictionarySort)} disabled={Boolean(gachaArtists)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="popular">热度从高到低</option><option value="least">热度从低到高</option><option value="name-asc">名称 A → Z</option><option value="name-desc">名称 Z → A</option></select></label>
@@ -1257,20 +1253,20 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                 {layoutMode === 'grid' ? (
                     /* --- GRID LAYOUT (Dynamic Columns using gridCols) --- */
                     imageDisplay.layout === 'masonry' ? (
-                    <ShortestColumnMasonry
-                        items={filteredArtists}
-                        columns={gridCols}
-                        getItemKey={artist => String(artist.id)}
-                        estimateItemHeight={estimateArtistCardHeight}
-                        renderItem={renderArtistCard}
-                    />
-                ) : (
-                    <div
-                        className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid md:pr-6`}
-                        style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { '--mobile-gallery-columns': gridCols }) }}
-                    >
-                        {filteredArtists.map(renderArtistCard)}
-                    </div>
+                        <ShortestColumnMasonry<Artist>
+                            items={filteredArtists}
+                            columns={gridCols}
+                            getItemKey={artist => String(artist.id)}
+                            estimateItemHeight={estimateArtistCardHeight}
+                            renderItem={renderArtistCard}
+                        />
+                    ) : (
+                        <div
+                            className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid md:pr-6`}
+                            style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { '--mobile-gallery-columns': gridCols }) }}
+                        >
+                            {filteredArtists.map(renderArtistCard)}
+                        </div>
                     )
                 ) : (
                     /* --- EXPANDED LIST LAYOUT --- */

@@ -17,7 +17,7 @@ import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileU
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
 import { Check, ChevronDown, Dice5, Heart, LoaderCircle, Menu, Plus, RefreshCw, Settings2, SlidersHorizontal, Tag, UserRound } from 'lucide-react';
-import { IconButton, SegmentedControl, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
@@ -42,7 +42,7 @@ const DEFAULT_PARAMS = {
   characters: [],
 };
 
-type CharacterTab = 'all' | 'catalog' | 'custom' | 'favorites';
+type CharacterTab = 'all' | 'catalog' | 'custom';
 type GachaMode = 'mixed' | 'catalog' | 'custom';
 
 interface CharacterCard {
@@ -134,6 +134,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
   const confirmAction = useConfirmDialog();
   const [tab, setTab] = useState<CharacterTab>('all');
+  const [showFavOnly, setShowFavOnly] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [sort, setSort] = useState<CharacterDictionarySort>(() => {
     const saved = localStorage.getItem('nai_character_sort');
@@ -294,16 +295,16 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       .filter(chain => !query || chain.name.toLowerCase().includes(query) || chain.basePrompt.toLowerCase().includes(query))
       .map(customToCard);
     let cards = tab === 'catalog' ? catalog : tab === 'custom' ? custom : [...custom, ...catalog];
-    if (tab === 'favorites') cards = [...custom, ...catalog].filter(card => favorites.has(card.key));
+    if (showFavOnly) cards = cards.filter(card => favorites.has(card.key));
     return cards;
-  }, [catalogToCard, customChains, customToCard, favorites, gachaCards, loadedCatalog, searchResults, searchTerm, tab]);
+  }, [catalogToCard, customChains, customToCard, favorites, gachaCards, loadedCatalog, searchResults, searchTerm, showFavOnly, tab]);
   useRestoreListAnchor(scrollRef, returnTargetId, `${visibleCards.length}:${isLoading ? 1 : 0}`);
 
   // 目录预取：当前页可见目录角色（前 40 个）的封面候选提前请求并固定保存（pin），
   // 滚动/浏览时封面秒出；getCoverSet 自带 14 天缓存与 300ms 串行限流，不重复打 Danbooru API。
   const coverPrewarmedRef = useRef(new Set<string>());
   useEffect(() => {
-    if (gachaCards || tab === 'custom' || tab === 'favorites') return;
+    if (gachaCards || tab === 'custom' || showFavOnly) return;
     const targets = visibleCards
       .filter(card => card.kind === 'catalog' && card.tagName && !coverPrewarmedRef.current.has(card.key))
       .slice(0, 40);
@@ -321,7 +322,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
         }).catch(() => {});
       }).catch(() => {});
     }
-  }, [gachaCards, tab, visibleCards]);
+  }, [gachaCards, showFavOnly, tab, visibleCards]);
 
   const toggleFavorite = (card: CharacterCard) => {
     setFavorites(previous => {
@@ -543,17 +544,16 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
          </div>
          <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
             <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品、变体或英文 Tag…" containerClassName="min-w-0 md:w-64 lg:w-72 flex-none" />
-            <SegmentedControl<CharacterTab>
+            <select
               value={tab}
-              onChange={value => { setTab(value); setGachaCards(null); }}
-              options={[
-                { value: 'all', label: '全部' },
-                { value: 'catalog', label: '角色 Tag' },
-                { value: 'custom', label: '我的自定义', badge: customChains.length },
-                { value: 'favorites', label: '收藏' },
-              ]}
-              ariaLabel="角色范围筛选"
-            />
+              onChange={event => { setTab(event.target.value as CharacterTab); setGachaCards(null); }}
+              className="h-10 flex-none rounded-xl border border-gray-200 bg-white px-3 text-xs text-gray-700 outline-none hover:border-gray-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700"
+              aria-label="角色范围筛选"
+            >
+              <option value="all">全部角色</option>
+              <option value="catalog">角色 Tag</option>
+              <option value="custom">我的自定义{customChains.length ? ` (${customChains.length})` : ''}</option>
+            </select>
             <select
               value={sort}
               disabled={Boolean(gachaCards)}
@@ -659,7 +659,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                 )}
               </div>
 
-              <IconButton label={tab === 'favorites' ? '显示全部角色' : '只看收藏'} tone={tab === 'favorites' ? 'favorite' : 'neutral'} onClick={() => setTab(tab === 'favorites' ? 'all' : 'favorites')}><Heart className={`h-4 w-4 ${tab === 'favorites' ? 'fill-current' : ''}`} /></IconButton>
+              <IconButton label={showFavOnly ? '显示全部角色' : '只看收藏'} tone={showFavOnly ? 'favorite' : 'neutral'} onClick={() => setShowFavOnly(value => !value)}><Heart className={`h-4 w-4 ${showFavOnly ? 'fill-current' : ''}`} /></IconButton>
               <IconButton label="刷新列表" onClick={() => void onRefresh()} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
               <ImageTaggerAction notify={notify} />
               <ToolbarButton tone="primary" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4" />自定义角色</ToolbarButton>
@@ -683,9 +683,10 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              <button onClick={() => { setShowMobileFilters(false); setShowCreate(true); }} className="mobile-touch rounded-xl bg-indigo-600 px-3 text-sm font-bold text-white">＋ 新建自定义角色</button>
              {gachaCards && <button onClick={() => { setGachaCards(null); setShowMobileFilters(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">返回目录</button>}
            </div>
-           <div><div className="mb-2 text-sm font-bold dark:text-white">显示范围</div><div className="grid grid-cols-2 gap-2">
-             {([['all', '全部'], ['catalog', '角色 Tag'], ['custom', `自定义 ${customChains.length}`], ['favorites', '收藏']] as [CharacterTab, string][]).map(([value, label]) => <button key={value} onClick={() => { setTab(value); setGachaCards(null); }} className={`mobile-touch rounded-xl px-3 text-sm font-bold ${tab === value ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{label}</button>)}
+           <div><div className="mb-2 text-sm font-bold dark:text-white">显示范围</div><div className="grid grid-cols-3 gap-2">
+             {([['all', '全部'], ['catalog', '角色 Tag'], ['custom', `自定义 ${customChains.length}`]] as [CharacterTab, string][]).map(([value, label]) => <button key={value} onClick={() => { setTab(value); setGachaCards(null); }} className={`mobile-touch rounded-xl px-2 text-xs font-bold ${tab === value ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{label}</button>)}
            </div></div>
+           <button onClick={() => setShowFavOnly(value => !value)} className={`mobile-touch w-full rounded-xl text-sm font-bold ${showFavOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>★ 只看收藏 {favorites.size > 0 ? `(${favorites.size})` : ''}</button>
            <label className="block text-sm font-bold dark:text-white">排序方式<select value={sort} disabled={Boolean(gachaCards)} onChange={event => setSort(event.target.value as CharacterDictionarySort)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="popular">热度从高到低</option><option value="least">热度从低到高</option><option value="name-asc">名称 A → Z</option><option value="name-desc">名称 Z → A</option></select></label>
            <div className="grid grid-cols-2 gap-3">
              <label className="text-sm font-bold dark:text-white">抽卡范围<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option></select></label>
@@ -714,7 +715,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
         </div>
         )}
 
-        {!searchTerm.trim() && !gachaCards && tab !== 'custom' && tab !== 'favorites' && (
+        {!searchTerm.trim() && !gachaCards && tab !== 'custom' && !showFavOnly && (
           <div ref={sentinelRef} className="flex min-h-20 items-center justify-center py-6 text-sm text-gray-400">
             {isLoadingMore ? '正在加载更多角色…' : nextPage < pageCount ? <button onClick={() => void loadMore()} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">继续向下滚动加载更多</button> : catalogTotal ? '已加载完整角色目录' : null}
           </div>
