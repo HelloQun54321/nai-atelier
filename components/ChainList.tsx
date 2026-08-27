@@ -402,7 +402,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
               {showDesktopFilters && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowDesktopFilters(false)} />
-                  <div role="dialog" aria-label="标签筛选" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(30rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                  <div role="dialog" aria-label="标签筛选" className="absolute left-1/2 top-[calc(100%+0.5rem)] z-50 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                     <div className="mb-3 flex items-center justify-between"><b className="text-sm dark:text-white">标签筛选</b>{selectedTags.size > 0 && <button type="button" onClick={() => setSelectedTags(new Set())} className="text-xs font-bold text-indigo-600">清除</button>}</div>
                     <div className="flex max-h-52 flex-wrap gap-2 overflow-y-auto">{allTags.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`rounded-full px-3 py-1.5 text-xs font-medium ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>{tag}</button>)}</div>
                   </div>
