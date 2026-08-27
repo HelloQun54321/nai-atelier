@@ -379,6 +379,17 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
     }
   };
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isScanning && !isImporting && !isDeleting) {
+        handleModalClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isScanning, isImporting, isDeleting, handleModalClose]);
+
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length > 0) {

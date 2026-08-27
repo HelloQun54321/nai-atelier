@@ -3,6 +3,10 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-27
+### 优化:全站弹窗（Modal）ESC 键盘监听与遮罩点击关闭交互闭环（审查阶段一）
+
+- **弹窗关闭交互契约**：为预设引用弹窗（`ChainEditorPresetModal`）、保存类型分支弹窗（`ChainEditorForkModal`）、文件夹批量导入弹窗（`FolderBatchImportModal`）、图片反推面板（`ImageTaggerPanel`）、画师库配置弹窗（`ArtistLibraryConfig`）与词库更新弹窗（`TagDictionaryUpdater`）补齐全量 `Escape` 按键监听与背景遮罩点击自动收起，实现与原生桌面一致的弹窗交互闭环。
+
 ### 优化:全站画廊与资料库顶栏左上角搜索框统一锚定（Top-Left Search Anchor）
 
 - **全站左上角第一定位统一**：将角色库与 Pixiv 画廊中原本排在最左侧的分段选项卡（`SegmentedControl`）移至搜索框右侧，使全站所有 7 个画廊页面（风格串、角色库、画师库、Pixiv、Danbooru、AITag、灵感库）的最左上角（x=0）统一绝对锚定为标准搜索框，彻底建立跨页面一致的搜索肌肉记忆。

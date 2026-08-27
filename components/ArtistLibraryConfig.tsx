@@ -42,6 +42,18 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
         }
     }, [show, initialConfig]);
 
+    useEffect(() => {
+        if (!show) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                if (slotToDelete !== null) setSlotToDelete(null);
+                else onClose();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [show, slotToDelete, onClose]);
+
     const updateSlot = (index: number, field: keyof BenchmarkSlot, value: string) => {
         const newSlots = [...draftConfig.slots];
         newSlots[index] = { ...newSlots[index], [field]: value };
@@ -73,7 +85,7 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
     if (!show) return null;
 
     return (
-        <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onMouseDown={e => { if (e.target === e.currentTarget && slotToDelete === null) onClose(); }}>
             <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-2xl shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col max-h-[90vh] relative">
                 
                 {/* Delete Confirmation Overlay */}

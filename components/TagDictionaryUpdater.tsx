@@ -52,6 +52,17 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
   };
 
   useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !status?.running) {
+        setIsOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, status?.running]);
+
+  useEffect(() => {
     if (!isOpen && !status?.running) return;
     void loadStatus();
     const timer = window.setInterval(() => void loadStatus(), status?.running ? 700 : 3000);

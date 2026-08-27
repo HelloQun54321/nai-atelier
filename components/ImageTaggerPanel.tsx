@@ -47,6 +47,17 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
     imageTaggerService.getStatus().then(status => setDownloaded(status.downloaded)).catch(() => setDownloaded(null));
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, busy, onClose]);
+
   // 打开面板时若提供了 imageUrl（图库“反推此图”），自动抓取并识别，无需手动选文件。
   useEffect(() => {
     if (!open || !imageUrl) return;

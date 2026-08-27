@@ -16,8 +16,22 @@ export const ChainEditorForkModal: React.FC<ChainEditorForkModalProps> = ({
     confirmFork,
     isUploading,
     currentPreviewCover,
-}) => showForkModal ? (
-    <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+}) => {
+    React.useEffect(() => {
+        if (!showForkModal) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && !isUploading) {
+                setShowForkModal(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [showForkModal, isUploading, setShowForkModal]);
+
+    if (!showForkModal) return null;
+
+    return (
+    <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onMouseDown={e => { if (e.target === e.currentTarget && !isUploading) setShowForkModal(false); }}>
         <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-sm shadow-2xl border border-gray-200 dark:border-gray-800 p-6">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1 text-center">选择保存类型</h3>
             {currentPreviewCover.source && <p className="mb-4 text-center text-xs text-gray-500 dark:text-gray-400">保存为风格串时，当前显示图片会自动成为封面。</p>}
@@ -47,4 +61,5 @@ export const ChainEditorForkModal: React.FC<ChainEditorForkModalProps> = ({
             </button>
         </div>
     </div>
-) : null;
+    );
+};

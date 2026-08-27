@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：执行审查阶段一：补齐全站 Modal 弹窗的 ESC 键盘监听与遮罩点击关闭交互闭环（feat: complete ESC key and backdrop click dismissal across all modals）。
 - **Gemini (Flash)**：统一全站所有画廊与资料库顶栏左上角为绝对锚定搜索框（fix: unify top-left search anchor across all galleries and libraries）。
 - **Gemini (Flash)**：全局画廊与资料库顶栏空间网格与搜索交互深度归一化（refactor: deeply harmonize top bar spatial grids and search interactions across galleries）。
 - **Gemini (Flash)**：将串列表顶栏「标签筛选」弹层修改为以触发按钮为基准水平居中对齐（fix: center align tag filter popover under trigger button in ChainList）。
