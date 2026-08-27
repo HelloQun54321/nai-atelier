@@ -13,7 +13,7 @@ import { ImageActivityContext, OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, ListChecks, LoaderCircle, Pencil, RefreshCw, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, Layers, ListChecks, LoaderCircle, Pencil, RefreshCw, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarLink, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
@@ -932,15 +932,14 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                         <ToolbarButton onClick={() => setShowDateFilter(true)}><CalendarDays className="h-4 w-4" />筛选日期</ToolbarButton>
                         <ToolbarButton tone={favoriteOnly ? 'favorite' : 'neutral'} onClick={toggleFavoriteFilter} aria-pressed={favoriteOnly} title={favoriteOnly ? '显示全部历史图片' : '只看收藏图片'}><Heart className={favoriteOnly ? 'fill-current' : ''} />收藏</ToolbarButton>
                         <div className="hidden rounded-full bg-gray-100 px-3 py-1.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400 md:flex">{favoriteOnly ? '收藏 ' : ''}{totalCount} 张</div>
-                        <button onClick={() => setShowCleanMenu(true)} className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white p-0 text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden" aria-label="历史管理"><SlidersHorizontal className="h-[18px] w-[18px]" /></button>
+                        <IconButton label="历史管理" onClick={() => setShowCleanMenu(true)} className="md:hidden"><ListChecks /></IconButton>
                         <div className="relative hidden md:block">
-                            <button 
+                            <ToolbarButton 
                                 onClick={() => setShowCleanMenu(!showCleanMenu)} 
                                 disabled={migrationProgress !== null}
-                                className="flex h-10 items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-semibold text-red-600 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"
                             >
-                                <Trash2 className="h-4 w-4" />管理<ChevronDown className="h-3.5 w-3.5" />
-                            </button>
+                                <ListChecks className="h-4 w-4" />管理<ChevronDown className="h-3.5 w-3.5" />
+                            </ToolbarButton>
                             {showCleanMenu && (
                                 <div role="menu" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-48 rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                                     <button
@@ -969,7 +968,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                         onClick={() => handleCleanMenuClick('count')} 
                                         className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
                                     >
-                                        <SlidersHorizontal className="h-4 w-4" />按数量保留最新…
+                                        <Layers className="h-4 w-4" />按数量保留最新…
                                     </button>
                                 </div>
                             )}
