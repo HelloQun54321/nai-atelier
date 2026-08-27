@@ -3,6 +3,14 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-27
+### 架构与设计系统:收敛全站二级选项卡与过滤胶囊（SegmentedControl & FilterPill）
+
+- **抽象核心设计系统组件**：在 `DesignSystem.tsx` 中正式沉淀分段选择器 `SegmentedControl` 与过滤胶囊 `FilterPill`，统一触控尺寸、圆角契约（`rounded-xl`/`rounded-lg`）、暗色对比度与 Badge 徽标规范；
+- **全站画廊二级导航收敛**：
+  - `CharacterLibrary`：角色范围筛选（全部 / 角色 Tag / 我的自定义 / 收藏）接入 `SegmentedControl`；
+  - `PixivGallery`：主 Feed 选项卡接入 `SegmentedControl`，排行榜子模式与搜索排序/收藏门槛全量切换至 `FilterPill`；
+  - `DanbooruGallery`：排序、评级、画幅比例与单人筛选全量收敛至 `FilterPill`。
+
 ### 架构与体验:角色库抽卡升级为 Split-Button 与全站探索状态横幅标准化
 
 - **抽卡控件标准统一**：角色库抽卡升级为与画师库一致的 Split Button（`[Dice5 随机抽卡/再抽一批] + [ChevronDown 抽卡范围与数量设置]`），消除顶栏动态插塞返回按钮导致的右侧布局跳动；

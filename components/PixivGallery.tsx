@@ -24,7 +24,7 @@ import { createUuid } from '../services/id';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { NAIParams, User } from '../types';
-import { IconButton, MediaCardShell, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { FilterPill, IconButton, MediaCardShell, SegmentedControl, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ImageTaggerAction } from './ImageTaggerPanel';
@@ -745,32 +745,23 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       <WorkspaceToolbar>
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 overflow-x-auto">
-            {feedTabs.map(tab => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => switchTab(tab.id)}
-                className={`flex-none rounded-xl px-3 py-2 text-xs font-bold transition ${
-                  mode === tab.id && !showHistory ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => (showHistory ? void loadFeed('recommended', {}) : loadHistory())}
-              className={`flex-none rounded-xl px-3 py-2 text-xs font-bold transition ${
-                showHistory ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
-              }`}
-            >
-              足迹
-            </button>
+            <SegmentedControl
+              value={showHistory ? 'history' : mode}
+              onChange={val => {
+                if (val === 'history') loadHistory();
+                else switchTab(val as PixivFeedMode);
+              }}
+              options={[
+                ...feedTabs.map(tab => ({ value: tab.id, label: tab.label })),
+                { value: 'history', label: '足迹' },
+              ]}
+              ariaLabel="Pixiv Feed 选项卡"
+            />
             {userContext && (
               <button
                 type="button"
                 onClick={() => void loadFeed('recommended', {})}
-                className="flex-none rounded-xl px-3 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300"
+                className="flex-none rounded-xl px-3 py-1.5 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300"
               >
                 返回推荐
               </button>
@@ -805,21 +796,16 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
               <Flame className="size-3.5 text-orange-500" />榜单:
             </span>
             {rankingSubModes.map(sub => (
-              <button
+              <FilterPill
                 key={sub.id}
-                type="button"
+                active={rankingMode === sub.id}
                 onClick={() => {
                   setRankingMode(sub.id);
                   void loadFeed('ranking', { ranking_mode: sub.id, date: rankingDate });
                 }}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                  rankingMode === sub.id
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
-                }`}
               >
                 {sub.label}
-              </button>
+              </FilterPill>
             ))}
           </div>
 
@@ -862,21 +848,16 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             { id: 'date_desc', label: '最新' },
             { id: 'date_asc', label: '最早' },
           ].map(opt => (
-            <button
+            <FilterPill
               key={opt.id}
-              type="button"
+              active={searchSort === opt.id}
               onClick={() => {
                 setSearchSort(opt.id as any);
                 if (searchInput.trim()) void loadFeed('search', { word: searchInput.trim() });
               }}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                searchSort === opt.id
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
-              }`}
             >
               {opt.label}
-            </button>
+            </FilterPill>
           ))}
 
           <span className="mx-1 h-3.5 w-px bg-gray-200 dark:bg-gray-700" />
@@ -888,21 +869,16 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             { id: '5000users入り', label: '5000+ 收藏' },
             { id: '1000users入り', label: '1000+ 收藏' },
           ].map(opt => (
-            <button
+            <FilterPill
               key={opt.id}
-              type="button"
+              active={bookmarkThreshold === opt.id}
               onClick={() => {
                 setBookmarkThreshold(opt.id);
                 if (searchInput.trim()) void loadFeed('search', { word: searchInput.trim() });
               }}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                bookmarkThreshold === opt.id
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
-              }`}
             >
               {opt.label}
-            </button>
+            </FilterPill>
           ))}
         </div>
       )}

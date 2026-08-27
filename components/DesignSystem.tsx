@@ -94,3 +94,81 @@ export const MediaCardShell: React.FC<React.HTMLAttributes<HTMLElement> & {
     </Element>
   );
 };
+
+export interface SegmentedOption<T extends string = string> {
+  value: T;
+  label: React.ReactNode;
+  title?: string;
+  badge?: React.ReactNode;
+}
+
+export interface SegmentedControlProps<T extends string = string> {
+  options: readonly SegmentedOption<T>[];
+  value: T;
+  onChange: (value: T) => void;
+  className?: string;
+  size?: 'sm' | 'md';
+  ariaLabel?: string;
+}
+
+export const SegmentedControl = <T extends string = string>({
+  options,
+  value,
+  onChange,
+  className = '',
+  size = 'md',
+  ariaLabel,
+}: SegmentedControlProps<T>) => (
+  <div
+    role="tablist"
+    aria-label={ariaLabel}
+    className={`inline-flex items-center rounded-xl bg-gray-100 p-1 dark:bg-gray-900/90 ${className}`}
+  >
+    {options.map(option => {
+      const active = option.value === value;
+      const sizeClass = size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-xs';
+      return (
+        <button
+          key={option.value}
+          type="button"
+          role="tab"
+          aria-selected={active}
+          title={option.title}
+          onClick={() => onChange(option.value)}
+          className={`flex items-center gap-1.5 rounded-lg font-bold transition-colors select-none whitespace-nowrap ${sizeClass} ${
+            active
+              ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300'
+              : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+          }`}
+        >
+          <span>{option.label}</span>
+          {option.badge !== undefined && option.badge !== null && option.badge !== '' && (
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
+              active
+                ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+                : 'bg-gray-200/80 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+            }`}>
+              {option.badge}
+            </span>
+          )}
+        </button>
+      );
+    })}
+  </div>
+);
+
+export const FilterPill: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  active?: boolean;
+}> = ({ active = false, className = '', children, ...props }) => (
+  <button
+    type="button"
+    className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
+      active
+        ? 'bg-indigo-600 text-white font-semibold shadow-sm'
+        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+    } ${className}`}
+    {...props}
+  >
+    {children}
+  </button>
+);

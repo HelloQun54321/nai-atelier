@@ -17,7 +17,7 @@ import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileU
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
 import { Check, ChevronDown, Dice5, LoaderCircle, Menu, Plus, RefreshCw, Settings2, SlidersHorizontal, Tag, UserRound } from 'lucide-react';
-import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { IconButton, SegmentedControl, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
@@ -542,14 +542,18 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
            <MobileIconButton label={gachaCards ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} className="bg-indigo-600 text-white"><Dice5 className="h-5 w-5" /></MobileIconButton>
          </div>
          <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
-           <div className="flex flex-none items-center gap-1 overflow-x-auto">
-             {([
-               ['all', '全部'], ['catalog', '角色 Tag'], ['custom', `我的自定义 ${customChains.length}`], ['favorites', '收藏'],
-             ] as [CharacterTab, string][]).map(([value, label]) => (
-               <button key={value} onClick={() => { setTab(value); setGachaCards(null); }} className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium ${tab === value ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'}`}>{label}</button>
-             ))}
-           </div>
-           <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品、变体或英文 Tag…" containerClassName="min-w-[10rem] flex-1 md:max-w-none!" />
+            <SegmentedControl<CharacterTab>
+              value={tab}
+              onChange={value => { setTab(value); setGachaCards(null); }}
+              options={[
+                { value: 'all', label: '全部' },
+                { value: 'catalog', label: '角色 Tag' },
+                { value: 'custom', label: '我的自定义', badge: customChains.length },
+                { value: 'favorites', label: '收藏' },
+              ]}
+              ariaLabel="角色范围筛选"
+            />
+            <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品、变体或英文 Tag…" containerClassName="min-w-[10rem] flex-1 md:max-w-none!" />
             <select
               value={sort}
               disabled={Boolean(gachaCards)}

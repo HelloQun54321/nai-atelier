@@ -41,3 +41,4 @@ export const GalleryActiveStateBanner: React.FC<GalleryActiveStateBannerProps> =
     </div>
   </div>
 );
+

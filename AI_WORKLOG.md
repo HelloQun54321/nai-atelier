@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：在 DesignSystem 中抽象 SegmentedControl 与 FilterPill，收敛角色库、Pixiv 画廊与 Danbooru 画廊的二级选项卡与过滤胶囊（feat: harmonize segmented controls and filter pills across galleries）。
 - **Gemini (Flash)**：角色库抽卡升级为 Split-Button 组合控件，解耦纯视图列数与抽卡配置，引入画廊统一 Active State Banner 探索状态横幅（feat: standardize gacha split button and active state exploration banner across galleries）。
 - **Gemini (Flash)**：规范生成历史顶栏管理按钮视觉样式，纠偏清理管理菜单中的图标语义（refactor: normalize history toolbar layout and cleanup menu icon semantics）。
 - **Gemini (Flash)**：重构生图实验室顶层命令栏接入 WorkspaceToolbar 契约，收敛所有散装操作按钮至 DesignSystem 标准 IconButton / ToolbarButton 规范（refactor: align laboratory command bar with design system toolbar standards）。

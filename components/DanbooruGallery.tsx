@@ -15,7 +15,7 @@ import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataServi
 import { NAIParams, User } from '../types';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { FilterPill, IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { useMobileHistoryLayer } from './MobileUI';
@@ -408,14 +408,13 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             { id: 'favcount', label: '收藏榜' },
             { id: 'latest', label: '最新' },
           ].map(opt => (
-            <button
+            <FilterPill
               key={opt.id}
-              type="button"
+              active={sort === opt.id}
               onClick={() => void handleApplyFilter({ sort: opt.id as DanbooruSort })}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${sort === opt.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
             >
               {opt.label}
-            </button>
+            </FilterPill>
           ))}
 
           <span className="mx-1 h-3.5 w-px bg-gray-200 dark:bg-gray-700" />
@@ -430,14 +429,13 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             { id: 'q', label: '擦边 Q' },
             { id: 'e', label: 'R-18 E' },
           ].map(opt => (
-            <button
+            <FilterPill
               key={opt.id}
-              type="button"
+              active={rating === opt.id}
               onClick={() => void handleApplyFilter({ rating: opt.id as DanbooruRating })}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${rating === opt.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
             >
               {opt.label}
-            </button>
+            </FilterPill>
           ))}
 
           <span className="mx-1 h-3.5 w-px bg-gray-200 dark:bg-gray-700" />
@@ -449,23 +447,22 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             { id: 'landscape', label: '横屏' },
             { id: 'square', label: '方图' },
           ].map(opt => (
-            <button
+            <FilterPill
               key={opt.id}
-              type="button"
+              active={ratio === opt.id}
               onClick={() => void handleApplyFilter({ ratio: opt.id as DanbooruRatio })}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${ratio === opt.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
             >
               {opt.label}
-            </button>
+            </FilterPill>
           ))}
 
-          <button
-            type="button"
+          <FilterPill
+            active={soloOnly}
             onClick={() => void handleApplyFilter({ soloOnly: !soloOnly })}
-            className={`ml-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${soloOnly ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
+            className="ml-1"
           >
             仅单人 (solo)
-          </button>
+          </FilterPill>
         </div>
       )}
 
