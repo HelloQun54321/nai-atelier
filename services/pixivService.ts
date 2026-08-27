@@ -1,6 +1,30 @@
 import { MediaVariant, buildMediaUrl, getMobileOriginalUrl } from './mobileImageCache';
 
-export type PixivFeedMode = 'recommended' | 'search' | 'day' | 'week' | 'month' | 'user' | 'detail';
+export type PixivFeedMode =
+  | 'recommended'
+  | 'following'
+  | 'bookmarks'
+  | 'ranking'
+  | 'search'
+  | 'day'
+  | 'week'
+  | 'month'
+  | 'user'
+  | 'detail'
+  | 'related'
+  | 'trending';
+
+export type PixivRankingSubMode =
+  | 'day'
+  | 'day_ai'
+  | 'week_original'
+  | 'day_rookie'
+  | 'week'
+  | 'month'
+  | 'day_male'
+  | 'day_female'
+  | 'day_r18'
+  | 'day_r18_ai';
 
 export interface PixivUserInfo {
   id: string;
@@ -15,6 +39,7 @@ export interface PixivIllust {
   caption: string;
   restrict: number;
   xRestrict: number;
+  isBookmarked?: boolean;
   tags: string[];
   pageCount: number;
   width: number;
@@ -52,6 +77,10 @@ export interface PixivFeedParams {
   type?: string;
   offset?: number | string;
   lang?: string;
+  ranking_mode?: string;
+  restrict?: string;
+  tag?: string;
+  illust_id?: string;
 }
 
 export interface PixivFeedResult {
@@ -141,6 +170,22 @@ export const pixivService = {
       }
     }
     return requestJson(`/feed?${query.toString()}`);
+  },
+
+  addBookmark: async (illustId: string, restrict: 'public' | 'private' = 'public'): Promise<{ success?: boolean }> =>
+    requestJson('/bookmark', { method: 'POST', body: JSON.stringify({ illust_id: illustId, restrict }) }),
+
+  deleteBookmark: async (illustId: string): Promise<{ success?: boolean }> =>
+    requestJson(`/bookmark?illust_id=${encodeURIComponent(illustId)}`, { method: 'DELETE' }),
+
+  getRelated: async (illustId: string): Promise<PixivIllust[]> => {
+    const result = await pixivService.feed('related', { params: { illust_id: illustId } });
+    return result.items || [];
+  },
+
+  getTrendingTags: async (): Promise<Array<{ tag: string; translatedName?: string; illust?: PixivIllust }>> => {
+    const result = await pixivService.feed('trending');
+    return (result as any).items || [];
   },
 };
 

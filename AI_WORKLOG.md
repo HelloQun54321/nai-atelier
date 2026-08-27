@@ -5,9 +5,9 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
-- **Gemini (Flash)**：解除 Danbooru 与角色库封面的 Safebooru 全年龄限制，接入 Danbooru 官方全库与多级候选兜底（refactor: switch Danbooru endpoint to main site and remove rating:g restriction with candidate fallback）。
+- **Gemini (Flash)**：Danbooru 与 Pixiv 图库全生态升级：多维筛选排序、Pixiv 个人资产联动（关注/收藏/点赞）、全套排行榜体系（含AI专榜与日期穿越）与相关作品推荐（feat: comprehensive Danbooru and Pixiv gallery upgrade with personal asset sync, ranking explorer, multi-dimensional filters and related works）。
 
-- **Gemini (Flash)**：批量导入新增「清理无意义图片」面板，支持分类筛选并物理删除无元数据/非NAI/重复图片（feat: add junk file cleanup panel and disk deletion to batch import）。
+- **Gemini (Flash)**：解除 Danbooru 与角色库封面的 Safebooru 全年龄限制，接入 Danbooru 官方全库与多级候选兜底（refactor: switch Danbooru endpoint to main site and remove rating:g restriction with candidate fallback）。
 
 - **Gemini (Flash)**：文件夹批量导入查重规则改为纯提示词识别，排除尺寸/步数/模型/种子等非提示词参数干扰（refactor: refine batch import fingerprint to match purely on prompts）。
 

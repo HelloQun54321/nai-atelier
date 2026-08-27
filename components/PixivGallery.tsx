@@ -1,5 +1,24 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { CircleUserRound, ExternalLink, FlaskConical, Heart, KeyRound, LogIn, RefreshCw, Search, Unplug, X } from 'lucide-react';
+import {
+  Bookmark,
+  Calendar,
+  CircleUserRound,
+  Clock,
+  Compass,
+  ExternalLink,
+  Filter,
+  Flame,
+  FlaskConical,
+  Heart,
+  KeyRound,
+  LogIn,
+  RefreshCw,
+  Search,
+  Sparkles,
+  Unplug,
+  Users,
+  X,
+} from 'lucide-react';
 import { db } from '../services/dbService';
 import { createUuid } from '../services/id';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
@@ -17,6 +36,7 @@ import {
   PixivLoginState,
   PixivLoginStatus,
   PixivFeedMode,
+  PixivRankingSubMode,
   PixivIllust,
   buildPixivMediaUrl,
   buildPixivPreviewMediaUrl,
@@ -26,6 +46,7 @@ import {
   pixivPageCount,
   pixivService,
 } from '../services/pixivService';
+import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHistoryService';
 
 interface PixivGalleryProps {
   active: boolean;
@@ -52,10 +73,21 @@ const defaultParams: NAIParams = {
 
 const feedTabs: { id: PixivFeedMode; label: string }[] = [
   { id: 'recommended', label: '推荐' },
+  { id: 'following', label: '关注动态' },
+  { id: 'bookmarks', label: '我的收藏' },
+  { id: 'ranking', label: '排行榜' },
+  { id: 'search', label: '搜索' },
+];
+
+const rankingSubModes: { id: PixivRankingSubMode; label: string }[] = [
+  { id: 'day_ai', label: '🔥 AI专榜' },
   { id: 'day', label: '日榜' },
   { id: 'week', label: '周榜' },
   { id: 'month', label: '月榜' },
-  { id: 'search', label: '搜索' },
+  { id: 'week_original', label: '原创榜' },
+  { id: 'day_rookie', label: '新人榜' },
+  { id: 'day_male', label: '男性向' },
+  { id: 'day_female', label: '女性向' },
 ];
 
 const PIXIV_LOGIN_ACTIVE = new Set<PixivLoginState>(['starting', 'awaiting-user', 'exchanging']);
@@ -77,6 +109,13 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   const [connecting, setConnecting] = useState(false);
   const [mode, setMode] = useState<PixivFeedMode>('recommended');
   const [searchInput, setSearchInput] = useState('');
+  const [rankingMode, setRankingMode] = useState<PixivRankingSubMode>('day_ai');
+  const [rankingDate, setRankingDate] = useState('');
+  const [searchSort, setSearchSort] = useState<'popular_desc' | 'date_desc' | 'date_asc'>('popular_desc');
+  const [bookmarkThreshold, setBookmarkThreshold] = useState<string>('');
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyItems, setHistoryItems] = useState<GalleryHistoryItem[]>([]);
+
   const [items, setItems] = useState<PixivIllust[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -85,6 +124,9 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [bookmarking, setBookmarking] = useState(false);
+  const [relatedItems, setRelatedItems] = useState<PixivIllust[]>([]);
+  const [loadingRelated, setLoadingRelated] = useState(false);
   const [error, setError] = useState('');
   const [loginSession, setLoginSession] = useState<PixivLoginStatus | null>(null);
   const [loginMessage, setLoginMessage] = useState('');
@@ -288,7 +330,72 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     return prefetch.promise;
   };
 
-  const loadFeed = async (nextMode: PixivFeedMode, options: { cursor?: string; word?: string; user?: { id: string; name: string } } = {}) => {
+  // 记录足迹与加载相关作品
+  useEffect(() => {
+    if (selected) {
+      galleryHistoryService.recordView({
+        id: `pixiv:${selected.id}`,
+        source: 'pixiv',
+        sourceId: selected.id,
+        title: selected.title || `Pixiv #${selected.id}`,
+        artistName: selected.user?.name,
+        artistId: selected.user?.id,
+        previewUrl: buildPixivPreviewMediaUrl(selected, 0),
+        sampleUrl: getPixivCurrentPageUrl(selected, 0),
+        tags: selected.tags,
+        width: selected.width,
+        height: selected.height,
+        bookmarks: selected.totalBookmarks,
+        pageCount: pixivPageCount(selected),
+      });
+
+      setLoadingRelated(true);
+      pixivService.getRelated(selected.id)
+        .then(res => setRelatedItems(res))
+        .catch(() => setRelatedItems([]))
+        .finally(() => setLoadingRelated(false));
+    } else {
+      setRelatedItems([]);
+    }
+  }, [selected]);
+
+  const loadHistory = () => {
+    const history = galleryHistoryService.getHistory('pixiv');
+    setHistoryItems(history);
+    setShowHistory(true);
+  };
+
+  const handleToggleBookmark = async (illust: PixivIllust) => {
+    if (bookmarking) return;
+    setBookmarking(true);
+    const willBookmark = !illust.isBookmarked;
+    try {
+      if (willBookmark) {
+        await pixivService.addBookmark(illust.id);
+        notify('已收藏到 Pixiv 账号');
+      } else {
+        await pixivService.deleteBookmark(illust.id);
+        notify('已从 Pixiv 收藏中移除');
+      }
+      setItems(prev => prev.map(item => (item.id === illust.id ? { ...item, isBookmarked: willBookmark } : item)));
+    } catch (e: any) {
+      notify(e?.message || '操作失败', 'error');
+    } finally {
+      setBookmarking(false);
+    }
+  };
+
+  const loadFeed = async (
+    nextMode: PixivFeedMode,
+    options: {
+      cursor?: string;
+      word?: string;
+      user?: { id: string; name: string };
+      ranking_mode?: PixivRankingSubMode;
+      date?: string;
+    } = {}
+  ) => {
+    setShowHistory(false);
     const requestId = ++feedRequestRef.current;
     if (options.cursor) {
       setLoadingMore(true);
@@ -298,8 +405,19 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     setError('');
     try {
       const params: Record<string, string> = {};
-      if (nextMode === 'search') params.word = options.word || searchInput;
+      if (nextMode === 'search') {
+        const rawWord = options.word || searchInput;
+        params.word = bookmarkThreshold ? `${rawWord} ${bookmarkThreshold}`.trim() : rawWord;
+        if (searchSort) params.sort = searchSort;
+      }
       if (nextMode === 'user' && options.user) params.user_id = options.user.id;
+      if (nextMode === 'ranking') {
+        params.ranking_mode = options.ranking_mode || rankingMode;
+        if (options.date !== undefined ? options.date : rankingDate) {
+          params.date = options.date !== undefined ? options.date : rankingDate;
+        }
+      }
+
       // 命中投机预取（同模式同游标）直接消费；预取失败（null）回退正常请求
       const prefetched = options.cursor ? await consumeFeedPrefetch(nextMode, options.cursor) : null;
       const result = prefetched || await pixivService.feed(nextMode, { cursor: options.cursor, params });
@@ -338,11 +456,12 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   };
 
   const switchTab = (tab: PixivFeedMode) => {
-    if (tab === mode && items.length) return;
+    if (tab === mode && items.length && !showHistory) return;
     if (tab === 'search') {
       if (searchInput.trim()) void loadFeed('search', { word: searchInput.trim() });
       else {
         feedRequestRef.current += 1;
+        setShowHistory(false);
         setMode('search');
         setItems([]);
         setNextCursor(null);
@@ -357,14 +476,23 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   };
 
   const refreshCurrent = () => {
+    if (showHistory) {
+      loadHistory();
+      return;
+    }
     if (mode === 'user' && userContext) void loadFeed('user', { user: userContext });
     else if (mode === 'search') void loadFeed('search', { word: searchInput });
+    else if (mode === 'ranking') void loadFeed('ranking', { ranking_mode: rankingMode, date: rankingDate });
     else void loadFeed(mode, {});
   };
 
   const loadMore = () => {
-    if (!nextCursor || loadingMore) return;
-    void loadFeed(mode, { cursor: nextCursor, ...(mode === 'search' ? { word: searchInput } : {}) });
+    if (!nextCursor || loadingMore || showHistory) return;
+    void loadFeed(mode, {
+      cursor: nextCursor,
+      ...(mode === 'search' ? { word: searchInput } : {}),
+      ...(mode === 'ranking' ? { ranking_mode: rankingMode, date: rankingDate } : {}),
+    });
   };
 
   // 滚动接近列表底部时自动加载下一页（追加模式无限滚动）；按钮保留作兜底。
@@ -608,28 +736,257 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 overflow-x-auto">
             {feedTabs.map(tab => (
-              <button key={tab.id} type="button" onClick={() => switchTab(tab.id)} className={`flex-none rounded-xl px-3 py-2 text-xs font-bold transition ${mode === tab.id ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}>{tab.label}</button>
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => switchTab(tab.id)}
+                className={`flex-none rounded-xl px-3 py-2 text-xs font-bold transition ${
+                  mode === tab.id && !showHistory ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
+                }`}
+              >
+                {tab.label}
+              </button>
             ))}
-            {userContext && <button type="button" onClick={() => void loadFeed('recommended', {})} className="flex-none rounded-xl px-3 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300">返回推荐</button>}
+            <button
+              type="button"
+              onClick={() => (showHistory ? void loadFeed('recommended', {}) : loadHistory())}
+              className={`flex-none rounded-xl px-3 py-2 text-xs font-bold transition ${
+                showHistory ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
+              }`}
+            >
+              足迹
+            </button>
+            {userContext && (
+              <button
+                type="button"
+                onClick={() => void loadFeed('recommended', {})}
+                className="flex-none rounded-xl px-3 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300"
+              >
+                返回推荐
+              </button>
+            )}
           </div>
           <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center gap-2">
-            <ToolbarSearch value={searchInput} onChange={event => setSearchInput(event.target.value)} placeholder="Pixiv 标签搜索" aria-label="搜索 Pixiv" />
-            <ToolbarButton type="submit" tone="primary" disabled={loading}><Search />搜索</ToolbarButton>
+            <ToolbarSearch
+              value={searchInput}
+              onChange={event => setSearchInput(event.target.value)}
+              placeholder="Pixiv 标签搜索"
+              aria-label="搜索 Pixiv"
+            />
+            <ToolbarButton type="submit" tone="primary" disabled={loading}>
+              <Search />搜索
+            </ToolbarButton>
           </form>
         </div>
-        <IconButton label="刷新当前列表" onClick={() => void refreshCurrent()} disabled={loading}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton>
-        <IconButton label="断开 Pixiv 连接" tone="danger" onClick={() => void handleDisconnect()}><Unplug /></IconButton>
+        <IconButton label="刷新当前列表" onClick={() => void refreshCurrent()} disabled={loading}>
+          <RefreshCw className={loading ? 'animate-spin' : ''} />
+        </IconButton>
+        <IconButton label="断开 Pixiv 连接" tone="danger" onClick={() => void handleDisconnect()}>
+          <Unplug />
+        </IconButton>
       </WorkspaceToolbar>
+
+      {/* 排行榜二级工具栏（子模式 + 历史日期穿越） */}
+      {mode === 'ranking' && !showHistory && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white/80 px-3 py-2 text-xs backdrop-blur dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="flex items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
+              <Flame className="size-3.5 text-orange-500" />榜单:
+            </span>
+            {rankingSubModes.map(sub => (
+              <button
+                key={sub.id}
+                type="button"
+                onClick={() => {
+                  setRankingMode(sub.id);
+                  void loadFeed('ranking', { ranking_mode: sub.id, date: rankingDate });
+                }}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                  rankingMode === sub.id
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                }`}
+              >
+                {sub.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+            <Calendar className="size-3.5 text-indigo-500" />
+            <span className="font-semibold">历史日期:</span>
+            <input
+              type="date"
+              value={rankingDate}
+              onChange={e => {
+                setRankingDate(e.target.value);
+                void loadFeed('ranking', { ranking_mode: rankingMode, date: e.target.value });
+              }}
+              className="h-7 rounded border border-gray-300 bg-white px-2 text-xs text-gray-800 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+            />
+            {rankingDate && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRankingDate('');
+                  void loadFeed('ranking', { ranking_mode: rankingMode, date: '' });
+                }}
+                className="text-xs text-indigo-600 hover:underline dark:text-indigo-400"
+              >
+                今日
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 搜索二级筛选栏 */}
+      {mode === 'search' && !showHistory && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white/80 px-3 py-2 text-xs backdrop-blur dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
+          <span className="flex items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
+            <Filter className="size-3.5 text-indigo-500" />排序:
+          </span>
+          {[
+            { id: 'popular_desc', label: '热门度' },
+            { id: 'date_desc', label: '最新' },
+            { id: 'date_asc', label: '最早' },
+          ].map(opt => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => {
+                setSearchSort(opt.id as any);
+                if (searchInput.trim()) void loadFeed('search', { word: searchInput.trim() });
+              }}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                searchSort === opt.id
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+
+          <span className="mx-1 h-3.5 w-px bg-gray-200 dark:bg-gray-700" />
+
+          <span className="font-semibold text-gray-500 dark:text-gray-400">收藏门槛:</span>
+          {[
+            { id: '', label: '不限' },
+            { id: '10000users入り', label: '10000+ 收藏' },
+            { id: '5000users入り', label: '5000+ 收藏' },
+            { id: '1000users入り', label: '1000+ 收藏' },
+          ].map(opt => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => {
+                setBookmarkThreshold(opt.id);
+                if (searchInput.trim()) void loadFeed('search', { word: searchInput.trim() });
+              }}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                bookmarkThreshold === opt.id
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main ref={scrollRef} className={`${selected ? 'hidden xl:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
-          <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
-            <span>{headerText}</span>
-            <span>{items.length} 件作品{nextCursor ? ' · 可加载更多' : ''}</span>
-          </div>
+          {showHistory ? (
+            <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
+              <span className="font-bold text-gray-700 dark:text-gray-200">本地 Pixiv 浏览足迹 ({historyItems.length} 条)</span>
+              <button
+                type="button"
+                onClick={() => {
+                  galleryHistoryService.clear('pixiv');
+                  setHistoryItems([]);
+                }}
+                className="text-red-500 hover:underline"
+              >
+                清空足迹
+              </button>
+            </div>
+          ) : (
+            <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
+              <span>{headerText}</span>
+              <span>{items.length} 件作品{nextCursor ? ' · 可加载更多' : ''}</span>
+            </div>
+          )}
 
           {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
-          {loading && !items.length ? <div className="flex min-h-72 items-center justify-center text-sm text-gray-400">正在读取 Pixiv…</div> : items.length ? (
+
+          {showHistory ? (
+            historyItems.length ? (
+              <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
+                {historyItems.map(item => (
+                  <MediaCardShell key={item.id} selected={selectedId === String(item.sourceId)} className="mobile-gallery-item group relative flex-col">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const existing = items.find(p => p.id === String(item.sourceId));
+                        if (existing) {
+                          openDetail(existing);
+                        } else {
+                          const dummyIllust: PixivIllust = {
+                            id: String(item.sourceId),
+                            title: item.title,
+                            type: 'illust',
+                            caption: '',
+                            restrict: 0,
+                            xRestrict: 0,
+                            isBookmarked: false,
+                            tags: item.tags,
+                            pageCount: item.pageCount || 1,
+                            width: item.width || 800,
+                            height: item.height || 1200,
+                            totalBookmarks: item.bookmarks || 0,
+                            totalViews: 0,
+                            createDate: new Date(item.viewedAt).toISOString(),
+                            user: {
+                              id: item.artistId || '',
+                              name: item.artistName || '',
+                              account: '',
+                            },
+                            urls: {
+                              thumb: item.previewUrl,
+                              medium: item.previewUrl,
+                              large: item.previewUrl,
+                              original: item.sampleUrl,
+                            },
+                            metaPages: item.sampleUrl ? [item.sampleUrl] : [],
+                          };
+                          setItems(prev => [dummyIllust, ...prev]);
+                          openDetail(dummyIllust);
+                        }
+                      }}
+                      className="block w-full text-left"
+                    >
+                      <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">
+                        <SmartImage src={item.previewUrl} alt={item.title} />
+                      </div>
+                      <div className="p-2.5">
+                        <p className="truncate text-xs font-bold">{item.title}</p>
+                        <p className="mt-1 truncate text-[10px] text-gray-500">{item.artistName || `Pixiv #${item.sourceId}`}</p>
+                      </div>
+                    </button>
+                  </MediaCardShell>
+                ))}
+              </div>
+            ) : (
+              <div className="flex min-h-72 flex-col items-center justify-center text-center text-sm text-gray-500">
+                <p className="font-bold">暂无 Pixiv 浏览足迹</p>
+                <p className="mt-1 text-xs">点开作品后将自动记录到此处，方便秒级回溯。</p>
+              </div>
+            )
+          ) : loading && !items.length ? (
+            <div className="flex min-h-72 items-center justify-center text-sm text-gray-400">正在读取 Pixiv…</div>
+          ) : items.length ? (
             imageDisplay.layout === 'masonry' ? (
               <ShortestColumnMasonry
                 items={items}
@@ -639,16 +996,25 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 renderItem={renderPixivCard}
               />
             ) : (
-            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
-              {items.map(renderPixivCard)}
-            </div>
+              <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
+                {items.map(renderPixivCard)}
+              </div>
             )
-          ) : !loading && <div className="flex min-h-72 flex-col items-center justify-center text-center text-sm text-gray-500"><p className="font-bold">没有找到作品</p><p className="mt-1 text-xs">请尝试其他关键词或榜单。</p></div>}
+          ) : !loading && (
+            <div className="flex min-h-72 flex-col items-center justify-center text-center text-sm text-gray-500">
+              <p className="font-bold">没有找到作品</p>
+              <p className="mt-1 text-xs">请尝试其他关键词、排行榜或关注列表。</p>
+            </div>
+          )}
 
-          {nextCursor && <div className="mt-5 flex items-center justify-center gap-3 pb-4">
-            <ToolbarButton disabled={loadingMore} onClick={() => void loadMore()}><RefreshCw className={loadingMore ? 'animate-spin' : ''} />加载更多</ToolbarButton>
-            <div ref={autoLoadSentinelRef} className="h-4 w-full max-w-40" aria-hidden="true" />
-          </div>}
+          {!showHistory && nextCursor && (
+            <div className="mt-5 flex items-center justify-center gap-3 pb-4">
+              <ToolbarButton disabled={loadingMore} onClick={() => void loadMore()}>
+                <RefreshCw className={loadingMore ? 'animate-spin' : ''} />加载更多
+              </ToolbarButton>
+              <div ref={autoLoadSentinelRef} className="h-4 w-full max-w-40" aria-hidden="true" />
+            </div>
+          )}
         </main>
 
         <DetailSidePanel
@@ -659,38 +1025,115 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
           onBack={closeMobileDetail}
           onClose={() => setSelectedId(null)}
         >
-          {selected ? <div className="space-y-4">
-            <DetailImageStage pager={{ page: selectedPage, count: currentPageCount, onPrev: () => setSelectedPage(value => Math.max(0, value - 1)), onNext: () => setSelectedPage(value => Math.min(currentPageCount - 1, value + 1)) }}>
-              <SmartImage
-                eager
-                src={buildPixivPreviewMediaUrl(selected, selectedPage)}
-                upgradeSrc={buildPixivMediaUrl(selected, selectedPage, 'original')}
-                upgradeVariant="original"
-                alt={`${selected.title} 第 ${selectedPage + 1} 页`}
-                className="max-h-[62vh] w-full object-contain"
-              />
-            </DetailImageStage>
-            {selected.type === 'ugoira' && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">动图（ugoira）：这里展示首帧，动画请到 Pixiv 查看。</div>}
-            <div className="flex items-center justify-between text-[11px] text-gray-500">
-              <span>♥ {formatCount(selected.totalBookmarks)}</span>
-              <span>浏览 {formatCount(selected.totalViews)}</span>
-              <span>{selected.user.name}</span>
+          {selected ? (
+            <div className="space-y-4">
+              <DetailImageStage
+                pager={{
+                  page: selectedPage,
+                  count: currentPageCount,
+                  onPrev: () => setSelectedPage(value => Math.max(0, value - 1)),
+                  onNext: () => setSelectedPage(value => Math.min(currentPageCount - 1, value + 1)),
+                }}
+              >
+                <SmartImage
+                  eager
+                  src={buildPixivPreviewMediaUrl(selected, selectedPage)}
+                  upgradeSrc={buildPixivMediaUrl(selected, selectedPage, 'original')}
+                  upgradeVariant="original"
+                  alt={`${selected.title} 第 ${selectedPage + 1} 页`}
+                  className="max-h-[62vh] w-full object-contain"
+                />
+              </DetailImageStage>
+              {selected.type === 'ugoira' && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+                  动图（ugoira）：这里展示首帧，动画请到 Pixiv 查看。
+                </div>
+              )}
+              <div className="flex items-center justify-between text-[11px] text-gray-500">
+                <span>♥ {formatCount(selected.totalBookmarks)}</span>
+                <span>浏览 {formatCount(selected.totalViews)}</span>
+                <span className="font-semibold text-indigo-600 dark:text-indigo-400">{selected.user.name}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <ToolbarButton tone="primary" onClick={() => importToPlayground(selected)}>
+                  <FlaskConical />导入实验室
+                </ToolbarButton>
+                <ToolbarButton
+                  tone={selected.isBookmarked ? 'favorite' : undefined}
+                  disabled={bookmarking}
+                  onClick={() => void handleToggleBookmark(selected)}
+                >
+                  <Heart className={selected.isBookmarked ? 'fill-rose-500 text-rose-500' : ''} />
+                  {bookmarking ? '同步中…' : selected.isBookmarked ? '已收藏到Pixiv' : '收藏到Pixiv'}
+                </ToolbarButton>
+                <ToolbarButton disabled={saving} onClick={() => void saveToInspiration(selected)}>
+                  <Bookmark />{saving ? '保存中…' : '加入灵感库'}
+                </ToolbarButton>
+                <ToolbarButton onClick={() => openAuthorWorks(selected.user.id, selected.user.name)}>
+                  <CircleUserRound />作者全集
+                </ToolbarButton>
+                <ToolbarLink href={pixivArtworkUrl(selected)} target="_blank" rel="noreferrer" className="col-span-2">
+                  <ExternalLink />在 Pixiv 查看原帖
+                </ToolbarLink>
+              </div>
+              <div className="flex items-center gap-2">
+                <ImageTaggerAction notify={notify} imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} actionLabel="复制 {count} 个 Tag" />
+                <span className="text-[11px] text-gray-500">反推当前页图片（本地识别）</span>
+              </div>
+              {selected.tags.length > 0 && (
+                <section>
+                  <h3 className="mb-2 text-xs font-black text-gray-700 dark:text-gray-200">标签 · {selected.tags.length}</h3>
+                  <TagChipGroup
+                    chips={selected.tags.map(tag => ({
+                      label: tag,
+                      onClick: () => {
+                        setSearchInput(tag);
+                        void loadFeed('search', { word: tag });
+                      },
+                    }))}
+                  />
+                </section>
+              )}
+
+              {/* 相关作品推荐（看了又看） */}
+              <section className="border-t border-gray-200 pt-3 dark:border-gray-800">
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="flex items-center gap-1.5 text-xs font-black text-gray-700 dark:text-gray-200">
+                    <Sparkles className="size-3.5 text-amber-500" />
+                    相关作品推荐
+                  </h3>
+                  {loadingRelated && <span className="text-[10px] text-gray-400">正在寻找相似作品…</span>}
+                </div>
+                {relatedItems.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {relatedItems.slice(0, 9).map(rel => (
+                      <button
+                        key={rel.id}
+                        type="button"
+                        onClick={() => openDetail(rel)}
+                        className="group relative aspect-[3/4] overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800 hover:border-indigo-500"
+                      >
+                        <SmartImage
+                          src={rel.urls.medium || rel.urls.thumb}
+                          alt={rel.title}
+                          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                        />
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1 text-left text-[9px] text-white">
+                          <p className="truncate font-semibold">{rel.title}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : !loadingRelated && (
+                  <p className="text-center text-[11px] text-gray-400">暂无相关推荐</p>
+                )}
+              </section>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <ToolbarButton tone="primary" onClick={() => importToPlayground(selected)}><FlaskConical />导入实验室</ToolbarButton>
-              <ToolbarButton disabled={saving} onClick={() => void saveToInspiration(selected)}><Heart />{saving ? '保存中…' : '加入灵感库'}</ToolbarButton>
-              <ToolbarButton onClick={() => openAuthorWorks(selected.user.id, selected.user.name)}><CircleUserRound />作者作品</ToolbarButton>
-              <ToolbarLink href={pixivArtworkUrl(selected)} target="_blank" rel="noreferrer"><ExternalLink />打开 Pixiv</ToolbarLink>
+          ) : (
+            <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">
+              选择一张作品后查看图片、分页和导入操作。
             </div>
-            <div className="flex items-center gap-2">
-              <ImageTaggerAction notify={notify} imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} actionLabel="复制 {count} 个 Tag" />
-              <span className="text-[11px] text-gray-500">反推当前页图片（本地识别）</span>
-            </div>
-            {selected.tags.length > 0 && <section>
-              <h3 className="mb-2 text-xs font-black text-gray-700 dark:text-gray-200">标签 · {selected.tags.length}</h3>
-              <TagChipGroup chips={selected.tags.map(tag => ({ label: tag, onClick: () => { setSearchInput(tag); void loadFeed('search', { word: tag }); } }))} />
-            </section>}
-          </div> : <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">选择一张作品后查看图片、分页和导入操作。</div>}
+          )}
         </DetailSidePanel>
       </div>
     </div>

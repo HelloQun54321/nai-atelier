@@ -2213,6 +2213,24 @@ export const handlePixivGalleryRequest = async (req, res, url, pixivGallery, pix
     }
     return sendJson(res, 200, result);
   }
+  if (url.pathname === '/api/pixiv/bookmark') {
+    if (req.method === 'POST') {
+      let body = {};
+      try { body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}'); } catch {
+        return sendJson(res, 400, { error: '请求体不是有效 JSON', code: 'PIXIV_INVALID_BODY' });
+      }
+      return sendJson(res, 200, await pixivGallery.addBookmark({ illustId: body.illust_id || body.illustId, restrict: body.restrict }));
+    }
+    if (req.method === 'DELETE') {
+      let body = {};
+      try { body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}'); } catch {
+        body = {};
+      }
+      const illustId = body.illust_id || body.illustId || url.searchParams.get('illust_id') || url.searchParams.get('illustId');
+      return sendJson(res, 200, await pixivGallery.deleteBookmark({ illustId }));
+    }
+    return sendJson(res, 405, { error: 'Method not allowed' });
+  }
   return sendJson(res, 404, { error: 'Pixiv 接口不存在', code: 'PIXIV_NOT_FOUND' });
 };
 

@@ -7,6 +7,7 @@ import {
   danbooruPromptTags,
   danbooruService,
   resolveDanbooruQuery,
+  buildDanbooruFilterQuery,
 } from '../services/danbooruService';
 import { db } from '../services/dbService';
 import { createUuid } from '../services/id';
@@ -21,6 +22,8 @@ import { useMobileHistoryLayer } from './MobileUI';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { buildMediaUrl } from '../services/mobileImageCache';
+import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHistoryService';
+import { Clock, Dices, Filter, Flame, Sparkles, Star } from 'lucide-react';
 
 interface DanbooruGalleryProps {
   active: boolean;
@@ -71,11 +74,22 @@ const copyText = async (value: string) => {
   textarea.remove();
 };
 
+type DanbooruSort = 'rank' | 'score' | 'favcount' | 'latest' | 'random';
+type DanbooruRating = 'all' | 'g' | 's' | 'q' | 'e';
+type DanbooruRatio = 'all' | 'portrait' | 'landscape' | 'square';
+
 export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, currentUser, notify, onNavigateToPlayground, onRefreshInspiration }) => {
   const imageDisplay = useMobileImageDisplayPreferences();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState('');
   const [query, setQuery] = useState('order:rank');
+  const [sort, setSort] = useState<DanbooruSort>('rank');
+  const [rating, setRating] = useState<DanbooruRating>('all');
+  const [ratio, setRatio] = useState<DanbooruRatio>('all');
+  const [soloOnly, setSoloOnly] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyItems, setHistoryItems] = useState<GalleryHistoryItem[]>([]);
+
   const [items, setItems] = useState<DanbooruPost[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
@@ -89,15 +103,11 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   const queryRef = useRef(query);
   const pageRef = useRef(page);
   const appendingRef = useRef(false);
-  // 非追加 load 的竞态守卫：快速连续搜索/跳页时，慢的旧响应会覆盖新结果——
-  // 迟到的响应一律丢弃（组件卸载后同样不再写状态）。
   const loadGuard = useStaleGuard();
-  // 下一页投机预取：当前页稳定后后台取下一页 JSON 并立即预热其缩略图，
-  // 哨兵触底时直接消费预取结果，把"取 JSON → 再抓图"的串行等待从滚动路径上移走。
   const nextPagePrefetchRef = useRef<{ query: string; page: number; promise: Promise<Awaited<ReturnType<typeof danbooruService.search>> | null> } | null>(null);
 
   const scheduleNextPagePrefetch = (query: string, page: number, hasMore: boolean) => {
-    if (!hasMore) return;
+    if (!hasMore || showHistory) return;
     const existing = nextPagePrefetchRef.current;
     if (existing && existing.query === query && existing.page === page + 1) return;
     const promise = danbooruService.search({ query, page: page + 1, limit: PAGE_SIZE })
@@ -130,7 +140,34 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     }).catch(() => {});
   };
 
+  // 记录足迹
+  useEffect(() => {
+    if (selected) {
+      galleryHistoryService.recordView({
+        id: `danbooru:${selected.id}`,
+        source: 'danbooru',
+        sourceId: selected.id,
+        title: selected.tags.character[0] || selected.tags.artist[0] || `#${selected.id}`,
+        artistName: selected.tags.artist[0],
+        previewUrl: selected.previewUrl,
+        sampleUrl: selected.sampleUrl,
+        tags: danbooruPromptTags(selected).split(', ').filter(Boolean),
+        width: selected.width,
+        height: selected.height,
+        score: selected.score,
+        bookmarks: selected.favCount,
+      });
+    }
+  }, [selected]);
+
+  const loadHistory = () => {
+    const history = galleryHistoryService.getHistory('danbooru');
+    setHistoryItems(history);
+    setShowHistory(true);
+  };
+
   const load = async (nextQuery = query, nextPage = page) => {
+    setShowHistory(false);
     const mySeq = loadGuard.begin();
     setLoading(true);
     setError('');
@@ -155,6 +192,39 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       notify(message, 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleApplyFilter = async (overrides: {
+    sort?: DanbooruSort;
+    rating?: DanbooruRating;
+    ratio?: DanbooruRatio;
+    soloOnly?: boolean;
+    inputVal?: string;
+  } = {}) => {
+    const s = overrides.sort !== undefined ? overrides.sort : sort;
+    const r = overrides.rating !== undefined ? overrides.rating : rating;
+    const rat = overrides.ratio !== undefined ? overrides.ratio : ratio;
+    const solo = overrides.soloOnly !== undefined ? overrides.soloOnly : soloOnly;
+    const term = overrides.inputVal !== undefined ? overrides.inputVal : input;
+
+    if (overrides.sort !== undefined) setSort(s);
+    if (overrides.rating !== undefined) setRating(r);
+    if (overrides.ratio !== undefined) setRatio(rat);
+    if (overrides.soloOnly !== undefined) setSoloOnly(solo);
+
+    try {
+      const resolvedTag = term.trim() ? await resolveDanbooruQuery(term.trim()) : '';
+      const finalQuery = buildDanbooruFilterQuery({
+        query: resolvedTag,
+        sort: s,
+        rating: r,
+        ratio: rat,
+        subject: solo ? 'solo' : 'all',
+      });
+      await load(finalQuery || 'order:rank', 1);
+    } catch (e: any) {
+      notify(e?.message || '筛选查询失败', 'error');
     }
   };
 
@@ -209,28 +279,6 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasMore, items.length, loading]);
 
-  const submitSearch = async (event?: FormEvent) => {
-    event?.preventDefault();
-    try {
-      const resolved = await resolveDanbooruQuery(input);
-      await load(resolved || 'order:rank', 1);
-    } catch (searchError) {
-      notify(searchError instanceof Error ? searchError.message : '无法识别这个 Tag', 'error');
-    }
-  };
-
-  // 页码跳转（显式跳页工具）：替换为第 N 页，此后滚动从该页继续追加。
-  const submitPageJump = (event?: FormEvent) => {
-    event?.preventDefault();
-    const value = Number(pageInput);
-    if (!Number.isFinite(value) || value < 1) {
-      notify('请输入有效页码', 'error');
-      return;
-    }
-    setPageInput('');
-    void load(query, Math.floor(value));
-  };
-
   // 瀑布流（masonry 布局时）：真实宽高比完整显示，最短列分配互相补齐。
   const masonryColumns = useMasonryColumnCount(imageDisplay);
   const getPostRatio = (post: DanbooruPost) => {
@@ -241,20 +289,36 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, getPostRatio(post));
     return imageHeight + 52; // 标题 + 作者文本区
   }, []);
+
   const renderDanbooruCard = (post: DanbooruPost) => {
     const title = post.tags.character[0] || post.tags.artist[0] || `#${post.id}`;
     const ratio = `${post.width || 3} / ${post.height || 4}`;
-    return <article key={post.id} data-safe-mode-work="true" className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors dark:bg-gray-800 ${selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
-      <button type="button" onClick={() => setSelectedId(post.id)} className="block w-full text-left">
-        <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}>
-          <SmartImage src={post.sampleUrl} alt={title.replaceAll('_', ' ')} />
-          <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-[10px] text-white">
-            <span>♥ {formatCount(post.favCount)}</span><span>▲ {formatCount(post.score)}</span>
+    return (
+      <article
+        key={post.id}
+        data-safe-mode-work="true"
+        className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors dark:bg-gray-800 ${
+          selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'
+        }`}
+      >
+        <button type="button" onClick={() => setSelectedId(post.id)} className="block w-full text-left">
+          <div
+            className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800"
+            style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}
+          >
+            <SmartImage src={post.sampleUrl} alt={title.replaceAll('_', ' ')} />
+            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-[10px] text-white">
+              <span>♥ {formatCount(post.favCount)}</span>
+              <span>▲ {formatCount(post.score)}</span>
+            </div>
           </div>
-        </div>
-        <div className="p-2.5"><p data-safe-mode-title="true" className="truncate text-xs font-bold">{title.replaceAll('_', ' ')}</p><p className="mt-1 truncate text-[10px] text-gray-500">{post.tags.artist.slice(0, 2).join(', ').replaceAll('_', ' ') || `Danbooru #${post.id}`}</p></div>
-      </button>
-    </article>;
+          <div className="p-2.5">
+            <p data-safe-mode-title="true" className="truncate text-xs font-bold">{title.replaceAll('_', ' ')}</p>
+            <p className="mt-1 truncate text-[10px] text-gray-500">{post.tags.artist.slice(0, 2).join(', ').replaceAll('_', ' ') || `Danbooru #${post.id}`}</p>
+          </div>
+        </button>
+      </article>
+    );
   };
 
   const importToPlayground = (post: DanbooruPost) => {
@@ -304,26 +368,197 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     notify('已复制全部 Danbooru Tag');
   };
 
+  const submitPageJump = (event?: FormEvent) => {
+    event?.preventDefault();
+    const value = Number(pageInput);
+    if (!Number.isFinite(value) || value < 1) {
+      notify('请输入有效页码', 'error');
+      return;
+    }
+    setPageInput('');
+    void load(query, Math.floor(value));
+  };
+
+  const submitSearch = async (event?: FormEvent) => {
+    event?.preventDefault();
+    void handleApplyFilter({ inputVal: input });
+  };
+
+  const handleRandomGacha = () => {
+    void handleApplyFilter({ sort: 'random' });
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceToolbar>
         <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center gap-2">
-          <ToolbarSearch value={input} onChange={event => setInput(event.target.value)} placeholder="中文或英文 Tag；两个条件请用逗号分隔" aria-label="搜索 Danbooru" />
+          <ToolbarSearch value={input} onChange={event => setInput(event.target.value)} placeholder="输入中文或英文 Tag，回车直接搜索" aria-label="搜索 Danbooru" />
           <ToolbarButton type="submit" tone="primary" disabled={loading}><Search />搜索</ToolbarButton>
         </form>
+        <ToolbarButton onClick={handleRandomGacha} disabled={loading} title="随机抽卡漫游"><Dices className="text-amber-500" />抽卡漫游</ToolbarButton>
+        <ToolbarButton onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : undefined} title="浏览历史足迹"><Clock />足迹</ToolbarButton>
         <IconButton label="刷新" onClick={() => void load(query, page)} disabled={loading}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton>
         <ImageTaggerAction notify={notify} />
       </WorkspaceToolbar>
 
+      {/* 快捷多维筛选栏 */}
+      {!showHistory && (
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-gray-200 bg-white/80 px-3 py-2 text-xs backdrop-blur dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
+          <span className="flex items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
+            <Flame className="size-3.5 text-orange-500" />排序:
+          </span>
+          {[
+            { id: 'rank', label: '综合热度' },
+            { id: 'score', label: '高分榜' },
+            { id: 'favcount', label: '收藏榜' },
+            { id: 'latest', label: '最新' },
+            { id: 'random', label: '随机' },
+          ].map(opt => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => void handleApplyFilter({ sort: opt.id as DanbooruSort })}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${sort === opt.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
+            >
+              {opt.label}
+            </button>
+          ))}
+
+          <span className="mx-1 h-3.5 w-px bg-gray-200 dark:bg-gray-700" />
+
+          <span className="flex items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
+            <Filter className="size-3.5 text-indigo-500" />评级:
+          </span>
+          {[
+            { id: 'all', label: '全部' },
+            { id: 'g', label: '全年龄 G' },
+            { id: 's', label: '微涩 S' },
+            { id: 'q', label: '擦边 Q' },
+            { id: 'e', label: 'R-18 E' },
+          ].map(opt => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => void handleApplyFilter({ rating: opt.id as DanbooruRating })}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${rating === opt.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
+            >
+              {opt.label}
+            </button>
+          ))}
+
+          <span className="mx-1 h-3.5 w-px bg-gray-200 dark:bg-gray-700" />
+
+          <span className="font-semibold text-gray-500 dark:text-gray-400">比例:</span>
+          {[
+            { id: 'all', label: '不限' },
+            { id: 'portrait', label: '竖屏' },
+            { id: 'landscape', label: '横屏' },
+            { id: 'square', label: '方图' },
+          ].map(opt => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => void handleApplyFilter({ ratio: opt.id as DanbooruRatio })}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${ratio === opt.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
+            >
+              {opt.label}
+            </button>
+          ))}
+
+          <button
+            type="button"
+            onClick={() => void handleApplyFilter({ soloOnly: !soloOnly })}
+            className={`ml-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${soloOnly ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
+          >
+            仅单人 (solo)
+          </button>
+        </div>
+      )}
+
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main ref={scrollRef} className={`${selected ? 'hidden xl:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
-          <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
-            <span>{query === 'order:rank' ? '热门普通级作品' : `检索：${query.replaceAll('_', ' ')}`}</span>
-            <span>仅显示 General · 已加载 {items.length} 件{hasMore ? ' · 滚动继续加载' : ' · 已全部加载'}</span>
-          </div>
+          {showHistory ? (
+            <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
+              <span className="font-bold text-gray-700 dark:text-gray-200">本地浏览足迹 ({historyItems.length} 条)</span>
+              <button
+                type="button"
+                onClick={() => {
+                  galleryHistoryService.clear('danbooru');
+                  setHistoryItems([]);
+                }}
+                className="text-red-500 hover:underline"
+              >
+                清空足迹
+              </button>
+            </div>
+          ) : (
+            <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
+              <span>{query === 'order:rank' ? '综合热门推荐' : `检索：${query.replaceAll('_', ' ')}`}</span>
+              <span>已加载 {items.length} 件{hasMore ? ' · 滚动继续加载' : ' · 已全部加载'}</span>
+            </div>
+          )}
 
           {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
-          {loading && !items.length ? <div className="flex min-h-72 items-center justify-center text-sm text-gray-400">正在读取 Danbooru…</div> : items.length ? (
+
+          {showHistory ? (
+            historyItems.length ? (
+              <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
+                {historyItems.map(item => (
+                  <article key={item.id} className="mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border border-gray-200 bg-white transition-colors dark:border-gray-700 dark:bg-gray-800 hover:border-indigo-500">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const existing = items.find(p => p.id === Number(item.sourceId));
+                        if (existing) {
+                          setSelectedId(existing.id);
+                        } else {
+                          // 临时包装一个 post 以便在侧栏查看与操作
+                          const dummyPost: DanbooruPost = {
+                            id: Number(item.sourceId),
+                            score: item.score || 0,
+                            favCount: item.bookmarks || 0,
+                            rating: 's',
+                            fileExt: 'jpg',
+                            previewUrl: item.previewUrl,
+                            sampleUrl: item.sampleUrl,
+                            sourceUrl: item.sampleUrl,
+                            postUrl: `https://danbooru.donmai.us/posts/${item.sourceId}`,
+                            tags: {
+                              artist: item.artistName ? [item.artistName] : [],
+                              copyright: [],
+                              character: [item.title],
+                              general: item.tags,
+                              meta: [],
+                            },
+                            width: item.width || 800,
+                            height: item.height || 1200,
+                          };
+                          setItems(prev => [dummyPost, ...prev]);
+                          setSelectedId(dummyPost.id);
+                        }
+                      }}
+                      className="block w-full text-left"
+                    >
+                      <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">
+                        <SmartImage src={item.sampleUrl} alt={item.title} />
+                      </div>
+                      <div className="p-2.5">
+                        <p className="truncate text-xs font-bold">{item.title}</p>
+                        <p className="mt-1 truncate text-[10px] text-gray-500">{item.artistName || `Danbooru #${item.sourceId}`}</p>
+                      </div>
+                    </button>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="flex min-h-72 flex-col items-center justify-center text-center text-sm text-gray-500">
+                <p className="font-bold">暂无 Danbooru 浏览足迹</p>
+                <p className="mt-1 text-xs">点开作品后将自动记录到此处，方便秒级回溯。</p>
+              </div>
+            )
+          ) : loading && !items.length ? (
+            <div className="flex min-h-72 items-center justify-center text-sm text-gray-400">正在读取 Danbooru…</div>
+          ) : items.length ? (
             imageDisplay.layout === 'masonry' ? (
               <ShortestColumnMasonry
                 items={items}
@@ -333,32 +568,39 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
                 renderItem={renderDanbooruCard}
               />
             ) : (
-            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
-              {items.map(renderDanbooruCard)}
-            </div>
+              <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
+                {items.map(renderDanbooruCard)}
+              </div>
             )
-          ) : !loading && <div className="flex min-h-72 flex-col items-center justify-center text-center text-sm text-gray-500"><p className="font-bold">没有找到普通级图片</p><p className="mt-1 text-xs">请检查 Tag 拼写，或减少检索条件。</p></div>}
+          ) : !loading && (
+            <div className="flex min-h-72 flex-col items-center justify-center text-center text-sm text-gray-500">
+              <p className="font-bold">没有找到匹配图片</p>
+              <p className="mt-1 text-xs">请尝试放宽筛选条件或更换搜索词。</p>
+            </div>
+          )}
 
-          <div className="mt-5 flex flex-col items-center gap-3 pb-4">
-            <div ref={appendSentinelRef} className="h-1 w-full" aria-hidden="true" />
-            {items.length >= DANBOORU_APPEND_LIMIT && hasMore && (
-              <ToolbarButton onClick={() => void appendNextPage(true)}><RefreshCw className={appendingRef.current ? 'animate-spin' : ''} />已加载 {DANBOORU_APPEND_LIMIT} 件 · 继续加载更多</ToolbarButton>
-            )}
-            <form onSubmit={submitPageJump} className="flex items-center gap-2 text-xs text-gray-500">
-              <span>滚动浏览 · 跳到第</span>
-              <input
-                type="number"
-                min={1}
-                value={pageInput}
-                onChange={event => setPageInput(event.target.value)}
-                onFocus={event => event.currentTarget.select()}
-                aria-label="输入页码跳转"
-                className="h-9 w-16 rounded-lg border border-indigo-200 bg-white px-2 text-center text-sm font-bold text-indigo-600 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 dark:border-indigo-900/60 dark:bg-gray-800 dark:text-indigo-300"
-              />
-              <span>页</span>
-              <ToolbarButton type="submit" disabled={loading}>跳转</ToolbarButton>
-            </form>
-          </div>
+          {!showHistory && (
+            <div className="mt-5 flex flex-col items-center gap-3 pb-4">
+              <div ref={appendSentinelRef} className="h-1 w-full" aria-hidden="true" />
+              {items.length >= DANBOORU_APPEND_LIMIT && hasMore && (
+                <ToolbarButton onClick={() => void appendNextPage(true)}><RefreshCw className={appendingRef.current ? 'animate-spin' : ''} />已加载 {DANBOORU_APPEND_LIMIT} 件 · 继续加载更多</ToolbarButton>
+              )}
+              <form onSubmit={submitPageJump} className="flex items-center gap-2 text-xs text-gray-500">
+                <span>滚动浏览 · 跳到第</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={pageInput}
+                  onChange={event => setPageInput(event.target.value)}
+                  onFocus={event => event.currentTarget.select()}
+                  aria-label="输入页码跳转"
+                  className="h-9 w-16 rounded-lg border border-indigo-200 bg-white px-2 text-center text-sm font-bold text-indigo-600 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 dark:border-indigo-900/60 dark:bg-gray-800 dark:text-indigo-300"
+                />
+                <span>页</span>
+                <ToolbarButton type="submit" disabled={loading}>跳转</ToolbarButton>
+              </form>
+            </div>
+          )}
         </main>
 
         <DetailSidePanel

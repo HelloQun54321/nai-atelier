@@ -43,16 +43,32 @@ const feedResponse = (id, title = 'x', nextUrl = null) => jsonResponse({
 
 // ---------- host / path / method 允许列表 ----------
 
-test('Pixiv API allowlist only permits the five whitelisted app-api.pixiv.net GET paths', () => {
-  assert.equal(PIXIV_ALLOWED_API_PATHS.size, 5);
-  for (const path of ['/v1/illust/recommended', '/v1/search/illust', '/v1/illust/ranking', '/v1/user/illusts', '/v1/illust/detail']) {
+test('Pixiv API allowlist only permits whitelisted app-api.pixiv.net paths', () => {
+  assert.equal(PIXIV_ALLOWED_API_PATHS.size, 11);
+  for (const path of [
+    '/v1/illust/recommended',
+    '/v1/search/illust',
+    '/v1/illust/ranking',
+    '/v1/user/illusts',
+    '/v1/illust/detail',
+    '/v2/illust/follow',
+    '/v1/user/bookmarks/illust',
+    '/v2/illust/related',
+    '/v1/trending-tags/illust',
+  ]) {
     const target = classifyPixivApiTarget(`https://app-api.pixiv.net${path}`);
     assert.ok(target, path);
     assert.equal(target.host, 'app-api.pixiv.net');
     assert.equal(target.pathname, path);
     assert.equal(target.method, 'GET');
   }
-  for (const method of PIXIV_ALLOWED_API_PATHS.values()) assert.equal(method, 'GET');
+  for (const path of ['/v2/illust/bookmark/add', '/v1/illust/bookmark/delete']) {
+    const target = classifyPixivApiTarget(`https://app-api.pixiv.net${path}`);
+    assert.ok(target, path);
+    assert.equal(target.host, 'app-api.pixiv.net');
+    assert.equal(target.pathname, path);
+    assert.equal(target.method, 'POST');
+  }
   assert.equal(classifyPixivApiTarget('https://app-api.pixiv.net/v1/illust/foo'), null);
   assert.equal(classifyPixivApiTarget('https://app-api.pixiv.net/v1/search/user'), null);
   assert.equal(classifyPixivApiTarget('https://app-api.pixiv.net/v2/illust/search'), null);

@@ -22,9 +22,28 @@ export const PIXIV_ALLOWED_API_PATHS = new Map([
   ['/v1/illust/ranking', 'GET'],
   ['/v1/user/illusts', 'GET'],
   ['/v1/illust/detail', 'GET'],
+  ['/v2/illust/follow', 'GET'],
+  ['/v1/user/bookmarks/illust', 'GET'],
+  ['/v2/illust/bookmark/add', 'POST'],
+  ['/v1/illust/bookmark/delete', 'POST'],
+  ['/v2/illust/related', 'GET'],
+  ['/v1/trending-tags/illust', 'GET'],
 ]);
 
-export const PIXIV_FEED_MODES = new Set(['recommended', 'search', 'day', 'week', 'month', 'user', 'detail']);
+export const PIXIV_FEED_MODES = new Set([
+  'recommended',
+  'following',
+  'bookmarks',
+  'ranking',
+  'search',
+  'day',
+  'week',
+  'month',
+  'user',
+  'detail',
+  'related',
+  'trending',
+]);
 const MAX_CURSOR_LENGTH = 2048;
 const MIN_REFRESH_TOKEN_LENGTH = 16;
 const MAX_REFRESH_TOKEN_LENGTH = 2048;
@@ -121,6 +140,7 @@ const normalizeIllust = illust => ({
   caption: String(illust.caption ?? ''),
   restrict: Number(illust.restrict) || 0,
   xRestrict: Number(illust.x_restrict ?? illust.xRestrict) || 0,
+  isBookmarked: Boolean(illust.is_bookmarked ?? illust.isBookmarked ?? false),
   tags: Array.isArray(illust.tags)
     ? illust.tags.map(tag => String(typeof tag === 'string' ? tag : tag?.name ?? '')).filter(Boolean)
     : [],
@@ -151,6 +171,15 @@ export const normalizePixivResponse = (payload, mode) => {
   if (mode === 'detail') {
     const illust = raw.illust && typeof raw.illust === 'object' ? raw.illust : null;
     return { mode, items: illust ? [normalizeIllust(illust)] : [], nextUrl: null };
+  }
+  if (mode === 'trending') {
+    const trendTags = Array.isArray(raw.trend_tags) ? raw.trend_tags : [];
+    const items = trendTags.map(item => ({
+      tag: String(item.tag || ''),
+      translatedName: String(item.translated_name || ''),
+      illust: item.illust ? normalizeIllust(item.illust) : null,
+    }));
+    return { mode, items, nextUrl: null };
   }
   const items = Array.isArray(raw.illusts) ? raw.illusts.map(normalizeIllust) : [];
   const nextUrl = sanitizePixivNextUrl(raw.next_url);
@@ -384,24 +413,31 @@ export class PixivOAuthClient {
     if (!current?.accessToken) throw pixivError('尚未配置 Pixiv 访问令牌', 'PIXIV_NOT_CONFIGURED', 409);
     let response;
     try {
+      const requestHeaders = {
+        accept: 'application/json',
+        'user-agent': PIXIV_USER_AGENT,
+        ...(options.headers || {}),
+        authorization: `Bearer ${current.accessToken}`,
+      };
+      let requestBody = options.body;
+      if (requestBody && typeof requestBody === 'object' && !(requestBody instanceof Uint8Array)) {
+        requestHeaders['content-type'] = 'application/x-www-form-urlencoded';
+        requestBody = new URLSearchParams(requestBody).toString();
+      }
       response = await this.requestFetch(classified.url.toString(), {
         method,
-        headers: {
-          accept: 'application/json',
-          'user-agent': PIXIV_USER_AGENT,
-          ...(options.headers || {}),
-          authorization: `Bearer ${current.accessToken}`,
-        },
+        headers: requestHeaders,
+        body: requestBody,
         signal: options.signal || AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error) {
       throw pixivError(`无法连接 Pixiv API：${redactSensitive(error?.message)}`, 'PIXIV_UNAVAILABLE', 502);
     }
-    if (response.status === 401 && method === 'GET' && !options._pixivRetried) {
+    if (response.status === 401 && !options._pixivRetried) {
       await this.refresh();
       return this.requestOnce(target, { ...options, _pixivRetried: true });
     }
-    if (response.status === 429 && method === 'GET' && !options._pixivRateRetried) {
+    if (response.status === 429 && !options._pixivRateRetried) {
       const retryAfter = response.headers?.get?.('retry-after') ?? null;
       const delayMs = resolvePixivRetryDelayMs(retryAfter, this.retryDelayMs);
       await sleep(delayMs);
@@ -579,6 +615,34 @@ export class PixivGalleryService {
     };
   }
 
+  async addBookmark({ illustId, restrict = 'public' } = {}) {
+    const id = String(illustId || '').trim();
+    if (!id) throw pixivError('添加收藏需要 illust_id 参数', 'PIXIV_INVALID_PARAMS', 400);
+    const target = `https://${PIXIV_API_HOST}/v2/illust/bookmark/add`;
+    const result = await this.oauth.request(target, {
+      method: 'POST',
+      body: {
+        illust_id: id,
+        restrict: restrict === 'private' ? 'private' : 'public',
+      },
+    });
+    // 收藏改变后清空 bookmarks feed 缓存
+    this.feedCache.clear();
+    return result || { success: true };
+  }
+
+  async deleteBookmark({ illustId } = {}) {
+    const id = String(illustId || '').trim();
+    if (!id) throw pixivError('取消收藏需要 illust_id 参数', 'PIXIV_INVALID_PARAMS', 400);
+    const target = `https://${PIXIV_API_HOST}/v1/illust/bookmark/delete`;
+    const result = await this.oauth.request(target, {
+      method: 'POST',
+      body: { illust_id: id },
+    });
+    this.feedCache.clear();
+    return result || { success: true };
+  }
+
   buildFeedUrl(mode, params = {}) {
     const search = new URLSearchParams();
     const set = (key, raw) => {
@@ -589,6 +653,18 @@ export class PixivGalleryService {
     if (mode === 'recommended') {
       set('offset', params.offset);
       return `https://${PIXIV_API_HOST}/v1/illust/recommended${search.size ? `?${search}` : ''}`;
+    }
+    if (mode === 'following') {
+      set('restrict', params.restrict || 'all');
+      set('offset', params.offset);
+      return `https://${PIXIV_API_HOST}/v2/illust/follow${search.size ? `?${search}` : ''}`;
+    }
+    if (mode === 'bookmarks') {
+      set('user_id', params.user_id || 'me');
+      set('restrict', params.restrict || 'public');
+      set('tag', params.tag);
+      set('offset', params.offset);
+      return `https://${PIXIV_API_HOST}/v1/user/bookmarks/illust${search.size ? `?${search}` : ''}`;
     }
     if (mode === 'search') {
       const word = String(params.word || params.q || '').trim();
@@ -602,11 +678,22 @@ export class PixivGalleryService {
       set('offset', params.offset);
       return `https://${PIXIV_API_HOST}/v1/search/illust${search.size ? `?${search}` : ''}`;
     }
-    if (mode === 'day' || mode === 'week' || mode === 'month') {
-      set('mode', mode);
+    if (mode === 'ranking' || mode === 'day' || mode === 'week' || mode === 'month') {
+      const rankingMode = params.ranking_mode || (mode === 'ranking' ? 'day' : mode);
+      set('mode', rankingMode);
       set('date', params.date);
       set('offset', params.offset);
       return `https://${PIXIV_API_HOST}/v1/illust/ranking${search.size ? `?${search}` : ''}`;
+    }
+    if (mode === 'related') {
+      const illustId = String(params.illust_id || '').trim();
+      if (!illustId) throw pixivError('相关推荐模式需要 illust_id 参数', 'PIXIV_INVALID_PARAMS', 400);
+      set('illust_id', illustId);
+      set('offset', params.offset);
+      return `https://${PIXIV_API_HOST}/v2/illust/related${search.size ? `?${search}` : ''}`;
+    }
+    if (mode === 'trending') {
+      return `https://${PIXIV_API_HOST}/v1/trending-tags/illust${search.size ? `?${search}` : ''}`;
     }
     if (mode === 'user') {
       const userId = String(params.user_id || '').trim();
