@@ -387,9 +387,8 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceToolbar>
-        <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center gap-2">
-          <ToolbarSearch value={input} onChange={event => setInput(event.target.value)} placeholder="输入中文或英文 Tag，回车直接搜索" aria-label="搜索 Danbooru" />
-          <ToolbarButton type="submit" tone="primary" disabled={loading}><Search />搜索</ToolbarButton>
+        <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center">
+          <ToolbarSearch value={input} onChange={event => setInput(event.target.value)} placeholder="输入中文或英文 Tag，回车直接搜索" aria-label="搜索 Danbooru" containerClassName="min-w-[12rem] flex-1 md:max-w-none!" />
         </form>
         <ToolbarButton onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : undefined} title="浏览历史足迹"><Clock />足迹</ToolbarButton>
         <IconButton label="刷新" onClick={() => void load(query, page)} disabled={loading}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton>

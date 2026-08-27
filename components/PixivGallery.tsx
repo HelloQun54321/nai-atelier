@@ -767,16 +767,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
               </button>
             )}
           </div>
-          <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center gap-2">
+          <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center">
             <ToolbarSearch
               value={searchInput}
               onChange={event => setSearchInput(event.target.value)}
-              placeholder="Pixiv 标签搜索"
+              placeholder="Pixiv 标签搜索，回车直接检索"
               aria-label="搜索 Pixiv"
+              containerClassName="min-w-[10rem] flex-1 md:max-w-none!"
             />
-            <ToolbarButton type="submit" tone="primary" disabled={loading}>
-              <Search />搜索
-            </ToolbarButton>
           </form>
         </div>
         <IconButton label="断开 Pixiv 连接" tone="danger" onClick={() => void handleDisconnect()} title="断开 Pixiv 连接">

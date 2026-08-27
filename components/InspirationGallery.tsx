@@ -193,7 +193,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
   return <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-950">
     <WorkspaceToolbar>
-      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索标题、Prompt、备注或标签" containerClassName="min-w-0 md:w-[24rem] md:flex-none" />
+      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索标题、Prompt、备注或标签" containerClassName="min-w-[12rem] flex-1 md:max-w-none!" />
       <IconButton label={activeFilterCount > 0 ? `筛选，已启用 ${activeFilterCount} 项` : '筛选'} onClick={() => setMobileFilters(!mobileFilters)} tone={activeFilterCount > 0 ? 'primary' : 'neutral'} className="md:hidden"><Filter /></IconButton>
       <div className="relative hidden flex-none md:block">
         <ToolbarButton onClick={() => setDesktopFilters(!desktopFilters)} className={desktopFilters ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-800 dark:!bg-indigo-950/50' : ''} aria-expanded={desktopFilters} aria-haspopup="dialog"><Filter />筛选{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}</ToolbarButton>
@@ -206,7 +206,6 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       </div>
       <IconButton label={selectedIds.size ? `取消选择 ${selectedIds.size} 项` : '选择灵感'} onClick={() => setSelectedIds(selectedIds.size ? new Set() : new Set(filtered.filter(item => canEditItem(item, currentUser)).map(item => item.id)))} tone={selectedIds.size ? 'primary' : 'neutral'} className="md:hidden"><CheckSquare /></IconButton>
       <ToolbarButton onClick={() => setSelectedIds(selectedIds.size ? new Set() : new Set(filtered.filter(item => canEditItem(item, currentUser)).map(item => item.id)))} tone={selectedIds.size ? 'primary' : 'neutral'} className="hidden md:inline-flex"><CheckSquare />{selectedIds.size ? `${selectedIds.size} 项` : '选择'}</ToolbarButton>
-      <div className="hidden flex-1 md:block" />
       <IconButton label="刷新灵感库" disabled={busy === 'refresh'} onClick={() => void refreshAll()}><RefreshCw className={busy === 'refresh' ? 'animate-spin' : ''} /></IconButton>
       <ImageTaggerAction notify={notify} />
       <IconButton label="加入灵感库" tone="primary" onClick={() => setUploadOpen(true)} className="md:hidden"><Plus /></IconButton>

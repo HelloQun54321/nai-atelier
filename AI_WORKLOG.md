@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：全局画廊与资料库顶栏空间网格与搜索交互深度归一化（refactor: deeply harmonize top bar spatial grids and search interactions across galleries）。
 - **Gemini (Flash)**：将串列表顶栏「标签筛选」弹层修改为以触发按钮为基准水平居中对齐（fix: center align tag filter popover under trigger button in ChainList）。
 - **Gemini (Flash)**：执行自检轮次三：强化 SegmentedControl、FilterPill 与 GenerationModeNav 在暗色模式下的边缘对比度与外框契约（style: refine dark mode contrast and border contracts for segmented controls）。
 - **Gemini (Flash)**：执行自检轮次二：为角色库、画师库、串列表、灵感库与 AITag 全局下拉气泡与浮动菜单补充点击外部自动关闭（feat: add click-outside dismiss backdrops for top bar popovers across galleries）。
