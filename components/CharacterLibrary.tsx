@@ -16,7 +16,7 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
-import { Check, ChevronDown, Dice5, Heart, LoaderCircle, Menu, Plus, RefreshCw, Settings2, Tag, UserRound } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Dice5, Heart, LoaderCircle, Menu, Plus, RefreshCw, Settings2, SlidersHorizontal, Tag, UserRound, X } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
@@ -365,21 +365,56 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
   /** 当前选中的卡片集合；key 与卡片 key 一致（catalog:tagName / custom:chainId），
    *  跨搜索/抽卡/切换 Tab 保持选中。 */
+  /** 选中角色槽位列表：支持有序调整槽位 (1..N) 与位置 */
+  const [selectedSlotOrder, setSelectedSlotOrder] = useState<string[]>([]);
+  const [showSlotDetail, setShowSlotDetail] = useState(false);
+
+  // 同步已选卡片的顺序（新选中的加到末尾，取消选中的移出）
+  useEffect(() => {
+    setSelectedSlotOrder(prev => {
+      const currentKeys = Array.from(selectedKeys);
+      const kept = prev.filter(k => selectedKeys.has(k));
+      const added = currentKeys.filter(k => !prev.includes(k));
+      return [...kept, ...added];
+    });
+  }, [selectedKeys]);
+
+  /** 当前选中的卡片集合（按 slotOrder 排列） */
   const selectedCards = useMemo(() => {
-    const cards: CharacterCard[] = [];
+    const cardMap = new Map<string, CharacterCard>();
     selectedKeys.forEach(key => {
       if (key.startsWith('catalog:')) {
         const tagName = key.slice('catalog:'.length);
         const chain = persistedCatalog.get(tagName.toLowerCase());
-        cards.push({ key, kind: 'catalog', name: chain?.name || tagName, tagName, chain });
+        cardMap.set(key, { key, kind: 'catalog', name: chain?.name || tagName, tagName, chain });
       } else if (key.startsWith('custom:')) {
         const id = key.slice('custom:'.length);
         const chain = customChains.find(candidate => candidate.id === id);
-        if (chain) cards.push({ key, kind: 'custom', name: chain.name, previewImage: chain.previewImage, chain });
+        if (chain) cardMap.set(key, { key, kind: 'custom', name: chain.name, previewImage: chain.previewImage, chain });
       }
     });
-    return cards;
-  }, [customChains, persistedCatalog, selectedKeys]);
+    return selectedSlotOrder.map(k => cardMap.get(k)).filter((c): c is CharacterCard => Boolean(c));
+  }, [customChains, persistedCatalog, selectedKeys, selectedSlotOrder]);
+
+  const moveSlot = (index: number, delta: number) => {
+    const targetIndex = index + delta;
+    if (targetIndex < 0 || targetIndex >= selectedSlotOrder.length) return;
+    setSelectedSlotOrder(prev => {
+      const next = [...prev];
+      const temp = next[index];
+      next[index] = next[targetIndex];
+      next[targetIndex] = temp;
+      return next;
+    });
+  };
+
+  const removeSlot = (key: string) => {
+    setSelectedKeys(prev => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  };
 
   const toggleSelect = (card: CharacterCard) => {
     setSelectedKeys(previous => {
@@ -389,30 +424,53 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     });
   };
 
-  const clearSelection = () => setSelectedKeys(new Set());
+  const clearSelection = () => {
+    setSelectedKeys(new Set());
+    setSelectedSlotOrder([]);
+  };
 
-  /** 批量复制：各角色按单卡语义取提示词，英文逗号拼接（与风格串/Tag 串语义一致）。 */
+  /** 批量复制：各角色按单卡语义取提示词，英文逗号拼接 */
   const copyAllSelected = async () => {
     if (selectedCards.length === 0) return;
     await navigator.clipboard.writeText(selectedCards.map(cardPromptText).join(', '));
     notify(`已复制 ${selectedCards.length} 个角色提示词`);
   };
 
-  /** 批量导入：拼接后的提示词整体放入主体区；负面提示词与参数沿用第一个
-   *  带本地链的角色（其余角色共享实验室当前参数），与单卡 sendToPlayground 语义一致。 */
+  /** 批量导入实验室：自动将选中的多个角色分别填入独立的角色槽位 (CharacterParams[])，
+   * 并按选中的角色数量自动均匀分配站位坐标 (X: 0.2 ~ 0.8, Y: 0.5) */
   const importAllSelected = () => {
     if (selectedCards.length === 0) return;
+    const count = selectedCards.length;
+    
+    // 计算站位横坐标：单人居中 0.5；多人均匀分布
+    const getSlotX = (index: number, total: number) => {
+      if (total <= 1) return 0.5;
+      const step = 0.6 / (total - 1);
+      return parseFloat((0.2 + index * step).toFixed(2));
+    };
+
+    const characters = selectedCards.map((card, idx) => ({
+      id: `char-${Date.now()}-${idx}`,
+      prompt: cardPromptText(card),
+      negativePrompt: card.chain?.negativePrompt || '',
+      x: getSlotX(idx, count),
+      y: 0.5,
+    }));
+
     const firstChain = selectedCards.find(card => card.chain)?.chain;
     sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify({
-      prompt: selectedCards.map(cardPromptText).join(', '),
+      prompt: '',
       negativePrompt: firstChain?.negativePrompt || '',
-      params: firstChain?.params || DEFAULT_PARAMS,
+      params: {
+        ...(firstChain?.params || DEFAULT_PARAMS),
+        characters,
+        useCoords: true,
+      },
     }));
-    setSelectedKeys(new Set());
-    notify(`已把 ${selectedCards.length} 个角色提示词送往实验室`);
+    clearSelection();
+    notify(`已把 ${count} 个角色分配至独立槽位送往实验室`);
     onNavigateToPlayground();
   };
-
   const generatePreview = async (card: CharacterCard) => {
     if (!apiKey) {
       notify('请先在全局设置中填写 NovelAI API Key', 'error');
@@ -695,35 +753,96 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
       {/* 底部悬浮多选操作栏 */}
       <div className={`pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4 transition-all duration-300 ${selectedCards.length > 0 ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}>
-        <div className="pointer-events-auto flex items-center gap-3 rounded-2xl border border-gray-200 bg-white/95 px-4 py-2.5 shadow-2xl backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
-          <div className="text-xs font-semibold text-gray-600 dark:text-gray-300">
-            已选 <span className="font-bold text-indigo-600 dark:text-indigo-400">{selectedCards.length}</span> 个角色
-          </div>
-          <div className="h-4 w-px bg-gray-200 dark:bg-gray-700" />
-          <button
-            type="button"
-            onClick={clearSelection}
-            className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
-          >
-            清空
-          </button>
-          <div className="flex items-center gap-1.5">
-            <ToolbarButton
-              tone="neutral"
-              disabled={selectedCards.length === 0}
-              onClick={() => void copyAllSelected()}
-              className="!h-8 !px-3 !text-xs"
+        <div className="pointer-events-auto relative flex flex-col items-center">
+          {showSlotDetail && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowSlotDetail(false)} />
+              <div role="dialog" aria-label="角色槽位与站位排布" className="absolute bottom-[calc(100%+0.5rem)] z-50 max-h-72 w-[min(38rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-gray-200 bg-white/95 p-3 shadow-2xl backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+                <div className="mb-2 flex items-center justify-between px-1 text-xs font-bold text-gray-800 dark:text-white">
+                  <span>多角色槽位分配（导入时自动填入实验室各角色槽）</span>
+                  <span className="text-[11px] font-normal text-gray-500">点击 ↑ / ↓ 调整槽位顺序</span>
+                </div>
+                <div className="space-y-1.5">
+                  {selectedCards.map((card, idx) => (
+                    <div key={card.key} className="flex items-center justify-between gap-2 rounded-xl border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-800">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-indigo-600 font-mono text-[10px] font-bold text-white">
+                          {idx + 1}
+                        </span>
+                        <span className="truncate font-bold text-gray-800 dark:text-gray-100">{card.name}</span>
+                        {card.tagName && <span className="truncate font-mono text-[10px] text-gray-400">({card.tagName})</span>}
+                      </div>
+                      <div className="flex flex-none items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => moveSlot(idx, -1)}
+                          className="rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-900 disabled:opacity-30 dark:hover:bg-gray-700 dark:hover:text-white"
+                          title="上移槽位"
+                        >
+                          <ArrowUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === selectedCards.length - 1}
+                          onClick={() => moveSlot(idx, 1)}
+                          className="rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-900 disabled:opacity-30 dark:hover:bg-gray-700 dark:hover:text-white"
+                          title="下移槽位"
+                        >
+                          <ArrowDown className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeSlot(card.key)}
+                          className="rounded p-1 text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/40"
+                          title="移除"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white/95 px-4 py-2.5 shadow-2xl backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+            <button
+              type="button"
+              onClick={() => setShowSlotDetail(value => !value)}
+              className="flex items-center gap-1 text-xs font-semibold text-gray-600 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-indigo-400"
+              title="点击查看/调整角色槽位顺序"
             >
-              复制全部
-            </ToolbarButton>
-            <ToolbarButton
-              tone="primary"
-              disabled={selectedCards.length === 0}
-              onClick={importAllSelected}
-              className="!h-8 !px-3 !text-xs"
+              <span>已选 <span className="font-bold text-indigo-600 dark:text-indigo-400">{selectedCards.length}</span> 个角色</span>
+              <SlidersHorizontal className="h-3.5 w-3.5 opacity-70" />
+            </button>
+            <div className="h-4 w-px bg-gray-200 dark:bg-gray-700" />
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
             >
-              导入实验室
-            </ToolbarButton>
+              清空
+            </button>
+            <div className="flex items-center gap-1.5">
+              <ToolbarButton
+                tone="neutral"
+                disabled={selectedCards.length === 0}
+                onClick={() => void copyAllSelected()}
+                className="!h-8 !px-3 !text-xs"
+              >
+                复制全部
+              </ToolbarButton>
+              <ToolbarButton
+                tone="primary"
+                disabled={selectedCards.length === 0}
+                onClick={importAllSelected}
+                className="!h-8 !px-3 !text-xs"
+              >
+                导入实验室
+              </ToolbarButton>
+            </div>
           </div>
         </div>
       </div>

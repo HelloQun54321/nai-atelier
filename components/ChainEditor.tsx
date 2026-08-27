@@ -1183,7 +1183,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setParams(data.params);
         clearPresetSources();
         markChange();
-        notify(hasPromptStructure ? '已按原结构恢复提示词与生成参数。' : '已恢复全局提示词与生成参数。');
+        const charCount = data.params?.characters?.length || 0;
+        if (charCount > 0) {
+            notify(`已导入 ${charCount} 个多角色槽位与生成参数。`);
+        } else {
+            notify(hasPromptStructure ? '已按原结构恢复提示词与生成参数。' : '已恢复全局提示词与生成参数。');
+        }
     };
 
 

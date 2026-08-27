@@ -4,6 +4,7 @@ import { Artist, User } from '../types';
 import { generateImage } from '../services/naiService'; // Import generation service
 import { api } from '../services/api'; // Import api for updating
 import { db } from '../services/dbService'; // Import DB to fetch config
+import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import { ArtistLibraryConfig } from './ArtistLibraryConfig';
 import { ArtistLibraryCart } from './ArtistLibraryCart';
 import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryEntriesAt, getArtistDictionaryPage, searchArtistDictionary } from '../services/tagDictionary';
@@ -32,6 +33,7 @@ interface ArtistLibraryProps {
     artistsData: Artist[] | null;
     onRefresh: () => Promise<void>;
     notify: (msg: string, type?: 'success' | 'error') => void;
+    onNavigateToPlayground?: () => void;
     currentUser?: User | null; // Add current user prop for permission check
 }
 
@@ -121,7 +123,7 @@ interface LogEntry {
 
 type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
 
-export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRefresh, notify, currentUser }) => {
+export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRefresh, notify, onNavigateToPlayground, currentUser }) => {
     const imageDisplay = useMobileImageDisplayPreferences();
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
     const [artistRatios, setArtistRatios] = useState<Record<string, number>>({});
@@ -597,6 +599,20 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         addToHistory(str);
         notify('组合串已复制！');
     };
+
+    const importCartToPlayground = () => {
+        if (cart.length === 0) return;
+        const str = cart.map(formatTag).join(', ');
+        sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify({
+            prompt: str,
+            negativePrompt: '',
+            mode: 'append-prompt',
+        }));
+        setCart([]);
+        notify(`已把 ${cart.length} 位画师 Tag 送往实验室`);
+        onNavigateToPlayground?.();
+    };
+
 
     const catalogArtistId = (name: string) => {
         let hash = 2166136261;
@@ -1236,20 +1252,12 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                 updateWeight={updateWeight}
                 toggleCart={toggleCart}
                 copyCart={copyCart}
+                importCart={onNavigateToPlayground ? importCartToPlayground : undefined}
                 formatTag={formatTag}
             />
 
             {currentLightboxImage && (
                 <div className="fixed inset-0 z-50 bg-white/95 dark:bg-black/95 flex items-center justify-center backdrop-blur-sm select-none" onClick={() => setLightboxState(null)}>
-                    <div
-                        className="absolute left-0 top-0 bottom-0 w-[20%] z-20 flex items-center justify-start pl-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
-                        onClick={(e) => { e.stopPropagation(); navigateLightbox('prev'); }}
-                    >
-                        <div className="p-2 rounded-full bg-white/10 backdrop-blur opacity-0 group-hover:opacity-100 transition-opacity">
-                            <svg className="w-8 h-8 text-gray-800 dark:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                        </div>
-                    </div>
-
                     <div className="relative max-w-full max-h-full p-4 flex flex-col items-center pointer-events-auto" onClick={(e) => e.stopPropagation()}>
                         <OriginalImage
                             src={currentLightboxImage.src}
