@@ -112,16 +112,29 @@ export async function handleDanbooruRoute(ctx: RouteContext): Promise<Response |
       const limit = clampInt(url.searchParams.get('limit'), 40, 1, DANBOORU_MAX_PAGE_SIZE);
       const query = normalizeDanbooruQuery(url.searchParams.get('tags'));
       const isRandom = query.includes('order:random');
-      const target = new URL('/posts.json', DANBOORU_BASE_URL);
-      target.searchParams.set('tags', query);
-      // Danbooru 官方 API 规定：order:random 查询不允许 page > 1（否则上游直接抛 500），必须固定 page=1
-      target.searchParams.set('page', isRandom ? '1' : String(page));
-      target.searchParams.set('limit', String(limit));
+      
+      let target: URL;
+      // 当全局无额外 Tag 且请求 popular/rank 时，优先使用 Danbooru Explore Popular 接口，避免大库全表排序 500 超时
+      if (query === 'explore:popular_week') {
+        target = new URL('/explore/posts/popular.json?scale=week', DANBOORU_BASE_URL);
+      } else if (query === 'explore:popular_month') {
+        target = new URL('/explore/posts/popular.json?scale=month', DANBOORU_BASE_URL);
+      } else if (query === 'explore:popular_day') {
+        target = new URL('/explore/posts/popular.json?scale=day', DANBOORU_BASE_URL);
+      } else {
+        target = new URL('/posts.json', DANBOORU_BASE_URL);
+        target.searchParams.set('tags', query);
+        // Danbooru 官方 API 规定：order:random 查询不允许 page > 1（否则上游直接抛 500），必须固定 page=1
+        target.searchParams.set('page', isRandom ? '1' : String(page));
+        target.searchParams.set('limit', String(limit));
+      }
+
       const payload = await fetchDanbooruJson(target, env);
       const items = (Array.isArray(payload) ? payload : [])
         .map(normalizeDanbooruPost)
         .filter(Boolean);
-      return json({ items, page: isRandom ? 1 : page, limit, query, hasMore: isRandom ? false : (Array.isArray(payload) && payload.length >= limit) }, 200, {
+      const isExplore = query.startsWith('explore:');
+      return json({ items, page: isRandom || isExplore ? 1 : page, limit, query, hasMore: isRandom || isExplore ? false : (Array.isArray(payload) && payload.length >= limit) }, 200, {
         'Cache-Control': isRandom ? 'no-cache, no-store' : 'private, max-age=120',
       });
     } catch (e: any) {

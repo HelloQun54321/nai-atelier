@@ -552,7 +552,15 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             </div>
           ) : (
             <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
-              <span>{query === 'order:rank' ? '综合热门推荐' : `检索：${query.replaceAll('_', ' ')}`}</span>
+              <span>
+                {query === 'order:rank'
+                  ? '综合热门推荐'
+                  : query === 'explore:popular_month'
+                  ? '高分榜 · 月度热门'
+                  : query === 'explore:popular_week'
+                  ? '收藏榜 · 本周精选'
+                  : `检索：${query.replaceAll('_', ' ')}`}
+              </span>
               <span>已加载 {displayedItems.length} 件{hasMore ? ' · 滚动继续加载' : ' · 已全部加载'}</span>
             </div>
           )}

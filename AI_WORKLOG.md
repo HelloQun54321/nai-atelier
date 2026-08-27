@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-28
+- **Gemini (Flash)**：修复 Danbooru 全局高分榜与收藏榜数据库查询超时卡死，自动路由至官方 explore popular 聚合接口（fix: route global Danbooru score and favcount sorts to official explore popular endpoints）。
 - **Gemini (Flash)**：收敛 Danbooru 图库为单行顶栏下拉筛选，修复上游 2-Tag 上限下的评级/比例/单人多维筛选生效（feat: consolidate Danbooru toolbar into single row and fix multi-dimensional filtering）。
 - **Gemini (Flash)**：编辑页返回列表恢复浏览位置，任意方式离开编辑页时自动为未设封面的风格串补全封面（fix: restore list position on editor exit and auto-fill missing style covers）。
 - **Gemini (Flash)**：新增 keep-alive 图库滚动位置保持 hook，修复侧边栏切换页面跳回顶部问题（fix: restore scroll position across keep-alive gallery views）。

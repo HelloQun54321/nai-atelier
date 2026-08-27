@@ -146,26 +146,34 @@ export const buildDanbooruFilterQuery = (options: DanbooruFilterOptions = {}): s
   const raw = (options.query || '').trim();
   if (raw) parts.push(raw);
 
-  // 排序修饰
-  if (options.sort === 'score') parts.push('order:score');
-  else if (options.sort === 'favcount') parts.push('order:favcount');
-  else if (options.sort === 'latest') parts.push('order:id_desc');
-  else if (options.sort === 'rank' || (!options.sort && !raw)) parts.push('order:rank');
+  // 排序修饰：
+  // 1. 当有关键词时（如 frieren order:score），Danbooru 的索引能极快响应；
+  // 2. 当无关键词时（全站大库），全表 order:score 或 order:favcount 会触发 Danbooru 官方数据库 500 timeout；
+  //    此时无缝路由到 Danbooru 官方专用的 /explore/posts/popular 聚合接口（日榜/周榜/月榜），秒级响应且结果高质量。
+  if (options.sort === 'score') {
+    parts.push(raw ? 'order:score' : 'explore:popular_month');
+  } else if (options.sort === 'favcount') {
+    parts.push(raw ? 'order:favcount' : 'explore:popular_week');
+  } else if (options.sort === 'latest') {
+    parts.push('order:id_desc');
+  } else if (options.sort === 'rank' || (!options.sort && !raw)) {
+    parts.push('order:rank');
+  }
 
   // 评级修饰（仅在不超过 2 Tag 匿名上限时可并入上游检索）
-  if (options.rating && options.rating !== 'all' && parts.length < 2) {
+  if (options.rating && options.rating !== 'all' && parts.length < 2 && !parts[0]?.startsWith('explore:')) {
     parts.push(`rating:${options.rating}`);
   }
 
   // 构图比例修饰
-  if (parts.length < 2) {
+  if (parts.length < 2 && !parts[0]?.startsWith('explore:')) {
     if (options.ratio === 'portrait') parts.push('ratio:<0.8');
     else if (options.ratio === 'landscape') parts.push('ratio:>1.2');
     else if (options.ratio === 'square') parts.push('ratio:square');
   }
 
   // 主体修饰
-  if (options.subject && options.subject !== 'all' && parts.length < 2) {
+  if (options.subject && options.subject !== 'all' && parts.length < 2 && !parts[0]?.startsWith('explore:')) {
     parts.push(options.subject);
   }
 
