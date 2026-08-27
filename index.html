@@ -7,19 +7,8 @@
     <title>NAI Atelier · NovelAI 创作工坊</title>
     <!-- Simple Emoji Favicon -->
     <link rel="icon" type="image/png" href="/artist-palette-3d.png">
-    <!-- Keys removed for security - Managed by Worker Env -->
-    <script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "jszip": "https://esm.sh/jszip@3.10.1",
-    "bcryptjs": "https://esm.sh/bcryptjs@^3.0.3"
-  }
-}
-</script>
-<link rel="stylesheet" href="/index.css">
+    <!-- 依赖由 Vite 本地打包，不再使用 esm.sh CDN importmap（上游零构建时代遗留）。 -->
+    <link rel="stylesheet" href="/index.css">
 </head>
   <body class="antialiased h-screen overflow-hidden bg-gray-50 text-gray-900 transition-colors duration-300 dark:bg-gray-950 dark:text-gray-100">
     <div id="root" class="h-full"></div>

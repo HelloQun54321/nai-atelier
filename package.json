@@ -1,7 +1,7 @@
 {
   "name": "nai-atelier",
   "private": true,
-  "version": "0.120.4",
+  "version": "0.120.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,8 +14,6 @@
     "prepare": "node scripts/install-git-hooks.mjs",
     "update:tags": "node --no-warnings scripts/update-tag-dictionary.mjs",
     "preview": "vite preview",
-    "deploy": "npm run build && npx wrangler pages project create nai-prompt-manager --production-branch main || true && npx wrangler pages deploy dist --project-name=nai-prompt-manager --commit-message=deploy",
-    "manual-deploy": "npm run build && npx wrangler pages deploy dist --project-name=nai-prompt-manager --branch=main --commit-message=deploy",
     "dev:local": "node scripts/local-server.mjs",
     "dev:local:quick": "npx wrangler pages dev dist --persist-to ./local-data --binding LOCAL_HISTORY_ENABLED=true --binding PERSONAL_MODE_ENABLED=true --port 3000 --show-interactive-dev-session=false",
     "dev:local:watch": "concurrently -k \"vite build --watch\" \"esbuild worker/index.ts --bundle --format=esm --outfile=dist/_worker.js --platform=browser --watch\" \"npm run dev:local:quick\"",
