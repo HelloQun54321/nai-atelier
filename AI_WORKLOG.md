@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：镜像对齐角色库与画师库顶栏布局，为角色库增配独立收藏按钮并精简画师库冗余跑图入口（feat: harmonize topbars and favorite actions between character and artist libraries）。
 - **Gemini (Flash)**：恢复 AITag 画廊顶栏桌面端筛选按钮（fix: restore desktop filter button in AitagGallery toolbar）。
 - **Gemini (Flash)**：修复 ArtistLibraryConfig 弹窗内部容器闭合缺陷（fix: restore inner container div in ArtistLibraryConfig）。
 - **Gemini (Flash)**：执行审查阶段三：对齐角色卡片外壳圆角、暗黑背景与选中光晕至 DesignSystem MediaCard 标准（style: harmonize character card shell and selection rings with DesignSystem standards）。

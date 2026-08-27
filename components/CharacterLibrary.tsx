@@ -16,7 +16,7 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
-import { Check, ChevronDown, Dice5, LoaderCircle, Menu, Plus, RefreshCw, Settings2, SlidersHorizontal, Tag, UserRound } from 'lucide-react';
+import { Check, ChevronDown, Dice5, Heart, LoaderCircle, Menu, Plus, RefreshCw, Settings2, SlidersHorizontal, Tag, UserRound } from 'lucide-react';
 import { IconButton, SegmentedControl, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
@@ -562,70 +562,69 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             >
               <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">{searchTerm.trim() ? '相关性优先 · 名称 A → Z' : '名称 A → Z'}</option><option value="name-desc">{searchTerm.trim() ? '相关性优先 · 名称 Z → A' : '名称 Z → A'}</option>
             </select>
-            <div className="relative ml-auto flex flex-none items-center justify-end gap-2">
-              <div className="relative flex flex-none items-center">
-                <ToolbarButton
-                  onClick={() => void drawGacha()}
-                  disabled={isGachaLoading || catalogTotal <= 0}
-                  className="!rounded-r-none !border-r-0 !bg-indigo-600 !text-white hover:!bg-indigo-500"
-                >
-                  {isGachaLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Dice5 className="h-4 w-4" />}
-                  {gachaCards ? '再抽一批' : '随机抽卡'}
-                </ToolbarButton>
-                <IconButton
-                  label="抽卡设置"
-                  onClick={() => setShowGachaTools(value => !value)}
-                  className="!rounded-l-none"
-                  aria-expanded={showGachaTools}
-                  aria-haspopup="dialog"
-                >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </IconButton>
-                {showGachaTools && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowGachaTools(false)} />
-                    <div role="dialog" aria-label="随机抽卡设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                      <div className="mb-2 text-xs font-bold text-gray-800 dark:text-white">随机抽卡设置</div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <label className="text-xs text-gray-500 dark:text-gray-400">
-                          抽卡范围
-                          <select
-                            value={gachaMode}
-                            onChange={event => setGachaMode(event.target.value as GachaMode)}
-                            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white"
-                          >
-                            <option value="mixed">Tag + 自定义</option>
-                            <option value="catalog">只抽角色 Tag</option>
-                            <option value="custom">只抽自定义</option>
-                          </select>
-                        </label>
-                        <label className="text-xs text-gray-500 dark:text-gray-400">
-                          数量
-                          <select
-                            value={gachaCount}
-                            onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)}
-                            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white"
-                          >
-                            <option value={6}>6 位</option>
-                            <option value={12}>12 位</option>
-                            <option value={24}>24 位</option>
-                          </select>
-                        </label>
-                      </div>
-                      {gachaCards && (
-                        <button
-                          type="button"
-                          onClick={() => { setGachaCards(null); setShowGachaTools(false); }}
-                          className="mt-3 w-full rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
+            <div className="relative flex flex-none items-center">
+              <ToolbarButton
+                onClick={() => void drawGacha()}
+                disabled={isGachaLoading || catalogTotal <= 0}
+                className="!rounded-r-none !border-r-0 !bg-indigo-600 !text-white hover:!bg-indigo-500"
+              >
+                {isGachaLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Dice5 className="h-4 w-4" />}
+                {gachaCards ? '再抽一批' : '随机抽卡'}
+              </ToolbarButton>
+              <IconButton
+                label="抽卡设置"
+                onClick={() => setShowGachaTools(value => !value)}
+                className="!rounded-l-none"
+                aria-expanded={showGachaTools}
+                aria-haspopup="dialog"
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </IconButton>
+              {showGachaTools && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowGachaTools(false)} />
+                  <div role="dialog" aria-label="随机抽卡设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                    <div className="mb-2 text-xs font-bold text-gray-800 dark:text-white">随机抽卡设置</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="text-xs text-gray-500 dark:text-gray-400">
+                        抽卡范围
+                        <select
+                          value={gachaMode}
+                          onChange={event => setGachaMode(event.target.value as GachaMode)}
+                          className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white"
                         >
-                          返回完整目录
-                        </button>
-                      )}
+                          <option value="mixed">Tag + 自定义</option>
+                          <option value="catalog">只抽角色 Tag</option>
+                          <option value="custom">只抽自定义</option>
+                        </select>
+                      </label>
+                      <label className="text-xs text-gray-500 dark:text-gray-400">
+                        数量
+                        <select
+                          value={gachaCount}
+                          onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)}
+                          className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white"
+                        >
+                          <option value={6}>6 位</option>
+                          <option value={12}>12 位</option>
+                          <option value={24}>24 位</option>
+                        </select>
+                      </label>
                     </div>
-                  </>
-                )}
-              </div>
-
+                    {gachaCards && (
+                      <button
+                        type="button"
+                        onClick={() => { setGachaCards(null); setShowGachaTools(false); }}
+                        className="mt-3 w-full rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
+                      >
+                        返回完整目录
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="relative ml-auto flex flex-none items-center justify-end gap-2">
               <div className="relative flex-none">
                 <IconButton
                   label="显示设置"
@@ -660,6 +659,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                 )}
               </div>
 
+              <IconButton label={tab === 'favorites' ? '显示全部角色' : '只看收藏'} tone={tab === 'favorites' ? 'favorite' : 'neutral'} onClick={() => setTab(tab === 'favorites' ? 'all' : 'favorites')}><Heart className={`h-4 w-4 ${tab === 'favorites' ? 'fill-current' : ''}`} /></IconButton>
               <IconButton label="刷新列表" onClick={() => void onRefresh()} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
               <ImageTaggerAction notify={notify} />
               <ToolbarButton tone="primary" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4" />自定义角色</ToolbarButton>

@@ -12,7 +12,7 @@ import { createUuid } from '../services/id';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
-import { Bot, ChevronDown, ClipboardList, Clock3, Dice5, Download, Grid3X3, Heart, List, LoaderCircle, Menu, MoreHorizontal, RefreshCw, Settings2, SlidersHorizontal } from 'lucide-react';
+import { Bot, ChevronDown, ClipboardList, Clock3, Dice5, Download, Grid3X3, Heart, List, LoaderCircle, Menu, RefreshCw, Settings2, SlidersHorizontal } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
@@ -1132,32 +1132,27 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                 </div>
                 <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
                     {/* Primary search */}
-                    <div className="relative min-w-0 flex-1">
-                        <ToolbarSearch
-                            type="text"
-                            placeholder="搜索全部画师 Tag（支持中文）..."
-                            className="pr-12"
-                            containerClassName="md:max-w-none!"
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                        />
-                        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">
-                            {isCatalogLoading ? <span className="inline-block h-3 w-3 animate-spin rounded-full border border-gray-400 border-t-transparent" /> : filteredArtists.length.toLocaleString('zh-CN')}
-                        </div>
-                    </div>
+                    <ToolbarSearch
+                        type="text"
+                        placeholder="搜索全部画师 Tag（支持中文）..."
+                        containerClassName="min-w-0 md:w-64 lg:w-72 flex-none"
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                    />
 
                     <select
                         value={artistSort}
                         onChange={event => setArtistSort(event.target.value as ArtistDictionarySort)}
                         disabled={!!gachaArtists}
-                        className="h-10 rounded-xl border border-gray-200 bg-white px-2.5 text-xs text-gray-700 outline-none hover:border-gray-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700"
+                        className="h-10 flex-none rounded-xl border border-gray-200 bg-white px-3 text-xs text-gray-700 outline-none hover:border-gray-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700"
                         title={gachaArtists ? '返回目录后可调整排序' : '画师目录排序'}
                     >
-                        <option value="popular">热度：高到低</option>
-                        <option value="least">热度：低到高</option>
-                        <option value="name-asc">名称：A → Z</option>
-                        <option value="name-desc">名称：Z → A</option>
+                        <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option>
+                        <option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option>
+                        <option value="name-asc">{searchTerm.trim() ? '相关性优先 · 名称 A → Z' : '名称 A → Z'}</option>
+                        <option value="name-desc">{searchTerm.trim() ? '相关性优先 · 名称 Z → A' : '名称 Z → A'}</option>
                     </select>
+
                     <div className="relative flex flex-none items-center">
                         <ToolbarButton onClick={() => void drawGacha()} disabled={isGachaLoading || artistCatalogCount <= 0} className="!rounded-r-none !border-r-0 !bg-indigo-600 !text-white hover:!bg-indigo-500">
                             {isGachaLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Dice5 className="h-4 w-4" />}{gachaArtists ? '再抽一批' : '随机抽卡'}
@@ -1167,48 +1162,54 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                             <>
                                 <div className="fixed inset-0 z-40" onClick={() => setShowGachaTools(false)} />
                                 <div role="dialog" aria-label="随机抽卡设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                                    <div className="grid grid-cols-2 gap-2"><label className="text-xs text-gray-500">抽卡方式<select value={gachaMode} onChange={event => setGachaMode(event.target.value as ArtistGachaMode)} className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"><option value="mixed">惊喜混合</option><option value="uniform">完全随机</option><option value="popular">热门画师</option></select></label><label className="text-xs text-gray-500">数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label></div>
-                                    {gachaArtists && <button type="button" onClick={() => { returnToCatalog(); setShowGachaTools(false); }} className="mt-3 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-800">返回完整目录</button>}
+                                    <div className="mb-2 text-xs font-bold text-gray-800 dark:text-white">随机抽卡设置</div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <label className="text-xs text-gray-500 dark:text-gray-400">
+                                            抽卡方式
+                                            <select value={gachaMode} onChange={event => setGachaMode(event.target.value as ArtistGachaMode)} className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white">
+                                                <option value="mixed">惊喜混合</option>
+                                                <option value="uniform">完全随机</option>
+                                                <option value="popular">热门画师</option>
+                                            </select>
+                                        </label>
+                                        <label className="text-xs text-gray-500 dark:text-gray-400">
+                                            数量
+                                            <select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white">
+                                                <option value={6}>6 位</option>
+                                                <option value={12}>12 位</option>
+                                                <option value={24}>24 位</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                    {gachaArtists && <button type="button" onClick={() => { returnToCatalog(); setShowGachaTools(false); }} className="mt-3 w-full rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">返回完整目录</button>}
                                 </div>
                             </>
                         )}
                     </div>
 
-                    <div className="relative flex-none">
-                        <IconButton label="显示设置" onClick={() => setShowDisplayTools(value => !value)} aria-expanded={showDisplayTools}><SlidersHorizontal /></IconButton>
-                        {showDisplayTools && (
-                            <>
-                                <div className="fixed inset-0 z-40" onClick={() => setShowDisplayTools(false)} />
-                                <div role="dialog" aria-label="画师显示设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-72 rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                                    <div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setLayoutMode('grid')} className={`rounded-lg px-3 py-2 text-sm ${layoutMode === 'grid' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}><Grid3X3 className="mr-1 inline h-4 w-4" />网格</button><button type="button" onClick={() => setLayoutMode('list')} className={`rounded-lg px-3 py-2 text-sm ${layoutMode === 'list' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}><List className="mr-1 inline h-4 w-4" />展开</button></div>
-                                    {layoutMode === 'grid' && <div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={() => setViewMode('original')} className={`rounded-lg px-3 py-2 text-sm ${viewMode === 'original' ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-950/40' : 'bg-gray-100 dark:bg-gray-800'}`}>原图</button><button type="button" onClick={() => setViewMode('benchmark')} className={`rounded-lg px-3 py-2 text-sm ${viewMode === 'benchmark' ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-950/40' : 'bg-gray-100 dark:bg-gray-800'}`}>实装</button></div>}
-                                    <label className="mt-3 block text-xs text-gray-500">{layoutMode === 'grid' ? `每行 ${gridCols} 列` : `图片宽度 ${listImgWidth}px`}<input type="range" min={layoutMode === 'grid' ? 3 : 80} max={layoutMode === 'grid' ? 15 : 400} step={layoutMode === 'grid' ? 1 : 10} value={layoutMode === 'grid' ? gridCols : listImgWidth} onChange={event => layoutMode === 'grid' ? (setGridCols(Number(event.target.value)), localStorage.setItem('nai_artist_grid_columns', event.target.value)) : setListImgWidth(Number(event.target.value))} className="mt-2 w-full accent-indigo-500" /></label>
-                                    {layoutMode === 'grid' && viewMode === 'benchmark' && <label className="mt-3 block text-xs text-gray-500">实装槽位<select value={activeSlot} onChange={event => setActiveSlot(Number(event.target.value))} className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-800">{config.slots.map((slot, index) => <option key={index} value={index}>{index + 1}. {slot.label}</option>)}</select></label>}
-                                    <button type="button" onClick={() => { setShowDisplayTools(false); setShowConfig(true); }} className="mt-3 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-800"><Settings2 className="mr-1 inline h-4 w-4" />管理分组与槽位</button>
-                                </div>
-                            </>
-                        )}
-                    </div>
+                    <div className="relative ml-auto flex flex-none items-center justify-end gap-2">
+                        <div className="relative flex-none">
+                            <IconButton label="显示设置" onClick={() => setShowDisplayTools(value => !value)} aria-expanded={showDisplayTools}><SlidersHorizontal /></IconButton>
+                            {showDisplayTools && (
+                                <>
+                                    <div className="fixed inset-0 z-40" onClick={() => setShowDisplayTools(false)} />
+                                    <div role="dialog" aria-label="画师显示设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-72 rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                                        <div className="mb-2 text-xs font-bold text-gray-800 dark:text-white">显示设置</div>
+                                        <div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setLayoutMode('grid')} className={`rounded-lg px-3 py-2 text-sm ${layoutMode === 'grid' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}><Grid3X3 className="mr-1 inline h-4 w-4" />网格</button><button type="button" onClick={() => setLayoutMode('list')} className={`rounded-lg px-3 py-2 text-sm ${layoutMode === 'list' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}><List className="mr-1 inline h-4 w-4" />展开</button></div>
+                                        {layoutMode === 'grid' && <div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={() => setViewMode('original')} className={`rounded-lg px-3 py-2 text-sm ${viewMode === 'original' ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-950/40' : 'bg-gray-100 dark:bg-gray-800'}`}>原图</button><button type="button" onClick={() => setViewMode('benchmark')} className={`rounded-lg px-3 py-2 text-sm ${viewMode === 'benchmark' ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-950/40' : 'bg-gray-100 dark:bg-gray-800'}`}>实装</button></div>}
+                                        <label className="mt-3 block text-xs text-gray-500">{layoutMode === 'grid' ? `每行 ${gridCols} 列` : `图片宽度 ${listImgWidth}px`}<input type="range" min={layoutMode === 'grid' ? 3 : 80} max={layoutMode === 'grid' ? 15 : 400} step={layoutMode === 'grid' ? 1 : 10} value={layoutMode === 'grid' ? gridCols : listImgWidth} onChange={event => layoutMode === 'grid' ? (setGridCols(Number(event.target.value)), localStorage.setItem('nai_artist_grid_columns', event.target.value)) : setListImgWidth(Number(event.target.value))} className="mt-2 w-full accent-indigo-500" /></label>
+                                    </div>
+                                </>
+                            )}
+                        </div>
 
-                    <IconButton label={showFavOnly ? '显示全部画师' : '只看收藏'} tone={showFavOnly ? 'favorite' : 'neutral'} onClick={() => setShowFavOnly(value => !value)}><Heart className={`h-4 w-4 ${showFavOnly ? 'fill-current' : ''}`} /></IconButton>
+                        <IconButton label={showFavOnly ? '显示全部画师' : '只看收藏'} tone={showFavOnly ? 'favorite' : 'neutral'} onClick={() => setShowFavOnly(value => !value)}><Heart className={`h-4 w-4 ${showFavOnly ? 'fill-current' : ''}`} /></IconButton>
 
-                    {(taskQueue.length > 0 || failedTasks.length > 0) && <div className={`flex h-9 flex-none items-center overflow-hidden rounded-lg border text-xs font-bold ${failedTasks.length ? 'border-red-200 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/30' : 'border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-800 dark:bg-indigo-950/30'}`}><button type="button" onClick={() => setShowLogs(true)} className="h-full px-2">等待 {taskQueue.length}{failedTasks.length ? ` · 失败 ${failedTasks.length}` : ''}</button><button type="button" onClick={() => setIsPaused(value => !value)} className={`flex h-full w-8 items-center justify-center border-l border-current/15 ${isPaused ? 'bg-amber-100 text-amber-600 dark:bg-amber-950/40' : ''}`} aria-label={isPaused ? '恢复画师预览队列' : '暂停画师预览队列'} title={isPaused ? '恢复队列' : '暂停队列'}>{isPaused ? <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg> : <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>}</button></div>}
-                    <div className="relative flex-none">
-                        <IconButton label="更多工具" onClick={() => setShowMoreTools(value => !value)} aria-expanded={showMoreTools}><MoreHorizontal /></IconButton>
-                        {showMoreTools && (
-                            <>
-                                <div className="fixed inset-0 z-40" onClick={() => setShowMoreTools(false)} />
-                                <div role="menu" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-52 rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                                    {isAdmin && (layoutMode === 'list' || viewMode === 'benchmark') && apiKey && <button type="button" onClick={() => { queueMissingGenerations(); setShowMoreTools(false); }} className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700">补全缺失预览</button>}
-                                    <button type="button" onClick={() => { setShowImport(true); setShowMoreTools(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"><Download className="h-4 w-4" />批量导入</button>
-                                    <button type="button" onClick={() => { setShowHistory(true); setShowMoreTools(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"><Clock3 className="h-4 w-4" />历史记录</button>
-                                    <button type="button" onClick={() => { setShowLogs(true); setShowMoreTools(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"><ClipboardList className="h-4 w-4" />任务与日志</button>
-                                </div>
-                            </>
-                        )}
+                        <IconButton label="批量导入画师" onClick={() => setShowImport(true)} title="批量导入画师"><Download className="h-4 w-4" /></IconButton>
+
+                        {canManageArtists && <IconButton label="刷新画师列表" onClick={handleRefresh} disabled={isLoading}><RefreshCw className={isLoading ? 'animate-spin' : ''} /></IconButton>}
+                        <ImageTaggerAction notify={notify} />
                     </div>
-                    {canManageArtists && <IconButton label="刷新画师列表" onClick={handleRefresh} disabled={isLoading}><RefreshCw className={isLoading ? 'animate-spin' : ''} /></IconButton>}
-                    <ImageTaggerAction notify={notify} />
                 </div>
             </WorkspaceToolbar>
 
