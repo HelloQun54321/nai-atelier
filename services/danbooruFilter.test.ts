@@ -15,7 +15,6 @@ describe('buildDanbooruFilterQuery', () => {
     expect(buildDanbooruFilterQuery({ query: 'hatsune_miku', sort: 'score' })).toBe('hatsune_miku order:score');
     expect(buildDanbooruFilterQuery({ query: 'hatsune_miku', sort: 'favcount' })).toBe('hatsune_miku order:favcount');
     expect(buildDanbooruFilterQuery({ query: 'hatsune_miku', sort: 'latest' })).toBe('hatsune_miku order:id_desc');
-    expect(buildDanbooruFilterQuery({ query: 'hatsune_miku', sort: 'random' })).toBe('hatsune_miku order:random');
   });
 
   it('combines rating, ratio, and subject filters', () => {

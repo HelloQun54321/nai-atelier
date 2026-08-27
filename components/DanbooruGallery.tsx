@@ -23,7 +23,7 @@ import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMa
 import { OriginalImage, SmartImage } from './SmartImage';
 import { buildMediaUrl } from '../services/mobileImageCache';
 import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHistoryService';
-import { Clock, Dices, Filter, Flame, Sparkles, Star } from 'lucide-react';
+import { Clock, Filter, Flame, Sparkles, Star } from 'lucide-react';
 
 interface DanbooruGalleryProps {
   active: boolean;
@@ -74,7 +74,7 @@ const copyText = async (value: string) => {
   textarea.remove();
 };
 
-type DanbooruSort = 'rank' | 'score' | 'favcount' | 'latest' | 'random';
+type DanbooruSort = 'rank' | 'score' | 'favcount' | 'latest';
 type DanbooruRating = 'all' | 'g' | 's' | 'q' | 'e';
 type DanbooruRatio = 'all' | 'portrait' | 'landscape' | 'square';
 
@@ -384,14 +384,6 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     void handleApplyFilter({ inputVal: input });
   };
 
-  const handleRandomGacha = () => {
-    if (sort === 'random') {
-      void load('order:random', 1);
-    } else {
-      void handleApplyFilter({ sort: 'random' });
-    }
-  };
-
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceToolbar>
@@ -399,7 +391,6 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
           <ToolbarSearch value={input} onChange={event => setInput(event.target.value)} placeholder="输入中文或英文 Tag，回车直接搜索" aria-label="搜索 Danbooru" />
           <ToolbarButton type="submit" tone="primary" disabled={loading}><Search />搜索</ToolbarButton>
         </form>
-        <ToolbarButton onClick={handleRandomGacha} disabled={loading} title="随机抽卡漫游"><Dices className="text-amber-500" />抽卡漫游</ToolbarButton>
         <ToolbarButton onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : undefined} title="浏览历史足迹"><Clock />足迹</ToolbarButton>
         <IconButton label="刷新" onClick={() => void load(query, page)} disabled={loading}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton>
         <ImageTaggerAction notify={notify} />
@@ -416,7 +407,6 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             { id: 'score', label: '高分榜' },
             { id: 'favcount', label: '收藏榜' },
             { id: 'latest', label: '最新' },
-            { id: 'random', label: '随机' },
           ].map(opt => (
             <button
               key={opt.id}

@@ -135,7 +135,7 @@ export const danbooruAllTags = (post: DanbooruPost) => [
 
 export interface DanbooruFilterOptions {
   query?: string;
-  sort?: 'rank' | 'score' | 'favcount' | 'latest' | 'random';
+  sort?: 'rank' | 'score' | 'favcount' | 'latest';
   rating?: 'all' | 'g' | 's' | 'q' | 'e';
   ratio?: 'all' | 'portrait' | 'landscape' | 'square';
   subject?: 'all' | 'solo' | '1girl' | '1boy';
@@ -150,7 +150,6 @@ export const buildDanbooruFilterQuery = (options: DanbooruFilterOptions = {}): s
   if (options.sort === 'score') parts.push('order:score');
   else if (options.sort === 'favcount') parts.push('order:favcount');
   else if (options.sort === 'latest') parts.push('order:id_desc');
-  else if (options.sort === 'random') parts.push('order:random');
   else if (options.sort === 'rank' || (!options.sort && !raw)) parts.push('order:rank');
 
   // 评级修饰

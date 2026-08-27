@@ -15,23 +15,49 @@ function buildLocalDanbooruFetch(targetUrl: string, env?: Env) {
   };
 }
 
+// Danbooru 在负载高时会对重查询返回 500 time-out（官方文档亦有多项说明）；
+// 上游 500 time-out 自动重试，网络超时同样重试，避免瞬时负载造成偶发失败。
 async function fetchDanbooruJson(target: URL, env?: Env) {
-  const localFetch = buildLocalDanbooruFetch(target.toString(), env);
-  const response = await fetch(localFetch.url, {
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': 'NAI-Atelier/0.5 (+local personal use)',
-      ...localFetch.headers,
-    },
-    signal: AbortSignal.timeout(30_000),
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    let message = text.slice(0, 240);
-    try { message = JSON.parse(text)?.message || JSON.parse(text)?.error || message; } catch { /* Plain-text error. */ }
-    throw Object.assign(new Error(`Danbooru ${response.status}: ${message}`), { status: response.status });
+  const maxAttempts = 3;
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (attempt > 0) { const { promise, resolve } = Promise.withResolvers<void>(); setTimeout(resolve, 1000 * attempt); await promise; }
+    try {
+      const localFetch = buildLocalDanbooruFetch(target.toString(), env);
+      const response = await fetch(localFetch.url, {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'NAI-Atelier/0.5 (+local personal use)',
+          ...localFetch.headers,
+        },
+        signal: AbortSignal.timeout(30_000),
+      });
+      const text = await response.text();
+      if (!response.ok) {
+        let message = text.slice(0, 240);
+        try { message = JSON.parse(text)?.message || JSON.parse(text)?.error || message; } catch { /* Plain-text error. */ }
+        const isServerTimeOut = response.status === 500 && /timeout|timed out/i.test(message);
+        if (isServerTimeOut && attempt < maxAttempts - 1) {
+          lastError = new Error(`Danbooru ${response.status}: ${message}`);
+          continue;
+        }
+        if (isServerTimeOut) {
+          throw Object.assign(new Error('Danbooru 数据库查询超时（随机检索繁忙），请稍后再试'), { status: 502, danbooruDetail: message });
+        }
+        throw Object.assign(new Error(`Danbooru ${response.status}: ${message}`), { status: response.status });
+      }
+      try { return JSON.parse(text); } catch { throw new Error('Danbooru 返回了无效 JSON'); }
+    } catch (error: any) {
+      lastError = error;
+      const networkTimeOut = error?.name === 'TimeoutError'
+        || error?.cause?.code === 'UND_ERR_CONNECT_TIMEOUT'
+        || error?.cause?.code === 'UND_ERR_HEADERS_TIMEOUT'
+        || error?.cause?.code === 'UND_ERR_SOCKET';
+      if (networkTimeOut && attempt < maxAttempts - 1) continue;
+      throw error;
+    }
   }
-  try { return JSON.parse(text); } catch { throw new Error('Danbooru 返回了无效 JSON'); }
+  throw lastError;
 }
 
 const splitDanbooruTags = (value: unknown) => String(value || '').split(/\s+/).map(tag => tag.trim()).filter(Boolean);
