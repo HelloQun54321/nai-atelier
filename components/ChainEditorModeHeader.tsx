@@ -33,7 +33,7 @@ export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
         label={`返回${entityLabel}列表`}
         onClick={() => void onBack()}
       >
-        <ArrowLeft className="h-5 w-5" />
+        <ArrowLeft className="h-4 w-4" />
       </IconButton>
       {isOwner && (
         <IconButton

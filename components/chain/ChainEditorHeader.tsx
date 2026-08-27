@@ -156,7 +156,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                             label="导入图片或 JSON 配置"
                             onClick={() => importInputRef.current?.click()}
                         >
-                            <FileDown />
+                            <FileDown className="h-4 w-4" />
                         </IconButton>
                     </>
                 )}
@@ -165,7 +165,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                         label="引用预设"
                         onClick={() => setShowImportPreset(true)}
                     >
-                        <Quote />
+                        <Quote className="h-4 w-4" />
                     </IconButton>
                 )}
                 {canEdit && (
@@ -173,7 +173,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                         label="图片反推 Tag"
                         onClick={() => setTaggerOpen(true)}
                     >
-                        <ImagePlus />
+                        <ImagePlus className="h-4 w-4" />
                     </IconButton>
                 )}
                 <IconButton
@@ -187,7 +187,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     className={tagAssistEnabled ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-800 dark:!bg-indigo-950/40 dark:!text-indigo-300' : ''}
                 >
                     <span className="relative block">
-                        <Tags />
+                        <Tags className="h-4 w-4" />
                         <span aria-hidden="true" className="absolute -bottom-1.5 -right-1.5 text-[9px] font-black leading-none">
                             {tagAssistEnabled ? 'o' : '−'}
                         </span>
@@ -199,7 +199,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                         tone="danger"
                         onClick={handleReset}
                     >
-                        <RotateCcw />
+                        <RotateCcw className="h-4 w-4" />
                     </IconButton>
                 )}
                 {/* Fork / Save to Library Button */}
@@ -211,14 +211,14 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                             onClick={handleFork}
                             className="!border-emerald-300 !bg-emerald-50 !text-emerald-600 hover:!bg-emerald-100 dark:!border-emerald-900/70 dark:!bg-emerald-950/35 dark:!text-emerald-300"
                         >
-                            <Save />
+                            <Save className="h-4 w-4" />
                         </IconButton>
                     ) : (
                         <ToolbarButton
                             disabled={isUploading}
                             onClick={handleFork}
                         >
-                            <Save />
+                            <Save className="h-4 w-4" />
                             <span>复制为新串</span>
                         </ToolbarButton>
                     )
@@ -234,7 +234,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                         title={isUploading ? '正在保存' : hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存'}
                         aria-label={isUploading ? '正在保存' : hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存'}
                     >
-                        <Save />
+                        <Save className="h-4 w-4" />
                         <span className="hidden sm:inline">{isUploading ? '保存中' : canSaveCurrentChain ? '保存修改' : '已保存'}</span>
                     </ToolbarButton>
                 )}
