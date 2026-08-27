@@ -3,6 +3,10 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-27
+### 优化:角色卡片外壳圆角与多选聚焦环对齐设计系统（审查阶段三）
+
+- **卡片外壳对齐**：将 `CharacterLibrary` 中的角色卡片外壳圆角从 `rounded-lg` 统一升级为 `DesignSystem` 规范的 `rounded-2xl`，背景与边框统一至 `dark:bg-gray-900` 与 `dark:border-gray-800`，选中光晕统一为 `border-indigo-500 ring-2 ring-indigo-500/20`，消除跨画廊卡片质感差异。
+
 ### 优化:生图实验室参数调优表单视觉与聚焦光晕系统化收敛（审查阶段二）
 
 - **参数表单规范化**：全面升级生图实验室（`ChainEditorParams`）的生成模型下拉框、图片尺寸预设与自定义宽高输入框、采样器、步数与随机种子输入框为设计系统标准的 `rounded-xl` 圆角，并补充统一的 `focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20` 键盘与鼠标聚焦光晕，彻底消除旧版 4px 细碎生硬输入框风格。
