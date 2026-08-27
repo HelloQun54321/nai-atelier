@@ -378,7 +378,12 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       }
       setItems(prev => prev.map(item => (item.id === illust.id ? { ...item, isBookmarked: willBookmark } : item)));
     } catch (e: any) {
-      notify(e?.message || '操作失败', 'error');
+      const message = String(e?.message || '');
+      // Pixiv 上游常见 400/404 原文（作品失效、收藏状态不同步等），转成可理解提示。
+      const friendly = /invalid request/i.test(message)
+        ? 'Pixiv 拒绝了该请求（作品可能已失效或状态已变化），请刷新后重试'
+        : (message || '操作失败');
+      notify(friendly, 'error');
     } finally {
       setBookmarking(false);
     }

@@ -640,6 +640,7 @@ export class PixivGalleryService {
         this.feedCache.clear();
         return { success: true, alreadyBookmarked: true };
       }
+      console.error('[pixiv] addBookmark failed:', { illustId: id, status: err?.status, code: err?.code, message: err?.message });
       throw err;
     }
   }
@@ -660,6 +661,7 @@ export class PixivGalleryService {
         this.feedCache.clear();
         return { success: true };
       }
+      console.error('[pixiv] deleteBookmark failed:', { illustId: id, status: err?.status, code: err?.code, message: err?.message });
       throw err;
     }
   }
