@@ -498,7 +498,9 @@ const App = () => {
   const getSelectedChain = () => chains.find(c => c.id === selectedId);
   const handleReturnFromEditor = () => {
     const selectedChain = getSelectedChain();
-    return handleNavigate(selectedChain?.type === 'character' ? 'characters' : 'list', selectedChain?.id || selectedId, { refreshData: false });
+    // 不传 id：返回列表时保持离开前的滚动位置（useKeepAliveScrollRestore 恢复），
+    // 而不是把编辑过的卡片滚到视口中央，符合“回到刚刚浏览的位置”的预期。
+    return handleNavigate(selectedChain?.type === 'character' ? 'characters' : 'list', undefined, { refreshData: false });
   };
 
   if (!currentUser && !dbConfigError) {

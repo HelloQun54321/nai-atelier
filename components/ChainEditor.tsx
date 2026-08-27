@@ -1208,6 +1208,29 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         return { previewImage: upload.url, changed: true };
     };
 
+
+    /** 离开编辑页前，若风格串尚未设置封面且当前有可见图片，自动将该图设为封面。
+     *  已有封面或非风格串时不改动；失败静默，不阻塞返回。 */
+    const autoSaveCoverOnExit = async () => {
+        if (chain.type !== 'style' || chain.previewImage) return;
+        if (!displayedPreviewImage || isUploading) return;
+        try {
+            const cover = await prepareCurrentPreviewCover();
+            if (cover.changed && cover.previewImage) {
+                await onUpdateChain(chain.id, { previewImage: cover.previewImage });
+                notify('已自动将当前图片设为封面');
+            }
+        } catch (error) {
+            console.warn('离开时自动保存封面失败:', error);
+        }
+    };
+
+    const handleBack = async () => {
+        await autoSaveCoverOnExit();
+        await onBack();
+    };
+
+
     const handleSaveAll = async () => {
         if (!isOwner || isUploading) return;
         setIsUploading(true);
@@ -1831,7 +1854,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onTagAssistEnabledChange={onTagAssistEnabledChange}
                 activeGenerationMode={activeGenerationMode}
                 selectGenerationMode={selectGenerationMode}
-                onBack={onBack}
+                onBack={handleBack}
                 markChange={markChange}
                 handleReset={handleReset}
                 handleFork={handleFork}
