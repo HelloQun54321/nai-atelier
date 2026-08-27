@@ -1101,7 +1101,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     <ToolbarSearch
                         type="text"
                         placeholder="搜索全部画师 Tag（支持中文）..."
-                        containerClassName="min-w-0 md:w-64 lg:w-72 flex-none"
+                        containerClassName="min-w-0 flex-1 md:max-w-none"
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                     />
@@ -1153,14 +1153,12 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                         )}
                     </div>
 
-                    <div className="relative ml-auto flex flex-none items-center justify-end gap-2">
-                        <IconButton label={showFavOnly ? '显示全部画师' : '只看收藏'} tone={showFavOnly ? 'favorite' : 'neutral'} onClick={() => setShowFavOnly(value => !value)}><Heart className={`h-4 w-4 ${showFavOnly ? 'fill-current' : ''}`} /></IconButton>
+                    <IconButton label={showFavOnly ? '显示全部画师' : '只看收藏'} tone={showFavOnly ? 'favorite' : 'neutral'} onClick={() => setShowFavOnly(value => !value)}><Heart className={`h-4 w-4 ${showFavOnly ? 'fill-current' : ''}`} /></IconButton>
 
-                        <IconButton label="批量导入画师" onClick={() => setShowImport(true)} title="批量导入画师"><Download className="h-4 w-4" /></IconButton>
+                    <IconButton label="批量导入画师" onClick={() => setShowImport(true)} title="批量导入画师"><Download className="h-4 w-4" /></IconButton>
 
-                        {canManageArtists && <IconButton label="刷新画师列表" onClick={handleRefresh} disabled={isLoading}><RefreshCw className={isLoading ? 'animate-spin' : ''} /></IconButton>}
-                        <ImageTaggerAction notify={notify} />
-                    </div>
+                    {canManageArtists && <IconButton label="刷新画师列表" onClick={handleRefresh} disabled={isLoading}><RefreshCw className={isLoading ? 'animate-spin' : ''} /></IconButton>}
+                    <ImageTaggerAction notify={notify} />
                 </div>
             </WorkspaceToolbar>
 

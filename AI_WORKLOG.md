@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：将画师库与角色库顶栏搜索框自适应拉长铺满，操作控件右移消除空位（feat: elongate search bar and right-shift controls in character and artist libraries）。
 - **Gemini (Flash)**：彻底清理画师库与角色库中显示设置关联的死代码（refactor: purge dead layout and display state/views in character and artist libraries）。
 - **Gemini (Flash)**：移除角色库与画师库顶栏冗余的显示设置按钮与弹窗（feat: remove redundant display settings button and popovers from character and artist libraries）。
 - **Gemini (Flash)**：修复 ArtistLibrary 控制栏与列表视图 JSX 闭合问题（fix: restore JSX tag closures in ArtistLibrary toolbar and list layout）。
