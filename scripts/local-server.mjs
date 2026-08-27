@@ -96,7 +96,8 @@ const LOCAL_PROXY_PORTS = [7897, 7890, 10809, 10808, 2080, 8888, 1080, 6152, 789
  */
 function resolveWranglerProxyEnv() {
   const noProxy = [process.env.NO_PROXY, process.env.no_proxy, '127.0.0.1', 'localhost'].filter(Boolean).join(',');
-  return { HTTPS_PROXY: 'http://127.0.0.1:1', HTTP_PROXY: 'http://127.0.0.1:1', NO_PROXY: noProxy };
+  // ALL_PROXY 一并注入：覆盖更多客户端解析路径，统一把 wrangler 出站请求短路到本地空端口。
+  return { HTTPS_PROXY: 'http://127.0.0.1:1', HTTP_PROXY: 'http://127.0.0.1:1', ALL_PROXY: 'http://127.0.0.1:1', all_proxy: 'http://127.0.0.1:1', NO_PROXY: noProxy };
 }
 
 async function findLocalProxyPort() {
@@ -175,10 +176,15 @@ function cleanupStaleWranglerTmp() {
   }
 }
 
-/** 隐藏 wrangler 高频请求日志（[wrangler:info] GET/POST/...），保留横幅、Ready 与错误。 */
-function quietWranglerRequests(stream) {
+/**
+ * 隐藏 wrangler 高频请求日志（[wrangler:info] GET/POST/...），保留横幅、Ready 与错误。
+ */
+function quietWranglerRequests(stream, seen = {}) {
   const rl = createInterface({ input: stream });
   rl.on('line', line => {
+    // 看门狗据此判断 wrangler 是否活过启动期：黑洞特征是长时间零输出，
+    // 因此任意一行输出（含 Proxy 提示、banner、Ready）都视为进程活着。
+    seen.value = true;
     if (/^\[wrangler:info\] (GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD) /.test(line)) return;
     process.stdout.write(`${line}\n`);
   });
@@ -254,7 +260,7 @@ async function reuseExistingServer() {
   }
 }
 
-async function waitForWorker(port) {
+async function waitForWorker(port, { outputSeen = () => true, onWranglerRestart = null } = {}) {
   const startedAt = Date.now();
   // A large local R2 store can take longer to recover after an interrupted
   // workerd process. Do not kill a healthy recovery just because the usual
@@ -262,6 +268,7 @@ async function waitForWorker(port) {
   const timeoutMs = 180_000;
   const notices = [8_000, 20_000, 35_000, 60_000, 90_000, 120_000, 150_000];
   let noticeIndex = 0;
+  let restartAttempted = false;
   while (Date.now() - startedAt < timeoutMs) {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/lan/status`, { cache: 'no-store', signal: AbortSignal.timeout(1500) });
@@ -271,6 +278,13 @@ async function waitForWorker(port) {
       // Worker is still starting.
     }
     const elapsed = Date.now() - startedAt;
+    // 看门狗：wrangler 启动期被 TUN 代理黑洞时长时间零输出（此前 130s 卡死即此形态）。
+    // 25 秒无任何输出视为黑洞，自动杀进程重启一次，避免无限静默。
+    if (onWranglerRestart && !restartAttempted && elapsed > 25_000 && !outputSeen()) {
+      restartAttempted = true;
+      await onWranglerRestart();
+      continue;
+    }
     if (noticeIndex < notices.length && elapsed >= notices[noticeIndex]) {
       console.log(`\x1b[33m核心页面服务仍在启动（已等待 ${Math.round(elapsed / 1000)} 秒）...\x1b[0m`);
       noticeIndex += 1;
@@ -356,11 +370,33 @@ async function startServer() {
   // chain left Miniflare descendants behind when startup failed on Windows.
   const wranglerCli = 'node_modules/wrangler/wrangler-dist/cli.js';
   console.log('\x1b[36m核心页面服务正在启动，请稍候（需恢复本地 D1/R2 存储，数据量越大耗时越长）...\x1b[0m');
-  const child = spawn(process.execPath, ['--no-warnings', '--experimental-vm-modules', wranglerCli, ...args], { stdio: ['inherit', 'pipe', 'inherit'], shell: false, env: { ...process.env, ...wranglerEnv } });
-  // 默认过滤高频请求日志；需要完整输出时设置 NAI_WRANGLER_LOG=all
-  if (process.env.NAI_WRANGLER_LOG !== 'all') quietWranglerRequests(child.stdout);
+  const wranglerSeen = { value: false };
+  const spawnWrangler = () => {
+    const child = spawn(process.execPath, ['--no-warnings', '--experimental-vm-modules', wranglerCli, ...args], { stdio: ['inherit', 'pipe', 'inherit'], shell: false, env: { ...process.env, ...wranglerEnv } });
+    // 默认过滤高频请求日志；需要完整输出时设置 NAI_WRANGLER_LOG=all
+    if (process.env.NAI_WRANGLER_LOG !== 'all') quietWranglerRequests(child.stdout, wranglerSeen);
+    child.on('error', (err) => {
+      console.error('\x1b[31m启动失败:\x1b[0m', err.message);
+      cleanup();
+      process.exit(1);
+    });
+    child.on('exit', (code) => {
+      // 被看门狗淘汰的旧实例：其 exit 事件可能在重启标志复位后才触发，必须静默。
+      if (child.isRetired) return;
+      mediaGateway?.close();
+      tagUpdateServer.close();
+      if (shuttingDown) return;
+      if (code !== 0 && code !== null) {
+        console.error(`\x1b[31m服务异常退出，退出码: ${code}\x1b[0m`);
+      }
+      process.exit(code || 0);
+    });
+    return child;
+  };
+  let child = spawnWrangler();
   let mediaGateway = null;
   let shuttingDown = false;
+  let wranglerRestarting = false;
 
   const cleanup = () => {
     if (shuttingDown) return;
@@ -372,25 +408,21 @@ async function startServer() {
 
   process.once('SIGINT', () => { cleanup(); process.exit(0); });
   process.once('SIGTERM', () => { cleanup(); process.exit(0); });
-  
-  child.on('error', (err) => {
-    console.error('\x1b[31m启动失败:\x1b[0m', err.message);
-    cleanup();
-    process.exit(1);
-  });
-  
-  child.on('exit', (code) => {
-    mediaGateway?.close();
-    tagUpdateServer.close();
-    if (shuttingDown) return;
-    if (code !== 0 && code !== null) {
-      console.error(`\x1b[31m服务异常退出，退出码: ${code}\x1b[0m`);
-    }
-    process.exit(code || 0);
-  });
 
   try {
-    await waitForWorker(workerPort);
+    await waitForWorker(workerPort, {
+      outputSeen: () => wranglerSeen.value,
+      onWranglerRestart: async () => {
+        console.log('\x1b[33mwrangler 启动 25 秒无输出（疑似代理出口黑洞），自动重启 wrangler 一次...\x1b[0m');
+        wranglerRestarting = true;
+        child.isRetired = true;
+        terminateProcessTree(child.pid);
+        child = spawnWrangler();
+        wranglerRestarting = false;
+        // 等待端口与进程彻底释放，避免重启后抢端口失败。
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      },
+    });
     console.log(`\x1b[32m核心页面服务已就绪（耗时 ${bootElapsedSec()} 秒，含本地 D1/R2 存储恢复）。\x1b[0m`);
     // 网关初始化以本地轻量步骤为主，偶发环境卡顿不应让窗口无限静默：90 秒未就绪即报错退出。
     console.log('\x1b[36m图片网关初始化中（缩略图缓存、Agent、Pixiv、桥接）...\x1b[0m');

@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **qianlian/deepseek-v4-flash-0731**：wrangler 启动偶发卡顿加固——25 秒零输出看门狗自动重启 + 慢启动不误杀（任意输出即活）+ 被淘汰实例退出静默 + 注入 ALL_PROXY 全覆盖（fix: add wrangler zero-output watchdog with restart and retire guard）。
 - **Gemini (Flash)**：角色库多选栏升级为底部居中悬浮胶囊栏，精细化生图历史多选工具栏与角色参考管理弹层交互规范（feat: standardize floating action dock and character reference manager interactions）。
 - **Gemini (Flash)**：在 DesignSystem 中抽象 SegmentedControl 与 FilterPill，收敛角色库、Pixiv 画廊与 Danbooru 画廊的二级选项卡与过滤胶囊（feat: harmonize segmented controls and filter pills across galleries）。
 - **Gemini (Flash)**：角色库抽卡升级为 Split-Button 组合控件，解耦纯视图列数与抽卡配置，引入画廊统一 Active State Banner 探索状态横幅（feat: standardize gacha split button and active state exploration banner across galleries）。
