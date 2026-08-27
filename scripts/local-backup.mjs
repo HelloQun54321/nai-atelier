@@ -33,22 +33,22 @@ export function formatBackupTimestamp(date = new Date()) {
  * @param {Date} fallbackDate
  */
 export function parseBackupNameDate(name, fallbackDate = new Date()) {
-  // 匹配 20260827-211945
-  const m1 = name.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
+  // 匹配 20260827-211945 或 NaiPromptManager-full-20260731-051444.zip
+  const m1 = name.match(/(?:^|[^\d])(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
   if (m1) {
     const [, y, m, d, hh, mm, ss] = m1;
     const date = new Date(Number(y), Number(m) - 1, Number(d), Number(hh), Number(mm), Number(ss));
     if (!Number.isNaN(date.getTime())) return date.toISOString();
   }
   // 匹配 2026-06-27-041244
-  const m2 = name.match(/^(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})(\d{2})/);
+  const m2 = name.match(/(?:^|[^\d])(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})(\d{2})/);
   if (m2) {
     const [, y, m, d, hh, mm, ss] = m2;
     const date = new Date(Number(y), Number(m) - 1, Number(d), Number(hh), Number(mm), Number(ss));
     if (!Number.isNaN(date.getTime())) return date.toISOString();
   }
   // 匹配 2026-08-20
-  const m3 = name.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const m3 = name.match(/(?:^|[^\d])(\d{4})-(\d{2})-(\d{2})/);
   if (m3) {
     const [, y, m, d] = m3;
     const date = new Date(Number(y), Number(m) - 1, Number(d));

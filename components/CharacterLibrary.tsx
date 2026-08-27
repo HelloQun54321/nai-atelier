@@ -16,7 +16,7 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
-import { Check, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Dice5, GripVertical, Heart, LoaderCircle, Menu, Plus, RefreshCw, Settings2, SlidersHorizontal, Tag, UserRound, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Dice5, Eye, GripVertical, Heart, LoaderCircle, Menu, Pencil, Plus, RefreshCw, Settings2, SlidersHorizontal, Tag, UserRound, X } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
@@ -112,6 +112,22 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                     pinPlacement="bottom-right"
                   />
                   {card.previewImage && <button disabled={generating} onClick={event => { event.stopPropagation(); void generatePreview(card); }} className={`absolute bottom-2 rounded bg-black/60 px-2 py-1 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:opacity-40 ${showPin ? 'right-12' : 'right-2'}`}>{generating ? '生成中…' : '重新生成'}</button>}
+                  {card.kind === 'custom' && (
+                    <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 transition-opacity md:group-hover:opacity-100">
+                      <button
+                        type="button"
+                        onClick={event => {
+                          event.stopPropagation();
+                          if (card.chain) onSelect(card.chain.id);
+                        }}
+                        className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-indigo-600 shadow-sm backdrop-blur hover:bg-indigo-50 dark:bg-black/70 dark:text-indigo-300 dark:hover:bg-indigo-950/60"
+                        title="编辑还原角色与 Prompt"
+                        aria-label="编辑自定义角色"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
                   {selected && (
                     <div className="pointer-events-none absolute inset-0 z-10 border-4 border-indigo-500/80">
                       <div className="absolute left-2 top-2 rounded-full bg-indigo-600 p-1 text-white shadow-lg"><Check className="h-3 w-3" strokeWidth={4} /></div>
@@ -133,7 +149,23 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                       <span className="text-gray-500">作品 {(card.postCount || 0).toLocaleString('zh-CN')}</span>
                       {card.matchReason && <span className="truncate rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 dark:bg-gray-700 dark:text-gray-300" title={`匹配：${card.matchReason}`}>匹配：{card.matchReason}</span>}
                     </div>
-                  </> : <div className="mt-1 truncate text-[10px] text-gray-400">{card.chain?.description || '手工组合外貌与服装提示词'}</div>}
+                  </> : (
+                    <div className="mt-1 flex items-center justify-between gap-1.5 text-[10px]">
+                      <div className="truncate font-mono text-gray-400 dark:text-gray-500" title={card.chain?.basePrompt || card.chain?.description || ''}>
+                        {card.chain?.basePrompt || card.chain?.description || '手工组合外貌与服装提示词'}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={event => {
+                          event.stopPropagation();
+                          if (card.chain) onSelect(card.chain.id);
+                        }}
+                        className="flex-none font-bold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+                      >
+                        编辑
+                      </button>
+                    </div>
+                  )}
                 </div>
               </article>
             );

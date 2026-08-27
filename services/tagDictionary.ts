@@ -112,7 +112,25 @@ export const searchTagDictionary = async (rawQuery: string, limit = 10): Promise
   const manifest = await loadManifest();
   const { entries, isChineseQuery } = await loadQueryEntries(manifest, query);
 
-  return entries
+  // 中文输入时，同时并发利用角色库倒排全文检索（支持拼音、别名、角色名任意子串）
+  let characterSuggestions: TagSuggestion[] = [];
+  if (isChineseQuery && manifest.characterSearchShards?.length) {
+    try {
+      const characterEntries = await searchCharacterDictionary(rawQuery, Math.min(limit, 8));
+      characterSuggestions = characterEntries.map(entry => ({
+        name: entry.name,
+        chinese: entry.chinese,
+        category: 4,
+        categoryLabel: '角色',
+        postCount: entry.postCount,
+        isNovelAI: true,
+      }));
+    } catch (err) {
+      console.warn('Character dictionary autocomplete search failed:', err);
+    }
+  }
+
+  const generalSuggestions = entries
     .filter(entry => (isChineseQuery ? entry[1] : entry[0]).toLowerCase().startsWith(query))
     .sort((a, b) => {
       const aSearchValue = isChineseQuery ? a[1] : a[0];
@@ -129,6 +147,20 @@ export const searchTagDictionary = async (rawQuery: string, limit = 10): Promise
       postCount: entry[3],
       isNovelAI: entry[4] === 1
     }));
+
+  // 合并去重（角色候选优先排在前方）
+  const seen = new Set<string>();
+  const merged: TagSuggestion[] = [];
+  for (const item of [...characterSuggestions, ...generalSuggestions]) {
+    const key = item.name.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      merged.push(item);
+      if (merged.length >= limit) break;
+    }
+  }
+
+  return merged;
 };
 
 /** Resolve exact English Tag matches without treating prefix suggestions as translations. */

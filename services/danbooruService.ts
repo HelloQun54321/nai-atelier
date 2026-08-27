@@ -29,11 +29,10 @@ export interface DanbooruSearchResult {
 const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v10';
 const COVER_CACHE_TTL = 14 * 24 * 60 * 60 * 1000;
 const COVER_CACHE_LIMIT = 150;
-// 候选枚举调度：最多 3 并发 + 100ms 启动间隔（有效速率 ~6/s，低于 Danbooru
-// 匿名 ~10/s 限制）；429 时整体退避 2s。此前是严格串行 + 300ms 间隔，
-// 40 个画师的封面要 12s 才能枚举完。
-const COVER_REQUEST_CONCURRENCY = 3;
-const COVER_REQUEST_INTERVAL_MS = 100;
+// 候选枚举调度：5 并发 + 60ms 启动间隔（有效速率 ~12/s，充分利用媒体网关与并发吞吐）；
+// 遭遇 429 时整体退避 1.5s。
+const COVER_REQUEST_CONCURRENCY = 5;
+const COVER_REQUEST_INTERVAL_MS = 60;
 // Keep the cached first screen compact. The cover component loads later pages on demand.
 const COVER_CACHE_CANDIDATE_LIMIT = 24;
 
@@ -300,7 +299,7 @@ const getCoverSet = (tag: string, kind: 'artist' | 'character'): Promise<Danboor
   const pending = coverRequests.get(key);
   if (pending) return pending;
 
-  const request = scheduleCoverRequest(() => search({ query: `${normalizedTag} order:score`, limit: kind === 'character' ? 160 : 20 }))
+  const request = scheduleCoverRequest(() => search({ query: `${normalizedTag} order:score`, limit: kind === 'character' ? 60 : 20 }))
     .then(result => {
       const representativePost = chooseCover(result.items, normalizedTag, kind);
       const candidatePosts = candidatePostsFor(result.items, normalizedTag, kind);
