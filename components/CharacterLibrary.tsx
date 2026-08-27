@@ -16,7 +16,7 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
-import { Check, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Dice5, Heart, LoaderCircle, Menu, Plus, RefreshCw, Settings2, SlidersHorizontal, Tag, UserRound, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Dice5, GripVertical, Heart, LoaderCircle, Menu, Plus, RefreshCw, Settings2, SlidersHorizontal, Tag, UserRound, X } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
@@ -368,6 +368,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   /** 选中角色槽位列表：支持有序调整槽位 (1..N) 与位置 */
   const [selectedSlotOrder, setSelectedSlotOrder] = useState<string[]>([]);
   const [showSlotDetail, setShowSlotDetail] = useState(false);
+  const [draggingSlotIndex, setDraggingSlotIndex] = useState<number | null>(null);
 
   // 同步已选卡片的顺序（新选中的加到末尾，取消选中的移出）
   useEffect(() => {
@@ -404,6 +405,15 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       const temp = next[index];
       next[index] = next[targetIndex];
       next[targetIndex] = temp;
+      return next;
+    });
+  };
+  const reorderSlots = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+    setSelectedSlotOrder(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
       return next;
     });
   };
@@ -760,12 +770,38 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
               <div role="dialog" aria-label="角色槽位与站位排布" className="absolute bottom-[calc(100%+0.5rem)] z-50 max-h-72 w-[min(38rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-gray-200 bg-white/95 p-3 shadow-2xl backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
                 <div className="mb-2 flex items-center justify-between px-1 text-xs font-bold text-gray-800 dark:text-white">
                   <span>多角色槽位分配（导入时自动填入实验室各角色槽）</span>
-                  <span className="text-[11px] font-normal text-gray-500">点击 ↑ / ↓ 调整槽位顺序</span>
+                  <span className="text-[11px] font-normal text-gray-500">支持直接拖拽，也可点 ↑ / ↓ 调整顺序</span>
                 </div>
                 <div className="space-y-1.5">
                   {selectedCards.map((card, idx) => (
-                    <div key={card.key} className="flex items-center justify-between gap-2 rounded-xl border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-800">
+                    <div
+                      key={card.key}
+                      draggable
+                      onDragStart={event => {
+                        setDraggingSlotIndex(idx);
+                        event.dataTransfer.effectAllowed = 'move';
+                        event.dataTransfer.setData('text/plain', String(idx));
+                      }}
+                      onDragEnd={() => setDraggingSlotIndex(null)}
+                      onDragOver={event => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = 'move';
+                      }}
+                      onDrop={event => {
+                        event.preventDefault();
+                        if (draggingSlotIndex !== null) {
+                          reorderSlots(draggingSlotIndex, idx);
+                          setDraggingSlotIndex(null);
+                        }
+                      }}
+                      className={`flex cursor-grab active:cursor-grabbing items-center justify-between gap-2 rounded-xl border px-2.5 py-1.5 text-xs transition-colors ${
+                        draggingSlotIndex === idx
+                          ? 'border-indigo-500 bg-indigo-50/60 opacity-60 dark:bg-indigo-950/40'
+                          : 'border-gray-200 bg-gray-50 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600'
+                      }`}
+                    >
                       <div className="flex min-w-0 items-center gap-2">
+                        <GripVertical className="h-3.5 w-3.5 flex-none text-gray-400" />
                         <span className="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-indigo-600 font-mono text-[10px] font-bold text-white">
                           {idx + 1}
                         </span>
