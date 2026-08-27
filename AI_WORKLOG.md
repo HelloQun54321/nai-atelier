@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **qianlian/deepseek-v4-flash-0731**：标注数据边界——AGENTS.md 新增保护区强制节（local-data 禁删禁改、database_id 为存储键）、README 补 local-data 内部构成清单、.gitignore 补性质注释（docs: mark data boundaries and local-data inventory as do-not-delete）。
 - **qianlian/deepseek-v4-flash-0731**：修复“启动后数据消失”事故 —— database_id 是本地 D1 存储键的一部分,此前误删导致加载空库;已恢复 ID 并验证全部数据回归,删除误生成空库文件（fix: restore d1 database_id to keep local store mapping stable）。
 - **qianlian/deepseek-v4-flash-0731**：移除上游多用户与云端遗留——sessions 表、users 配额列、ROLE_POLICY、admin 管理路由死代码,auth/me 收窄,并查明 pages dev 直接使用 dist/_worker.js 的加载机制（refactor: remove upstream multi-user remnants from worker database layer）。
 - **qianlian/deepseek-v4-flash-0731**：修复本地启动偶发卡死 —— 为 wrangler 注入快速失败代理跳过启动期外连检查，网关出站代理在 TUN 系统代理失效时改用本机真实端口（fix: prevent wrangler startup hang by fast-failing outbound check when the system proxy is black-holed）。

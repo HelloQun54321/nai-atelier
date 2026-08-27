@@ -7,7 +7,13 @@
 ## 项目概览
 
 - NAI Atelier：本地个人 NovelAI 创作工坊。React 19 + TypeScript + Vite + Tailwind 4 前端，Cloudflare Worker 后端（`worker/`），数据落本地 D1 + R2。
-- 领域知识与完整功能说明见 `README.md`；NovelAI 接口说明见 `NOVELAI_API_DOCS.md`；历史变更见 `CHANGELOG.md`。
+
+## 数据边界（保护区，禁止触碰）
+
+- `local-data/` 是唯一事实源：D1 数据库（风格串/角色/灵感/历史/设置）、R2 原图（数 GB）、局域网认证、Pixiv 令牌、LLM 密钥与 Agent 会话全部在此。**任何 AI 不得删除、改名、移动或“优化”其中的任何文件**；涉及 local-data 内部结构、迁移或清理的改动必须先与用户确认。详细构成见 README「数据备份」章节。
+- `wrangler.toml` 的 `[[d1_databases]] database_id` 是本地 `--persist-to` 存储键（f(database_name + database_id) 决定加载哪个 SQLite 文件）。删除或更改会导致本地模式改加载全新的空库，界面表现为所有数据“消失”（真实文件仍在但不再被加载）。`database_name`、`bucket_name` 与 binding 名同样是存储定位的一部分，均不可改动。
+- `local-cache/`（缩略图、WD Tagger 模型）是可再生成缓存：可清理，但删除只影响速度不影响数据。
+- 判断“是否上游遗留”时必须区分**数据层/存储键**与**代码层残留**：历史事故把 database_id 误判为云端残留删除导致数据不可见（已修复）。涉及“清理”“迁移”“删除”的推理一律按本节红线执行。
 
 ## 需求推演与同类项检查（强制）
 

@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.120.7-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.120.8-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -551,8 +551,21 @@ flowchart TD
 | `local-data` | D1、R2、原图、历史、局域网认证 | **需要** |
 | `local-cache/thumbnails` | 电脑按需生成的 WebP 小图 | 不需要 |
 | 手机浏览器缓存 | 最多 100 MB 可再获取小图 | 不需要 |
-| 浏览器 LocalStorage | API Key 选项和界面偏好 | 不属于重要图片数据 |
-| GitHub 仓库 | 代码、文档和可公开静态词库 | 不包含个人生成数据 |
+### local-data 内部构成（一律不可删除、改名或移动）
+
+| 路径 | 内容 | 可再生成 |
+| --- | --- | --- |
+| `v3/d1/miniflare-D1DatabaseObject/*.sqlite` | D1 数据库：风格串、角色、灵感、8,900+ 历史记录、设置、Vibe | 否，核心 |
+| `v3/r2/nai-assets/blobs/` | 全部原图：历史图片、封面、灵感图（数 GB） | 否，核心 |
+| `lan-access.json` | 局域网四位密码与签名密钥 | 否，删除后需重新授权所有设备 |
+| `pixiv-tokens.json` + `pixiv.key` | Pixiv OAuth 令牌（AES 加密） | 否，删除后需重新登录 |
+| `prompt-agent.key` | LLM 密钥的加密主密钥 | 否，删除后已存模型凭据无法解密 |
+| `prompt-agent.json` / `prompt-agent-logs/` / `prompt-agent-sessions/` / `prompt-agent-tasks/` | Agent 配置、会话与事件记录 | 否（会话与过程记录会消失） |
+| `st-chatu8-bridge.json` | SillyTavern 桥接同步状态 | 可重建（重新同步） |
+| `novelai-webapp-sync.json` / `tag-translations.json` / `cloud-queue.json` / `vibe-recovery/` | 增量缓存与恢复记录 | 是 |
+| `v3/cache/` / `v3/workflows/` | 运行时缓存 | 是 |
+
+> 警告：`wrangler.toml` 的 `database_id` 是本地 D1 存储键（与 `database_name` 共同决定加载哪个 SQLite 文件），删除或更改会让本地模式改加载全新空库，界面数据“消失”——真实文件仍在但不再被加载。完整备份时整体复制 `local-data`，不要只挑看起来像配置的文件。AI 侧红线见 `AGENTS.md`「数据边界」。
 
 ### 缩略图网关
 

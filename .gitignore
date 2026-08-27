@@ -41,7 +41,8 @@ plans/*
 docs/plans/
 .planning
 
-# 本地部署数据
+# 本地部署数据：local-data/ 为不可再生核心数据（D1/R2/密钥/会话），禁止删除；
+# local-cache/ 为可再生成缓存（缩略图/模型），可清理但删除只影响速度。
 local-data/
 local-cache/
 

@@ -3,6 +3,12 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-27
+### 维护：标注数据边界与 local-data 内部构成（防误删红线）
+
+- `AGENTS.md` 新增「数据边界（保护区，禁止触碰）」强制节：`local-data/` 全量禁止删除/改名/移动，`wrangler.toml` 的 `database_id` 明确为本地 D1 存储键（不是云端残留），并规定判断“上游遗留”时必须区分数据层与代码层；
+- `README.md` 存储边界章节补充 `local-data` 内部构成清单（每项可再生成性）与 database_id 警告；
+- `.gitignore` 为 local-data（不可再生）与 local-cache（可再生成）补充性质注释。
+
 ### 修复：恢复 wrangler.toml 的 D1 database_id，修正“启动后数据消失”事故
 
 - 事故原因：前一次清理把 `wrangler.toml` 的 `[[d1_databases]] database_id` 当作云端残留删除，但该 ID 实际是本地 `--persist-to` 存储键的一部分（f(database_name + database_id) 决定加载哪个 SQLite 文件）——ID 移除后本地模式改加载全新的空库，界面表现为风格串、历史、灵感全部消失；
