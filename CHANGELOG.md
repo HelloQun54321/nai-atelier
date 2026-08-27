@@ -3,6 +3,12 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-27
+### 架构与体验:生图实验室顶层命令栏对齐设计系统契约（WorkspaceToolbar）
+
+- **统一顶栏网格与尺寸**：生图实验室顶栏重构接入 `WorkspaceToolbar`，废除自定义双列 grid，左右分区清晰规范；
+- **基础按钮规范归一**：将全部散装硬编码按钮（导入、预设、反推、Tag辅助、重置、Fork、保存）收敛至 DesignSystem 标准 `IconButton` 与 `ToolbarButton`，严格统一至 `h-10 rounded-xl` 规格；
+- **模式导航返回规范**：对齐 `ChainEditorModeHeader` 返回与编辑按钮至标准 `IconButton` 尺寸。
+
 ### 架构与体验:全页面顶栏空间网格与操作区布局统一契约（Top Bar Contract）
 
 - **统一 3+1 空间结构**：在风格串、角色库、画师库、AITag、Danbooru、Pixiv、灵感库、生成历史 8 个工作区全量对齐 Zone A (搜索/视图) / Zone B (过滤/状态) / Zone C (系统动作与主操作) / Zone D (探索型次级多维筛选)；

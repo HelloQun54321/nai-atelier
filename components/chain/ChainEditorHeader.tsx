@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { FileDown, ImagePlus, Quote, RotateCcw, Save, Tags } from 'lucide-react';
 import { GenerationMode } from '../../types';
 import { ChainEditorModeHeader } from '../ChainEditorModeHeader';
+import { IconButton, ToolbarButton, WorkspaceToolbar } from '../DesignSystem';
 
 export interface ChainEditorHeaderProps {
     chainId: string;
@@ -74,8 +75,8 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     const isPlayground = chainId === 'playground';
 
     return (
-        <header className="chain-editor-header workspace-command-bar relative z-30 grid h-auto flex-shrink-0 grid-cols-1 items-center gap-1 overflow-visible border-b border-gray-200 bg-white px-2 py-1 dark:border-gray-800 dark:bg-gray-950 md:gap-2 md:px-6 lg:grid-cols-2 lg:gap-0 lg:py-0">
-            <div className="chain-editor-header-main relative flex min-w-0 items-center gap-2 md:gap-4">
+        <WorkspaceToolbar className="chain-editor-header justify-between">
+            <div className="chain-editor-header-main relative flex min-w-0 flex-1 items-center gap-2 md:gap-4">
                 <ChainEditorModeHeader
                     isLaboratory={isPlayground}
                     chainName={chainName}
@@ -141,7 +142,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                 </div>}
             </div>
 
-            <div className="chain-editor-actions ml-auto flex w-full flex-shrink-0 items-center justify-end gap-2 overflow-x-auto lg:w-auto">
+            <div className="chain-editor-actions ml-auto flex flex-none items-center justify-end gap-2 overflow-x-auto">
                 {canEdit && (
                     <>
                         <input
@@ -151,102 +152,93 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                             accept="image/png,application/json,.json"
                             onChange={handleImportImage}
                         />
-                        <button
-                            type="button"
+                        <IconButton
+                            label="导入图片或 JSON 配置"
                             onClick={() => importInputRef.current?.click()}
-                            className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
-                            title="导入图片或 JSON 配置"
-                            aria-label="导入图片或 JSON 配置"
                         >
-                            <FileDown className="h-[18px] w-[18px] md:h-5 md:w-5" />
-                        </button>
+                            <FileDown />
+                        </IconButton>
                     </>
                 )}
                 {canEdit && (
-                    <button
-                        type="button"
+                    <IconButton
+                        label="引用预设"
                         onClick={() => setShowImportPreset(true)}
-                        className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
-                        title="引用预设"
-                        aria-label="引用预设"
                     >
-                        <Quote className="h-[18px] w-[18px] md:h-5 md:w-5" />
-                    </button>
+                        <Quote />
+                    </IconButton>
                 )}
                 {canEdit && (
-                    <button
-                        type="button"
+                    <IconButton
+                        label="图片反推 Tag"
                         onClick={() => setTaggerOpen(true)}
-                        className="mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-indigo-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
-                        title="图片反推 Tag"
-                        aria-label="图片反推 Tag"
                     >
-                        <ImagePlus className="h-[18px] w-[18px] md:h-5 md:w-5" />
-                    </button>
+                        <ImagePlus />
+                    </IconButton>
                 )}
-                <button
-                    type="button"
+                <IconButton
+                    label={tagAssistEnabled ? '关闭 Tag 辅助' : '开启 Tag 辅助'}
+                    aria-pressed={tagAssistEnabled}
                     onClick={() => {
                         const enabled = !tagAssistEnabled;
                         onTagAssistEnabledChange(enabled);
                         notify(`Tag 辅助已${enabled ? '开启' : '关闭'}`);
                     }}
-                    aria-pressed={tagAssistEnabled}
-                    className={`mobile-touch flex h-11 w-11 items-center justify-center rounded-xl border p-0 transition-colors ${tagAssistEnabled
-                        ? 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/60'
-                        : 'border-gray-200 bg-gray-100 text-gray-500 hover:border-gray-300 hover:bg-gray-200 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-700'}`}
-                    title={tagAssistEnabled ? '关闭 Tag 辅助' : '开启 Tag 辅助'}
-                    aria-label={tagAssistEnabled ? '关闭 Tag 辅助' : '开启 Tag 辅助'}
+                    className={tagAssistEnabled ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-800 dark:!bg-indigo-950/40 dark:!text-indigo-300' : ''}
                 >
                     <span className="relative block">
-                        <Tags className="h-[18px] w-[18px] md:h-5 md:w-5" />
+                        <Tags />
                         <span aria-hidden="true" className="absolute -bottom-1.5 -right-1.5 text-[9px] font-black leading-none">
                             {tagAssistEnabled ? 'o' : '−'}
                         </span>
                     </span>
-                </button>
+                </IconButton>
                 {isPlayground && (
-                    <button
-                        type="button"
+                    <IconButton
+                        label="重置实验室"
+                        tone="danger"
                         onClick={handleReset}
-                        className="mobile-touch ml-1 flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-0 text-red-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-gray-800 dark:bg-gray-800 dark:text-red-400 dark:hover:border-red-900/60 dark:hover:bg-red-950/30"
-                        title="重置实验室"
-                        aria-label="重置实验室"
                     >
-                        <RotateCcw className="h-[18px] w-[18px] md:h-5 md:w-5" />
-                    </button>
+                        <RotateCcw />
+                    </IconButton>
                 )}
                 {/* Fork / Save to Library Button */}
                 {canSaveActiveModeToLibrary && ((!isOwner && !isGuest) || isPlayground) && (
-                    <button
-                        onClick={handleFork}
-                        disabled={isUploading}
-                        className={`mobile-touch flex h-11 items-center justify-center rounded-xl border p-0 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isPlayground
-                            ? 'w-11 border-emerald-200 bg-emerald-50 text-emerald-600 hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/35 dark:text-emerald-300 dark:hover:border-emerald-800 dark:hover:bg-emerald-950/60'
-                            : 'w-auto border-gray-200 bg-gray-100 px-3 text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-800 dark:text-indigo-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40'}`}
-                        title={isPlayground ? '保存到库' : '复制为新串'}
-                        aria-label={isPlayground ? '保存到库' : '复制为新串'}
-                    >
-                        <Save className={`block h-[18px] w-[18px] md:h-5 md:w-5 ${isPlayground ? '' : 'mr-1'}`} />
-                        {!isPlayground && <span>复制为新串</span>}
-                    </button>
+                    isPlayground ? (
+                        <IconButton
+                            label="保存到库"
+                            disabled={isUploading}
+                            onClick={handleFork}
+                            className="!border-emerald-300 !bg-emerald-50 !text-emerald-600 hover:!bg-emerald-100 dark:!border-emerald-900/70 dark:!bg-emerald-950/35 dark:!text-emerald-300"
+                        >
+                            <Save />
+                        </IconButton>
+                    ) : (
+                        <ToolbarButton
+                            disabled={isUploading}
+                            onClick={handleFork}
+                        >
+                            <Save />
+                            <span>复制为新串</span>
+                        </ToolbarButton>
+                    )
                 )}
                 {canSaveActiveModeToLibrary && isOwner && !isPlayground && (
-                    <button
-                        type="button"
+                    <ToolbarButton
+                        tone="primary"
                         onClick={handleSaveAll}
                         disabled={!canSaveCurrentChain || isUploading}
-                        className={`mobile-touch flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-bold transition-colors lg:w-11 lg:px-0 ${canSaveCurrentChain && !isUploading
-                            ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20 hover:bg-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500'
-                            : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}
+                        className={canSaveCurrentChain && !isUploading
+                            ? '!border-emerald-600 !bg-emerald-600 !text-white hover:!bg-emerald-500 shadow-sm shadow-emerald-600/20'
+                            : ''}
                         title={isUploading ? '正在保存' : hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存'}
                         aria-label={isUploading ? '正在保存' : hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存'}
                     >
-                        <Save className="h-[18px] w-[18px] md:h-5 md:w-5" />
-                        <span className="lg:hidden">{isUploading ? '保存中' : canSaveCurrentChain ? '保存' : '已保存'}</span>
-                    </button>
+                        <Save />
+                        <span className="hidden sm:inline">{isUploading ? '保存中' : canSaveCurrentChain ? '保存修改' : '已保存'}</span>
+                    </ToolbarButton>
                 )}
             </div>
-        </header>
+        </WorkspaceToolbar>
     );
 };

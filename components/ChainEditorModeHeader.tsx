@@ -2,6 +2,7 @@ import React from 'react';
 import { ArrowLeft, Pencil } from 'lucide-react';
 import { GenerationMode } from '../types';
 import { GenerationModeNav } from './GenerationModeNav';
+import { IconButton } from './DesignSystem';
 
 interface ChainEditorModeHeaderProps {
   isLaboratory: boolean;
@@ -28,25 +29,19 @@ export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
 
   return (
     <div className="flex w-full min-w-0 items-center gap-2">
-      <button
-        type="button"
+      <IconButton
+        label={`返回${entityLabel}列表`}
         onClick={() => void onBack()}
-        className="mobile-touch flex h-10 w-10 flex-none items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-indigo-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
-        aria-label={`返回${entityLabel}列表`}
-        title={`返回${entityLabel}列表`}
       >
         <ArrowLeft className="h-5 w-5" />
-      </button>
+      </IconButton>
       {isOwner && (
-        <button
-          type="button"
+        <IconButton
+          label={`编辑${entityLabel}信息`}
           onClick={onEditInfo}
-          className="mobile-touch flex h-10 w-10 flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300"
-          aria-label={`编辑${entityLabel}信息`}
-          title={`编辑${entityLabel}名称与信息`}
         >
           <Pencil className="h-4 w-4" />
-        </button>
+        </IconButton>
       )}
       <h1 className="min-w-0 flex-1 truncate text-base font-bold text-gray-900 dark:text-white md:text-lg" title={chainName}>{chainName}</h1>
     </div>
