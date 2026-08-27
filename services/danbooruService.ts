@@ -152,18 +152,20 @@ export const buildDanbooruFilterQuery = (options: DanbooruFilterOptions = {}): s
   else if (options.sort === 'latest') parts.push('order:id_desc');
   else if (options.sort === 'rank' || (!options.sort && !raw)) parts.push('order:rank');
 
-  // 评级修饰
-  if (options.rating && options.rating !== 'all') {
+  // 评级修饰（仅在不超过 2 Tag 匿名上限时可并入上游检索）
+  if (options.rating && options.rating !== 'all' && parts.length < 2) {
     parts.push(`rating:${options.rating}`);
   }
 
   // 构图比例修饰
-  if (options.ratio === 'portrait') parts.push('ratio:<0.8');
-  else if (options.ratio === 'landscape') parts.push('ratio:>1.2');
-  else if (options.ratio === 'square') parts.push('ratio:square');
+  if (parts.length < 2) {
+    if (options.ratio === 'portrait') parts.push('ratio:<0.8');
+    else if (options.ratio === 'landscape') parts.push('ratio:>1.2');
+    else if (options.ratio === 'square') parts.push('ratio:square');
+  }
 
   // 主体修饰
-  if (options.subject && options.subject !== 'all') {
+  if (options.subject && options.subject !== 'all' && parts.length < 2) {
     parts.push(options.subject);
   }
 

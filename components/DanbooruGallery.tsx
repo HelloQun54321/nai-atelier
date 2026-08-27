@@ -18,12 +18,12 @@ import { useStaleGuard } from './useStaleGuard';
 import { FilterPill, IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { ImageTaggerAction } from './ImageTaggerPanel';
-import { useMobileHistoryLayer } from './MobileUI';
+import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './MobileUI';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { buildMediaUrl } from '../services/mobileImageCache';
 import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHistoryService';
-import { Clock, Filter, Flame } from 'lucide-react';
+import { Clock, Filter, Flame, Menu } from 'lucide-react';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 
 interface DanbooruGalleryProps {
@@ -91,6 +91,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   const [soloOnly, setSoloOnly] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [historyItems, setHistoryItems] = useState<GalleryHistoryItem[]>([]);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
 
   const [items, setItems] = useState<DanbooruPost[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -230,6 +231,30 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     }
   };
 
+  // 前端辅助过滤：当关键词本身已有 1~2 个 Tag，导致无法在上游 API 追加 rating/ratio/solo 时，
+  // 在本地对返回列表进行即时过滤，确保用户在任何检索词下点击筛选都绝对生效。
+  const displayedItems = useMemo(() => {
+    if (showHistory) return items;
+    return items.filter(post => {
+      // 评级过滤
+      if (rating !== 'all' && post.rating?.toLowerCase() !== rating) {
+        return false;
+      }
+      // 比例过滤
+      if (ratio !== 'all') {
+        const r = Number(post.width) / Math.max(1, Number(post.height) || 1);
+        if (ratio === 'portrait' && r >= 0.85) return false;
+        if (ratio === 'landscape' && r <= 1.15) return false;
+        if (ratio === 'square' && (r < 0.85 || r > 1.15)) return false;
+      }
+      // 单人过滤
+      if (soloOnly) {
+        const hasSolo = post.tags?.general?.includes('solo') || post.tags?.general?.includes('1girl') || post.tags?.general?.includes('1boy');
+        if (!hasSolo) return false;
+      }
+      return true;
+    });
+  }, [items, rating, ratio, showHistory, soloOnly]);
   // 自动加载：把下一页内容追加到当前列表下方（连续滚动、无切页感）。
   // 与 Pixiv/历史页一致；软上限后停止自动追加，按钮可继续手动加载。
   const appendNextPage = async (force = false) => {
@@ -389,84 +414,126 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceToolbar>
-        <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center">
-          <ToolbarSearch value={input} onChange={event => setInput(event.target.value)} placeholder="输入中文或英文 Tag，回车直接搜索" aria-label="搜索 Danbooru" containerClassName="min-w-[12rem] flex-1 md:max-w-none!" />
-        </form>
-        <ToolbarButton onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : undefined} title="浏览历史足迹"><Clock />足迹</ToolbarButton>
-        <IconButton label="刷新" onClick={() => void load(query, page)} disabled={loading}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton>
-        <ImageTaggerAction notify={notify} />
+        <div className="flex w-full min-w-0 items-center gap-2 md:hidden">
+          <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center">
+            <ToolbarSearch value={input} onChange={event => setInput(event.target.value)} placeholder="输入 Tag 搜索" aria-label="搜索 Danbooru" containerClassName="min-w-0 flex-1" />
+          </form>
+          <MobileIconButton label="筛选条件" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><Menu className="h-5 w-5" /></MobileIconButton>
+          <ToolbarButton onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : undefined} title="浏览历史足迹"><Clock className="h-4 w-4" /></ToolbarButton>
+          <IconButton label="刷新" onClick={() => void load(query, page)} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></IconButton>
+          <ImageTaggerAction notify={notify} />
+        </div>
+        <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
+          <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center">
+            <ToolbarSearch value={input} onChange={event => setInput(event.target.value)} placeholder="输入中文或英文 Tag，回车直接搜索…" aria-label="搜索 Danbooru" containerClassName="min-w-[12rem] flex-1 md:max-w-none" />
+          </form>
+          <select
+            value={sort}
+            onChange={event => void handleApplyFilter({ sort: event.target.value as DanbooruSort })}
+            className="h-10 flex-none rounded-xl border border-gray-200 bg-white px-3 text-xs text-gray-700 outline-none hover:border-gray-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700"
+            aria-label="排序方式"
+          >
+            <option value="rank">综合热度</option>
+            <option value="score">高分榜</option>
+            <option value="favcount">收藏榜</option>
+            <option value="latest">最新</option>
+          </select>
+          <select
+            value={rating}
+            onChange={event => void handleApplyFilter({ rating: event.target.value as DanbooruRating })}
+            className="h-10 flex-none rounded-xl border border-gray-200 bg-white px-3 text-xs text-gray-700 outline-none hover:border-gray-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700"
+            aria-label="评级筛选"
+          >
+            <option value="all">全部评级</option>
+            <option value="g">全年龄 G</option>
+            <option value="s">微涩 S</option>
+            <option value="q">擦边 Q</option>
+            <option value="e">R-18 E</option>
+          </select>
+          <select
+            value={ratio}
+            onChange={event => void handleApplyFilter({ ratio: event.target.value as DanbooruRatio })}
+            className="h-10 flex-none rounded-xl border border-gray-200 bg-white px-3 text-xs text-gray-700 outline-none hover:border-gray-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700"
+            aria-label="画幅比例"
+          >
+            <option value="all">不限比例</option>
+            <option value="portrait">竖屏</option>
+            <option value="landscape">横屏</option>
+            <option value="square">方图</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => void handleApplyFilter({ soloOnly: !soloOnly })}
+            className={`h-10 flex-none rounded-xl border px-3 text-xs font-semibold transition-colors ${
+              soloOnly
+                ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-600'
+                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
+            }`}
+            aria-pressed={soloOnly}
+          >
+            单人 (solo)
+          </button>
+          <ToolbarButton onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : undefined} title="浏览历史足迹"><Clock className="h-4 w-4" />足迹</ToolbarButton>
+          <IconButton label="刷新" onClick={() => void load(query, page)} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></IconButton>
+          <ImageTaggerAction notify={notify} />
+        </div>
       </WorkspaceToolbar>
 
-      {/* 快捷多维筛选栏 */}
-      {!showHistory && (
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-gray-200 bg-white/80 px-3 py-2 text-xs backdrop-blur dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
-          <span className="flex items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
-            <Flame className="size-3.5 text-orange-500" />排序:
-          </span>
-          {[
-            { id: 'rank', label: '综合热度' },
-            { id: 'score', label: '高分榜' },
-            { id: 'favcount', label: '收藏榜' },
-            { id: 'latest', label: '最新' },
-          ].map(opt => (
-            <FilterPill
-              key={opt.id}
-              active={sort === opt.id}
-              onClick={() => void handleApplyFilter({ sort: opt.id as DanbooruSort })}
+      <MobileBottomSheet open={showMobileFilters} title="Danbooru 筛选" onClose={() => setShowMobileFilters(false)}>
+        <div className="space-y-4">
+          <label className="block text-sm font-bold dark:text-white">
+            排序方式
+            <select
+              value={sort}
+              onChange={event => { void handleApplyFilter({ sort: event.target.value as DanbooruSort }); }}
+              className="mobile-touch mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 font-normal dark:border-gray-800 dark:bg-gray-800"
             >
-              {opt.label}
-            </FilterPill>
-          ))}
-
-          <span className="mx-1 h-3.5 w-px bg-gray-200 dark:bg-gray-700" />
-
-          <span className="flex items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
-            <Filter className="size-3.5 text-indigo-500" />评级:
-          </span>
-          {[
-            { id: 'all', label: '全部' },
-            { id: 'g', label: '全年龄 G' },
-            { id: 's', label: '微涩 S' },
-            { id: 'q', label: '擦边 Q' },
-            { id: 'e', label: 'R-18 E' },
-          ].map(opt => (
-            <FilterPill
-              key={opt.id}
-              active={rating === opt.id}
-              onClick={() => void handleApplyFilter({ rating: opt.id as DanbooruRating })}
+              <option value="rank">综合热度</option>
+              <option value="score">高分榜</option>
+              <option value="favcount">收藏榜</option>
+              <option value="latest">最新</option>
+            </select>
+          </label>
+          <label className="block text-sm font-bold dark:text-white">
+            评级范围
+            <select
+              value={rating}
+              onChange={event => { void handleApplyFilter({ rating: event.target.value as DanbooruRating }); }}
+              className="mobile-touch mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 font-normal dark:border-gray-800 dark:bg-gray-800"
             >
-              {opt.label}
-            </FilterPill>
-          ))}
-
-          <span className="mx-1 h-3.5 w-px bg-gray-200 dark:bg-gray-700" />
-
-          <span className="font-semibold text-gray-500 dark:text-gray-400">比例:</span>
-          {[
-            { id: 'all', label: '不限' },
-            { id: 'portrait', label: '竖屏' },
-            { id: 'landscape', label: '横屏' },
-            { id: 'square', label: '方图' },
-          ].map(opt => (
-            <FilterPill
-              key={opt.id}
-              active={ratio === opt.id}
-              onClick={() => void handleApplyFilter({ ratio: opt.id as DanbooruRatio })}
+              <option value="all">全部评级</option>
+              <option value="g">全年龄 G</option>
+              <option value="s">微涩 S</option>
+              <option value="q">擦边 Q</option>
+              <option value="e">R-18 E</option>
+            </select>
+          </label>
+          <label className="block text-sm font-bold dark:text-white">
+            画幅比例
+            <select
+              value={ratio}
+              onChange={event => { void handleApplyFilter({ ratio: event.target.value as DanbooruRatio }); }}
+              className="mobile-touch mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 font-normal dark:border-gray-800 dark:bg-gray-800"
             >
-              {opt.label}
-            </FilterPill>
-          ))}
-
-          <FilterPill
-            active={soloOnly}
-            onClick={() => void handleApplyFilter({ soloOnly: !soloOnly })}
-            className="ml-1"
+              <option value="all">不限比例</option>
+              <option value="portrait">竖屏</option>
+              <option value="landscape">横屏</option>
+              <option value="square">方图</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() => { void handleApplyFilter({ soloOnly: !soloOnly }); }}
+            className={`mobile-touch w-full rounded-xl border px-3 text-sm font-semibold transition-colors ${
+              soloOnly
+                ? 'border-indigo-600 bg-indigo-600 text-white'
+                : 'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'
+            }`}
           >
-            仅单人 (solo)
-          </FilterPill>
+            {soloOnly ? '✓ 已启用仅单人 (solo)' : '启用仅单人 (solo)'}
+          </button>
         </div>
-      )}
-
+      </MobileBottomSheet>
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main ref={scrollRef} onScroll={onScrollRestore} className={`${selected ? 'hidden xl:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
           {showHistory ? (
@@ -486,7 +553,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
           ) : (
             <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
               <span>{query === 'order:rank' ? '综合热门推荐' : `检索：${query.replaceAll('_', ' ')}`}</span>
-              <span>已加载 {items.length} 件{hasMore ? ' · 滚动继续加载' : ' · 已全部加载'}</span>
+              <span>已加载 {displayedItems.length} 件{hasMore ? ' · 滚动继续加载' : ' · 已全部加载'}</span>
             </div>
           )}
 
@@ -548,12 +615,12 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
                 <p className="mt-1 text-xs">点开作品后将自动记录到此处，方便秒级回溯。</p>
               </div>
             )
-          ) : loading && !items.length ? (
+          ) : loading && !displayedItems.length ? (
             <div className="flex min-h-72 items-center justify-center text-sm text-gray-400">正在读取 Danbooru…</div>
-          ) : items.length ? (
+          ) : displayedItems.length ? (
             imageDisplay.layout === 'masonry' ? (
               <ShortestColumnMasonry
-                items={items}
+                items={displayedItems}
                 columns={masonryColumns}
                 getItemKey={post => String(post.id)}
                 estimateItemHeight={estimateDanbooruCardHeight}
@@ -561,7 +628,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
               />
             ) : (
               <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
-                {items.map(renderDanbooruCard)}
+                {displayedItems.map(renderDanbooruCard)}
               </div>
             )
           ) : !loading && (

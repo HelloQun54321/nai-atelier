@@ -17,14 +17,20 @@ describe('buildDanbooruFilterQuery', () => {
     expect(buildDanbooruFilterQuery({ query: 'hatsune_miku', sort: 'latest' })).toBe('hatsune_miku order:id_desc');
   });
 
-  it('combines rating, ratio, and subject filters', () => {
+  it('combines rating, ratio, and subject filters up to Danbooru 2-tag limit', () => {
     expect(buildDanbooruFilterQuery({
       query: 'frieren',
       sort: 'score',
       rating: 's',
       ratio: 'portrait',
       subject: 'solo',
-    })).toBe('frieren order:score rating:s ratio:<0.8 solo');
+    })).toBe('frieren order:score');
+
+    expect(buildDanbooruFilterQuery({
+      rating: 's',
+      ratio: 'portrait',
+      subject: 'solo',
+    })).toBe('order:rank rating:s');
   });
 });
 
