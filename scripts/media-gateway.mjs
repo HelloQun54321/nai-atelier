@@ -307,7 +307,8 @@ export const classifyDanbooruRemoteTarget = value => {
   let target;
   try { target = new URL(value); } catch { return null; }
   if (target.protocol !== 'https:' || target.username || target.password) return null;
-  if (target.hostname.toLowerCase() !== 'safebooru.donmai.us') return null;
+  const hostname = target.hostname.toLowerCase();
+  if (hostname !== 'danbooru.donmai.us' && hostname !== 'safebooru.donmai.us') return null;
   return target.pathname === '/posts.json' ? 'json' : null;
 };
 

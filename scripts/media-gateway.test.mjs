@@ -676,11 +676,12 @@ test('AITag JSON proxy uses the curl transport before Node fetch', async () => {
   assert.equal(await response.json().then(payload => payload.items.length), 0);
 });
 
-test('Danbooru computer proxy only accepts the Safebooru posts API', () => {
+test('Danbooru computer proxy only accepts the Danbooru/Safebooru posts API', () => {
+  assert.equal(classifyDanbooruRemoteTarget('https://danbooru.donmai.us/posts.json?tags=1girl'), 'json');
   assert.equal(classifyDanbooruRemoteTarget('https://safebooru.donmai.us/posts.json?tags=1girl'), 'json');
-  assert.equal(classifyDanbooruRemoteTarget('https://safebooru.donmai.us/posts/1.json'), null);
-  assert.equal(classifyDanbooruRemoteTarget('https://danbooru.donmai.us/posts.json'), null);
+  assert.equal(classifyDanbooruRemoteTarget('https://danbooru.donmai.us/posts/1.json'), null);
   assert.equal(classifyDanbooruRemoteTarget('https://safebooru.donmai.us.evil.example/posts.json'), null);
+  assert.equal(classifyDanbooruRemoteTarget('https://danbooru.donmai.us.evil.example/posts.json'), null);
   assert.equal(classifyDanbooruRemoteTarget('file:///etc/passwd'), null);
 });
 

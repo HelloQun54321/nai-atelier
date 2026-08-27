@@ -5,7 +5,7 @@ export type DanbooruTagCategory = 'general' | 'artist' | 'copyright' | 'characte
 
 export interface DanbooruPost {
   id: number;
-  rating: 'g';
+  rating: string;
   score: number;
   favCount: number;
   width: number;
@@ -26,7 +26,7 @@ export interface DanbooruSearchResult {
   hasMore: boolean;
 }
 
-const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v9';
+const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v10';
 const COVER_CACHE_TTL = 14 * 24 * 60 * 60 * 1000;
 const COVER_CACHE_LIMIT = 150;
 // 候选枚举调度：最多 3 并发 + 100ms 启动间隔（有效速率 ~6/s，低于 Danbooru
@@ -182,7 +182,11 @@ const candidatePostsFor = (items: DanbooruPost[], normalizedTag: string, kind: '
 
 const getCharacterCandidates = (items: DanbooruPost[], normalizedTag: string) => {
   const exact = items.filter(post => post.tags.character.some(value => value.toLowerCase() === normalizedTag));
+  if (!exact.length) return [];
+
   const targetIsVariant = CHARACTER_VARIANT_NAME.test(normalizedTag);
+
+  // 梯队 1：严格单人经典立绘（无 Q 版、无草稿、无换装）
   const representative = exact.filter(post => (
     post.tags.general.includes('solo')
     && post.tags.character.length <= 2
@@ -193,15 +197,30 @@ const getCharacterCandidates = (items: DanbooruPost[], normalizedTag: string) =>
     && !post.tags.character.some(value => value !== normalizedTag && CHARACTER_VARIANT_NAME.test(value))
   ));
   const canonical = representative.filter(post => post.tags.character.length === 1);
-  return canonical.length ? canonical : representative;
+  if (canonical.length) return canonical;
+  if (representative.length) return representative;
+
+  // 梯队 2：放宽换装与常规排除词限制（只要是 solo 单人即可）
+  const relaxedSolo = exact.filter(post => post.tags.general.includes('solo'));
+  if (relaxedSolo.length) return relaxedSolo;
+
+  // 梯队 3：放宽 solo 单人限制（允许双人或合照图）
+  const relaxedCharacterCount = exact.filter(post => post.tags.character.length <= 2);
+  if (relaxedCharacterCount.length) return relaxedCharacterCount;
+
+  // 梯队 4：终极兜底，返回所有匹配该角色标签的帖子
+  return exact;
 };
 
 const chooseCover = (items: DanbooruPost[], tag: string, kind: 'artist' | 'character') => {
   const normalizedTag = tag.toLowerCase().replaceAll(' ', '_');
   const exact = items.filter(post => post.tags[kind].some(value => value.toLowerCase() === normalizedTag));
+  if (!exact.length) return null;
   if (kind === 'artist') return exact[0] || null;
 
   const candidates = getCharacterCandidates(items, normalizedTag);
+  if (!candidates.length) return exact[0] || null;
+
   const tagFrequency = new Map<string, number>();
   for (const post of candidates) {
     for (const value of new Set(post.tags.general)) {
@@ -220,7 +239,7 @@ const chooseCover = (items: DanbooruPost[], tag: string, kind: 'artist' | 'chara
       + (post.tags.general.some(value => ['looking_at_viewer', 'facing_viewer'].includes(value)) ? 35 : 0)
       + (post.tags.general.some(value => CHARACTER_COVER_FRAMING_TAGS.has(value)) ? 20 : 0);
   };
-  return candidates.sort((left, right) => representativeScore(right) - representativeScore(left))[0] || null;
+  return candidates.sort((left, right) => representativeScore(right) - representativeScore(left))[0] || exact[0] || null;
 };
 
 const getCoverSet = (tag: string, kind: 'artist' | 'character'): Promise<DanbooruCoverSet> => {

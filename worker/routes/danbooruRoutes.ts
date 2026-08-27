@@ -2,7 +2,7 @@
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
 import { json, error, clampInt, type D1Database, type Env, type RouteContext } from './types';
 
-const DANBOORU_BASE_URL = 'https://safebooru.donmai.us';
+const DANBOORU_BASE_URL = 'https://danbooru.donmai.us';
 const DANBOORU_MAX_PAGE_SIZE = 200;
 
 function buildLocalDanbooruFetch(targetUrl: string, env?: Env) {
@@ -38,14 +38,14 @@ const splitDanbooruTags = (value: unknown) => String(value || '').split(/\s+/).m
 
 function normalizeDanbooruPost(post: any) {
   const previewUrl = String(post?.preview_file_url || '');
-  if (!Number.isFinite(Number(post?.id)) || post?.rating !== 'g' || !previewUrl.startsWith('https://cdn.donmai.us/')) return null;
+  if (!Number.isFinite(Number(post?.id)) || !previewUrl.startsWith('https://cdn.donmai.us/')) return null;
   const variants = Array.isArray(post?.media_asset?.variants) ? post.media_asset.variants : [];
   const preferredVariant = variants.find((variant: any) => variant?.type === '720x720')
     || variants.find((variant: any) => variant?.type === '360x360');
   const sampleUrl = String(preferredVariant?.url || post?.large_file_url || post?.file_url || previewUrl);
   return {
     id: Number(post.id),
-    rating: 'g',
+    rating: String(post.rating || 'g'),
     score: Number(post.score || 0),
     favCount: Number(post.fav_count || 0),
     width: Number(post.image_width || 0),
@@ -54,7 +54,7 @@ function normalizeDanbooruPost(post: any) {
     previewUrl,
     sampleUrl: sampleUrl.startsWith('https://cdn.donmai.us/') ? sampleUrl : previewUrl,
     sourceUrl: String(post.source || '').slice(0, 2048),
-    postUrl: `https://safebooru.donmai.us/posts/${Number(post.id)}`,
+    postUrl: `https://danbooru.donmai.us/posts/${Number(post.id)}`,
     tags: {
       general: splitDanbooruTags(post.tag_string_general),
       artist: splitDanbooruTags(post.tag_string_artist),

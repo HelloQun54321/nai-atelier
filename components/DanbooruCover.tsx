@@ -149,7 +149,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
       {canBrowse && <button type="button" disabled={isLoadingMore || (candidateIndex !== null && candidateIndex >= candidates.length - 1 && !coverSet?.hasMore)} onClick={event => { event.stopPropagation(); moveCandidate(1); }} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-35" title="下一张" aria-label="下一张"><ChevronRight className="h-4 w-4" /></button>}
     </> : <div className="absolute inset-0 flex flex-col items-center justify-center px-3 text-center text-gray-400">
       <ImageIcon className={`h-7 w-7 ${coverSet === undefined ? 'animate-pulse' : ''}`} />
-      <span className="mt-2 text-[10px]">{coverSet === undefined ? '正在查找参考图…' : kind === 'character' ? '暂无合适的单人代表图' : 'Danbooru 暂无普通级图片'}</span>
+      <span className="mt-2 text-[10px]">{coverSet === undefined ? '正在查找参考图…' : 'Danbooru 暂无相关图片'}</span>
     </div>}
   </div>;
 };
