@@ -399,10 +399,15 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
             {allTags.length > 0 && <div className="relative ml-auto flex-none">
               <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} className={selectedTags.size > 0 ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!bg-indigo-950/40' : ''} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" />标签{selectedTags.size > 0 ? ` ${selectedTags.size}` : ''}</ToolbarButton>
-              {showDesktopFilters && <div role="dialog" aria-label="标签筛选" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(30rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                <div className="mb-3 flex items-center justify-between"><b className="text-sm dark:text-white">标签筛选</b>{selectedTags.size > 0 && <button type="button" onClick={() => setSelectedTags(new Set())} className="text-xs font-bold text-indigo-600">清除</button>}</div>
-                <div className="flex max-h-52 flex-wrap gap-2 overflow-y-auto">{allTags.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`rounded-full px-3 py-1.5 text-xs font-medium ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>{tag}</button>)}</div>
-              </div>}
+              {showDesktopFilters && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowDesktopFilters(false)} />
+                  <div role="dialog" aria-label="标签筛选" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(30rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                    <div className="mb-3 flex items-center justify-between"><b className="text-sm dark:text-white">标签筛选</b>{selectedTags.size > 0 && <button type="button" onClick={() => setSelectedTags(new Set())} className="text-xs font-bold text-indigo-600">清除</button>}</div>
+                    <div className="flex max-h-52 flex-wrap gap-2 overflow-y-auto">{allTags.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`rounded-full px-3 py-1.5 text-xs font-medium ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>{tag}</button>)}</div>
+                  </div>
+                </>
+              )}
             </div>}
             <select value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className={`${allTags.length > 0 ? '' : 'ml-auto'} h-10 w-36 rounded-xl border border-gray-200 bg-white px-2 text-xs text-gray-600 outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300`}><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option></select>
             <select value={selectedModel} onChange={event => setSelectedModel(event.target.value)} aria-label="模型筛选" className="h-10 w-36 rounded-xl border border-gray-200 bg-white px-2 text-xs text-gray-600 outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"><option value="">全部模型</option>{modelFilterOptions.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}</select>

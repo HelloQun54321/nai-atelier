@@ -582,44 +582,47 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                   <ChevronDown className="h-3.5 w-3.5" />
                 </IconButton>
                 {showGachaTools && (
-                  <div role="dialog" aria-label="随机抽卡设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                    <div className="mb-2 text-xs font-bold text-gray-800 dark:text-white">随机抽卡设置</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className="text-xs text-gray-500 dark:text-gray-400">
-                        抽卡范围
-                        <select
-                          value={gachaMode}
-                          onChange={event => setGachaMode(event.target.value as GachaMode)}
-                          className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white"
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowGachaTools(false)} />
+                    <div role="dialog" aria-label="随机抽卡设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                      <div className="mb-2 text-xs font-bold text-gray-800 dark:text-white">随机抽卡设置</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="text-xs text-gray-500 dark:text-gray-400">
+                          抽卡范围
+                          <select
+                            value={gachaMode}
+                            onChange={event => setGachaMode(event.target.value as GachaMode)}
+                            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white"
+                          >
+                            <option value="mixed">Tag + 自定义</option>
+                            <option value="catalog">只抽角色 Tag</option>
+                            <option value="custom">只抽自定义</option>
+                          </select>
+                        </label>
+                        <label className="text-xs text-gray-500 dark:text-gray-400">
+                          数量
+                          <select
+                            value={gachaCount}
+                            onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)}
+                            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white"
+                          >
+                            <option value={6}>6 位</option>
+                            <option value={12}>12 位</option>
+                            <option value={24}>24 位</option>
+                          </select>
+                        </label>
+                      </div>
+                      {gachaCards && (
+                        <button
+                          type="button"
+                          onClick={() => { setGachaCards(null); setShowGachaTools(false); }}
+                          className="mt-3 w-full rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
                         >
-                          <option value="mixed">Tag + 自定义</option>
-                          <option value="catalog">只抽角色 Tag</option>
-                          <option value="custom">只抽自定义</option>
-                        </select>
-                      </label>
-                      <label className="text-xs text-gray-500 dark:text-gray-400">
-                        数量
-                        <select
-                          value={gachaCount}
-                          onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)}
-                          className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white"
-                        >
-                          <option value={6}>6 位</option>
-                          <option value={12}>12 位</option>
-                          <option value={24}>24 位</option>
-                        </select>
-                      </label>
+                          返回完整目录
+                        </button>
+                      )}
                     </div>
-                    {gachaCards && (
-                      <button
-                        type="button"
-                        onClick={() => { setGachaCards(null); setShowGachaTools(false); }}
-                        className="mt-3 w-full rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
-                      >
-                        返回完整目录
-                      </button>
-                    )}
-                  </div>
+                  </>
                 )}
               </div>
 
@@ -633,24 +636,27 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                   <SlidersHorizontal />
                 </IconButton>
                 {showDisplayTools && (
-                  <div role="dialog" aria-label="角色显示设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                    <div className="mb-2 text-xs font-bold text-gray-800 dark:text-white">显示设置</div>
-                    <label className="block text-xs text-gray-500 dark:text-gray-400">
-                      每行 {gridColumns} 列
-                      <input
-                        type="range"
-                        min="3"
-                        max="10"
-                        value={gridColumns}
-                        onChange={event => {
-                          const value = Number(event.target.value);
-                          setGridColumns(value);
-                          localStorage.setItem('nai_character_grid_columns', String(value));
-                        }}
-                        className="mt-2 w-full accent-indigo-500"
-                      />
-                    </label>
-                  </div>
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowDisplayTools(false)} />
+                    <div role="dialog" aria-label="角色显示设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                      <div className="mb-2 text-xs font-bold text-gray-800 dark:text-white">显示设置</div>
+                      <label className="block text-xs text-gray-500 dark:text-gray-400">
+                        每行 {gridColumns} 列
+                        <input
+                          type="range"
+                          min="3"
+                          max="10"
+                          value={gridColumns}
+                          onChange={event => {
+                            const value = Number(event.target.value);
+                            setGridColumns(value);
+                            localStorage.setItem('nai_character_grid_columns', String(value));
+                          }}
+                          className="mt-2 w-full accent-indigo-500"
+                        />
+                      </label>
+                    </div>
+                  </>
                 )}
               </div>
 
