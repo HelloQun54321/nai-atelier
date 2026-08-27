@@ -16,7 +16,7 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
-import { Check, ChevronDown, Dice5, Heart, LoaderCircle, Menu, Plus, RefreshCw, Settings2, SlidersHorizontal, Tag, UserRound } from 'lucide-react';
+import { Check, ChevronDown, Dice5, Heart, LoaderCircle, Menu, Plus, RefreshCw, Settings2, Tag, UserRound } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
@@ -170,7 +170,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const [showCreate, setShowCreate] = useState(false);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showGachaTools, setShowGachaTools] = useState(false);
-  const [showDisplayTools, setShowDisplayTools] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
@@ -625,40 +624,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
               )}
             </div>
             <div className="relative ml-auto flex flex-none items-center justify-end gap-2">
-              <div className="relative flex-none">
-                <IconButton
-                  label="显示设置"
-                  onClick={() => setShowDisplayTools(value => !value)}
-                  aria-expanded={showDisplayTools}
-                  aria-haspopup="dialog"
-                >
-                  <SlidersHorizontal />
-                </IconButton>
-                {showDisplayTools && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowDisplayTools(false)} />
-                    <div role="dialog" aria-label="角色显示设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                      <div className="mb-2 text-xs font-bold text-gray-800 dark:text-white">显示设置</div>
-                      <label className="block text-xs text-gray-500 dark:text-gray-400">
-                        每行 {gridColumns} 列
-                        <input
-                          type="range"
-                          min="3"
-                          max="10"
-                          value={gridColumns}
-                          onChange={event => {
-                            const value = Number(event.target.value);
-                            setGridColumns(value);
-                            localStorage.setItem('nai_character_grid_columns', String(value));
-                          }}
-                          className="mt-2 w-full accent-indigo-500"
-                        />
-                      </label>
-                    </div>
-                  </>
-                )}
-              </div>
-
               <IconButton label={showFavOnly ? '显示全部角色' : '只看收藏'} tone={showFavOnly ? 'favorite' : 'neutral'} onClick={() => setShowFavOnly(value => !value)}><Heart className={`h-4 w-4 ${showFavOnly ? 'fill-current' : ''}`} /></IconButton>
               <IconButton label="刷新列表" onClick={() => void onRefresh()} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
               <ImageTaggerAction notify={notify} />

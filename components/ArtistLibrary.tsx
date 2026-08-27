@@ -12,7 +12,7 @@ import { createUuid } from '../services/id';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
-import { Bot, ChevronDown, ClipboardList, Clock3, Dice5, Download, Grid3X3, Heart, List, LoaderCircle, Menu, RefreshCw, Settings2, SlidersHorizontal } from 'lucide-react';
+import { Bot, ChevronDown, ClipboardList, Clock3, Dice5, Download, Grid3X3, Heart, List, LoaderCircle, Menu, RefreshCw, Settings2 } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
@@ -280,7 +280,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     const [gridCols, setGridCols] = useState(() => Number(localStorage.getItem('nai_artist_grid_columns')) || 6);
     const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
     const [showMobileTools, setShowMobileTools] = useState(false);
-    const [showDisplayTools, setShowDisplayTools] = useState(false);
     const [showGachaTools, setShowGachaTools] = useState(false);
     const [showMoreTools, setShowMoreTools] = useState(false);
 
@@ -1187,21 +1186,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     </div>
 
                     <div className="relative ml-auto flex flex-none items-center justify-end gap-2">
-                        <div className="relative flex-none">
-                            <IconButton label="显示设置" onClick={() => setShowDisplayTools(value => !value)} aria-expanded={showDisplayTools}><SlidersHorizontal /></IconButton>
-                            {showDisplayTools && (
-                                <>
-                                    <div className="fixed inset-0 z-40" onClick={() => setShowDisplayTools(false)} />
-                                    <div role="dialog" aria-label="画师显示设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-72 rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                                        <div className="mb-2 text-xs font-bold text-gray-800 dark:text-white">显示设置</div>
-                                        <div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setLayoutMode('grid')} className={`rounded-lg px-3 py-2 text-sm ${layoutMode === 'grid' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}><Grid3X3 className="mr-1 inline h-4 w-4" />网格</button><button type="button" onClick={() => setLayoutMode('list')} className={`rounded-lg px-3 py-2 text-sm ${layoutMode === 'list' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}><List className="mr-1 inline h-4 w-4" />展开</button></div>
-                                        {layoutMode === 'grid' && <div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={() => setViewMode('original')} className={`rounded-lg px-3 py-2 text-sm ${viewMode === 'original' ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-950/40' : 'bg-gray-100 dark:bg-gray-800'}`}>原图</button><button type="button" onClick={() => setViewMode('benchmark')} className={`rounded-lg px-3 py-2 text-sm ${viewMode === 'benchmark' ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-950/40' : 'bg-gray-100 dark:bg-gray-800'}`}>实装</button></div>}
-                                        <label className="mt-3 block text-xs text-gray-500">{layoutMode === 'grid' ? `每行 ${gridCols} 列` : `图片宽度 ${listImgWidth}px`}<input type="range" min={layoutMode === 'grid' ? 3 : 80} max={layoutMode === 'grid' ? 15 : 400} step={layoutMode === 'grid' ? 1 : 10} value={layoutMode === 'grid' ? gridCols : listImgWidth} onChange={event => layoutMode === 'grid' ? (setGridCols(Number(event.target.value)), localStorage.setItem('nai_artist_grid_columns', event.target.value)) : setListImgWidth(Number(event.target.value))} className="mt-2 w-full accent-indigo-500" /></label>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-
                         <IconButton label={showFavOnly ? '显示全部画师' : '只看收藏'} tone={showFavOnly ? 'favorite' : 'neutral'} onClick={() => setShowFavOnly(value => !value)}><Heart className={`h-4 w-4 ${showFavOnly ? 'fill-current' : ''}`} /></IconButton>
 
                         <IconButton label="批量导入画师" onClick={() => setShowImport(true)} title="批量导入画师"><Download className="h-4 w-4" /></IconButton>

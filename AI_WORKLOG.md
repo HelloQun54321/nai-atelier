@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：移除角色库与画师库顶栏冗余的显示设置按钮与弹窗（feat: remove redundant display settings button and popovers from character and artist libraries）。
 - **Gemini (Flash)**：修复 ArtistLibrary 控制栏与列表视图 JSX 闭合问题（fix: restore JSX tag closures in ArtistLibrary toolbar and list layout）。
 - **Gemini (Flash)**：将角色库范围选项卡替换为同款下拉框并移除重复的收藏项（refactor: convert character scope tab to select dropdown and deduplicate favorites）。
 - **Gemini (Flash)**：镜像对齐角色库与画师库顶栏布局，为角色库增配独立收藏按钮并精简画师库冗余跑图入口（feat: harmonize topbars and favorite actions between character and artist libraries）。
