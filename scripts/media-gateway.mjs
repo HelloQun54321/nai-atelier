@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rename, rmdir, unlink, writeFile } f
 import { createServer, request as httpRequest } from 'node:http';
 import { connect as connectSocket } from 'node:net';
 import { availableParallelism, tmpdir, totalmem } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, extname, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
@@ -2438,6 +2438,45 @@ const proxyRequest = (req, res, workerPort) => {
 };
 
 export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSecret = '', outboundProxyUrl = '', pixivFetch, pixivTokenDir, pixivWebLogin } = {}) {
+// 静态前端资源直接由网关从 dist/ 提供：页面与资源加载不依赖 workerd，也不占用其请求槽。
+const STATIC_CONTENT_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.woff2': 'font/woff2',
+  '.wasm': 'application/wasm',
+  '.txt': 'text/plain; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+};
+const DIST_ROOT = join(process.cwd(), 'dist');
+const serveDistFile = async (req, res, url) => {
+  let pathname = url.pathname;
+  try { pathname = decodeURIComponent(pathname); } catch { return false; }
+  if (pathname.includes('..') || pathname.includes('\0')) return false;
+  const relative = pathname.replace(/^\/+/, '') || 'index.html';
+  const filePath = join(DIST_ROOT, relative);
+  if (!filePath.startsWith(DIST_ROOT)) return false;
+  let data;
+  try { data = await readFile(filePath); } catch { return false; }
+  const ext = extname(filePath).toLowerCase();
+  // 带内容哈希的构建产物可永久缓存；入口与清单文件禁用缓存。
+  const immutable = relative.startsWith('assets/') || /[.-][a-f0-9]{8,}\./i.test(relative);
+  res.writeHead(200, {
+    'Content-Type': STATIC_CONTENT_TYPES[ext] || 'application/octet-stream',
+    'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
+  });
+  res.end(data);
+  return true;
+};
   const proxyAgent = outboundProxyUrl ? new ProxyAgent(outboundProxyUrl) : null;
   const remoteFetch = (url, options = {}) => undiciFetch(url, { ...options, ...(proxyAgent ? { dispatcher: proxyAgent } : {}) });
   const cloudQueue = new CloudQueueCoordinator(remoteFetch);
@@ -2483,6 +2522,9 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
   // 后台同步官方 Web 应用常量（模型清单、限额换算、免费门槛、成本系数）。
   void initNaiRuntimeSync();
 
+  // 用户会话最近一次请求时间：历史缩略图预热必须让行，避免抢占真实浏览的并发槽。
+  let lastUserTrafficAt = 0;
+  const markUserTraffic = () => { lastUserTrafficAt = Date.now(); };
   const historyIndexStatus = {
     running: false,
     total: 0,
@@ -2546,6 +2588,10 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         completedAt: 0,
       });
       for (let page = 0; ; page++) {
+        // 用户正在使用时退避：把缩略图并发与 D1 查询让给真实浏览请求。
+        while (Date.now() - lastUserTrafficAt < 3000) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
         const result = await requestWorkerJson(`/api/local-history/media-index?page=${page}&pageSize=100&includeCount=${page === 0 ? '1' : '0'}`, internalWorkerRequest, workerPort);
         const items = result.items || [];
         if (page === 0) historyIndexStatus.total = Number(result.count || items.length);
@@ -2567,6 +2613,7 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
   };
 
   const server = createServer(async (req, res) => {
+    markUserTraffic();
     let url;
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
     if (url.pathname.startsWith('/api/integrations/st-chatu8/')) {
@@ -2981,6 +3028,8 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
         return sendJson(res, 400, { error: error.message || 'Invalid prewarm request' });
       }
     }
+    // 静态前端资源由网关直接提供，/api 与 /__internal 继续转发给 workerd。
+    if (!url.pathname.startsWith('/api/') && !url.pathname.startsWith('/__internal/') && await serveDistFile(req, res, url)) return;
     if (url.pathname !== '/api/media') return proxyRequest(req, res, workerPort);
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
     if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
@@ -3075,7 +3124,8 @@ export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSe
     server.once('error', reject);
     server.listen(port, '0.0.0.0', resolve);
   });
-  setTimeout(() => void buildHistoryIndex(), 0).unref?.();
+  // 历史缩略图预热延迟到页面与首次浏览就绪后再启动，避免抢占启动期资源。
+  setTimeout(() => void buildHistoryIndex(), 35_000).unref?.();
   return server;
 }
 

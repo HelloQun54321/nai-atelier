@@ -1,5 +1,5 @@
 import { spawn, execSync, spawnSync } from 'child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs';
 import { createServer as createNetServer } from 'net';
 import { randomBytes, randomInt } from 'crypto';
 import { networkInterfaces, platform } from 'os';
@@ -127,6 +127,19 @@ function needsBuild() {
   const oldestOutput = Math.min(...BUILD_OUTPUTS.map(path => statSync(path).mtimeMs));
   const newestInput = Math.max(...BUILD_INPUTS.map(getNewestMtime));
   return newestInput > oldestOutput;
+}
+/** 清理历史 wrangler pages dev 临时产物：每次 pages dev 都会新建一个 tmp 目录，旧目录不再使用。 */
+function cleanupStaleWranglerTmp() {
+  const tmpDir = '.wrangler/tmp';
+  if (!existsSync(tmpDir)) return;
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  for (const entry of readdirSync(tmpDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dirPath = `${tmpDir}/${entry.name}`;
+    try {
+      if (statSync(dirPath).mtimeMs < cutoff) rmSync(dirPath, { recursive: true, force: true });
+    } catch { /* 清理失败不阻塞启动 */ }
+  }
 }
 
 function buildLatest() {
@@ -349,4 +362,5 @@ console.log('\x1b[36m=== NAI Atelier 本地部署 ===\x1b[0m');
 if (await reuseExistingServer()) process.exit(0);
 ensureDependencies();
 buildLatest();
+cleanupStaleWranglerTmp();
 await startServer();
