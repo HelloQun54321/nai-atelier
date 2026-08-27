@@ -385,7 +385,13 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   };
 
   const handleRandomGacha = () => {
-    void handleApplyFilter({ sort: 'random' });
+    if (sort === 'random') {
+      // 当前已是随机模式：随机跳转起始页，保证每次点击必出不同结果
+      const randomPage = 1 + Math.floor(Math.random() * 50);
+      void load('order:random', randomPage);
+    } else {
+      void handleApplyFilter({ sort: 'random' });
+    }
   };
 
   return (

@@ -36,6 +36,7 @@ import {
   PixivLoginState,
   PixivLoginStatus,
   PixivFeedMode,
+  PixivFeedResult,
   PixivRankingSubMode,
   PixivIllust,
   buildPixivMediaUrl,
@@ -188,7 +189,6 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
         setItems([]);
         setNextCursor(null);
         await refreshStatus();
-        void loadFeed('recommended', {});
         notify('Pixiv 登录成功');
       } else {
         applyLoginSession(next);
@@ -307,7 +307,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
 
   // 下一页 feed 投机预取：当前页稳定后用 nextCursor 后台请求下一页（网关对 feed
   // 响应自动预热缩略图，等于 JSON 和图片一起备好）；点"加载更多"/触底时直接消费。
-  const nextFeedPrefetchRef = useRef<{ mode: PixivFeedMode; cursor: string; promise: Promise<Awaited<ReturnType<typeof pixivService.feed>> | null> } | null>(null);
+  const nextFeedPrefetchRef = useRef<{ mode: PixivFeedMode; cursor: string; promise: Promise<PixivFeedResult<PixivIllust> | null> } | null>(null);
 
   const scheduleFeedPrefetch = (feedMode: PixivFeedMode, cursor: string | null | undefined, word: string, userId?: string) => {
     if (!cursor) return;
@@ -319,11 +319,11 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     nextFeedPrefetchRef.current = {
       mode: feedMode,
       cursor,
-      promise: pixivService.feed(feedMode, { cursor, params }).catch(() => null),
+      promise: pixivService.feed<PixivIllust>(feedMode, { cursor, params }).catch(() => null),
     };
   };
 
-  const consumeFeedPrefetch = (feedMode: PixivFeedMode, cursor: string) => {
+  const consumeFeedPrefetch = (feedMode: PixivFeedMode, cursor: string): Promise<PixivFeedResult<PixivIllust> | null> | null => {
     const prefetch = nextFeedPrefetchRef.current;
     if (!prefetch || prefetch.mode !== feedMode || prefetch.cursor !== cursor) return null;
     nextFeedPrefetchRef.current = null;
@@ -456,6 +456,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   };
 
   const switchTab = (tab: PixivFeedMode) => {
+    nextFeedPrefetchRef.current = null;
     if (tab === mode && items.length && !showHistory) return;
     if (tab === 'search') {
       if (searchInput.trim()) void loadFeed('search', { word: searchInput.trim() });
@@ -512,6 +513,10 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   }, [nextCursor, loadingMore, mode, searchInput]);
 
   const openAuthorWorks = (userId: string, userName: string) => {
+    if (!userId) {
+      notify('该历史记录未保存画师信息，无法直达作者全集', 'error');
+      return;
+    }
     void loadFeed('user', { user: { id: userId, name: userName } });
   };
 
@@ -582,6 +587,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
 
   const handleDisconnect = async () => {
     feedRequestRef.current += 1;
+    nextFeedPrefetchRef.current = null;
     try {
       await pixivService.disconnect();
       setStatus(previous => (previous ? { ...previous, connected: false } : previous));
@@ -906,6 +912,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 onClick={() => {
                   galleryHistoryService.clear('pixiv');
                   setHistoryItems([]);
+                  setSelectedId(null);
                 }}
                 className="text-red-500 hover:underline"
               >
@@ -942,7 +949,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                             xRestrict: 0,
                             isBookmarked: false,
                             tags: item.tags,
-                            pageCount: item.pageCount || 1,
+                            pageCount: 1, // 修复 H1：足迹中仅记录单张预览图，页数对齐为 1 避免翻页器静默失效
                             width: item.width || 800,
                             height: item.height || 1200,
                             totalBookmarks: item.bookmarks || 0,

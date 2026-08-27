@@ -29,13 +29,22 @@ export interface GalleryHistoryItem {
 const STORAGE_KEY = 'nai_gallery_view_history_v1';
 const MAX_HISTORY_ITEMS = 200;
 
+const getStorage = () => {
+  try {
+    return typeof window !== 'undefined' ? window.localStorage : (globalThis as any).localStorage;
+  } catch {
+    return null;
+  }
+};
+
 class GalleryHistoryService {
   private cache: GalleryHistoryItem[] | null = null;
 
   private load(): GalleryHistoryItem[] {
     if (this.cache) return this.cache;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const storage = getStorage();
+      const raw = storage ? storage.getItem(STORAGE_KEY) : null;
       this.cache = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(this.cache)) this.cache = [];
     } catch {
@@ -46,17 +55,23 @@ class GalleryHistoryService {
 
   private persist() {
     if (!this.cache) return;
+    const limited = this.cache.slice(0, MAX_HISTORY_ITEMS);
+    this.cache = limited;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.cache.slice(0, MAX_HISTORY_ITEMS)));
+      const storage = getStorage();
+      if (storage) {
+        storage.setItem(STORAGE_KEY, JSON.stringify(limited));
+      }
     } catch {
-      // 存储满了时淘汰一半
-      if (this.cache.length > 50) {
-        this.cache = this.cache.slice(0, 50);
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(this.cache));
-        } catch {
-          // ignore
+      // 存储满：淘汰一半并同步更新内存态，避免内存态与实际存储脱节
+      this.cache = limited.slice(0, 50);
+      try {
+        const storage = getStorage();
+        if (storage) {
+          storage.setItem(STORAGE_KEY, JSON.stringify(this.cache));
         }
+      } catch {
+        // ignore
       }
     }
   }
@@ -112,3 +127,4 @@ class GalleryHistoryService {
 }
 
 export const galleryHistoryService = new GalleryHistoryService();
+

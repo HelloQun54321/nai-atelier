@@ -83,9 +83,15 @@ export interface PixivFeedParams {
   illust_id?: string;
 }
 
-export interface PixivFeedResult {
+export interface PixivTrendingTag {
+  tag: string;
+  translatedName?: string;
+  illust?: PixivIllust | null;
+}
+
+export interface PixivFeedResult<T = PixivIllust> {
   mode: PixivFeedMode;
-  items: PixivIllust[];
+  items: T[];
   nextUrl: string | null;
   nextCursor: string | null;
   fetchedAt: number;
@@ -161,7 +167,7 @@ export const pixivService = {
   cancelPixivLogin: async (id: string): Promise<PixivLoginStatus> =>
     requestJson(`/login?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
-  feed: async (mode: PixivFeedMode, options: { cursor?: string; params?: PixivFeedParams } = {}): Promise<PixivFeedResult> => {
+  feed: async <T = PixivIllust>(mode: PixivFeedMode, options: { cursor?: string; params?: PixivFeedParams } = {}): Promise<PixivFeedResult<T>> => {
     const query = new URLSearchParams({ mode });
     if (options.cursor) query.set('cursor', options.cursor);
     if (options.params) {
@@ -183,9 +189,9 @@ export const pixivService = {
     return result.items || [];
   },
 
-  getTrendingTags: async (): Promise<Array<{ tag: string; translatedName?: string; illust?: PixivIllust }>> => {
-    const result = await pixivService.feed('trending');
-    return (result as any).items || [];
+  getTrendingTags: async (): Promise<PixivTrendingTag[]> => {
+    const result = await pixivService.feed<PixivTrendingTag>('trending');
+    return result.items || [];
   },
 };
 

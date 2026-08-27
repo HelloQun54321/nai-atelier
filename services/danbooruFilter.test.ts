@@ -28,3 +28,4 @@ describe('buildDanbooruFilterQuery', () => {
     })).toBe('frieren order:score rating:s ratio:<0.8 solo');
   });
 });
+

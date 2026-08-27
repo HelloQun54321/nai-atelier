@@ -1,8 +1,29 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { galleryHistoryService } from './galleryHistoryService';
 
+// Mock localStorage for Node test runner
+const createMockStorage = () => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] || null,
+    setItem: (key: string, value: string) => {
+      store[key] = value;
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    },
+  };
+};
+
 describe('galleryHistoryService', () => {
+  let mockStorage = createMockStorage();
+
   beforeEach(() => {
+    mockStorage = createMockStorage();
+    (globalThis as any).localStorage = mockStorage;
     galleryHistoryService.clear();
   });
 
@@ -106,4 +127,30 @@ describe('galleryHistoryService', () => {
     galleryHistoryService.clear('danbooru');
     expect(galleryHistoryService.getHistory()).toHaveLength(0);
   });
+
+  it('syncs in-memory cache when localStorage quota error occurs', () => {
+    // 模拟当数据体积大于 2000 字节时触发配额超限错误
+    mockStorage.setItem = (key: string, value: string) => {
+      if (value.length > 2000) {
+        throw new Error('QuotaExceededError');
+      }
+    };
+
+    // 记录 60 条记录，每条带有丰富信息以超出 2000 字节限制
+    for (let i = 0; i < 60; i++) {
+      galleryHistoryService.recordView({
+        id: `item:${i}`,
+        source: 'pixiv',
+        sourceId: String(i),
+        title: `Item With Very Long Title For Quota Simulation ${i}`,
+        previewUrl: `https://example.com/long/path/to/preview/image/${i}.jpg`,
+        sampleUrl: `https://example.com/long/path/to/sample/image/${i}.jpg`,
+        tags: ['tag1', 'tag2', 'tag3', 'tag4', 'tag5'],
+      });
+    }
+
+    // 触发配额超限降级后，内存中的缓存应同步截断到 50 条
+    expect(galleryHistoryService.getHistory().length).toBeLessThanOrEqual(50);
+  });
 });
+
