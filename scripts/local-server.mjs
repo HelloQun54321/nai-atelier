@@ -392,8 +392,12 @@ async function startServer() {
   try {
     await waitForWorker(workerPort);
     console.log(`\x1b[32m核心页面服务已就绪（耗时 ${bootElapsedSec()} 秒，含本地 D1/R2 存储恢复）。\x1b[0m`);
-    const gatewayStartedAt = Date.now();
-    mediaGateway = await createMediaGateway({ port: 3000, workerPort, lanSecret: lanAccess.secret, outboundProxyUrl: gatewayOutboundProxy });
+    // 网关初始化以本地轻量步骤为主，偶发环境卡顿不应让窗口无限静默：90 秒未就绪即报错退出。
+    console.log('\x1b[36m图片网关初始化中（缩略图缓存、Agent、Pixiv、桥接）...\x1b[0m');
+    mediaGateway = await Promise.race([
+      createMediaGateway({ port: 3000, workerPort, lanSecret: lanAccess.secret, outboundProxyUrl: gatewayOutboundProxy }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('图片网关初始化超过 90 秒（可能为系统繁忙或磁盘异常），请关闭窗口后重试')), 90_000)),
+    ]);
     console.log(`\x1b[32m图片网关已就绪（耗时 ${((Date.now() - gatewayStartedAt) / 1000).toFixed(1)} 秒），手机列表将按需使用缩略图。\x1b[0m`);
     console.log(`\x1b[32m全部就绪，总耗时 ${bootElapsedSec()} 秒。\x1b[0m`);
     openWhenReady();
