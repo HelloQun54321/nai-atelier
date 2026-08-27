@@ -1037,15 +1037,61 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             </MobileBottomSheet>
 
             <div ref={historyScrollRef} className="flex-1 overflow-y-auto p-4 md:p-6 pb-20">
-                {selectionMode && <div className="mb-5 hidden items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 dark:border-indigo-900/60 dark:bg-indigo-950/30 md:flex">
-                    <span className="mr-auto text-sm font-bold text-indigo-700 dark:text-indigo-200">多选模式 · 已选 {selectedIds.size} 张</span>
-                    <button type="button" onClick={selectCurrentPage} className="rounded-lg px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 dark:text-indigo-200 dark:hover:bg-indigo-900/50">全选本页</button>
-                    <button type="button" onClick={invertCurrentPageSelection} className="rounded-lg px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 dark:text-indigo-200 dark:hover:bg-indigo-900/50">反选本页</button>
-                    <button type="button" onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending} className="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-400 disabled:opacity-40">收藏选中</button>
-                    <button type="button" onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending} className="rounded-lg px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-100 disabled:opacity-40 dark:text-rose-300 dark:hover:bg-rose-950/40">取消收藏</button>
-                    <button type="button" onClick={exitSelectionMode} className="rounded-lg px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800">退出</button>
-                    <button type="button" onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-500 disabled:opacity-40">删除选中</button>
-                </div>}
+                {selectionMode && (
+                    <div className="mb-5 hidden items-center gap-2 rounded-2xl border border-indigo-100 bg-indigo-50/80 px-4 py-2.5 shadow-sm dark:border-indigo-900/40 dark:bg-indigo-950/30 md:flex">
+                        <span className="mr-auto text-xs font-bold text-indigo-800 dark:text-indigo-200">
+                            多选模式 · 已选 <span className="font-extrabold text-indigo-600 dark:text-indigo-400">{selectedIds.size}</span> 张
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                type="button"
+                                onClick={selectCurrentPage}
+                                className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:text-indigo-200 dark:hover:bg-indigo-900/50"
+                            >
+                                全选本页
+                            </button>
+                            <button
+                                type="button"
+                                onClick={invertCurrentPageSelection}
+                                className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:text-indigo-200 dark:hover:bg-indigo-900/50"
+                            >
+                                反选本页
+                            </button>
+                            <div className="mx-1 h-3.5 w-px bg-indigo-200 dark:bg-indigo-800/60" />
+                            <button
+                                type="button"
+                                onClick={() => void handleBulkFavorite(true)}
+                                disabled={!selectedIds.size || selectionFavoritePending}
+                                className="rounded-xl bg-rose-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-rose-400 disabled:opacity-40"
+                            >
+                                收藏选中
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void handleBulkFavorite(false)}
+                                disabled={!selectedIds.size || selectionFavoritePending}
+                                className="rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40 dark:border-rose-900/40 dark:bg-gray-900 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                            >
+                                取消收藏
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void handleBulkDelete()}
+                                disabled={!selectedIds.size}
+                                className="rounded-xl bg-red-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-red-500 disabled:opacity-40"
+                            >
+                                删除选中
+                            </button>
+                            <button
+                                type="button"
+                                onClick={exitSelectionMode}
+                                className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                            >
+                                退出多选
+                            </button>
+                        </div>
+                    </div>
+                )}
                 {isLoading ? (
                     <div className="h-full flex flex-col items-center justify-center text-gray-400">
                         <RefreshCw className="mb-3 h-8 w-8 animate-spin" />

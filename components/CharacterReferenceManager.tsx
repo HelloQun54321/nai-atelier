@@ -5,6 +5,7 @@ import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
+import { SegmentedControl } from './DesignSystem';
 
 interface Props {
   params: NAIParams;
@@ -243,10 +244,21 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
           </div>
         </main> : <>
           <div className="flex flex-none flex-wrap items-center gap-2 border-b border-gray-200 bg-gray-50/60 p-3 dark:border-gray-800 dark:bg-gray-950/60 sm:px-5">
-            <input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索角色参考…" className="mobile-touch min-w-40 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-sm outline-none focus:border-cyan-500 dark:border-gray-800 dark:bg-gray-900" />
-            <button type="button" onClick={() => setArchived(value => !value)} className={`mobile-touch rounded-xl px-3 text-xs font-bold ${archived ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'}`}>{archived ? '查看资料库' : '已归档'}</button>
+            <SegmentedControl
+              value={archived ? 'archived' : 'active'}
+              onChange={val => setArchived(val === 'archived')}
+              options={[
+                { value: 'active', label: '资料库' },
+                { value: 'archived', label: '已归档' },
+              ]}
+              size="sm"
+              ariaLabel="资料库范围"
+            />
+            <input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索角色参考…" className="h-9 min-w-40 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-xs outline-none focus:border-cyan-500 dark:border-gray-800 dark:bg-gray-900" />
             <input ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => void handleUpload(event.target.files?.[0])} />
-            <button type="button" disabled={Boolean(busyId)} onClick={() => imageInputRef.current?.click()} className="mobile-touch rounded-xl bg-cyan-600 px-4 text-xs font-bold text-white shadow-sm hover:bg-cyan-500 disabled:opacity-50">{busyId ? '保存中…' : '上传图片'}</button>
+            <button type="button" disabled={Boolean(busyId)} onClick={() => imageInputRef.current?.click()} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-cyan-600 px-3.5 text-xs font-bold text-white shadow-sm hover:bg-cyan-500 disabled:opacity-50 transition-colors">
+              {busyId ? '保存中…' : '＋ 上传图片'}
+            </button>
           </div>
           <main className="workspace-manager-split grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_340px]">
             <div className="workspace-manager-list overflow-y-auto p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5">

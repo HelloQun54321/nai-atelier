@@ -716,15 +716,37 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
         {!isLoading && visibleCards.length === 0 && <div className="py-20 text-center text-gray-400">没有找到符合条件的角色</div>}
       </div>
 
-      <div className={`absolute bottom-0 left-0 right-0 z-30 border-t border-gray-200 bg-white/95 shadow-[0_-5px_20px_rgba(0,0,0,0.1)] backdrop-blur transition-transform duration-300 dark:border-gray-800 dark:bg-gray-950/95 ${selectedCards.length > 0 ? 'translate-y-0' : 'translate-y-full'}`}>
-        <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-3 p-4 md:flex-row md:gap-4">
-          <div className="text-sm text-gray-500 dark:text-gray-400">已选 <span className="font-bold text-gray-900 dark:text-white">{selectedCards.length}</span> 个</div>
-          <div className="flex w-full items-center justify-between gap-2 md:ml-auto md:w-auto">
-            <button type="button" onClick={clearSelection} className="rounded-lg bg-gray-200 px-4 py-2 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">清空</button>
-            <div className="flex gap-2">
-              <button type="button" disabled={selectedCards.length === 0} onClick={() => void copyAllSelected()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40">复制全部</button>
-              <button type="button" disabled={selectedCards.length === 0} onClick={importAllSelected} className="rounded-lg bg-white px-4 py-2 text-sm font-bold text-indigo-600 ring-1 ring-indigo-200 transition-colors hover:bg-indigo-50 dark:bg-gray-900 dark:text-indigo-300 dark:ring-indigo-900 disabled:cursor-not-allowed disabled:opacity-40">导入实验室</button>
-            </div>
+      {/* 底部悬浮多选操作栏 */}
+      <div className={`pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4 transition-all duration-300 ${selectedCards.length > 0 ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}>
+        <div className="pointer-events-auto flex items-center gap-3 rounded-2xl border border-gray-200 bg-white/95 px-4 py-2.5 shadow-2xl backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+          <div className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+            已选 <span className="font-bold text-indigo-600 dark:text-indigo-400">{selectedCards.length}</span> 个角色
+          </div>
+          <div className="h-4 w-px bg-gray-200 dark:bg-gray-700" />
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+          >
+            清空
+          </button>
+          <div className="flex items-center gap-1.5">
+            <ToolbarButton
+              tone="neutral"
+              disabled={selectedCards.length === 0}
+              onClick={() => void copyAllSelected()}
+              className="!h-8 !px-3 !text-xs"
+            >
+              复制全部
+            </ToolbarButton>
+            <ToolbarButton
+              tone="primary"
+              disabled={selectedCards.length === 0}
+              onClick={importAllSelected}
+              className="!h-8 !px-3 !text-xs"
+            >
+              导入实验室
+            </ToolbarButton>
           </div>
         </div>
       </div>
