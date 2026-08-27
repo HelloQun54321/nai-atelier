@@ -75,8 +75,8 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     const isPlayground = chainId === 'playground';
 
     return (
-        <WorkspaceToolbar className="chain-editor-header justify-between">
-            <div className="chain-editor-header-main relative flex min-w-0 flex-1 items-center gap-2 md:gap-4">
+        <header className="chain-editor-header workspace-command-bar relative z-30 grid h-auto flex-shrink-0 grid-cols-1 items-center gap-1 overflow-visible border-b border-gray-200 bg-white px-2 py-1 dark:border-gray-800/80 dark:bg-gray-900/90 md:px-5 lg:grid-cols-2 lg:gap-0 lg:py-0">
+            <div className="chain-editor-header-main relative flex min-w-0 items-center gap-2 md:gap-4 lg:pr-4">
                 <ChainEditorModeHeader
                     isLaboratory={isPlayground}
                     chainName={chainName}
@@ -239,6 +239,6 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     </ToolbarButton>
                 )}
             </div>
-        </WorkspaceToolbar>
+        </header>
     );
 };
