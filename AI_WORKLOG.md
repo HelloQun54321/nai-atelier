@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：统一全站所有画廊与资料库顶栏左上角为绝对锚定搜索框（fix: unify top-left search anchor across all galleries and libraries）。
 - **Gemini (Flash)**：全局画廊与资料库顶栏空间网格与搜索交互深度归一化（refactor: deeply harmonize top bar spatial grids and search interactions across galleries）。
 - **Gemini (Flash)**：将串列表顶栏「标签筛选」弹层修改为以触发按钮为基准水平居中对齐（fix: center align tag filter popover under trigger button in ChainList）。
 - **Gemini (Flash)**：执行自检轮次三：强化 SegmentedControl、FilterPill 与 GenerationModeNav 在暗色模式下的边缘对比度与外框契约（style: refine dark mode contrast and border contracts for segmented controls）。

@@ -542,6 +542,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
            <MobileIconButton label={gachaCards ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} className="bg-indigo-600 text-white"><Dice5 className="h-5 w-5" /></MobileIconButton>
          </div>
          <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
+            <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品、变体或英文 Tag…" containerClassName="min-w-0 md:w-64 lg:w-72 flex-none" />
             <SegmentedControl<CharacterTab>
               value={tab}
               onChange={value => { setTab(value); setGachaCards(null); }}
@@ -553,7 +554,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
               ]}
               ariaLabel="角色范围筛选"
             />
-            <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品、变体或英文 Tag…" containerClassName="min-w-[10rem] flex-1 md:max-w-none!" />
             <select
               value={sort}
               disabled={Boolean(gachaCards)}

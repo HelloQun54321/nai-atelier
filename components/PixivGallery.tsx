@@ -744,6 +744,15 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceToolbar>
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <form onSubmit={submitSearch} className="flex min-w-0 flex-none items-center">
+            <ToolbarSearch
+              value={searchInput}
+              onChange={event => setSearchInput(event.target.value)}
+              placeholder="Pixiv 标签搜索，回车直接检索"
+              aria-label="搜索 Pixiv"
+              containerClassName="min-w-0 md:w-64 lg:w-72 flex-none"
+            />
+          </form>
           <div className="flex items-center gap-1 overflow-x-auto">
             <SegmentedControl
               value={showHistory ? 'history' : mode}
@@ -767,15 +776,6 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
               </button>
             )}
           </div>
-          <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center">
-            <ToolbarSearch
-              value={searchInput}
-              onChange={event => setSearchInput(event.target.value)}
-              placeholder="Pixiv 标签搜索，回车直接检索"
-              aria-label="搜索 Pixiv"
-              containerClassName="min-w-[10rem] flex-1 md:max-w-none!"
-            />
-          </form>
         </div>
         <IconButton label="断开 Pixiv 连接" tone="danger" onClick={() => void handleDisconnect()} title="断开 Pixiv 连接">
           <Unplug />
