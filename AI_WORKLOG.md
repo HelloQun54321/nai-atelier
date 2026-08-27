@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：修复 ArtistLibraryConfig 弹窗内部容器闭合缺陷（fix: restore inner container div in ArtistLibraryConfig）。
 - **Gemini (Flash)**：执行审查阶段三：对齐角色卡片外壳圆角、暗黑背景与选中光晕至 DesignSystem MediaCard 标准（style: harmonize character card shell and selection rings with DesignSystem standards）。
 - **Gemini (Flash)**：执行审查阶段二：全面规范化生图实验室参数输入与下拉控件圆角与聚焦光晕（style: harmonize parameter form inputs and focus rings in ChainEditorParams）。
 - **Gemini (Flash)**：执行审查阶段一：补齐全站 Modal 弹窗的 ESC 键盘监听与遮罩点击关闭交互闭环（feat: complete ESC key and backdrop click dismissal across all modals）。

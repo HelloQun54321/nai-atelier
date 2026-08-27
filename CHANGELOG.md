@@ -3,6 +3,10 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-27
+### 修复:画师库配置弹窗（ArtistLibraryConfig）内部 DOM 容器闭合缺陷
+
+- **构建与语法修复**：修复 `ArtistLibraryConfig` 弹窗在添加遮罩点击监听时意外遗漏内部卡片 `<div>` 开标签导致的 esbuild JSX 构建语法解析异常，保障 Vite 生产构建与本地服务启动畅通。
+
 ### 优化:角色卡片外壳圆角与多选聚焦环对齐设计系统（审查阶段三）
 
 - **卡片外壳对齐**：将 `CharacterLibrary` 中的角色卡片外壳圆角从 `rounded-lg` 统一升级为 `DesignSystem` 规范的 `rounded-2xl`，背景与边框统一至 `dark:bg-gray-900` 与 `dark:border-gray-800`，选中光晕统一为 `border-indigo-500 ring-2 ring-indigo-500/20`，消除跨画廊卡片质感差异。

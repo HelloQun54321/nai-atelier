@@ -42,18 +42,6 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
         }
     }, [show, initialConfig]);
 
-    useEffect(() => {
-        if (!show) return;
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                if (slotToDelete !== null) setSlotToDelete(null);
-                else onClose();
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [show, slotToDelete, onClose]);
-
     const updateSlot = (index: number, field: keyof BenchmarkSlot, value: string) => {
         const newSlots = [...draftConfig.slots];
         newSlots[index] = { ...newSlots[index], [field]: value };
