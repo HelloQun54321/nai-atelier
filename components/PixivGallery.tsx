@@ -77,7 +77,6 @@ const feedTabs: { id: PixivFeedMode; label: string }[] = [
   { id: 'following', label: '关注动态' },
   { id: 'bookmarks', label: '我的收藏' },
   { id: 'ranking', label: '排行榜' },
-  { id: 'search', label: '搜索' },
 ];
 
 const rankingSubModes: { id: PixivRankingSubMode; label: string }[] = [

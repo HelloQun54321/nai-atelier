@@ -70,9 +70,8 @@ const normalizeDanbooruQuery = (value: string | null) => {
   if (!query) return 'order:rank';
   const tokens = query.split(' ').filter(Boolean);
   if (tokens.length > 2) throw Object.assign(new Error('Danbooru 匿名检索一次最多支持两个 Tag，请用逗号分隔并减少条件'), { status: 400 });
-  // 允许 Unicode 字母数字（中文等语言的 tag/别名可直接查询），仍拒绝空白、引号、
-  // 斜杠等符号类注入。
-  if (tokens.some(token => !/^[\p{L}\p{N}_:.()'!+\-/]+$/u.test(token))) {
+  // 允许 Unicode 字母数字与高级搜索符号（<, >, =, ~, * 等），仍拒绝空白、引号、反斜杠等符号类注入。
+  if (tokens.some(token => !/^[\p{L}\p{N}_:.()'!+\-/<>=~*]+$/u.test(token))) {
     throw Object.assign(new Error('Danbooru 查询中包含不支持的字符'), { status: 400 });
   }
   return tokens.join(' ');
@@ -86,16 +85,18 @@ export async function handleDanbooruRoute(ctx: RouteContext): Promise<Response |
       const page = clampInt(url.searchParams.get('page'), 1, 1, 1000);
       const limit = clampInt(url.searchParams.get('limit'), 40, 1, DANBOORU_MAX_PAGE_SIZE);
       const query = normalizeDanbooruQuery(url.searchParams.get('tags'));
+      const isRandom = query.includes('order:random');
       const target = new URL('/posts.json', DANBOORU_BASE_URL);
       target.searchParams.set('tags', query);
-      target.searchParams.set('page', String(page));
+      // Danbooru 官方 API 规定：order:random 查询不允许 page > 1（否则上游直接抛 500），必须固定 page=1
+      target.searchParams.set('page', isRandom ? '1' : String(page));
       target.searchParams.set('limit', String(limit));
       const payload = await fetchDanbooruJson(target, env);
       const items = (Array.isArray(payload) ? payload : [])
         .map(normalizeDanbooruPost)
         .filter(Boolean);
-      return json({ items, page, limit, query, hasMore: Array.isArray(payload) && payload.length >= limit }, 200, {
-        'Cache-Control': 'private, max-age=120',
+      return json({ items, page: isRandom ? 1 : page, limit, query, hasMore: isRandom ? false : (Array.isArray(payload) && payload.length >= limit) }, 200, {
+        'Cache-Control': isRandom ? 'no-cache, no-store' : 'private, max-age=120',
       });
     } catch (e: any) {
       return error(e?.message || 'Danbooru 查询失败', Number(e?.status) >= 400 && Number(e?.status) < 500 ? Number(e.status) : 502);

@@ -416,6 +416,8 @@ export class PixivOAuthClient {
       const requestHeaders = {
         accept: 'application/json',
         'user-agent': PIXIV_USER_AGENT,
+        'app-os': 'ios',
+        'app-os-version': '14.6',
         ...(options.headers || {}),
         authorization: `Bearer ${current.accessToken}`,
       };
@@ -447,7 +449,9 @@ export class PixivOAuthClient {
     let payload = null;
     try { payload = JSON.parse(text || '{}'); } catch { payload = null; }
     if (!response.ok) {
-      throw pixivError(`Pixiv API 返回 ${response.status}`, 'PIXIV_API_ERROR', response.status === 401 ? 401 : 502, {
+      const rawMsg = payload?.error?.user_message || payload?.error?.message || payload?.message || `Pixiv API 返回 ${response.status}`;
+      const upstreamMsg = redactSensitive(rawMsg, [current?.accessToken, current?.refreshToken]);
+      throw pixivError(upstreamMsg, 'PIXIV_API_ERROR', response.status, {
         upstreamStatus: response.status,
       });
     }
@@ -619,28 +623,45 @@ export class PixivGalleryService {
     const id = String(illustId || '').trim();
     if (!id) throw pixivError('添加收藏需要 illust_id 参数', 'PIXIV_INVALID_PARAMS', 400);
     const target = `https://${PIXIV_API_HOST}/v2/illust/bookmark/add`;
-    const result = await this.oauth.request(target, {
-      method: 'POST',
-      body: {
-        illust_id: id,
-        restrict: restrict === 'private' ? 'private' : 'public',
-      },
-    });
-    // 收藏改变后清空 bookmarks feed 缓存
-    this.feedCache.clear();
-    return result || { success: true };
+    try {
+      const result = await this.oauth.request(target, {
+        method: 'POST',
+        body: {
+          illust_id: id,
+          restrict: restrict === 'private' ? 'private' : 'public',
+        },
+      });
+      // 收藏改变后清空 bookmarks feed 缓存
+      this.feedCache.clear();
+      return result || { success: true };
+    } catch (err) {
+      const message = String(err?.message || '').toLowerCase();
+      if (err?.status === 400 || message.includes('already bookmarked') || message.includes('already')) {
+        this.feedCache.clear();
+        return { success: true, alreadyBookmarked: true };
+      }
+      throw err;
+    }
   }
 
   async deleteBookmark({ illustId } = {}) {
     const id = String(illustId || '').trim();
     if (!id) throw pixivError('取消收藏需要 illust_id 参数', 'PIXIV_INVALID_PARAMS', 400);
     const target = `https://${PIXIV_API_HOST}/v1/illust/bookmark/delete`;
-    const result = await this.oauth.request(target, {
-      method: 'POST',
-      body: { illust_id: id },
-    });
-    this.feedCache.clear();
-    return result || { success: true };
+    try {
+      const result = await this.oauth.request(target, {
+        method: 'POST',
+        body: { illust_id: id },
+      });
+      this.feedCache.clear();
+      return result || { success: true };
+    } catch (err) {
+      if (err?.status === 400) {
+        this.feedCache.clear();
+        return { success: true };
+      }
+      throw err;
+    }
   }
 
   buildFeedUrl(mode, params = {}) {

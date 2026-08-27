@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-27
+- **Gemini (Flash)**：修复 Pixiv 收藏 400 状态平滑兼容、移除顶栏冗余搜索 Tab、修复 Danbooru 抽卡漫游 500 报错与高级搜索符号支持（fix: handle pixiv bookmark already bookmarked state, remove redundant search tab, and fix danbooru random pagination 500 error with advanced query symbols）。
+
 - **Gemini (Flash)**：修复画廊独立审计缺陷：足迹翻页语义对齐、存储异常内存态同步、随机抽卡抖动与画师直达守卫（fix: align gallery history page count, sync storage quota cache, jitter random gacha, and add author id guard）。
 
 - **Gemini (Flash)**：Danbooru 与 Pixiv 图库全生态升级：多维筛选排序、Pixiv 个人资产联动（关注/收藏/点赞）、全套排行榜体系（含AI专榜与日期穿越）与相关作品推荐（feat: comprehensive Danbooru and Pixiv gallery upgrade with personal asset sync, ranking explorer, multi-dimensional filters and related works）。
