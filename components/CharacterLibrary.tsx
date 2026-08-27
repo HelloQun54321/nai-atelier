@@ -118,7 +118,14 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                   )}
                 </div>
                 <div className="p-3">
-                  <h2 data-safe-mode-title="true" className="truncate text-sm font-bold text-gray-900 dark:text-white" title={card.name}>{card.name}</h2>
+                  <div className="flex items-center justify-between gap-1.5">
+                    <h2 data-safe-mode-title="true" className="truncate text-sm font-bold text-gray-900 dark:text-white" title={card.name}>{card.name}</h2>
+                    {card.kind === 'custom' ? (
+                      <span className="flex-none rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">自定义</span>
+                    ) : (
+                      <span className="flex-none rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">Tag 词库</span>
+                    )}
+                  </div>
                   {card.kind === 'catalog' ? <>
                     <div data-safe-mode-title="true" className="mt-0.5 truncate font-mono text-[10px] text-gray-400" title={card.tagName}>{card.tagName}</div>
                     <div className="mt-1 flex items-center justify-between gap-1 text-[10px]">
@@ -551,7 +558,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              >
                <option value="all">全部角色</option>
                <option value="catalog">角色 Tag</option>
-               <option value="custom">我的自定义{customChains.length ? ` (${customChains.length})` : ''}</option>
+              <option value="custom">自定义角色</option>
              </select>
              <select
                value={sort}
@@ -647,7 +654,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              {gachaCards && <button onClick={() => { setGachaCards(null); setShowMobileFilters(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">返回目录</button>}
            </div>
            <div><div className="mb-2 text-sm font-bold dark:text-white">显示范围</div><div className="grid grid-cols-3 gap-2">
-             {([['all', '全部'], ['catalog', '角色 Tag'], ['custom', `自定义 ${customChains.length}`]] as [CharacterTab, string][]).map(([value, label]) => <button key={value} onClick={() => { setTab(value); setGachaCards(null); }} className={`mobile-touch rounded-xl px-2 text-xs font-bold ${tab === value ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{label}</button>)}
+            {([['all', '全部'], ['catalog', '角色 Tag'], ['custom', '自定义角色']] as [CharacterTab, string][]).map(([value, label]) => <button key={value} onClick={() => { setTab(value); setGachaCards(null); }} className={`mobile-touch rounded-xl px-2 text-xs font-bold ${tab === value ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{label}</button>)}
            </div></div>
            <button onClick={() => setShowFavOnly(value => !value)} className={`mobile-touch w-full rounded-xl text-sm font-bold ${showFavOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>★ 只看收藏 {favorites.size > 0 ? `(${favorites.size})` : ''}</button>
            <label className="block text-sm font-bold dark:text-white">排序方式<select value={sort} disabled={Boolean(gachaCards)} onChange={event => setSort(event.target.value as CharacterDictionarySort)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="popular">热度从高到低</option><option value="least">热度从低到高</option><option value="name-asc">名称 A → Z</option><option value="name-desc">名称 Z → A</option></select></label>

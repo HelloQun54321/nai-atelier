@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-08-28
+- **Gemini (Flash)**：规范角色库来源筛选下拉文案为「自定义角色」并为卡片增加「Tag 词库/自定义」来源徽标（fix: clean character library filter labels and add card source badges）。
+
 ## 2026-08-27
 - **Gemini (Flash)**：将画师库与角色库顶栏搜索框自适应拉长铺满，操作控件右移消除空位（feat: elongate search bar and right-shift controls in character and artist libraries）。
 - **Gemini (Flash)**：彻底清理画师库与角色库中显示设置关联的死代码（refactor: purge dead layout and display state/views in character and artist libraries）。
