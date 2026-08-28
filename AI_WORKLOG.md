@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：SmartImage 改为页面隐藏时保留已显示图片不卸载（懒加载观察器仅可见时激活新图；换图/重试仍正常重置）——切页往返不再整列表闪现"加载中"，全图库受益；代价是隐藏页面保留已解码图片的内存占用（fix: keep gallery images mounted while their view is hidden）。
 - **ZCode (GLM-5.3)**：修复实验室误触发自动设封面——autoSaveCoverOnExit 补上 chain.id === 'playground' 豁免（与 handleSavePreview 对齐）：实验室 keep-alive 实例被 LRU 淘汰卸载时不再把生成图"自动设为封面"并跨页弹提示，真实风格串功能不变（fix: exempt playground from auto cover save on unmount）。
 - **ZCode (GLM-5.3)**：按用户决定彻底去掉 AITag 画廊"无 prompt 作品不显示"的过滤规则（列表过滤、详情预览壳、详情图片列表三处一并移除并清理 import）——根因是 prompt 元数据由搜索响应后的后台任务异步补齐，首开时条目未补完被整页滤空显示"没有匹配结果"；现画廊与上游所见即所得，首开立即出全量列表（feat: drop prompt-metadata filter so the aitag gallery shows results immediately）。
 - **ZCode (GLM-5.3)**：修复 DataBackupManager 把上次备份完成误报为"刚刚完成"（首次观测只记录基线）；扩展 secret-scan 覆盖 sk 家族变体/hf_/glpat-/Telegram token/无引号命名密钥并排除引用误报，补测试用例，仓库全量扫描通过（fix: dedupe backup completion toasts and widen secret-scan coverage）。

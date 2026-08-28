@@ -84,15 +84,20 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     return () => observer.disconnect();
   }, [viewActive]);
 
+  // 换图或手动重试时重置展示状态。页面隐藏/显示的切换刻意不在此列：
+  // 切走时保留已显示的 <img>（display:none 不产生任何流量），切回瞬时完整呈现，
+  // 不再整列表闪现"加载中"；图片字节本就走浏览器/网关的永久缓存。
   useEffect(() => {
-    setDisplaySrc('');
     setLoaded(false);
     setFailed(false);
     setUseOriginal(false);
-    if (!viewActive || !src) {
-      setActivatedSrc('');
-      return;
-    }
+    setDisplaySrc('');
+    setActivatedSrc('');
+  }, [src, retryToken]);
+
+  // 懒加载激活：仅在页面可见时挂载观察器；隐藏期间不激活任何新图片。
+  useEffect(() => {
+    if (!viewActive || !src || activatedSrc === src) return;
     const node = containerRef.current;
     if (!node || eager || !('IntersectionObserver' in window)) {
       setActivatedSrc(src);
@@ -108,9 +113,10 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     }, { root, rootMargin: `${preloadDistance}px 0px` });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [eager, retryToken, src, viewActive]);
+  }, [eager, src, viewActive, activatedSrc]);
 
-  const activated = viewActive && (eager || activatedSrc === src);
+  // 页面隐藏时已激活的图保持展示（见上方激活 effect）；只有真正激活过的源才算可渲染。
+  const activated = eager || activatedSrc === src;
   const pixelWidth = measuredWidth * Math.max(1, window.devicePixelRatio || 1);
   // 档位棘轮（只升不降）：详情侧栏打开会挤压卡片、移动端详情会整栏隐藏（宽度归零），
   // 若档位随之降档，全部卡片的缓存键跳变、整列表重新请求并闪占位。
@@ -119,12 +125,17 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   const variant = thumbnailVariant ?? selectThumbnailVariant(variantFloorRef.current);
   const upgradeTarget = upgradeSrc && upgradeSrc !== src ? upgradeSrc : undefined;
 
+  // 升级源随目标变化重置；页面隐藏/显示不重置（与主图同样保留已显示内容）。
   useEffect(() => {
     setUpgradeActivatedSrc('');
     setUpgradeDisplaySrc('');
     setUpgradeLoaded(false);
     setUpgradeFailed(false);
-    if (!viewActive || !upgradeTarget) return;
+  }, [upgradeTarget, retryToken]);
+
+  // 升级源懒加载激活：仅在页面可见时进行。
+  useEffect(() => {
+    if (!viewActive || !upgradeTarget || upgradeActivatedSrc === upgradeTarget) return;
     const node = containerRef.current;
     if (!node || eager || !('IntersectionObserver' in window)) {
       setUpgradeActivatedSrc(upgradeTarget);
@@ -140,9 +151,9 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     }, { root, rootMargin: `${upgradeDistance}px 0px` });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [eager, retryToken, src, upgradeTarget, viewActive]);
+  }, [eager, upgradeTarget, viewActive, upgradeActivatedSrc]);
 
-  const upgradeActivated = viewActive && Boolean(upgradeTarget) && (eager || upgradeActivatedSrc === upgradeTarget);
+  const upgradeActivated = Boolean(upgradeTarget) && (eager || upgradeActivatedSrc === upgradeTarget);
 
   useEffect(() => {
     if (!activated || !src) {
