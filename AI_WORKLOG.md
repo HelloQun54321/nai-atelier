@@ -4,7 +4,7 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
-## 2026-08-28
+- **DeepSeek V4 Flash (qianlian)**：启动日志的局域网访问地址过滤 WSL/Hyper-V、TUN 等虚拟网卡，只展示真实可访问地址（fix: filter virtual adapter addresses from LAN access list）。
 - **Gemini (Flash)**：修复编辑页左上角返回按钮偶发点击无响应，修正 handleReturnFromEditor 逻辑并移除导航外层 startTransition 确保同步即时跳转（fix: resolve unresponsive editor back button and make navigation synchronous）。
 - **Gemini (Flash)**：修复从编辑页返回列表时丢失浏览位置直接回到顶部，为 useKeepAliveScrollRestore 增加隐藏清零防护并在返回时携带 returnTargetId 确保渲染高度（fix: maintain scroll position and prewarm batch render on return from editor）。
 - **Gemini (Flash)**：修复 st-chatu8 同步风格串缺失完整生成参数导致进入 ChainEditor 触发 TypeError 白屏崩溃，四层全链路补齐 normalizeParams 与空值防御并自动修复本地存量 30 个同步风格串（fix: resolve blank screen crash on opening st-chatu8 chains and repair legacy chain params）。

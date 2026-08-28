@@ -33,12 +33,18 @@ function loadLanAccessConfig() {
   return config;
 }
 
+/** 虚拟网卡特征名（WSL/Hyper-V、虚拟机、隧道类）：手机无法经它们访问电脑。 */
+const VIRTUAL_ADAPTER_PATTERN = /vEthernet|WSL|Hyper-V|VirtualBox|VMware|docker|tailscale|zerotier|utun|tun|tap/i;
+
 function getLanUrls() {
   const addresses = [];
-  for (const entries of Object.values(networkInterfaces())) {
+  for (const [name, entries] of Object.entries(networkInterfaces())) {
+    // Windows 上 networkInterfaces 的键即适配器名，虚拟网卡直接跳过。
+    if (VIRTUAL_ADAPTER_PATTERN.test(name)) continue;
     for (const entry of entries || []) {
       if (entry.family !== 'IPv4' || entry.internal) continue;
-      if (/^(169\.254|0\.)/.test(entry.address)) continue;
+      // 169.254/0.x 是链路本地；198.18.0.0/15 是保留测试段（TUN 代理虚拟网卡常用），均非真实局域网。
+      if (/^(169\.254|0\.|198\.1[89]\.)/.test(entry.address)) continue;
       addresses.push(entry.address);
     }
   }
