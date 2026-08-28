@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ConfirmDialogProvider } from './components/ConfirmDialog';
 import { LanAccessGate } from './components/LanAccessGate';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -12,10 +13,12 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <LanAccessGate>
-      <ConfirmDialogProvider>
-        <App />
-      </ConfirmDialogProvider>
-    </LanAccessGate>
+    <ErrorBoundary>
+      <LanAccessGate>
+        <ConfirmDialogProvider>
+          <App />
+        </ConfirmDialogProvider>
+      </LanAccessGate>
+    </ErrorBoundary>
   </React.StrictMode>
 );
