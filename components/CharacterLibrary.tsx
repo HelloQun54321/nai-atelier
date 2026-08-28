@@ -266,6 +266,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     const generation = ++searchGenerationRef.current;
     if (!query) {
       setSearchResults([]);
+      // 清空搜索词时必须复位 loading：在途请求的 finally 会被上面递增的代际守卫拦下，不复位就永久转圈
+      setIsLoading(false);
       return;
     }
     setIsLoading(true);

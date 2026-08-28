@@ -447,6 +447,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         const requestId = ++catalogSearchRequestRef.current;
         if (!query) {
             setCatalogSearchResults([]);
+            // 清空搜索词时必须复位 loading：在途请求的 finally 会被上面递增的代际守卫拦下，不复位就永久转圈
+            setIsCatalogLoading(false);
             return;
         }
 
