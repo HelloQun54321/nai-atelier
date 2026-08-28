@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：修复角色库"只看收藏"看不到词库角色——词库是无限分页加载而筛选只作用已加载子集；收藏时落展示快照（nai_character_favorite_details），筛选改为按收藏清单渲染（自定义取本地链、词库取快照/已加载条目、与标签页组合语义一致），旧收藏进入筛选时按名字串行检索补齐（fix: render character favorites from the stored list instead of the loaded catalog slice）。
 - **ZCode (GLM-5.3)**：按用户指定语义反转安全模式启动判定——"启动时自动开启安全模式"开关成为唯一决定者（开→每次启动必开；关→必关），上一轮的"优先恢复上次手动状态"逻辑移除；nai_safe_mode 键降级为当前状态镜像供 Agent 读取（fix: make safe mode startup preference authoritative）。
 - **ZCode (GLM-5.3)**：SmartImage 改为页面隐藏时保留已显示图片不卸载（懒加载观察器仅可见时激活新图；换图/重试仍正常重置）——切页往返不再整列表闪现"加载中"，全图库受益；代价是隐藏页面保留已解码图片的内存占用（fix: keep gallery images mounted while their view is hidden）。
 - **ZCode (GLM-5.3)**：修复实验室误触发自动设封面——autoSaveCoverOnExit 补上 chain.id === 'playground' 豁免（与 handleSavePreview 对齐）：实验室 keep-alive 实例被 LRU 淘汰卸载时不再把生成图"自动设为封面"并跨页弹提示，真实风格串功能不变（fix: exempt playground from auto cover save on unmount）。

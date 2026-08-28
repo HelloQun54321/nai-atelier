@@ -192,6 +192,13 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     try { return new Set(JSON.parse(localStorage.getItem('nai_character_favorites') || '[]')); }
     catch { return new Set(); }
   });
+  // 收藏条目的展示快照（名字/中文名/作品数）：词库是无限分页加载的，"只看收藏"若只在
+  // 已加载子集里过滤，未加载页的收藏将永远不可见。收藏时把条目信息落一份快照，
+  // 筛选时直接按收藏清单渲染，不再依赖"恰好加载到那一页"。
+  const [favoriteDetails, setFavoriteDetails] = useState<Record<string, { name?: string; chinese?: string; postCount?: number }>>(() => {
+    try { return JSON.parse(localStorage.getItem('nai_character_favorite_details') || '{}'); }
+    catch { return {}; }
+  });
   const [coverCandidates, setCoverCandidates] = useState<Record<string, DanbooruCoverCandidate | null>>({});
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [gachaMode, setGachaMode] = useState<GachaMode>(() => {
@@ -260,6 +267,42 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       })
       .finally(() => generation === catalogGenerationRef.current && setIsLoading(false));
   }, [sort]);
+
+  // 旧收藏没有展示快照：进入"只看收藏"时按名字向本地词库逐个检索补齐（串行 + 间隔，避免压垮词库读取）。
+  // 检索不到的（可能已从词库下架）记一个仅含名字的快照，避免每次进入都重复检索。
+  useEffect(() => {
+    if (!showFavOnly || searchTerm.trim()) return;
+    const missing = Array.from(favorites).filter(key => key.startsWith('catalog:') && !favoriteDetails[key]);
+    if (!missing.length) return;
+    let cancelled = false;
+    void (async () => {
+      for (const key of missing) {
+        if (cancelled) return;
+        const tagName = key.slice('catalog:'.length);
+        try {
+          const results = await searchCharacterDictionary(tagName, 5, sort);
+          if (cancelled) return;
+          const entry = results.find(item => item.name === tagName)
+            ?? results.find(item => item.name.toLowerCase() === tagName.toLowerCase());
+          setFavoriteDetails(previous => {
+            if (previous[key] || cancelled) return previous;
+            const next = {
+              ...previous,
+              [key]: entry
+                ? { name: entry.name, chinese: entry.chinese, postCount: entry.postCount }
+                : { name: tagName },
+            };
+            try { localStorage.setItem('nai_character_favorite_details', JSON.stringify(next)); } catch { /* 配额满时保留会话内状态 */ }
+            return next;
+          });
+        } catch {
+          return; // 词库检索失败：中止本轮，下次进入筛选时继续补
+        }
+        await new Promise(resolve => window.setTimeout(resolve, 120));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showFavOnly, searchTerm, favorites, favoriteDetails, sort]);
 
   useEffect(() => {
     const query = searchTerm.trim();
@@ -331,6 +374,43 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const visibleCards = useMemo(() => {
     if (gachaCards) return gachaCards;
     const query = searchTerm.trim().toLowerCase();
+    // "只看收藏"（无搜索词时）以收藏清单为准渲染：词库是无限分页加载的，按"已加载子集"
+    // 过滤会让未加载页的收藏永远显示不出来。自定义角色取本地链，词库角色取已加载条目 →
+    // 收藏快照 → 按键名兜底（名称/封面来自本地已有角色链）。
+    if (showFavOnly && !query) {
+      const customByKey = new Map(customChains.map(chain => [`custom:${chain.id}`, customToCard(chain)]));
+      const loadedByName = new Map(loadedCatalog.map(entry => [entry.name, entry]));
+      const cards: CharacterCard[] = [];
+      for (const key of favorites) {
+        if (key.startsWith('custom:')) {
+          if (tab === 'catalog') continue;
+          const customCard = customByKey.get(key);
+          if (customCard) cards.push(customCard);
+          continue;
+        }
+        if (!key.startsWith('catalog:')) continue;
+        if (tab === 'custom') continue;
+        const tagName = key.slice('catalog:'.length);
+        const loaded = loadedByName.get(tagName);
+        if (loaded) {
+          cards.push(catalogToCard(loaded));
+          continue;
+        }
+        const snapshot = favoriteDetails[key];
+        const chain = persistedCatalog.get(tagName.toLowerCase());
+        cards.push({
+          key,
+          kind: 'catalog',
+          name: snapshot?.chinese || snapshot?.name || tagName,
+          tagName,
+          chinese: snapshot?.chinese,
+          postCount: snapshot?.postCount,
+          previewImage: chain?.previewImage,
+          chain,
+        });
+      }
+      return cards;
+    }
     const catalog = (query ? searchResults : loadedCatalog).map(catalogToCard);
     const custom = customChains
       .filter(chain => !query || chain.name.toLowerCase().includes(query) || chain.basePrompt.toLowerCase().includes(query))
@@ -338,7 +418,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     let cards = tab === 'catalog' ? catalog : tab === 'custom' ? custom : [...custom, ...catalog];
     if (showFavOnly) cards = cards.filter(card => favorites.has(card.key));
     return cards;
-  }, [catalogToCard, customChains, customToCard, favorites, gachaCards, loadedCatalog, searchResults, searchTerm, showFavOnly, tab]);
+  }, [catalogToCard, customChains, customToCard, favoriteDetails, favorites, gachaCards, loadedCatalog, persistedCatalog, searchResults, searchTerm, showFavOnly, tab]);
   useRestoreListAnchor(scrollRef, returnTargetId, `${visibleCards.length}:${isLoading ? 1 : 0}`);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'characters');
 
@@ -367,10 +447,24 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   }, [gachaCards, showFavOnly, tab, visibleCards]);
 
   const toggleFavorite = (card: CharacterCard) => {
+    const wasFavorite = favorites.has(card.key);
     setFavorites(previous => {
       const next = new Set(previous);
       if (next.has(card.key)) next.delete(card.key); else next.add(card.key);
       localStorage.setItem('nai_character_favorites', JSON.stringify([...next]));
+      return next;
+    });
+    setFavoriteDetails(previous => {
+      if (wasFavorite) {
+        if (!(card.key in previous)) return previous;
+        const next = { ...previous };
+        delete next[card.key];
+        try { localStorage.setItem('nai_character_favorite_details', JSON.stringify(next)); } catch { /* 配额满时保留会话内状态 */ }
+        return next;
+      }
+      if (card.kind !== 'catalog' || !card.tagName) return previous;
+      const next = { ...previous, [card.key]: { name: card.tagName, chinese: card.chinese, postCount: card.postCount } };
+      try { localStorage.setItem('nai_character_favorite_details', JSON.stringify(next)); } catch { /* 配额满时保留会话内状态 */ }
       return next;
     });
   };
