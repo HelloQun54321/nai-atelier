@@ -4,6 +4,10 @@
 
 ## 2026-08-29
 
+### 安全:overrides 强制升级 shell-quote 至 1.10.0，消除 critical 级告警
+- **背景**：`shell-quote` 是开发工具 concurrently 的传递依赖，Dependabot 给 ≤1.8.4 标了 critical（quote() 不转义换行）。被利用的前提是"攻击者可控输入进入 shell 解析"，本项目该工具只处理 package.json 里自己写的命令——实际不可利用，但标签扎眼。
+- **修复**：通过 npm `overrides` 强制钉到 1.10.0（补丁级覆盖）；concurrently 冒烟验证正常（依赖树中 rxjs 物理文件缺失的安装残留已顺手重建）。
+
 ### 安全:升级 sharp 至 0.35.4（libvips 8.18.6），消除不可信图片处理的内存安全漏洞
 - **背景**：sharp 是网关给远端不可信图片（AITag/Danbooru/Pixiv 封面、历史原图）生成缩略图的组件，Dependabot 报告 0.35.0 以下版本继承了 libvips 的 4 个内存安全类 CVE（CVE-2026-33327 等）——恶意构造的图片可在缩略图处理时触发，是该链路上唯一的真实攻击面。
 - **验证**：升级后以网关同款操作（resize + webp 输出）做功能冒烟通过，libvips 8.18.6；网关测试 140/140 通过。WD Tagger 的图像预处理同样基于 sharp，首图打标时留意一次即可。

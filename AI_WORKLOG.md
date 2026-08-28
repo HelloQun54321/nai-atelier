@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：依赖安全升级第三项——npm overrides 强制 shell-quote 1.8.3 → 1.10.0（concurrently 的传递依赖，清除 critical+high 两条告警；本项目无攻击者可控输入，实际不可利用）；concurrently 冒烟通过，顺手重建了安装残留损坏的 rxjs 包（chore: force-upgrade shell-quote via npm overrides）。
 - **ZCode (GLM-5.3)**：依赖安全升级第二项——sharp 0.34.5 → 0.35.4（libvips 8.18.6），消除不可信图片缩略图处理的 4 个内存安全 CVE；网关同款操作冒烟（resize+webp）与网关测试 140/140 通过（fix: upgrade sharp to 0.35.4 to clear libvips memory-safety advisories）。
 - **ZCode (GLM-5.3)**：依赖安全升级第一项——undici 7.28.0 → 7.29.0，清空该包全部 11 条 Dependabot 告警（网关对外请求链路的 HTTP 客户端）；API 无变更，网关测试 140/140 通过（fix: upgrade undici to 7.29.0 to clear proxy fetch advisories）。
 - **ZCode (GLM-5.3)**：桌面端 keep-alive 上限 8 → 9（全部可保留页面常驻、永不淘汰）。浏览器实测定位剩余重载根因：上限 8 时全 9 页轮换必有一个页面被挤出重建；提高后全轮换返回 AITag，页面 DOM 节点存活（探针验证）、封面零重新请求。测试中发现图片组件修复在 8 槽内本就生效（两页往返 DOM 存活、零请求）（perf: keep all desktop gallery views mounted so switching never remounts）。

@@ -1,7 +1,7 @@
 {
   "name": "nai-atelier",
   "private": true,
-  "version": "0.131.44",
+  "version": "0.131.45",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -21,6 +21,9 @@
     "dev:local:linux": "sh scripts/local-server.sh",
     "test:live-sync": "node scripts/nai-live-sync.mjs",
     "build:local": "vite build && npm run build:worker"
+  },
+  "overrides": {
+    "shell-quote": "^1.8.5"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.81.1",
