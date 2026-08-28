@@ -13,6 +13,8 @@ interface ChainEditorParamsProps {
     hideResolution?: boolean;
     mode?: 'text-to-image' | ImageEditOperation;
     forceEmptySeed?: boolean;
+    /** 免费步数上限开关（全局设置）；开启时步数锁定在官方同步的免费门槛内，关闭后放宽到 NovelAI 硬上限 50。 */
+    enforceFreeStepLimit?: boolean;
 }
 
 const RESOLUTIONS = {
@@ -42,9 +44,11 @@ const normalizeCustomDimension = (value: number) => {
 
 const linkedDimensionFor = (dimension: number) => normalizeCustomDimension(Math.floor(OPUS_FREE_PIXEL_LIMIT / dimension / RESOLUTION_STEP) * RESOLUTION_STEP);
 
-export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, setParams, canEdit, markChange, presetSource, hideResolution = false, mode = 'text-to-image', forceEmptySeed = false }) => {
+export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, setParams, canEdit, markChange, presetSource, hideResolution = false, mode = 'text-to-image', forceEmptySeed = false, enforceFreeStepLimit = true }) => {
     // 网关自动同步的官方模型清单（未来新模型无需改代码即可出现在下拉里）。
     const runtime = useNaiRuntime();
+    // NovelAI 采样步数硬上限 50；免费上限取官方运行时同步值（默认 28），随官方调整自动更新。
+    const maxSteps = enforceFreeStepLimit ? Math.max(1, Math.floor(runtime.freeMaxSteps) || 28) : 50;
     const selectableModels = getSelectableNaiModels(runtime);
     const [resolutionMode, setResolutionMode] = React.useState(() => resolutionModeFor(params));
     const [linkCustomDimensions, setLinkCustomDimensions] = React.useState(true);
@@ -294,13 +298,18 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 </div>
 
                 <div className="flex flex-col gap-1">
-                    <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">生成步数</label>
+                    <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">
+                        <span className="flex items-center justify-between">
+                            生成步数
+                            {!enforceFreeStepLimit && <span className="text-[10px] text-amber-600 dark:text-amber-400 font-normal" title="已在全局设置中解除免费步数上限，超出免费门槛的步数将消耗 Anlas">已解除上限</span>}
+                        </span>
+                    </label>
                     <input type="number" className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                         disabled={!canEdit}
-                        value={params.steps ?? 28}
-                        max={28}
+                        value={params.steps ?? Math.min(maxSteps, 28)}
+                        max={maxSteps}
                         onChange={(e) => {
-                            const val = Math.min(28, parseInt(e.target.value) || 0);
+                            const val = Math.min(maxSteps, Math.max(1, parseInt(e.target.value) || 0));
                             setParams({ ...params, steps: val });
                             markChange();
                         }}

@@ -121,6 +121,8 @@ export interface AppearancePreferences {
   generationStreamPreview: boolean;
   /** 强制清空随机种子；开启后在工坊与实验室中暂时忽略并留空随机种子（不修改预设保存的原值），关闭后恢复。 */
   forceEmptySeed: boolean;
+  /** 免费步数上限开关；开启时生成步数输入锁定在官方同步的 freeMaxSteps（默认 28）内，关闭后允许探索付费步数（至多 50）。 */
+  enforceFreeStepLimit: boolean;
   labModuleOrder: LabModuleId[];
   labModuleCollapsed: LabModuleCollapsedPreferences;
   /** 四种实验室模式各自独立的模块顺序与默认展开状态。 */
@@ -145,6 +147,7 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   tagAssistEnabled: true,
   generationStreamPreview: false,
   forceEmptySeed: false,
+  enforceFreeStepLimit: true,
   labModuleOrder: [...DEFAULT_LAB_MODULE_ORDER],
   labModuleCollapsed: { ...DEFAULT_LAB_MODULE_COLLAPSED },
   labPageLayouts: cloneDefaultLabPageLayouts(),
@@ -284,6 +287,9 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     forceEmptySeed: typeof input.forceEmptySeed === 'boolean'
       ? input.forceEmptySeed
       : DEFAULT_APPEARANCE_PREFERENCES.forceEmptySeed,
+    enforceFreeStepLimit: typeof input.enforceFreeStepLimit === 'boolean'
+      ? input.enforceFreeStepLimit
+      : DEFAULT_APPEARANCE_PREFERENCES.enforceFreeStepLimit,
     labModuleOrder: labPageLayouts['text-to-image'].order as LabModuleId[],
     labModuleCollapsed: labPageLayouts['text-to-image'].collapsed as LabModuleCollapsedPreferences,
     labPageLayouts,

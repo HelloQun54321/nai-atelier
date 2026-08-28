@@ -569,6 +569,7 @@ const App = () => {
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
           forceEmptySeed={appearancePreferences.forceEmptySeed}
+          enforceFreeStepLimit={appearancePreferences.enforceFreeStepLimit}
           labPageLayouts={appearancePreferences.labPageLayouts}
           safeMode={safeMode}
           onBack={handleReturnFromEditor}
@@ -637,6 +638,7 @@ const App = () => {
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
           forceEmptySeed={appearancePreferences.forceEmptySeed}
+          enforceFreeStepLimit={appearancePreferences.enforceFreeStepLimit}
           labPageLayouts={appearancePreferences.labPageLayouts}
           safeMode={safeMode}
           onBack={() => handleNavigate(lastLabEntryViewRef.current)}

@@ -52,12 +52,13 @@ interface ChainEditorProps {
     onTagAssistEnabledChange: (enabled: boolean) => void;
     generationStreamPreview: boolean;
     forceEmptySeed?: boolean;
+    enforceFreeStepLimit?: boolean;
     labPageLayouts: LabPageLayouts;
     safeMode: boolean;
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, labPageLayouts, safeMode, onBack }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, enforceFreeStepLimit = true, labPageLayouts, safeMode, onBack }) => {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
     const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
@@ -2024,6 +2025,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             markChange={markChange}
                             presetSource={presetSources.settings}
                             forceEmptySeed={forceEmptySeed}
+                            enforceFreeStepLimit={enforceFreeStepLimit}
                         />
                         </LabModuleSection>
                     </div>
@@ -2071,6 +2073,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 safeMode={safeMode}
                 tagAssistEnabled={tagAssistEnabled}
                 forceEmptySeed={forceEmptySeed}
+                enforceFreeStepLimit={enforceFreeStepLimit}
                 latestTextToImageItem={latestTextToImageItem}
                 onOpenLightbox={image => {
                     const historyIndex = image ? previewHistory.findIndex(item => item.imageUrl === image) : -1;

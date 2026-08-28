@@ -22,6 +22,7 @@ describe('appearance preferences', () => {
       tagAssistEnabled: false,
       generationStreamPreview: true,
       forceEmptySeed: true,
+      enforceFreeStepLimit: false,
       labModuleOrder: ['params', 'prompt', 'negative', 'vibe', 'characters', 'characterReference'],
       labModuleCollapsed: {
         prompt: true,
@@ -44,6 +45,7 @@ describe('appearance preferences', () => {
       tagAssistEnabled: false,
       generationStreamPreview: true,
       forceEmptySeed: true,
+      enforceFreeStepLimit: false,
       labModuleOrder: ['params', 'prompt', 'negative', 'vibe', 'characters', 'characterReference'],
       labModuleCollapsed: {
         prompt: true,
