@@ -4,6 +4,10 @@
 
 ## 2026-08-29
 
+### 安全:vite dev server 仅绑定本机回环，消除局域网暴露面
+- **背景**：Dependabot 报告的 4 条 vite 漏洞（Windows 文件读取绕过、WebSocket 任意文件读等）全部只在 `npm run dev` 开发服务器运行时暴露，且此前配置绑定 `0.0.0.0`——开发期间局域网设备可达。
+- **修复**：dev server 改绑 `127.0.0.1`，局域网设备彻底不可达，4 条漏洞的实际暴露面归零（大版本升级到修复版留待例行维护）。日常使用的 `dev:local` 走构建产物，不经过 vite，本就不受影响。
+
 ### 安全:overrides 强制升级 shell-quote 至 1.10.0，消除 critical 级告警
 - **背景**：`shell-quote` 是开发工具 concurrently 的传递依赖，Dependabot 给 ≤1.8.4 标了 critical（quote() 不转义换行）。被利用的前提是"攻击者可控输入进入 shell 解析"，本项目该工具只处理 package.json 里自己写的命令——实际不可利用，但标签扎眼。
 - **修复**：通过 npm `overrides` 强制钉到 1.10.0（补丁级覆盖）；concurrently 冒烟验证正常（依赖树中 rxjs 物理文件缺失的安装残留已顺手重建）。

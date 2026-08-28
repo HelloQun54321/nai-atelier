@@ -11,7 +11,10 @@ const packageJson = JSON.parse(
 export default defineConfig({
   server: {
     port: 3000,
-    host: '0.0.0.0',
+    // 仅本机可访问：vite dev server 会暴露开发机文件系统（Dependabot 报告的 4 条文件读取类
+    // 漏洞的暴露面），绑回环后局域网设备彻底不可达。手机预览移动端走 dev:local 的构建产物，
+    // 不经过这里。
+    host: '127.0.0.1',
   },
   plugins: [react(), tailwindcss()],
   define: {
