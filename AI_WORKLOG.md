@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：App.refreshData 加请求代际并发守卫，过期刷新不再提前清 loading 或覆盖新数据（fix: serialize concurrent chain list refreshes with a seq guard）。
 - **ZCode (GLM-5.3)**：Pixiv"加入灵感库"改走 /api/upload 转存 R2 资产 URL（importPixivImageAsDataUrl → importPixivImageAsFile），消除多 MB base64 原图入库并随灵感缓存常驻内存的问题（perf: store pixiv inspirations as uploaded assets instead of data urls）。
 - **ZCode (GLM-5.3)**：修复历史批量删除裸 await 无异常保护——加 try/catch 统一处理（失败保留选中集便于重试），清理预览计数请求加 catch 兜底（fix: guard bulk history deletion against partial failures）。
 - **ZCode (GLM-5.3)**：修复 Agent 面板初始化错误被吞（卡死在"正在加载对话"）——增加错误提示与重试按钮；request_generation 生图流程异常时补回 finalize 失败终态，服务端任务不再永久等待（fix: surface agent init errors and finalize generation on failure）。

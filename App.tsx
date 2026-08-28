@@ -118,17 +118,23 @@ const App = () => {
     };
   });
 
+  // refreshData 并发守卫：创建/删除/Agent 数据变更事件可能同时触发多次刷新，
+  // 先完成者的 finally 会提前清掉后者的 loading，响应乱序时还会互相覆盖
+  const refreshDataSeqRef = useRef(0);
   const refreshData = async (force = false) => {
     // Chains (Always load all chains so we can filter client side and do mutual imports)
     if (!force && chains.length > 0 && Date.now() - lastChainFetch < CACHE_TTL) return;
 
+    const refreshSeq = ++refreshDataSeqRef.current;
     setLoading(true);
     try {
       const data = await db.getAllChains();
+      if (refreshSeq !== refreshDataSeqRef.current) return;
       setChains(data);
       setLastChainFetch(Date.now());
       setDbConfigError(false);
     } catch (e: any) {
+      if (refreshSeq !== refreshDataSeqRef.current) return;
       if (e.message && e.message.includes('Database not configured')) {
         setDbConfigError(true);
       } else {
@@ -136,7 +142,7 @@ const App = () => {
         notify('风格串列表加载失败，请稍后重试', 'error');
       }
     } finally {
-      setLoading(false);
+      if (refreshSeq === refreshDataSeqRef.current) setLoading(false);
     }
   };
 
