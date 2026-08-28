@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：修复 NAI_WRANGLER_LOG=all 模式 stdout 无人消费导致 wrangler 管道阻塞假死 + 看门狗误杀健康进程——新增 fullWranglerLog 透传函数，完整日志模式仍持续消费输出并推进看门狗标记（fix: keep consuming wrangler stdout in full-log debug mode）。
 - **ZCode (GLM-5.3)**：修复 PIN 限流失败计数在触发锁定时被清零的问题（worker 与网关两处同步）——计数改为跨锁定周期累计、仅成功解锁时清零，堵住 4 位 PIN 被按天持续爆破的路径（fix: keep LAN PIN failure count across lockout windows）。
 - **ZCode (GLM-5.3)**：修复空/全透明蒙版可提交 infill/outpaint 白耗 Anlas——提交前用 maskHasInk 检查蒙版 alpha 通道，为空时拦截并给出对应操作提示（fix: block empty-mask infill submissions that waste Anlas）。
 - **ZCode (GLM-5.3)**：修复 PromptAgent 会话历史加载无竞态守卫（快速切换会话时旧响应覆盖新对话）——加会话加载代际计数丢弃晚到响应；同批修复 Agent 输入框与 AITag 三处搜索框的回车未排除中文输入法组字态（isComposing）导致的误发/误搜（fix: guard agent session loading races and IME enter handling）。

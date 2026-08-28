@@ -199,6 +199,16 @@ function quietWranglerRequests(stream, seen = {}) {
   });
 }
 
+// NAI_WRANGLER_LOG=all：仍然必须持续消费 stdout 并推进看门狗标记，
+// 否则 64KB 管道缓冲写满后 wrangler 阻塞假死、看门狗误判后杀掉健康进程。
+function fullWranglerLog(stream, seen = {}) {
+  const rl = createInterface({ input: stream });
+  rl.on('line', line => {
+    seen.value = true;
+    process.stdout.write(`${line}\n`);
+  });
+}
+
 function buildLatest() {
   if (!needsBuild()) {
     console.log('\x1b[90m代码未变化，跳过构建。\x1b[0m');
@@ -382,8 +392,9 @@ async function startServer() {
   const wranglerSeen = { value: false };
   const spawnWrangler = () => {
     const child = spawn(process.execPath, ['--no-warnings', '--experimental-vm-modules', wranglerCli, ...args], { stdio: ['inherit', 'pipe', 'inherit'], shell: false, env: { ...process.env, ...wranglerEnv } });
-    // 默认过滤高频请求日志；需要完整输出时设置 NAI_WRANGLER_LOG=all
-    if (process.env.NAI_WRANGLER_LOG !== 'all') quietWranglerRequests(child.stdout, wranglerSeen);
+    // 默认过滤高频请求日志；NAI_WRANGLER_LOG=all 透传完整输出（仍持续消费管道并推进看门狗）
+    if (process.env.NAI_WRANGLER_LOG === 'all') fullWranglerLog(child.stdout, wranglerSeen);
+    else quietWranglerRequests(child.stdout, wranglerSeen);
     child.on('error', (err) => {
       console.error('\x1b[31m启动失败:\x1b[0m', err.message);
       cleanup();
