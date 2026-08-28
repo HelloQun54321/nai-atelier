@@ -191,6 +191,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const loadedSessionIdRef = useRef('');
   // 会话历史加载的代际计数：丢弃切换会话后晚到的旧响应
   const sessionLoadSeqRef = useRef(0);
+  // 初始化失败提示：吞掉错误会让面板永远停在"正在加载对话"且无重试入口
+  const [sessionInitError, setSessionInitError] = useState('');
   const panelRef = useRef<HTMLDivElement | null>(null);
   const modelMenuRef = useRef<HTMLDivElement | null>(null);
   const pendingPanelWidthRef = useRef(panelWidth);
@@ -303,7 +305,9 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   useEffect(() => {
     if (!props.open) return;
-    void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(setModels)]).catch(() => {});
+    setSessionInitError('');
+    void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(setModels)])
+      .catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行'));
   }, [props.open]);
 
   useEffect(() => {
@@ -541,7 +545,12 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             })();
           } else if (event.action.kind === 'request_generation') {
             const generationAction = event.action;
-            void Promise.resolve(props.onRequestGeneration(event.draft || props.draft, generationAction.patch.reason)).then(success => promptAgentService.control(activeSessionId, 'finalize', generationAction.patch.requestId, { requestId: generationAction.patch.requestId, success: success === true }).catch(() => {}));
+            void Promise.resolve(props.onRequestGeneration(event.draft || props.draft, generationAction.patch.reason))
+              .then(success => promptAgentService.control(activeSessionId, 'finalize', generationAction.patch.requestId, { requestId: generationAction.patch.requestId, success: success === true }).catch(() => {}))
+              .catch(() => {
+                // 生图流程本身抛异常也必须回传 finalize，否则服务端任务永久等待确认
+                void promptAgentService.control(activeSessionId, 'finalize', generationAction.patch.requestId, { requestId: generationAction.patch.requestId, success: false }).catch(() => {});
+              });
           } else if (event.action.kind === 'set_client_preferences') {
             const patch = event.action.patch;
             if (patch.themeMode) {
@@ -769,7 +778,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
         <div ref={scrollRef} onScroll={event => { const element = event.currentTarget; const next = element.scrollHeight - element.scrollTop - element.clientHeight < 80; followBottomRef.current = next; setFollowingBottom(next); }} className="relative flex-1 space-y-3 overflow-y-auto p-3 md:p-4">
-          {messages.length === 0 && <div className="mt-8 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">告诉我你想在项目里做什么</h3><p className="mt-1 text-sm text-gray-500">{sessionReady ? '这是一条独立对话，可在项目的任何页面继续。' : '正在加载这条对话…'}</p>{activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount && <div className="mx-auto mt-4 flex max-w-sm items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-2 text-left dark:border-gray-700 dark:bg-gray-900"><span><b className="block text-xs text-gray-800 dark:text-gray-100">破限模式</b><span className="block text-[10px] text-gray-500">只能在发送第一条消息前选择</span></span><button type="button" role="switch" aria-checked={activeSession.creativeMode} aria-label="切换本对话破限模式" onClick={() => void updateCreativeMode(!activeSession.creativeMode)} className="mobile-touch flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-0 bg-transparent p-0 shadow-none"><span className={`relative block h-5 w-10 rounded-full transition-colors ${activeSession.creativeMode ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${activeSession.creativeMode ? 'left-5' : 'left-0.5'}`} /></span></button></div>}<div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '查看当前设置和 Anlas 预算'].map(value => <button key={value} type="button" disabled={!sessionReady} onClick={() => void run(value)} className="mobile-touch rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold text-gray-700 shadow-sm hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{value}</button>)}</div></div>}
+          {messages.length === 0 && <div className="mt-8 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">告诉我你想在项目里做什么</h3><p className="mt-1 text-sm text-gray-500">{sessionReady ? '这是一条独立对话，可在项目的任何页面继续。' : sessionInitError || '正在加载这条对话…'}</p>{!sessionReady && sessionInitError && <button type="button" onClick={() => { setSessionInitError(''); void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(setModels)]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行')); }} className="mobile-touch mt-3 rounded-xl border border-indigo-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">重试</button>}{activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount && <div className="mx-auto mt-4 flex max-w-sm items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-2 text-left dark:border-gray-700 dark:bg-gray-900"><span><b className="block text-xs text-gray-800 dark:text-gray-100">破限模式</b><span className="block text-[10px] text-gray-500">只能在发送第一条消息前选择</span></span><button type="button" role="switch" aria-checked={activeSession.creativeMode} aria-label="切换本对话破限模式" onClick={() => void updateCreativeMode(!activeSession.creativeMode)} className="mobile-touch flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-0 bg-transparent p-0 shadow-none"><span className={`relative block h-5 w-10 rounded-full transition-colors ${activeSession.creativeMode ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${activeSession.creativeMode ? 'left-5' : 'left-0.5'}`} /></span></button></div>}<div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '查看当前设置和 Anlas 预算'].map(value => <button key={value} type="button" disabled={!sessionReady} onClick={() => void run(value)} className="mobile-touch rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold text-gray-700 shadow-sm hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{value}</button>)}</div></div>}
           <AgentMessageList
             messages={messages}
             visibleMessageCount={visibleMessageCount}

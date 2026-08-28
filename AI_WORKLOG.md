@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：修复 Agent 面板初始化错误被吞（卡死在"正在加载对话"）——增加错误提示与重试按钮；request_generation 生图流程异常时补回 finalize 失败终态，服务端任务不再永久等待（fix: surface agent init errors and finalize generation on failure）。
 - **ZCode (GLM-5.3)**：补齐四个视图的竞态守卫缺口——AITag 后台追加连拉改为单序号且让位用户加载、修复 finally 提前关 spinner；Danbooru 同款 finally 守卫；Pixiv"看了又看"加代际守卫、登录轮询加在途去重与连续失败容忍；Vibe 库搜索加请求代际（fix: add stale-response guards across gallery and vibe loading paths）。
 - **ZCode (GLM-5.3)**：修复 Tag 词库更新先删后写的非原子性——先写 public/tag-data.staging 暂存目录、manifest 就绪后原子替换正式目录，失败路径清理暂存，中途失败不再留下无 manifest 的残缺词库（fix: write tag dictionary to staging dir and swap atomically）。
 - **ZCode (GLM-5.3)**：重写 local-server.sh 为薄启动器——保留 Termux/Node 检测后 exec 委托给 local-server.mjs，消除 Unix 端缺网关/PIN/Agent/桥接且端口布局冲突的功能残缺问题（fix: delegate local-server.sh to the shared orchestrator）。
