@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：修复两处响应式样式缺陷——新增 .mobile-size-locked 让小圆钮豁免 44px 最小高度（历史收藏/灵感选择钮不再被拉成蛋形）；把 mobile-gallery 比例规则移入 @layer components 使桌面端 md:aspect-square 正常生效（fix: keep round icon buttons round and let desktop square layout preference apply）。
 - **ZCode (GLM-5.3)**：修复安全模式开关重启后状态丢失——safeMode 初始化优先读上次手动开关的 nai_safe_mode，无记录时回退启动偏好 nai_safe_mode_startup（fix: restore last safe mode toggle state on startup）。
 - **ZCode (GLM-5.3)**：蒙版绘制增加多点触控防护——按下/移动/抬起只响应主指针（isPrimary），第二指/手掌误触不再导致笔迹跳变与撤销栈污染（fix: ignore non-primary pointers in mask drawing）。
 - **ZCode (GLM-5.3)**：worker 后端请求处理加固——chains/chains name·description、benchmarks config 等缺字段 bind 补默认值；vibe 强度/灵感 useCount·updatedAt/历史 createdAt 等 NaN 归一；/api/assets If-None-Match 支持弱校验器与多值；st-chatu8 导入按 meta.changes 计数；agent 概览先 ensure vibe/角色参考 schema；灵感 sourceUrl 仅接受 https（fix: harden worker request binding, cache negotiation and agent overview queries）。
