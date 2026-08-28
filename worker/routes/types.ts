@@ -56,21 +56,14 @@ export interface WorkerContext {
   waitUntil(promise: Promise<any>): void;
 }
 
-export const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Cookie, Server-Timing',
-  'Access-Control-Allow-Credentials': 'true',
-};
-
-export const json = (data: any, status = 200, headers: Record<string, string> = {}) => 
-  new Response(JSON.stringify(data), { 
-    headers: { 'Content-Type': 'application/json', ...corsHeaders, ...headers }, 
+export const json = (data: any, status = 200, headers: Record<string, string> = {}) =>
+  new Response(JSON.stringify(data), {
+    headers: { 'Content-Type': 'application/json', ...headers },
     status 
   });
 
-export const error = (msg: string, status = 500) => 
-  new Response(JSON.stringify({ error: msg }), { headers: { 'Content-Type': 'application/json', ...corsHeaders }, status });
+export const error = (msg: string, status = 500) =>
+  new Response(JSON.stringify({ error: msg }), { headers: { 'Content-Type': 'application/json' }, status });
 
 export const clampInt = (value: string | null, fallback: number, min: number, max: number) => {
   const parsed = Number.parseInt(value || '', 10);

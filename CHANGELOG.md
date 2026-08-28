@@ -4,6 +4,10 @@
 
 ## 2026-08-29
 
+### 修复:移除全局限 CORS 通配头，封堵恶意网页无认证读写本机 API 的通道
+- **根因**：worker 所有响应（含回环直连）都携带 `Access-Control-Allow-Origin: *`，而回环 Host 本身免认证——本机浏览器访问任意恶意网页时，该网页的 JS 可直接 fetch `localhost:3000/api/*` 读取风格串/历史/灵感并增删改数据（drive-by CSRF）。同源单机应用本不需要任何 CORS 头。
+- **修复**：删除 worker 全部 `Access-Control-Allow-*` 响应头；同源 SPA 不会发起预检，跨源预检因无 CORS 头必然失败。OPTIONS 分支保留并改为空 204。
+
 ### 修复:局域网设备发送非法 JSON 可令本地服务进程崩溃（未认证远程 DoS）
 - **根因**：网关 `handleLanUnlock`、`handleLanPinUpdate` 与 `/api/generation-queue/cancel` 三处直接 `JSON.parse` 请求体且无异常捕获，调用点也无 try/catch 包裹——局域网内任意设备无需密码即可发送畸形 JSON 触发未捕获异常，Node 默认行为是整个进程退出，本地服务随之全站不可用。
 - **修复**：新增 `readJsonBody` 安全解析助手（空 body 与非法 JSON 一律按空对象处理），替换三处裸解析；畸形 PIN 会正常走"密码不正确"路径并计入锁定计数。

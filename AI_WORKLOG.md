@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：移除 worker 全局 CORS 通配头（`corsHeaders` 常量与 json/error/aitag/zip/SSE/assets 各处展开）——回环免认证 + `ACAO:*` 组合允许本机浏览器中的恶意网页无认证读写全部 API（drive-by CSRF）；同源应用不需要 CORS，跨源预检现必然失败，OPTIONS 分支改为空 204（fix: remove wildcard CORS headers from worker responses）。
 - **ZCode (GLM-5.3)**：修复网关三处无 try/catch 的裸 JSON.parse（`/api/lan/unlock`、`/api/lan/pin`、`/api/generation-queue/cancel`）——局域网设备无需认证发送畸形 JSON 即可触发未捕获异常令整个 local-server 进程退出；新增 readJsonBody 安全解析助手统一按空对象兜底（fix: harden gateway JSON body parsing against unauthenticated DoS）。
 - **ZCode (GLM-5.3)**：修复网关 readRequestBody 的 30 秒 socket 空闲超时在 body 读完未解除的问题——该超时会误杀排队/上游生成超过 30 秒的请求，非流式路径出现"已扣费却拿不到图"；现于 'end' 事件中 `setTimeout(0)` 解除，慢 body 防护保留（fix: release gateway socket idle timeout after request body is read）。
 - **ZCode (GLM-5.3)**：实现用户指定的步数上限开关——新增偏好 `enforceFreeStepLimit`（默认开启），全局设置提供开关；开启时生成步数锁定为官方同步的 `freeMaxSteps`（替换写死的 28，官方调整自动跟随），关闭时放宽到 NovelAI 硬上限 50 并显示「已解除上限」提示；覆盖工坊与实验室四模式参数面板，补偏好回归测试（feat: add toggle for free step limit on generation）。

@@ -1,8 +1,7 @@
 import { MEDIA_VARIANTS, validateMediaSource } from './mediaValidation';
 import { LAN_ACCESS_COOKIE } from './sharedWhitelist.mjs';
 import {
-  corsHeaders, json, error, INIT_SQL,
-  type Env, type WorkerContext, type RouteContext,
+  json, error, INIT_SQL,  type Env, type WorkerContext, type RouteContext,
 } from './routes/types';
 import { handlePixivRoute } from './routes/pixivRoutes';
 import { handleDanbooruRoute } from './routes/danbooruRoutes';
@@ -53,7 +52,6 @@ export default {
           object.writeHttpMetadata(headers);
           headers.set('etag', object.httpEtag);
           headers.set('Cache-Control', 'private, max-age=31536000, immutable');
-          headers.set('Access-Control-Allow-Origin', '*');
           return new Response(object.body, { headers });
         } catch (e) {
           console.error('asset proxy failed', e);
@@ -65,8 +63,9 @@ export default {
       return env.ASSETS.fetch(request);
     }
 
+    // 同源 SPA 不会发起预检；不返回任何 CORS 头，使跨源预检必然失败（防 drive-by 读写本机 API）。
     if (method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders });
+      return new Response(null, { status: 204 });
     }
 
     if (!env.DB) {

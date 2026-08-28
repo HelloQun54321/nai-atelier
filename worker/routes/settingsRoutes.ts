@@ -3,7 +3,7 @@
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
 import { LAN_ACCESS_COOKIE } from '../sharedWhitelist.mjs';
 import { MEDIA_VARIANTS, validateMediaSource } from '../mediaValidation';
-import { json, error, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, corsHeaders, type D1Database, type Env, type RouteContext } from './types';
+import { json, error, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, type D1Database, type Env, type RouteContext } from './types';
 
 const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const lanAccessAttempts = new Map<string, { failures: number; blockedUntil: number }>();
@@ -538,7 +538,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
       return error(errText, naiRes.status);
     }
     const blob = await naiRes.blob();
-    return new Response(blob, { headers: { ...corsHeaders, 'Content-Type': 'application/zip' } });
+    return new Response(blob, { headers: { 'Content-Type': 'application/zip' } });
   }
 
   if (path === '/api/generate-stream' && method === 'POST') {
@@ -557,7 +557,6 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     if (!naiRes.ok) return error(await naiRes.text(), naiRes.status);
     return new Response(naiRes.body, {
       headers: {
-        ...corsHeaders,
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'private, no-store',
         'X-Accel-Buffering': 'no',

@@ -1,6 +1,6 @@
 // AITag scraping + reverse-proxy routes.
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
-import { corsHeaders, json, error, clampInt, sleep, type D1Database, type Env, type RouteContext } from './types';
+import { json, error, clampInt, sleep, type D1Database, type Env, type RouteContext } from './types';
 
 const AITAG_BASE_URL = 'https://aitag.win';
 const AITAG_IMAGE_BASE_URL = 'https://ai-img.10118899.xyz/';
@@ -27,7 +27,6 @@ async function proxyAitagJson(targetUrl: URL): Promise<Response> {
     headers: {
       'Content-Type': response.headers.get('Content-Type') || 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',
-      ...corsHeaders,
     },
   });
 }
