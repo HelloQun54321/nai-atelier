@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-28
+- **ZCode (GLM-5.3)**：与用户讨论后修复手机端实验室导航死角——实验室顶栏模式导航左侧新增返回箭头（仅 <md 窄屏显示，与侧边栏互斥不造重复入口），返回记录的进入前内容页并兜底风格串列表，补断点与回调回归测试（fix: add mobile lab back arrow to exit playground dead end）。
 - **ZCode (GLM-5.3)**：排查「启动本地服务时快时慢/卡住数分钟」——用带时间戳的对照实验定位为 wrangler 横幅前的 npm 更新检查（update-check 库无视代理环境变量直连 registry 被黑洞，实测阻塞 36 秒+且失败不缓存），经 npm_config_registry 注入快速失败端口后实测启动降至 1 秒内（fix: short-circuit wrangler npm update check to unblock local server startup）。
 - **ZCode (GLM-5.3)**：按用户选择重构手机端编辑器工具栏——低频操作（导入/引用预设/反推/Tag 辅助/重置/保存）全部收进模式导航行右侧 ⋯ 底部动作面板（复用 MobileBottomSheet），平板与桌面保持原布局，新增面板交互与断点回归测试（feat: collapse editor toolbar into mobile more menu sheet）。
 - **ZCode (GLM-5.3)**：修复手机端编辑器工具栏居中未生效——grid 项的无前缀 ml-auto 会收缩行宽并钉右、令 justify-center 失效，改为 lg:ml-auto 桌面端专属，并新增 ChainEditorHeader 断点回归测试（fix: center editor toolbar on mobile by scoping auto margin to desktop）。

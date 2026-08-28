@@ -26,6 +26,9 @@ const CharacterLibrary = lazy(() => import('./components/CharacterLibrary').then
 type ViewState = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'inspiration' | 'history' | 'playground';
 type KeepAliveView = Exclude<ViewState, 'edit'>;
 
+// 手机端实验室返回箭头的落点：只记录内容页，编辑器/实验室本身不作为返回落点。
+const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'inspiration', 'history'];
+
 const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
 
 const isKeepAliveView = (targetView: ViewState): targetView is KeepAliveView => targetView !== 'edit';
@@ -40,6 +43,7 @@ const App = () => {
   const [dbConfigError, setDbConfigError] = useState(false);
 
   // Playground State
+  const lastLabEntryViewRef = useRef<ViewState>('list');
   const [playgroundChain, setPlaygroundChain] = useState<PromptChain | null>(null);
   const [playgroundImportToken, setPlaygroundImportToken] = useState(0);
   const [playgroundAgentOpenToken, setPlaygroundAgentOpenToken] = useState(0);
@@ -405,6 +409,8 @@ const App = () => {
       setIsEditorDirty(false);
     }
 
+    // 记录进入实验室前的内容页，供手机端返回箭头使用；实验室内部切换不覆盖该记录。
+    if (newView === 'playground' && LAB_ENTRY_VIEWS.includes(view)) lastLabEntryViewRef.current = view;
     setSelectedId(id);
     setView(newView);
     keepViewMounted(newView);
@@ -633,7 +639,7 @@ const App = () => {
           forceEmptySeed={appearancePreferences.forceEmptySeed}
           labPageLayouts={appearancePreferences.labPageLayouts}
           safeMode={safeMode}
-          onBack={() => handleNavigate('list')}
+          onBack={() => handleNavigate(lastLabEntryViewRef.current)}
         />;
       default:
         return <div>Unknown View</div>;

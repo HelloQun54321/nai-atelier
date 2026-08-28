@@ -37,7 +37,8 @@ describe('ChainEditorModeHeader', () => {
     expect(onEditInfo).toHaveBeenCalledOnce();
   });
 
-  it('实验室仍显示四模式导航，不显示风格串名称与铅笔', () => {
+  it('实验室显示四模式导航与手机端返回箭头，不显示风格串名称与铅笔', () => {
+    const onBack = vi.fn();
     render(React.createElement(ChainEditorModeHeader, {
       isLaboratory: true,
       chainName: '不应显示',
@@ -46,13 +47,18 @@ describe('ChainEditorModeHeader', () => {
       activeMode: 'text-to-image',
       onSelectMode: vi.fn(),
       onEditInfo: vi.fn(),
-      onBack: vi.fn(),
+      onBack,
     }));
 
     expect(screen.getByRole('navigation', { name: '生成模式' })).toBeTruthy();
-    expect(screen.getAllByRole('button')).toHaveLength(4);
+    expect(screen.getAllByRole('button')).toHaveLength(5);
     expect(screen.queryByRole('button', { name: '编辑风格串信息' })).toBeNull();
     expect(screen.queryByText('不应显示')).toBeNull();
+    // 返回箭头只在无侧边栏的窄屏（<md）显示，桌面/平板由侧边栏承担退出，不造重复入口
+    const backButton = screen.getByRole('button', { name: '退出实验室，返回上一页面' });
+    expect(backButton.className).toContain('md:hidden');
+    fireEvent.click(backButton);
+    expect(onBack).toHaveBeenCalledOnce();
   });
 
   it('角色串详情使用对应的返回与编辑文案', () => {
