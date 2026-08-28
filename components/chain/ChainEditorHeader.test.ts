@@ -1,10 +1,27 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChainEditorHeader } from './ChainEditorHeader';
 
-afterEach(() => cleanup());
+beforeEach(() => {
+  // jsdom 未实现 matchMedia；桩为不匹配使 useMobileHistoryLayer 走无副作用的早退分支
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })));
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const renderHeader = (props: Partial<Parameters<typeof ChainEditorHeader>[0]> = {}) => render(React.createElement(ChainEditorHeader, {
   chainId: 'playground',
@@ -17,11 +34,11 @@ const renderHeader = (props: Partial<Parameters<typeof ChainEditorHeader>[0]> = 
   isCharacterMode: false,
   isOwner: true,
   isGuest: false,
-  canEdit: false,
+  canEdit: true,
   isEditingInfo: false,
   setIsEditingInfo: vi.fn(),
-  canSaveActiveModeToLibrary: false,
-  canSaveCurrentChain: false,
+  canSaveActiveModeToLibrary: true,
+  canSaveCurrentChain: true,
   isUploading: false,
   hasChanges: false,
   hasPendingPreviewCover: false,
@@ -42,23 +59,45 @@ const renderHeader = (props: Partial<Parameters<typeof ChainEditorHeader>[0]> = 
 }));
 
 describe('ChainEditorHeader 工具栏', () => {
-  it('操作按钮行移动端整行居中，桌面端保持靠右', () => {
-    const { container } = renderHeader();
+  it('桌面操作行移动端隐藏，移动端仅显示更多按钮', () => {
+    const { container, getByRole } = renderHeader();
     const actions = container.querySelector('.chain-editor-actions') as HTMLElement;
     expect(actions).toBeTruthy();
-    expect(actions.className).toContain('justify-center');
-    expect(actions.className).toContain('lg:justify-end');
-    // 关键约束：ml-auto 不能不带断点前缀出现在移动端——grid 项的 auto 边距会收缩行宽并把整行钉到右侧，
-    // 让 justify-center 完全失效（视觉上仍然靠右）；桌面端才允许 lg:ml-auto 恢复靠右。
-    expect(actions.className).toMatch(/(^|\s)lg:ml-auto(\s|$)/);
+    // 移动端整行隐藏（hidden），md 起恢复右对齐工具行；auto 边距绝不能无断点前缀出现在移动端
+    // ——grid 项的无前缀 ml-auto 会收缩行宽并钉右，是此前"居中不生效"的根因。
+    expect(actions.className).toContain('hidden');
+    expect(actions.className).toContain('md:flex');
     expect(actions.className).not.toMatch(/(^|\s)ml-auto(\s|$)/);
+    const moreButton = getByRole('button', { name: '更多操作' });
+    expect(moreButton.className).toContain('md:hidden');
   });
 
-  it('实验室模式展示重置与 Tag 辅助按钮，不展示保存/复制按钮', () => {
-    const { getByRole, queryByRole } = renderHeader({ canSaveActiveModeToLibrary: false });
-    expect(getByRole('button', { name: '重置实验室' })).toBeTruthy();
-    expect(getByRole('button', { name: /Tag 辅助/ })).toBeTruthy();
-    expect(queryByRole('button', { name: '保存到库' })).toBeNull();
-    expect(queryByRole('button', { name: '保存修改' })).toBeNull();
+  it('更多按钮弹出底部操作面板，收齐全部低频动作，点击后关闭', () => {
+    const handleReset = vi.fn();
+    const { getByRole, queryByRole } = renderHeader({ handleReset });
+
+    fireEvent.click(getByRole('button', { name: '更多操作' }));
+    const dialog = getByRole('dialog', { name: '更多操作' });
+    expect(within(dialog).getByRole('button', { name: '导入图片或 JSON 配置' })).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: '引用预设' })).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: '图片反推 Tag' })).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: /^Tag 辅助/ })).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: '重置实验室' })).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: '保存到库' })).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '重置实验室' }));
+    expect(handleReset).toHaveBeenCalledOnce();
+    expect(queryByRole('dialog', { name: '更多操作' })).toBeNull();
+  });
+
+  it('Tag 辅助在面板内切换状态并回调通知', () => {
+    const onTagAssistEnabledChange = vi.fn();
+    const notify = vi.fn();
+    const { getByRole } = renderHeader({ tagAssistEnabled: false, onTagAssistEnabledChange, notify });
+
+    fireEvent.click(getByRole('button', { name: '更多操作' }));
+    fireEvent.click(within(getByRole('dialog', { name: '更多操作' })).getByRole('button', { name: /^Tag 辅助/ }));
+    expect(onTagAssistEnabledChange).toHaveBeenCalledWith(true);
+    expect(notify).toHaveBeenCalledWith('Tag 辅助已开启');
   });
 });

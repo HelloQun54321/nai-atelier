@@ -1,8 +1,35 @@
-import React, { useRef } from 'react';
-import { FileDown, ImagePlus, Quote, RotateCcw, Save, Tags } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { FileDown, ImagePlus, MoreHorizontal, Quote, RotateCcw, Save, Tags } from 'lucide-react';
 import { GenerationMode } from '../../types';
 import { ChainEditorModeHeader } from '../ChainEditorModeHeader';
 import { IconButton, ToolbarButton, WorkspaceToolbar } from '../DesignSystem';
+import { MobileBottomSheet, MobileIconButton } from '../MobileUI';
+
+const MobileActionRow: React.FC<{
+    icon: React.ReactNode;
+    label: string;
+    detail?: string;
+    tone?: 'default' | 'danger' | 'primary';
+    disabled?: boolean;
+    onClick: () => void;
+}> = ({ icon, label, detail, tone = 'default', disabled = false, onClick }) => (
+    <button
+        type="button"
+        disabled={disabled}
+        onClick={onClick}
+        className={`mobile-touch flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+            tone === 'danger'
+                ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30'
+                : tone === 'primary'
+                    ? 'text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30'
+                    : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
+        }`}
+    >
+        <span className="flex-none">{icon}</span>
+        <span className="min-w-0 flex-1">{label}</span>
+        {detail && <span className="flex-none text-xs font-normal text-gray-400">{detail}</span>}
+    </button>
+);
 
 export interface ChainEditorHeaderProps {
     chainId: string;
@@ -73,8 +100,11 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
 }) => {
     const importInputRef = useRef<HTMLInputElement>(null);
     const isPlayground = chainId === 'playground';
+    const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+    const closeMobileActions = () => setMobileActionsOpen(false);
 
     return (
+        <>
         <header className="chain-editor-header workspace-command-bar relative z-30 grid h-auto flex-shrink-0 grid-cols-1 items-center gap-1 overflow-visible border-b border-gray-200 bg-white px-2 py-1 dark:border-gray-800/80 dark:bg-gray-900/90 md:px-5 lg:grid-cols-2 lg:gap-0 lg:py-0">
             <div className="chain-editor-header-main relative flex min-w-0 items-center gap-2 md:gap-4 lg:pr-4">
                 <ChainEditorModeHeader
@@ -140,9 +170,16 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     </div>
                     <div className="mt-4 flex justify-end"><button type="button" onClick={() => setIsEditingInfo(false)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-500">完成</button></div>
                 </div>}
+                <MobileIconButton
+                    label="更多操作"
+                    onClick={() => setMobileActionsOpen(true)}
+                    className="ml-auto flex-none text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 md:hidden"
+                >
+                    <MoreHorizontal className="h-5 w-5" />
+                </MobileIconButton>
             </div>
 
-            <div className="chain-editor-actions flex flex-none items-center justify-center gap-2 overflow-x-auto lg:ml-auto lg:justify-end">
+            <div className="chain-editor-actions hidden md:flex flex-none items-center gap-2 overflow-x-auto md:ml-auto md:justify-end">
                 {canEdit && (
                     <>
                         <input
@@ -240,5 +277,28 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                 )}
             </div>
         </header>
+        <MobileBottomSheet open={mobileActionsOpen} title="更多操作" onClose={closeMobileActions}>
+            <div className="flex flex-col gap-1">
+                {canEdit && <MobileActionRow icon={<FileDown className="h-4 w-4" />} label="导入图片或 JSON 配置" onClick={() => { closeMobileActions(); importInputRef.current?.click(); }} />}
+                {canEdit && <MobileActionRow icon={<Quote className="h-4 w-4" />} label="引用预设" onClick={() => { closeMobileActions(); setShowImportPreset(true); }} />}
+                {canEdit && <MobileActionRow icon={<ImagePlus className="h-4 w-4" />} label="图片反推 Tag" onClick={() => { closeMobileActions(); setTaggerOpen(true); }} />}
+                <MobileActionRow
+                    icon={<Tags className="h-4 w-4" />}
+                    label="Tag 辅助"
+                    detail={tagAssistEnabled ? '已开启' : '已关闭'}
+                    onClick={() => {
+                        const enabled = !tagAssistEnabled;
+                        onTagAssistEnabledChange(enabled);
+                        notify(`Tag 辅助已${enabled ? '开启' : '关闭'}`);
+                        closeMobileActions();
+                    }}
+                />
+                {isPlayground && <MobileActionRow icon={<RotateCcw className="h-4 w-4" />} label="重置实验室" tone="danger" onClick={() => { closeMobileActions(); handleReset(); }} />}
+                {canSaveActiveModeToLibrary && isPlayground && <MobileActionRow icon={<Save className="h-4 w-4" />} label="保存到库" tone="primary" disabled={isUploading} onClick={() => { closeMobileActions(); handleFork(); }} />}
+                {canSaveActiveModeToLibrary && !isPlayground && isOwner && <MobileActionRow icon={<Save className="h-4 w-4" />} label={isUploading ? '保存中' : canSaveCurrentChain ? '保存修改' : '已保存'} tone="primary" disabled={!canSaveCurrentChain || isUploading} onClick={() => { closeMobileActions(); handleSaveAll(); }} />}
+                {canSaveActiveModeToLibrary && !isPlayground && !isOwner && !isGuest && <MobileActionRow icon={<Save className="h-4 w-4" />} label="复制为新串" tone="primary" disabled={isUploading} onClick={() => { closeMobileActions(); handleFork(); }} />}
+            </div>
+        </MobileBottomSheet>
+        </>
     );
 };

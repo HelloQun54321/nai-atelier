@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-28
+- **ZCode (GLM-5.3)**：按用户选择重构手机端编辑器工具栏——低频操作（导入/引用预设/反推/Tag 辅助/重置/保存）全部收进模式导航行右侧 ⋯ 底部动作面板（复用 MobileBottomSheet），平板与桌面保持原布局，新增面板交互与断点回归测试（feat: collapse editor toolbar into mobile more menu sheet）。
 - **ZCode (GLM-5.3)**：修复手机端编辑器工具栏居中未生效——grid 项的无前缀 ml-auto 会收缩行宽并钉右、令 justify-center 失效，改为 lg:ml-auto 桌面端专属，并新增 ChainEditorHeader 断点回归测试（fix: center editor toolbar on mobile by scoping auto margin to desktop）。
 - **ZCode (GLM-5.3)**：手机端实验室图生图/局部重绘/扩图隐藏顶部大图预览区，与文生图对齐仅保留底部浮动圆圈查看当前预览（编辑模式圆圈与顶部预览同源），编辑器工具栏按钮行移动端居中，并清理移动端预览壳死 CSS、补预览壳断点回归测试（fix: hide lab edit-mode preview on mobile and center editor toolbar）。
 - **ZCode (GLM-5.3)**：清理 AI_WORKLOG 两处重复条目，并还原 App.tsx 无语义的编辑器格式化残留（docs: remove duplicate AI worklog entries）。
