@@ -755,7 +755,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
               containerClassName="min-w-[12rem] flex-1 md:max-w-none"
             />
           </form>
-          <div className="flex flex-none items-center gap-1.5 overflow-x-auto">
+          <div className="hidden flex-none items-center gap-1.5 overflow-x-auto md:flex">
             {feedTabs.map(tab => {
               const active = !showHistory && mode === tab.id;
               return (
@@ -812,6 +812,56 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
         </IconButton>
         <ImageTaggerAction notify={notify} />
       </WorkspaceToolbar>
+
+      {/* 移动端独立导航行（搜索与操作按钮保持首行，导航 Tab 单行横向滚动） */}
+      <div className="flex w-full items-center gap-1.5 overflow-x-auto border-b border-gray-200 bg-white px-2 py-1.5 backdrop-blur md:hidden dark:border-gray-800 dark:bg-gray-900/80">
+        {feedTabs.map(tab => {
+          const active = !showHistory && mode === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => {
+                if (showHistory) {
+                  setShowHistory(false);
+                  void loadFeed(tab.id, {});
+                } else {
+                  switchTab(tab.id);
+                }
+              }}
+              aria-pressed={active}
+              className={`h-9 flex-none whitespace-nowrap rounded-lg border px-2.5 text-[11px] font-semibold transition-colors ${
+                active
+                  ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-600'
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => (showHistory ? (setShowHistory(false), void loadFeed('recommended', {})) : loadHistory())}
+          aria-pressed={showHistory}
+          className={`h-9 flex-none whitespace-nowrap rounded-lg border px-2.5 text-[11px] font-semibold transition-colors ${
+            showHistory
+              ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-600'
+              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
+          }`}
+        >
+          足迹
+        </button>
+        {userContext && (
+          <button
+            type="button"
+            onClick={() => void loadFeed('recommended', {})}
+            className="h-9 flex-none whitespace-nowrap rounded-lg border border-gray-200 bg-white px-2.5 text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+          >
+            返回推荐
+          </button>
+        )}
+      </div>
 
       {/* 排行榜二级工具栏（子模式 + 历史日期穿越） */}
       {mode === 'ranking' && !showHistory && (

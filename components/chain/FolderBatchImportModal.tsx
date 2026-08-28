@@ -704,7 +704,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
   return (
     <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 md:p-6" onClick={handleModalClose}>
       <div
-        className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
+        className="flex max-h-[90dvh] w-full max-w-4xl flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
         onClick={e => e.stopPropagation()}
       >
         {/* Modal Header */}
@@ -886,7 +886,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
               </div>
 
               {/* Items Grid */}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 max-h-[42vh] overflow-y-auto pr-1">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 max-h-[42dvh] overflow-y-auto pr-1">
                 {detectedItems.map(item => (
                   <div
                     key={item.id}
@@ -1065,7 +1065,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
           onClick={() => !isDeleting && setShowCleanupModal(false)}
         >
           <div
-            className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
+            className="flex max-h-[85dvh] w-full max-w-2xl flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
             onClick={e => e.stopPropagation()}
           >
             {/* Cleanup Header */}
@@ -1151,7 +1151,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
             </div>
 
             {/* Cleanup Items List */}
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5 space-y-2.5 max-h-[46vh]">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5 space-y-2.5 max-h-[46dvh]">
               {currentCategoryJunkItems.length === 0 ? (
                 <div className="py-12 text-center text-xs text-gray-400">当前分类下没有可清理的图片</div>
               ) : (

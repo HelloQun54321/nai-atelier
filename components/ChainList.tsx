@@ -82,7 +82,7 @@ const CopyModal: React.FC<{
 
     return (
         <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-            <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+            <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col max-h-[85dvh]" onClick={e => e.stopPropagation()}>
                 <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-900 rounded-t-2xl">
                     <h3 className="font-bold text-gray-900 dark:text-white truncate pr-4">{chain.name}</h3>
                     <button onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white">✕</button>

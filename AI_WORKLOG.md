@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-28
+- **DeepSeek V4 Flash (qianlian)**：完成 10 轮手机端前端显示检查并修复五类问题——移动端实验室生成错误提示可见、Pixiv 顶栏移动端导航独立成行、画师配置弹窗窄屏参数降级单列、画师复制历史抽屉移动端全屏化、全站弹窗高度 vh 改 dvh（fix: repair mobile display issues across galleries and lab）。
+- **DeepSeek V4 Flash (qianlian)**：局域网访问密码可在设置中实时修改（网关承载解锁校验与会话签发、新增 PUT /api/lan/pin 写回 lan-access.json），改密立即生效无需重启（feat: support changing LAN access pin at runtime）。
 - **DeepSeek V4 Flash (qianlian)**：局域网访问密码可在设置中实时修改（网关承载解锁校验与会话签发、新增 PUT /api/lan/pin 写回 lan-access.json），改密立即生效无需重启（feat: support changing LAN access pin at runtime）。
 - **DeepSeek V4 Flash (qianlian)**：启动日志的局域网访问地址过滤 WSL/Hyper-V、TUN 等虚拟网卡，只展示真实可访问地址（fix: filter virtual adapter addresses from LAN access list）。
 - **Gemini (Flash)**：修复编辑页左上角返回按钮偶发点击无响应，修正 handleReturnFromEditor 逻辑并移除导航外层 startTransition 确保同步即时跳转（fix: resolve unresponsive editor back button and make navigation synchronous）。

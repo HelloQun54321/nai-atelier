@@ -74,7 +74,7 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
 
     return (
         <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onMouseDown={e => { if (e.target === e.currentTarget && slotToDelete === null) onClose(); }}>
-            <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-2xl shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col max-h-[90vh] relative">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-2xl shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col max-h-[90dvh] relative">
                 
                 {/* Delete Confirmation Overlay */}
                 {slotToDelete !== null && (
@@ -180,7 +180,7 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
                         />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                         <div>
                             <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Seed (-1 = Random)</label>
                             <div className="flex gap-2">

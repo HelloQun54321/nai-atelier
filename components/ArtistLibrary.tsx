@@ -1264,7 +1264,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                         <OriginalImage
                             src={currentLightboxImage.src}
                             alt={currentLightboxImage.name}
-                            className="max-w-full max-h-[85vh] rounded shadow-2xl object-contain cursor-pointer"
+                            className="max-w-full max-h-[85dvh] rounded shadow-2xl object-contain cursor-pointer"
                             onClick={() => setLightboxState(null)}
                         />
                         <div className="mt-4 text-center">
@@ -1292,8 +1292,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
             )}
 
             {/* History, Logs, Import Modal rendering kept ... */}
-            <div className={`fixed top-0 right-0 w-80 h-full bg-white dark:bg-gray-900 shadow-2xl z-40 transform transition-transform duration-300 border-l border-gray-200 dark:border-gray-800 flex flex-col ${showHistory ? 'translate-x-0' : 'translate-x-full'}`}>
-                <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
+            <div className={`fixed top-0 right-0 w-full max-w-80 h-full bg-white dark:bg-gray-900 shadow-2xl z-40 transform transition-transform duration-300 border-l border-gray-200 dark:border-gray-800 flex flex-col md:w-80 ${showHistory ? 'translate-x-0' : 'translate-x-full'}`}>
+                <div className="p-4 pt-[max(1rem,env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
                     <h3 className="flex items-center gap-2 font-bold text-gray-800 dark:text-white"><ClipboardList className="h-4 w-4" />复制历史</h3>
                     <button onClick={() => setShowHistory(false)} className="text-gray-500 hover:text-gray-800 dark:hover:text-white">×</button>
                 </div>
@@ -1314,7 +1314,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
 
             {showLogs && (
                 <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-800 p-6 flex flex-col max-h-[80vh]">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-800 p-6 flex flex-col max-h-[80dvh]">
                         <div className="flex justify-between items-center mb-4 border-b border-gray-200 dark:border-gray-800 pb-2">
                             <h3 className="text-lg font-bold text-gray-900 dark:text-white">任务日志</h3>
                             <button onClick={() => setShowLogs(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white">✕</button>
