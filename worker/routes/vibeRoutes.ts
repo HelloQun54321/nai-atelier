@@ -418,6 +418,22 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
       let asset = await db.prepare('SELECT * FROM vibe_assets WHERE source_hash = ?').bind(sourceHash).first<any>();
       const id = asset?.id || crypto.randomUUID();
       const now = Date.now();
+      // 先校验再落库：全新 Vibe 若没有任何可用编码，直接 400 返回，
+      // 避免先插入资产行/原图/缩略图后校验失败留下零编码脏数据
+      const pendingEncodings: { model: string; modelKey: string; information: number; bytes: Uint8Array }[] = [];
+      for (const [modelKey, variants] of Object.entries(document.encodings as Record<string, any>)) {
+        if (!variants || typeof variants !== 'object') continue;
+        const model = modelKey === 'v4-5full' ? VIBE_MODEL : String(document.importInfo?.model || modelKey);
+        for (const variant of Object.values(variants as Record<string, any>)) {
+          const information = Number((variant as any)?.params?.information_extracted);
+          const encoding = String((variant as any)?.encoding || '');
+          if (!Number.isFinite(information) || information < 0 || information > 1 || !/^[A-Za-z0-9+/=]+$/.test(encoding)) continue;
+          const bytes = base64ToBytes(encoding);
+          if (bytes.length < 64 || bytes.length > 12 * 1024 * 1024) continue;
+          pendingEncodings.push({ model, modelKey, information, bytes });
+        }
+      }
+      if (!asset && !pendingEncodings.length) return error('Vibe 文件中没有可用编码', 400);
       if (!asset) {
         let originalKey: string | null = null;
         let originalType: string | null = null;
@@ -440,30 +456,20 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
             Math.max(0, Math.min(1, Number(document.importInfo?.strength ?? 0.6))), now, now).run();
       }
       let imported = 0;
-      for (const [modelKey, variants] of Object.entries(document.encodings as Record<string, any>)) {
-        if (!variants || typeof variants !== 'object') continue;
-        const model = modelKey === 'v4-5full' ? VIBE_MODEL : String(document.importInfo?.model || modelKey);
-        for (const variant of Object.values(variants as Record<string, any>)) {
-          const information = Number((variant as any)?.params?.information_extracted);
-          const encoding = String((variant as any)?.encoding || '');
-          if (!Number.isFinite(information) || information < 0 || information > 1 || !/^[A-Za-z0-9+/=]+$/.test(encoding)) continue;
-          const bytes = base64ToBytes(encoding);
-          if (bytes.length < 64 || bytes.length > 12 * 1024 * 1024) continue;
-          const exists = await db.prepare('SELECT id FROM vibe_encodings WHERE vibe_id = ? AND model = ? AND information_extracted = ?')
-            .bind(id, model, information).first<any>();
-          if (exists) continue;
-          const encodingId = crypto.randomUUID();
-          const encodingKey = `vibes/encodings/${id}/${encodingId}.bin`;
-          const encodingHash = await sha256Hex(bytes);
-          await env.BUCKET.put(encodingKey, exactArrayBuffer(bytes), { httpMetadata: { contentType: 'application/octet-stream' } });
-          await db.prepare(`INSERT INTO vibe_encodings
-            (id, vibe_id, model, model_key, information_extracted, encoding_key, encoding_hash, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-            .bind(encodingId, id, model, modelKey, information, encodingKey, encodingHash, now).run();
-          imported++;
-        }
+      for (const item of pendingEncodings) {
+        const exists = await db.prepare('SELECT id FROM vibe_encodings WHERE vibe_id = ? AND model = ? AND information_extracted = ?')
+          .bind(id, item.model, item.information).first<any>();
+        if (exists) continue;
+        const encodingId = crypto.randomUUID();
+        const encodingKey = `vibes/encodings/${id}/${encodingId}.bin`;
+        const encodingHash = await sha256Hex(item.bytes);
+        await env.BUCKET.put(encodingKey, exactArrayBuffer(item.bytes), { httpMetadata: { contentType: 'application/octet-stream' } });
+        await db.prepare(`INSERT INTO vibe_encodings
+          (id, vibe_id, model, model_key, information_extracted, encoding_key, encoding_hash, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(encodingId, id, item.model, item.modelKey, item.information, encodingKey, encodingHash, now).run();
+        imported++;
       }
-      if (!imported && !asset) return error('Vibe 文件中没有可用编码', 400);
       await db.prepare('UPDATE vibe_assets SET archived = 0, updated_at = ? WHERE id = ?').bind(now, id).run();
       asset = await db.prepare('SELECT * FROM vibe_assets WHERE id = ?').bind(id).first<any>();
       return json({ item: await mapVibeAsset(db, asset), imported });
