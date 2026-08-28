@@ -142,7 +142,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                 </div>}
             </div>
 
-            <div className="chain-editor-actions ml-auto flex flex-none items-center justify-end gap-2 overflow-x-auto">
+            <div className="chain-editor-actions ml-auto flex flex-none items-center justify-center gap-2 overflow-x-auto lg:justify-end">
                 {canEdit && (
                     <>
                         <input

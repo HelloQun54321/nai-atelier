@@ -239,7 +239,12 @@ describe('ImageEditPreview', () => {
       getDownloadFilename: () => 'fixture.png',
     }));
 
-    expect(container.querySelector('.image-edit-preview-shell')).toBeTruthy();
+    const shell = container.querySelector('.image-edit-preview-shell') as HTMLElement;
+    expect(shell).toBeTruthy();
+    // 移动端整卡隐藏（hidden），桌面端以 contents 参与左右分区（lg:contents）——与文生图预览容器同款断点语义，绝不允许写成 lg:hidden（桌面隐藏/移动显示）。
+    expect(shell.className).toContain('hidden');
+    expect(shell.className).toContain('lg:contents');
+    expect(shell.className).not.toContain('lg:hidden');
     const generateButton = screen.getByRole('button', { name: /生成局部重绘结果/ });
     // 移动端隐藏内嵌生成按钮（hidden），桌面端显示（lg:flex）——绝不允许写成 lg:hidden（桌面隐藏/移动显示）。
     expect(generateButton.className).toContain('hidden');
