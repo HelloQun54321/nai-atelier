@@ -47,6 +47,14 @@ if (next === current) {
   process.exit(1);
 }
 
+// 先校验 README 徽章再落盘：避免校验失败时留下"包已升、徽章未升"的中间状态
+const readme = readFileSync(readmePath, 'utf8');
+const badgePattern = /version-\d+\.\d+\.\d+-/;
+if (!badgePattern.test(readme)) {
+  console.error('README.md 中未找到 version-x.y.z 形式的徽章，请检查版本徽章行');
+  process.exit(1);
+}
+
 pkg.version = next;
 writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 
@@ -55,12 +63,6 @@ lock.version = next;
 if (lock.packages?.['']) lock.packages[''].version = next;
 writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
 
-const readme = readFileSync(readmePath, 'utf8');
-const badgePattern = /version-\d+\.\d+\.\d+-/;
-if (!badgePattern.test(readme)) {
-  console.error('README.md 中未找到 version-x.y.z 形式的徽章，请检查版本徽章行');
-  process.exit(1);
-}
 writeFileSync(readmePath, readme.replace(badgePattern, `version-${next}-`));
 
 console.log(`${current} -> ${next} (${arg.startsWith('set:') ? 'set' : arg})`);

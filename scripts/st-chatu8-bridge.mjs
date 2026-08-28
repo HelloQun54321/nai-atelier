@@ -396,10 +396,11 @@ export class StChatu8Bridge {
       incomingSourceHashes.add(sourceHash);
       const result = await this.requestWorkerJson('/api/vibes/import', { method: 'POST', body: { document } });
       const requestedName = String(document.name || '').trim();
-      if (result?.item?.id) this.state.vibeLinks[sourceHash] = { vibeId: result.item.id, lastSeenAt: Date.now() };
+      const vibeId = result?.item?.id || null;
+      if (vibeId) this.state.vibeLinks[sourceHash] = { vibeId, lastSeenAt: Date.now() };
       const requestedStrength = clamp(document.importInfo?.strength, 0, 1, 0.6);
-      if (requestedName && (result?.item?.name !== requestedName || Number(result?.item?.defaultStrength) !== requestedStrength)) {
-        await this.requestWorkerJson(`/api/vibes/${encodeURIComponent(result.item.id)}`, {
+      if (vibeId && requestedName && (result?.item?.name !== requestedName || Number(result?.item?.defaultStrength) !== requestedStrength)) {
+        await this.requestWorkerJson(`/api/vibes/${encodeURIComponent(vibeId)}`, {
           method: 'PUT', body: { name: requestedName, defaultStrength: requestedStrength },
         });
       }

@@ -1788,6 +1788,9 @@ const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, clou
     if (!runtime.streamedModels.includes(payload?.model)) {
       return sendJson(res, 400, { error: '当前模型不支持生成过程预览，请关闭该设置后重试' });
     }
+    if (!payload.parameters || typeof payload.parameters !== 'object') {
+      return sendJson(res, 400, { error: '生图请求缺少 parameters' });
+    }
     const hasLocalVibes = payload?.parameters?._local_vibes?.enabled && payload.parameters._local_vibes.slots?.length;
     const hasLocalReferences = payload?.parameters?._local_character_references?.enabled && payload.parameters._local_character_references.slots?.length;
     if (hasLocalVibes || hasLocalReferences) {
@@ -2395,7 +2398,11 @@ class ThumbnailCache {
   }
 
   async withJobSlot(task) {
-    if (this.activeJobs >= this.concurrency) await new Promise(resolve => this.jobQueue.push(resolve));
+    // 循环等待而非一次判断：被唤醒者恢复执行前，并发的早到调用可能已把槽位占满，
+    // 单次 if 会短暂突破并发上限（sharp 内存尖峰）
+    while (this.activeJobs >= this.concurrency) {
+      await new Promise(resolve => this.jobQueue.push(resolve));
+    }
     this.activeJobs++;
     try { return await task(); } finally {
       this.activeJobs--;

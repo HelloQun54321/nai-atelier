@@ -163,6 +163,8 @@ export function startTagUpdateServer() {
     }
 
     if (request.method === 'POST') {
+      // 消费并丢弃请求体：keep-alive 客户端下未读的 body 会污染同连接的下一个请求
+      request.resume();
       if (!updateState.running) void runTagUpdate();
       return writeJson(response, updateState.running ? 202 : 200, {
         available: true,
