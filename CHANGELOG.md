@@ -4,6 +4,10 @@
 
 ## 2026-08-29
 
+### 性能:历史与 Vibe 表结构自愈逻辑加进程级缓存，不再每个请求重跑整套 DDL
+- **根因**：灵感表此前已加进程内标记避免重复 DDL，但 `ensureLocalHistorySchema`（1 CREATE TABLE + 8 ALTER + 3 INDEX + 一次全表 UPDATE）与 `ensureVibeSchema`/`ensureCharacterReferenceSchema` 漏掉了——每个历史翻页/加图请求都要重付约 12 条 DDL 往返与一次无索引全表扫描，ALTER 靠抛异常兜底在 workerd 中代价不低。
+- **修复**：与灵感表同型——三个 ensure 函数各加进程级幂等标记，同一实例只在首个请求执行一次。
+
 ### 修复:隐私模式/存储配额满时修改设置导致整页崩溃
 - **根因**：外观偏好与图片显示偏好的 `localStorage.setItem` 无异常保护，而外观偏好保存在 `useLayoutEffect`（渲染阶段）——Safari 隐私模式、锁定模式或配额满时 `setItem` 抛异常会击穿 React 树白屏，且每次改任意设置都会复现。同项目的其他偏好写入均有防护，唯独这两处遗漏。
 - **修复**：两处写入加 try/catch 兜底——持久化失败只影响跨会话记忆，当前会话内的设置状态照常生效。

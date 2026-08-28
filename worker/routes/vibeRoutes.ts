@@ -3,7 +3,10 @@
 import { readImageDimensions } from '../imageDimensions.mjs';
 import { json, error, parseStoredJson, type D1Database, type Env, type RouteContext } from './types';
 
+// 进程内标记：DDL 幂等但昂贵，同一实例只在首个请求跑一次。
+let vibeSchemaEnsured = false;
 async function ensureVibeSchema(db: D1Database) {
+  if (vibeSchemaEnsured) return;
   await db.batch([
     db.prepare(`CREATE TABLE IF NOT EXISTS vibe_assets (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, source_hash TEXT NOT NULL UNIQUE,
@@ -26,9 +29,12 @@ async function ensureVibeSchema(db: D1Database) {
   ]) {
     try { await db.prepare(statement).run(); } catch { /* Column already exists. */ }
   }
+  vibeSchemaEnsured = true;
 }
 
+let characterReferenceSchemaEnsured = false;
 async function ensureCharacterReferenceSchema(db: D1Database) {
+  if (characterReferenceSchemaEnsured) return;
   await db.prepare(`CREATE TABLE IF NOT EXISTS character_reference_assets (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, source_hash TEXT NOT NULL UNIQUE,
     original_key TEXT NOT NULL, original_type TEXT NOT NULL,
@@ -43,6 +49,7 @@ async function ensureCharacterReferenceSchema(db: D1Database) {
   try {
     await db.prepare('ALTER TABLE character_reference_assets ADD COLUMN default_fidelity REAL NOT NULL DEFAULT 0.6').run();
   } catch { /* Column already exists. */ }
+  characterReferenceSchemaEnsured = true;
 }
 
 const bytesToBase64 = (bytes: Uint8Array) => {

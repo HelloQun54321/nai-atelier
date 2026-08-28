@@ -62,7 +62,10 @@ function buildInspirationSetStatements(updates: any): { assignments: string[]; v
   return { assignments, values };
 }
 
+// 进程内标记：DDL 幂等但昂贵，同一实例只在首个请求跑一次，不再每个请求都重复整套语句。
+let localHistorySchemaEnsured = false;
 export async function ensureLocalHistorySchema(db: D1Database) {
+  if (localHistorySchemaEnsured) return;
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS local_generation_history (
       id TEXT PRIMARY KEY,
@@ -115,6 +118,7 @@ export async function ensureLocalHistorySchema(db: D1Database) {
         OR TRIM(COALESCE(subject_prompt, '')) != ''
         OR TRIM(COALESCE(modules, '')) NOT IN ('', '[]', 'null')
       )`).run();
+  localHistorySchemaEnsured = true;
 }
 
 export function localHistoryEnabled(env: Env) {
