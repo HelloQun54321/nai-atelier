@@ -27,12 +27,29 @@ export const getLabModeLabel = (mode: GenerationMode): string => (
     mode === 'text-to-image' ? '文生图' : mode === 'image-to-image' ? '图生图' : mode === 'inpaint' ? '局部重绘' : '扩图'
 );
 
-const cloneParams = (params: NAIParams): NAIParams => ({
-  ...params,
-  characters: params.characters?.map(character => ({ ...character })) || [],
-  vibes: params.vibes ? { ...params.vibes, slots: params.vibes.slots.map(slot => ({ ...slot })) } : undefined,
-  characterReferences: params.characterReferences ? { ...params.characterReferences, slots: params.characterReferences.slots.map(slot => ({ ...slot })) } : undefined,
-});
+export const normalizeParams = (params?: Partial<NAIParams> | null): NAIParams => {
+  const safe = params && typeof params === 'object' ? params : {};
+  return {
+    ...LAB_DEFAULT_PARAMS,
+    ...safe,
+    width: Number(safe.width) || LAB_DEFAULT_PARAMS.width,
+    height: Number(safe.height) || LAB_DEFAULT_PARAMS.height,
+    steps: Number(safe.steps) || LAB_DEFAULT_PARAMS.steps,
+    scale: Number(safe.scale) || LAB_DEFAULT_PARAMS.scale,
+    sampler: safe.sampler || LAB_DEFAULT_PARAMS.sampler,
+    characters: Array.isArray(safe.characters) ? safe.characters.map(character => ({ ...character })) : [],
+    vibes: safe.vibes ? {
+      ...safe.vibes,
+      slots: Array.isArray(safe.vibes.slots) ? safe.vibes.slots.map(slot => ({ ...slot })) : [],
+    } : undefined,
+    characterReferences: safe.characterReferences ? {
+      ...safe.characterReferences,
+      slots: Array.isArray(safe.characterReferences.slots) ? safe.characterReferences.slots.map(slot => ({ ...slot })) : [],
+    } : undefined,
+  };
+};
+
+const cloneParams = (params: NAIParams): NAIParams => normalizeParams(params);
 
 export const createLabImageEditDraft = (
   operation: ImageEditOperation,

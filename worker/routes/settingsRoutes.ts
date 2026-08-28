@@ -585,6 +585,22 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
 
   // --- CRUD Routes ---
 
+  const DEFAULT_CHAIN_PARAMS = {
+    width: 832,
+    height: 1216,
+    steps: 28,
+    scale: 5,
+    sampler: 'k_euler_ancestral',
+    qualityToggle: true,
+    ucPreset: 4,
+    characters: [],
+  };
+
+  const parseChainParams = (raw: string | null | undefined) => {
+    const parsed = parseStoredJson(raw, {});
+    return { ...DEFAULT_CHAIN_PARAMS, ...parsed };
+  };
+
   // Chains
   if (path === '/api/chains' && method === 'GET') {
     // 游客不返回 guest_hidden=1 的记录
@@ -612,7 +628,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
       id: c.id, userId: c.user_id, username: c.username, type: c.type || 'style', name: c.name, description: c.description,
       tags: parseStoredJson(c.tags, []), previewImage: c.preview_image, base_prompt: c.base_prompt, // raw DB column needed? No, mapping below
       basePrompt: c.base_prompt,
-      negativePrompt: c.negative_prompt, modules: parseStoredJson(c.modules, []), params: parseStoredJson(c.params, {}),
+      negativePrompt: c.negative_prompt, modules: parseStoredJson(c.modules, []), params: parseChainParams(c.params),
       variableValues: parseStoredJson(c.variable_values, {}), guestHidden: c.guest_hidden === 1, createdAt: c.created_at, updatedAt: c.updated_at
     }));
     return json(data);
@@ -631,13 +647,14 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
         .filter(tag => tag.length > 0);
       tags = JSON.stringify(sanitizedTags);
     }
+    const paramsToStore = JSON.stringify({ ...DEFAULT_CHAIN_PARAMS, ...(body.params && typeof body.params === 'object' ? body.params : {}) });
     try {
-      await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, body.name, body.description, tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', body.params ? JSON.stringify(body.params) : '{}', body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, Date.now(), Date.now()).run();
+      await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, body.name, body.description, tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', paramsToStore, body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, Date.now(), Date.now()).run();
       return json({ id });
     } catch (e: any) {
       if (isMissingColumnError(e)) {
         await initDB();
-        await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, body.name, body.description, tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', body.params ? JSON.stringify(body.params) : '{}', body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, Date.now(), Date.now()).run();
+        await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, body.name, body.description, tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', paramsToStore, body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, Date.now(), Date.now()).run();
         return json({ id });
       }
       throw e;
@@ -661,7 +678,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
       basePrompt: chain.base_prompt || '',
       negativePrompt: chain.negative_prompt || '',
       modules: parseStoredJson(chain.modules, []),
-      params: parseStoredJson(chain.params, {}),
+      params: parseChainParams(chain.params),
       variableValues: parseStoredJson(chain.variable_values, {}),
       guestHidden: chain.guest_hidden === 1,
       createdAt: chain.created_at,

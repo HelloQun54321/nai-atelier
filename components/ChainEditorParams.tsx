@@ -25,11 +25,14 @@ const GENERATION_MAX_DIMENSION = 4096;
 // 标准竖图／横图恰好使用 1,011,712 像素；联动模式保持在这一 Opus 免费像素档内。
 export const OPUS_FREE_PIXEL_LIMIT = 832 * 1216;
 
-const resolutionModeFor = (params: NAIParams) => {
-    if (params.width === 832 && params.height === 1216) return 'Portrait';
-    if (params.width === 1216 && params.height === 832) return 'Landscape';
-    if (params.width === 1024 && params.height === 1024) return 'Square';
-    return 'Custom';
+const resolutionModeFor = (params?: NAIParams) => {
+    const width = Number(params?.width);
+    const height = Number(params?.height);
+    if (width === 832 && height === 1216) return 'Portrait';
+    if (width === 1216 && height === 832) return 'Landscape';
+    if (width === 1024 && height === 1024) return 'Square';
+    if (width && height) return 'Custom';
+    return 'Portrait';
 };
 
 const normalizeCustomDimension = (value: number) => {
@@ -208,7 +211,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                                     max={GENERATION_MAX_DIMENSION}
                                     step={RESOLUTION_STEP}
                                     disabled={!canEdit}
-                                    value={params.width}
+                                    value={params.width ?? 832}
                                     onChange={event => updateCustomDimension('width', Number(event.target.value))}
                                     className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs md:text-sm font-normal text-gray-800 dark:text-gray-200 dark:border-gray-800 dark:bg-gray-950 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                                 />
@@ -222,7 +225,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                                     max={GENERATION_MAX_DIMENSION}
                                     step={RESOLUTION_STEP}
                                     disabled={!canEdit}
-                                    value={params.height}
+                                    value={params.height ?? 1216}
                                     onChange={event => updateCustomDimension('height', Number(event.target.value))}
                                     className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs md:text-sm font-normal text-gray-800 dark:text-gray-200 dark:border-gray-800 dark:bg-gray-950 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                                 />
@@ -245,16 +248,23 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                                     <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${linkCustomDimensions ? 'translate-x-4' : ''}`} />
                                 </span>
                             </button>
-                            <div
-                                role="status"
-                                className={`rounded-xl px-2.5 py-1.5 text-[11px] font-medium leading-relaxed tabular-nums border ${
-                                    params.width * params.height <= OPUS_FREE_PIXEL_LIMIT
-                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800/40'
-                                        : 'bg-amber-50 text-amber-700 border-amber-200/60 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800/40'
-                                }`}
-                            >
-                                当前 {params.width.toLocaleString()} × {params.height.toLocaleString()} = {(params.width * params.height).toLocaleString()} 像素 · {params.width * params.height <= OPUS_FREE_PIXEL_LIMIT ? '在 Opus 免费像素范围内' : `超过免费像素上限 ${OPUS_FREE_PIXEL_LIMIT.toLocaleString()}`}
-                            </div>
+                            {(() => {
+                                const customWidth = Number(params.width) || 832;
+                                const customHeight = Number(params.height) || 1216;
+                                const totalPixels = customWidth * customHeight;
+                                return (
+                                    <div
+                                        role="status"
+                                        className={`rounded-xl px-2.5 py-1.5 text-[11px] font-medium leading-relaxed tabular-nums border ${
+                                            totalPixels <= OPUS_FREE_PIXEL_LIMIT
+                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800/40'
+                                                : 'bg-amber-50 text-amber-700 border-amber-200/60 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800/40'
+                                        }`}
+                                    >
+                                        当前 {customWidth.toLocaleString()} × {customHeight.toLocaleString()} = {totalPixels.toLocaleString()} 像素 · {totalPixels <= OPUS_FREE_PIXEL_LIMIT ? '在 Opus 免费像素范围内' : `超过免费像素上限 ${OPUS_FREE_PIXEL_LIMIT.toLocaleString()}`}
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>
@@ -287,7 +297,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                     <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">生成步数</label>
                     <input type="number" className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                         disabled={!canEdit}
-                        value={params.steps}
+                        value={params.steps ?? 28}
                         max={28}
                         onChange={(e) => {
                             const val = Math.min(28, parseInt(e.target.value) || 0);
@@ -375,12 +385,12 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                     <div>
                         <div className="mb-1 flex items-center justify-between">
                             <label className="block text-xs text-gray-500 dark:text-gray-500">CFG Scale</label>
-                            <span className="font-mono text-xs text-indigo-600 dark:text-indigo-400">{params.scale}</span>
+                            <span className="font-mono text-xs text-indigo-600 dark:text-indigo-400">{params.scale ?? 5}</span>
                         </div>
                         <input
                             type="range" min="0" max="10" step="0.1"
                             disabled={!canEdit}
-                            value={params.scale}
+                            value={params.scale ?? 5}
                             onChange={(e) => { setParams({ ...params, scale: parseFloat(e.target.value) }); markChange(); }}
                             className="w-full cursor-pointer accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
                         />

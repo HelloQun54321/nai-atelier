@@ -84,6 +84,9 @@ test('st-chatu8 remains authoritative for linked artists without creating duplic
   });
   bridge.saveState = async () => {};
   await bridge.syncArtists([{ externalId: 'st:one', name: '画风 A', fixedPrompt: 'first', updatedAt: 1 }]);
+  assert.equal(chains[0].params?.width, 832);
+  assert.equal(chains[0].params?.height, 1216);
+  assert.equal(chains[0].params?.sampler, 'k_euler_ancestral');
   chains[0].basePrompt = 'local edit that must not win';
   chains[0].updatedAt = 999;
   await bridge.syncArtists([{ externalId: 'st:one', name: '画风 A', fixedPrompt: 'second', updatedAt: 2 }]);

@@ -156,6 +156,17 @@ const artistHash = artist => sha256(JSON.stringify({
   negativePrompt: String(artist.negativePrompt || ''),
 }));
 
+const DEFAULT_CHAIN_PARAMS = {
+  width: 832,
+  height: 1216,
+  steps: 28,
+  scale: 5,
+  sampler: 'k_euler_ancestral',
+  qualityToggle: true,
+  ucPreset: 4,
+  characters: [],
+};
+
 const artistToChainBody = (artist, existing) => ({
   name: String(artist.name || '未命名风格串').slice(0, 100),
   description: existing?.description || '与 SillyTavern st-chatu8 双向同步',
@@ -166,7 +177,10 @@ const artistToChainBody = (artist, existing) => ({
   modules: artist.fixedPromptEnd ? [{
     id: 'st-chatu8-postfix', name: '后置画风', content: String(artist.fixedPromptEnd), isActive: true, position: 'post',
   }] : [],
-  params: existing?.params || {},
+  params: {
+    ...DEFAULT_CHAIN_PARAMS,
+    ...(existing?.params || {}),
+  },
   variableValues: existing?.variableValues || { subject: '' },
 });
 

@@ -3,6 +3,10 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-28
+### 修复:解决点击 st-chatu8 同步画师串触发 TypeError 白屏崩溃问题并修复存量数据
+- **根因修复与空值防御**：修复 st-chatu8 同步的风格串因缺失完整生成参数（`params: {}`）导致进入编辑器（`ChainEditor`）时 `params.width` 为 `undefined`，进而触发 `ChainEditorParams` 自定义尺寸区域 `params.width.toLocaleString()` 抛出运行时 TypeError 白屏崩溃的缺陷。
+- **全链路参数兜底**：在桥接生成（`st-chatu8-bridge.mjs`）、Worker 接口（`settingsRoutes.ts`）、工作区状态（`labWorkspace.ts`）与参数编辑面板（`ChainEditorParams.tsx`）四层全量注入 `normalizeParams` 与安全链式访问，确保任意缺失或异常参数均能自愈回退到标准默认生成参数。
+- **存量数据无感修复**：自动识别并修复本地数据库中存量的 30 个 st-chatu8 同步风格串，补齐标准生成参数，点击即可秒开进入工坊。
 ### 体验:Pixiv 顶栏改为搜索栏拉宽铺满+独立导航按钮，对齐 Danbooru 风格
 - **顶栏单行化重构**：移除 Pixiv 顶栏的胶囊式 `SegmentedControl` 选项卡，改为与 Danbooru 一致的布局——搜索栏 `flex-1` 自适应拉宽铺满，推荐 / 关注动态 / 我的收藏 / 排行榜 / 足迹 制成独立等高按钮依次排在搜索框之后，激活项实心高亮，消除中间空白与挤压感。
 - **交互一致**：保持原有切换语义（含足迹视图切换、画师上下文"返回推荐"），窄屏下按钮组支持横向滚动。

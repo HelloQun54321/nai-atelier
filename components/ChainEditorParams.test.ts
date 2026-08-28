@@ -224,4 +224,10 @@ describe('ChainEditorParams', () => {
     const restoredInput = screen.getByPlaceholderText('随机') as HTMLInputElement;
     expect(restoredInput.value).toBe('987654321');
   });
+
+  it('当 params 为空对象或缺少宽高时优雅渲染且不崩溃', () => {
+    renderParams({ params: {} as any });
+    expect(screen.getByRole('combobox', { name: '图片尺寸' })).toBeDefined();
+    expect(screen.getByRole('combobox', { name: '采样器' })).toBeDefined();
+  });
 });
