@@ -692,6 +692,26 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         return `NAI-${timestamp}.png`;
     };
 
+    // 窄屏没有预览卡（<lg 隐藏），大图灯箱是移动端唯一的下载/设封面入口
+    const handleLightboxDownload = async () => {
+        if (!lightboxImg) return;
+        try {
+            const response = await fetch(lightboxImg);
+            if (!response.ok) throw new Error(`下载失败: ${response.status}`);
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = getDownloadFilename();
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            notify('下载失败: ' + (error instanceof Error ? error.message : String(error)), 'error');
+        }
+    };
+
     // Helper to mark changes only if owner
     const markChange = () => {
         editorRevisionRef.current += 1;
@@ -1444,7 +1464,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             // that upload finished, which was especially visible on phones.
             setGeneratedImage(result.image);
             setPreviewMode('result');
-            if (window.matchMedia('(max-width: 767px)').matches) setLightboxImg(result.image);
+            if (window.matchMedia('(max-width: 1023px)').matches) setLightboxImg(result.image);
 
             // Leave the current task so React can commit and the browser can
             // paint the result before JSON serialization/history persistence.
@@ -2156,6 +2176,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             {/* Lightbox Modal */}
             {lightboxImg && (
                 <div className="fixed inset-0 z-[1500] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setLightboxImg(null)}>
+                    <div className="absolute top-4 left-4 z-10 flex gap-2" onClick={e => e.stopPropagation()}>
+                        <button type="button" onClick={handleLightboxDownload} className="mobile-touch rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-white backdrop-blur transition-colors hover:bg-white/20">下载</button>
+                        {isOwner && lightboxImg === generatedImage && chain.id !== 'playground' && (
+                            <button type="button" onClick={handleSavePreview} disabled={isUploading} className="mobile-touch rounded-lg bg-indigo-600/90 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50">{isUploading ? '上传中...' : '设为封面'}</button>
+                        )}
+                    </div>
                     {previewHistory.length > 1 && (
                         <button
                             className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"

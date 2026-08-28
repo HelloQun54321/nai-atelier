@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：补齐手机端实验室预览功能入口——大图灯箱左上角新增「下载」与条件显示的「设为封面」操作条（<lg 预览卡隐藏时的唯一入口），生成完成自动弹灯箱的断点从 767px 修正为与布局一致的 1023px，消除平板区间生成后无可见反馈的死角（fix: restore preview actions on mobile via lightbox and align auto-open breakpoint）。
 - **ZCode (GLM-5.3)**：修复编辑模式切换的三处蒙版状态机竞态——切模式前先清空 imageEditMaskData 防止旧模式蒙版画进新模式画布；applyOutpaint 调整画布尺寸后清空撤销/重做栈防过期快照破坏扩图语义；键盘 Ctrl+Z/Y 改经 latest-ref 调用最新 undo/redo，修复空依赖 effect 过期闭包把蒙版写进另一模式草稿（fix: resolve mask state races when switching lab edit modes）。
 - **ZCode (GLM-5.3)**：修复编辑画布三套 CSS 盒模型不同步导致的蒙版坐标错位——ImageEditCanvas 改为 ResizeObserver 量取容器可用空间后统一计算显示尺寸，底图/蒙版/叠加三画布绝对定位填满同一盒子，笔刷落点所见即所得；无 ResizeObserver 环境退化为 resize 监听（fix: unify image edit canvas boxes so mask coordinates match the visible base image）。
 - **ZCode (GLM-5.3)**：封堵上传通道存储型 XSS——`/api/upload` 增加图片扩展名白名单（PNG/JPEG/WebP，Content-Type 由白名单推导）与 12MB 大小上限，`/api/assets` 响应补 `X-Content-Type-Options: nosniff`（fix: restrict uploads to images and add nosniff to asset responses）。
