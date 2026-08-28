@@ -354,12 +354,11 @@ const App = () => {
     if (work) work.dataset.safeWorkRevealed = 'true';
   };
 
-  // keep-alive 视图按最近使用保留：桌面端上限 8（9 个可保留页面中几乎全部常驻），
-  // 切页往返不再触发整页卸载重建——配合 SmartImage 隐藏时保留图片，切回任意图库瞬时完整呈现。
+  // keep-alive 视图按最近使用保留：桌面端上限 9 = 全部可保留页面常驻，任何切页往返
+  // 都不再触发整页卸载重建——配合 SmartImage 隐藏时保留图片，切回任意图库瞬时完整呈现。
   // 手机浏览器内存管理激进（iOS Safari 内存紧张时会整页刷新），维持 4；手机端另有
-  // Cache API 持久图片缓存兜底，页面重建时图片仍能从本地缓存秒出。访问时提升到队尾，
-  // 超出上限时淘汰最久未用的（当前正在展示的视图总是队尾，不会被淘汰）。
-  const keepAliveLimit = () => (window.matchMedia('(max-width: 767px)').matches ? 4 : 8);
+  // Cache API 持久图片缓存兜底，页面重建时图片仍能从本地缓存秒出。访问时提升到队尾。
+  const keepAliveLimit = () => (window.matchMedia('(max-width: 767px)').matches ? 4 : 9);
   const keepViewMounted = (targetView: ViewState) => {
     if (!isKeepAliveView(targetView)) return;
     setMountedViews(prev => {

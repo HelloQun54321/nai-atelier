@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：桌面端 keep-alive 上限 8 → 9（全部可保留页面常驻、永不淘汰）。浏览器实测定位剩余重载根因：上限 8 时全 9 页轮换必有一个页面被挤出重建；提高后全轮换返回 AITag，页面 DOM 节点存活（探针验证）、封面零重新请求。测试中发现图片组件修复在 8 槽内本就生效（两页往返 DOM 存活、零请求）（perf: keep all desktop gallery views mounted so switching never remounts）。
 - **ZCode (GLM-5.3)**：keep-alive 待机上限按视口区分——桌面 4 → 8（可保留页面几乎全部常驻，多页轮换不再触发整页卸载重建），手机维持 4（规避移动浏览器内存压力导致的整页刷新；已有 Cache API 图片缓存兜底）（perf: raise desktop keep-alive limit to 8 so page switches never unmount galleries）。
 - **ZCode (GLM-5.3)**：画师库同源修复——收藏画师时落展示快照（nai_artist_favorite_details），"只看收藏"改为按收藏清单渲染（本地已保存画师 → 已加载词库条目 → 快照兜底），旧收藏进入筛选时按名字串行检索补齐；nai_fav_artists 格式不变，Agent 面板读写不受影响（fix: render artist favorites from the stored list instead of the loaded catalog slice）。
 - **ZCode (GLM-5.3)**：修复角色库"只看收藏"看不到词库角色——词库是无限分页加载而筛选只作用已加载子集；收藏时落展示快照（nai_character_favorite_details），筛选改为按收藏清单渲染（自定义取本地链、词库取快照/已加载条目、与标签页组合语义一致），旧收藏进入筛选时按名字串行检索补齐（fix: render character favorites from the stored list instead of the loaded catalog slice）。
