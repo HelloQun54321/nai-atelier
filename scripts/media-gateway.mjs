@@ -422,7 +422,7 @@ export const handleLanUnlock = async (req, res, { secret, configFile = LAN_CONFI
       retryAfter: Math.ceil((attempt.blockedUntil - Date.now()) / 1000),
     });
   }
-  const payload = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}') || {};
+  const payload = await readJsonBody(req, 4096);
   const pin = String(payload.pin || '');
   if (!/^\d{4}$/.test(pin) || pin !== configuredPin) {
     const failures = attempt.failures + 1;
@@ -451,7 +451,7 @@ export const handleLanPinUpdate = async (req, res, { secret, configFile = LAN_CO
   if (!hasValidLanCookie(req, secret)) {
     return sendJson(res, 401, { error: '需要先通过局域网密码验证才能修改', code: 'LAN_ACCESS_REQUIRED' });
   }
-  const payload = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}') || {};
+  const payload = await readJsonBody(req, 4096);
   try {
     await writeLanPin(String(payload.pin || ''), configFile);
   } catch (error) {
@@ -502,6 +502,16 @@ const readRequestBody = (req, limit) => new Promise((resolve, reject) => {
   });
   req.on('error', reject);
 });
+
+/** 解析 JSON 请求体；空 body 与非法 JSON 一律按空对象处理，避免未捕获异常击穿进程。 */
+const readJsonBody = async (req, limit) => {
+  const raw = (await readRequestBody(req, limit)).toString('utf8');
+  try {
+    return JSON.parse(raw || '{}') || {};
+  } catch {
+    return {};
+  }
+};
 
 const requestWorkerJson = (path, req, workerPort, { method = 'GET', body } = {}) => new Promise((resolve, reject) => {
   const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
@@ -3124,7 +3134,7 @@ const serveDistFile = async (req, res, url) => {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       const keyHash = keyHashFromRequest(req);
       if (!keyHash) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
-      const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
+      const body = await readJsonBody(req, 4096);
       const status = cloudQueue.get(String(body.taskId || ''));
       if (status && status.keyHash !== keyHash) return sendJson(res, 404, { error: '排队任务不存在' });
       if (!status?.cancelable || !status.controller) return sendJson(res, 409, { error: '当前任务已不能取消' });

@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：修复网关三处无 try/catch 的裸 JSON.parse（`/api/lan/unlock`、`/api/lan/pin`、`/api/generation-queue/cancel`）——局域网设备无需认证发送畸形 JSON 即可触发未捕获异常令整个 local-server 进程退出；新增 readJsonBody 安全解析助手统一按空对象兜底（fix: harden gateway JSON body parsing against unauthenticated DoS）。
 - **ZCode (GLM-5.3)**：修复网关 readRequestBody 的 30 秒 socket 空闲超时在 body 读完未解除的问题——该超时会误杀排队/上游生成超过 30 秒的请求，非流式路径出现"已扣费却拿不到图"；现于 'end' 事件中 `setTimeout(0)` 解除，慢 body 防护保留（fix: release gateway socket idle timeout after request body is read）。
 - **ZCode (GLM-5.3)**：实现用户指定的步数上限开关——新增偏好 `enforceFreeStepLimit`（默认开启），全局设置提供开关；开启时生成步数锁定为官方同步的 `freeMaxSteps`（替换写死的 28，官方调整自动跟随），关闭时放宽到 NovelAI 硬上限 50 并显示「已解除上限」提示；覆盖工坊与实验室四模式参数面板，补偏好回归测试（feat: add toggle for free step limit on generation）。
 - **ZCode (GLM-5.3)**：按用户确认的意图完成全项目 bug 排查（12 轮只读审计，未改代码）；随后开始逐项修复。第一项：README「项目定位」增加适用范围声明——本项目仅面向 NovelAI Opus 档位会员，其他档位与第三方服务未做适配；顺带补上 CHANGELOG 缺失的 2026-08-28 日期节标题（docs: note opus-only subscription scope in readme）。
