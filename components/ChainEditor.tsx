@@ -1242,6 +1242,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const coverAutoSaveTriggeredRef = useRef(false);
     const autoSaveCoverOnExit = async () => {
         if (coverAutoSaveTriggeredRef.current) return;
+        // 实验室（playground）是临时试验田，不是真正的风格串：它永远没有持久封面。
+        // 缺了这条豁免，实验室实例被 keep-alive 淘汰卸载时会把生成的图"自动设为封面"
+        // 并弹提示，而用户此刻早已在其他页面。
+        if (chain.id === 'playground') return;
         if (chain.type !== 'style' || chain.previewImage) return;
         if (!displayedPreviewImage || isUploading) return;
         try {
