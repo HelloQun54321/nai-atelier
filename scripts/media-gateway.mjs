@@ -24,6 +24,7 @@ const CACHE_INDEX = join(CACHE_DIR, 'index.json');
 const VIBE_RECOVERY_DIR = join(process.cwd(), 'local-data', 'vibe-recovery');
 const CLOUD_QUEUE_CONFIG_FILE = join(process.cwd(), 'local-data', 'cloud-queue.json');
 const CLOUD_QUEUE_CONFIG_VERSION = 2;
+const LAN_CONFIG_FILE = join(process.cwd(), 'local-data', 'lan-access.json');
 const CACHE_LIMIT = 1024 * 1024 * 1024;
 const CACHE_PRUNE_TARGET = 900 * 1024 * 1024;
 // pinned 封面缓存总量上限：封面单张数十 KB，正常画师/角色数量级远达不到；
@@ -360,6 +361,103 @@ const sendJson = (res, status, payload) => {
     'Cache-Control': 'no-store',
   });
   res.end(body);
+};
+const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+// 网关是手机访问 3000 端口的唯一入口，局域网密码校验/会话签发在这里承载；
+// worker 的 /api/lan/unlock 保留给本机直连兜底（其 env.PIN 是启动时快照）。
+// 密码每次校验实时读取配置文件，改密后立即生效，无需重启。
+const lanAccessAttempts = new Map();
+
+/** 读取局域网配置中的四位密码；文件缺失/损坏按未配置处理。 */
+export const readLanPin = async (configFile = LAN_CONFIG_FILE) => {
+  try {
+    const saved = JSON.parse(await readFile(configFile, 'utf8'));
+    if (/^\d{4}$/.test(String(saved.pin || ''))) return String(saved.pin);
+  } catch { /* 未生成或损坏：按未配置处理。 */ }
+  return null;
+};
+
+/** 原子写入新密码（临时文件 + 改名），保留 secret 等其他字段；非法输入抛出带 status 的错误。 */
+export const writeLanPin = async (pin, configFile = LAN_CONFIG_FILE) => {
+  if (!/^\d{4}$/.test(String(pin || ''))) {
+    throw Object.assign(new Error('局域网密码必须是 4 位数字'), { status: 400 });
+  }
+  await mkdir(dirname(configFile), { recursive: true });
+  const current = await readFile(configFile, 'utf8').then(
+    text => { try { return JSON.parse(text); } catch { return {}; } },
+    () => ({})
+  );
+  const next = { ...(current && typeof current === 'object' ? current : {}), pin: String(pin) };
+  const temporary = `${configFile}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  await rename(temporary, configFile);
+};
+
+/** 与 worker 端 createLanAccessToken 完全一致的令牌格式：expiresAt.nonce.HMAC-SHA256(base64url)。 */
+const createLanAccessToken = secret => {
+  const expiresAt = Date.now() + LAN_SESSION_MAX_AGE_SECONDS * 1000;
+  const nonce = randomUUID();
+  const value = `${expiresAt}.${nonce}`;
+  const signature = createHmac('sha256', secret).update(value).digest('base64url');
+  return `${value}.${signature}`;
+};
+
+const getLanAttemptKey = req =>
+  normalizeIp(req.socket.remoteAddress) || req.headers['user-agent'] || 'lan-device';
+
+/** 局域网解锁：本机回环直接放行；远端按配置文件实时密码校验，签发 30 天会话 Cookie。 */
+export const handleLanUnlock = async (req, res, { secret, configFile = LAN_CONFIG_FILE } = {}) => {
+  if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+  if (isLoopbackIp(req.socket.remoteAddress)) return sendJson(res, 200, { success: true, authorized: true });
+  const configuredPin = await readLanPin(configFile);
+  if (!configuredPin || !secret || secret.length < 16) {
+    return sendJson(res, 503, { error: '局域网访问密码尚未正确配置，请重新启动电脑端服务' });
+  }
+  const attemptKey = getLanAttemptKey(req);
+  const attempt = lanAccessAttempts.get(attemptKey) || { failures: 0, blockedUntil: 0 };
+  if (attempt.blockedUntil > Date.now()) {
+    return sendJson(res, 429, {
+      error: '尝试次数过多，请一分钟后再试',
+      code: 'LAN_ACCESS_BLOCKED',
+      retryAfter: Math.ceil((attempt.blockedUntil - Date.now()) / 1000),
+    });
+  }
+  const payload = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}') || {};
+  const pin = String(payload.pin || '');
+  if (!/^\d{4}$/.test(pin) || pin !== configuredPin) {
+    const failures = attempt.failures + 1;
+    const blockedUntil = failures >= 5 ? Date.now() + 60_000 : 0;
+    lanAccessAttempts.set(attemptKey, { failures: blockedUntil ? 0 : failures, blockedUntil });
+    return sendJson(res, blockedUntil ? 429 : 401, {
+      error: blockedUntil ? '连续输错5次，请一分钟后再试' : '密码不正确',
+      code: blockedUntil ? 'LAN_ACCESS_BLOCKED' : 'LAN_ACCESS_DENIED',
+      attemptsRemaining: blockedUntil ? 0 : 5 - failures,
+    });
+  }
+  lanAccessAttempts.delete(attemptKey);
+  const body = Buffer.from(JSON.stringify({ success: true, authorized: true }));
+  res.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': body.length,
+    'Cache-Control': 'no-store',
+    'Set-Cookie': `${LAN_ACCESS_COOKIE}=${createLanAccessToken(secret)}; Max-Age=${LAN_SESSION_MAX_AGE_SECONDS}; Path=/; HttpOnly; SameSite=Strict`,
+  });
+  res.end(body);
+};
+
+/** 修改局域网密码：需已有授权会话（本机回环直接放行），写入后立即生效。 */
+export const handleLanPinUpdate = async (req, res, { secret, configFile = LAN_CONFIG_FILE } = {}) => {
+  if (req.method !== 'PUT') return sendJson(res, 405, { error: 'Method not allowed' });
+  if (!hasValidLanCookie(req, secret)) {
+    return sendJson(res, 401, { error: '需要先通过局域网密码验证才能修改', code: 'LAN_ACCESS_REQUIRED' });
+  }
+  const payload = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}') || {};
+  try {
+    await writeLanPin(String(payload.pin || ''), configFile);
+  } catch (error) {
+    return sendJson(res, Number(error.status) || 400, { error: error.message || '密码无效' });
+  }
+  return sendJson(res, 200, { success: true });
 };
 
 const isLoopbackOrigin = value => {
@@ -2674,6 +2772,10 @@ const serveDistFile = async (req, res, url) => {
         return sendBridgeJson(req, res, Number(error.status) || 400, { error: error.message || 'st-chatu8 同步失败' });
       }
     }
+    // 局域网密码：解锁与改密由网关实时读取 local-data/lan-access.json 承载，
+    // 改密后立即生效无需重启（worker 的 env.PIN 是启动快照，仅作本机直连兜底）。
+    if (url.pathname === '/api/lan/unlock') return handleLanUnlock(req, res, { secret: lanSecret });
+    if (url.pathname === '/api/lan/pin') return handleLanPinUpdate(req, res, { secret: lanSecret });
     if (url.pathname.startsWith('/api/prompt-agent/')) {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       try {

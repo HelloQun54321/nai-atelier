@@ -158,6 +158,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [maintenanceStatus, setMaintenanceStatus] = useState<LocalMaintenanceStatus | null>(null);
   const [maintenanceStatusError, setMaintenanceStatusError] = useState('');
   const [maintenanceStatusLoading, setMaintenanceStatusLoading] = useState(false);
+  const [lanPin, setLanPin] = useState('');
+  const [lanPinSaving, setLanPinSaving] = useState(false);
   const [isCreatingPreset, setIsCreatingPreset] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
@@ -224,6 +226,29 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       setMaintenanceStatusLoading(false);
     }
   }, []);
+  const saveLanPin = async () => {
+    if (lanPinSaving) return;
+    if (!/^\d{4}$/.test(lanPin)) {
+      notify('新密码必须是 4 位数字', 'error');
+      return;
+    }
+    setLanPinSaving(true);
+    try {
+      const response = await fetch('/api/lan/pin', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: lanPin }),
+      });
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      if (!response.ok) throw new Error(payload?.error || '修改失败');
+      setLanPin('');
+      notify('局域网访问密码已更新，立即生效', 'success');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '修改失败', 'error');
+    } finally {
+      setLanPinSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!open || activeSection !== 'maintenance') return;
@@ -1129,7 +1154,34 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">电脑缩略图缓存</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">本地小图缓存已建立自动空间管理；清除后可重新生成，不影响原图。</p></div><Database className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs text-gray-500 dark:bg-gray-800/70 dark:text-gray-400">{maintenanceStatus ? <>已缓存 {maintenanceStatus.thumbnailCache.count} 张 · {(maintenanceStatus.thumbnailCache.bytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.limitBytes / 1024 / 1024).toFixed(0)} MB<br />固定封面 {maintenanceStatus.thumbnailCache.pinnedCount} 张 · {(maintenanceStatus.thumbnailCache.pinnedBytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.pinnedLimitBytes / 1024 / 1024).toFixed(0)} MB</> : '等待读取本地缓存状态…'}</div></div>
 
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">本地服务状态</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">状态来自当前运行的媒体网关与核心页面服务；手机访问时也会经过同一套验证。</p></div><button type="button" onClick={() => void refreshMaintenanceStatus()} disabled={maintenanceStatusLoading} className="mobile-touch flex flex-none items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" title="刷新本地服务状态"><RefreshCw className={`h-3.5 w-3.5 ${maintenanceStatusLoading ? 'animate-spin' : ''}`} />刷新</button></div>{maintenanceStatusError ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2.5 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">{maintenanceStatusError}</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2"><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.gatewayReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>媒体网关：{maintenanceStatus?.gatewayReady ? '可用' : '正在检查'}</div><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.workerReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : maintenanceStatus ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>核心页面服务：{maintenanceStatus?.workerReady ? '可用' : maintenanceStatus ? '未就绪' : '正在检查'}</div></div>}</div>
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="font-semibold text-gray-900 dark:text-white">局域网访问密码</h4>
+                    <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">手机通过局域网访问时使用的四位数字密码；电脑与手机均可修改，保存后立即生效，无需重启。</p>
+                  </div>
+                  <Lock className="h-4 w-4 flex-none text-indigo-500" />
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={lanPin}
+                    onChange={event => setLanPin(event.currentTarget.value.replace(/\D/g, '').slice(0, 4))}
+                    placeholder="新的 4 位数字密码"
+                    className="mobile-touch w-40 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void saveLanPin()}
+                    disabled={lanPinSaving || lanPin.length !== 4}
+                    className="mobile-touch flex-none rounded-xl bg-indigo-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                  >{lanPinSaving ? '保存中…' : '更新密码'}</button>
+                </div>
+              </div>
+
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">本地服务状态</h4>…<p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">状态来自当前运行的媒体网关与核心页面服务；手机访问时也会经过同一套验证。</p></div><button type="button" onClick={() => void refreshMaintenanceStatus()} disabled={maintenanceStatusLoading} className="mobile-touch flex flex-none items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" title="刷新本地服务状态"><RefreshCw className={`h-3.5 w-3.5 ${maintenanceStatusLoading ? 'animate-spin' : ''}`} />刷新</button></div>{maintenanceStatusError ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2.5 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">{maintenanceStatusError}</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2"><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.gatewayReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>媒体网关：{maintenanceStatus?.gatewayReady ? '可用' : '正在检查'}</div><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.workerReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : maintenanceStatus ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>核心页面服务：{maintenanceStatus?.workerReady ? '可用' : maintenanceStatus ? '未就绪' : '正在检查'}</div></div>}</div>
 
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
                 <DataBackupManager notify={notify} />

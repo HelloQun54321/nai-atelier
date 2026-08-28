@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHmac } from 'node:crypto';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   VibeEncodingMemoryCache,
   buildCachedVibeReferences,
@@ -35,10 +39,14 @@ import {
   fetchNovelAiGeneration,
   fetchNovelAiGenerationStream,
   getValidatedSource,
+  handleLanPinUpdate,
+  handleLanUnlock,
   isPixivConnectionMutationAllowed,
   normalizeCloudQueuePreferences,
   normalizeCloudQueueServiceUrl,
+  readLanPin,
   selectThumbnailConcurrency,
+  writeLanPin,
 } from './media-gateway.mjs';
 import { PromptAgentService, calculateAgentContextBudget, customProviderRuntime, detectModelCapabilities, estimateContextTokens, parseTranslationResponse, parseWebSearchResponse, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
 import { getNovelAiModelProfile, readNovelAiOfficialKnowledge, resolveNovelAiModelFamily, searchNovelAiOfficialKnowledge } from './novelai-agent-knowledge.mjs';
@@ -1320,4 +1328,133 @@ test('图像编辑费用：普通编辑不套用 V5 普通生图免费档，Focu
   assert.ok(estimateNovelAiGenerationCost({ ...base, parameters: { ...base.parameters, _local_edit_operation: 'outpaint' } }, false, true) > 0);
   assert.equal(computeGenerationPersonalUsage(base, 0, false, DEFAULT_NAI_RUNTIME, true, true).opusImagesDelta, 1);
   assert.equal(computeGenerationPersonalUsage(base, 0, true, DEFAULT_NAI_RUNTIME, true, true).opusImagesDelta, 0);
+});
+// ---- 局域网密码：网关实时读取配置文件，改密后立即生效 ----
+
+const lanTestReq = ({ method = 'POST', body = {}, remoteAddress = '192.168.1.50', cookie = '' }) => {
+  const chunks = [Buffer.from(JSON.stringify(body))];
+  return {
+    method,
+    socket: { remoteAddress },
+    headers: { cookie, 'user-agent': 'lan-pin-test' },
+    setTimeout: () => {},
+    destroy: () => {},
+    on: (event, handler) => {
+      if (event === 'data') chunks.forEach(chunk => handler(chunk));
+      if (event === 'end') handler();
+      return this;
+    },
+  };
+};
+
+const lanTestRes = () => {
+  const res = { statusCode: 0, headers: {}, body: '', ended: false };
+  res.writeHead = (status, headers) => { res.statusCode = status; res.headers = headers || {}; return res; };
+  res.end = data => { res.body = Buffer.isBuffer(data) ? data.toString('utf8') : String(data || ''); res.ended = true; };
+  return res;
+};
+
+test('局域网密码读写：保留 secret、拒绝非法值、缺失按未配置', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'nai-lan-'));
+  try {
+    const file = join(dir, 'lan-access.json');
+    await writeFile(file, JSON.stringify({ pin: '0526', secret: 's'.repeat(32) }));
+    assert.equal(await readLanPin(file), '0526');
+    await writeLanPin('1234', file);
+    assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { pin: '1234', secret: 's'.repeat(32) });
+    await assert.rejects(() => writeLanPin('12a4', file), /4 位数字/);
+    await assert.rejects(() => writeLanPin('123', file), /4 位数字/);
+    assert.equal(await readLanPin(join(dir, 'missing.json')), null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('局域网解锁：错误密码计数、连错 5 次锁定、正确密码签发与 worker 兼容的会话 Cookie', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'nai-lan-'));
+  try {
+    const file = join(dir, 'lan-access.json');
+    const secret = 'x'.repeat(32);
+    await writeFile(file, JSON.stringify({ pin: '0526', secret }));
+    const ip = '192.168.1.70';
+    for (let index = 0; index < 4; index += 1) {
+      const res = lanTestRes();
+      await handleLanUnlock(lanTestReq({ body: { pin: '0000' }, remoteAddress: ip }), res, { secret, configFile: file });
+      assert.equal(res.statusCode, 401);
+      const payload = JSON.parse(res.body);
+      assert.equal(payload.code, 'LAN_ACCESS_DENIED');
+      assert.equal(payload.attemptsRemaining, 4 - index);
+    }
+    // 第 5 次输错当场进入一分钟锁定（与 worker 行为一致，返回 429）。
+    const fifth = lanTestRes();
+    await handleLanUnlock(lanTestReq({ body: { pin: '0000' }, remoteAddress: ip }), fifth, { secret, configFile: file });
+    assert.equal(fifth.statusCode, 429);
+    assert.equal(JSON.parse(fifth.body).code, 'LAN_ACCESS_BLOCKED');
+    const blocked = lanTestRes();
+    await handleLanUnlock(lanTestReq({ body: { pin: '0526' }, remoteAddress: ip }), blocked, { secret, configFile: file });
+    assert.equal(blocked.statusCode, 429);
+    assert.equal(JSON.parse(blocked.body).code, 'LAN_ACCESS_BLOCKED');
+    assert.equal(blocked.headers['Set-Cookie'], undefined);
+    // 换一个 IP 用正确密码：签发 30 天 Cookie，签名格式与 worker 端完全一致。
+    const ok = lanTestRes();
+    await handleLanUnlock(lanTestReq({ body: { pin: '0526' }, remoteAddress: '192.168.1.71' }), ok, { secret, configFile: file });
+    assert.equal(ok.statusCode, 200);
+    const setCookie = ok.headers['Set-Cookie'];
+    assert.match(setCookie, /^nai_lan_access=[^;]+; Max-Age=2592000; Path=\/; HttpOnly; SameSite=Strict$/);
+    const token = setCookie.slice('nai_lan_access='.length).split(';')[0];
+    const [expiresAt, nonce, signature] = token.split('.');
+    assert.match(expiresAt, /^\d+$/);
+    assert.equal(signature, createHmac('sha256', secret).update(`${expiresAt}.${nonce}`).digest('base64url'));
+    // 本机回环直接放行且不签发 Cookie。
+    const local = lanTestRes();
+    await handleLanUnlock(lanTestReq({ body: { pin: 'x' }, remoteAddress: '127.0.0.1' }), local, { secret, configFile: file });
+    assert.equal(local.statusCode, 200);
+    assert.equal(local.headers['Set-Cookie'], undefined);
+    assert.equal(JSON.parse(local.body).authorized, true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('局域网改密：未授权拒绝、改后旧密码立即失效且 secret 保留', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'nai-lan-'));
+  try {
+    const file = join(dir, 'lan-access.json');
+    const secret = 'y'.repeat(32);
+    await writeFile(file, JSON.stringify({ pin: '0526', secret }));
+    // LAN 客户端未携带授权 Cookie → 拒绝。
+    const denied = lanTestRes();
+    await handleLanPinUpdate(lanTestReq({ method: 'PUT', body: { pin: '8888' }, remoteAddress: '192.168.1.80' }), denied, { secret, configFile: file });
+    assert.equal(denied.statusCode, 401);
+    // 本机回环直接放行。
+    const local = lanTestRes();
+    await handleLanPinUpdate(lanTestReq({ method: 'PUT', body: { pin: '8888' }, remoteAddress: '127.0.0.1' }), local, { secret, configFile: file });
+    assert.equal(local.statusCode, 200);
+    assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { pin: '8888', secret });
+    // 已授权手机（先解锁拿 Cookie）改密 → 成功；旧密码立即失效、新密码立即可用。
+    const unlock = lanTestRes();
+    await handleLanUnlock(lanTestReq({ body: { pin: '8888' }, remoteAddress: '192.168.1.81' }), unlock, { secret, configFile: file });
+    assert.equal(unlock.statusCode, 200);
+    const cookie = unlock.headers['Set-Cookie'].split(';')[0];
+    const update = lanTestRes();
+    await handleLanPinUpdate(lanTestReq({ method: 'PUT', body: { pin: '2468' }, remoteAddress: '192.168.1.81', cookie }), update, { secret, configFile: file });
+    assert.equal(update.statusCode, 200);
+    assert.equal(await readLanPin(file), '2468');
+    const oldPin = lanTestRes();
+    await handleLanUnlock(lanTestReq({ body: { pin: '8888' }, remoteAddress: '192.168.1.82' }), oldPin, { secret, configFile: file });
+    assert.equal(oldPin.statusCode, 401);
+    const newPin = lanTestRes();
+    await handleLanUnlock(lanTestReq({ body: { pin: '2468' }, remoteAddress: '192.168.1.82' }), newPin, { secret, configFile: file });
+    assert.equal(newPin.statusCode, 200);
+    // 非法值拒绝且不落盘；非 PUT 拒绝。
+    const invalid = lanTestRes();
+    await handleLanPinUpdate(lanTestReq({ method: 'PUT', body: { pin: 'abc' }, remoteAddress: '127.0.0.1' }), invalid, { secret, configFile: file });
+    assert.equal(invalid.statusCode, 400);
+    assert.equal(await readLanPin(file), '2468');
+    const wrongMethod = lanTestRes();
+    await handleLanPinUpdate(lanTestReq({ method: 'POST', body: { pin: '1111' }, remoteAddress: '127.0.0.1' }), wrongMethod, { secret, configFile: file });
+    assert.equal(wrongMethod.statusCode, 405);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
