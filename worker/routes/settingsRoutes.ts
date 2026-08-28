@@ -94,7 +94,9 @@ export async function handleLanRoute(request: Request, env: Env, url: URL): Prom
     if (!/^\d{4}$/.test(payload.pin || '') || payload.pin !== configuredPin) {
       const failures = attempt.failures + 1;
       const blockedUntil = failures >= 5 ? Date.now() + 60_000 : 0;
-      lanAccessAttempts.set(attemptKey, { failures: blockedUntil ? 0 : failures, blockedUntil });
+      // 失败计数跨锁定周期累计（仅成功解锁时清零）：否则每轮锁定到期后归零，
+      // 4 位 PIN 可被约 7200 次/天的持续爆破逐日击穿
+      lanAccessAttempts.set(attemptKey, { failures, blockedUntil });
       return json({
         error: blockedUntil ? '连续输错5次，请一分钟后再试' : '密码不正确',
         code: blockedUntil ? 'LAN_ACCESS_BLOCKED' : 'LAN_ACCESS_DENIED',

@@ -427,7 +427,8 @@ export const handleLanUnlock = async (req, res, { secret, configFile = LAN_CONFI
   if (!/^\d{4}$/.test(pin) || pin !== configuredPin) {
     const failures = attempt.failures + 1;
     const blockedUntil = failures >= 5 ? Date.now() + 60_000 : 0;
-    lanAccessAttempts.set(attemptKey, { failures: blockedUntil ? 0 : failures, blockedUntil });
+    // 失败计数跨锁定周期累计（仅成功解锁时清零），防止按天爆破
+    lanAccessAttempts.set(attemptKey, { failures, blockedUntil });
     return sendJson(res, blockedUntil ? 429 : 401, {
       error: blockedUntil ? '连续输错5次，请一分钟后再试' : '密码不正确',
       code: blockedUntil ? 'LAN_ACCESS_BLOCKED' : 'LAN_ACCESS_DENIED',
