@@ -3,6 +3,8 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-28
+### 修复:修复编辑页左上角返回按钮偶发点击无响应问题
+- **返回导航调用修复**：修复 `handleReturnFromEditor` 返回跳转逻辑，补正函数调用并移除视图跳转外层不必要的 `startTransition` 包装，确保点击左上角 `<ArrowLeft>` 返回按钮时立即、同步触发视图状态切换，杜绝点击后无任何响应的问题。
 ### 修复:解决从编辑页返回列表时丢失浏览位置直接回到顶部的问题
 - **容器隐藏滚动防护**：在 `useKeepAliveScrollRestore` 中增加视图激活与非零高度防护（`activeRef.current && root.clientHeight > 0`），彻底阻止列表容器在切换隐藏（`display: none`）瞬间由浏览器派发的 `scrollTop = 0` 虚假滚动事件冲掉内存中的真实位置缓存。
 - **返回定位锚点联通**：在 `handleReturnFromEditor` 返回跳转时重新携带 `selectedId` 作为 `returnTargetId`，使列表按需提前补齐渲染批次（`visibleCount`），确保长列表在拥有完整可滚动高度的基础上精确恢复至离开前的像素级视口位置。

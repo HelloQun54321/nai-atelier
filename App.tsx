@@ -1,5 +1,5 @@
 
-import React, { lazy, startTransition, Suspense, useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Layout } from './components/Layout';
 import { ChainList } from './components/ChainList';
 import { useConfirmDialog } from './components/ConfirmDialog';
@@ -405,15 +405,13 @@ const App = () => {
       setIsEditorDirty(false);
     }
 
-    startTransition(() => {
-      setSelectedId(id);
-      setView(newView);
-      keepViewMounted(newView);
-      if (newView === 'playground' && options.externalImport) {
-        setPlaygroundImportToken(prev => prev + 1);
-      }
-      if (newView === 'playground') ensurePlayground();
-    });
+    setSelectedId(id);
+    setView(newView);
+    keepViewMounted(newView);
+    if (newView === 'playground' && options.externalImport) {
+      setPlaygroundImportToken(prev => prev + 1);
+    }
+    if (newView === 'playground') ensurePlayground();
 
     // Auto-load data based on view, respecting cache
     if ((newView === 'list' || newView === 'characters') && options.refreshData !== false) refreshData();
@@ -502,7 +500,7 @@ const App = () => {
     // 1. 确保列表渲染批次（visibleCount）包含该卡片及之前的所有卡片，保证容器拥有足够的高度恢复原滚动位置；
     // 2. useKeepAliveScrollRestore 精确恢复离开前的像素级滚动位置；
     // 3. 若目标卡片仍在视口内则不强制居中，若因排序变动离开视口则由 useRestoreListAnchor 兜底滚回可见范围。
-    return handleNavigate(selectedChain?.type === 'character' ? 'characters' : 'list', selectedChain?.id || selectedId, { refreshData: false });
+    void handleNavigate(selectedChain?.type === 'character' ? 'characters' : 'list', selectedChain?.id || selectedId, { refreshData: false });
   };
 
   if (!currentUser && !dbConfigError) {
