@@ -187,7 +187,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors pointer-events-none" />
                                         <TagCoverActions
                                             favorite={isFav}
-                                            onToggleFavorite={() => toggleFav(artist.name)}
+                                            onToggleFavorite={() => toggleFav(artist)}
                                             candidate={viewMode === 'original' ? coverCandidates[artist.id] : null}
                                             onSetCover={viewMode === 'original' ? candidate => setDanbooruCover(artist, candidate) : undefined}
                                             pinPlacement="bottom-right"
@@ -233,6 +233,12 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     const [searchTerm, setSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
     const [favorites, setFavorites] = useState<Set<string>>(new Set());
+    // 收藏画师的展示快照（中文名/作品数）：词库画师是无限分页加载的，"只看收藏"若只在
+    // 已加载子集里过滤，未加载页的收藏将永远不可见。收藏时落一份快照，筛选时按收藏清单渲染。
+    const [favoriteArtistDetails, setFavoriteArtistDetails] = useState<Record<string, { name?: string; chinese?: string; postCount?: number }>>(() => {
+        try { return JSON.parse(localStorage.getItem('nai_artist_favorite_details') || '{}'); }
+        catch { return {}; }
+    });
     const [coverCandidates, setCoverCandidates] = useState<Record<string, DanbooruCoverCandidate | null>>({});
     const [showFavOnly, setShowFavOnly] = useState(false);
     const [usePrefix, setUsePrefix] = useState(true);
@@ -563,13 +569,26 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         localStorage.setItem('nai_copy_history', JSON.stringify(newHistory));
     };
 
-    const toggleFav = (name: string, e?: React.MouseEvent) => {
+    const toggleFav = (artist: Artist, e?: React.MouseEvent) => {
         e?.stopPropagation();
+        const wasFavorite = favorites.has(artist.name);
         const newFav = new Set(favorites);
-        if (newFav.has(name)) newFav.delete(name);
-        else newFav.add(name);
+        if (wasFavorite) newFav.delete(artist.name);
+        else newFav.add(artist.name);
         setFavorites(newFav);
         localStorage.setItem('nai_fav_artists', JSON.stringify(Array.from(newFav)));
+        setFavoriteArtistDetails(previous => {
+            if (wasFavorite) {
+                if (!(artist.name in previous)) return previous;
+                const next = { ...previous };
+                delete next[artist.name];
+                try { localStorage.setItem('nai_artist_favorite_details', JSON.stringify(next)); } catch { /* 配额满时保留会话内状态 */ }
+                return next;
+            }
+            const next = { ...previous, [artist.name]: { name: artist.name, chinese: artist.chineseName, postCount: artist.postCount } };
+            try { localStorage.setItem('nai_artist_favorite_details', JSON.stringify(next)); } catch { /* 配额满时保留会话内状态 */ }
+            return next;
+        });
     };
 
     const toggleCart = (name: string, e?: React.MouseEvent) => {
@@ -663,8 +682,36 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         return result;
     }, [artistsData, catalogSearchResults, gachaArtists, loadedCatalogArtists, searchTerm]);
 
+    // "只看收藏"（无搜索词、非抽卡）按收藏清单渲染：词库画师是无限分页加载的，
+    // 按"已加载子集"过滤会让未加载页的收藏永远显示不出来。优先取本地已保存画师，
+    // 其次取已加载词库条目，最后取收藏时落下的展示快照。
+    const favoriteArtists = useMemo(() => {
+        if (!showFavOnly || searchTerm.trim() || gachaArtists) return null;
+        const persistedByName = new Map((artistsData || []).map(artist => [artist.name.toLowerCase(), artist]));
+        const loadedByName = new Map(loadedCatalogArtists.map(entry => [entry.name, entry]));
+        const result: Artist[] = [];
+        for (const name of favorites) {
+            const key = name.toLowerCase();
+            const persisted = persistedByName.get(key);
+            const entry = loadedByName.get(name);
+            const snapshot = favoriteArtistDetails[name];
+            result.push({
+                id: persisted?.id || catalogArtistId(name),
+                name,
+                imageUrl: persisted?.imageUrl || '',
+                previewUrl: persisted?.previewUrl,
+                benchmarks: persisted?.benchmarks || [],
+                chineseName: entry?.chinese ?? snapshot?.chinese ?? persisted?.chineseName,
+                postCount: entry?.postCount ?? snapshot?.postCount ?? persisted?.postCount,
+                catalogOnly: !persisted,
+            });
+        }
+        return result;
+    }, [artistsData, favoriteArtistDetails, gachaArtists, loadedCatalogArtists, searchTerm, showFavOnly, favorites]);
+
     // MEMOIZED Filtered Artists to prevent stutter during layout changes
     const filteredArtists = useMemo(() => {
+        if (favoriteArtists) return favoriteArtists;
         return availableArtists.filter(a => {
             if (showFavOnly && !favorites.has(a.name)) return false;
             if (searchTerm) {
@@ -673,7 +720,42 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
             }
             return true;
         });
-    }, [availableArtists, showFavOnly, favorites, searchTerm]);
+    }, [availableArtists, favoriteArtists, showFavOnly, favorites, searchTerm]);
+
+    // 旧收藏没有展示快照：进入"只看收藏"时按名字向本地词库逐个检索补齐（串行 + 间隔，避免压垮词库读取）。
+    // 词库中已查不到的记一个仅含名字的快照，避免每次进入都重复检索。
+    useEffect(() => {
+        if (!showFavOnly || searchTerm.trim() || gachaArtists) return;
+        const missing = Array.from(favorites).filter(name => !favoriteArtistDetails[name]);
+        if (!missing.length) return;
+        let cancelled = false;
+        void (async () => {
+            for (const name of missing) {
+                if (cancelled) return;
+                try {
+                    const results = await searchArtistDictionary(name, 5, artistSort);
+                    if (cancelled) return;
+                    const entry = results.find(item => item.name === name)
+                        ?? results.find(item => item.name.toLowerCase() === name.toLowerCase());
+                    setFavoriteArtistDetails(previous => {
+                        if (previous[name] || cancelled) return previous;
+                        const next = {
+                            ...previous,
+                            [name]: entry
+                                ? { name: entry.name, chinese: entry.chinese, postCount: entry.postCount }
+                                : { name },
+                        };
+                        try { localStorage.setItem('nai_artist_favorite_details', JSON.stringify(next)); } catch { /* 配额满时保留会话内状态 */ }
+                        return next;
+                    });
+                } catch {
+                    return; // 词库检索失败：中止本轮，下次进入筛选时继续补
+                }
+                await new Promise(resolve => window.setTimeout(resolve, 120));
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [showFavOnly, searchTerm, gachaArtists, favorites, favoriteArtistDetails, artistSort]);
 
     // 目录预取：当前页可见画师（前 40 个）的封面候选提前请求并固定保存（pin），
     // 滚动/浏览时封面秒出；getCoverSet 自带 14 天缓存与 300ms 串行限流，不重复打 Danbooru API。
