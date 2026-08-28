@@ -43,11 +43,12 @@ import {
   buildPixivMediaUrl,
   buildPixivPreviewMediaUrl,
   getPixivCurrentPageUrl,
-  importPixivImageAsDataUrl,
+  importPixivImageAsFile,
   pixivArtworkUrl,
   pixivPageCount,
   pixivService,
 } from '../services/pixivService';
+import { api } from '../services/api';
 import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHistoryService';
 
 interface PixivGalleryProps {
@@ -654,13 +655,15 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     setSaving(true);
     try {
       const pageUrl = getPixivCurrentPageUrl(illust, selectedPage);
-      const imageUrl = await importPixivImageAsDataUrl(pageUrl);
+      // 经 /api/upload 转存为 R2 资产 URL：避免多 MB base64 dataURL 直接入库并随灵感缓存常驻内存
+      const imageFile = await importPixivImageAsFile(pageUrl);
+      const uploaded = await api.uploadFile(imageFile, 'inspirations');
       await db.saveInspiration({
         id: createUuid(),
         userId: currentUser.id,
         username: currentUser.username,
         title: illust.title || `Pixiv #${illust.id}`,
-        imageUrl,
+        imageUrl: uploaded.url,
         prompt: illust.tags.join(', '),
         tags: ['Pixiv', ...illust.tags.slice(0, 8)],
         sourceType: 'pixiv',
