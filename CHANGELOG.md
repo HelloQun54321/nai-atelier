@@ -4,6 +4,10 @@
 
 ## 2026-08-29
 
+### 修复:局部重绘/扩图画布三套尺寸路径不同步，蒙版坐标与可见底图错位
+- **根因**：编辑画布的底图 canvas 由 `max-h-[62vh]` 自行约束、蒙版/叠加 canvas 填满 aspect-ratio wrapper、wrapper 又被容器高度钳制——三者尺寸路径互不相同。视口偏矮（如竖图叠加参数面板把画布区压矮）时，蒙版坐标系与可见底图分离，笔刷落点系统性偏移且 Focused 选区框失准。
+- **修复**：`ImageEditCanvas` 改为按容器实际可用空间（含 62vh 上限）用 ResizeObserver 精确计算唯一显示尺寸，wrapper 显式定宽高，底图/蒙版/叠加三张画布统一绝对定位填满同一盒子——坐标映射自洽、所见即所得；jsdom 等无 ResizeObserver 环境自动退化为窗口 resize 监听。
+
 ### 修复:封堵上传通道的存储型 XSS 与配额绕过
 - **根因**：`/api/upload` 不校验文件大小，且 Content-Type 直接采信客户端声明（可存任意 `text/html`）；`/api/assets` 响应又缺 `X-Content-Type-Options: nosniff`——持有局域网会话的设备可上传 HTML/脚本内容并在应用同源执行，调用全部 `/api/*`（清历史、删库、改预算）。
 - **修复**：上传仅接受 PNG/JPEG/WebP（按扩展名白名单推导 Content-Type，不再采信客户端声明），并加上与 base64 路径一致的 12MB 上限；`/api/assets` 响应补 `nosniff`，禁止浏览器嗅探 MIME。

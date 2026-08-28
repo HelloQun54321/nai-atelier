@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：修复编辑画布三套 CSS 盒模型不同步导致的蒙版坐标错位——ImageEditCanvas 改为 ResizeObserver 量取容器可用空间后统一计算显示尺寸，底图/蒙版/叠加三画布绝对定位填满同一盒子，笔刷落点所见即所得；无 ResizeObserver 环境退化为 resize 监听（fix: unify image edit canvas boxes so mask coordinates match the visible base image）。
 - **ZCode (GLM-5.3)**：封堵上传通道存储型 XSS——`/api/upload` 增加图片扩展名白名单（PNG/JPEG/WebP，Content-Type 由白名单推导）与 12MB 大小上限，`/api/assets` 响应补 `X-Content-Type-Options: nosniff`（fix: restrict uploads to images and add nosniff to asset responses）。
 - **ZCode (GLM-5.3)**：移除 worker 全局 CORS 通配头（`corsHeaders` 常量与 json/error/aitag/zip/SSE/assets 各处展开）——回环免认证 + `ACAO:*` 组合允许本机浏览器中的恶意网页无认证读写全部 API（drive-by CSRF）；同源应用不需要 CORS，跨源预检现必然失败，OPTIONS 分支改为空 204（fix: remove wildcard CORS headers from worker responses）。
 - **ZCode (GLM-5.3)**：修复网关三处无 try/catch 的裸 JSON.parse（`/api/lan/unlock`、`/api/lan/pin`、`/api/generation-queue/cancel`）——局域网设备无需认证发送畸形 JSON 即可触发未捕获异常令整个 local-server 进程退出；新增 readJsonBody 安全解析助手统一按空对象兜底（fix: harden gateway JSON body parsing against unauthenticated DoS）。
