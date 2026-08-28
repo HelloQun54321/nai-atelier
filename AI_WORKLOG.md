@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：蒙版绘制增加多点触控防护——按下/移动/抬起只响应主指针（isPrimary），第二指/手掌误触不再导致笔迹跳变与撤销栈污染（fix: ignore non-primary pointers in mask drawing）。
 - **ZCode (GLM-5.3)**：worker 后端请求处理加固——chains/chains name·description、benchmarks config 等缺字段 bind 补默认值；vibe 强度/灵感 useCount·updatedAt/历史 createdAt 等 NaN 归一；/api/assets If-None-Match 支持弱校验器与多值；st-chatu8 导入按 meta.changes 计数；agent 概览先 ensure vibe/角色参考 schema；灵感 sourceUrl 仅接受 https（fix: harden worker request binding, cache negotiation and agent overview queries）。
 - **ZCode (GLM-5.3)**：App.refreshData 加请求代际并发守卫，过期刷新不再提前清 loading 或覆盖新数据（fix: serialize concurrent chain list refreshes with a seq guard）。
 - **ZCode (GLM-5.3)**：Pixiv"加入灵感库"改走 /api/upload 转存 R2 资产 URL（importPixivImageAsDataUrl → importPixivImageAsFile），消除多 MB base64 原图入库并随灵感缓存常驻内存的问题（perf: store pixiv inspirations as uploaded assets instead of data urls）。

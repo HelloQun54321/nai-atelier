@@ -413,7 +413,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!maskEditable) return;
+    if (!maskEditable || !event.isPrimary) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     maskRestoreRevisionRef.current += 1;
     const point = getCanvasPoint(event);
@@ -432,7 +432,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!maskEditable) return;
+    if (!maskEditable || !event.isPrimary) return;
     if (selectingRef.current) {
       const point = getCanvasPoint(event);
       const start = startPointRef.current;
@@ -449,6 +449,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   };
 
   const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!event.isPrimary) return;
     if (maskEditable && (drawingRef.current || selectingRef.current)) persistMask();
     drawingRef.current = false;
     selectingRef.current = false;
