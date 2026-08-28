@@ -575,11 +575,17 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
       if (!file || !(file instanceof File)) return error('Invalid file', 400);
       // folder/ext 净化为单段安全字符：两者都来自客户端，直接拼接可写出任意前缀的 R2 key
       const folder = String(formData.get('folder') || 'misc').replace(/[^a-zA-Z0-9_-]/g, '') || 'misc';
-      const ext = String(file.name.split('.').pop() || 'png').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || 'bin';
+      // 扩展名仅接受图片类型；Content-Type 由白名单推导而非采信客户端声明，防止借上传通道存储 HTML/脚本
+      const extensionByType: Record<string, string> = { png: 'png', jpg: 'jpeg', jpeg: 'jpeg', webp: 'webp' };
+      const rawExt = String(file.name.split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
+      const ext = extensionByType[rawExt];
+      if (!ext) return error('仅支持上传 PNG、JPEG 或 WebP 图片', 400);
+      if (file.size > MAX_MANAGED_IMAGE_BYTES) {
+        return error(`图片不能超过 ${Math.floor(MAX_MANAGED_IMAGE_BYTES / 1024 / 1024)}MB`, 413);
+      }
       const filename = `${folder}/${currentUser.id}_${Date.now()}.${ext}`;
-      const fileSize = file.size;
-      await env.BUCKET.put(filename, file.stream(), { httpMetadata: { contentType: file.type } });
-      return json({ url: `/api/assets/${filename}`, size: fileSize });
+      await env.BUCKET.put(filename, file.stream(), { httpMetadata: { contentType: `image/${ext}` } });
+      return json({ url: `/api/assets/${filename}`, size: file.size });
   }
 
   // --- CRUD Routes ---

@@ -4,6 +4,10 @@
 
 ## 2026-08-29
 
+### 修复:封堵上传通道的存储型 XSS 与配额绕过
+- **根因**：`/api/upload` 不校验文件大小，且 Content-Type 直接采信客户端声明（可存任意 `text/html`）；`/api/assets` 响应又缺 `X-Content-Type-Options: nosniff`——持有局域网会话的设备可上传 HTML/脚本内容并在应用同源执行，调用全部 `/api/*`（清历史、删库、改预算）。
+- **修复**：上传仅接受 PNG/JPEG/WebP（按扩展名白名单推导 Content-Type，不再采信客户端声明），并加上与 base64 路径一致的 12MB 上限；`/api/assets` 响应补 `nosniff`，禁止浏览器嗅探 MIME。
+
 ### 修复:移除全局限 CORS 通配头，封堵恶意网页无认证读写本机 API 的通道
 - **根因**：worker 所有响应（含回环直连）都携带 `Access-Control-Allow-Origin: *`，而回环 Host 本身免认证——本机浏览器访问任意恶意网页时，该网页的 JS 可直接 fetch `localhost:3000/api/*` 读取风格串/历史/灵感并增删改数据（drive-by CSRF）。同源单机应用本不需要任何 CORS 头。
 - **修复**：删除 worker 全部 `Access-Control-Allow-*` 响应头；同源 SPA 不会发起预检，跨源预检因无 CORS 头必然失败。OPTIONS 分支保留并改为空 204。

@@ -52,6 +52,8 @@ export default {
           object.writeHttpMetadata(headers);
           headers.set('etag', object.httpEtag);
           headers.set('Cache-Control', 'private, max-age=31536000, immutable');
+          // 对象内容不可信时禁止浏览器嗅探 MIME，防止借资产存储 HTML/脚本形成同源 XSS
+          headers.set('X-Content-Type-Options', 'nosniff');
           return new Response(object.body, { headers });
         } catch (e) {
           console.error('asset proxy failed', e);
