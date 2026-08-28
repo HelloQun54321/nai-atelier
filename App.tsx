@@ -71,12 +71,9 @@ const App = () => {
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const isDark = themeMode === 'dark' || (themeMode === 'system' && systemDark);
   const [safeModeStartup, setSafeModeStartup] = useState(() => localStorage.getItem('nai_safe_mode_startup') !== 'false');
-  // 优先恢复上次会话的手动开关状态（nai_safe_mode），没有记录时回退到"启动时进入安全模式"偏好
-  const [safeMode, setSafeMode] = useState(() => {
-    const lastState = localStorage.getItem('nai_safe_mode');
-    if (lastState === 'true' || lastState === 'false') return lastState === 'true';
-    return localStorage.getItem('nai_safe_mode_startup') !== 'false';
-  });
+  // 启动偏好唯一决定启动时的安全模式状态：开关开启则每次启动必定进入安全模式，关闭则必定关闭。
+  // 会话中的手动开关只影响当前会话；nai_safe_mode 键继续作为当前状态镜像供 Agent 读取，不参与启动判定。
+  const [safeMode, setSafeMode] = useState(() => localStorage.getItem('nai_safe_mode_startup') !== 'false');
   const [safeModeHideTitles, setSafeModeHideTitles] = useState(() => localStorage.getItem('nai_safe_mode_hide_titles') !== 'false');
 
   // Toast State
