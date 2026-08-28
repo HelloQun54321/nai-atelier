@@ -4,6 +4,10 @@
 
 ## 2026-08-29
 
+### 修复:Linux/macOS 启动脚本功能残缺，与主编排器严重不一致
+- **根因**：`local-server.sh` 自行直启 wrangler，缺少 media-gateway、局域网 PIN 绑定、Agent、Pixiv、st-chatu8 桥与 Tag 更新服务，且端口布局（单进程 3000）与 `local-server.mjs`（网关 3000 + worker 3001）冲突——Termux/macOS/Linux 用户按文档跑 `.sh` 得到的是功能残缺的服务。
+- **修复**：`.sh` 改为薄启动器，保留 Termux 环境检测与 Node 检查后直接 `exec` 委托给 `local-server.mjs`，各平台行为完全一致。
+
 ### 修复:开启 NAI_WRANGLER_LOG=all 调试日志会导致服务启动失败
 - **根因**：该模式直接跳过 stdout 消费——wrangler 写满 64KB 管道缓冲后阻塞假死；同时看门狗因始终收不到"有输出"标记，在 25 秒后把健康进程误判为代理黑洞杀掉重启一次，随后 180 秒超时报「核心页面服务启动超过 3 分钟」退出。
 - **修复**：新增 fullWranglerLog 透传函数——完整输出仍然持续消费管道并推进看门狗标记，调试模式恢复正常可用。

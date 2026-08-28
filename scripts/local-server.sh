@@ -2,10 +2,13 @@
 set -e
 
 echo ""
-echo "=== NAI Atelier 本地部署 ==="
+echo "=== NAI Atelier 本地部署 (Linux / macOS / Termux) ==="
 echo ""
 
-# Termux 环境检测与依赖安装
+# 完整服务（media-gateway、局域网 PIN、Agent、Pixiv、st-chatu8 桥、备份、Tag 更新服务）
+# 统一由 scripts/local-server.mjs 编排：网关 3000 + worker 3001。
+# 此前本脚本自行直启 wrangler（缺网关与全部绑定，端口布局也与 .mjs 冲突），
+# 现在委托给同一编排器，保证各平台行为一致。
 if [ -n "$TERMUX_VERSION" ] || [ -d "/data/data/com.termux" ]; then
     printf "\033[36m[Termux]\033[0m 检测到 Termux 环境\n"
     if ! command -v node >/dev/null 2>&1; then
@@ -17,33 +20,9 @@ if [ -n "$TERMUX_VERSION" ] || [ -d "/data/data/com.termux" ]; then
     fi
 fi
 
-# 检查构建产物
-if [ ! -d "dist" ] || [ ! -f "dist/index.html" ]; then
-    printf "\033[33m正在构建前端...\033[0m\n"
-    npm run build || {
-        printf "\033[31m构建失败\033[0m\n"
-        exit 1
-    }
+if ! command -v node >/dev/null 2>&1; then
+    printf "\033[31m未检测到 Node.js，请先安装 Node.js 18+。\033[0m\n"
+    exit 1
 fi
 
-# 检查 wrangler
-if ! npx wrangler --version >/dev/null 2>&1; then
-    printf "\033[33mwrangler 未安装，正在安装...\033[0m\n"
-    npm install wrangler --save-dev || {
-        printf "\033[31mwrangler 安装失败\033[0m\n"
-        exit 1
-    }
-fi
-
-printf "\033[32m启动本地服务 (端口 3000)...\033[0m\n"
-printf "\033[90m数据存储位置: ./local-data/\033[0m\n"
-printf "\033[90m访问地址: http://localhost:3000\033[0m\n"
-echo ""
-
-npx wrangler pages dev dist \
-    --persist-to ./local-data \
-    --binding LOCAL_HISTORY_ENABLED=true \
-    --binding PERSONAL_MODE_ENABLED=true \
-    --port 3000 \
-    --compatibility-date 2024-04-01 \
-    --show-interactive-dev-session=false
+exec node "$(dirname "$0")/local-server.mjs" "$@"
