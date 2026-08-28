@@ -1,12 +1,16 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const OUTPUT_DIR = path.join(ROOT, 'public', 'tag-data');
-const MANIFEST_FILE = path.join(OUTPUT_DIR, 'manifest.json');
+// 词库先写入暂存目录、全部成功后再原子替换正式目录：
+// 生成中途失败（磁盘满/进程被杀）只会留下废弃暂存目录，不会破坏现有词库。
+const FINAL_OUTPUT_DIR = path.join(ROOT, 'public', 'tag-data');
+const STAGING_OUTPUT_DIR = path.join(ROOT, 'public', 'tag-data.staging');
+let OUTPUT_DIR = FINAL_OUTPUT_DIR;
+const MANIFEST_FILE = path.join(FINAL_OUTPUT_DIR, 'manifest.json');
 const NAI_TAGS_FILE = path.join(ROOT, 'data', 'novelai-v45-tags.json');
 const TRANSLATION_DATABASE_URL = process.env.NAI_TAG_DATABASE_URL
   || 'https://raw.githubusercontent.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table/main/tag.sqlite';
@@ -285,7 +289,8 @@ async function main() {
       }
     }
 
-    await rm(OUTPUT_DIR, { recursive: true, force: true });
+    await rm(STAGING_OUTPUT_DIR, { recursive: true, force: true });
+    OUTPUT_DIR = STAGING_OUTPUT_DIR;
     await mkdir(OUTPUT_DIR, { recursive: true });
     const shardMap = await writeShards(englishShards, 'shards');
     const chineseShardMap = await writeShards(chineseShards, 'zh-shards');
@@ -355,11 +360,17 @@ async function main() {
     };
 
     await writeFile(path.join(OUTPUT_DIR, 'manifest.json'), JSON.stringify(manifest));
+    // manifest 就绪后原子替换：正式目录从这一刻起整体切换为新词库
+    await rm(FINAL_OUTPUT_DIR, { recursive: true, force: true });
+    await rename(STAGING_OUTPUT_DIR, FINAL_OUTPUT_DIR);
+    OUTPUT_DIR = FINAL_OUTPUT_DIR;
     console.log(`Wrote ${manifest.count} bilingual tags across ${englishShards.size} English and ${chineseShards.size} Chinese shards`);
     console.log('TAG_UPDATE_RESULT=updated');
   } finally {
     database?.close();
     await rm(temporaryDatabase, { force: true });
+    // 失败路径下清理残留暂存目录（成功路径已被 rename 走，force 保证幂等）
+    await rm(STAGING_OUTPUT_DIR, { recursive: true, force: true }).catch(() => {});
   }
 }
 

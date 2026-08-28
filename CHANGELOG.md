@@ -4,6 +4,10 @@
 
 ## 2026-08-29
 
+### 修复:Tag 词库更新先删后写，中途失败留下残缺词库
+- **根因**：更新脚本先递归删除 `public/tag-data` 再开始写几百个分片文件，manifest 最后才写——生成阶段任何失败（磁盘满、进程被杀）都会让词库变成空目录或半成品且无 manifest，前端自动补全与画师/角色目录全挂，必须重新联网下载。
+- **修复**：改为先写入 `public/tag-data.staging` 暂存目录，manifest 就绪后原子替换正式目录；失败路径清理暂存残留，现有词库始终完好。
+
 ### 修复:Linux/macOS 启动脚本功能残缺，与主编排器严重不一致
 - **根因**：`local-server.sh` 自行直启 wrangler，缺少 media-gateway、局域网 PIN 绑定、Agent、Pixiv、st-chatu8 桥与 Tag 更新服务，且端口布局（单进程 3000）与 `local-server.mjs`（网关 3000 + worker 3001）冲突——Termux/macOS/Linux 用户按文档跑 `.sh` 得到的是功能残缺的服务。
 - **修复**：`.sh` 改为薄启动器，保留 Termux 环境检测与 Node 检查后直接 `exec` 委托给 `local-server.mjs`，各平台行为完全一致。
