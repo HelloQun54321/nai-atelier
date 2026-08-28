@@ -94,16 +94,19 @@ function getOutboundProxyUrl() {
 const LOCAL_PROXY_PORTS = [7897, 7890, 10809, 10808, 2080, 8888, 1080, 6152, 7891, 10801];
 
 /**
- * wrangler 启动时会外连做版本检查；Windows 系统代理若指向失效的 TUN 网关
- * （198.18.0.0/15 保留网段，mihomo/Clash 常见），该请求会被黑洞挂起近两分钟，
- * 表现为启动窗口长时间停在“核心页面服务正在启动”且无 wrangler 输出。
- * 这里统一注入指向本地空端口的快速失败代理，强制外连检查毫秒级失败跳过——
+ * wrangler 启动期有两类外连可能被网络环境黑洞，导致启动窗口长时间停在“核心页面服务正在启动”：
+ * 1. 版本检查等出站请求：Windows 系统代理若指向失效的 TUN 网关（198.18.0.0/15 保留网段，
+ *    mihomo/Clash 常见），请求会被黑洞挂起近两分钟。
+ * 2. 启动横幅之前的 npm 更新检查（update-check 库）：走原生 https、无视全部代理环境变量，
+ *    registry 直连被黑洞时实测阻塞 36 秒起步；失败不写缓存，下次启动继续阻塞——
+ *    这是“启动时快时慢”的主要形态。经 rc 库识别的 npm_config_registry 环境变量，
+ *    把 registry 一并短路到本地空端口，强制毫秒级失败（wrangler 内部静默吞掉该失败）。
  * 无论代理软件健康与否，本地 pages dev 启动都不应依赖出站网络。
  */
-function resolveWranglerProxyEnv() {
+function resolveWranglerStartupEnv() {
   const noProxy = [process.env.NO_PROXY, process.env.no_proxy, '127.0.0.1', 'localhost'].filter(Boolean).join(',');
   // ALL_PROXY 一并注入：覆盖更多客户端解析路径，统一把 wrangler 出站请求短路到本地空端口。
-  return { HTTPS_PROXY: 'http://127.0.0.1:1', HTTP_PROXY: 'http://127.0.0.1:1', ALL_PROXY: 'http://127.0.0.1:1', all_proxy: 'http://127.0.0.1:1', NO_PROXY: noProxy };
+  return { HTTPS_PROXY: 'http://127.0.0.1:1', HTTP_PROXY: 'http://127.0.0.1:1', ALL_PROXY: 'http://127.0.0.1:1', all_proxy: 'http://127.0.0.1:1', NO_PROXY: noProxy, npm_config_registry: 'http://127.0.0.1:1' };
 }
 
 async function findLocalProxyPort() {
@@ -361,9 +364,9 @@ async function startServer() {
   ];
   
   const tagUpdateServer = startTagUpdateServer();
-  const wranglerEnv = resolveWranglerProxyEnv();
+  const wranglerEnv = resolveWranglerStartupEnv();
   const gatewayOutboundProxy = await resolveGatewayProxyUrl(outboundProxyUrl);
-  console.log(`\x1b[90mWrangler 出站代理: ${wranglerEnv.HTTPS_PROXY}（快速失败，跳过启动期外连检查）\x1b[0m`);
+  console.log(`\x1b[90mWrangler 出站代理: ${wranglerEnv.HTTPS_PROXY}（快速失败，跳过启动期外连检查与 npm 更新检查）\x1b[0m`);
   // Tag 数据不再随仓库分发（上游未声明许可）：缺失时提示用户自行安装。
   try {
     if (!existsSync('public/tag-data/manifest.json')) {
