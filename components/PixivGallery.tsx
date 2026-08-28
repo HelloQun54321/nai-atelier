@@ -24,7 +24,7 @@ import { createUuid } from '../services/id';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { NAIParams, User } from '../types';
-import { FilterPill, IconButton, MediaCardShell, SegmentedControl, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { FilterPill, IconButton, MediaCardShell, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ImageTaggerAction } from './ImageTaggerPanel';
@@ -745,34 +745,59 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceToolbar>
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <form onSubmit={submitSearch} className="flex min-w-0 flex-none items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center">
             <ToolbarSearch
               value={searchInput}
               onChange={event => setSearchInput(event.target.value)}
               placeholder="Pixiv 标签搜索，回车直接检索"
               aria-label="搜索 Pixiv"
-              containerClassName="min-w-0 md:w-64 lg:w-72 flex-none"
+              containerClassName="min-w-[12rem] flex-1 md:max-w-none"
             />
           </form>
-          <div className="flex items-center gap-1 overflow-x-auto">
-            <SegmentedControl
-              value={showHistory ? 'history' : mode}
-              onChange={val => {
-                if (val === 'history') loadHistory();
-                else switchTab(val as PixivFeedMode);
-              }}
-              options={[
-                ...feedTabs.map(tab => ({ value: tab.id, label: tab.label })),
-                { value: 'history', label: '足迹' },
-              ]}
-              ariaLabel="Pixiv Feed 选项卡"
-            />
+          <div className="flex flex-none items-center gap-1.5 overflow-x-auto">
+            {feedTabs.map(tab => {
+              const active = !showHistory && mode === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    if (showHistory) {
+                      setShowHistory(false);
+                      void loadFeed(tab.id, {});
+                    } else {
+                      switchTab(tab.id);
+                    }
+                  }}
+                  aria-pressed={active}
+                  className={`h-10 flex-none whitespace-nowrap rounded-xl border px-3 text-xs font-semibold transition-colors ${
+                    active
+                      ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-600'
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => (showHistory ? (setShowHistory(false), void loadFeed('recommended', {})) : loadHistory())}
+              aria-pressed={showHistory}
+              className={`h-10 flex-none whitespace-nowrap rounded-xl border px-3 text-xs font-semibold transition-colors ${
+                showHistory
+                  ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-600'
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
+              }`}
+            >
+              足迹
+            </button>
             {userContext && (
               <button
                 type="button"
                 onClick={() => void loadFeed('recommended', {})}
-                className="flex-none rounded-xl px-3 py-1.5 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300"
+                className="h-10 flex-none whitespace-nowrap rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
               >
                 返回推荐
               </button>
