@@ -512,8 +512,8 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         ...(editWithAvailability ? { _local_edit: editWithAvailability } : {}),
       };
       const imageKey = `local-history/${currentUser.id}/${id}.${extension}`;
-      const existing = await db.prepare('SELECT image_key, is_favorite, favorite_at FROM local_generation_history WHERE id = ? AND user_id = ?')
-        .bind(id, currentUser.id).first<{image_key: string, is_favorite: number, favorite_at: number | null}>();
+      const existing = await db.prepare('SELECT image_key, is_favorite, favorite_at, external_source, external_id FROM local_generation_history WHERE id = ? AND user_id = ?')
+        .bind(id, currentUser.id).first<{image_key: string, is_favorite: number, favorite_at: number | null, external_source: string | null, external_id: string | null}>();
       const isFavorite = body.isFavorite === undefined ? Number(existing?.is_favorite || 0) === 1 : Boolean(body.isFavorite);
       const favoriteAt = isFavorite ? Number(body.favoriteAt || existing?.favorite_at || Date.now()) : null;
 
@@ -526,15 +526,20 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         INSERT OR REPLACE INTO local_generation_history (
           id, user_id, image_key, image_type, prompt, negative_prompt, params,
           base_prompt, subject_prompt, modules, structure_version,
-          source_chain_id, source_chain_name, source_chain_type, is_favorite, favorite_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          source_chain_id, source_chain_name, source_chain_type, is_favorite, favorite_at, created_at,
+          external_source, external_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         id, currentUser.id, imageKey, imageType, body.prompt || '', body.negativePrompt || '',
         JSON.stringify(normalizedParams), body.basePrompt || '', body.subjectPrompt || '', JSON.stringify(body.modules || []),
         hasStructuredInput ? 1 : 0,
         body.sourceChainId || null, body.sourceChainName || null, body.sourceChainType || null,
         isFavorite ? 1 : 0, favoriteAt,
-        Number(body.createdAt || Date.now())
+        Number(body.createdAt || Date.now()),
+        // INSERT OR REPLACE 是整行删除重插：外部来源行（st-chatu8 索引）重存时必须回填，
+        // 否则外链被抹掉、图片指向不存在的 R2 对象
+        body.externalSource || existing?.external_source || null,
+        body.externalId || existing?.external_id || null
       ).run();
       if (existing?.image_key && existing.image_key !== imageKey) await env.BUCKET.delete(existing.image_key);
       if (!editMask) await env.BUCKET.delete(editMaskKey);
