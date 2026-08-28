@@ -71,7 +71,12 @@ const App = () => {
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const isDark = themeMode === 'dark' || (themeMode === 'system' && systemDark);
   const [safeModeStartup, setSafeModeStartup] = useState(() => localStorage.getItem('nai_safe_mode_startup') !== 'false');
-  const [safeMode, setSafeMode] = useState(() => localStorage.getItem('nai_safe_mode_startup') !== 'false');
+  // 优先恢复上次会话的手动开关状态（nai_safe_mode），没有记录时回退到"启动时进入安全模式"偏好
+  const [safeMode, setSafeMode] = useState(() => {
+    const lastState = localStorage.getItem('nai_safe_mode');
+    if (lastState === 'true' || lastState === 'false') return lastState === 'true';
+    return localStorage.getItem('nai_safe_mode_startup') !== 'false';
+  });
   const [safeModeHideTitles, setSafeModeHideTitles] = useState(() => localStorage.getItem('nai_safe_mode_hide_titles') !== 'false');
 
   // Toast State
