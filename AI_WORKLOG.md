@@ -5,8 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-28
+- **ZCode (GLM-5.3)**：清理 AI_WORKLOG 两处重复条目，并还原 App.tsx 无语义的编辑器格式化残留（docs: remove duplicate AI worklog entries）。
 - **DeepSeek V4 Flash (qianlian)**：完成 10 轮手机端前端显示检查并修复五类问题——移动端实验室生成错误提示可见、Pixiv 顶栏移动端导航独立成行、画师配置弹窗窄屏参数降级单列、画师复制历史抽屉移动端全屏化、全站弹窗高度 vh 改 dvh（fix: repair mobile display issues across galleries and lab）。
-- **DeepSeek V4 Flash (qianlian)**：局域网访问密码可在设置中实时修改（网关承载解锁校验与会话签发、新增 PUT /api/lan/pin 写回 lan-access.json），改密立即生效无需重启（feat: support changing LAN access pin at runtime）。
 - **DeepSeek V4 Flash (qianlian)**：局域网访问密码可在设置中实时修改（网关承载解锁校验与会话签发、新增 PUT /api/lan/pin 写回 lan-access.json），改密立即生效无需重启（feat: support changing LAN access pin at runtime）。
 - **DeepSeek V4 Flash (qianlian)**：启动日志的局域网访问地址过滤 WSL/Hyper-V、TUN 等虚拟网卡，只展示真实可访问地址（fix: filter virtual adapter addresses from LAN access list）。
 - **Gemini (Flash)**：修复编辑页左上角返回按钮偶发点击无响应，修正 handleReturnFromEditor 逻辑并移除导航外层 startTransition 确保同步即时跳转（fix: resolve unresponsive editor back button and make navigation synchronous）。
@@ -132,8 +132,6 @@
 - **Gemini (Flash)**：优化 AITag 页面在模型筛选（如 V5）时的瀑布流加载机制，增加自适应多页自动批拉填充（凑满 15 张目标增量或最多连拉 4 页），消除稀疏命中时的串行等待（perf: auto-fill batches on sparse aitag model filter）。
 
 - **DeepSeek (V4 Flash)**：将 ChainEditor 巨石组件（2849 行）拆分为 components/chain 下 6 个模块化子组件（Header/PromptInputs/Modules/Characters/PresetModal/ForkModal），共享展示件与 PromptAgentOverlayController 移入 PresetSourceBadges.tsx，主组件瘦身为编排器，纯结构重构行为不变，tsc、191 个前端测试与 130 个 gateway 测试全部通过（refactor: split ChainEditor monolith into modular chain subcomponents）。
-- **DeepSeek (V4 Flash)**：将生图实验室重置按钮的作用域严格限定为当前激活的页面——文生图仅重置提示词/模块/参数与预设来源徽章，图生图/局部重绘/扩图仅清空当前模式的底图、蒙版与草稿，并补充默认参数常量与重置定向单测（fix: scope laboratory reset to active mode）。
-
 - **DeepSeek (V4 Flash)**：将生图实验室重置按钮的作用域严格限定为当前激活的页面——文生图仅重置提示词/模块/参数与预设来源徽章，图生图/局部重绘/扩图仅清空当前模式的底图、蒙版与草稿，并补充默认参数常量与重置定向单测（fix: scope laboratory reset to active mode）。
 - **DeepSeek (V4 Flash)**：将 Worker 后端 4481 行超级文件按业务域拆分为 8 个路由模块（settings/history/vibe/aitag/danbooru/stBridge/pixiv/types），`worker/index.ts` 精简至约 200 行仅保留初始化、CORS、错误捕获与按原顺序分发，纯结构重构行为不变，130 个 gateway 测试与 tsc、esbuild 全部通过（refactor: split worker/index.ts into domain route modules）。
 - **Gemini (Flash)**：在 AGENTS.md 中新增 AI 协作生命周期与会话管理规范（Director-Worker 规范），约束跨会话上下文继承基于项目文档、同模块连续调整禁止随意销毁 Worker、新建任务保持 Brief 自包含（docs: codify agent lifecycle and session management rules）。
