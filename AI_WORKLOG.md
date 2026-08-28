@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：修复空/全透明蒙版可提交 infill/outpaint 白耗 Anlas——提交前用 maskHasInk 检查蒙版 alpha 通道，为空时拦截并给出对应操作提示（fix: block empty-mask infill submissions that waste Anlas）。
 - **ZCode (GLM-5.3)**：修复 PromptAgent 会话历史加载无竞态守卫（快速切换会话时旧响应覆盖新对话）——加会话加载代际计数丢弃晚到响应；同批修复 Agent 输入框与 AITag 三处搜索框的回车未排除中文输入法组字态（isComposing）导致的误发/误搜（fix: guard agent session loading races and IME enter handling）。
 - **ZCode (GLM-5.3)**：修复移动端悬浮层互相遮挡——画师库复制历史抽屉与遮罩提升到 z-[60]/z-[55] 高于底部导航，恢复「清空历史」可点；实验室页 Agent 悬浮球垂直上限收紧到 0.78，不再遮挡生成 FAB（fix: keep mobile history drawer and agent ball from covering nav and generate FAB）。
 - **ZCode (GLM-5.3)**：为 ensureLocalHistorySchema/ensureVibeSchema/ensureCharacterReferenceSchema 补上进程级幂等标记（与灵感表既有做法同型），消除每个请求重跑整套 DDL + 全表扫描的性能回归（perf: cache local history and vibe schema ensure per process）。

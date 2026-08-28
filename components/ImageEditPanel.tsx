@@ -159,6 +159,18 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     return canvas ? { data: canvas.toDataURL('image/png'), rect: focusedRectRef.current ? { ...focusedRectRef.current } : null } : null;
   };
 
+  /** 蒙版画布上是否存在任何非透明像素（即用户是否画了内容）；按 alpha 通道逐像素检查，遇非零提前返回。 */
+  const maskHasInk = (canvas: HTMLCanvasElement): boolean => {
+    const context = canvas.getContext('2d');
+    if (!context || !canvas.width || !canvas.height) return false;
+    const image = context.getImageData(0, 0, canvas.width, canvas.height);
+    const data = image.data;
+    for (let index = 3; index < data.length; index += 4) {
+      if (data[index] !== 0) return true;
+    }
+    return false;
+  };
+
   const renderOverlay = () => {
     const mask = maskCanvasRef.current;
     const overlay = overlayCanvasRef.current;
@@ -666,6 +678,12 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     }
     if (operation === 'inpaint' && focused && (!state.focusedRect || state.focusedRect.width < 2 || state.focusedRect.height < 2)) {
       setError('请先在画布上框选 Focused Inpainting 区域');
+      return;
+    }
+    // 蒙版为空（未画任何笔迹/未应用画布扩展）时 infill/outpaint 语义上等于不重绘，
+    // 但 NovelAI 仍会按编辑请求计费——拦截并提示，避免白耗 Anlas
+    if (operation !== 'image-to-image' && !maskHasInk(maskCanvas)) {
+      setError(operation === 'outpaint' ? '请先设置画布扩展并点击「应用画布扩展」，或手动绘制扩图蒙版' : '请先在蒙版上涂画需要重绘的区域');
       return;
     }
     setError(null);
