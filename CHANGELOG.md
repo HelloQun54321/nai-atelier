@@ -4,6 +4,14 @@
 
 ## 2026-08-29
 
+### 修复:worker 后端请求处理加固（缺字段 500、NaN 绑定、缓存协商、统计虚高、Agent 概览）
+- **缺字段 500**：创建风格串未传 name/description、基准图配置缺 config、灵感缺 updatedAt 等场景，undefined 直接进入 D1 bind 抛错变 500——现统一补默认值；坏 JSON 请求体也不再炸端点。
+- **NaN 穿透**：Vibe 默认强度、灵感 useCount/updatedAt、历史 createdAt、st-chatu8 导入 createdAt 等数值绑定加 isFinite 归一。
+- **缓存协商**：`/api/assets` If-None-Match 只做全等比较，浏览器带弱校验器（W/）或多值列表时缓存整包 200——现按规范解析。
+- **统计虚高**：st-chatu8 历史导入 `INSERT OR IGNORE` 不看实际写入行数、一律 `imported++`——主键冲突静默忽略后返回值虚高，现按 meta.changes 计数。
+- **Agent 概览**：`/api/agent/project-overview` 直接 COUNT vibe/角色参考表但从不 ensure schema——恢复自旧备份的库上稳定 500，现先补齐表结构。
+- **外链卫生**：灵感 `sourceUrl` 入库只接受 https，防止 `javascript:` 等 scheme 渲染为链接（纵深防御）。
+
 ### 修复:风格串列表并发刷新无守卫，loading 状态互相踩踏
 - **根因**：`App.refreshData` 无并发保护——创建/删除风格串与 Agent 数据变更事件可同时触发多次刷新，先完成者的 finally 提前清掉后者的 loading，响应乱序时旧数据覆盖新数据。
 - **修复**：刷新加请求代际守卫，过期响应的状态写入与 loading 复位一律丢弃。

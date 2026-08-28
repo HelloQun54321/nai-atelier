@@ -2,7 +2,7 @@
 // lightweight agent overview endpoints.
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
 import { json, error, clampInt, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, type D1Database, type D1Result, type Env, type RouteContext } from './types';
-import { parseImageData, parseUploadedImage, exactArrayBuffer } from './vibeRoutes';
+import { parseImageData, parseUploadedImage, exactArrayBuffer, ensureVibeSchema, ensureCharacterReferenceSchema } from './vibeRoutes';
 import { deleteR2File, processImageUpload } from './settingsRoutes';
 
 // 进程内标记：DDL 幂等但昂贵（1 CREATE TABLE + 16 ALTER + 3 INDEX），
@@ -224,7 +224,10 @@ export async function handleAgentRoute(ctx: RouteContext): Promise<Response | nu
   const { request, db, path, method } = ctx;
 
   if (path === '/api/agent/project-overview' && method === 'GET') {
+      // 概览直接 COUNT vibe/角色参考等表：恢复自旧备份的库可能缺这些表，先确保 schema 存在
       await ensureInspirationSchema(db);
+      await ensureVibeSchema(db);
+      await ensureCharacterReferenceSchema(db);
       const [chains, inspirations, artists, vibes, groups, characterReferences, history] = await Promise.all([
           db.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN type = 'character' THEN 1 ELSE 0 END) AS characters FROM chains`).first<any>(),
           db.prepare('SELECT COUNT(*) AS total FROM inspirations').first<any>(),
@@ -526,6 +529,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       if (editMask) {
         await env.BUCKET.put(editMaskKey, exactArrayBuffer(editMask.bytes), { httpMetadata: { contentType: editMask.contentType } });
       }
+      const createdAt = Number.isFinite(Number(body.createdAt)) ? Number(body.createdAt) : Date.now();
       await db.prepare(`
         INSERT OR REPLACE INTO local_generation_history (
           id, user_id, image_key, image_type, prompt, negative_prompt, params,
@@ -539,7 +543,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         hasStructuredInput ? 1 : 0,
         body.sourceChainId || null, body.sourceChainName || null, body.sourceChainType || null,
         isFavorite ? 1 : 0, favoriteAt,
-        Number(body.createdAt || Date.now()),
+        createdAt,
         // INSERT OR REPLACE 是整行删除重插：外部来源行（st-chatu8 索引）重存时必须回填，
         // 否则外链被抹掉、图片指向不存在的 R2 对象
         body.externalSource || existing?.external_source || null,
@@ -553,7 +557,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         modules: JSON.stringify(body.modules || []), structure_version: hasStructuredInput ? 1 : 0, source_chain_id: body.sourceChainId,
         source_chain_name: body.sourceChainName, source_chain_type: body.sourceChainType,
         is_favorite: isFavorite ? 1 : 0, favorite_at: favoriteAt,
-        created_at: Number(body.createdAt || Date.now())
+        created_at: createdAt
       }) });
     }
 
@@ -737,9 +741,12 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         id, currentUser.id, currentUser.username, String(body.title || '未命名灵感').slice(0, 160), imageUrl, imageKey, imageType,
         String(body.prompt || ''), String(body.negativePrompt || ''), body.params ? JSON.stringify(body.params) : null,
         body.boardId || null, String(body.notes || ''), JSON.stringify(Array.isArray(body.tags) ? body.tags.slice(0, 80) : []),
-        body.sourceType || 'other', body.sourceId || null, body.sourceUrl || null,
+        body.sourceType || 'other', body.sourceId || null,
+        // 外链只接受 https，防止 javascript: 等任意 scheme 入库后渲染为 <a href>
+        typeof body.sourceUrl === 'string' && /^https:\/\//i.test(body.sourceUrl) ? body.sourceUrl : null,
         Math.max(0, Math.min(5, Math.floor(Number(body.rating) || 0))), body.isPinned ? 1 : 0, body.archived ? 1 : 0,
-        body.lastUsedAt || null, Number(body.useCount || 0), body.parentId || null, JSON.stringify(body.analysis || {}), now, Number(body.updatedAt || now),
+        body.lastUsedAt || null, Number.isFinite(Number(body.useCount)) ? Number(body.useCount) : 0, body.parentId || null, JSON.stringify(body.analysis || {}), now,
+        Number.isFinite(Number(body.updatedAt)) ? Number(body.updatedAt) : now,
       ).run();
     const row = await db.prepare('SELECT * FROM inspirations WHERE id = ?').bind(id).first<any>();
     return json({ success: true, id, item: mapInspirationRow(row) });

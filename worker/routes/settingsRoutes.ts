@@ -508,8 +508,8 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
   // --- ADMIN: Global Settings (Benchmark Config) ---
   if (path === '/api/config/benchmarks' && method === 'PUT') {
       if (currentUser.role !== 'admin') return error('Forbidden', 403);
-      const { config } = await request.json() as any;
-      await db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').bind('benchmark_config', JSON.stringify(config)).run();
+      const { config } = await request.json().catch(() => ({})) as any;
+      await db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').bind('benchmark_config', JSON.stringify(config ?? null)).run();
       return json({ success: true });
   }
 
@@ -656,12 +656,12 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     }
     const paramsToStore = JSON.stringify({ ...DEFAULT_CHAIN_PARAMS, ...(body.params && typeof body.params === 'object' ? body.params : {}) });
     try {
-      await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, body.name, body.description, tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', paramsToStore, body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, Date.now(), Date.now()).run();
+      await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, String(body.name || ''), String(body.description || ''), tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', paramsToStore, body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, Date.now(), Date.now()).run();
       return json({ id });
     } catch (e: any) {
       if (isMissingColumnError(e)) {
         await initDB();
-        await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, body.name, body.description, tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', paramsToStore, body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, Date.now(), Date.now()).run();
+        await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, String(body.name || ''), String(body.description || ''), tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', paramsToStore, body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, Date.now(), Date.now()).run();
         return json({ id });
       }
       throw e;
@@ -868,7 +868,9 @@ export const handleMediaRequest = async (request: Request, env: Env, url: URL) =
     try { key = decodeURIComponent(assetMatch[1]); } catch { return error('Invalid asset key', 400); }
     const object = await env.BUCKET.get(key);
     if (!object) return error('File not found', 404);
-    if (request.headers.get('If-None-Match') === object.httpEtag) {
+    // If-None-Match 可能带 W/ 前缀或多值列表，只做全等会让缓存整包 200
+    const ifNoneMatch = (request.headers.get('If-None-Match') || '').split(',').map(tag => tag.trim().replace(/^W\//, ''));
+    if (ifNoneMatch.includes(object.httpEtag.replace(/^W\//, ''))) {
       return new Response(null, { status: 304, headers: {
         ETag: object.httpEtag,
         'Cache-Control': 'private, max-age=31536000, immutable',

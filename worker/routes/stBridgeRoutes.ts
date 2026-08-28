@@ -42,16 +42,17 @@ export async function handleStBridgeRoute(ctx: RouteContext): Promise<Response |
         .bind(currentUser.id, externalId).first<{id: string}>();
       if (existing) { skipped++; continue; }
       const id = `st-chatu8-${externalId.slice(0, 32)}`;
-      await db.prepare(`INSERT OR IGNORE INTO local_generation_history (
+      const result = await db.prepare(`INSERT OR IGNORE INTO local_generation_history (
         id, user_id, image_key, image_type, prompt, negative_prompt, params,
         source_chain_id, source_chain_name, source_chain_type, external_source, external_id, created_at
       ) VALUES (?, ?, '', ?, ?, ?, ?, NULL, ?, 'playground', 'st-chatu8', ?, ?)`)
         .bind(
           id, currentUser.id, String(item.imageType || 'image/png'), String(item.prompt || ''),
           String(item.negativePrompt || ''), JSON.stringify(item.params || {}),
-          String(item.sourceName || 'st-chatu8'), externalId, Number(item.createdAt || Date.now())
+          String(item.sourceName || 'st-chatu8'), externalId, Number.isFinite(Number(item.createdAt)) ? Number(item.createdAt) : Date.now()
         ).run();
-      imported++;
+      // INSERT OR IGNORE 可能因主键冲突静默忽略：按实际写入行数计数，统计才准确
+      if ((result.meta?.changes || 0) > 0) imported++; else skipped++;
     }
     return json({ imported, skipped });
   }

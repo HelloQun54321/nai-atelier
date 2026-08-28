@@ -5,7 +5,7 @@ import { json, error, parseStoredJson, type D1Database, type Env, type RouteCont
 
 // 进程内标记：DDL 幂等但昂贵，同一实例只在首个请求跑一次。
 let vibeSchemaEnsured = false;
-async function ensureVibeSchema(db: D1Database) {
+export async function ensureVibeSchema(db: D1Database) {
   if (vibeSchemaEnsured) return;
   await db.batch([
     db.prepare(`CREATE TABLE IF NOT EXISTS vibe_assets (
@@ -33,7 +33,7 @@ async function ensureVibeSchema(db: D1Database) {
 }
 
 let characterReferenceSchemaEnsured = false;
-async function ensureCharacterReferenceSchema(db: D1Database) {
+export async function ensureCharacterReferenceSchema(db: D1Database) {
   if (characterReferenceSchemaEnsured) return;
   await db.prepare(`CREATE TABLE IF NOT EXISTS character_reference_assets (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, source_hash TEXT NOT NULL UNIQUE,
@@ -512,7 +512,9 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
       const body = await request.json() as any;
       const name = String(body.name || '').trim().slice(0, 100);
       if (!name) return error('Vibe 名称不能为空', 400);
-      const defaultStrength = Math.max(0, Math.min(1, Number(body.defaultStrength ?? 0.6)));
+      // NaN 会穿透 Math.min/Math.max 直接 bind 抛错，先归一为有限数
+      const rawStrength = Number(body.defaultStrength ?? 0.6);
+      const defaultStrength = Math.max(0, Math.min(1, Number.isFinite(rawStrength) ? rawStrength : 0.6));
       await db.prepare('UPDATE vibe_assets SET name = ?, default_strength = ?, updated_at = ? WHERE id = ?')
         .bind(name, defaultStrength, Date.now(), vibeId).run();
       const updated = await db.prepare('SELECT * FROM vibe_assets WHERE id = ?').bind(vibeId).first<any>();
