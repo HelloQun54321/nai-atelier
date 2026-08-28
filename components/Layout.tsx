@@ -76,7 +76,9 @@ const clampSidebarWidth = (value: number) => Math.min(SIDEBAR_MAX_WIDTH, Math.ma
 type MobileAgentDock = { side: 'left' | 'right'; y: number };
 type StoredMobileAgentDock = MobileAgentDock & { version?: number };
 const MOBILE_AGENT_DOCK_VERSION = 2;
-const clampMobileAgentY = (value: number, hideNav: boolean) => Math.min(hideNav ? 0.92 : 0.86, Math.max(0.1, value));
+// 实验室页（hideNav）底部右侧常驻生成 FAB（bottom ~16px + 48px 高），
+// 上限 0.78 保证悬浮球即使拖到最底也不会压住生成按钮；普通页上限 0.86 让出底部导航。
+const clampMobileAgentY = (value: number, hideNav: boolean) => Math.min(hideNav ? 0.78 : 0.86, Math.max(0.1, value));
 const readMobileAgentDock = (): MobileAgentDock => {
   try {
     const stored = JSON.parse(localStorage.getItem('nai_mobile_agent_dock') || '{}') as Partial<StoredMobileAgentDock>;

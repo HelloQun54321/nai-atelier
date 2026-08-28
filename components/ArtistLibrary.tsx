@@ -1294,7 +1294,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
             )}
 
             {/* History, Logs, Import Modal rendering kept ... */}
-            <div className={`fixed top-0 right-0 w-full max-w-80 h-full bg-white dark:bg-gray-900 shadow-2xl z-40 transform transition-transform duration-300 border-l border-gray-200 dark:border-gray-800 flex flex-col md:w-80 ${showHistory ? 'translate-x-0' : 'translate-x-full'}`}>
+            {/* z-[60]/z-[55]：高于移动端底部导航（z-50），否则导航条盖住抽屉底部的「清空历史」 */}
+            <div className={`fixed top-0 right-0 w-full max-w-80 h-full bg-white dark:bg-gray-900 shadow-2xl z-[60] transform transition-transform duration-300 border-l border-gray-200 dark:border-gray-800 flex flex-col md:w-80 ${showHistory ? 'translate-x-0' : 'translate-x-full'}`}>
                 <div className="p-4 pt-[max(1rem,env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
                     <h3 className="flex items-center gap-2 font-bold text-gray-800 dark:text-white"><ClipboardList className="h-4 w-4" />复制历史</h3>
                     <button onClick={() => setShowHistory(false)} className="text-gray-500 hover:text-gray-800 dark:hover:text-white">×</button>
@@ -1312,7 +1313,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     <button onClick={() => { setHistory([]); localStorage.setItem('nai_copy_history', '[]') }} className="w-full py-2 text-sm text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400">清空历史</button>
                 </div>
             </div>
-            {showHistory && <div className="fixed inset-0 z-30 bg-black/20 dark:bg-black/50 backdrop-blur-[1px]" onClick={() => setShowHistory(false)} />}
+            {showHistory && <div className="fixed inset-0 z-[55] bg-black/20 dark:bg-black/50 backdrop-blur-[1px]" onClick={() => setShowHistory(false)} />}
 
             {showLogs && (
                 <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">

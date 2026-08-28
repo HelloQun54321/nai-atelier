@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：修复移动端悬浮层互相遮挡——画师库复制历史抽屉与遮罩提升到 z-[60]/z-[55] 高于底部导航，恢复「清空历史」可点；实验室页 Agent 悬浮球垂直上限收紧到 0.78，不再遮挡生成 FAB（fix: keep mobile history drawer and agent ball from covering nav and generate FAB）。
 - **ZCode (GLM-5.3)**：为 ensureLocalHistorySchema/ensureVibeSchema/ensureCharacterReferenceSchema 补上进程级幂等标记（与灵感表既有做法同型），消除每个请求重跑整套 DDL + 全表扫描的性能回归（perf: cache local history and vibe schema ensure per process）。
 - **ZCode (GLM-5.3)**：修复隐私模式/配额满时 localStorage 写入抛异常击穿渲染进程树白屏——外观偏好（useLayoutEffect 内）与移动端图片显示偏好两处 setItem 加 try/catch 兜底（fix: guard localStorage writes in appearance and display preferences）。
 - **ZCode (GLM-5.3)**：修复 .naiv4vibe 导入先落库后校验的脏数据——把编码校验（范围/格式/长度）前移为预扫描，全新 Vibe 无可用编码时直接 400 且零写入，不再留下零编码资产行与孤儿 R2 文件（fix: validate vibe encodings before persisting imported assets）。
