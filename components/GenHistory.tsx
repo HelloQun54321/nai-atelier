@@ -546,13 +546,18 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     const handleBulkDelete = async () => {
         if (!selectedIds.size) return;
         if (!await confirmAction({ title: `删除选中的 ${selectedIds.size} 张图片？`, message: '这些历史记录和本地图片文件将被永久删除。', confirmLabel: '批量删除', tone: 'danger' })) return;
-        for (const id of selectedIds) await localHistory.delete(id);
-        setSelectionMode(false);
-        setSelectedIds(new Set());
-        setCacheState({});
-        inflightPagesRef.current = {};
-        await goToPage(currentPageRef.current, true);
-        notify('选中的历史图片已删除');
+        try {
+            for (const id of selectedIds) await localHistory.delete(id);
+            setSelectionMode(false);
+            setSelectedIds(new Set());
+            setCacheState({});
+            inflightPagesRef.current = {};
+            await goToPage(currentPageRef.current, true);
+            notify('选中的历史图片已删除');
+        } catch (e: any) {
+            // 部分删除成功也在此统一处理：选中集不清空，便于用户重试剩余项
+            notify('批量删除失败: ' + (e?.message || '未知错误'), 'error');
+        }
     };
 
     const patchFavoriteState = (ids: Set<string>, favorite: boolean) => {
@@ -693,11 +698,11 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         
         // 预览将删除的数量
         if (mode === 'days') {
-            localHistory.countOlderThan(cleanDays).then(setCleanPreviewCount);
+            localHistory.countOlderThan(cleanDays).then(setCleanPreviewCount).catch(() => setCleanPreviewCount(0));
         } else {
             localHistory.getCount().then(count => {
                 setCleanPreviewCount(Math.max(0, count - cleanCount));
-            });
+            }).catch(() => setCleanPreviewCount(0));
         }
     };
 
