@@ -4,6 +4,10 @@
 
 ## 2026-08-29
 
+### 修复:备份完成提示每次打开设置页都误报；secret-scan 扩展漏网密钥模式
+- **备份误报**：备份完成侦测不区分"本次会话刚完成"与"上次的历史完成"——只要上次备份是 completed 状态，每次打开设置页都弹一次成功提示，掩盖真正需要的新备份。首次观测现只记录基线。
+- **密钥扫描**：扩展 secret-scan 漏网模式——sk 家族变体（Stripe `sk_live_`/`sk_test_`、OpenRouter `sk-or-v1-`、Anthropic 全系）、HuggingFace `hf_`、GitLab `glpat-`、Telegram bot token、无引号的 `API_KEY=字面量` 赋值；同时排除 `process.env.*` 等读取引用避免误报，仓库全量扫描通过。
+
 ### 修复:脚本层小修批次（流式参数守卫、桥接判空、版本脚本原子性、并发槽位、Tag 服务请求体）
 - **流式参数守卫**：流式生图端点对缺 `parameters` 的请求直接 `delete` 抛 TypeError 返回 502，与非流式路径不一致——现返回 400。
 - **桥接判空**：st-chatu8 Vibe 同步在 import 返回 200 但缺 item 时对 `result.item.id` 取值抛 TypeError，中断整个同步——现统一判空。

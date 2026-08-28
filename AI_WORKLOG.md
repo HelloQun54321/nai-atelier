@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：修复 DataBackupManager 把上次备份完成误报为"刚刚完成"（首次观测只记录基线）；扩展 secret-scan 覆盖 sk 家族变体/hf_/glpat-/Telegram token/无引号命名密钥并排除引用误报，补测试用例，仓库全量扫描通过（fix: dedupe backup completion toasts and widen secret-scan coverage）。
 - **ZCode (GLM-5.3)**：脚本层小修——流式生图端点缺 parameters 返回 400（原 TypeError→502）；st-chatu8 桥 Vibe 同步统一判空；bump-version 先校验后落盘；withJobSlot 改循环等待消除唤醒竞态；tag-update-server POST 消费请求体。核查确认 pixiv.key 损坏 fail-closed 为有测试锚定的有意设计，未改动（fix: harden gateway stream params, bridge null safety and script utilities）。
 - **ZCode (GLM-5.3)**：修复两处响应式样式缺陷——新增 .mobile-size-locked 让小圆钮豁免 44px 最小高度（历史收藏/灵感选择钮不再被拉成蛋形）；把 mobile-gallery 比例规则移入 @layer components 使桌面端 md:aspect-square 正常生效（fix: keep round icon buttons round and let desktop square layout preference apply）。
 - **ZCode (GLM-5.3)**：修复安全模式开关重启后状态丢失——safeMode 初始化优先读上次手动开关的 nai_safe_mode，无记录时回退启动偏好 nai_safe_mode_startup（fix: restore last safe mode toggle state on startup）。

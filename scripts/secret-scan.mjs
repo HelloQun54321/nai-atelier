@@ -10,9 +10,13 @@ const MAX_TEXT_FILE_BYTES = 5 * 1024 * 1024;
 
 const SECRET_RULES = [
   ['NovelAI persistent token', /pst-[A-Za-z0-9_-]{20,}/g],
-  ['OpenAI or Anthropic API key', /sk-(?:(?:proj|svcacct)-[A-Za-z0-9_-]{20,}|ant-api03-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{32,})/g],
+  // sk 家族：OpenAI（含 proj/svcacct 前缀）、Anthropic（sk-ant-）、Stripe（sk_live_）、OpenRouter（sk-or-v1-）等变体
+  ['OpenAI or Anthropic API key', /sk[_-](?:(?:proj|svcacct)-[A-Za-z0-9_-]{20,}|ant-[A-Za-z0-9_-]{20,}|(?:live|test)_[A-Za-z0-9_-]{20,}|or-v1-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{32,})/g],
   ['Google API key', /AIza[0-9A-Za-z_-]{30,}/g],
   ['GitHub token', /(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})/g],
+  ['HuggingFace token', /hf_[A-Za-z0-9]{20,}/g],
+  ['GitLab token', /glpat-[A-Za-z0-9_-]{20,}/g],
+  ['Telegram bot token', /\b\d{8,10}:AA[A-Za-z0-9_-]{30,}/g],
   ['AWS access key', /AKIA[0-9A-Z]{16}/g],
   ['Slack token', /xox[baprs]-[A-Za-z0-9-]{10,}/g],
   ['npm token', /npm_[A-Za-z0-9]{20,}/g],
@@ -22,7 +26,7 @@ const SECRET_RULES = [
   ['credential-bearing URL', /https?:\/\/[^/@\s]+:[^/@\s]+@/g],
 ];
 
-const NAMED_SECRET = /\b(?:[A-Z0-9_]*(?:PASSWORD|PASSCODE|CLIENT_SECRET|API_KEY|ACCESS_TOKEN|REFRESH_TOKEN|PRIVATE_KEY)[A-Z0-9_]*)\b\s*[:=]\s*["'`]([^"'`\r\n]{8,})["'`]/gi;
+const NAMED_SECRET = /\b(?:[A-Z0-9_]*(?:PASSWORD|PASSCODE|CLIENT_SECRET|API_KEY|ACCESS_TOKEN|REFRESH_TOKEN|PRIVATE_KEY)[A-Z0-9_]*)\b\s*[:=]\s*(?:["'`]([^"'`\r\n]{8,})["'`]|([A-Za-z0-9_/.+-]{16,}))/gi;
 const PLACEHOLDER = /^(?:<|\$|your[-_ ]|replace[-_ ]|example[-_ ]|test[-_ ]|dummy[-_ ]|fake[-_ ])/i;
 
 export const isSensitivePath = file => {
@@ -64,7 +68,11 @@ export const scanText = (file, text) => {
   NAMED_SECRET.lastIndex = 0;
   for (const match of text.matchAll(NAMED_SECRET)) {
     const line = text.slice(text.lastIndexOf('\n', match.index) + 1, text.indexOf('\n', match.index) === -1 ? text.length : text.indexOf('\n', match.index));
-    if (fixtureFile || line.includes(ALLOW_MARKER) || PLACEHOLDER.test(match[1])) continue;
+    const namedValue = match[1] ?? match[2];
+    // 带引号或无引号字面量都算；点号成员表达式（process.env.X / config.apiKey）与
+    // 大写下划线常量名引用（FALLBACK_API_KEY）是读取引用而非硬编码
+    const looksLikeReference = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(namedValue) || (/^[A-Z0-9_]+$/.test(namedValue) && namedValue.includes('_'));
+    if (fixtureFile || line.includes(ALLOW_MARKER) || PLACEHOLDER.test(namedValue) || looksLikeReference) continue;
     findings.push({ file, line: lineNumberAt(text, match.index), rule: 'named secret with literal value' });
   }
   return findings;

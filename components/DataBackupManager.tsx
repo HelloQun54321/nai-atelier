@@ -52,12 +52,16 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
         setCustomTargetDir(data.targetDir);
       }
 
-      // 侦测刚刚完成的任务并弹出提示
-      if (data.phase === 'completed' && data.finishedAt && lastFinishedAtRef.current !== data.finishedAt) {
+      // 侦测刚刚完成的任务并弹出提示；首次观测只记录基线，
+      // 否则每次打开设置页都会把上次的历史完成误报为"刚刚完成"
+      if (data.phase === 'completed' && data.finishedAt) {
+        const isFirstObservation = lastFinishedAtRef.current === null;
         lastFinishedAtRef.current = data.finishedAt;
-        const count = data.lastBackup?.fileCount || data.progress.totalFiles;
-        const bytes = data.lastBackup?.totalBytes || data.progress.totalBytes;
-        notify(`数据备份完成！已备份 ${count} 个文件（${formatBytes(bytes)}）`, 'success');
+        if (!isFirstObservation) {
+          const count = data.lastBackup?.fileCount || data.progress.totalFiles;
+          const bytes = data.lastBackup?.totalBytes || data.progress.totalBytes;
+          notify(`数据备份完成！已备份 ${count} 个文件（${formatBytes(bytes)}）`, 'success');
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : '无法读取备份状态';

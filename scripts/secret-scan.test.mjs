@@ -23,3 +23,28 @@ test('secret scanner blocks sensitive filenames but permits templates', () => {
   assert.equal(isSensitivePath('certs/private.key'), true);
   assert.equal(isSensitivePath('.env.example'), false);
 });
+
+test('secret scanner detects sk-family variants, hf/gitlab/telegram tokens and unquoted named secrets', () => {
+  const stripeKey = 'sk_live_' + 'A'.repeat(24);
+  const openRouterKey = 'sk-or-v1-' + 'B'.repeat(24);
+  const hfToken = 'hf_' + 'C'.repeat(30);
+  const gitlabToken = 'glpat-' + 'D'.repeat(22);
+  const telegramToken = '1234567890:' + 'AA' + 'E'.repeat(32);
+  const unquoted = 'API_KEY = ' + 'F'.repeat(24);
+  const findings = scanText('keys.env.local', [
+    stripeKey, openRouterKey, hfToken, gitlabToken, telegramToken, unquoted,
+  ].join('\n'));
+  assert.deepEqual(findings.map(item => item.rule), [
+    'OpenAI or Anthropic API key',
+    'OpenAI or Anthropic API key',
+    'HuggingFace token',
+    'GitLab token',
+    'Telegram bot token',
+    'named secret with literal value',
+  ]);
+});
+
+test('named secret rule ignores references to env/config lookups', () => {
+  const computed = 'export const apiKey = process.env.NOVELAI_API_KEY;';
+  assert.deepEqual(scanText('src.ts', computed), []);
+});
