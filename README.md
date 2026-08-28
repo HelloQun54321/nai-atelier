@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.130.2-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.130.3-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -23,6 +23,9 @@
 NAI Atelier 是一套运行在个人电脑上的 NovelAI 创作工坊。它不是单纯的 Prompt 输入框，而是围绕长期个人使用建立的完整工作流：
 
 > **收集画师与角色 → 组合 Prompt → 调用 NovelAI → 保存原图和参数 → 整理历史与灵感 → 在电脑和手机之间继续使用。**
+
+> [!IMPORTANT]
+> **适用范围：本项目仅面向 NovelAI Opus 档位订阅会员。** 费用估算、免费额度判定、Opus 限额显示与免费门槛逻辑均按 Opus 档位设计；其他订阅档位（Paper / Tablet / Scroll）与第三方中转服务**未做适配**——非 Opus 档位下"免费"判定与实际扣费可能不符，请勿依赖本项目显示的免费标识。
 
 当前版本的四个核心原则：
 

@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-08-29
+- **ZCode (GLM-5.3)**：按用户确认的意图完成全项目 bug 排查（12 轮只读审计，未改代码）；随后开始逐项修复。第一项：README「项目定位」增加适用范围声明——本项目仅面向 NovelAI Opus 档位会员，其他档位与第三方服务未做适配；顺带补上 CHANGELOG 缺失的 2026-08-28 日期节标题（docs: note opus-only subscription scope in readme）。
+
 ## 2026-08-28
 - **ZCode (GLM-5.3)**：与用户讨论后修复手机端实验室导航死角——实验室顶栏模式导航左侧新增返回箭头（仅 <md 窄屏显示，与侧边栏互斥不造重复入口），返回记录的进入前内容页并兜底风格串列表，补断点与回调回归测试（fix: add mobile lab back arrow to exit playground dead end）。
 - **ZCode (GLM-5.3)**：排查「启动本地服务时快时慢/卡住数分钟」——用带时间戳的对照实验定位为 wrangler 横幅前的 npm 更新检查（update-check 库无视代理环境变量直连 registry 被黑洞，实测阻塞 36 秒+且失败不缓存），经 npm_config_registry 注入快速失败端口后实测启动降至 1 秒内（fix: short-circuit wrangler npm update check to unblock local server startup）。
