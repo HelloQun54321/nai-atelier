@@ -283,6 +283,14 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     restoreMask(maskData);
   }, [maskData, operation]);
 
+  // 键盘快捷键 effect 为空依赖，需要经由 ref 始终调用最新一轮渲染的 undo/redo，
+  // 否则会捕获首帧闭包里的 onDraftChange（其中 activeEditOperation 是挂载时的模式），
+  // 把蒙版撤销写进另一个编辑模式的草稿。
+  const latestUndoRedoRef = useRef<{ undo: () => void; redo: () => void }>({ undo: () => {}, redo: () => {} });
+  useEffect(() => {
+    latestUndoRedoRef.current = { undo, redo };
+  });
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
@@ -291,11 +299,11 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       if (!(event.ctrlKey || event.metaKey)) return;
       if (event.key.toLowerCase() === 'z') {
         event.preventDefault();
-        if (event.shiftKey) redo(); else undo();
+        if (event.shiftKey) latestUndoRedoRef.current.redo(); else latestUndoRedoRef.current.undo();
       }
       if (event.key.toLowerCase() === 'y') {
         event.preventDefault();
-        redo();
+        latestUndoRedoRef.current.redo();
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -571,6 +579,9 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       mask.width = result.width;
       mask.height = result.height;
       mask.getContext('2d')?.drawImage(result.mask, 0, 0);
+      // 画布尺寸已变，旧快照按原尺寸回贴会把扩图白边错误恢复成"保留"语义，必须清空撤销/重做栈
+      undoRef.current = [];
+      redoRef.current = [];
       focusedRectRef.current = null;
       setState({ width: result.width, height: result.height, focusedRect: null });
       renderOverlay();

@@ -664,6 +664,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const selectGenerationMode = async (mode: GenerationMode) => {
         if (activeEditOperation) await flushMaskSave(activeEditOperation).catch(error => console.warn('切换编辑模式前保存蒙版失败:', error));
+        // 切模式前先清空蒙版态：否则 Panel 会以「新 operation + 上一模式的 maskData」渲染，
+        // loadBaseImage 的默认恢复参数把旧模式蒙版画进新模式画布并随请求发出。
+        setImageEditMaskData(undefined);
         if (mode === 'text-to-image') {
             updateWorkspace(previous => ({ ...previous, activeMode: mode }));
             setImageEditBaseImage(null);
