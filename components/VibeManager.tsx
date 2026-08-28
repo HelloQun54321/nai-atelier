@@ -115,16 +115,23 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
     markChange();
   };
 
+  // 搜索加载代际：丢弃防抖窗口期快速输入后晚到的旧响应
+  const loadSeqRef = useRef(0);
   const load = async () => {
+    const loadSeq = ++loadSeqRef.current;
     setLoading(true);
     try {
       const [nextAssets, nextGroups] = await Promise.all([vibeService.list(search, archived), vibeService.listGroups()]);
+      if (loadSeq !== loadSeqRef.current) return;
       setAssets(nextAssets);
       setGroups(nextGroups);
       setDetail(current => current ? nextAssets.find(item => item.id === current.id) || current : null);
     } catch (error: any) {
+      if (loadSeq !== loadSeqRef.current) return;
       notify(error.message || 'Vibe 库加载失败', 'error');
-    } finally { setLoading(false); }
+    } finally {
+      if (loadSeq === loadSeqRef.current) setLoading(false);
+    }
   };
 
   useEffect(() => {

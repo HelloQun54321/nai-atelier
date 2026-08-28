@@ -194,7 +194,8 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       setError(message);
       notify(message, 'error');
     } finally {
-      setLoading(false);
+      // 过期的旧加载不得提前关掉新加载的 spinner（会重建触底哨兵、提前打开追加闸门）
+      if (loadGuard.isCurrent(mySeq)) setLoading(false);
     }
   };
 

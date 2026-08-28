@@ -129,6 +129,11 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   const [bookmarking, setBookmarking] = useState(false);
   const [relatedItems, setRelatedItems] = useState<PixivIllust[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(false);
+  // "看了又看"加载代际：丢弃快速切换作品后晚到的旧响应
+  const relatedLoadSeqRef = useRef(0);
+  // 登录轮询的在途守卫与连续失败计数
+  const loginPollInFlightRef = useRef(false);
+  const loginPollFailureCountRef = useRef(0);
   const [error, setError] = useState('');
   const [loginSession, setLoginSession] = useState<PixivLoginStatus | null>(null);
   const [loginMessage, setLoginMessage] = useState('');
@@ -178,8 +183,12 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   };
 
   const pollLogin = async (sessionId: string) => {
+    // 1 秒间隔的轮询加上在途守卫：上一次请求未返回前不叠加新请求
+    if (loginPollInFlightRef.current) return;
+    loginPollInFlightRef.current = true;
     try {
       const next = await pixivService.getPixivLoginStatus(sessionId);
+      loginPollFailureCountRef.current = 0;
       if (next.state === 'connected') {
         clearLoginPoll();
         window.sessionStorage.removeItem(PIXIV_LOGIN_SESSION_KEY);
@@ -195,8 +204,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
         applyLoginSession(next);
       }
     } catch (pollError) {
-      clearLoginPoll();
-      setLoginMessage(pollError instanceof Error ? pollError.message : '无法读取登录状态');
+      // 网络抖动不应终止登录轮询：连续失败多次才停止并提示，避免卡死在"等待登录"
+      loginPollFailureCountRef.current += 1;
+      if (loginPollFailureCountRef.current >= 15) {
+        clearLoginPoll();
+        setLoginMessage(pollError instanceof Error ? pollError.message : '无法读取登录状态');
+      }
+    } finally {
+      loginPollInFlightRef.current = false;
     }
   };
 
@@ -351,10 +366,20 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       });
 
       setLoadingRelated(true);
+      // 竞态守卫：快速连点两幅作品时，先点作品的慢响应不得覆盖新选中作品的"看了又看"
+      const relatedSeq = ++relatedLoadSeqRef.current;
       pixivService.getRelated(selected.id)
-        .then(res => setRelatedItems(res))
-        .catch(() => setRelatedItems([]))
-        .finally(() => setLoadingRelated(false));
+        .then(res => {
+          if (relatedSeq !== relatedLoadSeqRef.current) return;
+          setRelatedItems(res);
+        })
+        .catch(() => {
+          if (relatedSeq !== relatedLoadSeqRef.current) return;
+          setRelatedItems([]);
+        })
+        .finally(() => {
+          if (relatedSeq === relatedLoadSeqRef.current) setLoadingRelated(false);
+        });
     } else {
       setRelatedItems([]);
     }

@@ -446,6 +446,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     if (!force && visibleItems.length >= AITAG_APPEND_LIMIT) return;
     appendingRef.current = true;
     try {
+      // 追加循环只在开头取一次守卫序号，且每页让位给用户触发的新加载：
+      // 此前每页都 begin()，会持续作废在途的用户搜索，导致搜索结果被静默丢弃
+      const appendSeq = loadGuard.begin();
       // 当开启模型筛选（如 V5）时，稀疏命中文档会导致单页有效结果过少。
       // 采用自适应自动连拉（最多连续批拉 4 页，或满足新增至少 15 个符合筛选的作品），填补视口空白。
       let currentPageToLoad = page + 1;
@@ -460,8 +463,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       let skippedPages = 0;
 
       while (currentPageToLoad <= currentTotalPages && pagesFetched < maxBatchPages + (skippedPages > 0 ? maxSkippedPages : 0)) {
+        if (!loadGuard.isCurrent(appendSeq)) break;
         const itemsBefore = aitagPageCache.items.length;
-        const loadedCount = await loadWorks(currentPageToLoad, { append: true, silent: true });
+        const loadedCount = await loadWorks(currentPageToLoad, { append: true, silent: true, guardSeq: appendSeq });
         pagesFetched++;
         currentPageToLoad++;
         if (loadedCount === 0) break;
@@ -505,6 +509,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       silent?: boolean;
       /** 追加模式：下一页内容接到当前列表下方（连续滚动），不替换不回顶。 */
       append?: boolean;
+      /** 复用调用方的守卫序号（后台追加连拉共用一次 begin，让位用户加载）。 */
+      guardSeq?: number;
     } = {}
   ) => {
     const isAppend = options.append === true;
@@ -512,7 +518,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       const signature = getQuerySignature();
       if (querySignatureRef.current !== signature) return;
     }
-    const mySeq = loadGuard.begin();
+    // 追加模式复用 appendNextPage 的守卫序号，避免后台连拉作废用户的前台加载
+    const mySeq = options.guardSeq ?? loadGuard.begin();
     const targetSort = options.sortOverride || sort;
     const targetRankMonth = options.rankMonthOverride || rankMonth;
     const targetTimeRange = getAitagTimeRange(targetSort, targetRankMonth);
@@ -632,7 +639,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       notify('aitag 加载失败: ' + (errMessage || '未知错误'), 'error');
       return 0;
     } finally {
-      if (!options.silent) setIsLoading(false);
+      // 过期的旧加载不得提前关掉新加载的 spinner
+      if (!options.silent && loadGuard.isCurrent(mySeq)) setIsLoading(false);
     }
   };
 
