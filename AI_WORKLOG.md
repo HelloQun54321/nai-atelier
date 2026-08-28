@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：统一网关流式路径的取消消息为「已取消排队」（原为「已取消生成」）——前端终态判定按「已取消排队」匹配，导致流式取消被显示为错误态（fix: align stream cancel message with queue cancelled terminal phase）。
 - **ZCode (GLM-5.3)**：新增顶层 ErrorBoundary（components/ErrorBoundary.tsx 并接入 index.tsx）——任一视图渲染崩溃时显示可恢复的错误页而非整站白屏（fix: add top-level error boundary to recover from render crashes）。
 - **ZCode (GLM-5.3)**：修复角色库与画师库同源的"清空搜索词后 loading 永久卡死"——防抖 effect 空词分支不复位加载状态，而在途请求的 finally 又被递增的请求代际守卫拦截；两处空词分支同步复位 loading（fix: reset library search loading state when the query is cleared）。
 - **ZCode (GLM-5.3)**：补齐手机端实验室预览功能入口——大图灯箱左上角新增「下载」与条件显示的「设为封面」操作条（<lg 预览卡隐藏时的唯一入口），生成完成自动弹灯箱的断点从 767px 修正为与布局一致的 1023px，消除平板区间生成后无可见反馈的死角（fix: restore preview actions on mobile via lightbox and align auto-open breakpoint）。

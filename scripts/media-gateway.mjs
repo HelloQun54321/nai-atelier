@@ -1773,7 +1773,7 @@ const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, clou
   const abortRequest = () => {
     if (responseCompleted) return;
     requestAborted = true;
-    requestController.abort(new DOMException('用户已取消生成', 'AbortError'));
+    requestController.abort(new DOMException('用户已取消排队', 'AbortError'));
   };
   req.once('aborted', abortRequest);
   res.once('close', abortRequest);
@@ -1871,7 +1871,7 @@ const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, clou
     return res.end();
   } catch (error) {
     const cancelled = requestAborted || error?.name === 'AbortError';
-    const message = cancelled ? '已取消生成' : (error?.message || '流式生成失败');
+    const message = cancelled ? '已取消排队' : (error?.message || '流式生成失败');
     if (queueEnabled) cloudQueue.update(queueTaskId, { phase: cancelled ? 'cancelled' : 'error', error: message, cancelable: false, controller: null });
     if (res.headersSent) {
       if (!res.destroyed) {
