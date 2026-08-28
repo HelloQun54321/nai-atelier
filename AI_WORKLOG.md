@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-29
+- **ZCode (GLM-5.3)**：修复画师 benchmarks 列两处裸 JSON.parse——保存路径改用与删除路径一致的 parseStoredJson 容错解析、数组元素先做字符串归一，`/api/config/benchmarks` 读取加 try/catch，列/配置损坏不再永久 500（fix: tolerate corrupted benchmarks data in artist save and config endpoints）。
 - **ZCode (GLM-5.3)**：修复 `POST /api/local-history` 的 INSERT OR REPLACE 缺 `external_source`/`external_id` 列——同 id 重存 st-chatu8 外部来源行时外链标记被整行重插抹掉；现补入列清单并按"请求值优先、已有值兜底"回填（fix: preserve external source fields when re-saving local history rows）。
 - **ZCode (GLM-5.3)**：统一网关流式路径的取消消息为「已取消排队」（原为「已取消生成」）——前端终态判定按「已取消排队」匹配，导致流式取消被显示为错误态（fix: align stream cancel message with queue cancelled terminal phase）。
 - **ZCode (GLM-5.3)**：新增顶层 ErrorBoundary（components/ErrorBoundary.tsx 并接入 index.tsx）——任一视图渲染崩溃时显示可恢复的错误页而非整站白屏（fix: add top-level error boundary to recover from render crashes）。

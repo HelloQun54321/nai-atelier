@@ -771,7 +771,8 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     
     // Fetch existing artist to compare for deletions
     const existing = await db.prepare('SELECT name, benchmarks, preview_url, image_url FROM artists WHERE id = ?').bind(id).first<{name: string, benchmarks: string, preview_url: string, image_url: string}>();
-    const oldBenchmarks = existing && existing.benchmarks ? JSON.parse(existing.benchmarks) : [];
+    // benchmarks 列可能损坏（旧版本写入/备份恢复），用容错解析回退空数组，保证该画师仍可编辑保存
+    const oldBenchmarks = existing ? parseStoredJson(existing.benchmarks, []) : [];
 
     // Process image URL - handle both Base64 and external URL
     let imageUrl = body.imageUrl;
@@ -786,16 +787,17 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     const benchmarks = body.benchmarks || [];
     if (Array.isArray(benchmarks)) {
         for (let i = 0; i < benchmarks.length; i++) {
-            if (benchmarks[i] && benchmarks[i].startsWith('data:')) {
+            const item = typeof benchmarks[i] === 'string' ? benchmarks[i] as string : '';
+            if (item.startsWith('data:')) {
                 // Upload new file
-                const newUrl = await processImageUpload(env, benchmarks[i], `artists/benchmarks_${i}`, id);
+                const newUrl = await processImageUpload(env, item, `artists/benchmarks_${i}`, id);
                 benchmarks[i] = newUrl;
-                
-            } else if (benchmarks[i] && benchmarks[i].startsWith('http')) {
+
+            } else if (item.startsWith('http')) {
                 // Fetch external image URL and store in R2
-                const newUrl = await fetchAndUploadImage(env, benchmarks[i], `artists/benchmarks_${i}`, id, currentUser);
+                const newUrl = await fetchAndUploadImage(env, item, `artists/benchmarks_${i}`, id, currentUser);
                 benchmarks[i] = newUrl;
-                
+
             }
         }
     }

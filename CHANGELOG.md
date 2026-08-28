@@ -4,6 +4,10 @@
 
 ## 2026-08-29
 
+### 修复:画师基准图数据损坏后该画师永久无法编辑（两处裸 JSON.parse）
+- **根因**：画师保存路径直接 `JSON.parse` 数据库 `benchmarks` 列（同列的删除路径却有容错解析，防御策略不一致），列一旦损坏（旧版本写入/备份恢复）该画师每次保存都 500；基准图配置读取端点同样裸解析，settings 表值损坏后稳定 500。基准图数组内的非字符串元素也会让 `startsWith` 抛 TypeError。
+- **修复**：保存路径改用与删除路径一致的 `parseStoredJson` 容错解析；基准图数组元素先做字符串归一再判断前缀；`/api/config/benchmarks` 读取加容错，损坏值按空配置返回。
+
 ### 修复:重存本地历史会把 st-chatu8 外链标记抹掉
 - **根因**：`POST /api/local-history` 使用 `INSERT OR REPLACE`（整行删除重插），但列清单缺少 `external_source`/`external_id`——同 id 重传外部来源行时这两个字段被重置为 NULL，`localHistoryImageUrl` 随之指向不存在的 R2 对象。收藏字段有读回保留逻辑而外链字段没有。
 - **修复**：INSERT 列清单补上两个外链字段，重存时优先取请求值、否则保留数据库已有值（与收藏保留逻辑同型）。

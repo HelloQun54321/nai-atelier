@@ -129,7 +129,12 @@ export default {
       // --- PUBLIC: Benchmark Config (Read) ---
       if (path === '/api/config/benchmarks' && method === 'GET') {
           const res = await db.prepare('SELECT value FROM settings WHERE key = ?').bind('benchmark_config').first<{value: string}>();
-          return json({ config: res ? JSON.parse(res.value) : null });
+          // settings 表值可能因备份恢复/手工编辑而损坏，容错解析避免整端点 500
+          let config: unknown = null;
+          if (res) {
+            try { config = JSON.parse(res.value); } catch { config = null; }
+          }
+          return json({ config });
       }
 
       const agentResult = await handleAgentRoute({
