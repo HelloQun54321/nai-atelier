@@ -321,8 +321,14 @@ export const loadAppearancePreferences = (): AppearancePreferences => {
 
 export const saveAppearancePreferences = (preferences: AppearancePreferences) => {
   const normalized = normalizeAppearancePreferences(preferences);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-  localStorage.setItem(LEGACY_THEME_KEY, normalized.themeMode);
+  // Safari 隐私模式/锁定模式或配额满时 setItem 会抛异常；调用点在 useLayoutEffect（渲染阶段），
+  // 不兜底会击穿 React 树白屏，且每次改任意设置都会复现
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    localStorage.setItem(LEGACY_THEME_KEY, normalized.themeMode);
+  } catch {
+    // 写入失败只影响持久化，本次会话内的偏好状态仍然有效
+  }
 };
 
 export const applyAppearancePreferences = (preferences: AppearancePreferences, isDark: boolean) => {

@@ -27,7 +27,12 @@ export const getMobileImageDisplayPreferences = (): MobileImageDisplayPreference
 };
 
 export const setMobileImageDisplayPreferences = (value: MobileImageDisplayPreferences) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+  // 配额满/隐私模式下 setItem 会抛异常，不让持久化失败影响会话内的显示状态
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+  } catch {
+    // 忽略写入失败
+  }
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
 };
 
