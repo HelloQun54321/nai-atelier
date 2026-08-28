@@ -498,9 +498,11 @@ const App = () => {
   const getSelectedChain = () => chains.find(c => c.id === selectedId);
   const handleReturnFromEditor = () => {
     const selectedChain = getSelectedChain();
-    // 不传 id：返回列表时保持离开前的滚动位置（useKeepAliveScrollRestore 恢复），
-    // 而不是把编辑过的卡片滚到视口中央，符合“回到刚刚浏览的位置”的预期。
-    return handleNavigate(selectedChain?.type === 'character' ? 'characters' : 'list', undefined, { refreshData: false });
+    // 传 id 作为 returnTargetId：
+    // 1. 确保列表渲染批次（visibleCount）包含该卡片及之前的所有卡片，保证容器拥有足够的高度恢复原滚动位置；
+    // 2. useKeepAliveScrollRestore 精确恢复离开前的像素级滚动位置；
+    // 3. 若目标卡片仍在视口内则不强制居中，若因排序变动离开视口则由 useRestoreListAnchor 兜底滚回可见范围。
+    return handleNavigate(selectedChain?.type === 'character' ? 'characters' : 'list', selectedChain?.id || selectedId, { refreshData: false });
   };
 
   if (!currentUser && !dbConfigError) {

@@ -23,6 +23,8 @@ export const useKeepAliveScrollRestore = (
   options?: { skipRestore?: boolean },
 ) => {
   const active = useContext(ImageActivityContext);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const restoreTimerRef = useRef<number | null>(null);
 
   // 恢复滚动位置（视图重新激活时）
@@ -34,14 +36,15 @@ export const useKeepAliveScrollRestore = (
       const saved = scrollCache.get(viewKey);
       if (saved === undefined) return;
       // 内容尚未加载到足以滚动的位置时，先恢复可恢复的部分并继续追赶
-      root.scrollTop = Math.min(saved, root.scrollHeight - root.clientHeight);
+      const maxScroll = Math.max(0, root.scrollHeight - root.clientHeight);
+      root.scrollTop = Math.min(saved, maxScroll);
     };
     restore();
 
     const tryRestore = () => {
       restore();
       const saved = scrollCache.get(viewKey) ?? 0;
-      if (root.scrollTop >= saved || root.scrollHeight - root.clientHeight >= saved) {
+      if (root.scrollTop >= saved || (root.scrollHeight - root.clientHeight) >= saved) {
         if (restoreTimerRef.current !== null) {
           window.clearInterval(restoreTimerRef.current);
           restoreTimerRef.current = null;
@@ -50,7 +53,7 @@ export const useKeepAliveScrollRestore = (
     };
 
     if (restoreTimerRef.current !== null) window.clearInterval(restoreTimerRef.current);
-    restoreTimerRef.current = window.setInterval(tryRestore, 100);
+    restoreTimerRef.current = window.setInterval(tryRestore, 50);
     const timeout = window.setTimeout(() => {
       if (restoreTimerRef.current !== null) {
         window.clearInterval(restoreTimerRef.current);
@@ -67,12 +70,13 @@ export const useKeepAliveScrollRestore = (
     };
     // scrollRef 不会变化，只依赖激活状态
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, viewKey]);
+  }, [active, viewKey, options?.skipRestore]);
 
-  // 滚动时保存位置
+  // 滚动时保存位置（仅在视图处于激活状态且非隐藏塌陷时记录，防止容器隐藏时浏览器的清零 scroll 事件覆盖有效缓存）
   const handleScroll = () => {
     const root = scrollRef.current;
-    if (root) scrollCache.set(viewKey, root.scrollTop);
+    if (!root || !activeRef.current || root.clientHeight === 0) return;
+    scrollCache.set(viewKey, root.scrollTop);
   };
 
   return handleScroll;

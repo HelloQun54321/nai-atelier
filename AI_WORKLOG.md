@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-28
+- **Gemini (Flash)**：修复从编辑页返回列表时丢失浏览位置直接回到顶部，为 useKeepAliveScrollRestore 增加隐藏清零防护并在返回时携带 returnTargetId 确保渲染高度（fix: maintain scroll position and prewarm batch render on return from editor）。
 - **Gemini (Flash)**：修复 st-chatu8 同步风格串缺失完整生成参数导致进入 ChainEditor 触发 TypeError 白屏崩溃，四层全链路补齐 normalizeParams 与空值防御并自动修复本地存量 30 个同步风格串（fix: resolve blank screen crash on opening st-chatu8 chains and repair legacy chain params）。
 - **Gemini (Flash)**：Pixiv 顶栏改为搜索栏拉宽铺满 + 独立导航按钮组，对齐 Danbooru 风格（feat: widen Pixiv search bar and convert feed tabs to standalone buttons）。
 - **Gemini (Flash)**：Tag 补全弹窗改为 Portal 渲染至 body 顶层（z-index 9999），消除被模块卡片遮挡问题并随输入框实时对齐；聚焦时预热角色搜索记录（fix: render tag autocomplete listbox as top-layer portal and preload character search records）。

@@ -338,7 +338,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     return cards;
   }, [catalogToCard, customChains, customToCard, favorites, gachaCards, loadedCatalog, searchResults, searchTerm, showFavOnly, tab]);
   useRestoreListAnchor(scrollRef, returnTargetId, `${visibleCards.length}:${isLoading ? 1 : 0}`);
-  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'characters', { skipRestore: Boolean(returnTargetId) });
+  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'characters');
 
   // 目录预取：当前页可见目录角色（前 40 个）的封面候选提前请求并固定保存（pin），
   // 滚动/浏览时封面秒出；getCoverSet 自带 14 天缓存与 300ms 串行限流，不重复打 Danbooru API。

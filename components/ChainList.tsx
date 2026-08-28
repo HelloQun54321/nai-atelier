@@ -285,7 +285,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const chainScrollRef = useRef<HTMLDivElement>(null);
   const chainLoadSentinelRef = useRef<HTMLDivElement>(null);
   useRestoreListAnchor(chainScrollRef, returnTargetId, `${visibleCount}:${filteredChains.length}`);
-  const onScrollRestore = useKeepAliveScrollRestore(chainScrollRef, 'list', { skipRestore: Boolean(returnTargetId) });
+  const onScrollRestore = useKeepAliveScrollRestore(chainScrollRef, 'list');
   useEffect(() => {
     const sentinel = chainLoadSentinelRef.current;
     const root = chainScrollRef.current;

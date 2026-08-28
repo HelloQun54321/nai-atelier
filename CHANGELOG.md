@@ -3,6 +3,9 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-28
+### 修复:解决从编辑页返回列表时丢失浏览位置直接回到顶部的问题
+- **容器隐藏滚动防护**：在 `useKeepAliveScrollRestore` 中增加视图激活与非零高度防护（`activeRef.current && root.clientHeight > 0`），彻底阻止列表容器在切换隐藏（`display: none`）瞬间由浏览器派发的 `scrollTop = 0` 虚假滚动事件冲掉内存中的真实位置缓存。
+- **返回定位锚点联通**：在 `handleReturnFromEditor` 返回跳转时重新携带 `selectedId` 作为 `returnTargetId`，使列表按需提前补齐渲染批次（`visibleCount`），确保长列表在拥有完整可滚动高度的基础上精确恢复至离开前的像素级视口位置。
 ### 修复:解决点击 st-chatu8 同步画师串触发 TypeError 白屏崩溃问题并修复存量数据
 - **根因修复与空值防御**：修复 st-chatu8 同步的风格串因缺失完整生成参数（`params: {}`）导致进入编辑器（`ChainEditor`）时 `params.width` 为 `undefined`，进而触发 `ChainEditorParams` 自定义尺寸区域 `params.width.toLocaleString()` 抛出运行时 TypeError 白屏崩溃的缺陷。
 - **全链路参数兜底**：在桥接生成（`st-chatu8-bridge.mjs`）、Worker 接口（`settingsRoutes.ts`）、工作区状态（`labWorkspace.ts`）与参数编辑面板（`ChainEditorParams.tsx`）四层全量注入 `normalizeParams` 与安全链式访问，确保任意缺失或异常参数均能自愈回退到标准默认生成参数。
