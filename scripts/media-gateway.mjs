@@ -494,7 +494,12 @@ const readRequestBody = (req, limit) => new Promise((resolve, reject) => {
     }
     chunks.push(chunk);
   });
-  req.on('end', () => resolve(Buffer.concat(chunks, size)));
+  req.on('end', () => {
+    // body 读完后必须解除 socket 空闲超时：排队等待、上游生成、流式首帧都可能超过 30 秒，
+    // 否则连接会被上面设置的空闲超时销毁（非流式路径甚至已扣费却送不出图）。
+    req.setTimeout(0);
+    resolve(Buffer.concat(chunks, size));
+  });
   req.on('error', reject);
 });
 
