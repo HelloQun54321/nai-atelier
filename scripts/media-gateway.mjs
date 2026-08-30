@@ -64,9 +64,11 @@ const THUMB_WIDTHS = new Map([
   ['thumb-960', 960],
 ]);
 const execFile = promisify(nodeExecFile);
-const AITAG_BROWSER_HEADERS = {
+export const AITAG_IMAGE_HOST = 'ai-img.10118899.xyz';
+export const AITAG_REFERER = 'https://aitag.win/';
+export const AITAG_BROWSER_HEADERS = {
   accept: 'application/json, text/plain, */*',
-  referer: 'https://aitag.win/',
+  referer: AITAG_REFERER,
   'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
 };
 
@@ -2108,6 +2110,11 @@ export const requestRemoteBuffer = async (source, remoteFetch = fetch) => {
     const headers = { accept: 'image/*', 'user-agent': 'NAI-Atelier-MediaGateway/1.0' };
     // Pixiv 图片必须携带官方 Referer，否则上游返回 403。
     if (host === PIXIV_IMAGE_HOST) headers.referer = PIXIV_REFERER;
+    // AITag 图床开启了严格 Referer 防盗链校验（无 Referer 或非浏览器 UA 返回 403）。
+    if (host === AITAG_IMAGE_HOST || host === 'aitag.win') {
+      headers.referer = AITAG_REFERER;
+      headers['user-agent'] = AITAG_BROWSER_HEADERS['user-agent'];
+    }
     const response = await remoteFetch(url, {
       redirect: 'manual',
       signal: AbortSignal.timeout(20_000),
@@ -3220,17 +3227,18 @@ const serveDistFile = async (req, res, url) => {
         : requestRemoteBuffer(validated.source, remoteFetch);
 
       if (variant === 'original') {
-        let isPixivOriginal = false;
+        let isProxyRequiredOriginal = false;
         if (validated.type === 'remote') {
           try {
             const originalUrl = new URL(validated.source);
-            isPixivOriginal = originalUrl.protocol === 'https:'
+            const host = originalUrl.hostname.toLowerCase();
+            isProxyRequiredOriginal = originalUrl.protocol === 'https:'
               && (!originalUrl.port || originalUrl.port === '443')
-              && originalUrl.hostname.toLowerCase() === PIXIV_IMAGE_HOST;
+              && (host === PIXIV_IMAGE_HOST || host === AITAG_IMAGE_HOST || host === 'aitag.win');
           } catch {}
         }
-        // Pixiv 原图不能 302 直出（浏览器不会带官方 Referer），由网关带 Referer 代理。
-        if (validated.type === 'local' || (validated.type === 'remote' && !isPixivOriginal)) {
+        // 防盗链图床（Pixiv、AITag）原图不能 302 直出（浏览器不会带官方 Referer），由网关带 Referer 代理。
+        if (validated.type === 'local' || (validated.type === 'remote' && !isProxyRequiredOriginal)) {
           const location = validated.type === 'local'
             ? new URL(validated.source, `http://${req.headers.host || 'localhost'}`).toString()
             : validated.source;

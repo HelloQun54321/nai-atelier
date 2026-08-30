@@ -1188,7 +1188,20 @@ test('requestRemoteBuffer sends the Pixiv Referer for i.pximg.net and keeps it a
   assert.deepEqual([...result.buffer], [9, 8, 7]);
 });
 
-test('requestRemoteBuffer never sends a Referer for non-Pixiv hosts', async () => {
+test('requestRemoteBuffer sends the AITag Referer and browser User-Agent for ai-img.10118899.xyz', async () => {
+  const calls = [];
+  const remoteFetch = async (url, opts) => {
+    calls.push({ url: url.toString(), headers: opts.headers });
+    return new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'content-type': 'image/webp' } });
+  };
+  const result = await requestRemoteBuffer('https://ai-img.10118899.xyz/SD/123/456_p0.webp', remoteFetch);
+  assert.equal(result.status, 200);
+  assert.equal(calls[0].headers.referer, 'https://aitag.win/');
+  assert.match(calls[0].headers['user-agent'], /Chrome|Mozilla/);
+  assert.deepEqual([...result.buffer], [1, 2, 3]);
+});
+
+test('requestRemoteBuffer never sends a Referer for open CDN hosts like donmai', async () => {
   const referers = [];
   await requestRemoteBuffer('https://cdn.donmai.us/sample.webp', async (url, opts) => {
     referers.push(opts.headers.referer);
