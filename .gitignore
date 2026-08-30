@@ -49,5 +49,8 @@ local-cache/
 # Wrangler 本地缓存
 .wrangler/
 
+# Wrangler 运行调试日志（local-server.mjs 重定向到项目内，避免撑爆系统盘；可整体删除）
+.wrangler-logs/
+
 docs/db-field-addition-guide.md
 public/tag-data/

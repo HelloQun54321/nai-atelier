@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-31
+- **ZCode (GLM-5.3)**：排查本地启动日志 ENOSPC 报错，定位为 wrangler 调试日志默认写入 C 盘全局目录累积 7GB 撑爆系统盘；将日志重定向到项目内 `.wrangler-logs`（支持 `WRANGLER_LOG_PATH` 覆盖）并在本机同步设置用户级环境变量（fix: redirect wrangler debug logs to project-local .wrangler-logs dir）。
 - **Claude Code (Sonnet 4.5)**：修复 Keep-Alive 滚动恢复在容器隐藏（窄屏打开详情）期间锁与追赶定时器提前释放、恢复可见后无法自动完成的问题，隐藏期超时自动续期并补充追赶保持测试（fix: keep chase alive while scroll container hidden for robust restore after detail close）。
 - **Antigravity (Gemini 3.7 Flash)**：全面修复 Keep-Alive 滚动保持系统：修正 tryRestore 提前终止漏洞、增加恢复期虚假 0 事件拦截锁与 250ms 激活时间窗保护、引入 trigger 联动画廊详情侧边栏开关与 useLayoutEffect 绘制前首帧同步恢复（fix: harden keep-alive scroll restore with robust stop condition, restore lock and trigger support）。
 - **Antigravity (Gemini 3.7 Flash)**：修复 AITag 画廊跨页面往返切换时滚动位置丢失回顶的问题，清理遗留的冲突缓存代码，统一切换为 useKeepAliveScrollRestore 并持久化瀑布流宽高比缓存（fix: resolve scroll position loss on view switching in Aitag gallery）。

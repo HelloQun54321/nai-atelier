@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wri
 import { connect as connectNet, createServer as createNetServer } from 'net';
 import { randomBytes, randomInt } from 'crypto';
 import { networkInterfaces, platform } from 'os';
+import { resolve as resolvePath } from 'node:path';
 import { startTagUpdateServer } from './tag-update-server.mjs';
 import { createMediaGateway } from './media-gateway.mjs';
 
@@ -106,7 +107,10 @@ const LOCAL_PROXY_PORTS = [7897, 7890, 10809, 10808, 2080, 8888, 1080, 6152, 789
 function resolveWranglerStartupEnv() {
   const noProxy = [process.env.NO_PROXY, process.env.no_proxy, '127.0.0.1', 'localhost'].filter(Boolean).join(',');
   // ALL_PROXY 一并注入：覆盖更多客户端解析路径，统一把 wrangler 出站请求短路到本地空端口。
-  return { HTTPS_PROXY: 'http://127.0.0.1:1', HTTP_PROXY: 'http://127.0.0.1:1', ALL_PROXY: 'http://127.0.0.1:1', all_proxy: 'http://127.0.0.1:1', NO_PROXY: noProxy, npm_config_registry: 'http://127.0.0.1:1' };
+  // wrangler 默认把运行调试日志写到系统盘全局配置目录（如 C:\Users\<用户>\AppData\Roaming\xdg.config\.wrangler\logs），
+  // 且从不清零，长期累积实测 7GB 触发 ENOSPC；重定向到项目内 .wrangler-logs（可再生成，已 gitignore），用户显式设置优先。
+  const wranglerLogPath = process.env.WRANGLER_LOG_PATH || resolvePath('.wrangler-logs');
+  return { HTTPS_PROXY: 'http://127.0.0.1:1', HTTP_PROXY: 'http://127.0.0.1:1', ALL_PROXY: 'http://127.0.0.1:1', all_proxy: 'http://127.0.0.1:1', NO_PROXY: noProxy, npm_config_registry: 'http://127.0.0.1:1', WRANGLER_LOG_PATH: wranglerLogPath };
 }
 
 async function findLocalProxyPort() {
@@ -377,6 +381,7 @@ async function startServer() {
   const wranglerEnv = resolveWranglerStartupEnv();
   const gatewayOutboundProxy = await resolveGatewayProxyUrl(outboundProxyUrl);
   console.log(`\x1b[90mWrangler 出站代理: ${wranglerEnv.HTTPS_PROXY}（快速失败，跳过启动期外连检查与 npm 更新检查）\x1b[0m`);
+  console.log(`\x1b[90mWrangler 调试日志: ${wranglerEnv.WRANGLER_LOG_PATH}（可通过环境变量 WRANGLER_LOG_PATH 覆盖）\x1b[0m`);
   // Tag 数据不再随仓库分发（上游未声明许可）：缺失时提示用户自行安装。
   try {
     if (!existsSync('public/tag-data/manifest.json')) {

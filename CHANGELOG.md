@@ -3,6 +3,9 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-31
+### 修复:本地服务 Wrangler 调试日志重定向到项目内，避免写满系统盘触发 ENOSPC
+- **日志位置重定向**：`local-server.mjs` 将 wrangler 运行调试日志从系统盘全局目录（`AppData\Roaming\xdg.config\.wrangler\logs`，从不清零，实测累积 7GB 触发 ENOSPC）默认重定向到项目内 `.wrangler-logs/`（可整体删除），可用环境变量 `WRANGLER_LOG_PATH` 覆盖，启动信息中会显示实际日志位置。
+
 ### 修复:Keep-Alive 滚动恢复在容器隐藏期间保持追赶，杜绝窄屏详情关闭后位置丢失
 - **隐藏期恢复锁与追赶保持**：`useKeepAliveScrollRestore` 的恢复锁与追赶定时器不再因 `clientHeight === 0`（如 `< xl` 窄屏打开详情时主容器 `hidden`）提前释放，容器恢复可见后由定时器自动完成恢复，不依赖 `trigger`/`active` 再次变化；
 - **隐藏期 1200ms 超时自动续期**：容器保持隐藏时超时定时器自动顺延，恢复可见后按正常终止条件（到位或达最大可滚上限）结束追赶；
