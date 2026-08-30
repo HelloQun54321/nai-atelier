@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React, { useRef } from 'react';
 import { cleanup, render } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { ImageActivityContext } from './SmartImage';
 
@@ -93,7 +93,8 @@ describe('useKeepAliveScrollRestore', () => {
     rerender(React.createElement(Harness, { active: false, viewKey: 'restore-lock-view', clientHeight: 0, scrollHeight: 0, trigger: 123 }));
     root.scrollTop = 0;
 
-    // 重新切回激活，并在激活瞬间派发 scrollTop = 0 的 scroll 事件（模拟浏览器恢复时的初始事件）
+    // 重新切回激活，但 main 仍为 hidden（clientHeight = 0，如窄屏详情未关）：
+    // 恢复锁必须保持，浏览器恢复可见瞬间派发的 scrollTop = 0 事件不得冲刷缓存
     rerender(React.createElement(Harness, { active: true, viewKey: 'restore-lock-view', clientHeight: 0, scrollHeight: 0, trigger: 123 }));
     root.scrollTop = 0;
     root.dispatchEvent(new Event('scroll'));
@@ -102,5 +103,25 @@ describe('useKeepAliveScrollRestore', () => {
     rerender(React.createElement(Harness, { active: true, viewKey: 'restore-lock-view', clientHeight: 500, scrollHeight: 2000, trigger: null }));
     expect(root.scrollTop).toBe(950);
   });
-});
 
+  it('容器隐藏期间追赶定时器保持存活，恢复可见（trigger 不变）后自动完成恢复', () => {
+    vi.useFakeTimers();
+    try {
+      const { getByTestId, rerender } = render(React.createElement(Harness, { active: true, viewKey: 'hidden-chase-view', clientHeight: 500, scrollHeight: 2000, trigger: 123 }));
+      const root = getByTestId('root');
+      root.scrollTop = 950;
+      root.dispatchEvent(new Event('scroll'));
+
+      // 打开详情（窄屏 < xl）：main 变 hidden，clientHeight 塌陷为 0，active 仍为 true
+      rerender(React.createElement(Harness, { active: true, viewKey: 'hidden-chase-view', clientHeight: 0, scrollHeight: 0, trigger: 123 }));
+
+      // 容器恢复可见但 trigger 未变化（如断点缩放/窗口放大跨过 xl）：
+      // 追赶定时器不应被终止，应在可见后自动恢复
+      rerender(React.createElement(Harness, { active: true, viewKey: 'hidden-chase-view', clientHeight: 500, scrollHeight: 2000, trigger: 123 }));
+      vi.advanceTimersByTime(100);
+      expect(root.scrollTop).toBe(950);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

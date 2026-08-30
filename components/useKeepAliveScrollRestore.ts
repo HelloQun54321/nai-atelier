@@ -11,6 +11,7 @@ import { ImageActivityContext } from './SmartImage';
  * 并在视图重新激活（ImageActivityContext.active 变 true）或容器重新可见时恢复：
  * - useLayoutEffect 绘制前同步首帧恢复，消除切页闪动；
  * - 异步追赶在 1.2s 内每 50ms 追赶，直到实际滚动到位或达到容器可滚最大极限；
+ * - 容器隐藏（clientHeight 为 0，如窄屏打开详情）期间不终止追赶，等恢复可见后自动完成；
  * - 恢复期间锁定 handleScroll 写入，防止容器恢复瞬间浏览器的虚假 0 事件冲刷有效缓存。
  */
 const scrollCache = new Map<string, number>();
@@ -27,20 +28,24 @@ export const useKeepAliveScrollRestore = (
   const isRestoringRef = useRef(false);
   const restoreTimerRef = useRef<number | null>(null);
 
-  const restore = () => {
+  // 尝试恢复一次；容器隐藏（clientHeight === 0）时无法恢复，返回 false 由调用方决定继续等待
+  const restore = (): boolean => {
     const root = scrollRef.current;
-    if (!root || !activeRef.current || options?.skipRestore || root.clientHeight === 0) return;
+    if (!root || !activeRef.current || options?.skipRestore || root.clientHeight === 0) return false;
     const saved = scrollCache.get(viewKey);
-    if (saved === undefined || saved <= 0) return;
+    if (saved === undefined || saved <= 0) return false;
     const maxScroll = Math.max(0, root.scrollHeight - root.clientHeight);
-    if (maxScroll <= 0) return;
+    if (maxScroll <= 0) return false;
     root.scrollTop = Math.min(saved, maxScroll);
+    return true;
   };
 
-  // 1. 同步首帧恢复（在 DOM 布局完成后、绘制前执行，消除页面切回时的视觉跳跃）
+  // 1. 同步首帧恢复（在 DOM 布局完成后、绘制前执行，消除页面切回时的视觉跳跃）。
+  //    注意：容器隐藏（clientHeight === 0）时仍更新激活时间戳——恢复动作由 restore()
+  //    内部忽略，但时间戳保证后续容器恢复可见瞬间的虚假 0 事件落入 250ms 保护窗口。
   useLayoutEffect(() => {
     const root = scrollRef.current;
-    if (!root || !active || options?.skipRestore || root.clientHeight === 0) return;
+    if (!root || !active || options?.skipRestore) return;
     lastActivatedAtRef.current = Date.now();
     restore();
   }, [active, viewKey, options?.skipRestore, options?.trigger]);
@@ -48,47 +53,66 @@ export const useKeepAliveScrollRestore = (
   // 2. 异步持续追赶（针对图片/卡片等异步渲染未撑开全部高度的场景）
   useEffect(() => {
     const root = scrollRef.current;
-    if (!root || !active || options?.skipRestore || root.clientHeight === 0) return;
+    if (!root || !active || options?.skipRestore) return;
 
     const saved = scrollCache.get(viewKey);
     if (saved === undefined || saved <= 0) return;
 
+    // 恢复锁在容器隐藏期间也保持，防止 hidden -> visible 过渡瞬间的 0 事件冲刷有效缓存
     isRestoringRef.current = true;
     lastActivatedAtRef.current = Date.now();
     restore();
 
-    const tryRestore = () => {
-      const currentRoot = scrollRef.current;
-      if (!currentRoot || !activeRef.current || currentRoot.clientHeight === 0) return;
-      restore();
-      const currentSaved = scrollCache.get(viewKey) ?? 0;
-      const maxScroll = Math.max(0, currentRoot.scrollHeight - currentRoot.clientHeight);
-      // 正确终止条件：当前实际 scrollTop 已达到 saved，或者已达到当前 DOM 能滚动的最大极限
-      if (currentRoot.scrollTop >= currentSaved || (maxScroll > 0 && currentRoot.scrollTop >= maxScroll)) {
-        if (restoreTimerRef.current !== null) {
-          window.clearInterval(restoreTimerRef.current);
-          restoreTimerRef.current = null;
-        }
-        isRestoringRef.current = false;
-      }
-    };
+    let chaseTimeoutId: number | null = null;
 
-    if (restoreTimerRef.current !== null) window.clearInterval(restoreTimerRef.current);
-    restoreTimerRef.current = window.setInterval(tryRestore, 50);
-    const timeout = window.setTimeout(() => {
+    const stopChasing = () => {
       if (restoreTimerRef.current !== null) {
         window.clearInterval(restoreTimerRef.current);
         restoreTimerRef.current = null;
       }
+      if (chaseTimeoutId !== null) {
+        window.clearTimeout(chaseTimeoutId);
+        chaseTimeoutId = null;
+      }
       isRestoringRef.current = false;
-    }, 1200);
+    };
+
+    const tryRestore = () => {
+      const currentRoot = scrollRef.current;
+      if (!currentRoot || !activeRef.current) return;
+      restore();
+      // 容器仍隐藏（如窄屏打开详情）时继续等待，不终止追赶
+      if (currentRoot.clientHeight === 0) return;
+      const currentSaved = scrollCache.get(viewKey) ?? 0;
+      const maxScroll = Math.max(0, currentRoot.scrollHeight - currentRoot.clientHeight);
+      // 正确终止条件：当前实际 scrollTop 已达到 saved，或者已达到当前 DOM 能滚动的最大极限
+      if (currentRoot.scrollTop >= currentSaved || (maxScroll > 0 && currentRoot.scrollTop >= maxScroll)) {
+        stopChasing();
+      }
+    };
+
+    const scheduleChaseTimeout = () => {
+      chaseTimeoutId = window.setTimeout(() => {
+        const currentRoot = scrollRef.current;
+        if (currentRoot && currentRoot.clientHeight === 0) {
+          // 容器隐藏（如窄屏详情未关）时继续等待，恢复可见后由 tryRestore 完成恢复
+          scheduleChaseTimeout();
+          return;
+        }
+        stopChasing();
+      }, 1200);
+    };
+
+    if (restoreTimerRef.current !== null) window.clearInterval(restoreTimerRef.current);
+    restoreTimerRef.current = window.setInterval(tryRestore, 50);
+    scheduleChaseTimeout();
 
     return () => {
       if (restoreTimerRef.current !== null) {
         window.clearInterval(restoreTimerRef.current);
         restoreTimerRef.current = null;
       }
-      window.clearTimeout(timeout);
+      if (chaseTimeoutId !== null) window.clearTimeout(chaseTimeoutId);
       isRestoringRef.current = false;
     };
   }, [active, viewKey, options?.skipRestore, options?.trigger]);
