@@ -187,8 +187,6 @@ interface AitagPageCache {
   page: number;
   total: number;
   error: string | null;
-  mainScrollTop: number;
-  detailScrollTop: number;
   hasLoaded: boolean;
   cacheStatus: AitagCacheStatus | null;
   isOfflineCache: boolean;
@@ -207,12 +205,12 @@ let aitagPageCache: AitagPageCache = {
   page: 1,
   total: 0,
   error: null,
-  mainScrollTop: 0,
-  detailScrollTop: 0,
   hasLoaded: false,
   cacheStatus: null,
   isOfflineCache: false,
 };
+
+const aitagRatioCache: Record<number, number> = {};
 
 const defaultParams: NAIParams = {
   width: 832,
@@ -233,9 +231,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const imageDisplay = useMobileImageDisplayPreferences();
   const mainScrollRef = useRef<HTMLElement | null>(null);
   const onMainScrollRestore = useKeepAliveScrollRestore(mainScrollRef, 'aitag');
-  const detailScrollRef = useRef<HTMLDivElement | null>(null);
   const hasLoadedRef = useRef(aitagPageCache.hasLoaded);
-  const didRestoreScrollRef = useRef(false);
   const cancelPageInputRef = useRef(false);
   const cacheStatusRefreshTimerRef = useRef<number | null>(null);
   const [items, setItems] = useState<AitagWorkSummary[]>(() => aitagPageCache.items);
@@ -281,10 +277,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const hasNextPage = page < totalPages;
 
   // 瀑布流（masonry 布局时）：图片加载后按真实宽高比完整显示，最短列分配互相补齐。
-  const [aitagRatios, setAitagRatios] = useState<Record<number, number>>({});
+  const [aitagRatios, setAitagRatios] = useState<Record<number, number>>(() => aitagRatioCache);
   const masonryColumns = useMasonryColumnCount(imageDisplay);
   const estimateAitagCardHeight = React.useCallback((work: AitagWorkSummary, columnWidth: number) => {
-    const ratio = aitagRatios[work.id] || 1;
+    const ratio = aitagRatios[work.id] || aitagRatioCache[work.id] || 1;
     const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
     return imageHeight + 74; // 标题 + 收藏 + 元信息文本区
   }, [aitagRatios]);
@@ -340,6 +336,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             onImageLoad={(width, height) => {
               const ratio = width / Math.max(1, height);
               if (Number.isFinite(ratio) && ratio > 0 && aitagRatios[work.id] !== ratio) {
+                aitagRatioCache[work.id] = ratio;
                 setAitagRatios(previous => (previous[work.id] === ratio ? previous : { ...previous, [work.id]: ratio }));
               }
             }}
@@ -405,20 +402,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     }
   }, [page, isPageInputOpen]);
 
-  const cacheScrollPositions = () => {
-    if (mainScrollRef.current) {
-      aitagPageCache.mainScrollTop = mainScrollRef.current.scrollTop;
-    }
-    if (detailScrollRef.current) {
-      aitagPageCache.detailScrollTop = detailScrollRef.current.scrollTop;
-    }
-  };
-
   const resetScrollPositions = () => {
-    aitagPageCache.mainScrollTop = 0;
-    aitagPageCache.detailScrollTop = 0;
     if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0;
-    if (detailScrollRef.current) detailScrollRef.current.scrollTop = 0;
+    onMainScrollRestore();
   };
 
   // 滚动接近列表底部自动加载下一页（追加模式，与 Pixiv 相同的哨兵机制）：
@@ -885,20 +871,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   }, []);
 
   useEffect(() => {
-    if (didRestoreScrollRef.current || !hasLoadedRef.current) return;
-    didRestoreScrollRef.current = true;
-    requestAnimationFrame(() => {
-      if (mainScrollRef.current) mainScrollRef.current.scrollTop = aitagPageCache.mainScrollTop;
-      if (detailScrollRef.current) detailScrollRef.current.scrollTop = aitagPageCache.detailScrollTop;
-    });
-  }, [items.length, selectedDetail?.images.length]);
-
-  useEffect(() => {
     return () => {
       if (cacheStatusRefreshTimerRef.current !== null) {
         window.clearTimeout(cacheStatusRefreshTimerRef.current);
       }
-      cacheScrollPositions();
     };
   }, []);
 
@@ -1192,7 +1168,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selectedWork ? 'xl:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main
           ref={mainScrollRef}
-          onScroll={event => { cacheScrollPositions(); onMainScrollRestore(); }}
+          onScroll={onMainScrollRestore}
           className={`${selectedWork ? 'hidden xl:block' : 'block'} min-h-0 overflow-y-auto p-4 md:p-6`}
         >
           {error && (
@@ -1296,8 +1272,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           subInfo={selectedWork ? `#${selectedWork.id} · ${getAitagType(selectedWork)}` : undefined}
           onBack={closeMobileDetail}
           onClose={() => setSelectedId(null)}
-          bodyRef={detailScrollRef}
-          onBodyScroll={cacheScrollPositions}
         >
           {!selectedWork ? (
             <div className="h-full flex items-center justify-center text-sm text-gray-400 text-center px-6">

@@ -4,6 +4,11 @@
 
 ## 2026-08-31
 
+### 修复:AITag 画廊跨页面往返切换后无法保持滚动位置而回顶的问题
+- **移除冲突的旧版缓存覆盖**：清理 `AitagGallery` 内部遗留的手工 `cacheScrollPositions` 与一次性 `didRestoreScrollRef` 逻辑，消除页面切出隐藏时（`display: none`）由容器塌陷触发的无保护 `scrollTop = 0` 覆盖问题；
+- **统一切页滚动保持**：主滚动容器纯粹由工程统一的 `useKeepAliveScrollRestore` hook 管理，并在主动搜索、切换排序或切换筛选时按需回顶；
+- **持久化瀑布流卡片宽高比**：将 `aitagRatios` 纳入模块级生命周期缓存，避免切回视图时因卡片高度重算塌陷导致恢复位置被强制截断。
+
 ### 修复:媒体网关支持 AITag 图床防盗链请求头与原图直接代理，解决列表条带灰块与详情多图空白
 - **网关远程抓取 Referer**：在 `requestRemoteBuffer` 中为 `ai-img.10118899.xyz` 目标附加 `Referer: https://aitag.win/` 与浏览器 User-Agent，防止上游图床 403 拦截，彻底解决瀑布流列表未缓存批次大面积灰块断续问题；
 - **网关原图直出代理**：在 `/api/media?variant=original` 路由中将 AITag 图床纳入网关代理（不走 302 浏览器重定向，由网关带 Referer 抓取字节流返回），彻底解决作品详情中 P2/P3 多图区域空白无法展示的问题。

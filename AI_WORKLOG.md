@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-31
+- **Antigravity (Gemini 3.7 Flash)**：修复 AITag 画廊跨页面往返切换时滚动位置丢失回顶的问题，清理遗留的冲突缓存代码，统一切换为 useKeepAliveScrollRestore 并持久化瀑布流宽高比缓存（fix: resolve scroll position loss on view switching in Aitag gallery）。
 - **Antigravity (Gemini 3.7 Flash)**：媒体网关增加 AITag 图床防盗链请求头（Referer + 浏览器 UA）并对 original 变体实行网关字节流代理，彻底解决 AITag 列表断续大面积灰块与作品详情多图（P2/P3）空白问题（fix: support aitag anti-hotlinking headers and original proxy in media gateway）。
 - **Antigravity (Gemini 3.7 Flash)**：修复空文件夹批量导入卡死、AITag 作品组远程图（P2/P3）防盗链拦截无法显示、以及数据维护密码框触发浏览器向风格串搜索框误填用户名的问题（fix: empty folder scan lockup, aitag multi-image proxy, and password autofill isolation）。
 - **Antigravity (Gemini 3.7 Flash)**：修复历史页面、AITag 画廊及 Danbooru 画廊刷新按钮传参错误导致列表跳向更早历史的问题，统一重置回第 1 页并回顶（fix: reset to page 1 on refresh in history, aitag and danbooru galleries）。
