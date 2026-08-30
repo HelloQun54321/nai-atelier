@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-31
+- **Antigravity (Gemini 3.7 Flash)**：风格串批量导入选项全面接入 localStorage 偏好持久化（含「标记为待实测」、「自动清理无用素材」与「导入后删除本地源文件」），保持同组控件持久化行为一致（fix: persist markUntested preference to localStorage in batch import modal）。
 - **Antigravity (Gemini 3.7 Flash)**：风格串批量导入增加「自动清理无用素材」与「导入后删除本地源文件（收件箱模式）」开关，支持 localStorage 偏好记忆与导入联动物理删除，消除二级弹窗确认并彻底解决源文件残留导致的重复垃圾问题（feat: support auto cleaning junk and imported source files in batch import）。
 
 ## 2026-08-29

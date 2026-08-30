@@ -236,10 +236,24 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState({ current: 0, total: 0 });
 
-  const [markUntested, setMarkUntested] = useState(true);
+  // 偏好设置：待实测标记 & 自动清理无用素材 & 导入后删除本地源文件（收件箱模式）
+  const [markUntested, setMarkUntested] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('nai_batch_import_mark_untested');
+      return saved === null ? true : saved === 'true';
+    } catch {
+      return true;
+    }
+  });
   const [customTag, setCustomTag] = useState('');
 
-  // 偏好设置：自动清理无用素材 & 导入后删除本地源文件（收件箱模式）
+  const handleToggleMarkUntested = (checked: boolean) => {
+    setMarkUntested(checked);
+    try {
+      localStorage.setItem('nai_batch_import_mark_untested', String(checked));
+    } catch {}
+  };
+
   const [autoDeleteJunk, setAutoDeleteJunk] = useState<boolean>(() => {
     try {
       return localStorage.getItem('nai_batch_import_auto_delete_junk') === 'true';
@@ -1127,7 +1141,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                     <input
                       type="checkbox"
                       checked={markUntested}
-                      onChange={e => setMarkUntested(e.target.checked)}
+                      onChange={e => handleToggleMarkUntested(e.target.checked)}
                       className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                     />
                     <div className="flex items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-200">
