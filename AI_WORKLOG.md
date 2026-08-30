@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-08-31
+- **Antigravity (Gemini 3.7 Flash)**：风格串批量导入增加「自动清理无用素材」与「导入后删除本地源文件（收件箱模式）」开关，支持 localStorage 偏好记忆与导入联动物理删除，消除二级弹窗确认并彻底解决源文件残留导致的重复垃圾问题（feat: support auto cleaning junk and imported source files in batch import）。
+
 ## 2026-08-29
 - **ZCode (GLM-5.3)**：vite dev server 由 0.0.0.0 改绑 127.0.0.1——Dependabot 报告的 4 条 vite 漏洞全部只在 dev server 运行时暴露，绑回环后局域网暴露面归零，替代 vite 6→7 大版本升级的安全收益（fix: bind vite dev server to loopback only）。
 - **ZCode (GLM-5.3)**：依赖安全升级第三项——npm overrides 强制 shell-quote 1.8.3 → 1.10.0（concurrently 的传递依赖，清除 critical+high 两条告警；本项目无攻击者可控输入，实际不可利用）；concurrently 冒烟通过，顺手重建了安装残留损坏的 rxjs 包（chore: force-upgrade shell-quote via npm overrides）。

@@ -61,5 +61,76 @@ describe('FolderBatchImport & Untested Tag Lifecycle', () => {
     const fpDifferentNegative = computeChainFingerprint('1girl, scenic', 'worst quality, bad anatomy', { width: 832, height: 1216 });
     expect(fpBase).not.toBe(fpDifferentNegative);
   });
+
+  it('正确计算自动清理候选集（computeAutoCleanupTargets）', async () => {
+    const { computeAutoCleanupTargets } = await import('./FolderBatchImportModal');
+
+    const fakeFile = new File([''], 'test.png', { type: 'image/png' });
+    const detectedItems: any[] = [
+      { id: 'item-1', file: fakeFile, name: 'preset-1', isDuplicate: false, selected: true },
+      { id: 'item-2', file: fakeFile, name: 'preset-2', isDuplicate: false, selected: true },
+      { id: 'item-dup-unselected', file: fakeFile, name: 'preset-dup-1', isDuplicate: true, selected: false },
+      { id: 'item-dup-forced', file: fakeFile, name: 'preset-dup-2', isDuplicate: true, selected: true },
+    ];
+
+    const ignoredFiles: any[] = [
+      { id: 'ignored-1', file: fakeFile, name: 'bad-1.png', reason: 'no-metadata' },
+      { id: 'ignored-2', file: fakeFile, name: 'bad-2.jpg', reason: 'non-png' },
+    ];
+
+    const importedSuccessfullyIds = new Set(['item-1', 'item-2', 'item-dup-forced']);
+
+    // 1. 两者均关闭
+    const noneTargets = computeAutoCleanupTargets({
+      detectedItems,
+      ignoredFiles,
+      importedSuccessfullyIds,
+      deleteSourceAfterImport: false,
+      autoDeleteJunk: false,
+    });
+    expect(noneTargets).toEqual([]);
+
+    // 2. 仅开启 deleteSourceAfterImport（删除已导入成功的源文件）
+    const sourceOnlyTargets = computeAutoCleanupTargets({
+      detectedItems,
+      ignoredFiles,
+      importedSuccessfullyIds,
+      deleteSourceAfterImport: true,
+      autoDeleteJunk: false,
+    });
+    expect(sourceOnlyTargets.map(t => t.id)).toEqual(['item-1', 'item-2', 'item-dup-forced']);
+    expect(sourceOnlyTargets.every(t => t.category === 'source')).toBe(true);
+
+    // 3. 仅开启 autoDeleteJunk（删除无元数据与未导入的重复素材，不误删已强制导入的 item-dup-forced）
+    const junkOnlyTargets = computeAutoCleanupTargets({
+      detectedItems,
+      ignoredFiles,
+      importedSuccessfullyIds,
+      deleteSourceAfterImport: false,
+      autoDeleteJunk: true,
+    });
+    expect(junkOnlyTargets.map(t => t.id)).toEqual(['ignored-1', 'ignored-2', 'item-dup-unselected']);
+    expect(junkOnlyTargets.every(t => t.category === 'junk')).toBe(true);
+
+    // 4. 两者均开启（收件箱完全清空模式）
+    const bothTargets = computeAutoCleanupTargets({
+      detectedItems,
+      ignoredFiles,
+      importedSuccessfullyIds,
+      deleteSourceAfterImport: true,
+      autoDeleteJunk: true,
+    });
+    // 包含 3 个源文件 + 2 个忽略文件 + 1 个未导入的重复文件，共 6 个
+    expect(bothTargets.length).toBe(6);
+    expect(bothTargets.map(t => t.id)).toEqual([
+      'item-1',
+      'item-2',
+      'item-dup-forced',
+      'ignored-1',
+      'ignored-2',
+      'item-dup-unselected',
+    ]);
+  });
 });
+
 

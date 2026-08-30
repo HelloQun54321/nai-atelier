@@ -63,6 +63,152 @@ const formatFileSize = (bytes: number): string => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+export interface DeletableFileItem {
+  id: string;
+  file: File;
+  dirHandle?: any;
+  relativePath?: string;
+  name?: string;
+}
+
+export interface ComputeCleanupTargetsParams {
+  detectedItems: DetectedChainItem[];
+  ignoredFiles: IgnoredFileItem[];
+  importedSuccessfullyIds: Set<string>;
+  deleteSourceAfterImport: boolean;
+  autoDeleteJunk: boolean;
+}
+
+export const computeAutoCleanupTargets = ({
+  detectedItems,
+  ignoredFiles,
+  importedSuccessfullyIds,
+  deleteSourceAfterImport,
+  autoDeleteJunk,
+}: ComputeCleanupTargetsParams): {
+  id: string;
+  file: File;
+  dirHandle?: any;
+  relativePath?: string;
+  name: string;
+  category: 'source' | 'junk';
+}[] => {
+  const result: {
+    id: string;
+    file: File;
+    dirHandle?: any;
+    relativePath?: string;
+    name: string;
+    category: 'source' | 'junk';
+  }[] = [];
+  const addedIds = new Set<string>();
+
+  // 1. 若开启导入后删除源文件：加入所有已成功入库的图片
+  if (deleteSourceAfterImport) {
+    detectedItems.forEach(item => {
+      if (importedSuccessfullyIds.has(item.id) && !addedIds.has(item.id)) {
+        addedIds.add(item.id);
+        result.push({
+          id: item.id,
+          file: item.file,
+          dirHandle: item.dirHandle,
+          relativePath: item.relativePath,
+          name: item.name,
+          category: 'source',
+        });
+      }
+    });
+  }
+
+  // 2. 若开启自动清理无用素材：
+  if (autoDeleteJunk) {
+    // 2.1 加入无元数据/损坏文件
+    ignoredFiles.forEach(item => {
+      if (!addedIds.has(item.id)) {
+        addedIds.add(item.id);
+        result.push({
+          id: item.id,
+          file: item.file,
+          dirHandle: item.dirHandle,
+          relativePath: item.relativePath,
+          name: item.name,
+          category: 'junk',
+        });
+      }
+    });
+
+    // 2.2 加入未勾选导入的重复素材（排除已成功导入的，以防用户强制导入了某张重复图）
+    detectedItems.forEach(item => {
+      if (item.isDuplicate && !importedSuccessfullyIds.has(item.id) && !addedIds.has(item.id)) {
+        addedIds.add(item.id);
+        result.push({
+          id: item.id,
+          file: item.file,
+          dirHandle: item.dirHandle,
+          relativePath: item.relativePath,
+          name: item.name,
+          category: 'junk',
+        });
+      }
+    });
+  }
+
+  return result;
+};
+
+export async function removeSingleFileFromDisk(
+  root: any,
+  targetFile: File,
+  specificDir?: any,
+  relPath?: string
+): Promise<boolean> {
+  if (specificDir) {
+    try {
+      await specificDir.removeEntry(targetFile.name);
+      return true;
+    } catch {
+      // specificDir 失败时继续回退到 root 递归查找
+    }
+  }
+
+  if (root) {
+    // 根据相对路径逐级进入子目录
+    const path = relPath || targetFile.webkitRelativePath || targetFile.name;
+    const parts = path.split(/[\/\\]+/).filter(Boolean);
+
+    async function searchAndRemove(dir: any, subParts: string[]): Promise<boolean> {
+      if (subParts.length <= 1) {
+        const fileName = subParts[0] || targetFile.name;
+        try {
+          await dir.removeEntry(fileName);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      const nextDirName = subParts[0];
+      try {
+        const nextDir = await dir.getDirectoryHandle(nextDirName);
+        return await searchAndRemove(nextDir, subParts.slice(1));
+      } catch {
+        return false;
+      }
+    }
+
+    if (await searchAndRemove(root, parts)) return true;
+
+    // 如果路径无法逐级命中，直接在根目录尝试
+    try {
+      await root.removeEntry(targetFile.name);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
   isOpen,
   existingChains = [],
@@ -92,6 +238,37 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
 
   const [markUntested, setMarkUntested] = useState(true);
   const [customTag, setCustomTag] = useState('');
+
+  // 偏好设置：自动清理无用素材 & 导入后删除本地源文件（收件箱模式）
+  const [autoDeleteJunk, setAutoDeleteJunk] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('nai_batch_import_auto_delete_junk') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const [deleteSourceAfterImport, setDeleteSourceAfterImport] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('nai_batch_import_delete_source') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleAutoDeleteJunk = (checked: boolean) => {
+    setAutoDeleteJunk(checked);
+    try {
+      localStorage.setItem('nai_batch_import_auto_delete_junk', String(checked));
+    } catch {}
+  };
+
+  const handleToggleDeleteSource = (checked: boolean) => {
+    setDeleteSourceAfterImport(checked);
+    try {
+      localStorage.setItem('nai_batch_import_delete_source', String(checked));
+    } catch {}
+  };
 
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number; name: string }>({
@@ -519,6 +696,59 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
     });
   };
 
+  // 统一物理删除执行函数
+  const performDiskDeletion = async (
+    targets: DeletableFileItem[],
+    progressCallback?: (current: number, total: number) => void
+  ): Promise<{ successCount: number; failCount: number; deletedIds: Set<string> }> => {
+    if (!targets.length) {
+      return { successCount: 0, failCount: 0, deletedIds: new Set() };
+    }
+
+    let rootHandle = rootDirectoryHandleRef.current;
+    if (!rootHandle && 'showDirectoryPicker' in window) {
+      try {
+        notify('正在请求选择目标文件夹以获得删除写入权限...', 'success');
+        rootHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+        rootDirectoryHandleRef.current = rootHandle;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return { successCount: 0, failCount: targets.length, deletedIds: new Set() };
+        notify('未能获取文件夹写入权限，无法删除本地文件', 'error');
+        return { successCount: 0, failCount: targets.length, deletedIds: new Set() };
+      }
+    }
+
+    if (!rootHandle && (!targets[0] || !targets[0].dirHandle)) {
+      notify('当前浏览器环境未授予本地文件系统删除权限', 'error');
+      return { successCount: 0, failCount: targets.length, deletedIds: new Set() };
+    }
+
+    let successCount = 0;
+    let failCount = 0;
+    const deletedIds = new Set<string>();
+
+    for (let i = 0; i < targets.length; i++) {
+      const item = targets[i];
+      progressCallback?.(i + 1, targets.length);
+
+      const success = await removeSingleFileFromDisk(
+        rootHandle,
+        item.file,
+        item.dirHandle,
+        item.relativePath
+      );
+
+      if (success) {
+        successCount++;
+        deletedIds.add(item.id);
+      } else {
+        failCount++;
+      }
+    }
+
+    return { successCount, failCount, deletedIds };
+  };
+
   // 真实从本地磁盘物理删除选中的文件
   const executeDeleteJunkFiles = async () => {
     const targets = currentCategoryJunkItems.filter(item => selectedCleanupIds.has(item.id));
@@ -527,103 +757,12 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
       return;
     }
 
-    // 1. 如果尚未获取 rootDirectoryHandle，尝试唤起目录授权
-    let rootHandle = rootDirectoryHandleRef.current;
-    if (!rootHandle && 'showDirectoryPicker' in window) {
-      try {
-        notify('正在请求选择目标文件夹以获得删除写入权限...', 'success');
-        rootHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
-        rootDirectoryHandleRef.current = rootHandle;
-      } catch (err: any) {
-        if (err.name === 'AbortError') return;
-        notify('未能获取文件夹写入权限，无法删除本地文件', 'error');
-        return;
-      }
-    }
-
-    if (!rootHandle && !targets[0].dirHandle) {
-      notify('当前浏览器环境未授予本地文件系统删除权限', 'error');
-      return;
-    }
-
     setIsDeleting(true);
     setDeleteProgress({ current: 0, total: targets.length });
 
-    let deletedCount = 0;
-    let failCount = 0;
-    const deletedIds = new Set<string>();
-
-    async function removeFileFromDisk(
-      root: any,
-      targetFile: File,
-      specificDir?: any,
-      relPath?: string
-    ): Promise<boolean> {
-      if (specificDir) {
-        try {
-          await specificDir.removeEntry(targetFile.name);
-          return true;
-        } catch {
-          // specificDir 失败时继续回退到 root 递归查找
-        }
-      }
-
-      if (root) {
-        // 根据相对路径逐级进入子目录
-        const path = relPath || targetFile.webkitRelativePath || targetFile.name;
-        const parts = path.split(/[\/\\]+/).filter(Boolean);
-
-        async function searchAndRemove(dir: any, subParts: string[]): Promise<boolean> {
-          if (subParts.length <= 1) {
-            const fileName = subParts[0] || targetFile.name;
-            try {
-              await dir.removeEntry(fileName);
-              return true;
-            } catch {
-              return false;
-            }
-          }
-          const nextDirName = subParts[0];
-          try {
-            const nextDir = await dir.getDirectoryHandle(nextDirName);
-            return await searchAndRemove(nextDir, subParts.slice(1));
-          } catch {
-            return false;
-          }
-        }
-
-        if (await searchAndRemove(root, parts)) return true;
-
-        // 如果路径无法逐级命中，直接在根目录尝试
-        try {
-          await root.removeEntry(targetFile.name);
-          return true;
-        } catch {
-          return false;
-        }
-      }
-
-      return false;
-    }
-
-    for (let i = 0; i < targets.length; i++) {
-      const item = targets[i];
-      setDeleteProgress({ current: i + 1, total: targets.length });
-
-      const success = await removeFileFromDisk(
-        rootHandle,
-        item.file,
-        item.dirHandle,
-        item.relativePath
-      );
-
-      if (success) {
-        deletedCount++;
-        deletedIds.add(item.id);
-      } else {
-        failCount++;
-      }
-    }
+    const { successCount, failCount, deletedIds } = await performDiskDeletion(targets, (current, total) => {
+      setDeleteProgress({ current, total });
+    });
 
     setIsDeleting(false);
 
@@ -631,10 +770,10 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
     setDetectedItems(prev => prev.filter(item => !deletedIds.has(item.id)));
     setIgnoredFiles(prev => prev.filter(item => !deletedIds.has(item.id)));
 
-    if (deletedCount > 0) {
-      notify(`已成功从本地文件夹删除 ${deletedCount} 张无意义图片${failCount > 0 ? `，${failCount} 个失败` : ''}`);
+    if (successCount > 0) {
+      notify(`已成功从本地文件夹删除 ${successCount} 张无意义图片${failCount > 0 ? `，${failCount} 个失败` : ''}`);
       setShowCleanupModal(false);
-    } else {
+    } else if (failCount > 0) {
       notify('删除失败，请检查文件夹访问权限', 'error');
     }
   };
@@ -650,6 +789,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
     setIsImporting(true);
     let successCount = 0;
     let failCount = 0;
+    const importedSuccessfullyIds = new Set<string>();
 
     for (let i = 0; i < targets.length; i++) {
       const item = targets[i];
@@ -683,15 +823,36 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
         });
 
         successCount++;
+        importedSuccessfullyIds.add(item.id);
       } catch (err) {
         console.error('导入单个风格串失败:', item.name, err);
         failCount++;
       }
     }
 
+    // 联动自动清理：若开启了自动清理无用素材或导入后删除源文件
+    let autoDeletedCount = 0;
+    if (successCount > 0 && (autoDeleteJunk || deleteSourceAfterImport)) {
+      const cleanupTargets = computeAutoCleanupTargets({
+        detectedItems,
+        ignoredFiles,
+        importedSuccessfullyIds,
+        deleteSourceAfterImport,
+        autoDeleteJunk,
+      });
+
+      if (cleanupTargets.length > 0) {
+        const { successCount: deletedCount, deletedIds } = await performDiskDeletion(cleanupTargets);
+        autoDeletedCount = deletedCount;
+        setDetectedItems(prev => prev.filter(item => !deletedIds.has(item.id)));
+        setIgnoredFiles(prev => prev.filter(item => !deletedIds.has(item.id)));
+      }
+    }
+
     setIsImporting(false);
     if (successCount > 0) {
-      notify(`成功导入 ${successCount} 个风格串${markUntested ? '（已标记为待实测）' : ''}${failCount > 0 ? `，${failCount} 个失败` : ''}`);
+      const cleanMsg = autoDeletedCount > 0 ? `，已自动清理 ${autoDeletedCount} 个本地文件` : '';
+      notify(`成功导入 ${successCount} 个风格串${markUntested ? '（已标记为待实测）' : ''}${cleanMsg}${failCount > 0 ? `，${failCount} 个失败` : ''}`);
       onSuccess();
       handleModalClose();
     } else {
@@ -987,6 +1148,48 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       placeholder="可选，例如：外部收集, 2026-08"
                       className="h-8 w-48 rounded-lg border border-gray-300 bg-white px-2.5 text-xs text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                     />
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-200/70 dark:border-gray-800/80 pt-2.5 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-4 md:gap-6">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={deleteSourceAfterImport}
+                        onChange={e => handleToggleDeleteSource(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-200">
+                        <Trash2 className="h-3.5 w-3.5 text-indigo-500" />
+                        <span>导入后删除本地源文件</span>
+                        <span className="text-[11px] font-normal text-gray-500 dark:text-gray-400 hidden sm:inline">
+                          （已转存至工坊，保持文件夹整洁）
+                        </span>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={autoDeleteJunk}
+                        onChange={e => handleToggleAutoDeleteJunk(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500"
+                      />
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-200">
+                        <Trash2 className="h-3.5 w-3.5 text-rose-500" />
+                        <span>自动清理无用素材</span>
+                        {totalJunkCount > 0 ? (
+                          <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+                            （含 {totalJunkCount} 张无元数据/重复图）
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-normal text-gray-500 dark:text-gray-400 hidden sm:inline">
+                            （无元数据与未导入的重复图）
+                          </span>
+                        )}
+                      </div>
+                    </label>
                   </div>
                 </div>
               </div>
