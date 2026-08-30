@@ -850,7 +850,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     const handleRefresh = async () => {
         setCacheState({});
         inflightPagesRef.current = {};
-        await goToPage(currentPageRef.current, true);
+        currentPageRef.current = 1;
+        if (historyScrollRef.current) historyScrollRef.current.scrollTop = 0;
+        await goToPage(1, true);
     };
 
     const historyGroups = useMemo(() => {

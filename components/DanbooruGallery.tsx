@@ -421,7 +421,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
           </form>
           <MobileIconButton label="筛选条件" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><Menu className="h-5 w-5" /></MobileIconButton>
           <ToolbarButton onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : undefined} title="浏览历史足迹"><Clock className="h-4 w-4" /></ToolbarButton>
-          <IconButton label="刷新" onClick={() => void load(query, page)} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></IconButton>
+          <IconButton label="刷新" onClick={() => void load(query, 1)} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></IconButton>
           <ImageTaggerAction notify={notify} />
         </div>
         <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
@@ -475,7 +475,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             单人 (solo)
           </button>
           <ToolbarButton onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : undefined} title="浏览历史足迹"><Clock className="h-4 w-4" />足迹</ToolbarButton>
-          <IconButton label="刷新" onClick={() => void load(query, page)} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></IconButton>
+          <IconButton label="刷新" onClick={() => void load(query, 1)} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></IconButton>
           <ImageTaggerAction notify={notify} />
         </div>
       </WorkspaceToolbar>

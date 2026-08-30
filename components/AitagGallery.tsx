@@ -1146,7 +1146,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           <span title={isAitagConnected ? '连接正常' : '当前使用本地缓存'} className={`h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
           <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) handleSearch(); }} placeholder="搜索 AITag 作品" />
           <MobileIconButton label="AITag 筛选" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"><Menu className="h-5 w-5" /></MobileIconButton>
-          <MobileIconButton label="刷新" onClick={() => loadWorks(page, { resetScroll: true })} disabled={isLoading} className="border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"><RefreshCw className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} /></MobileIconButton>
+          <MobileIconButton label="刷新" onClick={() => loadWorks(1, { resetScroll: true })} disabled={isLoading} className="border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"><RefreshCw className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} /></MobileIconButton>
           <ImageTaggerAction notify={notify} />
         </div>
         <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
@@ -1172,7 +1172,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             )}
           </div>
           <div className="ml-auto hidden items-center gap-2 text-xs text-gray-500 xl:flex"><span>已加载 {formatCount(visibleItems.length)} 条</span><span>共 {formatCount(total)} 条</span></div>
-          <IconButton label="刷新" onClick={() => loadWorks(page, { resetScroll: true })} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
+          <IconButton label="刷新" onClick={() => loadWorks(1, { resetScroll: true })} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
           <ImageTaggerAction notify={notify} />
         </div>
       </WorkspaceToolbar>
