@@ -4,6 +4,12 @@
 
 ## 2026-08-31
 
+### 修复:Keep-Alive 滚动保持中追赶提前退出、恢复期虚假 0 事件冲刷及详情开关重跑缺失
+- **校准追赶终止条件**：在 `useKeepAliveScrollRestore` 中修正 `tryRestore` 的终止逻辑，只有当实际 `scrollTop` 到位或达到容器最大物理可滚上限时才停止追赶，彻底解决“高度足够即误判为已恢复”导致首帧清除定时器、异步组件无法追赶的问题；
+- **恢复期写入锁与时间窗防护**：在视图重新激活（`active` 变 true）与恢复追赶期间，屏蔽浏览器从 `display: none` 恢复可见时派发的初始 `scrollTop = 0` 虚假事件，防止冲刷有效历史缓存；
+- **支持详情开关与重新可见触发**：引入 `trigger` 依赖，当用户在 AITag、Danbooru、Pixiv 等画廊中关闭详情侧边栏（主容器从隐藏恢复可见）时，自动重新触发滚动恢复；
+- **useLayoutEffect 绘制前同步首帧**：在 DOM 布局完成后、浏览器绘制前同步执行一次恢复，消除切页时先回顶后跳回的视觉闪动。
+
 ### 修复:AITag 画廊跨页面往返切换后无法保持滚动位置而回顶的问题
 - **移除冲突的旧版缓存覆盖**：清理 `AitagGallery` 内部遗留的手工 `cacheScrollPositions` 与一次性 `didRestoreScrollRef` 逻辑，消除页面切出隐藏时（`display: none`）由容器塌陷触发的无保护 `scrollTop = 0` 覆盖问题；
 - **统一切页滚动保持**：主滚动容器纯粹由工程统一的 `useKeepAliveScrollRestore` hook 管理，并在主动搜索、切换排序或切换筛选时按需回顶；

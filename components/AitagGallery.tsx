@@ -230,13 +230,13 @@ const defaultParams: NAIParams = {
 export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser, notify, onNavigateToPlayground, onCreateArtistChain, onRefreshInspiration }) => {
   const imageDisplay = useMobileImageDisplayPreferences();
   const mainScrollRef = useRef<HTMLElement | null>(null);
-  const onMainScrollRestore = useKeepAliveScrollRestore(mainScrollRef, 'aitag');
   const hasLoadedRef = useRef(aitagPageCache.hasLoaded);
   const cancelPageInputRef = useRef(false);
   const cacheStatusRefreshTimerRef = useRef<number | null>(null);
   const [items, setItems] = useState<AitagWorkSummary[]>(() => aitagPageCache.items);
   const [details, setDetails] = useState<Record<number, AitagWorkDetail>>(() => aitagPageCache.details);
   const [selectedId, setSelectedId] = useState<number | null>(() => aitagPageCache.selectedId);
+  const onMainScrollRestore = useKeepAliveScrollRestore(mainScrollRef, 'aitag', { trigger: selectedId });
   const [q, setQ] = useState(() => aitagPageCache.q);
   const [prompt, setPrompt] = useState(() => aitagPageCache.prompt);
   const [sort, setSort] = useState<AitagSort>(() => aitagPageCache.sort);

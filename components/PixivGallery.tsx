@@ -105,7 +105,6 @@ const formatCount = (value: number) => new Intl.NumberFormat('zh-CN', {
 export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser, notify, onNavigateToPlayground, onRefreshInspiration }) => {
   const imageDisplay = useMobileImageDisplayPreferences();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'pixiv');
   const [status, setStatus] = useState<PixivConnectionStatus | null>(null);
   const [statusError, setStatusError] = useState('');
   const [refreshToken, setRefreshToken] = useState('');
@@ -122,6 +121,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   const [items, setItems] = useState<PixivIllust[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'pixiv', { trigger: selectedId });
   const [selectedPage, setSelectedPage] = useState(0);
   const [userContext, setUserContext] = useState<{ id: string; name: string } | null>(null);
   const [loading, setLoading] = useState(false);

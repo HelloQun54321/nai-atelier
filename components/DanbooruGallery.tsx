@@ -82,7 +82,6 @@ type DanbooruRatio = 'all' | 'portrait' | 'landscape' | 'square';
 export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, currentUser, notify, onNavigateToPlayground, onRefreshInspiration }) => {
   const imageDisplay = useMobileImageDisplayPreferences();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'danbooru');
   const [input, setInput] = useState('');
   const [query, setQuery] = useState('order:rank');
   const [sort, setSort] = useState<DanbooruSort>('rank');
@@ -92,9 +91,9 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   const [showHistory, setShowHistory] = useState(false);
   const [historyItems, setHistoryItems] = useState<GalleryHistoryItem[]>([]);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
-
   const [items, setItems] = useState<DanbooruPost[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'danbooru', { trigger: selectedId });
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);

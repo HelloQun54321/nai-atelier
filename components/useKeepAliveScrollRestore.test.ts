@@ -5,13 +5,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { ImageActivityContext } from './SmartImage';
 
-const InnerView: React.FC<{ viewKey: string; clientHeight: number; scrollHeight: number }> = ({
+const InnerView: React.FC<{ viewKey: string; clientHeight: number; scrollHeight: number; trigger?: unknown }> = ({
   viewKey,
   clientHeight,
   scrollHeight,
+  trigger,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const handleScroll = useKeepAliveScrollRestore(scrollRef, viewKey);
+  const handleScroll = useKeepAliveScrollRestore(scrollRef, viewKey, { trigger });
 
   const setNode = (node: HTMLDivElement | null) => {
     if (node) {
@@ -34,16 +35,17 @@ const InnerView: React.FC<{ viewKey: string; clientHeight: number; scrollHeight:
   }, React.createElement('div', { style: { height: '2000px' } }));
 };
 
-const Harness: React.FC<{ active?: boolean; viewKey?: string; clientHeight?: number; scrollHeight?: number }> = ({
+const Harness: React.FC<{ active?: boolean; viewKey?: string; clientHeight?: number; scrollHeight?: number; trigger?: unknown }> = ({
   active = true,
   viewKey = 'test-view',
   clientHeight = 500,
   scrollHeight = 2000,
+  trigger,
 }) => {
   return React.createElement(
     ImageActivityContext.Provider,
     { value: active },
-    React.createElement(InnerView, { viewKey, clientHeight, scrollHeight })
+    React.createElement(InnerView, { viewKey, clientHeight, scrollHeight, trigger })
   );
 };
 
@@ -79,6 +81,26 @@ describe('useKeepAliveScrollRestore', () => {
     // 3. 重新切回激活状态，验证 1200px 缓存未被 0 冲掉，并成功恢复
     rerender(React.createElement(Harness, { active: true, viewKey: 'guard-view', clientHeight: 500, scrollHeight: 2000 }));
     expect(root.scrollTop).toBe(1200);
+  });
+
+  it('恢复期间即使收到浏览器恢复可见时派发的 scrollTop = 0 事件，也不冲刷已有的滚动缓存，且 trigger 变化可重新恢复', () => {
+    const { getByTestId, rerender } = render(React.createElement(Harness, { active: true, viewKey: 'restore-lock-view', clientHeight: 500, scrollHeight: 2000, trigger: null }));
+    const root = getByTestId('root');
+    root.scrollTop = 950;
+    root.dispatchEvent(new Event('scroll'));
+
+    // 切到未激活隐藏（例如打开详情或切到风格串）
+    rerender(React.createElement(Harness, { active: false, viewKey: 'restore-lock-view', clientHeight: 0, scrollHeight: 0, trigger: 123 }));
+    root.scrollTop = 0;
+
+    // 重新切回激活，并在激活瞬间派发 scrollTop = 0 的 scroll 事件（模拟浏览器恢复时的初始事件）
+    rerender(React.createElement(Harness, { active: true, viewKey: 'restore-lock-view', clientHeight: 0, scrollHeight: 0, trigger: 123 }));
+    root.scrollTop = 0;
+    root.dispatchEvent(new Event('scroll'));
+
+    // 详情关闭（trigger 从 123 变 null，main 容器重新变为可见 clientHeight = 500）
+    rerender(React.createElement(Harness, { active: true, viewKey: 'restore-lock-view', clientHeight: 500, scrollHeight: 2000, trigger: null }));
+    expect(root.scrollTop).toBe(950);
   });
 });
 
