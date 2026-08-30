@@ -25,10 +25,15 @@ export const WorkspaceToolbar: React.FC<{
 
 export const ToolbarSearch: React.FC<React.InputHTMLAttributes<HTMLInputElement> & {
   containerClassName?: string;
-}> = ({ containerClassName = '', className = '', ...props }) => (
+}> = ({ containerClassName = '', className = '', type = 'search', ...props }) => (
   <label className={`relative block min-w-0 flex-1 md:max-w-md ${containerClassName}`}>
     <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
     <input
+      type={type}
+      autoComplete="off"
+      data-lpignore="true"
+      data-1p-ignore="true"
+      data-form-type="other"
       {...props}
       className={`h-10 w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-3 text-sm text-gray-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-800 dark:bg-gray-950/70 dark:text-gray-100 dark:focus:border-indigo-500/80 dark:focus:bg-gray-900 ${className}`}
     />

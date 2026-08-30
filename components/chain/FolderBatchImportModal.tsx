@@ -343,7 +343,11 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
   const processScannedFiles = async (
     fileEntries: { file: File; dirHandle?: any; relativePath?: string }[]
   ) => {
-    if (!fileEntries.length) return;
+    if (!fileEntries.length) {
+      setIsScanning(false);
+      notify('所选文件夹内未找到任何文件', 'error');
+      return;
+    }
 
     setIsScanning(true);
     cleanupObjectUrls();

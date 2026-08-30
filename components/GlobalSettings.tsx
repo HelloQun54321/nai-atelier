@@ -1178,6 +1178,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   <input
                     type="password"
                     inputMode="numeric"
+                    autoComplete="new-password"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
                     maxLength={4}
                     value={lanPin}
                     onChange={event => setLanPin(event.currentTarget.value.replace(/\D/g, '').slice(0, 4))}

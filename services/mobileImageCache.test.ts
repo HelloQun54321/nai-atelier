@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ratchetVariantWidth, selectThumbnailVariant, thumbnailVariantWidth } from './mobileImageCache';
+import { getMobileOriginalUrl, ratchetVariantWidth, selectThumbnailVariant, thumbnailVariantWidth } from './mobileImageCache';
 
 describe('selectThumbnailVariant', () => {
   it('按像素宽落入正确档位', () => {
@@ -38,5 +38,17 @@ describe('ratchetVariantWidth 档位棘轮', () => {
     expect(floor).toBe(320);
     floor = ratchetVariantWidth(floor, 700); // 窗口放大 → thumb-960? 700<=... 700>640 → 960
     expect(floor).toBe(960);
+  });
+});
+
+describe('getMobileOriginalUrl', () => {
+  it('对白名单内的远程图片走 /api/media 代理', () => {
+    const remote = 'https://ai-img.10118899.xyz/NAI/123/456.webp';
+    expect(getMobileOriginalUrl(remote)).toBe(`/api/media?source=${encodeURIComponent(remote)}&variant=original`);
+  });
+
+  it('对本地已有资源保持原始 URL', () => {
+    const local = '/api/assets/aitag-covers/123.webp';
+    expect(getMobileOriginalUrl(local)).toBe(local);
   });
 });
