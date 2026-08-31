@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-08-31
+- **Codex (GPT-5)**：通过 npm override 将 AI SDK、jsdom 与 Miniflare 共用的 ws 统一升级至 8.21.0，清除两条运行时 WebSocket 安全告警且不升级 Wrangler 工具链（fix: override ws to patched 8.21.0）。
 - **Codex (GPT-5)**：将 Vite 升级至 6.4.3，并刷新 Rollup、PostCSS、Picomatch、Nanoid 与 Babel Core 安全补丁，清除 Vite 构建链 14 条 Dependabot 告警且不触碰 Wrangler 依赖链（fix: update Vite toolchain security patches）。
 - **Codex (GPT-5)**：精简 pre-commit 为密钥扫描、ESLint 与 TypeScript 三项基础门禁，移除每次提交的全量 Gateway/Vitest 和重复仓库密钥扫描，并校准 AI 分级验证规则（chore: streamline pre-commit verification）。
 - **ZCode (GLM-5.3)**：排查本地启动日志 ENOSPC 报错，定位为 wrangler 调试日志默认写入 C 盘全局目录累积 7GB 撑爆系统盘；将日志重定向到项目内 `.wrangler-logs`（支持 `WRANGLER_LOG_PATH` 覆盖）并在本机同步设置用户级环境变量（fix: redirect wrangler debug logs to project-local .wrangler-logs dir）。

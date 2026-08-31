@@ -3,6 +3,10 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-31
+### 修复:统一 ws 8.21.0，清除运行时 WebSocket 安全告警
+- **传递依赖安全覆盖**：在 npm overrides 中将 AI SDK、jsdom 与 Miniflare 共用的 `ws` 从 `8.18.0` 统一提升到 `8.21.0`，修复碎片数据内存耗尽与未初始化内存披露告警；不新增直接依赖，也不升级 Wrangler/Miniflare。
+- **审计收敛**：本地 `npm audit` 从 6 个受影响包降至 5 个，剩余项全部位于 Wrangler/Miniflare 工具链。
+
 ### 修复:升级 Vite 6.4.3 与构建链安全补丁
 - **Vite 补丁升级**：Vite `6.4.1 → 6.4.3`，修复开发服务器 WebSocket 任意文件读取、Windows 路径绕过与 NTLMv2 哈希泄露等 4 条直接依赖告警，继续保持开发服务仅绑定 `127.0.0.1`。
 - **构建链同步修复**：刷新 Rollup、PostCSS、Picomatch、Nanoid 与 Babel Core 的兼容安全补丁；本地 `npm audit` 从 12 个受影响包降至 6 个，剩余项均属于未在本次范围内处理的 Wrangler/Miniflare 与共享 ws 依赖链。
