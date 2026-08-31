@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Move } from 'lucide-react';
 import { ImageEditCanvasExpansion } from '../types';
 import { OUTPAINT_RATIO_PRESETS } from '../services/imageEdit';
@@ -24,6 +24,7 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
   onSelectRatioId,
   isBusy = false,
 }) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const isDraggingRef = useRef(false);
   const dragStartRef = useRef<{ clientX: number; clientY: number; startLeft: number; startTop: number }>({
@@ -33,8 +34,8 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
     startTop: 0,
   });
 
-  const srcW = Math.max(64, Math.floor(Number(sourceWidth) || 64));
-  const srcH = Math.max(64, Math.floor(Number(sourceHeight) || 64));
+  const srcW = Math.max(64, Math.floor(Number(sourceWidth) || 1024));
+  const srcH = Math.max(64, Math.floor(Number(sourceHeight) || 1024));
 
   const currentPreset = OUTPAINT_RATIO_PRESETS.find(p => p.id === selectedRatioId) || OUTPAINT_RATIO_PRESETS[0];
   const targetRatio = currentPreset.widthRatio / currentPreset.heightRatio;
@@ -59,6 +60,37 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
   const deltaW = Math.max(0, targetW - srcW);
   const deltaH = Math.max(0, targetH - srcH);
 
+  // 动态测量外框容器，确保舞台无论何种比例都能等比居中渲染
+  const [stageDimensions, setStageDimensions] = useState<{ width: number; height: number }>({ width: 320, height: 200 });
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const updateSize = () => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const padW = 20;
+      const padH = 20;
+      const availW = Math.max(60, rect.width - padW);
+      const availH = Math.max(60, (rect.height || 220) - padH);
+
+      if (availW / availH > targetRatio) {
+        const h = availH;
+        const w = h * targetRatio;
+        setStageDimensions({ width: Math.round(w), height: Math.round(h) });
+      } else {
+        const w = availW;
+        const h = w / targetRatio;
+        setStageDimensions({ width: Math.round(w), height: Math.round(h) });
+      }
+    };
+
+    updateSize();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [targetRatio]);
+
   // 鼠标拖拽原图逻辑（64px 动态吸附）
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (isBusy || (!deltaW && !deltaH)) return;
@@ -71,6 +103,7 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     event.stopPropagation();
+    event.preventDefault();
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -204,16 +237,22 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
           <span className="text-[10px]">可直接拖拽原图 · 64px 动态吸附</span>
         </div>
 
-        <div className="flex h-56 w-full items-center justify-center overflow-hidden rounded-lg bg-gray-200/70 p-2 dark:bg-gray-900/60">
+        <div
+          ref={containerRef}
+          className="flex h-60 w-full items-center justify-center overflow-hidden rounded-lg bg-gray-200/80 p-2 dark:bg-gray-900/70"
+        >
           {/* 目标比例外框（“布”） */}
           <div
             ref={stageRef}
             onClick={handleStageClick}
-            style={{ aspectRatio: `${targetW} / ${targetH}` }}
-            className="relative flex max-h-full max-w-full cursor-pointer select-none items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-indigo-400/80 bg-white/90 shadow-md dark:border-indigo-500/60 dark:bg-gray-900"
+            style={{
+              width: `${stageDimensions.width}px`,
+              height: `${stageDimensions.height}px`,
+            }}
+            className="relative cursor-pointer select-none touch-none overflow-hidden rounded-lg border-2 border-dashed border-indigo-500/80 bg-white/95 shadow-md dark:border-indigo-400/70 dark:bg-gray-900"
           >
             {/* 网格斜纹提示 AI 扩图区域 */}
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(#6366f1_1px,transparent_1px)] [background-size:12px_12px] opacity-15" />
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(#6366f1_1.2px,transparent_1.2px)] [background-size:12px_12px] opacity-20" />
 
             {/* 四周扩展数值标签 */}
             {expansion.top > 0 && (
@@ -249,17 +288,21 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
                 width: `${widthPercent}%`,
                 height: `${heightPercent}%`,
               }}
-              className={`absolute flex flex-col items-center justify-center overflow-hidden rounded border-2 border-indigo-600 bg-indigo-50/90 shadow-lg transition-transform dark:border-indigo-400 dark:bg-indigo-950/90 ${deltaW > 0 || deltaH > 0 ? 'cursor-grab active:cursor-grabbing active:scale-[0.98]' : 'cursor-default'}`}
+              className={`absolute flex flex-col items-center justify-center overflow-hidden rounded border-2 border-indigo-600 bg-indigo-100/95 shadow-md touch-none ${
+                deltaW > 0 || deltaH > 0
+                  ? 'cursor-grab hover:border-indigo-500 hover:shadow-lg active:cursor-grabbing active:scale-[0.99] active:ring-2 active:ring-indigo-400'
+                  : 'cursor-default'
+              } dark:border-indigo-400 dark:bg-indigo-950/95`}
             >
               {baseImagePreview ? (
                 <img
                   src={baseImagePreview}
                   alt="原图缩略"
-                  className="pointer-events-none h-full w-full object-contain"
+                  className="pointer-events-none h-full w-full object-cover"
                 />
               ) : (
                 <div className="pointer-events-none flex flex-col items-center justify-center p-1 text-center">
-                  <Move className="mb-0.5 h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <Move className="mb-0.5 h-4 w-4 text-indigo-600 dark:text-indigo-400" />
                   <span className="text-[10px] font-bold text-indigo-900 dark:text-indigo-200">原图</span>
                 </div>
               )}
