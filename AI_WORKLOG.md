@@ -5,8 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-01
-- **Codex (GPT-5)**：图生图底图移入左侧「底图与导入」区展示（含宽高），右侧预览只显示生成结果，移动端悬浮预览同步只跟随结果（feat: show img2img base image in left import section）。
-- **Codex (GPT-5)**：修复图生图全链路：显示图与提交底图错位、全尺寸计费不透明、固定 seed 不可复现、Strength=0 回退、换底图静默覆盖参数、底图原 Prompt 读错对象、canGenerate 假阳性；新增结果持久化草稿、A/B 切换与「以此为底图」迭代闭环，并剔除图生图蒙版状态机（feat/fix/refactor: rebuild image-to-image iteration loop and cost transparency）。
+- **DeepSeek (V4 Flash)**：图生图底图移入左侧「底图与导入」区展示（含宽高），右侧预览只显示生成结果，移动端悬浮预览同步只跟随结果（feat: show img2img base image in left import section）。
+- **DeepSeek (V4 Flash)**：修复图生图全链路：显示图与提交底图错位、全尺寸计费不透明、固定 seed 不可复现、Strength=0 回退、换底图静默覆盖参数、底图原 Prompt 读错对象、canGenerate 假阳性；新增结果持久化草稿、A/B 切换与「以此为底图」迭代闭环，并剔除图生图蒙版状态机（feat/fix/refactor: rebuild image-to-image iteration loop and cost transparency）。
 - **Codex (GPT-5)**：补齐 NovelAI 官方请求发送前的蒙版最终转换，将 `1/8` 内部二值蒙版最近邻还原为全尺寸不透明黑白 PNG，修复扩图区重复灰色斜纹死区（fix: send full-size opaque masks for NovelAI infill）。
 - **Codex (GPT-5)**：复核 NovelAI 当前 Web Bundle 与蒙版 Worker，纠正扩图白色补底、Infill/Img2Img 参数、噪声种子及官方定点羽化回贴公式，并补充蒙版算法与 Payload 回归测试（fix: correct official outpaint preprocessing and composition）。
 - **Antigravity (Gemini 3.7 Flash)**：对齐 NovelAI 官方 Infill/Outpaint 协议与回贴算法，修正 add_original_image 标志、扩图底图边缘延伸填充、蒙版隔离与 1/8 潜空间 4px 膨胀 + 20px 双重盒状模糊无缝合成，彻底根治扩图横向条纹与死区伪影（fix: align outpaint and infill with official protocol, edge padding, and seamless mask composition）。
