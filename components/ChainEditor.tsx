@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GenerationMode, ImageEditMetadata, ImageEditOperation, PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft, LabImageEditDraft, LabWorkspaceSession } from '../types';
 import { compilePrompt, getEditableGlobalPrompt, mergePromptFields } from '../services/promptUtils';
-import { generateImage, generateImageEdit, generateImageStream } from '../services/naiService';
+import { generateImage, generateImageEdit, generateImageEditStream, generateImageStream } from '../services/naiService';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
@@ -1639,7 +1639,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         } else if (editCost > 0 && !await confirmAction({ title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。`, confirmLabel: `消耗 ${editCost} 点并生成` })) return;
 
         await flushMaskSave(request.operation).catch(error => console.warn('生成前保存编辑蒙版失败:', error));
+        const previousGeneratedImage = generatedImage;
+        const previousPreviewMode = previewMode;
+        const previousEditPreviewImage = imageEditPreviewImage;
+        let streamedPreviewShown = false;
         setIsGenerating(true);
+        setGenerationProgress(null);
         setErrorMsg(null);
         try {
             const editParams: NAIParams = {
@@ -1650,9 +1655,32 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 characters: [],
                 useCoords: false,
             };
-            const result = await generateImageEdit(apiKey, request.prompt, request.negativePrompt, editParams, request);
+            const streamSupported = getRuntimeNaiModelInfo(editParams.model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).supportsStreamedResponses;
+            let result;
+            if (generationStreamPreview && streamSupported) {
+                try {
+                    result = await generateImageEditStream(apiKey, request.prompt, request.negativePrompt, editParams, request, preview => {
+                        streamedPreviewShown = true;
+                        setGeneratedImage(preview.image);
+                        setImageEditPreviewImage(preview.image);
+                        setPreviewMode('result');
+                        setGenerationProgress(preview.step ? { step: preview.step, total: editParams.steps } : null);
+                    }, streamSupported);
+                } catch (streamError) {
+                    console.warn('图片编辑过程预览不可用，已回退普通生成：', streamError);
+                    setGenerationProgress(null);
+                    result = await generateImageEdit(apiKey, request.prompt, request.negativePrompt, editParams, request);
+                }
+            } else {
+                result = await generateImageEdit(apiKey, request.prompt, request.negativePrompt, editParams, request);
+            }
             setGeneratedImage(result.image);
+            setImageEditPreviewImage(result.image);
             setPreviewMode('result');
+            if (window.matchMedia('(max-width: 1023px)').matches) setLightboxImg(result.image);
+
+            await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+
             const keyHash = await hashNaiApiKey(apiKey);
             const editMask = request.mask ? await dataUrlToBlob(request.mask) : undefined;
             const edit: ImageEditMetadata = {
@@ -1690,14 +1718,21 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setPreviewMode('history');
             setGeneratedImage(historyItem.imageUrl);
             setImageEditPreviewImage(historyItem.imageUrl);
+            setLightboxImg(current => current === result.image ? historyItem.imageUrl : current);
             checkAndRemoveUntestedTag();
             notify('图片编辑完成，结果已保存为新的历史图片', 'success');
         } catch (editError) {
+            if (streamedPreviewShown) {
+                setGeneratedImage(previousGeneratedImage);
+                setPreviewMode(previousPreviewMode);
+                setImageEditPreviewImage(previousEditPreviewImage);
+            }
             const message = editError instanceof Error ? editError.message : '图片编辑失败';
             setErrorMsg(message);
             notify(message, 'error');
         } finally {
             setIsGenerating(false);
+            setGenerationProgress(null);
         }
     };
 
@@ -2097,6 +2132,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 maskData={imageEditMaskData}
                 generationCostLabel={imageEditCostLabel}
                 isGenerating={isGenerating}
+                generationProgress={generationProgress}
                 safeMode={safeMode}
                 tagAssistEnabled={tagAssistEnabled}
                 forceEmptySeed={forceEmptySeed}

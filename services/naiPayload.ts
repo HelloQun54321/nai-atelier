@@ -21,6 +21,8 @@ export interface NaiImageEditPayloadOptions {
   minimumContextArea?: number;
   runtimeModels?: string[];
   runtime?: NaiRuntimeConfig;
+  stream?: boolean;
+  runtimeStreamSupported?: boolean;
 }
 
 const TRANSPARENT_PROMPT_TAGS = 'transparent background, has alpha';
@@ -168,6 +170,8 @@ export const buildNaiImageEditPayload = (
   const base = buildNaiGenerationPayload(prompt, negative, requestParams, {
     runtime: options.runtime,
     allowVibes: options.operation === 'image-to-image',
+    stream: options.stream,
+    runtimeStreamSupported: options.runtimeStreamSupported,
   });
   const isInpaintOperation = options.operation === 'inpaint' || options.operation === 'outpaint';
   const model = isInpaintOperation

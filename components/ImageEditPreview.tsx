@@ -8,6 +8,7 @@ interface ImageEditPreviewProps {
   error: string | null;
   generationCostLabel: string;
   isGenerating?: boolean;
+  generationProgress?: { step: number; total: number } | null;
   isLoading?: boolean;
   onGenerate: () => void;
   onOpenLightbox: (image: string | null) => void;
@@ -23,10 +24,11 @@ interface ImageEditPreviewProps {
 
 const getOperationLabel = (operation: ImageEditOperation) => operation === 'image-to-image' ? '图生图' : operation === 'inpaint' ? '局部重绘' : '扩图';
 
-export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({ operation, image, error, generationCostLabel, isGenerating = false, isLoading = false, onGenerate, onOpenLightbox, getDownloadFilename, canNavigateHistory, historyLabel, onPreviousHistory, onNextHistory, canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup }) => (
+export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({ operation, image, error, generationCostLabel, isGenerating = false, generationProgress, isLoading = false, onGenerate, onOpenLightbox, getDownloadFilename, canNavigateHistory, historyLabel, onPreviousHistory, onNextHistory, canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup }) => (
   <div className="image-edit-preview-shell chain-editor-preview-wrapper order-1 hidden min-h-0 flex-1 lg:contents">
     <ChainEditorPreview
       isGenerating={isGenerating}
+      generationProgress={generationProgress}
       handleGenerate={onGenerate}
       errorMsg={error}
       generatedImage={image}

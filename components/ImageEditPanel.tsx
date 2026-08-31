@@ -33,6 +33,7 @@ interface ImageEditPanelProps {
   maskData?: string;
   generationCostLabel: (operation: ImageEditOperation, focused: boolean, context?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number }) => string;
   isGenerating?: boolean;
+  generationProgress?: { step: number; total: number } | null;
   safeMode?: boolean;
   tagAssistEnabled: boolean;
   forceEmptySeed?: boolean;
@@ -107,6 +108,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   onRemoveCurrentHistory,
   onClearHistoryGroup,
   isGenerating = false,
+  generationProgress,
   safeMode = false,
   onGenerateBarChange,
 }) => {
@@ -794,6 +796,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         onGenerate={() => { void submit(); }}
         isLoading={isLoading}
         isGenerating={isGenerating}
+        generationProgress={generationProgress}
         onOpenLightbox={onOpenLightbox}
         getDownloadFilename={getDownloadFilename}
         canNavigateHistory={canNavigateHistory}

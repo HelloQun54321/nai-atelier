@@ -313,3 +313,108 @@ export const generateImageStream = async (
     }
   }
 };
+
+/** 使用 NovelAI SSE 中间帧进行图片编辑（图生图 / 局部重绘 / 扩图）；成图后由 composeImageEditResult 合成回原图。 */
+export const generateImageEditStream = async (
+  apiKey: string,
+  prompt: string,
+  negative: string,
+  params: NAIParams,
+  edit: {
+    operation: ImageEditOperation;
+    image: string;
+    mask?: string;
+    strength: number;
+    noise: number;
+    focused?: boolean;
+    focusedRect?: { x: number; y: number; width: number; height: number };
+    minimumContextArea?: number;
+  },
+  onPreview?: (preview: NaiStreamPreview) => void,
+  runtimeStreamSupported = false,
+) => {
+  const runtime = await getNaiRuntimeConfig();
+  const prepared = await prepareImageEdit(edit);
+  const requestParams: NAIParams = { ...params, width: prepared.requestWidth, height: prepared.requestHeight };
+  const modelInfo = validateGenerationCapabilities(requestParams, runtime, edit.operation);
+  if (!modelInfo.supportsStreamedResponses && !runtimeStreamSupported) {
+    throw new Error(`NovelAI ${modelInfo.label} 暂不支持生成过程预览`);
+  }
+  const payload = buildNaiImageEditPayload(prompt, negative, requestParams, {
+    ...edit,
+    image: prepared.image,
+    mask: prepared.mask,
+    focused: edit.focused && edit.operation === 'inpaint',
+    runtimeModels: runtime.models,
+    runtime,
+    stream: true,
+    runtimeStreamSupported,
+  });
+  const payloadParameters = payload.parameters as Record<string, unknown>;
+  const fallbackSeed = typeof payloadParameters.seed === 'number' ? payloadParameters.seed : undefined;
+  let queue = getCachedCloudQueuePreferences();
+  try { queue = await getCloudQueuePreferences(); } catch { /* 由真实生成请求触发统一解锁和错误处理。 */ }
+  const taskId = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const queueApiKey = apiKey.trim();
+  let requestFinished = false;
+  let terminalPhase: 'completed' | 'cancelled' | 'error' = 'error';
+  let terminalError: string | undefined;
+  let finalImage = '';
+  let finalSeed = fallbackSeed;
+  if (queue.enabled) emitCloudQueueStatus({ taskId, phase: 'preparing', cancelable: true }, queueApiKey);
+  const statusWatcher = queue.enabled ? watchCloudQueueTask(taskId, () => requestFinished, queueApiKey) : Promise.resolve();
+  try {
+    const budgetKeyHash = await hashNaiApiKey(apiKey);
+    try {
+      await api.postSse('/generate-stream', payload, {
+        Authorization: `Bearer ${apiKey}`,
+        ...(queue.enabled ? { 'X-Nai-Queue-Task-Id': taskId } : {}),
+      }, ({ event, data }) => {
+        if (!data || typeof data !== 'object') return;
+        const eventData = data as { image?: unknown; step_ix?: unknown; seed?: unknown; message?: unknown };
+        if (event === 'error') throw new Error(typeof eventData.message === 'string' ? eventData.message : '流式图片编辑失败');
+        if (typeof eventData.image !== 'string' || !eventData.image) return;
+        const image = imageDataUri(eventData.image);
+        if (event === 'intermediate') {
+          onPreview?.({ image, step: typeof eventData.step_ix === 'number' ? eventData.step_ix + 1 : undefined });
+        } else if (event === 'final') {
+          finalImage = image;
+          if (typeof eventData.seed === 'number' && Number.isFinite(eventData.seed)) finalSeed = eventData.seed;
+          onPreview?.({ image, step: params.steps });
+        }
+      }, { budgetKeyHash });
+    } catch (error) {
+      if (!finalImage) throw error;
+    }
+    if (!finalImage) throw new Error('流式图片编辑没有返回最终图片');
+    terminalPhase = 'completed';
+    const rawBlob = blobFromDataUri(finalImage);
+    const composed = await composeImageEditResult(rawBlob, prepared);
+    return {
+      image: URL.createObjectURL(composed),
+      blob: composed,
+      seed: finalSeed,
+      estimatedCost: undefined as number | undefined,
+      requestWidth: prepared.requestWidth,
+      requestHeight: prepared.requestHeight,
+      focusedGeometry: prepared.focusedGeometry,
+    };
+  } catch (error) {
+    terminalPhase = error instanceof Error && error.message.includes('已取消排队') ? 'cancelled' : 'error';
+    terminalError = error instanceof Error ? error.message : '流式图片编辑失败';
+    if (queue.enabled) emitCloudQueueStatus({ taskId, phase: terminalPhase, error: terminalError, cancelable: false }, queueApiKey);
+    throw error;
+  } finally {
+    requestFinished = true;
+    if (terminalPhase === 'completed' && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
+    }
+    await statusWatcher;
+    if (queue.enabled) {
+      emitCloudQueueStatus({ taskId, phase: terminalPhase, error: terminalError, cancelable: false }, queueApiKey);
+      scheduleCloudQueueStatusClear(taskId, terminalPhase === 'error' ? 8000 : 5000, queueApiKey);
+    }
+  }
+};

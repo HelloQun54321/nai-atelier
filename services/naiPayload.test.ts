@@ -92,6 +92,21 @@ describe('NovelAI generation payload', () => {
     expect(editParameters._local_minimum_context_area).toBe(64);
   });
 
+  it('enables SSE stream mode for image edit payloads when stream option is requested', () => {
+    const img2img = buildNaiImageEditPayload('1girl', '', baseParams, {
+      operation: 'image-to-image', image: 'data:image/png;base64,aW1hZ2U=', strength: 0.7, noise: 0,
+      stream: true,
+    });
+    expect((img2img.parameters as Record<string, unknown>).stream).toBe('sse');
+
+    const inpaint = buildNaiImageEditPayload('1girl', '', baseParams, {
+      operation: 'inpaint', image: 'data:image/png;base64,aW1hZ2U=', mask: 'data:image/png;base64,bWFzaw==',
+      strength: 0.8, noise: 0, runtimeModels: ['nai-diffusion-5-full-inpainting'],
+      stream: true,
+    });
+    expect((inpaint.parameters as Record<string, unknown>).stream).toBe('sse');
+  });
+
   it('uses model-specific runtime presets and never injects the removed nsfw tag', () => {
     const v5 = buildNaiGenerationPayload('1girl', '', {
       ...baseParams,
