@@ -165,8 +165,11 @@ export const buildNaiImageEditPayload = (
   options: NaiImageEditPayloadOptions,
 ) => {
   validateImageEditSampler(params.sampler);
+  const seed = params.seed !== undefined && params.seed !== null && params.seed !== -1
+    ? params.seed
+    : Math.floor(0x100000000 * Math.random() - 1);
   // 编辑模式只使用整图提示词；文生图草稿中保留的多角色提示词与坐标不得泄漏到请求。
-  const requestParams: NAIParams = { ...params, characters: [], useCoords: false };
+  const requestParams: NAIParams = { ...params, seed, characters: [], useCoords: false };
   const base = buildNaiGenerationPayload(prompt, negative, requestParams, {
     runtime: options.runtime,
     allowVibes: options.operation === 'image-to-image',
@@ -188,6 +191,7 @@ export const buildNaiImageEditPayload = (
       options.focused === true,
       options.minimumContextArea,
     ),
+    extra_noise_seed: seed - 1,
     _local_edit_operation: options.operation,
   };
   return {

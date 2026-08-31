@@ -52,8 +52,10 @@ describe('NovelAI generation payload', () => {
     expect(payload.model).toBe('nai-diffusion-5-full');
     expect(editParameters.image).toBe('aW1hZ2U=');
     expect(editParameters.strength).toBe(0.65);
+    expect(editParameters.color_correct).toBe(false);
     expect(editParameters.noise).toBe(0.2);
     expect(editParameters.add_original_image).toBe(true);
+    expect(editParameters.extra_noise_seed).toBe(editParameters.seed - 1);
   });
 
   it('builds an inpainting payload with a mask and inpainting model capability', () => {
@@ -65,9 +67,10 @@ describe('NovelAI generation payload', () => {
     expect(payload.action).toBe('infill');
     expect(payload.model).toBe('nai-diffusion-4-5-full-inpainting');
     expect(editParameters.mask).toBe('bWFzaw==');
-    expect(editParameters.img2img).toEqual({ strength: 0.8 });
+    expect(editParameters.img2img).toEqual({ strength: 0.8, color_correct: true });
     expect(editParameters.inpaintImg2ImgStrength).toBe(0.8);
     expect(editParameters.add_original_image).toBe(false);
+    expect(editParameters.extra_noise_seed).toBe(editParameters.seed - 1);
   });
 
   it('builds outpainting as ordinary infill without the Focused marker', () => {
@@ -79,6 +82,7 @@ describe('NovelAI generation payload', () => {
     expect(payload.action).toBe('infill');
     expect(payload.model).toBe('nai-diffusion-5-full-inpainting');
     expect(editParameters.add_original_image).toBe(false);
+    expect(editParameters.img2img).toBeUndefined();
     expect(editParameters._local_edit_operation).toBe('outpaint');
     expect(editParameters._local_focused_inpainting).toBeUndefined();
     expect(editParameters._local_minimum_context_area).toBeUndefined();

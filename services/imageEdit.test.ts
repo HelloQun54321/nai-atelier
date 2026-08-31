@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildImageEditParameters, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, limitFocusedImageEditRect, normalizeMinimumContextArea, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from './imageEdit';
+import { blurImageEditMaskAlpha, buildImageEditParameters, dilateImageEditMaskAlpha, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, limitFocusedImageEditRect, normalizeMinimumContextArea, resizeImageEditMaskAlpha, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from './imageEdit';
 
 describe('image edit helpers', () => {
   it('validates NovelAI canvas dimensions and 64 pixel alignment', () => {
@@ -24,7 +24,7 @@ describe('image edit helpers', () => {
     expect(buildImageEditParameters('inpaint', 'data:image/png;base64,aW1hZ2U=', 'data:image/png;base64,bWFzaw==', 0.7, 0.2, true)).toEqual({
       image: 'aW1hZ2U=',
       mask: 'bWFzaw==',
-      img2img: { strength: 0.7 },
+      img2img: { strength: 0.7, color_correct: true },
       inpaintImg2ImgStrength: 0.7,
       noise: 0.2,
       add_original_image: false,
@@ -34,6 +34,7 @@ describe('image edit helpers', () => {
     expect(buildImageEditParameters('image-to-image', 'data:image/png;base64,aW1hZ2U=', undefined, 0.7, 0.2, false)).toEqual({
       image: 'aW1hZ2U=',
       strength: 0.7,
+      color_correct: false,
       noise: 0.2,
       add_original_image: true,
     });
@@ -87,10 +88,25 @@ describe('image edit helpers', () => {
   it('sets add_original_image to false for outpainting while preserving strength and noise', () => {
     const params = buildImageEditParameters('outpaint', 'data:image/png;base64,aW1hZ2U=', 'data:image/png;base64,bWFzaw==', 1, 0, false) as Record<string, unknown>;
     expect(params.add_original_image).toBe(false);
-    expect(params.img2img).toEqual({ strength: 1 });
+    expect(params.img2img).toBeUndefined();
     expect(params.inpaintImg2ImgStrength).toBe(1);
     expect(params.noise).toBe(0);
     expect(params.image).toBe('aW1hZ2U=');
     expect(params.mask).toBe('bWFzaw==');
+  });
+
+  it('builds the official dilated and feathered composite mask from low-resolution alpha', () => {
+    const source = new Uint8ClampedArray(7 * 7);
+    source[3 * 7 + 3] = 255;
+    const dilated = dilateImageEditMaskAlpha(source, 7, 7, 1);
+    expect(dilated[2 * 7 + 2]).toBe(255);
+    expect(dilated[4 * 7 + 4]).toBe(255);
+    expect(dilated[0]).toBe(0);
+
+    const scaled = resizeImageEditMaskAlpha(new Uint8ClampedArray([0, 255]), 2, 1, 4, 1);
+    expect([...scaled]).toEqual([0, 0, 255, 255]);
+
+    const blurred = blurImageEditMaskAlpha(new Uint8ClampedArray([0, 0, 255, 0, 0]), 5, 1);
+    expect([...blurred]).toEqual([6, 6, 6, 6, 6]);
   });
 });

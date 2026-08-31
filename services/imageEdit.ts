@@ -268,16 +268,9 @@ export const createOutpaintCanvas = async (source: Blob, expansion: ImageEditCan
     throw new Error('无法创建扩图画布');
   }
 
-  // 边缘像元夹取延伸（Clamp-to-edge Replication）：使扩图区域的 VAE 初值与原图边缘色调自然接续，消除纯白底色导致的潜空间高频断崖与条纹
-  if (top > 0) imageContext.drawImage(bitmap, 0, 0, sourceWidth, 1, left, 0, sourceWidth, top);
-  if (bottom > 0) imageContext.drawImage(bitmap, 0, sourceHeight - 1, sourceWidth, 1, left, top + sourceHeight, sourceWidth, bottom);
-  if (left > 0) imageContext.drawImage(bitmap, 0, 0, 1, sourceHeight, 0, top, left, sourceHeight);
-  if (right > 0) imageContext.drawImage(bitmap, sourceWidth - 1, 0, 1, sourceHeight, left + sourceWidth, top, right, sourceHeight);
-  if (top > 0 && left > 0) imageContext.drawImage(bitmap, 0, 0, 1, 1, 0, 0, left, top);
-  if (top > 0 && right > 0) imageContext.drawImage(bitmap, sourceWidth - 1, 0, 1, 1, left + sourceWidth, 0, right, top);
-  if (bottom > 0 && left > 0) imageContext.drawImage(bitmap, 0, sourceHeight - 1, 1, 1, 0, top + sourceHeight, left, bottom);
-  if (bottom > 0 && right > 0) imageContext.drawImage(bitmap, sourceWidth - 1, sourceHeight - 1, 1, 1, left + sourceWidth, top + sourceHeight, right, bottom);
-
+  // 官方 Web 在发送 Infill 前以白色补齐透明像素；扩图画布保持相同底色语义。
+  imageContext.fillStyle = '#ffffff';
+  imageContext.fillRect(0, 0, width, height);
   imageContext.drawImage(bitmap, left, top);
   bitmap.close();
 
@@ -295,9 +288,14 @@ export const createOutpaintCanvas = async (source: Blob, expansion: ImageEditCan
 export const buildImageEditParameters = (operation: ImageEditOperation, image: string, mask: string | undefined, strength: number, noise: number, focused: boolean, minimumContextArea?: number) => ({
   image: stripDataUrl(image),
   ...(mask ? { mask: stripDataUrl(mask) } : {}),
-  ...(operation === 'image-to-image' ? { strength } : { img2img: { strength }, inpaintImg2ImgStrength: strength }),
+  ...(operation === 'image-to-image'
+    ? { strength, color_correct: false }
+    : {
+      inpaintImg2ImgStrength: strength,
+      ...(strength !== 1 ? { img2img: { strength, color_correct: true } } : {}),
+    }),
   noise,
-  // 严格对齐 NovelAI 官方 Web 端 generateInfill 规范：Infill/Outpaint 模式必须为 false，避免服务端基于 1/8 粗糙二值蒙版硬回贴产生切块伪影；图生图则保持 true
+  // Infill 返回待合成生成图，官方 Web 明确关闭服务端原图回贴并在客户端合成一次。
   add_original_image: operation === 'image-to-image',
   ...(focused && operation === 'inpaint' ? { _local_focused_inpainting: true, _local_minimum_context_area: normalizeMinimumContextArea(minimumContextArea) } : {}),
 });
@@ -327,9 +325,7 @@ const buildThresholdMask = (source: CanvasImageSource, sourceWidth: number, sour
   context.drawImage(source, 0, 0, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight);
   const image = context.getImageData(0, 0, targetWidth, targetHeight);
   for (let index = 0; index < image.data.length; index += 4) {
-    const alpha = image.data[index + 3];
-    const red = image.data[index];
-    const active = alpha > 155 || (alpha > 0 && red >= 155);
+    const active = image.data[index + 3] > 155;
     const value = active ? 255 : 0;
     image.data[index] = value;
     image.data[index + 1] = value;
@@ -340,85 +336,76 @@ const buildThresholdMask = (source: CanvasImageSource, sourceWidth: number, sour
   return canvas;
 };
 
-/** 官方 1/8 潜空间蒙版膨胀算法（半径 4 像素，对应原图 32 像素重叠带） */
-const dilateBinaryMask = (source: Uint8ClampedArray, width: number, height: number, radius = 4) => {
+/** 官方 1/8 蒙版先膨胀 4 像素，再放大和羽化。 */
+export const dilateImageEditMaskAlpha = (source: Uint8ClampedArray, width: number, height: number, radius = 4) => {
+  if (radius <= 0) return new Uint8ClampedArray(source);
+  const horizontal = new Uint8ClampedArray(source.length);
   const output = new Uint8ClampedArray(source.length);
-  for (let i = 0; i < output.length; i += 4) output[i + 3] = 255;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
-      if (source[(y * width + x) * 4] === 255) {
-        const minY = Math.max(0, y - radius);
-        const maxY = Math.min(height - 1, y + radius);
-        const minX = Math.max(0, x - radius);
-        const maxX = Math.min(width - 1, x + radius);
-        for (let ny = minY; ny <= maxY; ny += 1) {
-          for (let nx = minX; nx <= maxX; nx += 1) {
-            const idx = (ny * width + nx) * 4;
-            output[idx] = 255;
-            output[idx + 1] = 255;
-            output[idx + 2] = 255;
-          }
-        }
+      let value = 0;
+      for (let offset = -radius; offset <= radius; offset += 1) {
+        value = Math.max(value, source[y * width + Math.max(0, Math.min(width - 1, x + offset))]);
       }
+      horizontal[y * width + x] = value;
+    }
+  }
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let value = 0;
+      for (let offset = -radius; offset <= radius; offset += 1) {
+        value = Math.max(value, horizontal[Math.max(0, Math.min(height - 1, y + offset)) * width + x]);
+      }
+      output[y * width + x] = value;
     }
   }
   return output;
 };
 
-/** 8 倍最近邻放大至原图分辨率 */
-const scaleUpMask8x = (source: Uint8ClampedArray, srcWidth: number, srcHeight: number, targetWidth: number, targetHeight: number) => {
-  const output = new Uint8ClampedArray(targetWidth * targetHeight * 4);
+export const resizeImageEditMaskAlpha = (source: Uint8ClampedArray, sourceWidth: number, sourceHeight: number, targetWidth: number, targetHeight: number) => {
+  const output = new Uint8ClampedArray(targetWidth * targetHeight);
   for (let y = 0; y < targetHeight; y += 1) {
-    const srcY = Math.min(srcHeight - 1, Math.floor(y / 8));
+    const sourceY = Math.min(sourceHeight - 1, Math.floor(y * sourceHeight / targetHeight));
     for (let x = 0; x < targetWidth; x += 1) {
-      const srcX = Math.min(srcWidth - 1, Math.floor(x / 8));
-      const srcIdx = (srcY * srcWidth + srcX) * 4;
-      const dstIdx = (y * targetWidth + x) * 4;
-      output[dstIdx] = source[srcIdx];
-      output[dstIdx + 1] = source[srcIdx + 1];
-      output[dstIdx + 2] = source[srcIdx + 2];
-      output[dstIdx + 3] = source[srcIdx + 3];
+      const sourceX = Math.min(sourceWidth - 1, Math.floor(x * sourceWidth / targetWidth));
+      output[y * targetWidth + x] = source[sourceY * sourceWidth + sourceX];
     }
   }
   return output;
 };
 
-/** 双重盒状模糊（半径 20px，2 次迭代），严格对齐官方 Web 端羽化参数 */
-const boxBlurMask = (source: Uint8ClampedArray, width: number, height: number, radius = 20, iterations = 2) => {
-  if (radius <= 0) return source;
+/** 官方蒙版 Worker 在半径 20、两轮时使用的定点盒式模糊。 */
+export const blurImageEditMaskAlpha = (source: Uint8ClampedArray, width: number, height: number) => {
   const current = new Uint8ClampedArray(source);
-  const windowSize = radius * 2 + 1;
-  for (let iter = 0; iter < iterations; iter += 1) {
-    const horizontal = new Uint8ClampedArray(current.length);
+  const radius = 20;
+  const radiusPlusOne = radius + 1;
+  const multiplier = 39;
+  const shift = 16;
+  const maxX = width - 1;
+  const maxY = height - 1;
+  const horizontal = new Int16Array(current.length);
+  for (let iteration = 0; iteration < 2; iteration += 1) {
     for (let y = 0; y < height; y += 1) {
-      let sum = 0;
       const rowOffset = y * width;
-      for (let offset = -radius; offset <= radius; offset += 1) sum += current[(rowOffset + Math.max(0, Math.min(width - 1, offset))) * 4];
+      let sum = current[rowOffset] * radiusPlusOne;
+      for (let offset = 1; offset <= Math.min(maxX, radius); offset += 1) sum += current[rowOffset + offset];
+      if (radius > maxX) sum += current[rowOffset + maxX] * (radius - maxX);
       for (let x = 0; x < width; x += 1) {
-        const idx = (rowOffset + x) * 4;
-        const avg = Math.round(sum / windowSize);
-        horizontal[idx] = avg;
-        horizontal[idx + 1] = avg;
-        horizontal[idx + 2] = avg;
-        horizontal[idx + 3] = avg;
-        const removeX = Math.max(0, Math.min(width - 1, x - radius));
-        const addX = Math.max(0, Math.min(width - 1, x + radius + 1));
-        sum += current[(rowOffset + addX) * 4] - current[(rowOffset + removeX) * 4];
+        horizontal[rowOffset + x] = sum;
+        const removeX = Math.max(x - radius, 0);
+        const addX = Math.min(x + radiusPlusOne, maxX);
+        sum += current[rowOffset + addX] - current[rowOffset + removeX];
       }
     }
     for (let x = 0; x < width; x += 1) {
-      let sum = 0;
-      for (let offset = -radius; offset <= radius; offset += 1) sum += horizontal[(Math.max(0, Math.min(height - 1, offset)) * width + x) * 4];
+      let sum = horizontal[x] * radiusPlusOne;
+      for (let offset = 1; offset <= Math.min(maxY, radius); offset += 1) sum += horizontal[offset * width + x];
+      if (radius > maxY) sum += horizontal[maxY * width + x] * (radius - maxY);
       for (let y = 0; y < height; y += 1) {
-        const idx = (y * width + x) * 4;
-        const avg = Math.round(sum / windowSize);
-        current[idx] = avg;
-        current[idx + 1] = avg;
-        current[idx + 2] = avg;
-        current[idx + 3] = avg;
-        const removeY = Math.max(0, Math.min(height - 1, y - radius));
-        const addY = Math.max(0, Math.min(height - 1, y + radius + 1));
-        sum += horizontal[(addY * width + x) * 4] - horizontal[(removeY * width + x) * 4];
+        current[y * width + x] = (sum * multiplier) >> shift;
+        const removeY = Math.max(y - radius, 0);
+        const addY = Math.min(y + radiusPlusOne, maxY);
+        sum += horizontal[addY * width + x] - horizontal[removeY * width + x];
       }
     }
   }
@@ -430,20 +417,21 @@ const buildCompositeMaskFromApiMask = (apiMaskCanvas: HTMLCanvasElement, targetW
   const apiContext = apiMaskCanvas.getContext('2d');
   if (!apiContext) throw new Error('无法读取 API 蒙版数据');
   const apiData = apiContext.getImageData(0, 0, apiMaskCanvas.width, apiMaskCanvas.height).data;
-  const dilated = dilateBinaryMask(apiData, apiMaskCanvas.width, apiMaskCanvas.height, 4);
-  const scaled = scaleUpMask8x(dilated, apiMaskCanvas.width, apiMaskCanvas.height, targetWidth, targetHeight);
-  const blurred = boxBlurMask(scaled, targetWidth, targetHeight, 20, 2);
+  const alpha = new Uint8ClampedArray(apiMaskCanvas.width * apiMaskCanvas.height);
+  for (let index = 0, pixel = 0; index < apiData.length; index += 4, pixel += 1) alpha[pixel] = apiData[index];
+  const dilated = dilateImageEditMaskAlpha(alpha, apiMaskCanvas.width, apiMaskCanvas.height, 4);
+  const scaled = resizeImageEditMaskAlpha(dilated, apiMaskCanvas.width, apiMaskCanvas.height, targetWidth, targetHeight);
+  const blurred = blurImageEditMaskAlpha(scaled, targetWidth, targetHeight);
 
   const compositeCanvas = createCanvas(targetWidth, targetHeight);
   const compositeContext = compositeCanvas.getContext('2d');
   if (!compositeContext) throw new Error('无法创建合成蒙版画布');
   const compositeImage = compositeContext.createImageData(targetWidth, targetHeight);
-  for (let i = 0; i < blurred.length; i += 4) {
-    const val = blurred[i];
-    compositeImage.data[i] = 255;
-    compositeImage.data[i + 1] = 255;
-    compositeImage.data[i + 2] = 255;
-    compositeImage.data[i + 3] = val; // Alpha 通道为羽化透明度
+  for (let index = 0, pixel = 0; index < compositeImage.data.length; index += 4, pixel += 1) {
+    compositeImage.data[index] = 255;
+    compositeImage.data[index + 1] = 255;
+    compositeImage.data[index + 2] = 255;
+    compositeImage.data[index + 3] = blurred[pixel];
   }
   compositeContext.putImageData(compositeImage, 0, 0);
   return compositeCanvas;
@@ -502,6 +490,8 @@ export const prepareImageEdit = async (edit: {
     requestImageCanvas = createCanvas(focusedGeometry.requestWidth, focusedGeometry.requestHeight);
     const requestImageContext = requestImageCanvas.getContext('2d');
     if (!requestImageContext) throw new Error('无法创建 Focused 图片画布');
+    requestImageContext.fillStyle = '#ffffff';
+    requestImageContext.fillRect(0, 0, requestImageCanvas.width, requestImageCanvas.height);
     requestImageContext.imageSmoothingQuality = 'high';
     requestImageContext.drawImage(imageBitmap, focusedGeometry.crop.x, focusedGeometry.crop.y, focusedGeometry.crop.width, focusedGeometry.crop.height, 0, 0, focusedGeometry.requestWidth, focusedGeometry.requestHeight);
 
@@ -534,11 +524,13 @@ export const prepareImageEdit = async (edit: {
     focusedRequestMaskContext.drawImage(focusedCropMaskCanvas, 0, 0, focusedCropMaskCanvas.width, focusedCropMaskCanvas.height, 0, 0, focusedRequestMaskCanvas.width, focusedRequestMaskCanvas.height);
 
     apiMaskCanvas = buildThresholdMask(focusedRequestMaskCanvas, focusedGeometry.requestWidth, focusedGeometry.requestHeight, Math.max(8, focusedGeometry.requestWidth / 8), Math.max(8, focusedGeometry.requestHeight / 8));
-    compositeMaskCanvas = buildCompositeMaskFromApiMask(apiMaskCanvas, focusedGeometry.crop.width, focusedGeometry.crop.height);
+    compositeMaskCanvas = buildCompositeMaskFromApiMask(apiMaskCanvas, focusedGeometry.requestWidth, focusedGeometry.requestHeight);
   } else {
     requestImageCanvas = createCanvas(originalWidth, originalHeight);
     const requestImageContext = requestImageCanvas.getContext('2d');
     if (!requestImageContext) throw new Error('无法创建图片编辑画布');
+    requestImageContext.fillStyle = '#ffffff';
+    requestImageContext.fillRect(0, 0, originalWidth, originalHeight);
     requestImageContext.drawImage(imageBitmap, 0, 0, originalWidth, originalHeight);
 
     if (sourceMaskCanvas) {
@@ -592,18 +584,15 @@ export const composeImageEditResult = async (result: Blob, prepared: PreparedIma
     fullMaskContext.drawImage(maskBitmap, 0, 0, maskBitmap.width, maskBitmap.height, 0, 0, baseBitmap.width, baseBitmap.height);
   }
 
-  // 1. 生成图以羽化蒙版调制 Alpha（destination-in）
   generatedContext.globalCompositeOperation = 'destination-in';
   generatedContext.drawImage(fullMask, 0, 0);
   generatedContext.globalCompositeOperation = 'source-over';
 
-  // 2. 底图扣除重绘区域（destination-out: 像素透明度乘以 1 - MaskAlpha）
   outputContext.globalCompositeOperation = 'destination-out';
   outputContext.drawImage(fullMask, 0, 0);
-
-  // 3. 将调制后的生成图回贴到底图上（source-over 实现精准 Output = Original*(1-A) + Generated*A）
-  outputContext.globalCompositeOperation = 'source-over';
+  outputContext.globalCompositeOperation = 'lighter';
   outputContext.drawImage(generated, 0, 0);
+  outputContext.globalCompositeOperation = 'source-over';
 
   baseBitmap.close();
   resultBitmap.close();
