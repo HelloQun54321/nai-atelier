@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-01
+- **Antigravity (Gemini 3.7 Flash)**：修复图生图等编辑模式导入底图后因 displayedImage 为 null 导致桌面端生成按钮被误禁用的缺陷，纠正为基于底图载入状态 canGenerate 判定（fix: enable image edit generate button upon base image load）。
 - **DeepSeek (V4 Flash)**：图生图底图移入左侧「底图与导入」区展示（含宽高），右侧预览只显示生成结果，移动端悬浮预览同步只跟随结果（feat: show img2img base image in left import section）。
 - **DeepSeek (V4 Flash)**：修复图生图全链路：显示图与提交底图错位、全尺寸计费不透明、固定 seed 不可复现、Strength=0 回退、换底图静默覆盖参数、底图原 Prompt 读错对象、canGenerate 假阳性；新增结果持久化草稿、A/B 切换与「以此为底图」迭代闭环，并剔除图生图蒙版状态机（feat/fix/refactor: rebuild image-to-image iteration loop and cost transparency）。
 - **Codex (GPT-5)**：补齐 NovelAI 官方请求发送前的蒙版最终转换，将 `1/8` 内部二值蒙版最近邻还原为全尺寸不透明黑白 PNG，修复扩图区重复灰色斜纹死区（fix: send full-size opaque masks for NovelAI infill）。

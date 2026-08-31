@@ -427,4 +427,58 @@ describe('ImageEditPreview', () => {
     expect(screen.queryByText(/点击看底图/)).toBeNull();
     expect(screen.queryByRole('button', { name: /以此为底图/ })).toBeNull();
   });
+
+  it('载入底图后右侧无生成结果（image 为 null）时，若 canGenerate 为 true 则生成按钮可用', () => {
+    const onGenerate = vi.fn();
+    render(React.createElement(ImageEditPreview, {
+      operation: 'image-to-image',
+      image: null,
+      baseImage: 'data:image/png;base64,base',
+      error: null,
+      generationCostLabel: '14 点',
+      canGenerate: true,
+      onGenerate,
+      onOpenLightbox: vi.fn(),
+      getDownloadFilename: () => 'fixture.png',
+    }));
+
+    const generateButton = screen.getByRole('button', { name: /生成图生图结果/ }) as HTMLButtonElement;
+    expect(generateButton.disabled).toBe(false);
+    fireEvent.click(generateButton);
+    expect(onGenerate).toHaveBeenCalledOnce();
+  });
+
+  it('canGenerate 为 false 或 isLoading 为 true 时生成按钮禁用', () => {
+    const { rerender } = render(React.createElement(ImageEditPreview, {
+      operation: 'image-to-image',
+      image: null,
+      baseImage: null,
+      error: null,
+      generationCostLabel: '14 点',
+      canGenerate: false,
+      onGenerate: vi.fn(),
+      onOpenLightbox: vi.fn(),
+      getDownloadFilename: () => 'fixture.png',
+    }));
+
+    const buttonNoBase = screen.getByRole('button', { name: /生成图生图结果/ }) as HTMLButtonElement;
+    expect(buttonNoBase.disabled).toBe(true);
+
+    rerender(React.createElement(ImageEditPreview, {
+      operation: 'image-to-image',
+      image: null,
+      baseImage: 'data:image/png;base64,base',
+      error: null,
+      generationCostLabel: '14 点',
+      isLoading: true,
+      canGenerate: true,
+      onGenerate: vi.fn(),
+      onOpenLightbox: vi.fn(),
+      getDownloadFilename: () => 'fixture.png',
+    }));
+
+    const buttonLoading = screen.getByRole('button', { name: /生成图生图结果/ }) as HTMLButtonElement;
+    expect(buttonLoading.disabled).toBe(true);
+  });
 });
+

@@ -145,6 +145,9 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isBaseImageDragActive, setIsBaseImageDragActive] = useState(false);
   const maskEditable = !safeMode && (operation === 'inpaint' || (operation === 'outpaint' && manualMaskEditing));
+  // 隐藏画布挂载即存在；只有真正载入底图（width/height 有效）且未在加载时才允许生成，
+  // 否则无底图时也会点亮生成按钮，点击后才报尺寸错误。
+  const canGenerate = !isLoading && !isGenerating && state.width > 0 && state.height > 0 && Boolean(imageCanvasRef.current) && (operation === 'image-to-image' || Boolean(maskCanvasRef.current));
 
   // 每次渲染同步移动端悬浮生成栏入口，保证 ChainEditor 拿到的费用标签与预览卡一致；
   // 通过回调上报而非可变 ref，父组件才能在自己渲染时拿到最新状态。
@@ -153,9 +156,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     onGenerateBarChange({
       generate: () => { void submit(); },
       costLabel: generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea }),
-      // 隐藏画布挂载即存在；只有真正载入底图（width/height 有效）且未在加载时才允许生成，
-      // 否则移动端无底图时也会点亮生成按钮，点击后才报尺寸错误。
-      canGenerate: !isLoading && !isGenerating && state.width > 0 && state.height > 0 && Boolean(imageCanvasRef.current) && (operation === 'image-to-image' || Boolean(maskCanvasRef.current)),
+      canGenerate,
     });
   });
 
@@ -831,13 +832,14 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       <ImageEditPreview
         operation={operation}
         image={previewImage}
-        baseImage={previewImage && baseImage && previewImage !== baseImage ? baseImage : null}
+        baseImage={baseImage}
         onUseResultAsBase={previewImage && previewImage !== baseImage ? () => onBaseImageChange(previewImage, 'generated') : undefined}
         error={error}
         generationCostLabel={generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea })}
         onGenerate={() => { void submit(); }}
         isLoading={isLoading}
         isGenerating={isGenerating}
+        canGenerate={canGenerate}
         generationProgress={generationProgress}
         onOpenLightbox={onOpenLightbox}
         getDownloadFilename={getDownloadFilename}

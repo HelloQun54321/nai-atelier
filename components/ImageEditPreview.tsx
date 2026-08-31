@@ -14,6 +14,8 @@ interface ImageEditPreviewProps {
   isGenerating?: boolean;
   generationProgress?: { step: number; total: number } | null;
   isLoading?: boolean;
+  canGenerate?: boolean;
+  generationDisabled?: boolean;
   onGenerate: () => void;
   onOpenLightbox: (image: string | null) => void;
   getDownloadFilename: () => string;
@@ -30,6 +32,7 @@ const getOperationLabel = (operation: ImageEditOperation) => operation === 'imag
 
 export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
   operation, image, baseImage, onUseResultAsBase, error, generationCostLabel, isGenerating = false, generationProgress, isLoading = false,
+  canGenerate, generationDisabled,
   onGenerate, onOpenLightbox, getDownloadFilename, canNavigateHistory, historyLabel, onPreviousHistory, onNextHistory,
   canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup,
 }) => {
@@ -38,6 +41,10 @@ export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
   const [showBase, setShowBase] = useState(false);
   // 结果存在时优先显示结果；切换到底图则显示底图
   const displayedImage: string | null = canCompare && showBase ? (baseImage ?? null) : image;
+
+  const isGenerationDisabled = generationDisabled !== undefined
+    ? generationDisabled
+    : isLoading || (canGenerate !== undefined ? !canGenerate : false);
 
   return (
     <div className="image-edit-preview-shell chain-editor-preview-wrapper order-1 hidden min-h-0 flex-1 lg:contents">
@@ -87,7 +94,7 @@ export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
         emptyLabel={operation === 'image-to-image' ? '在左侧「底图与导入」选择底图后生成' : '请先在左侧选择要编辑的底图'}
         resultAlt={`${getOperationLabel(operation)}预览`}
         showQueueStatus={false}
-        generationDisabled={isLoading || !displayedImage}
+        generationDisabled={isGenerationDisabled}
         hideGenerateButtonOnMobile
       />
     </div>
