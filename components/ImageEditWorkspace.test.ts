@@ -280,14 +280,15 @@ describe('ImageEditControls', () => {
     expect(onSelectImageSource).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'history-21' }), 'history', false);
   });
 
-  it('扩图默认只显示自动边缘扩展，不直接暴露画笔工具', () => {
+  it('扩图默认只显示自动边缘扩展与九向锚点，不直接暴露画笔工具', () => {
     const { onManualMaskEditingChange } = renderControls('outpaint');
 
-    expect(screen.getByText('扩展画布（像素）')).toBeTruthy();
-    expect(screen.getByText('上')).toBeTruthy();
-    expect(screen.getByText('右')).toBeTruthy();
-    expect(screen.getByText('下')).toBeTruthy();
-    expect(screen.getByText('左')).toBeTruthy();
+    expect(screen.getByText('智能画幅扩展')).toBeTruthy();
+    expect(screen.getByText('目标画幅比例')).toBeTruthy();
+    expect(screen.getByText('原图摆放方位（九向锚点）')).toBeTruthy();
+    expect(screen.getByTitle('原图靠左')).toBeTruthy();
+    expect(screen.getByTitle('原图居中')).toBeTruthy();
+    expect(screen.getByText('上 (top)')).toBeTruthy();
     expect(screen.getByText('手动调整蒙版')).toBeTruthy();
     expect(screen.queryByText('画笔')).toBeNull();
     fireEvent.click(screen.getByRole('switch', { name: /手动调整蒙版/ }));

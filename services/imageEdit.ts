@@ -81,6 +81,107 @@ export const transformCharacterCoordinatesForOutpaint = (
   }));
 };
 
+export type OutpaintAnchor =
+  | 'top-left'
+  | 'top-center'
+  | 'top-right'
+  | 'center-left'
+  | 'center'
+  | 'center-right'
+  | 'bottom-left'
+  | 'bottom-center'
+  | 'bottom-right';
+
+export interface OutpaintRatioOption {
+  id: string;
+  label: string;
+  ratio: string;
+  widthRatio: number;
+  heightRatio: number;
+}
+
+export const OUTPAINT_RATIO_PRESETS: OutpaintRatioOption[] = [
+  { id: '16:9', label: '16:9 电脑横屏壁纸', ratio: '16:9', widthRatio: 16, heightRatio: 9 },
+  { id: '9:16', label: '9:16 手机全屏壁纸', ratio: '9:16', widthRatio: 9, heightRatio: 16 },
+  { id: '1:1', label: '1:1 方形头像/贴纸', ratio: '1:1', widthRatio: 1, heightRatio: 1 },
+  { id: '4:3', label: '4:3 传统横屏插画', ratio: '4:3', widthRatio: 4, heightRatio: 3 },
+  { id: '3:4', label: '3:4 传统竖屏插画', ratio: '3:4', widthRatio: 3, heightRatio: 4 },
+  { id: '21:9', label: '21:9 超宽带鱼屏', ratio: '21:9', widthRatio: 21, heightRatio: 9 },
+  { id: '2:3', label: '2:3 官方经典写真', ratio: '2:3', widthRatio: 2, heightRatio: 3 },
+  { id: '3:2', label: '3:2 官方经典横图', ratio: '3:2', widthRatio: 3, heightRatio: 2 },
+];
+
+/**
+ * 根据源图尺寸、目标比例与九向锚点，智能计算各方向所需的 expansion 像素量（保证最终新画布为 64 的整数倍）。
+ */
+export const calculateOutpaintTargetExpansion = (
+  sourceWidth: number,
+  sourceHeight: number,
+  widthRatio: number,
+  heightRatio: number,
+  anchor: OutpaintAnchor = 'center'
+): ImageEditCanvasExpansion => {
+  const srcW = Math.max(IMAGE_EDIT_MIN_DIMENSION, Math.floor(Number(sourceWidth) || IMAGE_EDIT_MIN_DIMENSION));
+  const srcH = Math.max(IMAGE_EDIT_MIN_DIMENSION, Math.floor(Number(sourceHeight) || IMAGE_EDIT_MIN_DIMENSION));
+  const wRatio = Math.max(1, Number(widthRatio) || 1);
+  const hRatio = Math.max(1, Number(heightRatio) || 1);
+  const targetRatio = wRatio / hRatio;
+  const currentRatio = srcW / srcH;
+
+  let targetW: number;
+  let targetH: number;
+
+  if (currentRatio < targetRatio) {
+    // 当前图偏瘦 -> 保持高度，向两侧扩宽
+    targetH = Math.ceil(srcH / 64) * 64;
+    const calculatedW = targetH * targetRatio;
+    targetW = Math.ceil(calculatedW / 64) * 64;
+  } else {
+    // 当前图偏胖 -> 保持宽度，向上下扩高
+    targetW = Math.ceil(srcW / 64) * 64;
+    const calculatedH = targetW / targetRatio;
+    targetH = Math.ceil(calculatedH / 64) * 64;
+  }
+
+  targetW = Math.max(targetW, Math.ceil(srcW / 64) * 64);
+  targetH = Math.max(targetH, Math.ceil(srcH / 64) * 64);
+
+  targetW = Math.min(IMAGE_EDIT_MAX_DIMENSION, targetW);
+  targetH = Math.min(IMAGE_EDIT_MAX_DIMENSION, targetH);
+
+  const deltaW = Math.max(0, targetW - srcW);
+  const deltaH = Math.max(0, targetH - srcH);
+
+  let left = 0;
+  let right = 0;
+  let top = 0;
+  let bottom = 0;
+
+  if (anchor === 'top-left' || anchor === 'center-left' || anchor === 'bottom-left') {
+    left = 0;
+    right = deltaW;
+  } else if (anchor === 'top-right' || anchor === 'center-right' || anchor === 'bottom-right') {
+    left = deltaW;
+    right = 0;
+  } else {
+    left = Math.floor((deltaW / 2) / 64) * 64;
+    right = deltaW - left;
+  }
+
+  if (anchor === 'top-left' || anchor === 'top-center' || anchor === 'top-right') {
+    top = 0;
+    bottom = deltaH;
+  } else if (anchor === 'bottom-left' || anchor === 'bottom-center' || anchor === 'bottom-right') {
+    top = deltaH;
+    bottom = 0;
+  } else {
+    top = Math.floor((deltaH / 2) / 64) * 64;
+    bottom = deltaH - top;
+  }
+
+  return { top, right, bottom, left };
+};
+
 const clampRect = (width: number, height: number, rect: ImageEditRect): ImageEditRect => {
   const x = Math.max(0, Math.min(Math.floor(width - 1), Math.floor(rect.x)));
   const y = Math.max(0, Math.min(Math.floor(height - 1), Math.floor(rect.y)));

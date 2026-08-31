@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blurImageEditMaskAlpha, buildImageEditParameters, buildOpaqueImageEditMaskRgba, dilateImageEditMaskAlpha, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, limitFocusedImageEditRect, normalizeMinimumContextArea, resizeImageEditMaskAlpha, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from './imageEdit';
+import { blurImageEditMaskAlpha, buildImageEditParameters, buildOpaqueImageEditMaskRgba, calculateOutpaintTargetExpansion, dilateImageEditMaskAlpha, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, limitFocusedImageEditRect, normalizeMinimumContextArea, resizeImageEditMaskAlpha, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from './imageEdit';
 
 describe('image edit helpers', () => {
   it('validates NovelAI canvas dimensions and 64 pixel alignment', () => {
@@ -83,6 +83,34 @@ describe('image edit helpers', () => {
     const outpainted = transformCharacterCoordinatesForOutpaint([character], 1000, 800, { top: 64, right: 128, bottom: 0, left: 64 })?.[0];
     expect(outpainted?.x).toBeCloseTo(0.473154, 5);
     expect(outpainted?.y).toBeCloseTo(0.537037, 5);
+  });
+
+  it('calculates outpaint expansions accurately for various aspect ratios and 9-grid anchors', () => {
+    // 832x1216 (2:3) expanded to 16:9 -> target width 2176, deltaW = 1344, deltaH = 0
+    const leftAnchor = calculateOutpaintTargetExpansion(832, 1216, 16, 9, 'center-left');
+    expect(leftAnchor).toEqual({ top: 0, right: 1344, bottom: 0, left: 0 });
+    expect(832 + leftAnchor.left + leftAnchor.right).toBe(2176);
+
+    const rightAnchor = calculateOutpaintTargetExpansion(832, 1216, 16, 9, 'center-right');
+    expect(rightAnchor).toEqual({ top: 0, right: 0, bottom: 0, left: 1344 });
+
+    const centerAnchor = calculateOutpaintTargetExpansion(832, 1216, 16, 9, 'center');
+    expect(centerAnchor.left + 832 + centerAnchor.right).toBe(2176);
+    expect(centerAnchor.top).toBe(0);
+    expect(centerAnchor.bottom).toBe(0);
+
+    // 1216x832 (3:2) expanded to 9:16 -> target height 2176, deltaW = 0, deltaH = 1344
+    const topAnchor = calculateOutpaintTargetExpansion(1216, 832, 9, 16, 'top-center');
+    expect(topAnchor).toEqual({ top: 0, right: 0, bottom: 1344, left: 0 });
+    expect(832 + topAnchor.top + topAnchor.bottom).toBe(2176);
+
+    const bottomAnchor = calculateOutpaintTargetExpansion(1216, 832, 9, 16, 'bottom-center');
+    expect(bottomAnchor).toEqual({ top: 1344, right: 0, bottom: 0, left: 0 });
+
+    // 832x1216 expanded to 1:1 -> target width 1216, height 1216
+    const squareAnchor = calculateOutpaintTargetExpansion(832, 1216, 1, 1, 'center-left');
+    expect(squareAnchor).toEqual({ top: 0, right: 384, bottom: 0, left: 0 });
+    expect(832 + squareAnchor.left + squareAnchor.right).toBe(1216);
   });
 
   it('sets add_original_image to false for outpainting while preserving strength and noise', () => {

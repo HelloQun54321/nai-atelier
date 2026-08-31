@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-01
+- **Antigravity (Gemini 3.7 Flash)**：扩图新增按目标画幅比例（16:9/9:16/1:1/21:9等）一键智能换算画布尺寸，以及 3x3 九向方位锚点（靠左/居中/靠右/靠顶/靠底/四隅）原图位置对齐控制（feat: add outpaint aspect ratio presets and 9-grid anchor positioning）。
 - **Antigravity (Gemini 3.7 Flash)**：修复 ImageEditCanvas 画布节点闭合语法错误，恢复本地快速构建与生产环境打包正常运行（fix: repair canvas tag syntax in ImageEditCanvas）。
 - **Antigravity (Gemini 3.7 Flash)**：修复底图画板大比例放大时因 max-w-full 限制导致宽度被封顶、图片被纵向拉长变形的缺陷，解除宽度约束并优化 2D 滚动漫游（fix: maintain canvas aspect ratio on large zoom levels）。
 - **Antigravity (Gemini 3.7 Flash)**：底图编辑画板新增视口自由缩放（1.0x~4.0x/Ctrl+滚轮）、空格/中键拖拽平移漫游与一键全屏大画板精修模式，彻底解决局部五官/细节难以精细涂抹与框选的痛点（feat: add canvas zoom, pan, and fullscreen editing workspace）。
