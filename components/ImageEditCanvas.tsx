@@ -156,7 +156,6 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
   const handleZoomIn = () => setZoom(previous => Math.min(4, Math.round((previous + 0.5) * 10) / 10));
   const handleZoomOut = () => setZoom(previous => Math.max(1, Math.round((previous - 0.5) * 10) / 10));
   const handleZoomReset = () => setZoom(1);
-
   const canvasBoxStyle: React.CSSProperties = displaySize
     ? {
         width: Math.round(displaySize.width * zoom),
@@ -174,7 +173,6 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
       onPointerUp={handleContainerPointerUp}
       className={`relative flex flex-1 overflow-auto rounded-xl border border-gray-200 bg-white transition-colors dark:border-gray-800 dark:bg-gray-950/50 ${isFullscreen ? 'h-full min-h-0 w-full' : 'min-h-[300px]'} ${spacePressed ? 'cursor-grab active:cursor-grabbing' : ''}`}
     >
-      {isLoading && <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/20 text-sm text-white">正在载入底图...</div>}
       
       {/* 缩放与全屏悬浮工具条 */}
       {width > 0 && height > 0 && (
