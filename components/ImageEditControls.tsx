@@ -10,6 +10,7 @@ import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { HistoryImagePicker } from './HistoryImagePicker';
 import { ImageEditCanvas, ImageEditCanvasProps } from './ImageEditCanvas';
 import { LabModuleSection } from './LabModuleSection';
+import { OutpaintCanvasStage } from './OutpaintCanvasStage';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { VibeManager } from './VibeManager';
 
@@ -75,23 +76,6 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
 }) => {
   const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
   const [selectedRatioId, setSelectedRatioId] = useState<string>('16:9');
-  const [selectedAnchor, setSelectedAnchor] = useState<OutpaintAnchor>('center');
-
-  const applyRatioAnchor = (ratioId: string, anchor: OutpaintAnchor) => {
-    setSelectedRatioId(ratioId);
-    setSelectedAnchor(anchor);
-    const option = OUTPAINT_RATIO_PRESETS.find(p => p.id === ratioId) || OUTPAINT_RATIO_PRESETS[0];
-    if (canvasProps.width && canvasProps.height) {
-      const next = calculateOutpaintTargetExpansion(
-        canvasProps.width,
-        canvasProps.height,
-        option.widthRatio,
-        option.heightRatio,
-        anchor
-      );
-      onExpansionChange(next);
-    }
-  };
 
   const runtime = useNaiRuntime();
   const modelInfo = getRuntimeNaiModelInfo(selectableParams.model, runtime);
@@ -230,118 +214,56 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                 </span>
               </div>
 
-              {/* 目标画幅比例预设 */}
-              <div className="mb-3">
-                <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">目标画幅比例</span>
-                  <span className="text-[10px] text-gray-400">自动对齐 64 倍数</span>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-                  {OUTPAINT_RATIO_PRESETS.map(preset => {
-                    const isSelected = selectedRatioId === preset.id;
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        disabled={isBusy || !canvasProps.width || !canvasProps.height}
-                        onClick={() => applyRatioAnchor(preset.id, selectedAnchor)}
-                        className={`rounded-md border px-2 py-1.5 text-[11px] font-medium transition disabled:opacity-40 ${
-                          isSelected
-                            ? 'border-indigo-500 bg-indigo-50 font-bold text-indigo-700 shadow-sm dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300'
-                            : 'border-gray-200 bg-gray-50/70 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800/70 dark:text-gray-300 dark:hover:bg-gray-800'
-                        }`}
-                      >
-                        {preset.ratio} <span className="text-[10px] opacity-75">{preset.label.split(' ')[1]}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              {/* 可视化画幅模拟摆放台（“布”与可拖拽原图） */}
+              <OutpaintCanvasStage
+                sourceWidth={canvasProps.width}
+                sourceHeight={canvasProps.height}
+                baseImagePreview={baseImagePreview}
+                expansion={expansion}
+                onExpansionChange={onExpansionChange}
+                selectedRatioId={selectedRatioId}
+                onSelectRatioId={setSelectedRatioId}
+                isBusy={isBusy}
+              />
 
-              {/* 原图对齐方位 (3x3 九向锚点) 与 快捷步进 */}
-              <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <span className="mb-1.5 block text-[11px] font-semibold text-gray-700 dark:text-gray-300">原图摆放方位（九向锚点）</span>
-                  <div className="inline-grid grid-cols-3 gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1.5 dark:border-gray-700 dark:bg-gray-800/60">
-                    {[
-                      [
-                        { anchor: 'top-left' as const, symbol: '↖', label: '左上' },
-                        { anchor: 'top-center' as const, symbol: '↑', label: '靠顶' },
-                        { anchor: 'top-right' as const, symbol: '↗', label: '右上' },
-                      ],
-                      [
-                        { anchor: 'center-left' as const, symbol: '←', label: '靠左' },
-                        { anchor: 'center' as const, symbol: '⏺', label: '居中' },
-                        { anchor: 'center-right' as const, symbol: '→', label: '靠右' },
-                      ],
-                      [
-                        { anchor: 'bottom-left' as const, symbol: '↙', label: '左下' },
-                        { anchor: 'bottom-center' as const, symbol: '↓', label: '靠底' },
-                        { anchor: 'bottom-right' as const, symbol: '↘', label: '右下' },
-                      ],
-                    ].flat().map(item => {
-                      const isSelected = selectedAnchor === item.anchor;
-                      return (
-                        <button
-                          key={item.anchor}
-                          type="button"
-                          title={`原图${item.label}`}
-                          disabled={isBusy || !canvasProps.width || !canvasProps.height}
-                          onClick={() => applyRatioAnchor(selectedRatioId, item.anchor)}
-                          className={`flex h-8 w-8 items-center justify-center rounded text-xs font-bold transition disabled:opacity-40 ${
-                            isSelected
-                              ? 'bg-indigo-600 text-white shadow'
-                              : 'bg-white text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
-                          }`}
-                        >
-                          {item.symbol}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div>
-                  <span className="mb-1.5 block text-[11px] font-semibold text-gray-700 dark:text-gray-300">快捷像素加减</span>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => onExpansionChange({ top: 128, right: 128, bottom: 128, left: 128 })}
-                      className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                    >
-                      四周 +128px
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => onExpansionChange({ top: 64, right: 64, bottom: 64, left: 64 })}
-                      className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                    >
-                      四周 +64px
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => onExpansionChange({ top: 0, right: 128, bottom: 0, left: 128 })}
-                      className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                    >
-                      左右 +128px
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => onExpansionChange({ top: 0, right: 0, bottom: 0, left: 0 })}
-                      className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-500 transition hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
-                    >
-                      清零重置
-                    </button>
-                  </div>
-                </div>
+              {/* 快捷像素加减 */}
+              <div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => onExpansionChange({ top: 128, right: 128, bottom: 128, left: 128 })}
+                  className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                >
+                  四周 +128px
+                </button>
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => onExpansionChange({ top: 64, right: 64, bottom: 64, left: 64 })}
+                  className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                >
+                  四周 +64px
+                </button>
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => onExpansionChange({ top: 0, right: 128, bottom: 0, left: 128 })}
+                  className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                >
+                  左右 +128px
+                </button>
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => onExpansionChange({ top: 0, right: 0, bottom: 0, left: 0 })}
+                  className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-500 transition hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                >
+                  清零重置
+                </button>
               </div>
 
               {/* 四周像素精确数值调节 */}
-              <div className="grid grid-cols-2 gap-2">
+              <div className="mt-3 grid grid-cols-2 gap-2">
                 {(['top', 'right', 'bottom', 'left'] as const).map(side => (
                   <label key={side} className="text-[11px] text-gray-500 dark:text-gray-400">
                     {({ top: '上 (top)', right: '右 (right)', bottom: '下 (bottom)', left: '左 (left)' } as const)[side]}
