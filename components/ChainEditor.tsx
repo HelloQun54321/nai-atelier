@@ -310,7 +310,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setPreviewIndex(nextIndex);
         setPreviewMode('history');
         setGeneratedImage(nextImage);
-        if (activeEditOperation) setImageEditPreviewImage(nextImage);
         if (lightboxImg) {
             setLightboxImg(nextImage);
         }
@@ -333,7 +332,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 setPreviewIndex(0);
                 setPreviewMode('cover');
                 setGeneratedImage(null);
-                if (activeEditOperation) setImageEditPreviewImage(imageEditBaseImage);
                 if (lightboxImg) setLightboxImg(null);
             } else {
                 const nextIndex = Math.min(Math.max(0, removedIndex), nextHistory.length - 1);
@@ -341,7 +339,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 setPreviewIndex(nextIndex);
                 setPreviewMode('history');
                 setGeneratedImage(nextImage);
-                if (activeEditOperation) setImageEditPreviewImage(nextImage);
                 if (lightboxImg) setLightboxImg(nextImage);
             }
 
@@ -367,7 +364,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setPreviewIndex(0);
             setPreviewMode('cover');
             setGeneratedImage(null);
-            if (activeEditOperation) setImageEditPreviewImage(imageEditBaseImage);
             setLightboxImg(null);
             notify(`已清除 ${count} 张图片的当前风格串归属，历史页仍会保留。`, 'success');
         } catch (error) {
@@ -600,7 +596,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             if (resolveRevision !== editBaseResolveRevisionRef.current) return;
             const restoredBaseImage = blob ? await blobToDataUrl(blob) : null;
             setImageEditBaseImage(restoredBaseImage);
-            setImageEditPreviewImage(restoredBaseImage);
+            // 有「生成本草稿」时右侧优先显示结果；否则显示底图
+            let restoredResult: string | null = null;
+            if (draft.resultImageRef) {
+                const resultBlob = await readLabWorkspaceAsset(draft.resultImageRef);
+                if (resolveRevision !== editBaseResolveRevisionRef.current) return;
+                restoredResult = resultBlob ? await blobToDataUrl(resultBlob) : null;
+            }
+            setImageEditPreviewImage(restoredResult || restoredBaseImage);
             if (draft.maskRef) {
                 const maskBlob = await readLabWorkspaceAsset(draft.maskRef);
                 if (resolveRevision !== editBaseResolveRevisionRef.current) return;
@@ -622,6 +625,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             deleteLabWorkspaceAsset(baseAssetId),
             deleteLabWorkspaceAsset(previousDraft.maskRef !== maskAssetId ? maskAssetId : undefined),
             deleteLabWorkspaceAsset(currentEditDraft.maskRef !== maskAssetId ? currentEditDraft.maskRef : undefined),
+            deleteLabWorkspaceAsset(currentEditDraft.resultImageRef),
         ]).catch(error => console.warn('重置编辑模式资产失败:', error));
         updateWorkspace(previous => ({ ...previous, edits: { ...previous.edits, [operation]: defaultDraft } }));
     };
@@ -651,6 +655,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
         const maskAssetId = getLabWorkspaceAssetId(workspaceKey, operation, 'mask');
         await deleteLabWorkspaceAsset(maskAssetId);
+        // 重建草稿会丢弃旧结果引用；同步删除旧结果资产避免泄漏
+        const previousDraftForResult = workspaceSession.edits[operation];
+        if (previousDraftForResult?.resultImageRef) {
+            await deleteLabWorkspaceAsset(previousDraftForResult.resultImageRef).catch(error => console.warn('删除编辑结果资产失败:', error));
+        }
         if (reuseEditMask && parentHistoryId) {
             const maskBlob = await localHistory.getEditMask(parentHistoryId);
             if (maskBlob) {
@@ -1721,6 +1730,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setGeneratedImage(historyItem.imageUrl);
             setImageEditPreviewImage(historyItem.imageUrl);
             setLightboxImg(current => current === result.image ? historyItem.imageUrl : current);
+            // 把本次结果持久化为当前编辑模式的「生成本草稿」，历史导航不再覆盖工作区结果
+            try {
+                const resultRef = await saveLabWorkspaceAsset(result.blob, getLabWorkspaceAssetId(workspaceKey, request.operation, 'result'));
+                updateWorkspace(previous => ({
+                    ...previous,
+                    edits: { ...previous.edits, [request.operation]: { ...previous.edits[request.operation], resultImageRef: resultRef } },
+                }));
+            } catch (resultSaveError) {
+                console.warn('保存图片编辑结果资产失败:', resultSaveError);
+            }
             checkAndRemoveUntestedTag();
             notify('图片编辑完成，结果已保存为新的历史图片', 'success');
         } catch (editError) {
@@ -2207,6 +2226,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             promptSource = 'current';
                         }
 
+                        const previousResultRef = activeEditDraft.resultImageRef;
                         updateEditDraft(activeEditOperation, {
                             baseImageRef: ref,
                             baseImageSource: source,
@@ -2214,11 +2234,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             maskRef: undefined,
                             maskData: undefined,
                             focusedRect: undefined,
+                            resultImageRef: undefined,
                             prompt: inheritedPrompt,
                             negativePrompt: inheritedNegative,
                             params: inheritedParams,
                             promptSource,
                         });
+                        // 换底图作废旧结果资产
+                        if (previousResultRef) {
+                            void deleteLabWorkspaceAsset(previousResultRef).catch(error => console.warn('删除编辑结果资产失败:', error));
+                        }
                         setImageEditBaseImage(dataUrl);
                         setImageEditPreviewImage(dataUrl);
                         setImageEditMaskData(undefined);
@@ -2238,7 +2263,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             dataUrlToWorkspaceAsset(imageData, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'base')),
                             dataUrlToWorkspaceAsset(maskData, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'mask')),
                         ]);
-                        updateEditDraft(activeEditOperation, { baseImageRef: baseRef, maskRef });
+                        // 画布扩展/规范化改变画布尺寸：旧结果不再有效，作废
+                        const previousResultRef = activeEditDraft.resultImageRef;
+                        updateEditDraft(activeEditOperation, { baseImageRef: baseRef, maskRef, resultImageRef: undefined });
+                        if (previousResultRef) {
+                            void deleteLabWorkspaceAsset(previousResultRef).catch(error => console.warn('删除编辑结果资产失败:', error));
+                        }
                         setImageEditBaseImage(imageData);
                         setImageEditPreviewImage(imageData);
                         setImageEditMaskData(maskData);

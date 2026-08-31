@@ -183,6 +183,8 @@ export interface LabImageEditDraft {
   expansion: ImageEditCanvasExpansion;
   focusedRect?: { x: number; y: number; width: number; height: number };
   promptSource: 'current' | 'style-only' | 'history' | 'custom';
+  /** 最近一次生成结果的工作区资产引用；历史导航不得覆盖它。 */
+  resultImageRef?: string;
 }
 
 export interface LabWorkspaceSession {

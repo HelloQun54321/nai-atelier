@@ -171,8 +171,7 @@ export const saveLabWorkspaceAsset = async (blob: Blob, id: string = crypto.rand
   return id;
 };
 
-/** 工作区资产按会话、模式和角色复用，重复保存会覆盖同一个 Blob。 */
-export const getLabWorkspaceAssetId = (sessionKey: string, operation: ImageEditOperation, role: 'base' | 'mask') =>
+export const getLabWorkspaceAssetId = (sessionKey: string, operation: ImageEditOperation, role: 'base' | 'mask' | 'result') =>
   `lab:${encodeURIComponent(sessionKey)}:${operation}:${role}`;
 
 export const deleteLabWorkspaceAsset = async (id: string | undefined) => {
