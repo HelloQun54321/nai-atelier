@@ -158,7 +158,12 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
   const handleZoomReset = () => setZoom(1);
 
   const canvasBoxStyle: React.CSSProperties = displaySize
-    ? { width: Math.round(displaySize.width * zoom), height: Math.round(displaySize.height * zoom) }
+    ? {
+        width: Math.round(displaySize.width * zoom),
+        height: Math.round(displaySize.height * zoom),
+        maxWidth: zoom > 1 ? 'none' : '100%',
+        maxHeight: zoom > 1 ? 'none' : '100%',
+      }
     : { aspectRatio: `${Math.max(1, width)} / ${Math.max(1, height)}` };
 
   const canvasElement = (
@@ -167,7 +172,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
       onPointerDown={handleContainerPointerDown}
       onPointerMove={handleContainerPointerMove}
       onPointerUp={handleContainerPointerUp}
-      className={`relative flex flex-1 items-center justify-center overflow-auto rounded-xl border border-gray-200 bg-white transition-colors dark:border-gray-800 dark:bg-gray-950/50 ${isFullscreen ? 'h-full min-h-0 w-full' : 'min-h-[300px]'} ${spacePressed ? 'cursor-grab active:cursor-grabbing' : ''}`}
+      className={`relative flex flex-1 overflow-auto rounded-xl border border-gray-200 bg-white transition-colors dark:border-gray-800 dark:bg-gray-950/50 ${isFullscreen ? 'h-full min-h-0 w-full' : 'min-h-[300px]'} ${spacePressed ? 'cursor-grab active:cursor-grabbing' : ''}`}
     >
       {isLoading && <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/20 text-sm text-white">正在载入底图...</div>}
       
@@ -212,7 +217,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
         </div>
       )}
 
-      <div data-safe-mode-work="true" data-safe-mode-canvas="true" className="relative max-h-full max-w-full overflow-hidden shadow-2xl flex-shrink-0" style={canvasBoxStyle}>
+      <div data-safe-mode-work="true" data-safe-mode-canvas="true" className={`relative overflow-hidden shadow-2xl flex-shrink-0 m-auto ${zoom === 1 ? 'max-h-full max-w-full' : ''}`} style={canvasBoxStyle}>
         <canvas ref={imageCanvasRef} data-safe-mode-image="true" className="absolute inset-0 h-full w-full" />
         <canvas ref={overlayCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
         <canvas

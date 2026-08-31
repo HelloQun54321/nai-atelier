@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-01
+- **Antigravity (Gemini 3.7 Flash)**：修复底图画板大比例放大时因 max-w-full 限制导致宽度被封顶、图片被纵向拉长变形的缺陷，解除宽度约束并优化 2D 滚动漫游（fix: maintain canvas aspect ratio on large zoom levels）。
 - **Antigravity (Gemini 3.7 Flash)**：底图编辑画板新增视口自由缩放（1.0x~4.0x/Ctrl+滚轮）、空格/中键拖拽平移漫游与一键全屏大画板精修模式，彻底解决局部五官/细节难以精细涂抹与框选的痛点（feat: add canvas zoom, pan, and fullscreen editing workspace）。
 - **Antigravity (Gemini 3.7 Flash)**：对齐 NovelAI 官方 0 基订阅等级枚举（tier: 3 为 Opus），修复 Focused Inpainting 误把 Opus 会员判定为扣费 19 点的缺陷，并同步更新网关与单测（fix: align Opus tier enum check to support official zero-indexed tier 3）。
 - **Antigravity (Gemini 3.7 Flash)**：修复图生图模式下因未挂载 maskCanvas 导致底图尺寸规范化按钮（裁剪/填充/缩放）点击无响应的缺陷，补齐无蒙版画布适配并补充单元测试（fix: allow image normalization in image-to-image without maskCanvas）。
