@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-01
+- **Codex (GPT-5)**：补齐 NovelAI 官方请求发送前的蒙版最终转换，将 `1/8` 内部二值蒙版最近邻还原为全尺寸不透明黑白 PNG，修复扩图区重复灰色斜纹死区（fix: send full-size opaque masks for NovelAI infill）。
 - **Codex (GPT-5)**：复核 NovelAI 当前 Web Bundle 与蒙版 Worker，纠正扩图白色补底、Infill/Img2Img 参数、噪声种子及官方定点羽化回贴公式，并补充蒙版算法与 Payload 回归测试（fix: correct official outpaint preprocessing and composition）。
 - **Antigravity (Gemini 3.7 Flash)**：对齐 NovelAI 官方 Infill/Outpaint 协议与回贴算法，修正 add_original_image 标志、扩图底图边缘延伸填充、蒙版隔离与 1/8 潜空间 4px 膨胀 + 20px 双重盒状模糊无缝合成，彻底根治扩图横向条纹与死区伪影（fix: align outpaint and infill with official protocol, edge padding, and seamless mask composition）。
 - **Antigravity (Gemini 3.7 Flash)**：全面优化图生图、局部重绘与扩图工作流，实现底图提示词与元数据自动继承，解决扩图空词死白缺陷，重构板块层级动线并新增快捷扩图预设与尺寸预览（refactor: enhance image edit workflows with prompt auto-inheritance and outpaint presets）。

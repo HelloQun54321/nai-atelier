@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blurImageEditMaskAlpha, buildImageEditParameters, dilateImageEditMaskAlpha, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, limitFocusedImageEditRect, normalizeMinimumContextArea, resizeImageEditMaskAlpha, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from './imageEdit';
+import { blurImageEditMaskAlpha, buildImageEditParameters, buildOpaqueImageEditMaskRgba, dilateImageEditMaskAlpha, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, limitFocusedImageEditRect, normalizeMinimumContextArea, resizeImageEditMaskAlpha, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from './imageEdit';
 
 describe('image edit helpers', () => {
   it('validates NovelAI canvas dimensions and 64 pixel alignment', () => {
@@ -105,6 +105,14 @@ describe('image edit helpers', () => {
 
     const scaled = resizeImageEditMaskAlpha(new Uint8ClampedArray([0, 255]), 2, 1, 4, 1);
     expect([...scaled]).toEqual([0, 0, 255, 255]);
+
+    const requestMask = buildOpaqueImageEditMaskRgba(new Uint8ClampedArray([0, 255]), 2, 1, 4, 1);
+    expect([...requestMask]).toEqual([
+      0, 0, 0, 255,
+      0, 0, 0, 255,
+      255, 255, 255, 255,
+      255, 255, 255, 255,
+    ]);
 
     const blurred = blurImageEditMaskAlpha(new Uint8ClampedArray([0, 0, 255, 0, 0]), 5, 1);
     expect([...blurred]).toEqual([6, 6, 6, 6, 6]);

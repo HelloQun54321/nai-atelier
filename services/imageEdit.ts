@@ -374,6 +374,19 @@ export const resizeImageEditMaskAlpha = (source: Uint8ClampedArray, sourceWidth:
   return output;
 };
 
+/** 官方请求发送前会将 1/8 蒙版最近邻放大回全尺寸，并以不透明黑色补齐保留区。 */
+export const buildOpaqueImageEditMaskRgba = (source: Uint8ClampedArray, sourceWidth: number, sourceHeight: number, targetWidth: number, targetHeight: number) => {
+  const scaled = resizeImageEditMaskAlpha(source, sourceWidth, sourceHeight, targetWidth, targetHeight);
+  const output = new Uint8ClampedArray(targetWidth * targetHeight * 4);
+  for (let pixel = 0, index = 0; pixel < scaled.length; pixel += 1, index += 4) {
+    output[index] = scaled[pixel];
+    output[index + 1] = scaled[pixel];
+    output[index + 2] = scaled[pixel];
+    output[index + 3] = 255;
+  }
+  return output;
+};
+
 /** 官方蒙版 Worker 在半径 20、两轮时使用的定点盒式模糊。 */
 export const blurImageEditMaskAlpha = (source: Uint8ClampedArray, width: number, height: number) => {
   const current = new Uint8ClampedArray(source);
@@ -412,15 +425,36 @@ export const blurImageEditMaskAlpha = (source: Uint8ClampedArray, width: number,
   return current;
 };
 
-/** 从 1/8 API 二值蒙版构建官方标准的无缝合成羽化回贴蒙版 */
-const buildCompositeMaskFromApiMask = (apiMaskCanvas: HTMLCanvasElement, targetWidth: number, targetHeight: number) => {
-  const apiContext = apiMaskCanvas.getContext('2d');
-  if (!apiContext) throw new Error('无法读取 API 蒙版数据');
-  const apiData = apiContext.getImageData(0, 0, apiMaskCanvas.width, apiMaskCanvas.height).data;
-  const alpha = new Uint8ClampedArray(apiMaskCanvas.width * apiMaskCanvas.height);
-  for (let index = 0, pixel = 0; index < apiData.length; index += 4, pixel += 1) alpha[pixel] = apiData[index];
-  const dilated = dilateImageEditMaskAlpha(alpha, apiMaskCanvas.width, apiMaskCanvas.height, 4);
-  const scaled = resizeImageEditMaskAlpha(dilated, apiMaskCanvas.width, apiMaskCanvas.height, targetWidth, targetHeight);
+const readImageEditMaskAlpha = (canvas: HTMLCanvasElement) => {
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('无法读取 API 蒙版数据');
+  const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  const alpha = new Uint8ClampedArray(canvas.width * canvas.height);
+  for (let index = 0, pixel = 0; index < data.length; index += 4, pixel += 1) alpha[pixel] = data[index];
+  return alpha;
+};
+
+const buildRequestMaskFromLowResolutionMask = (lowResolutionMaskCanvas: HTMLCanvasElement, targetWidth: number, targetHeight: number) => {
+  const canvas = createCanvas(targetWidth, targetHeight);
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('无法创建请求蒙版画布');
+  const image = context.createImageData(targetWidth, targetHeight);
+  image.data.set(buildOpaqueImageEditMaskRgba(
+    readImageEditMaskAlpha(lowResolutionMaskCanvas),
+    lowResolutionMaskCanvas.width,
+    lowResolutionMaskCanvas.height,
+    targetWidth,
+    targetHeight,
+  ));
+  context.putImageData(image, 0, 0);
+  return canvas;
+};
+
+/** 从内部 1/8 二值蒙版构建官方标准的无缝合成羽化回贴蒙版。 */
+const buildCompositeMaskFromLowResolutionMask = (lowResolutionMaskCanvas: HTMLCanvasElement, targetWidth: number, targetHeight: number) => {
+  const alpha = readImageEditMaskAlpha(lowResolutionMaskCanvas);
+  const dilated = dilateImageEditMaskAlpha(alpha, lowResolutionMaskCanvas.width, lowResolutionMaskCanvas.height, 4);
+  const scaled = resizeImageEditMaskAlpha(dilated, lowResolutionMaskCanvas.width, lowResolutionMaskCanvas.height, targetWidth, targetHeight);
   const blurred = blurImageEditMaskAlpha(scaled, targetWidth, targetHeight);
 
   const compositeCanvas = createCanvas(targetWidth, targetHeight);
@@ -481,7 +515,8 @@ export const prepareImageEdit = async (edit: {
   }
 
   let requestImageCanvas: HTMLCanvasElement;
-  let apiMaskCanvas: HTMLCanvasElement | undefined;
+  let lowResolutionMaskCanvas: HTMLCanvasElement | undefined;
+  let requestMaskCanvas: HTMLCanvasElement | undefined;
   let compositeMaskCanvas: HTMLCanvasElement | undefined;
   let focusedGeometry: ImageEditFocusedGeometry | undefined;
 
@@ -523,8 +558,9 @@ export const prepareImageEdit = async (edit: {
     focusedRequestMaskContext.imageSmoothingEnabled = false;
     focusedRequestMaskContext.drawImage(focusedCropMaskCanvas, 0, 0, focusedCropMaskCanvas.width, focusedCropMaskCanvas.height, 0, 0, focusedRequestMaskCanvas.width, focusedRequestMaskCanvas.height);
 
-    apiMaskCanvas = buildThresholdMask(focusedRequestMaskCanvas, focusedGeometry.requestWidth, focusedGeometry.requestHeight, Math.max(8, focusedGeometry.requestWidth / 8), Math.max(8, focusedGeometry.requestHeight / 8));
-    compositeMaskCanvas = buildCompositeMaskFromApiMask(apiMaskCanvas, focusedGeometry.requestWidth, focusedGeometry.requestHeight);
+    lowResolutionMaskCanvas = buildThresholdMask(focusedRequestMaskCanvas, focusedGeometry.requestWidth, focusedGeometry.requestHeight, Math.max(8, focusedGeometry.requestWidth / 8), Math.max(8, focusedGeometry.requestHeight / 8));
+    requestMaskCanvas = buildRequestMaskFromLowResolutionMask(lowResolutionMaskCanvas, focusedGeometry.requestWidth, focusedGeometry.requestHeight);
+    compositeMaskCanvas = buildCompositeMaskFromLowResolutionMask(lowResolutionMaskCanvas, focusedGeometry.requestWidth, focusedGeometry.requestHeight);
   } else {
     requestImageCanvas = createCanvas(originalWidth, originalHeight);
     const requestImageContext = requestImageCanvas.getContext('2d');
@@ -536,8 +572,9 @@ export const prepareImageEdit = async (edit: {
     if (sourceMaskCanvas) {
       const requestWidth = requestImageCanvas.width;
       const requestHeight = requestImageCanvas.height;
-      apiMaskCanvas = buildThresholdMask(sourceMaskCanvas, originalWidth, originalHeight, Math.max(8, requestWidth / 8), Math.max(8, requestHeight / 8));
-      compositeMaskCanvas = buildCompositeMaskFromApiMask(apiMaskCanvas, originalWidth, originalHeight);
+      lowResolutionMaskCanvas = buildThresholdMask(sourceMaskCanvas, originalWidth, originalHeight, Math.max(8, requestWidth / 8), Math.max(8, requestHeight / 8));
+      requestMaskCanvas = buildRequestMaskFromLowResolutionMask(lowResolutionMaskCanvas, requestWidth, requestHeight);
+      compositeMaskCanvas = buildCompositeMaskFromLowResolutionMask(lowResolutionMaskCanvas, originalWidth, originalHeight);
     }
   }
 
@@ -548,7 +585,7 @@ export const prepareImageEdit = async (edit: {
 
   return {
     image: canvasToDataUrl(requestImageCanvas),
-    mask: apiMaskCanvas ? canvasToDataUrl(apiMaskCanvas) : undefined,
+    mask: requestMaskCanvas ? canvasToDataUrl(requestMaskCanvas) : undefined,
     originalImage,
     compositeMask: compositeMaskCanvas ? await canvasToBlob(compositeMaskCanvas) : undefined,
     requestWidth,
