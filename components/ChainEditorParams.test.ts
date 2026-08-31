@@ -111,21 +111,22 @@ describe('ChainEditorParams', () => {
     expect(markChange).toHaveBeenCalledOnce();
   });
 
-  it('Variety+ 与两个 CFG 控件统一使用主题强调色', () => {
+  it('Variety+ 与各滑块控件统一使用主题强调色', () => {
     renderParams({ params: { ...params, variety: true } });
 
     const varietySwitch = screen.getByRole('switch', { name: 'Variety+（多样性）' });
     expect(varietySwitch.className).toContain('hover:border-indigo-300');
     expect(varietySwitch.querySelector('.bg-indigo-500')).toBeTruthy();
     const sliders = screen.getAllByRole('slider');
-    expect(sliders).toHaveLength(2);
+    expect(sliders).toHaveLength(3); // Resolution Scale, CFG Scale, CFG Rescale
     expect(sliders.every(slider => slider.className.includes('accent-indigo-600'))).toBe(true);
   });
 
-  it('文生图保留可调图片尺寸', () => {
+  it('文生图保留可调图片尺寸与常见比例', () => {
     renderParams();
     expect(screen.getByText('图片尺寸')).toBeTruthy();
-    expect(screen.getByRole('option', { name: '横屏 (1216x832)' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /3:2 经典横屏/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /9:16 手机壁纸/ })).toBeTruthy();
   });
 
   it('自定义分辨率按 64 像素步进，并联动另一边最大化 Opus 免费像素', () => {
@@ -140,13 +141,34 @@ describe('ChainEditorParams', () => {
     expect(screen.getByRole('switch', { name: 'Opus 免费像素联动' }).getAttribute('aria-checked')).toBe('true');
 
     fireEvent.change(width, { target: { value: '512' } });
-    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ width: 512, height: 1920 }));
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ width: 512, height: 2048 }));
   });
 
   it('自定义分辨率清晰显示当前像素是否超过 Opus 免费范围', () => {
     renderParams({ params: { ...params, width: 2048, height: 2048 } });
     expect(screen.getByRole('status').textContent).toContain('4,194,304');
-    expect(screen.getByRole('status').textContent).toContain('超过免费像素上限 1,011,712');
+    expect(screen.getByRole('status').textContent).toContain('超过免费像素上限 1,048,576');
+  });
+
+  it('CFG Scale 和 CFG Rescale 支持直接输入精确数值', () => {
+    const setParams = vi.fn();
+    renderParams({ setParams });
+
+    const cfgScaleInput = screen.getByRole('spinbutton', { name: 'CFG Scale 数值' });
+    fireEvent.change(cfgScaleInput, { target: { value: '4.75' } });
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ scale: 4.75 }));
+
+    const cfgRescaleInput = screen.getByRole('spinbutton', { name: 'CFG Rescale 数值' });
+    fireEvent.change(cfgRescaleInput, { target: { value: '0.38' } });
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ cfgRescale: 0.38 }));
+  });
+
+  it('尺寸比例清晰度（Scale）滑块可缩放当前画幅尺寸', () => {
+    const setParams = vi.fn();
+    renderParams({ setParams, params: { ...params, width: 832, height: 1216 } });
+    const scaleSlider = screen.getByRole('slider', { name: '尺寸缩放滑块' });
+    fireEvent.change(scaleSlider, { target: { value: '0.5' } });
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ width: 448, height: 640 }));
   });
 
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 不显示不可调节的图片尺寸', mode => {
