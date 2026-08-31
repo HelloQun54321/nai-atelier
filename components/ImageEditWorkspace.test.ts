@@ -155,7 +155,7 @@ describe('ImageEditControls', () => {
     fireEvent.click(screen.getByRole('button', { name: /选择历史图片/ }));
     expect(screen.getByRole('dialog', { name: '选择历史图片' })).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: /选择历史生成图片/ }));
-    expect(onSelectImageSource).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'history-1' }), 'history');
+    expect(onSelectImageSource).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'history-1' }), 'history', false);
   });
 
   it('历史选择器读取全局分页数据并完整显示缩略图', async () => {
@@ -169,7 +169,7 @@ describe('ImageEditControls', () => {
     fireEvent.click(screen.getByRole('button', { name: '下一页历史图片' }));
     expect(await screen.findByText('第 2 / 2 页 · 每页 20 张')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /选择历史生成图片/ }));
-    expect(onSelectImageSource).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'history-21' }), 'history');
+    expect(onSelectImageSource).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'history-21' }), 'history', false);
   });
 
   it('扩图默认只显示自动边缘扩展，不直接暴露画笔工具', () => {

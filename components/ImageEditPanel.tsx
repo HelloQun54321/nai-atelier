@@ -801,11 +801,11 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         onPromptSource={onPromptSource}
         onDraftChange={onDraftChange}
         onFileChange={handleUpload}
-        onSelectImageSource={(item, source) => onBaseImageChange(item.imageUrl, source, item.id, {
+        onSelectImageSource={(item, source, importParams) => onBaseImageChange(item.imageUrl, source, item.id, importParams ? {
           prompt: item.prompt,
           negativePrompt: item.negativePrompt,
           params: item.params,
-        })}
+        } : undefined)}
         onStrengthChange={value => { setStrength(value); onDraftChange({ strength: value }); }}
         onNoiseChange={value => { setNoise(value); onDraftChange({ noise: value }); }}
         onBrushSizeChange={value => { setBrushSize(value); onDraftChange({ brushSize: value }); }}

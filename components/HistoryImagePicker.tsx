@@ -8,7 +8,8 @@ import { SmartImage } from './SmartImage';
 interface HistoryImagePickerProps {
   open: boolean;
   onClose: () => void;
-  onSelect: (item: LocalGenItem) => void;
+  /** 选中历史图后回调；importParams 表示是否同时载入该图的提示词与参数（默认仅替换底图）。 */
+  onSelect: (item: LocalGenItem, importParams: boolean) => void;
 }
 
 const HISTORY_THUMBNAIL_VARIANT = 'thumb-960';
@@ -34,6 +35,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [importParams, setImportParams] = useState(false);
   const pageSize = PAGINATION_CONFIG.PAGE_SIZE;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
@@ -97,7 +99,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
               <h2 className="font-bold text-gray-900 dark:text-white">选择历史图片</h2>
               <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500 dark:bg-gray-800 dark:text-gray-300">全部 {totalCount} 张</span>
             </div>
-            <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">数据与历史页面一致；选择后只替换底图，提示词与参数保持不变。</p>
+            <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">数据与历史页面一致；默认只替换底图，勾选「同时导入该图参数」才载入提示词与参数。</p>
           </div>
           <div className="flex flex-none items-center gap-1">
             <button type="button" onClick={() => void loadPage(page)} disabled={loading} className="mobile-touch flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 disabled:opacity-50 dark:hover:bg-gray-800" aria-label="刷新历史图片"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
@@ -118,7 +120,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => onSelect(item)}
+                  onClick={() => onSelect(item, importParams)}
                   className="group min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm transition hover:border-indigo-400 hover:ring-2 hover:ring-indigo-200 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-indigo-600 dark:hover:ring-indigo-900/50"
                   aria-label={`选择历史生成图片，${new Date(item.createdAt).toLocaleString('zh-CN')}`}
                 >
@@ -134,6 +136,10 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
 
         <footer className="flex flex-none items-center justify-between gap-3 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
           <span className="text-xs text-gray-500 dark:text-gray-400">第 {page} / {totalPages} 页 · 每页 {pageSize} 张</span>
+          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300" title="开启后同时载入该图的提示词与生成参数">
+            <input type="checkbox" checked={importParams} onChange={event => setImportParams(event.target.checked)} className="h-4 w-4 accent-indigo-500" />
+            同时导入该图参数
+          </label>
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => void loadPage(page - 1)} disabled={loading || page <= 1} className="mobile-touch flex h-10 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" aria-label="上一页历史图片"><ChevronLeft className="h-4 w-4" />上一页</button>
             <button type="button" onClick={() => void loadPage(page + 1)} disabled={loading || page >= totalPages} className="mobile-touch flex h-10 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" aria-label="下一页历史图片">下一页<ChevronRight className="h-4 w-4" /></button>

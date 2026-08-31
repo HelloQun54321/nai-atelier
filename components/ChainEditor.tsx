@@ -2205,16 +2205,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 inheritedParams = { ...activeEditDraft.params, ...latestTextToImageItem.params };
                             }
                             promptSource = 'current';
-                        } else if (source === 'history' && parentHistoryId) {
-                            const histItem = previewHistory.find(item => item.id === parentHistoryId);
-                            if (histItem) {
-                                inheritedPrompt = histItem.prompt || activeEditDraft.prompt;
-                                inheritedNegative = histItem.negativePrompt ?? activeEditDraft.negativePrompt;
-                                if (histItem.params) {
-                                    inheritedParams = { ...activeEditDraft.params, ...histItem.params };
-                                }
-                                promptSource = 'history';
-                            }
                         }
 
                         updateEditDraft(activeEditOperation, {

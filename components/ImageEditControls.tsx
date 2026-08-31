@@ -41,7 +41,8 @@ interface ImageEditControlsProps {
   onPromptSource: (source: LabImageEditDraft['promptSource']) => void;
   onDraftChange: (patch: Partial<LabImageEditDraft> & { maskData?: string }) => void;
   onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  onSelectImageSource: (item: LocalGenItem, source: 'generated' | 'history') => void;
+  /** importParams：是否同时载入该图的提示词与参数（历史选择器开关；generated 恒为 false）。 */
+  onSelectImageSource: (item: LocalGenItem, source: 'generated' | 'history', importParams?: boolean) => void;
   onStrengthChange: (value: number) => void;
   onNoiseChange: (value: number) => void;
   onBrushSizeChange: (value: number) => void;
@@ -128,7 +129,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
             <button disabled={isBusy || !latestTextToImageItem} type="button" onClick={() => latestTextToImageItem && onSelectImageSource(latestTextToImageItem, 'generated')} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" title={latestTextToImageItem ? '使用文生图最近一次生成结果' : '当前没有可用的文生图结果'}><Images className="h-4 w-4" />文生图最新</button>
             <button disabled={isBusy} type="button" onClick={() => setHistoryPickerOpen(true)} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><Clock3 className="h-4 w-4" />选择历史图片</button>
           </div>
-          <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">载入底图将自动带入该图的 Prompt、模型与参数，您可随时按需微调。</div>
+          <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">载入底图默认保留当前提示词与参数；从历史选择器勾选「同时导入该图参数」才会载入该图配置。</div>
           {operation === 'image-to-image' ? <>
             <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-white/70 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-400">图生图不需要绘制蒙版；底图会在右侧以完整预览规格显示。</div>
             <div className="hidden" aria-hidden="true"><canvas ref={canvasProps.imageCanvasRef} /><canvas ref={canvasProps.maskCanvasRef} /><canvas ref={canvasProps.overlayCanvasRef} /></div>
@@ -347,8 +348,8 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   <HistoryImagePicker
     open={historyPickerOpen}
     onClose={() => setHistoryPickerOpen(false)}
-    onSelect={item => {
-      onSelectImageSource(item, 'history');
+    onSelect={(item, importParams) => {
+      onSelectImageSource(item, 'history', importParams);
       setHistoryPickerOpen(false);
     }}
   />
