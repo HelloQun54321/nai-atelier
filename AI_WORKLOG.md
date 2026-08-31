@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-01
+- **Antigravity (Gemini 3.7 Flash)**：扩图新增自动双向同步与动态填充机制，在选择画幅比例或拖拽原图时即时自动计算并填充上/下/左/右各方向所需的扩展像素数值（fix: auto-fill directional outpaint expansions upon ratio and position changes）。
 - **Antigravity (Gemini 3.7 Flash)**：修复画幅模拟台舞台容器折叠为 0 导致原图极小且无法拖拽的缺陷，引入动态几何计算与触控指针优化（fix: repair outpaint stage container sizing and pointer drag capture）。
 - **Antigravity (Gemini 3.7 Flash)**：扩图新增真实比例画幅模拟台（布），支持在目标画幅（16:9/2:3/9:16/21:9等）中按真实比例呈现原图，并支持鼠标直接拖拽摆放与 64px 动态吸附对齐（feat: add visual outpaint canvas stage simulator with interactive drag and 64px snap）。
 - **Antigravity (Gemini 3.7 Flash)**：扩图新增按目标画幅比例（16:9/9:16/1:1/21:9等）一键智能换算画布尺寸，以及 3x3 九向方位锚点（靠左/居中/靠右/靠顶/靠底/四隅）原图位置对齐控制（feat: add outpaint aspect ratio presets and 9-grid anchor positioning）。

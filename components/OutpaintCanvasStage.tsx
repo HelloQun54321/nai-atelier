@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Move } from 'lucide-react';
 import { ImageEditCanvasExpansion } from '../types';
-import { OUTPAINT_RATIO_PRESETS } from '../services/imageEdit';
+import { calculateOutpaintTargetExpansion, OUTPAINT_RATIO_PRESETS } from '../services/imageEdit';
 
 export interface OutpaintCanvasStageProps {
   sourceWidth: number;
@@ -39,26 +39,47 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
 
   const currentPreset = OUTPAINT_RATIO_PRESETS.find(p => p.id === selectedRatioId) || OUTPAINT_RATIO_PRESETS[0];
   const targetRatio = currentPreset.widthRatio / currentPreset.heightRatio;
-  const currentRatio = srcW / srcH;
 
-  let targetW: number;
-  let targetH: number;
-
-  if (currentRatio < targetRatio) {
-    targetH = Math.ceil(srcH / 64) * 64;
-    const calcW = targetH * targetRatio;
-    targetW = Math.ceil(calcW / 64) * 64;
-  } else {
-    targetW = Math.ceil(srcW / 64) * 64;
-    const calcH = targetW / targetRatio;
-    targetH = Math.ceil(calcH / 64) * 64;
-  }
-
-  targetW = Math.max(targetW, Math.ceil(srcW / 64) * 64);
-  targetH = Math.max(targetH, Math.ceil(srcH / 64) * 64);
+  // 基础目标尺寸（居中扩充）
+  const baseExpansion = calculateOutpaintTargetExpansion(srcW, srcH, currentPreset.widthRatio, currentPreset.heightRatio, 'center');
+  const targetW = srcW + baseExpansion.left + baseExpansion.right;
+  const targetH = srcH + baseExpansion.top + baseExpansion.bottom;
 
   const deltaW = Math.max(0, targetW - srcW);
   const deltaH = Math.max(0, targetH - srcH);
+
+  // 当选择新比例或底图尺寸变动时，若当前 expansion 与目标差值不一致，立即自动计算并填充
+  useEffect(() => {
+    if (!sourceWidth || !sourceHeight) return;
+    const currentDw = (expansion.left || 0) + (expansion.right || 0);
+    const currentDh = (expansion.top || 0) + (expansion.bottom || 0);
+    if (currentDw !== deltaW || currentDh !== deltaH) {
+      let nextLeft = 0;
+      if (deltaW > 0) {
+        if (expansion.left + expansion.right > 0) {
+          const ratioX = expansion.left / (expansion.left + expansion.right);
+          nextLeft = Math.round((ratioX * deltaW) / 64) * 64;
+        } else {
+          nextLeft = Math.floor((deltaW / 2) / 64) * 64;
+        }
+      }
+      let nextTop = 0;
+      if (deltaH > 0) {
+        if (expansion.top + expansion.bottom > 0) {
+          const ratioY = expansion.top / (expansion.top + expansion.bottom);
+          nextTop = Math.round((ratioY * deltaH) / 64) * 64;
+        } else {
+          nextTop = Math.floor((deltaH / 2) / 64) * 64;
+        }
+      }
+      onExpansionChange({
+        top: nextTop,
+        right: Math.max(0, deltaW - nextLeft),
+        bottom: Math.max(0, deltaH - nextTop),
+        left: nextLeft,
+      });
+    }
+  }, [selectedRatioId, sourceWidth, sourceHeight, deltaW, deltaH]);
 
   // 动态测量外框容器，确保舞台无论何种比例都能等比居中渲染
   const [stageDimensions, setStageDimensions] = useState<{ width: number; height: number }>({ width: 320, height: 200 });
@@ -178,21 +199,8 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
   const handleRatioSelect = (ratioId: string) => {
     onSelectRatioId(ratioId);
     const option = OUTPAINT_RATIO_PRESETS.find(p => p.id === ratioId) || OUTPAINT_RATIO_PRESETS[0];
-    const r = option.widthRatio / option.heightRatio;
-    let tw = srcW;
-    let th = srcH;
-    if (srcW / srcH < r) {
-      th = Math.ceil(srcH / 64) * 64;
-      tw = Math.ceil((th * r) / 64) * 64;
-    } else {
-      tw = Math.ceil(srcW / 64) * 64;
-      th = Math.ceil((tw / r) / 64) * 64;
-    }
-    const dw = Math.max(0, tw - srcW);
-    const dh = Math.max(0, th - srcH);
-    const l = Math.floor((dw / 2) / 64) * 64;
-    const t = Math.floor((dh / 2) / 64) * 64;
-    onExpansionChange({ top: t, right: dw - l, bottom: dh - t, left: l });
+    const next = calculateOutpaintTargetExpansion(srcW, srcH, option.widthRatio, option.heightRatio, 'center');
+    onExpansionChange(next);
   };
 
   const leftPercent = targetW > 0 ? (expansion.left / targetW) * 100 : 0;
