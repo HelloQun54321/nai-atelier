@@ -7,6 +7,8 @@ interface ImageEditPreviewProps {
   image: string | null;
   /** 原始底图；图生图模式下用于底图/结果 A/B 对比。 */
   baseImage?: string | null;
+  /** 把当前生成结果设为新一轮底图（图生图迭代）。 */
+  onUseResultAsBase?: () => void;
   error: string | null;
   generationCostLabel: string;
   isGenerating?: boolean;
@@ -27,7 +29,7 @@ interface ImageEditPreviewProps {
 const getOperationLabel = (operation: ImageEditOperation) => operation === 'image-to-image' ? '图生图' : operation === 'inpaint' ? '局部重绘' : '扩图';
 
 export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
-  operation, image, baseImage, error, generationCostLabel, isGenerating = false, generationProgress, isLoading = false,
+  operation, image, baseImage, onUseResultAsBase, error, generationCostLabel, isGenerating = false, generationProgress, isLoading = false,
   onGenerate, onOpenLightbox, getDownloadFilename, canNavigateHistory, historyLabel, onPreviousHistory, onNextHistory,
   canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup,
 }) => {
@@ -40,14 +42,24 @@ export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
   return (
     <div className="image-edit-preview-shell chain-editor-preview-wrapper order-1 hidden min-h-0 flex-1 lg:contents">
       {canCompare && (
-        <button
-          type="button"
-          onClick={() => setShowBase(current => !current)}
-          className="absolute left-4 top-4 z-20 rounded-lg bg-black/60 px-3 py-1.5 text-xs font-semibold text-white shadow-lg backdrop-blur transition hover:bg-black/75"
-          title={showBase ? '当前显示底图，点击切换为生成结果' : '当前显示生成结果，点击切换为原始底图'}
-        >
-          {showBase ? '底图 · 点击看结果' : '结果 · 点击看底图'}
-        </button>
+        <div className="absolute left-4 top-4 z-20 flex gap-2">
+          <button
+            type="button"
+            onClick={() => setShowBase(current => !current)}
+            className="rounded-lg bg-black/60 px-3 py-1.5 text-xs font-semibold text-white shadow-lg backdrop-blur transition hover:bg-black/75"
+            title={showBase ? '当前显示底图，点击切换为生成结果' : '当前显示生成结果，点击切换为原始底图'}
+          >
+            {showBase ? '底图 · 点击看结果' : '结果 · 点击看底图'}
+          </button>
+          <button
+            type="button"
+            onClick={onUseResultAsBase}
+            className="rounded-lg bg-indigo-600/90 px-3 py-1.5 text-xs font-semibold text-white shadow-lg backdrop-blur transition hover:bg-indigo-600"
+            title="把当前生成结果作为新一轮底图继续图生图"
+          >
+            以此为底图
+          </button>
+        </div>
       )}
       <ChainEditorPreview
         isGenerating={isGenerating}
