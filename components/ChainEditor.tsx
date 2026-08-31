@@ -2161,7 +2161,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onPromptChange={value => updateEditDraft(activeEditOperation, { prompt: value, promptSource: 'custom' })}
                 onNegativePromptChange={value => updateEditDraft(activeEditOperation, { negativePrompt: value })}
                 onPromptSource={source => {
-                    const sourceItem = selectedPreviewItem || (activeEditDraft.parentHistoryId ? previewHistory.find(item => item.id === activeEditDraft.parentHistoryId) : null);
+                    // 「底图原 Prompt」必须绑定实际底图的 parentHistoryId，而不是当前浏览的历史项；
+                    // 用户翻过历史后二者不同，误读会取到另一张图的 Prompt。
+                    const sourceItem = activeEditDraft.parentHistoryId
+                        ? previewHistory.find(item => item.id === activeEditDraft.parentHistoryId) || null
+                        : null;
                     const value = source === 'style-only'
                         ? compilePrompt({ basePrompt, modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })) }, '')
                         : source === 'history'
