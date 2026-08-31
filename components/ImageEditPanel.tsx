@@ -46,7 +46,7 @@ interface ImageEditPanelProps {
   onPromptSource: (source: LabImageEditDraft['promptSource']) => void;
   onDraftChange: (patch: Partial<LabImageEditDraft> & { maskData?: string }) => void;
   onBaseImageChange: (dataUrl: string, source: 'generated' | 'history' | 'upload', parentHistoryId?: string, meta?: { prompt?: string; negativePrompt?: string; params?: import('../types').NAIParams }) => void;
-  onCanvasChange: (imageData: string, maskData: string) => void;
+  onCanvasChange: (imageData: string, maskData?: string) => void;
   onGenerate: (request: ImageEditRequest) => Promise<void>;
   latestTextToImageItem?: LocalGenItem;
   onOpenLightbox: (image: string | null) => void;
@@ -644,24 +644,28 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const applyNormalization = (mode: ImageEditNormalizationMode) => {
     const imageCanvas = imageCanvasRef.current;
     const maskCanvas = maskCanvasRef.current;
-    if (!imageCanvas || !maskCanvas || !normalization) return;
+    if (!imageCanvas || (operation !== 'image-to-image' && !maskCanvas) || !normalization) return;
     maskRestoreRevisionRef.current += 1;
     const { sourceWidth, sourceHeight, targetWidth, targetHeight } = normalization;
     const image = document.createElement('canvas');
     image.width = targetWidth;
     image.height = targetHeight;
     const imageContext = image.getContext('2d');
-    const mask = document.createElement('canvas');
-    mask.width = targetWidth;
-    mask.height = targetHeight;
-    const maskContext = mask.getContext('2d');
-    if (!imageContext || !maskContext) {
+    const mask = maskCanvas ? document.createElement('canvas') : null;
+    if (mask) {
+      mask.width = targetWidth;
+      mask.height = targetHeight;
+    }
+    const maskContext = mask?.getContext('2d');
+    if (!imageContext || (mask && !maskContext)) {
       setError('无法创建尺寸规范化画布');
       return;
     }
     imageContext.imageSmoothingEnabled = true;
     imageContext.imageSmoothingQuality = 'high';
-    maskContext.imageSmoothingEnabled = false;
+    if (maskContext) {
+      maskContext.imageSmoothingEnabled = false;
+    }
     let sourceRect = { x: 0, y: 0, width: sourceWidth, height: sourceHeight };
     let destinationRect = { x: 0, y: 0, width: targetWidth, height: targetHeight };
     if (mode === 'crop') sourceRect = getCenteredImageEditCrop(sourceWidth, sourceHeight, targetWidth, targetHeight);
@@ -671,7 +675,9 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       imageContext.fillRect(0, 0, targetWidth, targetHeight);
     }
     imageContext.drawImage(imageCanvas, sourceRect.x, sourceRect.y, sourceRect.width, sourceRect.height, destinationRect.x, destinationRect.y, destinationRect.width, destinationRect.height);
-    maskContext.drawImage(maskCanvas, sourceRect.x, sourceRect.y, sourceRect.width, sourceRect.height, destinationRect.x, destinationRect.y, destinationRect.width, destinationRect.height);
+    if (maskCanvas && maskContext) {
+      maskContext.drawImage(maskCanvas, sourceRect.x, sourceRect.y, sourceRect.width, sourceRect.height, destinationRect.x, destinationRect.y, destinationRect.width, destinationRect.height);
+    }
 
     const currentRect = focusedRectRef.current;
     const nextFocusedRect = currentRect ? {
@@ -683,17 +689,21 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     imageCanvas.width = targetWidth;
     imageCanvas.height = targetHeight;
     imageCanvas.getContext('2d')?.drawImage(image, 0, 0);
-    maskCanvas.width = targetWidth;
-    maskCanvas.height = targetHeight;
-    maskCanvas.getContext('2d')?.drawImage(mask, 0, 0);
+    if (maskCanvas && mask) {
+      maskCanvas.width = targetWidth;
+      maskCanvas.height = targetHeight;
+      maskCanvas.getContext('2d')?.drawImage(mask, 0, 0);
+    }
     focusedRectRef.current = nextFocusedRect ? limitFocusedImageEditRect(targetWidth, targetHeight, nextFocusedRect) : null;
     undoRef.current = [];
     redoRef.current = [];
     setState({ width: targetWidth, height: targetHeight, focusedRect: focusedRectRef.current });
     setNormalization(null);
-    renderOverlay();
+    if (operation !== 'image-to-image') {
+      renderOverlay();
+    }
     const imageData = canvasToDataUrl(imageCanvas);
-    const maskData = canvasToDataUrl(maskCanvas);
+    const maskData = maskCanvas ? canvasToDataUrl(maskCanvas) : undefined;
     onCanvasChange(imageData, maskData);
     onDraftChange({ maskData, focusedRect: focusedRectRef.current || undefined });
     notify(`已将底图规范化为 ${targetWidth} × ${targetHeight}`, 'success');

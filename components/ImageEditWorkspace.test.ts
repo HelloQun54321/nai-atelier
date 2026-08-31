@@ -313,6 +313,73 @@ describe('ImageEditControls', () => {
     expect((screen.getByRole('switch', { name: /手动调整蒙版/ }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: '画笔' }) as HTMLButtonElement).disabled).toBe(true);
   });
+
+  it('显示底图尺寸规范化提示并支持点击裁剪、填充与缩放', () => {
+    const draft = createLabImageEditDraft('image-to-image', 'blue bottle', 'low quality', params);
+    const onNormalize = vi.fn();
+    render(React.createElement(ImageEditControls, {
+      operation: 'image-to-image',
+      draft,
+      fileInputRef: React.createRef<HTMLInputElement>(),
+      canvasProps: {
+        imageCanvasRef: React.createRef<HTMLCanvasElement>(),
+        maskCanvasRef: React.createRef<HTMLCanvasElement>(),
+        overlayCanvasRef: React.createRef<HTMLCanvasElement>(),
+        width: 1024,
+        height: 1368,
+        focusedRect: null,
+        focused: false,
+        isLoading: false,
+        onPointerDown: vi.fn(),
+        onPointerMove: vi.fn(),
+        onPointerUp: vi.fn(),
+      },
+      latestTextToImageItem: undefined,
+      selectableParams: draft.params,
+      strength: draft.strength,
+      noise: draft.noise,
+      brushSize: draft.brushSize,
+      focused: draft.focused,
+      minimumContextArea: draft.minimumContextArea,
+      tool: 'brush',
+      manualMaskEditing: false,
+      safeMode: false,
+      tagAssistEnabled: false,
+      expansion: draft.expansion,
+      apiKey: 'test-key',
+      notify: vi.fn(),
+      normalization: { sourceWidth: 1024, sourceHeight: 1368, targetWidth: 1024, targetHeight: 1344 },
+      onNormalize,
+      onPromptChange: vi.fn(),
+      onNegativePromptChange: vi.fn(),
+      onPromptSource: vi.fn(),
+      onDraftChange: vi.fn(),
+      onFileChange: vi.fn(),
+      onSelectImageSource: vi.fn(),
+      onStrengthChange: vi.fn(),
+      onNoiseChange: vi.fn(),
+      onBrushSizeChange: vi.fn(),
+      onFocusedChange: vi.fn(),
+      onMinimumContextAreaChange: vi.fn(),
+      onToolChange: vi.fn(),
+      onManualMaskEditingChange: vi.fn(),
+      onClearMask: vi.fn(),
+      onInvertMask: vi.fn(),
+      onUndo: vi.fn(),
+      onRedo: vi.fn(),
+      onExpansionChange: vi.fn(),
+      onApplyOutpaint: vi.fn(),
+    }));
+
+    expect(screen.getByText('底图尺寸需要规范化')).toBeTruthy();
+    expect(screen.getByText(/当前 1024 × 1368，编辑接口建议使用 1024 × 1344/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /居中裁剪/ }));
+    expect(onNormalize).toHaveBeenCalledWith('crop');
+    fireEvent.click(screen.getByRole('button', { name: /完整保留并填充/ }));
+    expect(onNormalize).toHaveBeenCalledWith('contain');
+    fireEvent.click(screen.getByRole('button', { name: /直接缩放/ }));
+    expect(onNormalize).toHaveBeenCalledWith('stretch');
+  });
 });
 
 describe('ImageEditPreview', () => {

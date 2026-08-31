@@ -2263,7 +2263,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         cancelPendingMaskSave();
                         const [baseRef, maskRef] = await Promise.all([
                             dataUrlToWorkspaceAsset(imageData, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'base')),
-                            dataUrlToWorkspaceAsset(maskData, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'mask')),
+                            maskData ? dataUrlToWorkspaceAsset(maskData, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'mask')) : Promise.resolve(undefined),
                         ]);
                         // 画布扩展/规范化改变画布尺寸：旧结果不再有效，作废
                         const previousResultRef = activeEditDraft.resultImageRef;
@@ -2272,7 +2272,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             void deleteLabWorkspaceAsset(previousResultRef).catch(error => console.warn('删除编辑结果资产失败:', error));
                         }
                         setImageEditBaseImage(imageData);
-                        setImageEditPreviewImage(imageData);
+                        setImageEditPreviewImage(null);
                         setImageEditMaskData(maskData);
                     })();
                 }}

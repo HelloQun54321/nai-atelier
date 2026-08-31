@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-01
+- **Antigravity (Gemini 3.7 Flash)**：修复图生图模式下因未挂载 maskCanvas 导致底图尺寸规范化按钮（裁剪/填充/缩放）点击无响应的缺陷，补齐无蒙版画布适配并补充单元测试（fix: allow image normalization in image-to-image without maskCanvas）。
 - **Antigravity (Gemini 3.7 Flash)**：移除图生图右侧「点击看底图」与「以此为底图」悬浮按钮与相关冗余状态，恢复纯粹的右侧结果预览与下载交互（style: remove redundant image-to-image floating compare and iteration buttons）。
 - **Antigravity (Gemini 3.7 Flash)**：修复图生图等编辑模式导入底图后因 displayedImage 为 null 导致桌面端生成按钮被误禁用的缺陷，纠正为基于底图载入状态 canGenerate 判定（fix: enable image edit generate button upon base image load）。
 - **DeepSeek (V4 Flash)**：图生图底图移入左侧「底图与导入」区展示（含宽高），右侧预览只显示生成结果，移动端悬浮预览同步只跟随结果（feat: show img2img base image in left import section）。
