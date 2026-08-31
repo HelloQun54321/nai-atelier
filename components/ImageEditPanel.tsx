@@ -153,7 +153,9 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     onGenerateBarChange({
       generate: () => { void submit(); },
       costLabel: generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea }),
-      canGenerate: Boolean(imageCanvasRef.current && maskCanvasRef.current),
+      // 隐藏画布挂载即存在；只有真正载入底图（width/height 有效）且未在加载时才允许生成，
+      // 否则移动端无底图时也会点亮生成按钮，点击后才报尺寸错误。
+      canGenerate: !isLoading && !isGenerating && state.width > 0 && state.height > 0 && Boolean(imageCanvasRef.current && maskCanvasRef.current),
     });
   });
 
@@ -698,6 +700,11 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     const imageCanvas = imageCanvasRef.current;
     const maskCanvas = maskCanvasRef.current;
     if (!imageCanvas || !maskCanvas) return;
+    // 画布存在但尚未载入底图（width=0）时给出明确提示，而不是静默失败
+    if (!imageCanvas.width || !imageCanvas.height) {
+      setError('请先选择或上传一张底图再生成');
+      return;
+    }
     const dimensionError = validateImageEditDimensions(imageCanvas.width, imageCanvas.height);
     if (dimensionError) {
       setError(`请先处理底图尺寸：${dimensionError}`);
