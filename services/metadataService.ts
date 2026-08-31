@@ -76,18 +76,23 @@ interface PngTextEntry {
  */
 export const extractMetadata = async (file: File): Promise<string | null> => {
     if (file.type && file.type !== 'image/png') {
-        console.warn('Only PNG metadata is supported currently.');
         return null;
     }
 
     try {
-        const arrayBuffer = await file.arrayBuffer();
+        const arrayBuffer = typeof file.arrayBuffer === 'function'
+            ? await file.arrayBuffer()
+            : await new Promise<ArrayBuffer>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as ArrayBuffer);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsArrayBuffer(file);
+            });
         const standardMetadata = await extractNovelAiMetadataFromPng(arrayBuffer);
         if (standardMetadata) return standardMetadata;
 
         return await extractStealthMetadataFromFile(file);
     } catch (e) {
-        console.error('Failed to parse metadata', e);
         return null;
     }
 };

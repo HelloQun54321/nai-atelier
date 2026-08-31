@@ -2170,12 +2170,59 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     updateEditDraft(activeEditOperation, { prompt: value, promptSource: source });
                 }}
                 onDraftChange={patch => updateEditDraft(activeEditOperation, patch)}
-                onBaseImageChange={(dataUrl, source, parentHistoryId) => {
+                onBaseImageChange={(dataUrl, source, parentHistoryId, meta) => {
                     void (async () => {
                         cancelPendingMaskSave();
                         const ref = await dataUrlToWorkspaceAsset(dataUrl, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'base'));
                         await deleteLabWorkspaceAsset(getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'mask'));
-                        updateEditDraft(activeEditOperation, { baseImageRef: ref, baseImageSource: source, parentHistoryId: source === 'upload' ? undefined : parentHistoryId, maskRef: undefined, maskData: undefined, focusedRect: undefined });
+
+                        let inheritedPrompt = activeEditDraft.prompt;
+                        let inheritedNegative = activeEditDraft.negativePrompt;
+                        let inheritedParams = activeEditDraft.params;
+                        let promptSource = activeEditDraft.promptSource;
+
+                        if (meta) {
+                            if (meta.prompt) {
+                                inheritedPrompt = meta.prompt;
+                                promptSource = source === 'history' ? 'history' : 'current';
+                            }
+                            if (meta.negativePrompt !== undefined) {
+                                inheritedNegative = meta.negativePrompt;
+                            }
+                            if (meta.params) {
+                                inheritedParams = { ...activeEditDraft.params, ...meta.params };
+                            }
+                        } else if (source === 'generated' && latestTextToImageItem) {
+                            inheritedPrompt = latestTextToImageItem.prompt || finalPrompt || activeEditDraft.prompt;
+                            inheritedNegative = latestTextToImageItem.negativePrompt ?? activeEditDraft.negativePrompt;
+                            if (latestTextToImageItem.params) {
+                                inheritedParams = { ...activeEditDraft.params, ...latestTextToImageItem.params };
+                            }
+                            promptSource = 'current';
+                        } else if (source === 'history' && parentHistoryId) {
+                            const histItem = previewHistory.find(item => item.id === parentHistoryId);
+                            if (histItem) {
+                                inheritedPrompt = histItem.prompt || activeEditDraft.prompt;
+                                inheritedNegative = histItem.negativePrompt ?? activeEditDraft.negativePrompt;
+                                if (histItem.params) {
+                                    inheritedParams = { ...activeEditDraft.params, ...histItem.params };
+                                }
+                                promptSource = 'history';
+                            }
+                        }
+
+                        updateEditDraft(activeEditOperation, {
+                            baseImageRef: ref,
+                            baseImageSource: source,
+                            parentHistoryId: source === 'upload' ? undefined : parentHistoryId,
+                            maskRef: undefined,
+                            maskData: undefined,
+                            focusedRect: undefined,
+                            prompt: inheritedPrompt,
+                            negativePrompt: inheritedNegative,
+                            params: inheritedParams,
+                            promptSource,
+                        });
                         setImageEditBaseImage(dataUrl);
                         setImageEditPreviewImage(dataUrl);
                         setImageEditMaskData(undefined);

@@ -77,17 +77,20 @@ export const createLabWorkspaceSession = (
   negativePrompt: string,
   params: NAIParams,
   activeModules: Record<string, boolean>,
-): LabWorkspaceSession => ({
-  version: 1,
-  activeMode: 'text-to-image',
-  textToImage: { basePrompt, subjectPrompt, negativePrompt, params: cloneParams(params), activeModules: { ...activeModules } },
-  edits: {
-    'image-to-image': createLabImageEditDraft('image-to-image', '', negativePrompt, params),
-    inpaint: createLabImageEditDraft('inpaint', '', negativePrompt, params),
-    outpaint: createLabImageEditDraft('outpaint', '', negativePrompt, params),
-  },
-  updatedAt: Date.now(),
-});
+): LabWorkspaceSession => {
+  const initialPrompt = [basePrompt, subjectPrompt].filter(Boolean).join(', ') || '';
+  return {
+    version: 1,
+    activeMode: 'text-to-image',
+    textToImage: { basePrompt, subjectPrompt, negativePrompt, params: cloneParams(params), activeModules: { ...activeModules } },
+    edits: {
+      'image-to-image': createLabImageEditDraft('image-to-image', initialPrompt, negativePrompt, params),
+      inpaint: createLabImageEditDraft('inpaint', initialPrompt, negativePrompt, params),
+      outpaint: createLabImageEditDraft('outpaint', initialPrompt, negativePrompt, params),
+    },
+    updatedAt: Date.now(),
+  };
+};
 
 /** 只有实验室入口允许恢复图片编辑模式；风格串／角色串详情始终是文生图工作区。 */
 export const scopeLabWorkspaceSessionToEntry = (entryId: string, session: LabWorkspaceSession): LabWorkspaceSession => (

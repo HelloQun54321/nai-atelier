@@ -36,10 +36,10 @@ export const DEFAULT_LAB_MODULE_COLLAPSED: LabModuleCollapsedPreferences = {
 };
 
 const DEFAULT_LAB_EDIT_MODULE_ORDER: LabPageModuleId[] = [
-  'prompt',
   'baseImage',
-  'params',
+  'prompt',
   'editSettings',
+  'params',
   'characterReference',
   'vibe',
 ];

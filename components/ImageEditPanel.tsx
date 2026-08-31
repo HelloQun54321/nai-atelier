@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem } from '../types';
 import { LabPageLayout } from '../services/appearancePreferences';
 import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, limitFocusedImageEditRect, normalizeMinimumContextArea, validateImageEditDimensions } from '../services/imageEdit';
+import { extractMetadata, parseNovelAIMetadata } from '../services/metadataService';
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPreview } from './ImageEditPreview';
 
@@ -44,7 +45,7 @@ interface ImageEditPanelProps {
   onNegativePromptChange: (value: string) => void;
   onPromptSource: (source: LabImageEditDraft['promptSource']) => void;
   onDraftChange: (patch: Partial<LabImageEditDraft> & { maskData?: string }) => void;
-  onBaseImageChange: (dataUrl: string, source: 'generated' | 'history' | 'upload', parentHistoryId?: string) => void;
+  onBaseImageChange: (dataUrl: string, source: 'generated' | 'history' | 'upload', parentHistoryId?: string, meta?: { prompt?: string; negativePrompt?: string; params?: import('../types').NAIParams }) => void;
   onCanvasChange: (imageData: string, maskData: string) => void;
   onGenerate: (request: ImageEditRequest) => Promise<void>;
   latestTextToImageItem?: LocalGenItem;
@@ -523,14 +524,37 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const dataUrl = String(reader.result || '');
       if (!dataUrl) {
         setError('底图读取失败');
         return;
       }
-      onBaseImageChange(dataUrl, 'upload');
+      let extractedMeta: { prompt?: string; negativePrompt?: string; params?: import('../types').NAIParams } | undefined;
+      try {
+        const rawMeta = await extractMetadata(file);
+        if (rawMeta) {
+          const parsed = parseNovelAIMetadata(rawMeta);
+          if (parsed.prompt) {
+            extractedMeta = {
+              prompt: parsed.prompt,
+              negativePrompt: parsed.negativePrompt,
+              params: parsed.params,
+            };
+          }
+        }
+      } catch (metaErr) {
+        console.warn('解析底图元数据跳过:', metaErr);
+      }
+      if (extractedMeta) {
+        onBaseImageChange(dataUrl, 'upload', undefined, extractedMeta);
+      } else {
+        onBaseImageChange(dataUrl, 'upload');
+      }
       void loadBaseImage(dataUrl, { maskData: undefined, focusedRect: undefined });
+      if (extractedMeta?.prompt) {
+        notify('已自动解析并带入底图提示词与参数', 'success');
+      }
     };
     reader.onerror = () => setError('底图读取失败');
     reader.readAsDataURL(file);
@@ -770,7 +794,11 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         onPromptSource={onPromptSource}
         onDraftChange={onDraftChange}
         onFileChange={handleUpload}
-        onSelectImageSource={(item, source) => onBaseImageChange(item.imageUrl, source, item.id)}
+        onSelectImageSource={(item, source) => onBaseImageChange(item.imageUrl, source, item.id, {
+          prompt: item.prompt,
+          negativePrompt: item.negativePrompt,
+          params: item.params,
+        })}
         onStrengthChange={value => { setStrength(value); onDraftChange({ strength: value }); }}
         onNoiseChange={value => { setNoise(value); onDraftChange({ noise: value }); }}
         onBrushSizeChange={value => { setBrushSize(value); onDraftChange({ brushSize: value }); }}

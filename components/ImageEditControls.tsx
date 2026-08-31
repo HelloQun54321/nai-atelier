@@ -83,9 +83,37 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
       <LabModuleSection moduleId="prompt" label="提示词输入" order={getModuleOrder(layout, 'prompt')} defaultCollapsed={isModuleCollapsed(layout, 'prompt')}>
         <section className="space-y-4">
           <div>
-            <div className="mb-2 flex items-center justify-end gap-3"><span className="text-[10px] text-gray-400">{getOperationLabel(operation)} · 本次编辑独立保存</span></div>
-            <TagAutocompleteTextarea tagAssistEnabled={tagAssistEnabled} disabled={isBusy} value={draft.prompt} onValueChange={onPromptChange} className="min-h-28 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder="输入本次实际要生成的完整提示词" />
-            <div className="mt-2 flex flex-wrap gap-1.5"><button type="button" onClick={() => onPromptSource('current')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">当前完整 Prompt</button><button type="button" onClick={() => onPromptSource('style-only')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">仅保留风格串</button><button type="button" onClick={() => onPromptSource('history')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">历史 Prompt</button><button type="button" onClick={() => onPromptSource('custom')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">清空 Prompt</button></div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+                {draft.promptSource === 'history' ? '底图原提示词' : draft.promptSource === 'current' ? '文生图提示词' : '自定义编辑提示词'}
+              </span>
+              <span className="text-[10px] text-gray-400">{getOperationLabel(operation)} · 独立保存</span>
+            </div>
+            <TagAutocompleteTextarea
+              tagAssistEnabled={tagAssistEnabled}
+              disabled={isBusy}
+              value={draft.prompt}
+              onValueChange={onPromptChange}
+              className="min-h-28 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+              placeholder={
+                operation === 'outpaint'
+                  ? '输入扩图提示词（建议保留原图场景描述，AI 将在扩展区域继续绘制）'
+                  : operation === 'inpaint'
+                  ? '输入重绘提示词（AI 将仅在涂抹区域根据提示词生成内容）'
+                  : '输入图生图提示词'
+              }
+            />
+            {operation === 'outpaint' && (
+              <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                💡 <b>扩图提示</b>：NovelAI 扩图依赖提示词构想扩展区域的内容。系统已自动保留原图场景描述，您可在此修改或追加环境词（如 <code>wide angle, detailed background</code>）。
+              </p>
+            )}
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <button type="button" onClick={() => onPromptSource('history')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">底图原 Prompt</button>
+              <button type="button" onClick={() => onPromptSource('current')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">当前文生图 Prompt</button>
+              <button type="button" onClick={() => onPromptSource('style-only')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">仅保留风格串</button>
+              <button type="button" onClick={() => onPromptSource('custom')} className="rounded px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800">清空 Prompt</button>
+            </div>
           </div>
           <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">全局负面提示词<TagAutocompleteTextarea tagAssistEnabled={tagAssistEnabled} disabled={isBusy} value={draft.negativePrompt} onValueChange={onNegativePromptChange} className="mt-2 min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder="输入本次负面提示词" /></label>
         </section>
@@ -100,7 +128,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
             <button disabled={isBusy || !latestTextToImageItem} type="button" onClick={() => latestTextToImageItem && onSelectImageSource(latestTextToImageItem, 'generated')} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" title={latestTextToImageItem ? '使用文生图最近一次生成结果' : '当前没有可用的文生图结果'}><Images className="h-4 w-4" />文生图最新</button>
             <button disabled={isBusy} type="button" onClick={() => setHistoryPickerOpen(true)} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><Clock3 className="h-4 w-4" />选择历史图片</button>
           </div>
-          <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">切换底图不会覆盖当前提示词和编辑参数，也不会自动新增历史记录。</div>
+          <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">载入底图将自动带入该图的 Prompt、模型与参数，您可随时按需微调。</div>
           {operation === 'image-to-image' ? <>
             <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-white/70 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-400">图生图不需要绘制蒙版；底图会在右侧以完整预览规格显示。</div>
             <div className="hidden" aria-hidden="true"><canvas ref={canvasProps.imageCanvasRef} /><canvas ref={canvasProps.maskCanvasRef} /><canvas ref={canvasProps.overlayCanvasRef} /></div>
@@ -155,8 +183,103 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
           </div>
 
           {operation === 'outpaint' && <>
-            <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900"><div className="mb-2 text-xs font-semibold text-gray-700 dark:text-gray-200">扩展画布（像素）</div><div className="grid grid-cols-2 gap-2">{(['top', 'right', 'bottom', 'left'] as const).map(side => <label key={side} className="text-[11px] text-gray-500 dark:text-gray-400">{({ top: '上', right: '右', bottom: '下', left: '左' } as const)[side]}<input disabled={isBusy} type="number" min="0" step="64" value={expansion[side]} onChange={event => onExpansionChange({ ...expansion, [side]: Math.max(0, Number(event.target.value) || 0) })} className="mt-1 h-9 w-full rounded-lg border border-gray-300 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>)}</div><button disabled={isBusy} type="button" onClick={onApplyOutpaint} className="mt-3 h-9 w-full rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50">应用画布扩展</button></div>
-            <button type="button" role="switch" aria-checked={manualMaskEditing} disabled={isBusy || safeMode} onClick={() => onManualMaskEditingChange(!manualMaskEditing)} className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-xs font-semibold text-gray-600 transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-700"><span><span className="block">手动调整蒙版</span><span className="mt-0.5 block text-[10px] font-normal text-gray-400">默认只生成新增边缘；开启后可用画笔修正接缝区域</span></span><span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${manualMaskEditing ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${manualMaskEditing ? 'translate-x-4' : 'translate-x-0'}`} /></span></button>
+            <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">扩展画布（像素）</span>
+                <span className="text-[11px] font-mono text-gray-400">
+                  {canvasProps.width && canvasProps.height ? `${canvasProps.width} × ${canvasProps.height} ➔ ${canvasProps.width + (expansion.left || 0) + (expansion.right || 0)} × ${canvasProps.height + (expansion.top || 0) + (expansion.bottom || 0)}` : ''}
+                </span>
+              </div>
+              
+              {/* Quick Presets */}
+              <div className="mb-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => {
+                    const next = { top: 128, right: 128, bottom: 128, left: 128 };
+                    onExpansionChange(next);
+                  }}
+                  className="rounded-md border border-indigo-100 bg-indigo-50/60 px-2 py-1 text-[11px] font-medium text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-900/40 dark:bg-indigo-950/30 dark:text-indigo-300"
+                >
+                  四周 +128px
+                </button>
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => {
+                    const next = { top: 64, right: 64, bottom: 64, left: 64 };
+                    onExpansionChange(next);
+                  }}
+                  className="rounded-md border border-indigo-100 bg-indigo-50/60 px-2 py-1 text-[11px] font-medium text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-900/40 dark:bg-indigo-950/30 dark:text-indigo-300"
+                >
+                  四周 +64px
+                </button>
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => {
+                    const next = { top: 0, right: 128, bottom: 0, left: 128 };
+                    onExpansionChange(next);
+                  }}
+                  className="rounded-md border border-indigo-100 bg-indigo-50/60 px-2 py-1 text-[11px] font-medium text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-900/40 dark:bg-indigo-950/30 dark:text-indigo-300"
+                >
+                  左右 +128px
+                </button>
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => {
+                    const next = { top: 128, right: 0, bottom: 128, left: 0 };
+                    onExpansionChange(next);
+                  }}
+                  className="rounded-md border border-indigo-100 bg-indigo-50/60 px-2 py-1 text-[11px] font-medium text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-900/40 dark:bg-indigo-950/30 dark:text-indigo-300"
+                >
+                  上下 +128px
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {(['top', 'right', 'bottom', 'left'] as const).map(side => (
+                  <label key={side} className="text-[11px] text-gray-500 dark:text-gray-400">
+                    {({ top: '上', right: '右', bottom: '下', left: '左' } as const)[side]}
+                    <input
+                      disabled={isBusy}
+                      type="number"
+                      min="0"
+                      step="64"
+                      value={expansion[side]}
+                      onChange={event => onExpansionChange({ ...expansion, [side]: Math.max(0, Number(event.target.value) || 0) })}
+                      className="mt-1 h-9 w-full rounded-lg border border-gray-300 bg-white px-2 font-mono text-sm dark:border-gray-700 dark:bg-gray-900"
+                    />
+                  </label>
+                ))}
+              </div>
+              <button
+                disabled={isBusy || (!expansion.top && !expansion.right && !expansion.bottom && !expansion.left)}
+                type="button"
+                onClick={onApplyOutpaint}
+                className="mt-3 h-9 w-full rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white shadow transition hover:bg-indigo-500 disabled:opacity-40"
+              >
+                应用画布扩展
+              </button>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={manualMaskEditing}
+              disabled={isBusy || safeMode}
+              onClick={() => onManualMaskEditingChange(!manualMaskEditing)}
+              className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-xs font-semibold text-gray-600 transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-700"
+            >
+              <span>
+                <span className="block">手动调整蒙版</span>
+                <span className="mt-0.5 block text-[10px] font-normal text-gray-400">默认自动重绘全部新增边缘；开启后可用画笔微调接缝遮罩</span>
+              </span>
+              <span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${manualMaskEditing ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${manualMaskEditing ? 'translate-x-4' : 'translate-x-0'}`} />
+              </span>
+            </button>
           </>}
           {(operation === 'inpaint' || operation === 'outpaint' && manualMaskEditing) && <>
             {safeMode && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] leading-5 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">安全模式已开启，蒙版画笔暂不可用；关闭安全模式后可继续编辑。</div>}
