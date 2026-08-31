@@ -830,6 +830,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       <ImageEditPreview
         operation={operation}
         image={previewImage || baseImage}
+        baseImage={baseImage}
         error={error}
         generationCostLabel={generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea })}
         onGenerate={() => { void submit(); }}
