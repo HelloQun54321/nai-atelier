@@ -109,4 +109,11 @@ describe('image edit cost estimation', () => {
     expect(estimateImageEditCost(withFiveVibes, 'image-to-image', 1, false, 4, false)
       - estimateImageEditCost(withFiveVibes, 'inpaint', 1, false, 4, false)).toBe(2);
   });
+
+  it('treats strength 0 as a valid minimum that scales cost to near zero', () => {
+    const atFull = estimateImageEditCost(params, 'image-to-image', 1, false, 4, false);
+    const atZero = estimateImageEditCost(params, 'image-to-image', 0, false, 4, false);
+    expect(atZero).toBeLessThan(atFull);
+    expect(atZero).toBeLessThanOrEqual(2);
+  });
 });

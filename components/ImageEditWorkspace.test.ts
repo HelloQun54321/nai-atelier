@@ -280,4 +280,43 @@ describe('ImageEditPreview', () => {
     expect(onRemoveCurrentHistory).toHaveBeenCalledOnce();
     expect(onClearHistoryGroup).toHaveBeenCalledOnce();
   });
+
+  it('图生图结果与底图不同时显示 A/B 切换与「以此为底图」', () => {
+    const onUseResultAsBase = vi.fn();
+    render(React.createElement(ImageEditPreview, {
+      operation: 'image-to-image',
+      image: 'data:image/png;base64,result',
+      baseImage: 'data:image/png;base64,base',
+      error: null,
+      generationCostLabel: '12 点',
+      onGenerate: vi.fn(),
+      onOpenLightbox: vi.fn(),
+      getDownloadFilename: () => 'fixture.png',
+      onUseResultAsBase,
+    }));
+
+    expect(screen.getByText('结果 · 点击看底图')).toBeTruthy();
+    // 点击切换为底图视图
+    fireEvent.click(screen.getByRole('button', { name: '结果 · 点击看底图' }));
+    expect(screen.getByText('底图 · 点击看结果')).toBeTruthy();
+    // 以此为新底图
+    fireEvent.click(screen.getByRole('button', { name: /以此为底图/ }));
+    expect(onUseResultAsBase).toHaveBeenCalledOnce();
+  });
+
+  it('无结果或结果等于底图时不显示 A/B 切换', () => {
+    render(React.createElement(ImageEditPreview, {
+      operation: 'image-to-image',
+      image: 'data:image/png;base64,base',
+      baseImage: 'data:image/png;base64,base',
+      error: null,
+      generationCostLabel: '12 点',
+      onGenerate: vi.fn(),
+      onOpenLightbox: vi.fn(),
+      getDownloadFilename: () => 'fixture.png',
+    }));
+
+    expect(screen.queryByText(/点击看底图/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /以此为底图/ })).toBeNull();
+  });
 });

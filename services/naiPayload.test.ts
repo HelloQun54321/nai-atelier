@@ -207,4 +207,14 @@ describe('NovelAI generation payload', () => {
       strength: 1, noise: 0, runtimeModels: [],
     })).toThrow('当前模型不支持图像编辑');
   });
+
+  it('keeps fixed seed -1 server-side and omits extra_noise_seed in edits', () => {
+    const payload = buildNaiImageEditPayload('1girl', '', { ...baseParams, seed: -1 }, {
+      operation: 'image-to-image', image: 'data:image/png;base64,aW1hZ2U=', strength: 0.7, noise: 0,
+      runtimeModels: ['nai-diffusion-5-full-inpainting'],
+    });
+    // 固定 seed（-1）由服务端随机：请求不携带 seed，也不派生 extra_noise_seed
+    expect('seed' in payload.parameters).toBe(false);
+    expect('extra_noise_seed' in payload.parameters).toBe(false);
+  });
 });
