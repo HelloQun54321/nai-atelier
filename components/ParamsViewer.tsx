@@ -214,6 +214,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                         <ParamItem label="操作类型" value={edit.operation === 'image-to-image' ? '图生图' : edit.operation === 'inpaint' ? '局部重绘' : '扩图'} />
+                        {edit.parentHistoryId && <ParamItem label="父图" value="上一张生成（可再次编辑）" />}
                         {edit.strength !== undefined && <ParamItem label="重绘强度" value={edit.strength.toFixed(2)} />}
                         {edit.noise !== undefined && <ParamItem label="噪点强度" value={edit.noise.toFixed(2)} />}
                         {edit.focused && <ParamItem label="聚焦局部" value={edit.focusedArea ? `${Math.round(edit.focusedArea.width)} × ${Math.round(edit.focusedArea.height)}` : '开启'} />}
