@@ -3,6 +3,10 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-08-31
+### 工程化:精简提交前质量门禁，避免重复运行无关测试
+- **基础门禁保留**：pre-commit 仅保留暂存区密钥扫描、ESLint 错误检查与 TypeScript 类型检查；Gateway 与 Vitest 改为按改动范围定向执行，不再阻塞每次提交。
+- **消除重复扫描**：`test:gateway` 不再隐式执行全仓库密钥扫描，密钥保护统一由独立命令与提交门禁负责；所有原有测试继续保留。
+
 ### 修复:本地服务 Wrangler 调试日志重定向到项目内，避免写满系统盘触发 ENOSPC
 - **日志位置重定向**：`local-server.mjs` 将 wrangler 运行调试日志从系统盘全局目录（`AppData\Roaming\xdg.config\.wrangler\logs`，从不清零，实测累积 7GB 触发 ENOSPC）默认重定向到项目内 `.wrangler-logs/`（可整体删除），可用环境变量 `WRANGLER_LOG_PATH` 覆盖，启动信息中会显示实际日志位置。
 
