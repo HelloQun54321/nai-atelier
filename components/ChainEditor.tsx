@@ -1603,7 +1603,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const imageEditCostLabel = (operation: ImageEditOperation, focused: boolean, context?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number }) => {
         const focusedReady = operation === 'inpaint' && focused && Boolean(context?.focusedRect && context.focusedRect.width >= 2 && context.focusedRect.height >= 2);
-        const cost = estimateImageEditCost(activeEditDraft?.params || params, operation, activeEditDraft?.strength || (operation === 'image-to-image' ? 0.7 : 1), focusedReady, novelaiSubscription?.tier, opusUsageExhausted, context);
+        // strength=0 是合法值（完全保留原图、几乎不重绘）；不能用 || 回退到默认 0.7
+        const editStrength = activeEditDraft?.strength !== undefined ? activeEditDraft.strength : (operation === 'image-to-image' ? 0.7 : 1);
+        const cost = estimateImageEditCost(activeEditDraft?.params || params, operation, editStrength, focusedReady, novelaiSubscription?.tier, opusUsageExhausted, context);
         return formatImageEditCostLabel(cost, operation, focusedReady, novelaiSubscription?.tier);
     };
 
