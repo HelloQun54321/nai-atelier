@@ -957,7 +957,7 @@ const settleSuccessfulNovelAiGeneration = async ({ payload, authorization, keyHa
       const subscription = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(10_000), requestRemote);
       if (subscription.ok) {
         const sanitized = sanitizeNovelAiSubscription(await subscription.json());
-        setOpusUsageSnapshot(keyHash, sanitized.usage?.isNegative === true, sanitized.tier === 4);
+        setOpusUsageSnapshot(keyHash, sanitized.usage?.isNegative === true, Number(sanitized.tier) >= 3);
       }
     } catch {
       // 网络失败时沿用上次快照，不阻塞本次已经完成的生成结算。
@@ -3106,7 +3106,7 @@ const serveDistFile = async (req, res, url) => {
         }
         const payload = await upstream.json();
         const sanitized = sanitizeNovelAiSubscription(payload);
-        setOpusUsageSnapshot(keyHashFromAuthorization(authorization), sanitized.usage?.isNegative === true, sanitized.tier === 4);
+        setOpusUsageSnapshot(keyHashFromAuthorization(authorization), sanitized.usage?.isNegative === true, Number(sanitized.tier) >= 3);
         return sendJson(res, 200, sanitized);
       } catch (error) {
         return sendJson(res, 502, { error: error.message || 'NovelAI 订阅信息获取失败' });

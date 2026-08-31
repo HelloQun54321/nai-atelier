@@ -92,9 +92,10 @@ export const estimateImageEditCost = (
   const baseCost = Math.max(2, Math.ceil(raw * Math.max(0, Math.min(1, Number(strength) || 0))));
   const vibeCount = operation === 'image-to-image' && params.vibes?.enabled ? params.vibes.slots.length : 0;
   const preciseReferenceCount = params.characterReferences?.enabled ? params.characterReferences.slots.length : 0;
+  const isOpus = typeof opusTier === 'number' && opusTier >= 3;
   const focusedFree = operation === 'inpaint'
     && focused
-    && opusTier === 4
+    && isOpus
     && !opusUsageExhausted
     && vibeCount === 0
     && preciseReferenceCount === 0;
@@ -104,7 +105,8 @@ export const estimateImageEditCost = (
 
 export const formatImageEditCostLabel = (cost: number, operation: ImageEditOperation, focused: boolean, opusTier?: number) => {
   if (focused && operation === 'inpaint') {
-    if (opusTier === 4 && cost === 0) return 'Opus 免费';
+    const isOpus = typeof opusTier === 'number' && opusTier >= 3;
+    if (isOpus && cost === 0) return 'Opus 免费';
     if (opusTier === undefined) return '费用以官方返回为准';
   }
   return `${cost} 点`;

@@ -17,7 +17,7 @@ export interface NovelaiUsageState {
 }
 
 export interface NovelaiSubscriptionInfo {
-  /** 订阅等级：1 Paper / 2 Tablet / 3 Scroll / 4 Opus。 */
+  /** 订阅等级：0 Paper / 1 Tablet / 2 Scroll / 3 Opus（兼容 1~4 序号）。 */
   tier: number;
   active: boolean;
   /** 仅 Opus 订阅会返回 usage。 */

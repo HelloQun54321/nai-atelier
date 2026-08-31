@@ -91,8 +91,10 @@ describe('image edit cost estimation', () => {
   });
 
   it('only marks focused inpainting free for a confirmed Opus account', () => {
+    expect(estimateImageEditCost(params, 'inpaint', 1, true, 3, false)).toBe(0);
     expect(estimateImageEditCost(params, 'inpaint', 1, true, 4, false)).toBe(0);
-    expect(estimateImageEditCost(params, 'inpaint', 1, true, 3, false)).toBeGreaterThan(0);
+    expect(estimateImageEditCost(params, 'inpaint', 1, true, 2, false)).toBeGreaterThan(0);
+    expect(formatImageEditCostLabel(0, 'inpaint', true, 3)).toBe('Opus 免费');
     expect(formatImageEditCostLabel(0, 'inpaint', true, 4)).toBe('Opus 免费');
     expect(formatImageEditCostLabel(0, 'inpaint', true, undefined)).toBe('费用以官方返回为准');
   });
