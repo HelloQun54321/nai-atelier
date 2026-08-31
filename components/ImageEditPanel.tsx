@@ -155,7 +155,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       costLabel: generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea }),
       // 隐藏画布挂载即存在；只有真正载入底图（width/height 有效）且未在加载时才允许生成，
       // 否则移动端无底图时也会点亮生成按钮，点击后才报尺寸错误。
-      canGenerate: !isLoading && !isGenerating && state.width > 0 && state.height > 0 && Boolean(imageCanvasRef.current && maskCanvasRef.current),
+      canGenerate: !isLoading && !isGenerating && state.width > 0 && state.height > 0 && Boolean(imageCanvasRef.current) && (operation === 'image-to-image' || Boolean(maskCanvasRef.current)),
     });
   });
 
@@ -271,8 +271,11 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       setNormalization(dimensionError ? { sourceWidth: imageCanvas.width, sourceHeight: imageCanvas.height, targetWidth: normalizationTarget.width, targetHeight: normalizationTarget.height } : null);
       focusedRectRef.current = restoredFocusedRect;
       setState({ width: imageCanvas.width, height: imageCanvas.height, focusedRect: restoredFocusedRect });
-      resetMask(imageCanvas.width, imageCanvas.height);
-      restoreMask(restoredMaskData, loadRevision);
+      // 图生图无蒙版画布：跳过蒙版重置与恢复，避免触碰不存在的 canvas
+      if (operation !== 'image-to-image') {
+        resetMask(imageCanvas.width, imageCanvas.height);
+        restoreMask(restoredMaskData, loadRevision);
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '底图读取失败');
     } finally {
@@ -699,7 +702,8 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     if (inFlightRef.current || isGenerating) return;
     const imageCanvas = imageCanvasRef.current;
     const maskCanvas = maskCanvasRef.current;
-    if (!imageCanvas || !maskCanvas) return;
+    // 图生图不渲染蒙版画布（maskCanvas 为 null），仅要求底图画布存在
+    if (!imageCanvas || (operation !== 'image-to-image' && !maskCanvas)) return;
     // 画布存在但尚未载入底图（width=0）时给出明确提示，而不是静默失败
     if (!imageCanvas.width || !imageCanvas.height) {
       setError('请先选择或上传一张底图再生成');
@@ -716,7 +720,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     }
     // 蒙版为空（未画任何笔迹/未应用画布扩展）时 infill/outpaint 语义上等于不重绘，
     // 但 NovelAI 仍会按编辑请求计费——拦截并提示，避免白耗 Anlas
-    if (operation !== 'image-to-image' && !maskHasInk(maskCanvas)) {
+    if (operation !== 'image-to-image' && !maskHasInk(maskCanvas!)) {
       setError(operation === 'outpaint' ? '请先设置画布扩展并点击「应用画布扩展」，或手动绘制扩图蒙版' : '请先在蒙版上涂画需要重绘的区域');
       return;
     }
@@ -730,7 +734,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       canvasHeight: imageCanvas.height,
       parentHistoryId: draft.baseImageSource === 'upload' ? undefined : draft.parentHistoryId,
       baseImageSource: draft.baseImageSource,
-      mask: operation === 'image-to-image' ? undefined : canvasToDataUrl(maskCanvas),
+      mask: operation === 'image-to-image' ? undefined : canvasToDataUrl(maskCanvas!),
       strength,
       noise,
       focused: focused && operation === 'inpaint',

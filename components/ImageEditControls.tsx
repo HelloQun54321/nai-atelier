@@ -132,7 +132,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
           <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">载入底图默认保留当前提示词与参数；从历史选择器勾选「同时导入该图参数」才会载入该图配置。</div>
           {operation === 'image-to-image' ? <>
             <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-white/70 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-400">图生图不需要绘制蒙版；底图会在右侧以完整预览规格显示。</div>
-            <div className="hidden" aria-hidden="true"><canvas ref={canvasProps.imageCanvasRef} /><canvas ref={canvasProps.maskCanvasRef} /><canvas ref={canvasProps.overlayCanvasRef} /></div>
+            <div className="hidden" aria-hidden="true"><canvas ref={canvasProps.imageCanvasRef} /></div>
           </> : <div className="mt-4">
             <div className="mb-2 flex items-center justify-between gap-3"><span className="text-xs font-semibold text-gray-700 dark:text-gray-200">编辑画板</span><span className="text-[10px] text-gray-400">{operation === 'inpaint' ? '绘制重绘区域' : '预览扩边与调整蒙版'}</span></div>
             <ImageEditCanvas {...canvasProps} />
