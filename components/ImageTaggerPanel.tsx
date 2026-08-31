@@ -169,8 +169,46 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
           </button>
           <div className="space-y-3 rounded-2xl border border-gray-200 p-3 dark:border-gray-800">
             <div className="flex items-center gap-2 text-xs font-bold"><SlidersHorizontal className="h-4 w-4" />识别阈值</div>
-            <label className="block text-[11px] text-gray-500">普通 Tag：{percent(threshold)}<input type="range" min="0.15" max="0.8" step="0.05" value={threshold} onChange={event => setThreshold(Number(event.target.value))} className="mt-1 w-full accent-violet-600" /></label>
-            <label className="block text-[11px] text-gray-500">角色 Tag：{percent(characterThreshold)}<input type="range" min="0.4" max="0.95" step="0.05" value={characterThreshold} onChange={event => setCharacterThreshold(Number(event.target.value))} className="mt-1 w-full accent-violet-600" /></label>
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="text-[11px] text-gray-500">普通 Tag 阈值</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="15"
+                    max="80"
+                    step="1"
+                    disabled={busy}
+                    aria-label="普通 Tag 阈值百分比"
+                    value={Math.round(threshold * 100)}
+                    onChange={event => setThreshold(Math.max(0.15, Math.min(0.8, (parseInt(event.target.value, 10) || 15) / 100)))}
+                    className="w-14 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-violet-600 outline-none transition focus:border-violet-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-violet-400 dark:focus:border-violet-400 dark:focus:bg-gray-900"
+                  />
+                  <span className="font-mono text-[11px] text-gray-400">%</span>
+                </div>
+              </div>
+              <input type="range" min="0.15" max="0.8" step="0.01" aria-label="普通 Tag 阈值" disabled={busy} value={threshold} onChange={event => setThreshold(Number(event.target.value))} className="w-full cursor-pointer accent-violet-600 disabled:cursor-not-allowed disabled:opacity-50" />
+            </div>
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="text-[11px] text-gray-500">角色 Tag 阈值</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="40"
+                    max="95"
+                    step="1"
+                    disabled={busy}
+                    aria-label="角色 Tag 阈值百分比"
+                    value={Math.round(characterThreshold * 100)}
+                    onChange={event => setCharacterThreshold(Math.max(0.4, Math.min(0.95, (parseInt(event.target.value, 10) || 40) / 100)))}
+                    className="w-14 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-violet-600 outline-none transition focus:border-violet-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-violet-400 dark:focus:border-violet-400 dark:focus:bg-gray-900"
+                  />
+                  <span className="font-mono text-[11px] text-gray-400">%</span>
+                </div>
+              </div>
+              <input type="range" min="0.4" max="0.95" step="0.01" aria-label="角色 Tag 阈值" disabled={busy} value={characterThreshold} onChange={event => setCharacterThreshold(Number(event.target.value))} className="w-full cursor-pointer accent-violet-600 disabled:cursor-not-allowed disabled:opacity-50" />
+            </div>
             <button type="button" disabled={!file || busy} onClick={() => void run()} className="h-9 w-full rounded-xl bg-violet-600 text-xs font-bold text-white disabled:opacity-40">按当前阈值重新识别</button>
           </div>
         </section>

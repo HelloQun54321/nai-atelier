@@ -216,19 +216,33 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                             <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
                                 尺寸清晰度放大（Scale）
                             </span>
-                            <span className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                                {scaleMultiplier.toFixed(2)}x
+                            <div className="flex items-center gap-1">
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max={activeRatioMax.maxScale}
+                                    step="0.01"
+                                    aria-label="尺寸清晰度倍率数值"
+                                    disabled={!canEdit}
+                                    value={Number(scaleMultiplier.toFixed(2))}
+                                    onChange={(e) => {
+                                        const val = Math.min(activeRatioMax.maxScale, Math.max(1, parseFloat(e.target.value) || 1));
+                                        handleScaleChange(val);
+                                    }}
+                                    className="w-16 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-indigo-600 outline-none transition focus:border-indigo-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-400 dark:focus:border-indigo-400 dark:focus:bg-gray-900"
+                                />
+                                <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">x</span>
                                 {scaleMultiplier >= activeRatioMax.maxScale && (
-                                    <span className="ml-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 font-normal">已达画幅极限</span>
+                                    <span className="ml-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-normal text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">已达画幅极限</span>
                                 )}
-                            </span>
+                            </div>
                         </div>
                         <div className="relative flex items-center">
                             <input
                                 type="range"
                                 min="1.0"
                                 max={activeRatioMax.maxScale}
-                                step="0.05"
+                                step="0.01"
                                 aria-label="尺寸缩放滑块"
                                 disabled={!canEdit}
                                 value={Math.min(activeRatioMax.maxScale, scaleMultiplier)}

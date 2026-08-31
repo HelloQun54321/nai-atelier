@@ -118,8 +118,42 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
 
       <LabModuleSection moduleId="editSettings" label="编辑参数" order={getModuleOrder(layout, 'editSettings')} defaultCollapsed={isModuleCollapsed(layout, 'editSettings')}>
         <section className="space-y-4">
-          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">Strength <span className="float-right font-mono">{strength.toFixed(2)}</span><input disabled={isBusy} type="range" min="0" max="1" step="0.01" value={strength} onChange={event => onStrengthChange(Number(event.target.value))} className="mt-2 w-full accent-indigo-500" /></label>
-          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">Noise <span className="float-right font-mono">{noise.toFixed(2)}</span><input disabled={isBusy} type="range" min="0" max="1" step="0.01" value={noise} onChange={event => onNoiseChange(Number(event.target.value))} className="mt-2 w-full accent-indigo-500" /></label>
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">Strength</label>
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.01"
+                aria-label="Strength 数值"
+                disabled={isBusy}
+                value={Number(strength.toFixed(2))}
+                onChange={event => onStrengthChange(Math.max(0, Math.min(1, parseFloat(event.target.value) || 0)))}
+                className="w-16 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-indigo-600 outline-none transition focus:border-indigo-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-400 dark:focus:border-indigo-400 dark:focus:bg-gray-900"
+              />
+            </div>
+            <input disabled={isBusy} type="range" min="0" max="1" step="0.01" aria-label="Strength" value={strength} onChange={event => onStrengthChange(Number(event.target.value))} className="w-full cursor-pointer accent-indigo-500 disabled:cursor-not-allowed disabled:opacity-50" />
+          </div>
+
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">Noise</label>
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.01"
+                aria-label="Noise 数值"
+                disabled={isBusy}
+                value={Number(noise.toFixed(2))}
+                onChange={event => onNoiseChange(Math.max(0, Math.min(1, parseFloat(event.target.value) || 0)))}
+                className="w-16 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-indigo-600 outline-none transition focus:border-indigo-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-400 dark:focus:border-indigo-400 dark:focus:bg-gray-900"
+              />
+            </div>
+            <input disabled={isBusy} type="range" min="0" max="1" step="0.01" aria-label="Noise" value={noise} onChange={event => onNoiseChange(Number(event.target.value))} className="w-full cursor-pointer accent-indigo-500 disabled:cursor-not-allowed disabled:opacity-50" />
+          </div>
+
           {operation === 'outpaint' && <>
             <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900"><div className="mb-2 text-xs font-semibold text-gray-700 dark:text-gray-200">扩展画布（像素）</div><div className="grid grid-cols-2 gap-2">{(['top', 'right', 'bottom', 'left'] as const).map(side => <label key={side} className="text-[11px] text-gray-500 dark:text-gray-400">{({ top: '上', right: '右', bottom: '下', left: '左' } as const)[side]}<input disabled={isBusy} type="number" min="0" step="64" value={expansion[side]} onChange={event => onExpansionChange({ ...expansion, [side]: Math.max(0, Number(event.target.value) || 0) })} className="mt-1 h-9 w-full rounded-lg border border-gray-300 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>)}</div><button disabled={isBusy} type="button" onClick={onApplyOutpaint} className="mt-3 h-9 w-full rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50">应用画布扩展</button></div>
             <button type="button" role="switch" aria-checked={manualMaskEditing} disabled={isBusy || safeMode} onClick={() => onManualMaskEditingChange(!manualMaskEditing)} className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-xs font-semibold text-gray-600 transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-700"><span><span className="block">手动调整蒙版</span><span className="mt-0.5 block text-[10px] font-normal text-gray-400">默认只生成新增边缘；开启后可用画笔修正接缝区域</span></span><span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${manualMaskEditing ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${manualMaskEditing ? 'translate-x-4' : 'translate-x-0'}`} /></span></button>
@@ -128,8 +162,51 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
             {safeMode && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] leading-5 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">安全模式已开启，蒙版画笔暂不可用；关闭安全模式后可继续编辑。</div>}
             {operation === 'inpaint' && <label className="flex items-center justify-between gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300"><span>Focused Inpainting</span><input disabled={isBusy || safeMode} type="checkbox" checked={focused} onChange={event => onFocusedChange(event.target.checked)} className="h-4 w-4 accent-amber-500" /></label>}
             <div className="flex items-center gap-2"><button disabled={isBusy || safeMode} type="button" onClick={() => onToolChange('brush')} className={`flex h-9 flex-1 items-center justify-center gap-1 rounded-lg text-xs disabled:cursor-not-allowed disabled:opacity-45 ${tool === 'brush' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-900'}`}>画笔</button><button disabled={isBusy || safeMode} type="button" onClick={() => onToolChange('eraser')} className={`flex h-9 flex-1 items-center justify-center gap-1 rounded-lg text-xs disabled:cursor-not-allowed disabled:opacity-45 ${tool === 'eraser' ? 'bg-gray-200 text-gray-800 dark:bg-gray-800 dark:text-gray-200' : 'bg-gray-100 text-gray-500 dark:bg-gray-900'}`}><Eraser className="h-3.5 w-3.5" />橡皮擦</button></div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{focused ? '框选区域后在内部绘制蒙版' : '笔刷大小'} {!focused && <span className="float-right font-mono">{brushSize}px</span>}{!focused && <input disabled={isBusy || safeMode} type="range" min="8" max="512" step="4" value={brushSize} onChange={event => onBrushSizeChange(Number(event.target.value))} className="mt-2 w-full accent-indigo-500 disabled:cursor-not-allowed disabled:opacity-45" />}</label>
-            {focused && <div className="space-y-2"><label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">最小上下文 <span className="float-right font-mono">{minimumContextArea}px</span><input disabled={isBusy || safeMode} type="range" min="32" max="96" step="8" value={minimumContextArea} onChange={event => onMinimumContextAreaChange(Number(event.target.value))} className="mt-2 w-full accent-amber-500 disabled:cursor-not-allowed disabled:opacity-45" /></label><button disabled={isBusy || safeMode} type="button" onClick={onResetFocusedRect} className="h-8 w-full rounded-lg bg-amber-50 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-amber-950/30 dark:text-amber-300">重新框选区域</button></div>}
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{focused ? '框选区域后在内部绘制蒙版' : '笔刷大小'}</label>
+                {!focused && (
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min="8"
+                      max="512"
+                      step="4"
+                      aria-label="笔刷大小数值"
+                      disabled={isBusy || safeMode}
+                      value={brushSize}
+                      onChange={event => onBrushSizeChange(Math.max(8, Math.min(512, parseInt(event.target.value, 10) || 8)))}
+                      className="w-16 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-indigo-600 outline-none transition focus:border-indigo-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-400 dark:focus:border-indigo-400 dark:focus:bg-gray-900"
+                    />
+                    <span className="font-mono text-xs text-gray-400">px</span>
+                  </div>
+                )}
+              </div>
+              {!focused && <input disabled={isBusy || safeMode} type="range" min="8" max="512" step="4" aria-label="笔刷大小" value={brushSize} onChange={event => onBrushSizeChange(Number(event.target.value))} className="w-full cursor-pointer accent-indigo-500 disabled:cursor-not-allowed disabled:opacity-45" />}
+            </div>
+            {focused && <div className="space-y-2">
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">最小上下文</label>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min="32"
+                      max="96"
+                      step="8"
+                      aria-label="最小上下文数值"
+                      disabled={isBusy || safeMode}
+                      value={minimumContextArea}
+                      onChange={event => onMinimumContextAreaChange(Math.max(32, Math.min(96, parseInt(event.target.value, 10) || 32)))}
+                      className="w-16 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-amber-600 outline-none transition focus:border-amber-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-amber-400 dark:focus:border-amber-400 dark:focus:bg-gray-900"
+                    />
+                    <span className="font-mono text-xs text-gray-400">px</span>
+                  </div>
+                </div>
+                <input disabled={isBusy || safeMode} type="range" min="32" max="96" step="8" aria-label="最小上下文" value={minimumContextArea} onChange={event => onMinimumContextAreaChange(Number(event.target.value))} className="w-full cursor-pointer accent-amber-500 disabled:cursor-not-allowed disabled:opacity-45" />
+              </div>
+              <button disabled={isBusy || safeMode} type="button" onClick={onResetFocusedRect} className="h-8 w-full rounded-lg bg-amber-50 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-amber-950/30 dark:text-amber-300">重新框选区域</button>
+            </div>}
             <div className="grid grid-cols-4 gap-1"><button disabled={isBusy || safeMode} type="button" onClick={onUndo} className="flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title="撤销"><RotateCcw className="h-4 w-4" /></button><button disabled={isBusy || safeMode} type="button" onClick={onRedo} className="flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title="重做"><RotateCw className="h-4 w-4" /></button><button disabled={isBusy || safeMode} type="button" onClick={onClearMask} className="flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title="清空蒙版"><Trash2 className="h-4 w-4" /></button><button disabled={isBusy || safeMode} type="button" onClick={onInvertMask} className="flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title="反转蒙版"><Contrast className="h-4 w-4" /></button></div>
           </>}
         </section>
