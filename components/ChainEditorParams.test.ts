@@ -137,17 +137,17 @@ describe('ChainEditorParams', () => {
     const width = screen.getByRole('spinbutton', { name: '自定义宽度' });
     const height = screen.getByRole('spinbutton', { name: '自定义高度' });
     expect(width.getAttribute('step')).toBe('64');
-    expect(height.getAttribute('max')).toBe('4096');
+    expect(height.getAttribute('max')).toBe('2048');
     expect(screen.getByRole('switch', { name: 'Opus 免费像素联动' }).getAttribute('aria-checked')).toBe('true');
 
     fireEvent.change(width, { target: { value: '512' } });
     expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ width: 512, height: 2048 }));
   });
 
-  it('自定义分辨率清晰显示当前像素是否超过 Opus 免费范围', () => {
+  it('自定义分辨率清晰显示当前像素是否超过 Opus 免费范围或官方上限', () => {
     renderParams({ params: { ...params, width: 2048, height: 2048 } });
     expect(screen.getByRole('status').textContent).toContain('4,194,304');
-    expect(screen.getByRole('status').textContent).toContain('超过免费像素上限 1,048,576');
+    expect(screen.getByRole('status').textContent).toContain('超过 NovelAI 官方上限');
   });
 
   it('CFG Scale 和 CFG Rescale 支持直接输入精确数值', () => {
@@ -163,12 +163,13 @@ describe('ChainEditorParams', () => {
     expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ cfgRescale: 0.38 }));
   });
 
-  it('尺寸比例清晰度（Scale）滑块可缩放当前画幅尺寸', () => {
+  it('尺寸比例清晰度（Scale）滑块可将画幅尺寸等比高清放大并封顶在官方上限', () => {
     const setParams = vi.fn();
     renderParams({ setParams, params: { ...params, width: 832, height: 1216 } });
     const scaleSlider = screen.getByRole('slider', { name: '尺寸缩放滑块' });
-    fireEvent.change(scaleSlider, { target: { value: '0.5' } });
-    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ width: 448, height: 640 }));
+    expect(Number(scaleSlider.getAttribute('min'))).toBe(1);
+    fireEvent.change(scaleSlider, { target: { value: '1.5' } });
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ width: 1280, height: 1856 }));
   });
 
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 不显示不可调节的图片尺寸', mode => {

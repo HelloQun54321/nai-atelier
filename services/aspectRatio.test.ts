@@ -27,11 +27,11 @@ describe('aspectRatio service', () => {
     const res1 = calculateDimensionsForRatio(portrait, 1.0);
     expect(res1).toEqual({ width: 832, height: 1216 });
 
-    // 0.5x (832*0.5=416->448, 1216*0.5=608->640)
-    const resHalf = calculateDimensionsForRatio(portrait, 0.5);
-    expect(resHalf.width % 64).toBe(0);
-    expect(resHalf.height % 64).toBe(0);
-    expect(resHalf).toEqual({ width: 448, height: 640 });
+    // 1.25x (832*1.25=1040->1024, 1216*1.25=1520->1536)
+    const res125 = calculateDimensionsForRatio(portrait, 1.25);
+    expect(res125.width % 64).toBe(0);
+    expect(res125.height % 64).toBe(0);
+    expect(res125).toEqual({ width: 1024, height: 1536 });
 
     // 1.5x (832*1.5=1248->1280, 1216*1.5=1824->1856)
     const resLarge = calculateDimensionsForRatio(portrait, 1.5);
@@ -40,10 +40,29 @@ describe('aspectRatio service', () => {
     expect(resLarge).toEqual({ width: 1280, height: 1856 });
   });
 
-  it('normalizeTo64Step 确保尺寸在 64-4096 之间并对齐 64', () => {
+  it('按 2.0x 或大比例缩放时严格钳制在单边 2048 像素及总面积 3,145,728 像素内', () => {
+    // 9:16 (768x1344) at 2.0x -> without cap height would be 2688
+    const phone = BUILTIN_ASPECT_RATIOS.find(p => p.id === '9:16')!;
+    const resPhone = calculateDimensionsForRatio(phone, 2.0);
+    expect(resPhone.width).toBeLessThanOrEqual(2048);
+    expect(resPhone.height).toBeLessThanOrEqual(2048);
+    expect(resPhone.width * resPhone.height).toBeLessThanOrEqual(3145728);
+    expect(resPhone.height).toBe(2048);
+    expect(resPhone.width % 64).toBe(0);
+
+    // 1:2 (704x1408) at 2.0x
+    const tall = BUILTIN_ASPECT_RATIOS.find(p => p.id === '1:2')!;
+    const resTall = calculateDimensionsForRatio(tall, 2.0);
+    expect(resTall.width).toBeLessThanOrEqual(2048);
+    expect(resTall.height).toBeLessThanOrEqual(2048);
+    expect(resTall.width * resTall.height).toBeLessThanOrEqual(3145728);
+    expect(resTall.height).toBe(2048);
+  });
+
+  it('normalizeTo64Step 确保尺寸在 64-2048 之间并对齐 64', () => {
     expect(normalizeTo64Step(0)).toBe(64);
     expect(normalizeTo64Step(100)).toBe(128);
-    expect(normalizeTo64Step(5000)).toBe(4096);
+    expect(normalizeTo64Step(5000)).toBe(2048);
     expect(normalizeTo64Step(832)).toBe(832);
   });
 

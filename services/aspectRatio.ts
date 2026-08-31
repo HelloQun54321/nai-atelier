@@ -16,9 +16,11 @@ export interface AspectRatioPreset {
 }
 
 export const OPUS_FREE_PIXEL_LIMIT = 1048576; // 1024 * 1024
+export const NOVELAI_MAX_DIMENSION = 2048;
+export const NOVELAI_MAX_PIXELS = 1536 * 2048; // 3,145,728
 export const RESOLUTION_STEP = 64;
 export const GENERATION_MIN_DIMENSION = 64;
-export const GENERATION_MAX_DIMENSION = 4096;
+export const GENERATION_MAX_DIMENSION = NOVELAI_MAX_DIMENSION;
 
 export const BUILTIN_ASPECT_RATIOS: AspectRatioPreset[] = [
   // 方形
@@ -148,14 +150,12 @@ export const BUILTIN_ASPECT_RATIOS: AspectRatioPreset[] = [
 ];
 
 export const SCALE_STEPS = [
-  { value: 0.5, label: '0.5x' },
-  { value: 0.65, label: '0.65x' },
-  { value: 0.8, label: '0.8x' },
   { value: 1.0, label: '1.0x (Opus免费)' },
-  { value: 1.25, label: '1.25x' },
-  { value: 1.5, label: '1.5x' },
+  { value: 1.15, label: '1.15x' },
+  { value: 1.3, label: '1.3x' },
+  { value: 1.5, label: '1.5x (高清壁纸)' },
   { value: 1.75, label: '1.75x' },
-  { value: 2.0, label: '2.0x' },
+  { value: 2.0, label: '2.0x (封顶)' },
 ];
 
 export const normalizeTo64Step = (value: number) => {
@@ -167,12 +167,39 @@ export const calculateDimensionsForRatio = (
   preset: AspectRatioPreset,
   scale: number,
 ): { width: number; height: number } => {
-  if (Math.abs(scale - 1.0) < 0.001) {
+  const effectiveScale = Math.max(1.0, scale);
+  if (Math.abs(effectiveScale - 1.0) < 0.001) {
     return { width: preset.baseWidth, height: preset.baseHeight };
   }
-  const scaledWidth = normalizeTo64Step(preset.baseWidth * scale);
-  const scaledHeight = normalizeTo64Step(preset.baseHeight * scale);
-  return { width: scaledWidth, height: scaledHeight };
+
+  let rawWidth = Math.round((preset.baseWidth * effectiveScale) / RESOLUTION_STEP) * RESOLUTION_STEP;
+  let rawHeight = Math.round((preset.baseHeight * effectiveScale) / RESOLUTION_STEP) * RESOLUTION_STEP;
+
+  // 约束单边不超过 NovelAI 官方最大上限 2048
+  if (rawWidth > NOVELAI_MAX_DIMENSION) {
+    const ratio = preset.baseHeight / preset.baseWidth;
+    rawWidth = NOVELAI_MAX_DIMENSION;
+    rawHeight = Math.round((rawWidth * ratio) / RESOLUTION_STEP) * RESOLUTION_STEP;
+  }
+  if (rawHeight > NOVELAI_MAX_DIMENSION) {
+    const ratio = preset.baseWidth / preset.baseHeight;
+    rawHeight = NOVELAI_MAX_DIMENSION;
+    rawWidth = Math.round((rawHeight * ratio) / RESOLUTION_STEP) * RESOLUTION_STEP;
+  }
+
+  // 约束总像素不超过 NovelAI 官方上限 1536 * 2048 = 3,145,728
+  while (rawWidth * rawHeight > NOVELAI_MAX_PIXELS && (rawWidth > RESOLUTION_STEP || rawHeight > RESOLUTION_STEP)) {
+    if (rawWidth >= rawHeight) {
+      rawWidth -= RESOLUTION_STEP;
+    } else {
+      rawHeight -= RESOLUTION_STEP;
+    }
+  }
+
+  return {
+    width: Math.max(GENERATION_MIN_DIMENSION, Math.min(NOVELAI_MAX_DIMENSION, rawWidth)),
+    height: Math.max(GENERATION_MIN_DIMENSION, Math.min(NOVELAI_MAX_DIMENSION, rawHeight)),
+  };
 };
 
 export const detectClosestAspectRatio = (width: number, height: number): { preset: AspectRatioPreset | null; scale: number } => {
@@ -255,3 +282,4 @@ export const deleteUserDimensionPreset = (id: string): UserDimensionPreset[] => 
   }
   return next;
 };
+

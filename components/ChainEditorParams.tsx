@@ -11,6 +11,8 @@ import {
     GENERATION_MAX_DIMENSION,
     GENERATION_MIN_DIMENSION,
     getUserDimensionPresets,
+    NOVELAI_MAX_DIMENSION,
+    NOVELAI_MAX_PIXELS,
     normalizeTo64Step,
     OPUS_FREE_PIXEL_LIMIT,
     RESOLUTION_STEP,
@@ -337,7 +339,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                             <div className="relative flex items-center">
                                 <input
                                     type="range"
-                                    min="0.5"
+                                    min="1.0"
                                     max="2.0"
                                     step="0.05"
                                     aria-label="尺寸缩放滑块"
@@ -348,9 +350,8 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                                 />
                             </div>
                             <div className="flex items-center justify-between text-[10px] text-gray-400">
-                                <span>0.5x 极速草稿</span>
-                                <span className="font-semibold text-emerald-600 dark:text-emerald-400">1.0x Opus 免费基准点</span>
-                                <span>2.0x 高精大图</span>
+                                <span className="font-semibold text-emerald-600 dark:text-emerald-400">1.0x Opus 免费基准（原生画质/0点）</span>
+                                <span>2.0x 高清放大（官方上限封顶）</span>
                             </div>
                         </div>
                     ) : (
@@ -416,12 +417,16 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                         <div
                             role="status"
                             className={`rounded-xl px-2.5 py-1 text-[11px] font-medium leading-relaxed tabular-nums border ${
-                                isOpusFree
+                                currentWidth > NOVELAI_MAX_DIMENSION || currentHeight > NOVELAI_MAX_DIMENSION || totalPixels > NOVELAI_MAX_PIXELS
+                                    ? 'bg-red-50 text-red-700 border-red-200/60 dark:bg-red-950/30 dark:text-red-300 dark:border-red-800/40'
+                                    : isOpusFree
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800/40'
                                     : 'bg-amber-50 text-amber-700 border-amber-200/60 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800/40'
                             }`}
                         >
-                            当前 {currentWidth.toLocaleString()} × {currentHeight.toLocaleString()} = {totalPixels.toLocaleString()} 像素 · {isOpusFree ? '在 Opus 免费像素范围内' : `超过免费像素上限 ${freeMaxArea.toLocaleString()}`}
+                            {currentWidth > NOVELAI_MAX_DIMENSION || currentHeight > NOVELAI_MAX_DIMENSION || totalPixels > NOVELAI_MAX_PIXELS
+                                ? `当前 ${currentWidth.toLocaleString()} × ${currentHeight.toLocaleString()} = ${totalPixels.toLocaleString()} 像素 · 超过 NovelAI 官方上限（单边最大 2048，总像素最大 ${NOVELAI_MAX_PIXELS.toLocaleString()}）`
+                                : `当前 ${currentWidth.toLocaleString()} × ${currentHeight.toLocaleString()} = ${totalPixels.toLocaleString()} 像素 · ${isOpusFree ? '在 Opus 免费像素范围内' : `超过免费像素上限 ${freeMaxArea.toLocaleString()}`}`}
                         </div>
 
                         {/* Save as preset button & quick actions */}
