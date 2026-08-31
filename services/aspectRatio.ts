@@ -163,13 +163,58 @@ export const normalizeTo64Step = (value: number) => {
   return Math.min(GENERATION_MAX_DIMENSION, Math.max(GENERATION_MIN_DIMENSION, Math.round(finite / RESOLUTION_STEP) * RESOLUTION_STEP));
 };
 
+export const getMaxDimensionsForRatio = (preset: AspectRatioPreset): { width: number; height: number; maxScale: number } => {
+  let rawWidth = preset.baseWidth;
+  let rawHeight = preset.baseHeight;
+
+  if (preset.baseWidth >= preset.baseHeight) {
+    rawWidth = NOVELAI_MAX_DIMENSION;
+    rawHeight = Math.round((rawWidth * (preset.baseHeight / preset.baseWidth)) / RESOLUTION_STEP) * RESOLUTION_STEP;
+  } else {
+    rawHeight = NOVELAI_MAX_DIMENSION;
+    rawWidth = Math.round((rawHeight * (preset.baseWidth / preset.baseHeight)) / RESOLUTION_STEP) * RESOLUTION_STEP;
+  }
+
+  // 若总像素超出官方 3,145,728 限制，按原比例等比缩小
+  if (rawWidth * rawHeight > NOVELAI_MAX_PIXELS) {
+    const scaleFactor = Math.sqrt(NOVELAI_MAX_PIXELS / (rawWidth * rawHeight));
+    rawWidth = Math.floor((rawWidth * scaleFactor) / RESOLUTION_STEP) * RESOLUTION_STEP;
+    rawHeight = Math.floor((rawHeight * scaleFactor) / RESOLUTION_STEP) * RESOLUTION_STEP;
+
+    while (rawWidth * rawHeight > NOVELAI_MAX_PIXELS && (rawWidth > RESOLUTION_STEP && rawHeight > RESOLUTION_STEP)) {
+      if (preset.baseWidth >= preset.baseHeight) {
+        rawWidth -= RESOLUTION_STEP;
+        rawHeight = Math.floor((rawWidth * (preset.baseHeight / preset.baseWidth)) / RESOLUTION_STEP) * RESOLUTION_STEP;
+      } else {
+        rawHeight -= RESOLUTION_STEP;
+        rawWidth = Math.floor((rawHeight * (preset.baseWidth / preset.baseHeight)) / RESOLUTION_STEP) * RESOLUTION_STEP;
+      }
+    }
+  }
+
+  const maxScale = Number((Math.max(rawWidth / preset.baseWidth, rawHeight / preset.baseHeight)).toFixed(2));
+  return {
+    width: Math.max(GENERATION_MIN_DIMENSION, Math.min(NOVELAI_MAX_DIMENSION, rawWidth)),
+    height: Math.max(GENERATION_MIN_DIMENSION, Math.min(NOVELAI_MAX_DIMENSION, rawHeight)),
+    maxScale,
+  };
+};
+
+export const getMaxScaleForRatio = (preset: AspectRatioPreset): number => {
+  return getMaxDimensionsForRatio(preset).maxScale;
+};
+
 export const calculateDimensionsForRatio = (
   preset: AspectRatioPreset,
   scale: number,
 ): { width: number; height: number } => {
-  const effectiveScale = Math.max(1.0, scale);
+  const maxInfo = getMaxDimensionsForRatio(preset);
+  const effectiveScale = Math.max(1.0, Math.min(maxInfo.maxScale, scale));
   if (Math.abs(effectiveScale - 1.0) < 0.001) {
     return { width: preset.baseWidth, height: preset.baseHeight };
+  }
+  if (Math.abs(effectiveScale - maxInfo.maxScale) < 0.001) {
+    return { width: maxInfo.width, height: maxInfo.height };
   }
 
   let rawWidth = Math.round((preset.baseWidth * effectiveScale) / RESOLUTION_STEP) * RESOLUTION_STEP;

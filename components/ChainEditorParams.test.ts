@@ -168,6 +168,7 @@ describe('ChainEditorParams', () => {
     renderParams({ setParams, params: { ...params, width: 832, height: 1216 } });
     const scaleSlider = screen.getByRole('slider', { name: '尺寸缩放滑块' });
     expect(Number(scaleSlider.getAttribute('min'))).toBe(1);
+    expect(Number(scaleSlider.getAttribute('max'))).toBe(1.69);
     fireEvent.change(scaleSlider, { target: { value: '1.5' } });
     expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ width: 1280, height: 1856 }));
   });

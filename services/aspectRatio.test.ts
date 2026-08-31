@@ -5,6 +5,7 @@ import {
   calculateDimensionsForRatio,
   deleteUserDimensionPreset,
   detectClosestAspectRatio,
+  getMaxDimensionsForRatio,
   getUserDimensionPresets,
   normalizeTo64Step,
   OPUS_FREE_PIXEL_LIMIT,
@@ -57,6 +58,29 @@ describe('aspectRatio service', () => {
     expect(resTall.height).toBeLessThanOrEqual(2048);
     expect(resTall.width * resTall.height).toBeLessThanOrEqual(3145728);
     expect(resTall.height).toBe(2048);
+  });
+
+  it('getMaxDimensionsForRatio 准确计算每个画幅比例的自适应最大安全上限', () => {
+    // 1:2 (704x1408) -> max is 1024x2048, maxScale approx 1.45
+    const tall = BUILTIN_ASPECT_RATIOS.find(p => p.id === '1:2')!;
+    const maxTall = getMaxDimensionsForRatio(tall);
+    expect(maxTall.width).toBe(1024);
+    expect(maxTall.height).toBe(2048);
+    expect(maxTall.maxScale).toBe(1.45);
+
+    // 1:1 (1024x1024) -> max is 1728x1728, maxScale approx 1.69
+    const square = BUILTIN_ASPECT_RATIOS.find(p => p.id === '1:1')!;
+    const maxSquare = getMaxDimensionsForRatio(square);
+    expect(maxSquare.width).toBe(1728);
+    expect(maxSquare.height).toBe(1728);
+    expect(maxSquare.maxScale).toBe(1.69);
+
+    // 3:4 (896x1152) -> max is 1536x1984, maxScale approx 1.72
+    const standard = BUILTIN_ASPECT_RATIOS.find(p => p.id === '3:4')!;
+    const maxStandard = getMaxDimensionsForRatio(standard);
+    expect(maxStandard.width).toBe(1536);
+    expect(maxStandard.height).toBe(1984);
+    expect(maxStandard.maxScale).toBe(1.72);
   });
 
   it('normalizeTo64Step 确保尺寸在 64-2048 之间并对齐 64', () => {

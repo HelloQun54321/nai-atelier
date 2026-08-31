@@ -10,6 +10,7 @@ import {
     detectClosestAspectRatio,
     GENERATION_MAX_DIMENSION,
     GENERATION_MIN_DIMENSION,
+    getMaxDimensionsForRatio,
     getUserDimensionPresets,
     NOVELAI_MAX_DIMENSION,
     NOVELAI_MAX_PIXELS,
@@ -103,7 +104,10 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
         // 检查是否为内置比例
         const builtin = BUILTIN_ASPECT_RATIOS.find(item => item.id === value);
         if (builtin) {
-            const nextDims = calculateDimensionsForRatio(builtin, scaleMultiplier);
+            const maxInfo = getMaxDimensionsForRatio(builtin);
+            const clampedScale = Math.min(maxInfo.maxScale, Math.max(1.0, scaleMultiplier));
+            setScaleMultiplier(clampedScale);
+            const nextDims = calculateDimensionsForRatio(builtin, clampedScale);
             setParams({ ...params, width: nextDims.width, height: nextDims.height });
             markChange();
             return;
@@ -119,12 +123,16 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
 
     const handleScaleChange = (nextScale: number) => {
         if (!canEdit) return;
-        setScaleMultiplier(nextScale);
         const builtin = BUILTIN_ASPECT_RATIOS.find(item => item.id === resolutionMode);
         if (builtin) {
-            const nextDims = calculateDimensionsForRatio(builtin, nextScale);
+            const maxInfo = getMaxDimensionsForRatio(builtin);
+            const clampedScale = Math.min(maxInfo.maxScale, Math.max(1.0, nextScale));
+            setScaleMultiplier(clampedScale);
+            const nextDims = calculateDimensionsForRatio(builtin, clampedScale);
             setParams({ ...params, width: nextDims.width, height: nextDims.height });
             markChange();
+        } else {
+            setScaleMultiplier(nextScale);
         }
     };
 
@@ -208,6 +216,11 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
     const currentHeight = Number(params.height) || 1216;
     const totalPixels = currentWidth * currentHeight;
     const isOpusFree = totalPixels <= freeMaxArea;
+
+    const activeBuiltinRatio = BUILTIN_ASPECT_RATIOS.find(item => item.id === resolutionMode);
+    const activeRatioMax = activeBuiltinRatio
+        ? getMaxDimensionsForRatio(activeBuiltinRatio)
+        : { width: 2048, height: 2048, maxScale: 1.75 };
 
     return (
         <div className="space-y-4">
@@ -334,24 +347,27 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                                 </span>
                                 <span className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400">
                                     {scaleMultiplier.toFixed(2)}x
+                                    {scaleMultiplier >= activeRatioMax.maxScale && (
+                                        <span className="ml-1.5 rounded bg-indigo-50 px-1 py-0.5 text-[10px] text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 font-normal">已达画幅极限</span>
+                                    )}
                                 </span>
                             </div>
                             <div className="relative flex items-center">
                                 <input
                                     type="range"
                                     min="1.0"
-                                    max="2.0"
+                                    max={activeRatioMax.maxScale}
                                     step="0.05"
                                     aria-label="尺寸缩放滑块"
                                     disabled={!canEdit}
-                                    value={scaleMultiplier}
+                                    value={Math.min(activeRatioMax.maxScale, scaleMultiplier)}
                                     onChange={(e) => handleScaleChange(parseFloat(e.target.value))}
                                     className="w-full cursor-pointer accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
                                 />
                             </div>
                             <div className="flex items-center justify-between text-[10px] text-gray-400">
-                                <span className="font-semibold text-emerald-600 dark:text-emerald-400">1.0x Opus 免费基准（原生画质/0点）</span>
-                                <span>2.0x 高清放大（官方上限封顶）</span>
+                                <span className="font-semibold text-emerald-600 dark:text-emerald-400">1.0x Opus 免费基准（0点）</span>
+                                <span>{activeRatioMax.maxScale.toFixed(2)}x 官方封顶（{activeRatioMax.width}×{activeRatioMax.height}）</span>
                             </div>
                         </div>
                     ) : (
