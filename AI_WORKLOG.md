@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-01
+- **Antigravity (Gemini 3.7 Flash)**：对齐 NovelAI 官方 Infill/Outpaint 协议与回贴算法，修正 add_original_image 标志、扩图底图边缘延伸填充、蒙版隔离与 1/8 潜空间 4px 膨胀 + 20px 双重盒状模糊无缝合成，彻底根治扩图横向条纹与死区伪影（fix: align outpaint and infill with official protocol, edge padding, and seamless mask composition）。
 - **Antigravity (Gemini 3.7 Flash)**：全面优化图生图、局部重绘与扩图工作流，实现底图提示词与元数据自动继承，解决扩图空词死白缺陷，重构板块层级动线并新增快捷扩图预设与尺寸预览（refactor: enhance image edit workflows with prompt auto-inheritance and outpaint presets）。
 - **Antigravity (Gemini 3.7 Flash)**：尺寸清晰度滑块升级 0.01 高细腻度无级微调与直接数字点击输入，并同步补齐图像编辑（Strength/Noise/笔刷/上下文）、Vibe 强度与 Tagger 阈值等全站滑块直接输入能力（feat: add 0.01 precision and direct numeric inputs to all parameter sliders）。
 - **Antigravity (Gemini 3.7 Flash)**：彻底精简移除冗余的自定义像素输入与预设管理，统一为纯粹的画幅比例（11 种预设）与自适应清晰度放大滑块（refactor: streamline resolution controls to aspect ratio and scale slider）。

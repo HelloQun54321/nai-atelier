@@ -267,8 +267,17 @@ export const createOutpaintCanvas = async (source: Blob, expansion: ImageEditCan
     bitmap.close();
     throw new Error('无法创建扩图画布');
   }
-  imageContext.fillStyle = '#ffffff';
-  imageContext.fillRect(0, 0, width, height);
+
+  // 边缘像元夹取延伸（Clamp-to-edge Replication）：使扩图区域的 VAE 初值与原图边缘色调自然接续，消除纯白底色导致的潜空间高频断崖与条纹
+  if (top > 0) imageContext.drawImage(bitmap, 0, 0, sourceWidth, 1, left, 0, sourceWidth, top);
+  if (bottom > 0) imageContext.drawImage(bitmap, 0, sourceHeight - 1, sourceWidth, 1, left, top + sourceHeight, sourceWidth, bottom);
+  if (left > 0) imageContext.drawImage(bitmap, 0, 0, 1, sourceHeight, 0, top, left, sourceHeight);
+  if (right > 0) imageContext.drawImage(bitmap, sourceWidth - 1, 0, 1, sourceHeight, left + sourceWidth, top, right, sourceHeight);
+  if (top > 0 && left > 0) imageContext.drawImage(bitmap, 0, 0, 1, 1, 0, 0, left, top);
+  if (top > 0 && right > 0) imageContext.drawImage(bitmap, sourceWidth - 1, 0, 1, 1, left + sourceWidth, 0, right, top);
+  if (bottom > 0 && left > 0) imageContext.drawImage(bitmap, 0, sourceHeight - 1, 1, 1, 0, top + sourceHeight, left, bottom);
+  if (bottom > 0 && right > 0) imageContext.drawImage(bitmap, sourceWidth - 1, sourceHeight - 1, 1, 1, left + sourceWidth, top + sourceHeight, right, bottom);
+
   imageContext.drawImage(bitmap, left, top);
   bitmap.close();
 
@@ -288,7 +297,8 @@ export const buildImageEditParameters = (operation: ImageEditOperation, image: s
   ...(mask ? { mask: stripDataUrl(mask) } : {}),
   ...(operation === 'image-to-image' ? { strength } : { img2img: { strength }, inpaintImg2ImgStrength: strength }),
   noise,
-  add_original_image: true,
+  // 严格对齐 NovelAI 官方 Web 端 generateInfill 规范：Infill/Outpaint 模式必须为 false，避免服务端基于 1/8 粗糙二值蒙版硬回贴产生切块伪影；图生图则保持 true
+  add_original_image: operation === 'image-to-image',
   ...(focused && operation === 'inpaint' ? { _local_focused_inpainting: true, _local_minimum_context_area: normalizeMinimumContextArea(minimumContextArea) } : {}),
 });
 
@@ -319,77 +329,124 @@ const buildThresholdMask = (source: CanvasImageSource, sourceWidth: number, sour
   for (let index = 0; index < image.data.length; index += 4) {
     const alpha = image.data[index + 3];
     const red = image.data[index];
-    const active = Math.max(alpha, red) >= 155;
-    image.data[index] = active ? 255 : 0;
-    image.data[index + 1] = active ? 255 : 0;
-    image.data[index + 2] = active ? 255 : 0;
-    image.data[index + 3] = active ? 255 : 0;
+    const active = alpha > 155 || (alpha > 0 && red >= 155);
+    const value = active ? 255 : 0;
+    image.data[index] = value;
+    image.data[index + 1] = value;
+    image.data[index + 2] = value;
+    image.data[index + 3] = value;
   }
   context.putImageData(image, 0, 0);
   return canvas;
 };
 
-const blurAlpha = (alpha: Uint8ClampedArray, width: number, height: number, radius: number) => {
-  if (radius <= 0) return alpha;
-  const horizontal = new Uint8ClampedArray(alpha.length);
-  const output = new Uint8ClampedArray(alpha.length);
-  const windowSize = radius * 2 + 1;
+/** 官方 1/8 潜空间蒙版膨胀算法（半径 4 像素，对应原图 32 像素重叠带） */
+const dilateBinaryMask = (source: Uint8ClampedArray, width: number, height: number, radius = 4) => {
+  const output = new Uint8ClampedArray(source.length);
+  for (let i = 0; i < output.length; i += 4) output[i + 3] = 255;
   for (let y = 0; y < height; y += 1) {
-    let sum = 0;
-    for (let offset = -radius; offset <= radius; offset += 1) sum += alpha[y * width + Math.max(0, Math.min(width - 1, offset))];
     for (let x = 0; x < width; x += 1) {
-      horizontal[y * width + x] = Math.round(sum / windowSize);
-      const removeX = Math.max(0, Math.min(width - 1, x - radius));
-      const addX = Math.max(0, Math.min(width - 1, x + radius + 1));
-      sum += alpha[y * width + addX] - alpha[y * width + removeX];
-    }
-  }
-  for (let x = 0; x < width; x += 1) {
-    let sum = 0;
-    for (let offset = -radius; offset <= radius; offset += 1) sum += horizontal[Math.max(0, Math.min(height - 1, offset)) * width + x];
-    for (let y = 0; y < height; y += 1) {
-      output[y * width + x] = Math.round(sum / windowSize);
-      const removeY = Math.max(0, Math.min(height - 1, y - radius));
-      const addY = Math.max(0, Math.min(height - 1, y + radius + 1));
-      sum += horizontal[addY * width + x] - horizontal[removeY * width + x];
+      if (source[(y * width + x) * 4] === 255) {
+        const minY = Math.max(0, y - radius);
+        const maxY = Math.min(height - 1, y + radius);
+        const minX = Math.max(0, x - radius);
+        const maxX = Math.min(width - 1, x + radius);
+        for (let ny = minY; ny <= maxY; ny += 1) {
+          for (let nx = minX; nx <= maxX; nx += 1) {
+            const idx = (ny * width + nx) * 4;
+            output[idx] = 255;
+            output[idx + 1] = 255;
+            output[idx + 2] = 255;
+          }
+        }
+      }
     }
   }
   return output;
 };
 
-/** 对回贴蒙版做轻微膨胀和柔化，避免生成边缘出现硬切线。 */
-const softenCompositeMask = (canvas: HTMLCanvasElement) => {
-  const context = canvas.getContext('2d');
-  if (!context) return;
-  const image = context.getImageData(0, 0, canvas.width, canvas.height);
-  const source = new Uint8ClampedArray(canvas.width * canvas.height);
-  for (let index = 0, pixel = 0; index < image.data.length; index += 4, pixel += 1) source[pixel] = image.data[index + 3];
-  // 固定一个像素的膨胀半径，足以消除笔刷采样缝隙，同时避免 4MP 画布上做平方复杂度的形态学运算。
-  const dilationRadius = 1;
-  const horizontal = new Uint8ClampedArray(source.length);
-  const dilated = new Uint8ClampedArray(source.length);
-  for (let y = 0; y < canvas.height; y += 1) {
-    for (let x = 0; x < canvas.width; x += 1) {
-      let value = 0;
-      for (let offsetX = -dilationRadius; offsetX <= dilationRadius; offsetX += 1) value = Math.max(value, source[y * canvas.width + Math.max(0, Math.min(canvas.width - 1, x + offsetX))]);
-      horizontal[y * canvas.width + x] = value;
+/** 8 倍最近邻放大至原图分辨率 */
+const scaleUpMask8x = (source: Uint8ClampedArray, srcWidth: number, srcHeight: number, targetWidth: number, targetHeight: number) => {
+  const output = new Uint8ClampedArray(targetWidth * targetHeight * 4);
+  for (let y = 0; y < targetHeight; y += 1) {
+    const srcY = Math.min(srcHeight - 1, Math.floor(y / 8));
+    for (let x = 0; x < targetWidth; x += 1) {
+      const srcX = Math.min(srcWidth - 1, Math.floor(x / 8));
+      const srcIdx = (srcY * srcWidth + srcX) * 4;
+      const dstIdx = (y * targetWidth + x) * 4;
+      output[dstIdx] = source[srcIdx];
+      output[dstIdx + 1] = source[srcIdx + 1];
+      output[dstIdx + 2] = source[srcIdx + 2];
+      output[dstIdx + 3] = source[srcIdx + 3];
     }
   }
-  for (let y = 0; y < canvas.height; y += 1) {
-    for (let x = 0; x < canvas.width; x += 1) {
-      let value = 0;
-      for (let offsetY = -dilationRadius; offsetY <= dilationRadius; offsetY += 1) value = Math.max(value, horizontal[Math.max(0, Math.min(canvas.height - 1, y + offsetY)) * canvas.width + x]);
-      dilated[y * canvas.width + x] = value;
+  return output;
+};
+
+/** 双重盒状模糊（半径 20px，2 次迭代），严格对齐官方 Web 端羽化参数 */
+const boxBlurMask = (source: Uint8ClampedArray, width: number, height: number, radius = 20, iterations = 2) => {
+  if (radius <= 0) return source;
+  const current = new Uint8ClampedArray(source);
+  const windowSize = radius * 2 + 1;
+  for (let iter = 0; iter < iterations; iter += 1) {
+    const horizontal = new Uint8ClampedArray(current.length);
+    for (let y = 0; y < height; y += 1) {
+      let sum = 0;
+      const rowOffset = y * width;
+      for (let offset = -radius; offset <= radius; offset += 1) sum += current[(rowOffset + Math.max(0, Math.min(width - 1, offset))) * 4];
+      for (let x = 0; x < width; x += 1) {
+        const idx = (rowOffset + x) * 4;
+        const avg = Math.round(sum / windowSize);
+        horizontal[idx] = avg;
+        horizontal[idx + 1] = avg;
+        horizontal[idx + 2] = avg;
+        horizontal[idx + 3] = avg;
+        const removeX = Math.max(0, Math.min(width - 1, x - radius));
+        const addX = Math.max(0, Math.min(width - 1, x + radius + 1));
+        sum += current[(rowOffset + addX) * 4] - current[(rowOffset + removeX) * 4];
+      }
+    }
+    for (let x = 0; x < width; x += 1) {
+      let sum = 0;
+      for (let offset = -radius; offset <= radius; offset += 1) sum += horizontal[(Math.max(0, Math.min(height - 1, offset)) * width + x) * 4];
+      for (let y = 0; y < height; y += 1) {
+        const idx = (y * width + x) * 4;
+        const avg = Math.round(sum / windowSize);
+        current[idx] = avg;
+        current[idx + 1] = avg;
+        current[idx + 2] = avg;
+        current[idx + 3] = avg;
+        const removeY = Math.max(0, Math.min(height - 1, y - radius));
+        const addY = Math.max(0, Math.min(height - 1, y + radius + 1));
+        sum += horizontal[(addY * width + x) * 4] - horizontal[(removeY * width + x) * 4];
+      }
     }
   }
-  const softened = blurAlpha(dilated, canvas.width, canvas.height, Math.max(1, Math.min(3, dilationRadius)));
-  for (let index = 0, pixel = 0; index < image.data.length; index += 4, pixel += 1) {
-    image.data[index] = 255;
-    image.data[index + 1] = 255;
-    image.data[index + 2] = 255;
-    image.data[index + 3] = softened[pixel];
+  return current;
+};
+
+/** 从 1/8 API 二值蒙版构建官方标准的无缝合成羽化回贴蒙版 */
+const buildCompositeMaskFromApiMask = (apiMaskCanvas: HTMLCanvasElement, targetWidth: number, targetHeight: number) => {
+  const apiContext = apiMaskCanvas.getContext('2d');
+  if (!apiContext) throw new Error('无法读取 API 蒙版数据');
+  const apiData = apiContext.getImageData(0, 0, apiMaskCanvas.width, apiMaskCanvas.height).data;
+  const dilated = dilateBinaryMask(apiData, apiMaskCanvas.width, apiMaskCanvas.height, 4);
+  const scaled = scaleUpMask8x(dilated, apiMaskCanvas.width, apiMaskCanvas.height, targetWidth, targetHeight);
+  const blurred = boxBlurMask(scaled, targetWidth, targetHeight, 20, 2);
+
+  const compositeCanvas = createCanvas(targetWidth, targetHeight);
+  const compositeContext = compositeCanvas.getContext('2d');
+  if (!compositeContext) throw new Error('无法创建合成蒙版画布');
+  const compositeImage = compositeContext.createImageData(targetWidth, targetHeight);
+  for (let i = 0; i < blurred.length; i += 4) {
+    const val = blurred[i];
+    compositeImage.data[i] = 255;
+    compositeImage.data[i + 1] = 255;
+    compositeImage.data[i + 2] = 255;
+    compositeImage.data[i + 3] = val; // Alpha 通道为羽化透明度
   }
-  context.putImageData(image, 0, 0);
+  compositeContext.putImageData(compositeImage, 0, 0);
+  return compositeCanvas;
 };
 
 const hasMaskInRect = (context: CanvasRenderingContext2D, rect: ImageEditRect) => {
@@ -414,7 +471,7 @@ export interface PreparedImageEdit {
   focusedGeometry?: ImageEditFocusedGeometry;
 }
 
-/** 将编辑器的全尺寸蒙版转换为 NovelAI 官方使用的 1/8 尺寸蒙版。 */
+/** 将编辑器的全尺寸蒙版转换为 NovelAI 官方使用的 1/8 尺寸蒙版，并生成官方标准羽化回贴蒙版。 */
 export const prepareImageEdit = async (edit: {
   operation: ImageEditOperation;
   image: string;
@@ -436,9 +493,10 @@ export const prepareImageEdit = async (edit: {
   }
 
   let requestImageCanvas: HTMLCanvasElement;
-  let requestMaskCanvas: HTMLCanvasElement | undefined;
+  let apiMaskCanvas: HTMLCanvasElement | undefined;
   let compositeMaskCanvas: HTMLCanvasElement | undefined;
   let focusedGeometry: ImageEditFocusedGeometry | undefined;
+
   if (edit.operation === 'inpaint' && edit.focused && edit.focusedRect) {
     focusedGeometry = getFocusedImageEditGeometry(originalWidth, originalHeight, edit.focusedRect, edit.minimumContextArea);
     requestImageCanvas = createCanvas(focusedGeometry.requestWidth, focusedGeometry.requestHeight);
@@ -447,53 +505,55 @@ export const prepareImageEdit = async (edit: {
     requestImageContext.imageSmoothingQuality = 'high';
     requestImageContext.drawImage(imageBitmap, focusedGeometry.crop.x, focusedGeometry.crop.y, focusedGeometry.crop.width, focusedGeometry.crop.height, 0, 0, focusedGeometry.requestWidth, focusedGeometry.requestHeight);
 
-    compositeMaskCanvas = createCanvas(focusedGeometry.crop.width, focusedGeometry.crop.height);
-    const compositeContext = compositeMaskCanvas.getContext('2d');
-    if (!compositeContext) throw new Error('无法创建 Focused 合成蒙版');
+    const focusedCropMaskCanvas = createCanvas(focusedGeometry.crop.width, focusedGeometry.crop.height);
+    const focusedCropContext = focusedCropMaskCanvas.getContext('2d');
+    if (!focusedCropContext) throw new Error('无法创建 Focused 裁剪蒙版');
     if (sourceMaskCanvas && sourceMaskContext && hasMaskInRect(sourceMaskContext, focusedGeometry.inner)) {
-      compositeContext.drawImage(sourceMaskCanvas, focusedGeometry.crop.x, focusedGeometry.crop.y, focusedGeometry.crop.width, focusedGeometry.crop.height, 0, 0, focusedGeometry.crop.width, focusedGeometry.crop.height);
-      const compositeImage = compositeContext.getImageData(0, 0, compositeMaskCanvas.width, compositeMaskCanvas.height);
+      focusedCropContext.drawImage(sourceMaskCanvas, focusedGeometry.crop.x, focusedGeometry.crop.y, focusedGeometry.crop.width, focusedGeometry.crop.height, 0, 0, focusedGeometry.crop.width, focusedGeometry.crop.height);
+      const compositeImage = focusedCropContext.getImageData(0, 0, focusedCropMaskCanvas.width, focusedCropMaskCanvas.height);
       const innerX = focusedGeometry.inner.x - focusedGeometry.crop.x;
       const innerY = focusedGeometry.inner.y - focusedGeometry.crop.y;
-      for (let y = 0; y < compositeMaskCanvas.height; y += 1) {
-        for (let x = 0; x < compositeMaskCanvas.width; x += 1) {
+      for (let y = 0; y < focusedCropMaskCanvas.height; y += 1) {
+        for (let x = 0; x < focusedCropMaskCanvas.width; x += 1) {
           if (x < innerX || x >= innerX + focusedGeometry.inner.width || y < innerY || y >= innerY + focusedGeometry.inner.height) {
-            compositeImage.data[(y * compositeMaskCanvas.width + x) * 4 + 3] = 0;
+            compositeImage.data[(y * focusedCropMaskCanvas.width + x) * 4 + 3] = 0;
           }
         }
       }
-      compositeContext.putImageData(compositeImage, 0, 0);
+      focusedCropContext.putImageData(compositeImage, 0, 0);
     } else {
-      compositeContext.fillStyle = '#ffffff';
-      compositeContext.fillRect(focusedGeometry.inner.x - focusedGeometry.crop.x, focusedGeometry.inner.y - focusedGeometry.crop.y, focusedGeometry.inner.width, focusedGeometry.inner.height);
+      focusedCropContext.fillStyle = '#ffffff';
+      focusedCropContext.fillRect(focusedGeometry.inner.x - focusedGeometry.crop.x, focusedGeometry.inner.y - focusedGeometry.crop.y, focusedGeometry.inner.width, focusedGeometry.inner.height);
       focusedGeometry.fullSizeMask = true;
     }
-    softenCompositeMask(compositeMaskCanvas);
-    requestMaskCanvas = createCanvas(focusedGeometry.requestWidth, focusedGeometry.requestHeight);
-    const requestMaskContext = requestMaskCanvas.getContext('2d');
-    if (!requestMaskContext) throw new Error('无法创建 Focused 请求蒙版');
-    requestMaskContext.imageSmoothingEnabled = false;
-    requestMaskContext.drawImage(compositeMaskCanvas, 0, 0, compositeMaskCanvas.width, compositeMaskCanvas.height, 0, 0, requestMaskCanvas.width, requestMaskCanvas.height);
+
+    const focusedRequestMaskCanvas = createCanvas(focusedGeometry.requestWidth, focusedGeometry.requestHeight);
+    const focusedRequestMaskContext = focusedRequestMaskCanvas.getContext('2d');
+    if (!focusedRequestMaskContext) throw new Error('无法创建 Focused 请求蒙版画布');
+    focusedRequestMaskContext.imageSmoothingEnabled = false;
+    focusedRequestMaskContext.drawImage(focusedCropMaskCanvas, 0, 0, focusedCropMaskCanvas.width, focusedCropMaskCanvas.height, 0, 0, focusedRequestMaskCanvas.width, focusedRequestMaskCanvas.height);
+
+    apiMaskCanvas = buildThresholdMask(focusedRequestMaskCanvas, focusedGeometry.requestWidth, focusedGeometry.requestHeight, Math.max(8, focusedGeometry.requestWidth / 8), Math.max(8, focusedGeometry.requestHeight / 8));
+    compositeMaskCanvas = buildCompositeMaskFromApiMask(apiMaskCanvas, focusedGeometry.crop.width, focusedGeometry.crop.height);
   } else {
     requestImageCanvas = createCanvas(originalWidth, originalHeight);
     const requestImageContext = requestImageCanvas.getContext('2d');
     if (!requestImageContext) throw new Error('无法创建图片编辑画布');
     requestImageContext.drawImage(imageBitmap, 0, 0, originalWidth, originalHeight);
+
     if (sourceMaskCanvas) {
-      requestMaskCanvas = sourceMaskCanvas;
-      compositeMaskCanvas = sourceMaskCanvas;
+      const requestWidth = requestImageCanvas.width;
+      const requestHeight = requestImageCanvas.height;
+      apiMaskCanvas = buildThresholdMask(sourceMaskCanvas, originalWidth, originalHeight, Math.max(8, requestWidth / 8), Math.max(8, requestHeight / 8));
+      compositeMaskCanvas = buildCompositeMaskFromApiMask(apiMaskCanvas, originalWidth, originalHeight);
     }
   }
-
-  if (compositeMaskCanvas && !focusedGeometry) softenCompositeMask(compositeMaskCanvas);
 
   imageBitmap.close();
   sourceMask?.close();
   const requestWidth = requestImageCanvas.width;
   const requestHeight = requestImageCanvas.height;
-  const apiMaskCanvas = requestMaskCanvas
-    ? buildThresholdMask(requestMaskCanvas, requestMaskCanvas.width, requestMaskCanvas.height, Math.max(8, requestWidth / 8), Math.max(8, requestHeight / 8))
-    : undefined;
+
   return {
     image: canvasToDataUrl(requestImageCanvas),
     mask: apiMaskCanvas ? canvasToDataUrl(apiMaskCanvas) : undefined,
@@ -531,10 +591,20 @@ export const composeImageEditResult = async (result: Blob, prepared: PreparedIma
     generatedContext.drawImage(resultBitmap, 0, 0, baseBitmap.width, baseBitmap.height);
     fullMaskContext.drawImage(maskBitmap, 0, 0, maskBitmap.width, maskBitmap.height, 0, 0, baseBitmap.width, baseBitmap.height);
   }
+
+  // 1. 生成图以羽化蒙版调制 Alpha（destination-in）
   generatedContext.globalCompositeOperation = 'destination-in';
   generatedContext.drawImage(fullMask, 0, 0);
   generatedContext.globalCompositeOperation = 'source-over';
+
+  // 2. 底图扣除重绘区域（destination-out: 像素透明度乘以 1 - MaskAlpha）
+  outputContext.globalCompositeOperation = 'destination-out';
+  outputContext.drawImage(fullMask, 0, 0);
+
+  // 3. 将调制后的生成图回贴到底图上（source-over 实现精准 Output = Original*(1-A) + Generated*A）
+  outputContext.globalCompositeOperation = 'source-over';
   outputContext.drawImage(generated, 0, 0);
+
   baseBitmap.close();
   resultBitmap.close();
   maskBitmap.close();

@@ -67,6 +67,7 @@ describe('NovelAI generation payload', () => {
     expect(editParameters.mask).toBe('bWFzaw==');
     expect(editParameters.img2img).toEqual({ strength: 0.8 });
     expect(editParameters.inpaintImg2ImgStrength).toBe(0.8);
+    expect(editParameters.add_original_image).toBe(false);
   });
 
   it('builds outpainting as ordinary infill without the Focused marker', () => {
@@ -77,6 +78,7 @@ describe('NovelAI generation payload', () => {
     const editParameters = payload.parameters as Record<string, any>;
     expect(payload.action).toBe('infill');
     expect(payload.model).toBe('nai-diffusion-5-full-inpainting');
+    expect(editParameters.add_original_image).toBe(false);
     expect(editParameters._local_edit_operation).toBe('outpaint');
     expect(editParameters._local_focused_inpainting).toBeUndefined();
     expect(editParameters._local_minimum_context_area).toBeUndefined();

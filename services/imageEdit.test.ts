@@ -27,9 +27,15 @@ describe('image edit helpers', () => {
       img2img: { strength: 0.7 },
       inpaintImg2ImgStrength: 0.7,
       noise: 0.2,
-      add_original_image: true,
+      add_original_image: false,
       _local_focused_inpainting: true,
       _local_minimum_context_area: 64,
+    });
+    expect(buildImageEditParameters('image-to-image', 'data:image/png;base64,aW1hZ2U=', undefined, 0.7, 0.2, false)).toEqual({
+      image: 'aW1hZ2U=',
+      strength: 0.7,
+      noise: 0.2,
+      add_original_image: true,
     });
   });
 
@@ -76,5 +82,15 @@ describe('image edit helpers', () => {
     const outpainted = transformCharacterCoordinatesForOutpaint([character], 1000, 800, { top: 64, right: 128, bottom: 0, left: 64 })?.[0];
     expect(outpainted?.x).toBeCloseTo(0.473154, 5);
     expect(outpainted?.y).toBeCloseTo(0.537037, 5);
+  });
+
+  it('sets add_original_image to false for outpainting while preserving strength and noise', () => {
+    const params = buildImageEditParameters('outpaint', 'data:image/png;base64,aW1hZ2U=', 'data:image/png;base64,bWFzaw==', 1, 0, false) as Record<string, unknown>;
+    expect(params.add_original_image).toBe(false);
+    expect(params.img2img).toEqual({ strength: 1 });
+    expect(params.inpaintImg2ImgStrength).toBe(1);
+    expect(params.noise).toBe(0);
+    expect(params.image).toBe('aW1hZ2U=');
+    expect(params.mask).toBe('bWFzaw==');
   });
 });
