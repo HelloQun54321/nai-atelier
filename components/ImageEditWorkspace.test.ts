@@ -136,6 +136,114 @@ describe('ImageEditControls', () => {
     expect(screen.queryByText('扩展画布（像素）')).toBeNull();
   });
 
+  it('图生图底图缩略图显示在底图来源区', () => {
+    const draft = createLabImageEditDraft('image-to-image', 'blue bottle', 'low quality', params);
+    render(React.createElement(ImageEditControls, {
+      operation: 'image-to-image',
+      draft,
+      fileInputRef: React.createRef<HTMLInputElement>(),
+      canvasProps: {
+        imageCanvasRef: React.createRef<HTMLCanvasElement>(),
+        maskCanvasRef: React.createRef<HTMLCanvasElement>(),
+        overlayCanvasRef: React.createRef<HTMLCanvasElement>(),
+        width: 832,
+        height: 1216,
+        focusedRect: null,
+        focused: false,
+        isLoading: false,
+        onPointerDown: vi.fn(),
+        onPointerMove: vi.fn(),
+        onPointerUp: vi.fn(),
+      },
+      latestTextToImageItem: undefined,
+      selectableParams: draft.params,
+      strength: draft.strength,
+      noise: draft.noise,
+      brushSize: draft.brushSize,
+      focused: draft.focused,
+      minimumContextArea: draft.minimumContextArea,
+      tool: 'brush',
+      expansion: draft.expansion,
+      apiKey: 'test-key',
+      tagAssistEnabled: false,
+      notify: vi.fn(),
+      onPromptChange: vi.fn(),
+      onNegativePromptChange: vi.fn(),
+      onPromptSource: vi.fn(),
+      onDraftChange: vi.fn(),
+      onFileChange: vi.fn(),
+      onSelectImageSource: vi.fn(),
+      onStrengthChange: vi.fn(),
+      onNoiseChange: vi.fn(),
+      onBrushSizeChange: vi.fn(),
+      onFocusedChange: vi.fn(),
+      onMinimumContextAreaChange: vi.fn(),
+      onToolChange: vi.fn(),
+      onClearMask: vi.fn(),
+      onInvertMask: vi.fn(),
+      onUndo: vi.fn(),
+      onRedo: vi.fn(),
+      onExpansionChange: vi.fn(),
+      onApplyOutpaint: vi.fn(),
+      baseImagePreview: 'data:image/png;base64,base',
+    }));
+
+    expect(screen.getByAltText('图生图底图')).toBeTruthy();
+    expect(screen.getByText(/当前底图/)).toBeTruthy();
+    // 未载入底图时显示引导
+    cleanup();
+    render(React.createElement(ImageEditControls, {
+      operation: 'image-to-image',
+      draft,
+      fileInputRef: React.createRef<HTMLInputElement>(),
+      canvasProps: {
+        imageCanvasRef: React.createRef<HTMLCanvasElement>(),
+        maskCanvasRef: React.createRef<HTMLCanvasElement>(),
+        overlayCanvasRef: React.createRef<HTMLCanvasElement>(),
+        width: 0,
+        height: 0,
+        focusedRect: null,
+        focused: false,
+        isLoading: false,
+        onPointerDown: vi.fn(),
+        onPointerMove: vi.fn(),
+        onPointerUp: vi.fn(),
+      },
+      latestTextToImageItem: undefined,
+      selectableParams: draft.params,
+      strength: draft.strength,
+      noise: draft.noise,
+      brushSize: draft.brushSize,
+      focused: draft.focused,
+      minimumContextArea: draft.minimumContextArea,
+      tool: 'brush',
+      expansion: draft.expansion,
+      apiKey: 'test-key',
+      tagAssistEnabled: false,
+      notify: vi.fn(),
+      onPromptChange: vi.fn(),
+      onNegativePromptChange: vi.fn(),
+      onPromptSource: vi.fn(),
+      onDraftChange: vi.fn(),
+      onFileChange: vi.fn(),
+      onSelectImageSource: vi.fn(),
+      onStrengthChange: vi.fn(),
+      onNoiseChange: vi.fn(),
+      onBrushSizeChange: vi.fn(),
+      onFocusedChange: vi.fn(),
+      onMinimumContextAreaChange: vi.fn(),
+      onToolChange: vi.fn(),
+      onClearMask: vi.fn(),
+      onInvertMask: vi.fn(),
+      onUndo: vi.fn(),
+      onRedo: vi.fn(),
+      onExpansionChange: vi.fn(),
+      onApplyOutpaint: vi.fn(),
+    }));
+    expect(screen.queryByAltText('图生图底图')).toBeNull();
+    expect(screen.getByText(/请先上传/)).toBeTruthy();
+  });
+
   it('局部重绘显示蒙版工具和 Focused，但不显示扩图四边', () => {
     renderControls('inpaint');
 

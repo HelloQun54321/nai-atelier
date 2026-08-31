@@ -84,7 +84,7 @@ export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
         onClearHistoryGroup={onClearHistoryGroup}
         generationCostLabel={generationCostLabel}
         generateLabel={`生成${getOperationLabel(operation)}结果`}
-        emptyLabel="请先在左侧选择要编辑的底图"
+        emptyLabel={operation === 'image-to-image' ? '在左侧「底图与导入」选择底图后生成' : '请先在左侧选择要编辑的底图'}
         resultAlt={`${getOperationLabel(operation)}预览`}
         showQueueStatus={false}
         generationDisabled={isLoading || !displayedImage}

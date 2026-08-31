@@ -269,9 +269,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const latestTextToImageItem = previewHistory.find(item => !item.edit);
     const selectedPreviewItem = previewMode === 'history' ? previewHistory[previewIndex] || null : null;
     const displayedPreviewImage = selectedPreviewItem?.imageUrl || generatedImage;
-    // 移动端浮动圆圈：编辑模式与顶部预览同源（底图或结果），文生图沿用最近生成结果
+    // 移动端浮动圆圈：编辑模式显示最近一次编辑结果（底图已移入左侧「底图与导入」），文生图沿用最近生成结果
     const mobileFloatingPreviewImage = activeEditOperation
-        ? (imageEditPreviewImage || imageEditBaseImage)
+        ? imageEditPreviewImage
         : (displayedPreviewImage || chain.previewImage);
     const imageEditPreviewHistoryIndex = imageEditPreviewImage ? previewHistory.findIndex(item => item.imageUrl === imageEditPreviewImage) : -1;
     const imageEditPreviewItem = imageEditPreviewHistoryIndex >= 0 ? previewHistory[imageEditPreviewHistoryIndex] : null;
@@ -603,7 +603,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 if (resolveRevision !== editBaseResolveRevisionRef.current) return;
                 restoredResult = resultBlob ? await blobToDataUrl(resultBlob) : null;
             }
-            setImageEditPreviewImage(restoredResult || restoredBaseImage);
+            // 底图在左侧「底图与导入」展示；右侧只显示结果，无结果时为 null（空态引导左侧）
+            setImageEditPreviewImage(restoredResult);
             if (draft.maskRef) {
                 const maskBlob = await readLabWorkspaceAsset(draft.maskRef);
                 if (resolveRevision !== editBaseResolveRevisionRef.current) return;
@@ -647,7 +648,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (sourceImage) {
             draft.baseImageRef = await dataUrlToWorkspaceAsset(sourceImage, baseAssetId);
             setImageEditBaseImage(sourceImage);
-            setImageEditPreviewImage(sourceImage);
+            setImageEditPreviewImage(null);
         } else {
             await deleteLabWorkspaceAsset(baseAssetId);
             setImageEditBaseImage(null);
@@ -2245,7 +2246,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             void deleteLabWorkspaceAsset(previousResultRef).catch(error => console.warn('删除编辑结果资产失败:', error));
                         }
                         setImageEditBaseImage(dataUrl);
-                        setImageEditPreviewImage(dataUrl);
+                        // 换底图后右侧等待新结果；底图在左侧展示
+                        setImageEditPreviewImage(null);
                         setImageEditMaskData(undefined);
                         if (parentHistoryId) {
                             const selectedIndex = previewHistory.findIndex(item => item.id === parentHistoryId);

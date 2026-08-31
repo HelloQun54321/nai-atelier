@@ -35,6 +35,8 @@ interface ImageEditControlsProps {
   forceEmptySeed?: boolean;
   enforceFreeStepLimit?: boolean;
   apiKey: string;
+  /** 图生图模式底图缩略图（dataUrl），显示在底图来源区；右侧预览只显示结果。 */
+  baseImagePreview?: string | null;
   notify: (message: string, type?: 'success' | 'error') => void;
   onPromptChange: (value: string) => void;
   onNegativePromptChange: (value: string) => void;
@@ -67,7 +69,7 @@ const getModuleOrder = (layout: LabPageLayout, moduleId: keyof LabPageLayout['co
 const isModuleCollapsed = (layout: LabPageLayout, moduleId: keyof LabPageLayout['collapsed']) => Boolean(layout.collapsed[moduleId]);
 
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
-  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, isBusy = false, safeMode = false, tagAssistEnabled, forceEmptySeed = false, enforceFreeStepLimit = true, apiKey, notify,
+  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, isBusy = false, safeMode = false, tagAssistEnabled, forceEmptySeed = false, enforceFreeStepLimit = true, apiKey, baseImagePreview, notify,
   onPromptChange, onNegativePromptChange, onPromptSource, onDraftChange, onFileChange, onSelectImageSource, onStrengthChange, onNoiseChange, onBrushSizeChange, onFocusedChange,
   onMinimumContextAreaChange, onToolChange, manualMaskEditing = false, onManualMaskEditingChange = () => undefined, onClearMask, onInvertMask, onUndo, onRedo, onExpansionChange, onApplyOutpaint, onResetFocusedRect = () => undefined, normalization = null, onNormalize = () => undefined,
 }) => {
@@ -131,7 +133,19 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
           </div>
           <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">载入底图默认保留当前提示词与参数；从历史选择器勾选「同时导入该图参数」才会载入该图配置。</div>
           {operation === 'image-to-image' ? <>
-            <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-white/70 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-400">图生图不需要绘制蒙版；底图会在右侧以完整预览规格显示。</div>
+            {baseImagePreview ? (
+              <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+                <div className="relative flex items-center justify-center bg-black/5 p-3 dark:bg-black/20">
+                  <img src={baseImagePreview} alt="图生图底图" className="max-h-64 w-auto max-w-full rounded-lg object-contain shadow" />
+                </div>
+                <div className="flex items-center justify-between border-t border-gray-100 px-3 py-2 text-[11px] text-gray-500 dark:border-gray-800 dark:text-gray-400">
+                  <span>当前底图 · {canvasProps.width} × {canvasProps.height}</span>
+                  <span className="text-[10px]">生成结果在右侧预览</span>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-white/70 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-400">图生图不需要绘制蒙版；请先上传、选择文生图最新结果或历史图片作为底图。</div>
+            )}
             <div className="hidden" aria-hidden="true"><canvas ref={canvasProps.imageCanvasRef} /></div>
           </> : <div className="mt-4">
             <div className="mb-2 flex items-center justify-between gap-3"><span className="text-xs font-semibold text-gray-700 dark:text-gray-200">编辑画板</span><span className="text-[10px] text-gray-400">{operation === 'inpaint' ? '绘制重绘区域' : '预览扩边与调整蒙版'}</span></div>

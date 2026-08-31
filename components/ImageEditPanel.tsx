@@ -767,6 +767,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         fileInputRef={fileInputRef}
         forceEmptySeed={forceEmptySeed}
         enforceFreeStepLimit={enforceFreeStepLimit}
+        baseImagePreview={baseImage}
         canvasProps={{
           imageCanvasRef,
           maskCanvasRef,
@@ -829,8 +830,8 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       />
       <ImageEditPreview
         operation={operation}
-        image={previewImage || baseImage}
-        baseImage={baseImage}
+        image={previewImage}
+        baseImage={previewImage && baseImage && previewImage !== baseImage ? baseImage : null}
         onUseResultAsBase={previewImage && previewImage !== baseImage ? () => onBaseImageChange(previewImage, 'generated') : undefined}
         error={error}
         generationCostLabel={generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea })}
