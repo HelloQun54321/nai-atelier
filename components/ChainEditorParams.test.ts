@@ -122,32 +122,22 @@ describe('ChainEditorParams', () => {
     expect(sliders.every(slider => slider.className.includes('accent-indigo-600'))).toBe(true);
   });
 
-  it('文生图保留可调图片尺寸与常见比例', () => {
-    renderParams();
-    expect(screen.getByText('图片尺寸')).toBeTruthy();
-    expect(screen.getByRole('option', { name: /3:2 经典横屏/ })).toBeTruthy();
-    expect(screen.getByRole('option', { name: /9:16 手机壁纸/ })).toBeTruthy();
-  });
-
-  it('自定义分辨率按 64 像素步进，并联动另一边最大化 Opus 免费像素', () => {
+  it('文生图保留可调图片画幅比例与常见比例预设', () => {
     const setParams = vi.fn();
     renderParams({ setParams });
-    fireEvent.change(screen.getByRole('combobox', { name: '图片尺寸' }), { target: { value: 'Custom' } });
+    expect(screen.getByText('图片画幅比例')).toBeTruthy();
+    expect(screen.getByRole('option', { name: /3:2 经典横屏/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /9:16 手机壁纸/ })).toBeTruthy();
 
-    const width = screen.getByRole('spinbutton', { name: '自定义宽度' });
-    const height = screen.getByRole('spinbutton', { name: '自定义高度' });
-    expect(width.getAttribute('step')).toBe('64');
-    expect(height.getAttribute('max')).toBe('2048');
-    expect(screen.getByRole('switch', { name: 'Opus 免费像素联动' }).getAttribute('aria-checked')).toBe('true');
-
-    fireEvent.change(width, { target: { value: '512' } });
-    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ width: 512, height: 2048 }));
+    const select = screen.getByRole('combobox', { name: '图片画幅比例' });
+    fireEvent.change(select, { target: { value: '16:9' } });
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ width: 1344, height: 768 }));
   });
 
-  it('自定义分辨率清晰显示当前像素是否超过 Opus 免费范围或官方上限', () => {
-    renderParams({ params: { ...params, width: 2048, height: 2048 } });
-    expect(screen.getByRole('status').textContent).toContain('4,194,304');
-    expect(screen.getByRole('status').textContent).toContain('超过 NovelAI 官方上限');
+  it('清晰显示当前像素是否在 Opus 免费范围内', () => {
+    renderParams({ params: { ...params, width: 832, height: 1216 } });
+    expect(screen.getByRole('status').textContent).toContain('1,011,712 像素');
+    expect(screen.getByRole('status').textContent).toContain('在 Opus 免费像素范围内');
   });
 
   it('CFG Scale 和 CFG Rescale 支持直接输入精确数值', () => {
@@ -175,7 +165,7 @@ describe('ChainEditorParams', () => {
 
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 不显示不可调节的图片尺寸', mode => {
     renderParams({ hideResolution: true, mode });
-    expect(screen.queryByText('图片尺寸')).toBeNull();
+    expect(screen.queryByText('图片画幅比例')).toBeNull();
     expect(screen.queryByText(/当前画布|等待底图/)).toBeNull();
   });
 
@@ -251,7 +241,7 @@ describe('ChainEditorParams', () => {
 
   it('当 params 为空对象或缺少宽高时优雅渲染且不崩溃', () => {
     renderParams({ params: {} as any });
-    expect(screen.getByRole('combobox', { name: '图片尺寸' })).toBeDefined();
+    expect(screen.getByRole('combobox', { name: '图片画幅比例' })).toBeDefined();
     expect(screen.getByRole('combobox', { name: '采样器' })).toBeDefined();
   });
 });

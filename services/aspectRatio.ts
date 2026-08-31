@@ -149,15 +149,6 @@ export const BUILTIN_ASPECT_RATIOS: AspectRatioPreset[] = [
   },
 ];
 
-export const SCALE_STEPS = [
-  { value: 1.0, label: '1.0x (Opus免费)' },
-  { value: 1.15, label: '1.15x' },
-  { value: 1.3, label: '1.3x' },
-  { value: 1.5, label: '1.5x (高清壁纸)' },
-  { value: 1.75, label: '1.75x' },
-  { value: 2.0, label: '2.0x (封顶)' },
-];
-
 export const normalizeTo64Step = (value: number) => {
   const finite = Number.isFinite(value) ? value : RESOLUTION_STEP;
   return Math.min(GENERATION_MAX_DIMENSION, Math.max(GENERATION_MIN_DIMENSION, Math.round(finite / RESOLUTION_STEP) * RESOLUTION_STEP));
@@ -247,84 +238,31 @@ export const calculateDimensionsForRatio = (
   };
 };
 
-export const detectClosestAspectRatio = (width: number, height: number): { preset: AspectRatioPreset | null; scale: number } => {
-  if (!width || !height) return { preset: null, scale: 1.0 };
+export const detectClosestAspectRatio = (width: number, height: number): { preset: AspectRatioPreset; scale: number } => {
+  const fallback = BUILTIN_ASPECT_RATIOS.find(p => p.id === '2:3') || BUILTIN_ASPECT_RATIOS[0];
+  if (!width || !height) return { preset: fallback, scale: 1.0 };
+
   for (const preset of BUILTIN_ASPECT_RATIOS) {
     if (preset.baseWidth === width && preset.baseHeight === height) {
       return { preset, scale: 1.0 };
     }
   }
-  // 匹配已知比例与倍率
+
   const currentRatio = width / height;
-  let bestPreset: AspectRatioPreset | null = null;
+  let bestPreset = fallback;
   let minRatioDiff = Infinity;
 
   for (const preset of BUILTIN_ASPECT_RATIOS) {
     const targetRatio = preset.baseWidth / preset.baseHeight;
     const diff = Math.abs(currentRatio - targetRatio);
-    if (diff < 0.03 && diff < minRatioDiff) {
+    if (diff < minRatioDiff) {
       minRatioDiff = diff;
       bestPreset = preset;
     }
   }
 
-  if (bestPreset) {
-    const scale = Math.round((width / bestPreset.baseWidth) * 100) / 100;
-    return { preset: bestPreset, scale };
-  }
-
-  return { preset: null, scale: 1.0 };
+  const maxInfo = getMaxDimensionsForRatio(bestPreset);
+  const rawScale = Math.max(width / bestPreset.baseWidth, height / bestPreset.baseHeight);
+  const scale = Number(Math.max(1.0, Math.min(maxInfo.maxScale, Math.round(rawScale * 20) / 20)).toFixed(2));
+  return { preset: bestPreset, scale };
 };
-
-export interface UserDimensionPreset {
-  id: string;
-  name: string;
-  width: number;
-  height: number;
-  createdAt: number;
-}
-
-const STORAGE_KEY = 'nai_user_resolution_presets';
-
-export const getUserDimensionPresets = (): UserDimensionPreset[] => {
-  if (typeof window === 'undefined' || !window.localStorage) return [];
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-export const saveUserDimensionPreset = (name: string, width: number, height: number): UserDimensionPreset[] => {
-  const current = getUserDimensionPresets();
-  const trimmedName = name.trim() || `${width}×${height}`;
-  const newPreset: UserDimensionPreset = {
-    id: `preset-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    name: trimmedName,
-    width: normalizeTo64Step(width),
-    height: normalizeTo64Step(height),
-    createdAt: Date.now(),
-  };
-  const next = [newPreset, ...current.filter(item => item.name !== trimmedName)];
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  } catch (error) {
-    console.warn('保存用户尺寸预设失败:', error);
-  }
-  return next;
-};
-
-export const deleteUserDimensionPreset = (id: string): UserDimensionPreset[] => {
-  const current = getUserDimensionPresets();
-  const next = current.filter(item => item.id !== id);
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  } catch (error) {
-    console.warn('删除用户尺寸预设失败:', error);
-  }
-  return next;
-};
-

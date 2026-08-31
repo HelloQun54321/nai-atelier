@@ -3,13 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   BUILTIN_ASPECT_RATIOS,
   calculateDimensionsForRatio,
-  deleteUserDimensionPreset,
   detectClosestAspectRatio,
   getMaxDimensionsForRatio,
-  getUserDimensionPresets,
+  getMaxScaleForRatio,
   normalizeTo64Step,
   OPUS_FREE_PIXEL_LIMIT,
-  saveUserDimensionPreset,
 } from './aspectRatio';
 
 describe('aspectRatio service', () => {
@@ -42,7 +40,7 @@ describe('aspectRatio service', () => {
   });
 
   it('按 2.0x 或大比例缩放时严格钳制在单边 2048 像素及总面积 3,145,728 像素内', () => {
-    // 9:16 (768x1344) at 2.0x -> without cap height would be 2688
+    // 9:16 (768x1344) at 2.0x -> max is 1152x2048
     const phone = BUILTIN_ASPECT_RATIOS.find(p => p.id === '9:16')!;
     const resPhone = calculateDimensionsForRatio(phone, 2.0);
     expect(resPhone.width).toBeLessThanOrEqual(2048);
@@ -67,6 +65,7 @@ describe('aspectRatio service', () => {
     expect(maxTall.width).toBe(1024);
     expect(maxTall.height).toBe(2048);
     expect(maxTall.maxScale).toBe(1.45);
+    expect(getMaxScaleForRatio(tall)).toBe(1.45);
 
     // 1:1 (1024x1024) -> max is 1728x1728, maxScale approx 1.69
     const square = BUILTIN_ASPECT_RATIOS.find(p => p.id === '1:1')!;
@@ -90,34 +89,17 @@ describe('aspectRatio service', () => {
     expect(normalizeTo64Step(832)).toBe(832);
   });
 
-  it('detectClosestAspectRatio 能正确识别已知宽高对应的比例', () => {
+  it('detectClosestAspectRatio 能正确识别已知宽高对应的比例与倍率', () => {
     const detected = detectClosestAspectRatio(1024, 1024);
-    expect(detected.preset?.id).toBe('1:1');
+    expect(detected.preset.id).toBe('1:1');
     expect(detected.scale).toBe(1.0);
 
     const detectedWallpaper = detectClosestAspectRatio(768, 1344);
-    expect(detectedWallpaper.preset?.id).toBe('9:16');
+    expect(detectedWallpaper.preset.id).toBe('9:16');
     expect(detectedWallpaper.scale).toBe(1.0);
 
     const custom = detectClosestAspectRatio(1333, 444);
-    expect(custom.preset).toBeNull();
-  });
-
-  it('支持保存、读取与删除用户自定义尺寸预设', () => {
-    localStorage.clear();
-    expect(getUserDimensionPresets()).toEqual([]);
-
-    const saved = saveUserDimensionPreset('超清壁纸', 1920, 1080);
-    expect(saved).toHaveLength(1);
-    expect(saved[0].name).toBe('超清壁纸');
-    expect(saved[0].width).toBe(1920);
-    expect(saved[0].height).toBe(1088); // 1080 -> 1088 (64 * 17)
-
-    const list = getUserDimensionPresets();
-    expect(list).toHaveLength(1);
-
-    const updated = deleteUserDimensionPreset(saved[0].id);
-    expect(updated).toEqual([]);
-    expect(getUserDimensionPresets()).toEqual([]);
+    expect(custom.preset).toBeTruthy();
+    expect(custom.scale).toBeGreaterThanOrEqual(1.0);
   });
 });

@@ -1,24 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { ImageEditOperation, NAIParams } from '../types';
 import { DEFAULT_NAI_MODEL, getModelFollowDefaultSteps, getRuntimeNaiModelInfo, getSelectableNaiModels } from '../services/naiModels';
 import { getNaiRuntimeModelCapability, useNaiRuntime } from '../services/naiRuntime';
 import {
-    AspectRatioPreset,
     BUILTIN_ASPECT_RATIOS,
     calculateDimensionsForRatio,
-    deleteUserDimensionPreset,
     detectClosestAspectRatio,
-    GENERATION_MAX_DIMENSION,
-    GENERATION_MIN_DIMENSION,
     getMaxDimensionsForRatio,
-    getUserDimensionPresets,
-    NOVELAI_MAX_DIMENSION,
-    NOVELAI_MAX_PIXELS,
-    normalizeTo64Step,
     OPUS_FREE_PIXEL_LIMIT,
-    RESOLUTION_STEP,
-    saveUserDimensionPreset,
-    UserDimensionPreset,
 } from '../services/aspectRatio';
 
 interface ChainEditorParamsProps {
@@ -35,8 +24,6 @@ interface ChainEditorParamsProps {
 }
 
 export { OPUS_FREE_PIXEL_LIMIT };
-
-const LINK_DIMENSIONS_STORAGE_KEY = 'nai_link_custom_dimensions';
 
 export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
     params,
@@ -56,52 +43,23 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
     const freeMaxArea = runtime.freeMaxArea || OPUS_FREE_PIXEL_LIMIT;
     const selectableModels = getSelectableNaiModels(runtime);
 
-    // 用户自定义预设列表
-    const [userPresets, setUserPresets] = useState<UserDimensionPreset[]>(() => getUserDimensionPresets());
-    const [isAddingPreset, setIsAddingPreset] = useState(false);
-    const [newPresetName, setNewPresetName] = useState('');
-
     // 比例模式与缩放状态
     const [resolutionMode, setResolutionMode] = useState<string>(() => {
         const detected = detectClosestAspectRatio(Number(params.width) || 832, Number(params.height) || 1216);
-        return detected.preset ? detected.preset.id : 'Custom';
+        return detected.preset.id;
     });
     const [scaleMultiplier, setScaleMultiplier] = useState<number>(() => {
         const detected = detectClosestAspectRatio(Number(params.width) || 832, Number(params.height) || 1216);
         return detected.scale || 1.0;
     });
 
-    // 自定义像素编辑态（避免击键即时取整打断输入）
-    const [customWidthText, setCustomWidthText] = useState(String(params.width ?? 832));
-    const [customHeightText, setCustomHeightText] = useState(String(params.height ?? 1216));
-
-    // Opus 免费像素联动开关（持久化）
-    const [linkCustomDimensions, setLinkCustomDimensions] = useState<boolean>(() => {
-        if (typeof window === 'undefined' || !window.localStorage) return true;
-        const stored = localStorage.getItem(LINK_DIMENSIONS_STORAGE_KEY);
-        return stored !== null ? stored === 'true' : true;
-    });
-
-    // 同步宽高输入框的显示文本
-    useEffect(() => {
-        setCustomWidthText(String(params.width ?? 832));
-        setCustomHeightText(String(params.height ?? 1216));
-    }, [params.width, params.height]);
-
-    const linkedDimensionFor = (dimension: number) => {
-        const target = Math.floor(freeMaxArea / dimension / RESOLUTION_STEP) * RESOLUTION_STEP;
-        return normalizeTo64Step(target);
-    };
+    const activeBuiltinRatio = BUILTIN_ASPECT_RATIOS.find(item => item.id === resolutionMode) || BUILTIN_ASPECT_RATIOS[1];
+    const activeRatioMax = getMaxDimensionsForRatio(activeBuiltinRatio);
 
     const handleRatioSelectChange = (value: string) => {
         if (!canEdit) return;
         setResolutionMode(value);
 
-        if (value === 'Custom') {
-            return;
-        }
-
-        // 检查是否为内置比例
         const builtin = BUILTIN_ASPECT_RATIOS.find(item => item.id === value);
         if (builtin) {
             const maxInfo = getMaxDimensionsForRatio(builtin);
@@ -110,86 +68,18 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
             const nextDims = calculateDimensionsForRatio(builtin, clampedScale);
             setParams({ ...params, width: nextDims.width, height: nextDims.height });
             markChange();
-            return;
-        }
-
-        // 检查是否为用户自定义预设
-        const userPreset = userPresets.find(item => item.id === value);
-        if (userPreset) {
-            setParams({ ...params, width: userPreset.width, height: userPreset.height });
-            markChange();
         }
     };
 
     const handleScaleChange = (nextScale: number) => {
         if (!canEdit) return;
-        const builtin = BUILTIN_ASPECT_RATIOS.find(item => item.id === resolutionMode);
-        if (builtin) {
-            const maxInfo = getMaxDimensionsForRatio(builtin);
-            const clampedScale = Math.min(maxInfo.maxScale, Math.max(1.0, nextScale));
-            setScaleMultiplier(clampedScale);
-            const nextDims = calculateDimensionsForRatio(builtin, clampedScale);
-            setParams({ ...params, width: nextDims.width, height: nextDims.height });
-            markChange();
-        } else {
-            setScaleMultiplier(nextScale);
-        }
-    };
-
-    const handleCustomInputChange = (field: 'width' | 'height', text: string) => {
-        if (field === 'width') setCustomWidthText(text);
-        else setCustomHeightText(text);
-        const parsed = parseInt(text, 10);
-        if (Number.isFinite(parsed) && parsed >= GENERATION_MIN_DIMENSION && parsed <= GENERATION_MAX_DIMENSION) {
-            const value = normalizeTo64Step(parsed);
-            const counterpart = field === 'width' ? 'height' : 'width';
-            setParams({
-                ...params,
-                [field]: value,
-                ...(linkCustomDimensions ? { [counterpart]: linkedDimensionFor(value) } : {}),
-            });
-            markChange();
-        }
-    };
-
-    const handleCustomInputBlur = (field: 'width' | 'height', text: string) => {
-        const parsed = parseInt(text, 10);
-        const value = normalizeTo64Step(Number.isFinite(parsed) ? parsed : (field === 'width' ? 832 : 1216));
-        if (field === 'width') setCustomWidthText(String(value));
-        else setCustomHeightText(String(value));
-        const counterpart = field === 'width' ? 'height' : 'width';
-        setParams({
-            ...params,
-            [field]: value,
-            ...(linkCustomDimensions ? { [counterpart]: linkedDimensionFor(value) } : {}),
-        });
+        const builtin = BUILTIN_ASPECT_RATIOS.find(item => item.id === resolutionMode) || activeBuiltinRatio;
+        const maxInfo = getMaxDimensionsForRatio(builtin);
+        const clampedScale = Math.min(maxInfo.maxScale, Math.max(1.0, nextScale));
+        setScaleMultiplier(clampedScale);
+        const nextDims = calculateDimensionsForRatio(builtin, clampedScale);
+        setParams({ ...params, width: nextDims.width, height: nextDims.height });
         markChange();
-    };
-
-    const handleSaveNewPreset = () => {
-        const currentWidth = Number(params.width) || 832;
-        const currentHeight = Number(params.height) || 1216;
-        const updated = saveUserDimensionPreset(newPresetName, currentWidth, currentHeight);
-        setUserPresets(updated);
-        setNewPresetName('');
-        setIsAddingPreset(false);
-    };
-
-    const handleDeletePreset = (id: string, event: React.MouseEvent) => {
-        event.stopPropagation();
-        const updated = deleteUserDimensionPreset(id);
-        setUserPresets(updated);
-        if (resolutionMode === id) {
-            setResolutionMode('Custom');
-        }
-    };
-
-    const toggleLinkCustomDimensions = () => {
-        const next = !linkCustomDimensions;
-        setLinkCustomDimensions(next);
-        try {
-            localStorage.setItem(LINK_DIMENSIONS_STORAGE_KEY, String(next));
-        } catch { /* ignore */ }
     };
 
     const resolvedModelId = params.model?.trim() || DEFAULT_NAI_MODEL;
@@ -216,11 +106,6 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
     const currentHeight = Number(params.height) || 1216;
     const totalPixels = currentWidth * currentHeight;
     const isOpusFree = totalPixels <= freeMaxArea;
-
-    const activeBuiltinRatio = BUILTIN_ASPECT_RATIOS.find(item => item.id === resolutionMode);
-    const activeRatioMax = activeBuiltinRatio
-        ? getMaxDimensionsForRatio(activeBuiltinRatio)
-        : { width: 2048, height: 2048, maxScale: 1.75 };
 
     return (
         <div className="space-y-4">
@@ -305,196 +190,70 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
 
                 {!hideResolution && (
                     <div className="flex min-w-0 flex-col gap-1">
-                        <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">图片尺寸</label>
+                        <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">图片画幅比例</label>
                         <select
-                            aria-label="图片尺寸"
+                            aria-label="图片画幅比例"
                             disabled={!canEdit}
                             className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                             value={resolutionMode}
                             onChange={(e) => handleRatioSelectChange(e.target.value)}
                         >
-                            <optgroup label="内置常见画幅比例">
-                                {BUILTIN_ASPECT_RATIOS.map(item => (
-                                    <option key={item.id} value={item.id}>
-                                        {item.label} ({item.baseWidth}x{item.baseHeight})
-                                    </option>
-                                ))}
-                            </optgroup>
-                            {userPresets.length > 0 && (
-                                <optgroup label="我的自定义尺寸预设">
-                                    {userPresets.map(preset => (
-                                        <option key={preset.id} value={preset.id}>
-                                            {preset.name} ({preset.width}x{preset.height})
-                                        </option>
-                                    ))}
-                                </optgroup>
-                            )}
-                            <option value="Custom">自定义</option>
+                            {BUILTIN_ASPECT_RATIOS.map(item => (
+                                <option key={item.id} value={item.id}>
+                                    {item.label} ({item.baseWidth}x{item.baseHeight}) · {item.description}
+                                </option>
+                            ))}
                         </select>
                     </div>
                 )}
             </div>
 
-            {/* Resolution control panel: Aspect ratio scale slider or Custom width/height */}
+            {/* Resolution control panel: Aspect ratio scale slider */}
             {!hideResolution && (
                 <div className="mb-4 rounded-2xl border border-gray-200 bg-white/70 p-3.5 dark:border-gray-800 dark:bg-gray-900/60 sm:p-4">
-                    {resolutionMode !== 'Custom' ? (
-                        /* Ratio mode: Scale slider */
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between gap-2">
-                                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                                    尺寸比例清晰度（Scale）
-                                </span>
-                                <span className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                                    {scaleMultiplier.toFixed(2)}x
-                                    {scaleMultiplier >= activeRatioMax.maxScale && (
-                                        <span className="ml-1.5 rounded bg-indigo-50 px-1 py-0.5 text-[10px] text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 font-normal">已达画幅极限</span>
-                                    )}
-                                </span>
-                            </div>
-                            <div className="relative flex items-center">
-                                <input
-                                    type="range"
-                                    min="1.0"
-                                    max={activeRatioMax.maxScale}
-                                    step="0.05"
-                                    aria-label="尺寸缩放滑块"
-                                    disabled={!canEdit}
-                                    value={Math.min(activeRatioMax.maxScale, scaleMultiplier)}
-                                    onChange={(e) => handleScaleChange(parseFloat(e.target.value))}
-                                    className="w-full cursor-pointer accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-                                />
-                            </div>
-                            <div className="flex items-center justify-between text-[10px] text-gray-400">
-                                <span className="font-semibold text-emerald-600 dark:text-emerald-400">1.0x Opus 免费基准（0点）</span>
-                                <span>{activeRatioMax.maxScale.toFixed(2)}x 官方封顶（{activeRatioMax.width}×{activeRatioMax.height}）</span>
-                            </div>
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                                尺寸清晰度放大（Scale）
+                            </span>
+                            <span className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                                {scaleMultiplier.toFixed(2)}x
+                                {scaleMultiplier >= activeRatioMax.maxScale && (
+                                    <span className="ml-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 font-normal">已达画幅极限</span>
+                                )}
+                            </span>
                         </div>
-                    ) : (
-                        /* Custom exact pixel inputs */
-                        <div className="space-y-3">
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                <div className="grid grid-cols-2 gap-3">
-                                    <label className="text-xs font-medium text-gray-600 dark:text-gray-300">
-                                        宽度 (px)
-                                        <input
-                                            aria-label="自定义宽度"
-                                            type="number"
-                                            min={GENERATION_MIN_DIMENSION}
-                                            max={GENERATION_MAX_DIMENSION}
-                                            step={RESOLUTION_STEP}
-                                            disabled={!canEdit}
-                                            value={customWidthText}
-                                            onChange={e => handleCustomInputChange('width', e.target.value)}
-                                            onBlur={() => handleCustomInputBlur('width', customWidthText)}
-                                            onKeyDown={e => { if (e.key === 'Enter') handleCustomInputBlur('width', customWidthText); }}
-                                            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs md:text-sm font-normal text-gray-800 dark:text-gray-200 dark:border-gray-800 dark:bg-gray-950 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
-                                        />
-                                    </label>
-                                    <label className="text-xs font-medium text-gray-600 dark:text-gray-300">
-                                        高度 (px)
-                                        <input
-                                            aria-label="自定义高度"
-                                            type="number"
-                                            min={GENERATION_MIN_DIMENSION}
-                                            max={GENERATION_MAX_DIMENSION}
-                                            step={RESOLUTION_STEP}
-                                            disabled={!canEdit}
-                                            value={customHeightText}
-                                            onChange={e => handleCustomInputChange('height', e.target.value)}
-                                            onBlur={() => handleCustomInputBlur('height', customHeightText)}
-                                            onKeyDown={e => { if (e.key === 'Enter') handleCustomInputBlur('height', customHeightText); }}
-                                            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs md:text-sm font-normal text-gray-800 dark:text-gray-200 dark:border-gray-800 dark:bg-gray-950 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
-                                        />
-                                    </label>
-                                </div>
-                                <div className="flex flex-col justify-center">
-                                    <button
-                                        type="button"
-                                        role="switch"
-                                        aria-label="Opus 免费像素联动"
-                                        aria-checked={linkCustomDimensions}
-                                        disabled={!canEdit}
-                                        onClick={toggleLinkCustomDimensions}
-                                        className="flex items-center justify-between gap-2 text-left text-xs text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors disabled:opacity-60"
-                                    >
-                                        <span className="font-medium">Opus 免费像素联动</span>
-                                        <span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${linkCustomDimensions ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
-                                            <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${linkCustomDimensions ? 'translate-x-4' : ''}`} />
-                                        </span>
-                                    </button>
-                                </div>
-                            </div>
+                        <div className="relative flex items-center">
+                            <input
+                                type="range"
+                                min="1.0"
+                                max={activeRatioMax.maxScale}
+                                step="0.05"
+                                aria-label="尺寸缩放滑块"
+                                disabled={!canEdit}
+                                value={Math.min(activeRatioMax.maxScale, scaleMultiplier)}
+                                onChange={(e) => handleScaleChange(parseFloat(e.target.value))}
+                                className="w-full cursor-pointer accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                            />
                         </div>
-                    )}
+                        <div className="flex items-center justify-between text-[10px] text-gray-400">
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">1.0x Opus 免费基准（0点）</span>
+                            <span>{activeRatioMax.maxScale.toFixed(2)}x 官方封顶（{activeRatioMax.width}×{activeRatioMax.height}）</span>
+                        </div>
+                    </div>
 
-                    {/* Resolution Status & Presets management row */}
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
                         <div
                             role="status"
                             className={`rounded-xl px-2.5 py-1 text-[11px] font-medium leading-relaxed tabular-nums border ${
-                                currentWidth > NOVELAI_MAX_DIMENSION || currentHeight > NOVELAI_MAX_DIMENSION || totalPixels > NOVELAI_MAX_PIXELS
-                                    ? 'bg-red-50 text-red-700 border-red-200/60 dark:bg-red-950/30 dark:text-red-300 dark:border-red-800/40'
-                                    : isOpusFree
+                                isOpusFree
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800/40'
                                     : 'bg-amber-50 text-amber-700 border-amber-200/60 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800/40'
                             }`}
                         >
-                            {currentWidth > NOVELAI_MAX_DIMENSION || currentHeight > NOVELAI_MAX_DIMENSION || totalPixels > NOVELAI_MAX_PIXELS
-                                ? `当前 ${currentWidth.toLocaleString()} × ${currentHeight.toLocaleString()} = ${totalPixels.toLocaleString()} 像素 · 超过 NovelAI 官方上限（单边最大 2048，总像素最大 ${NOVELAI_MAX_PIXELS.toLocaleString()}）`
-                                : `当前 ${currentWidth.toLocaleString()} × ${currentHeight.toLocaleString()} = ${totalPixels.toLocaleString()} 像素 · ${isOpusFree ? '在 Opus 免费像素范围内' : `超过免费像素上限 ${freeMaxArea.toLocaleString()}`}`}
-                        </div>
-
-                        {/* Save as preset button & quick actions */}
-                        <div className="flex items-center gap-2">
-                            {isAddingPreset ? (
-                                <div className="flex items-center gap-1.5">
-                                    <input
-                                        type="text"
-                                        placeholder={`${currentWidth}×${currentHeight}`}
-                                        value={newPresetName}
-                                        onChange={e => setNewPresetName(e.target.value)}
-                                        className="h-7 w-28 rounded-lg border border-indigo-300 bg-white px-2 text-xs outline-none dark:border-indigo-700 dark:bg-gray-950"
-                                        autoFocus
-                                        onKeyDown={e => { if (e.key === 'Enter') handleSaveNewPreset(); else if (e.key === 'Escape') setIsAddingPreset(false); }}
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={handleSaveNewPreset}
-                                        className="h-7 rounded-lg bg-indigo-600 px-2 text-xs font-medium text-white hover:bg-indigo-700"
-                                    >
-                                        保存
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsAddingPreset(false)}
-                                        className="h-7 rounded-lg px-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                                    >
-                                        取消
-                                    </button>
-                                </div>
-                            ) : (
-                                <button
-                                    type="button"
-                                    disabled={!canEdit}
-                                    onClick={() => {
-                                        setNewPresetName('');
-                                        setIsAddingPreset(true);
-                                    }}
-                                    className="rounded-lg border border-dashed border-gray-300 px-2 py-1 text-[11px] text-gray-600 transition hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-400 dark:hover:border-indigo-500 dark:hover:text-indigo-400"
-                                >
-                                    + 保存为尺寸预设
-                                </button>
-                            )}
+                            当前输出 {currentWidth.toLocaleString()} × {currentHeight.toLocaleString()} = {totalPixels.toLocaleString()} 像素 · {isOpusFree ? '在 Opus 免费像素范围内' : `超过免费像素上限 ${freeMaxArea.toLocaleString()}`}
                         </div>
                     </div>
-
-                    {/* Hint if scale > 1.5 */}
-                    {scaleMultiplier > 1.5 && (
-                        <p className="mt-2 text-[10px] text-amber-600 dark:text-amber-400">
-                            💡 提示：超大尺寸文生图容易产生多肢体或重复构图，建议先用 1.0x 基准尺寸抽卡，再通过放大/重绘出大图。
-                        </p>
-                    )}
                 </div>
             )}
 

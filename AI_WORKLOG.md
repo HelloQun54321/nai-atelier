@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-01
+- **Antigravity (Gemini 3.7 Flash)**：彻底精简移除冗余的自定义像素输入与预设管理，统一为纯粹的画幅比例（11 种预设）与自适应清晰度放大滑块（refactor: streamline resolution controls to aspect ratio and scale slider）。
 - **Antigravity (Gemini 3.7 Flash)**：尺寸滑块上限根据画幅比例自适应封顶，消除滑块空转区，滑块每一步均有真实尺寸与点数响应（fix: make aspect ratio scale slider dynamic to exact ratio maximums）。
 - **Antigravity (Gemini 3.7 Flash)**：尺寸滑块以 1.0x 原生免费为起步基准，严格封顶在 NovelAI 官方上限（单边 2048px / 总面积 3,145,728px），消除超限 HTTP 400 校验报错（fix: clamp aspect ratio scale slider to 1.0x minimum and 2048px official limits）。
 - **Antigravity (Gemini 3.7 Flash)**：实现画幅比例与尺寸滑块解耦（预置 11 种常见比例与 1.0x Opus 免费基准点缩放）、自定义尺寸预设管理、修复精确像素自由输入，并将 CFG Scale / Rescale 升级为可直接点击输入的数字输入框（feat: add aspect ratio scale slider, resolution presets and direct cfg inputs）。
