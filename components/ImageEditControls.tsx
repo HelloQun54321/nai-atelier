@@ -150,10 +150,143 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
               <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-white/70 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-400">图生图不需要绘制蒙版；请先上传、选择文生图最新结果或历史图片作为底图。</div>
             )}
             <div className="hidden" aria-hidden="true"><canvas ref={canvasProps.imageCanvasRef} /></div>
-          </> : <div className="mt-4">
-            <div className="mb-2 flex items-center justify-between gap-3"><span className="text-xs font-semibold text-gray-700 dark:text-gray-200">编辑画板</span><span className="text-[10px] text-gray-400">{operation === 'inpaint' ? '绘制重绘区域' : '预览扩边与调整蒙版'}</span></div>
-            <ImageEditCanvas {...canvasProps} />
-          </div>}
+          </> : operation === 'outpaint' && !manualMaskEditing ? (
+            <div className="mt-4 space-y-3">
+              <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">智能画幅扩展</span>
+                  <span className="text-[11px] font-mono text-gray-400">
+                    {canvasProps.width && canvasProps.height ? `${canvasProps.width} × ${canvasProps.height} ➔ ${canvasProps.width + (expansion.left || 0) + (expansion.right || 0)} × ${canvasProps.height + (expansion.top || 0) + (expansion.bottom || 0)}` : ''}
+                  </span>
+                </div>
+
+                {/* 可视化画幅模拟摆放台（“布”与可拖拽原图） */}
+                <OutpaintCanvasStage
+                  sourceWidth={canvasProps.width}
+                  sourceHeight={canvasProps.height}
+                  baseImagePreview={baseImagePreview}
+                  expansion={expansion}
+                  onExpansionChange={onExpansionChange}
+                  selectedRatioId={selectedRatioId}
+                  onSelectRatioId={setSelectedRatioId}
+                  isBusy={isBusy}
+                />
+
+                {/* 快捷像素加减 */}
+                <div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => onExpansionChange({ top: 128, right: 128, bottom: 128, left: 128 })}
+                    className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                  >
+                    四周 +128px
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => onExpansionChange({ top: 64, right: 64, bottom: 64, left: 64 })}
+                    className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                  >
+                    四周 +64px
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => onExpansionChange({ top: 0, right: 128, bottom: 0, left: 128 })}
+                    className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                  >
+                    左右 +128px
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => onExpansionChange({ top: 0, right: 0, bottom: 0, left: 0 })}
+                    className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-500 transition hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                  >
+                    清零重置
+                  </button>
+                </div>
+
+                {/* 四周像素精确数值调节 */}
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {(['top', 'right', 'bottom', 'left'] as const).map(side => (
+                    <label key={side} className="text-[11px] text-gray-500 dark:text-gray-400">
+                      {({ top: '上 (top)', right: '右 (right)', bottom: '下 (bottom)', left: '左 (left)' } as const)[side]}
+                      <input
+                        disabled={isBusy}
+                        type="number"
+                        min="0"
+                        step="64"
+                        value={expansion[side]}
+                        onChange={event => onExpansionChange({ ...expansion, [side]: Math.max(0, Number(event.target.value) || 0) })}
+                        className="mt-1 h-9 w-full rounded-lg border border-gray-300 bg-white px-2 font-mono text-sm dark:border-gray-700 dark:bg-gray-900"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <button
+                  disabled={isBusy || (!expansion.top && !expansion.right && !expansion.bottom && !expansion.left)}
+                  type="button"
+                  onClick={onApplyOutpaint}
+                  className="mt-3 h-9 w-full rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white shadow transition hover:bg-indigo-500 disabled:opacity-40"
+                >
+                  应用画布扩展
+                </button>
+              </div>
+
+              {/* 隐藏画布 ref 挂载 */}
+              <div className="hidden" aria-hidden="true">
+                <ImageEditCanvas {...canvasProps} />
+              </div>
+
+              {/* 手动调整蒙版开关 */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={manualMaskEditing}
+                disabled={isBusy || safeMode}
+                onClick={() => onManualMaskEditingChange(!manualMaskEditing)}
+                className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-xs font-semibold text-gray-600 transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-700"
+              >
+                <span>
+                  <span className="block">手动调整蒙版</span>
+                  <span className="mt-0.5 block text-[10px] font-normal text-gray-400">默认自动重绘全部新增边缘；开启后可用画笔微调接缝遮罩</span>
+                </span>
+                <span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${manualMaskEditing ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                  <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${manualMaskEditing ? 'translate-x-4' : 'translate-x-0'}`} />
+                </span>
+              </button>
+            </div>
+          ) : (
+            <div className="mt-4">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">编辑画板</span>
+                <span className="text-[10px] text-gray-400">{operation === 'inpaint' ? '绘制重绘区域' : '手动调整接缝蒙版'}</span>
+              </div>
+              <ImageEditCanvas {...canvasProps} />
+              {operation === 'outpaint' && (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={manualMaskEditing}
+                    disabled={isBusy || safeMode}
+                    onClick={() => onManualMaskEditingChange(!manualMaskEditing)}
+                    className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-xs font-semibold text-gray-600 transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-700"
+                  >
+                    <span>
+                      <span className="block">手动调整蒙版</span>
+                      <span className="mt-0.5 block text-[10px] font-normal text-gray-400">关闭后返回画幅模拟摆放台</span>
+                    </span>
+                    <span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${manualMaskEditing ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                      <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${manualMaskEditing ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           {normalization && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"><div className="font-semibold">底图尺寸需要规范化</div><div className="mt-1 leading-5">当前 {normalization.sourceWidth} × {normalization.sourceHeight}，编辑接口建议使用 {normalization.targetWidth} × {normalization.targetHeight}。请选择处理方式后再生成。</div><div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3"><button disabled={isBusy} type="button" onClick={() => onNormalize('crop')} className="rounded-md bg-amber-100 px-2 py-1.5 font-semibold hover:bg-amber-200 disabled:opacity-50 dark:bg-amber-900/50 dark:hover:bg-amber-900">居中裁剪（推荐）</button><button disabled={isBusy} type="button" onClick={() => onNormalize('contain')} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold hover:bg-white disabled:opacity-50 dark:bg-gray-900/60 dark:hover:bg-gray-900">完整保留并填充</button><button disabled={isBusy} type="button" onClick={() => onNormalize('stretch')} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold hover:bg-white disabled:opacity-50 dark:bg-gray-900/60 dark:hover:bg-gray-900">直接缩放</button></div></div>}
         </section>
       </LabModuleSection>
@@ -204,107 +337,6 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
             </div>
             <input disabled={isBusy} type="range" min="0" max="1" step="0.01" aria-label="Noise" value={noise} onChange={event => onNoiseChange(Number(event.target.value))} className="w-full cursor-pointer accent-indigo-500 disabled:cursor-not-allowed disabled:opacity-50" />
           </div>
-
-          {operation === 'outpaint' && <>
-            <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">智能画幅扩展</span>
-                <span className="text-[11px] font-mono text-gray-400">
-                  {canvasProps.width && canvasProps.height ? `${canvasProps.width} × ${canvasProps.height} ➔ ${canvasProps.width + (expansion.left || 0) + (expansion.right || 0)} × ${canvasProps.height + (expansion.top || 0) + (expansion.bottom || 0)}` : ''}
-                </span>
-              </div>
-
-              {/* 可视化画幅模拟摆放台（“布”与可拖拽原图） */}
-              <OutpaintCanvasStage
-                sourceWidth={canvasProps.width}
-                sourceHeight={canvasProps.height}
-                baseImagePreview={baseImagePreview}
-                expansion={expansion}
-                onExpansionChange={onExpansionChange}
-                selectedRatioId={selectedRatioId}
-                onSelectRatioId={setSelectedRatioId}
-                isBusy={isBusy}
-              />
-
-              {/* 快捷像素加减 */}
-              <div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-                <button
-                  type="button"
-                  disabled={isBusy}
-                  onClick={() => onExpansionChange({ top: 128, right: 128, bottom: 128, left: 128 })}
-                  className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                >
-                  四周 +128px
-                </button>
-                <button
-                  type="button"
-                  disabled={isBusy}
-                  onClick={() => onExpansionChange({ top: 64, right: 64, bottom: 64, left: 64 })}
-                  className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                >
-                  四周 +64px
-                </button>
-                <button
-                  type="button"
-                  disabled={isBusy}
-                  onClick={() => onExpansionChange({ top: 0, right: 128, bottom: 0, left: 128 })}
-                  className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                >
-                  左右 +128px
-                </button>
-                <button
-                  type="button"
-                  disabled={isBusy}
-                  onClick={() => onExpansionChange({ top: 0, right: 0, bottom: 0, left: 0 })}
-                  className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-500 transition hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
-                >
-                  清零重置
-                </button>
-              </div>
-
-              {/* 四周像素精确数值调节 */}
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                {(['top', 'right', 'bottom', 'left'] as const).map(side => (
-                  <label key={side} className="text-[11px] text-gray-500 dark:text-gray-400">
-                    {({ top: '上 (top)', right: '右 (right)', bottom: '下 (bottom)', left: '左 (left)' } as const)[side]}
-                    <input
-                      disabled={isBusy}
-                      type="number"
-                      min="0"
-                      step="64"
-                      value={expansion[side]}
-                      onChange={event => onExpansionChange({ ...expansion, [side]: Math.max(0, Number(event.target.value) || 0) })}
-                      className="mt-1 h-9 w-full rounded-lg border border-gray-300 bg-white px-2 font-mono text-sm dark:border-gray-700 dark:bg-gray-900"
-                    />
-                  </label>
-                ))}
-              </div>
-              <button
-                disabled={isBusy || (!expansion.top && !expansion.right && !expansion.bottom && !expansion.left)}
-                type="button"
-                onClick={onApplyOutpaint}
-                className="mt-3 h-9 w-full rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white shadow transition hover:bg-indigo-500 disabled:opacity-40"
-              >
-                应用画布扩展
-              </button>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={manualMaskEditing}
-              disabled={isBusy || safeMode}
-              onClick={() => onManualMaskEditingChange(!manualMaskEditing)}
-              className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-xs font-semibold text-gray-600 transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-700"
-            >
-              <span>
-                <span className="block">手动调整蒙版</span>
-                <span className="mt-0.5 block text-[10px] font-normal text-gray-400">默认自动重绘全部新增边缘；开启后可用画笔微调接缝遮罩</span>
-              </span>
-              <span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${manualMaskEditing ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
-                <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${manualMaskEditing ? 'translate-x-4' : 'translate-x-0'}`} />
-              </span>
-            </button>
-          </>}
           {(operation === 'inpaint' || operation === 'outpaint' && manualMaskEditing) && <>
             {safeMode && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] leading-5 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">安全模式已开启，蒙版画笔暂不可用；关闭安全模式后可继续编辑。</div>}
             {operation === 'inpaint' && <label className="flex items-center justify-between gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300"><span>Focused Inpainting</span><input disabled={isBusy || safeMode} type="checkbox" checked={focused} onChange={event => onFocusedChange(event.target.checked)} className="h-4 w-4 accent-amber-500" /></label>}
