@@ -135,8 +135,6 @@ export const getNaiModelInfo = (model?: string): NaiModelInfo =>
 export const findNaiModelInfo = (model?: string): NaiModelInfo | undefined =>
   NAI_MODELS.find(item => item.id === (model?.trim() || DEFAULT_NAI_MODEL));
 
-export const resolveNaiModelId = (model?: string): string => getNaiModelInfo(model).id;
-
 /** 显示用标签：注册表已知模型返回注册表标签，未知标识（如导入的未来新模型）推导显示名。 */
 export const getNaiModelDisplayLabel = (model?: string): string => {
   const known = NAI_MODELS.find(item => item.id === model);

@@ -403,21 +403,6 @@ export const hasAitagImagePrompt = (image: AitagImage): boolean => {
   return typeof image.prompt_text === 'string' && image.prompt_text.trim().length > 0;
 };
 
-export const extractAitagNegativePrompt = (image: AitagImage) => {
-  const parsed = parseAitagAiJson(image.ai_json);
-  const comment = parsed?.Comment;
-
-  if (comment && typeof comment === 'object') {
-    const negative = comment.v4_negative_prompt?.caption?.base_caption || comment.uc;
-    if (typeof negative === 'string' && negative.trim()) return negative;
-  }
-
-  const v4Negative = parsed?.v4_negative_prompt?.caption?.base_caption;
-  if (typeof v4Negative === 'string' && v4Negative.trim()) return v4Negative;
-  if (typeof parsed?.uc === 'string' && parsed.uc.trim()) return parsed.uc;
-  return '';
-};
-
 export const formatAitagJson = (image: AitagImage) => {
   const parsed = parseAitagAiJson(image.ai_json);
   if (parsed) return JSON.stringify(parsed, null, 2);

@@ -12,25 +12,6 @@ const AITAG_CACHE_DELAY_MIN_MS = 800;
 const AITAG_CACHE_DELAY_MAX_MS = 1200;
 const AITAG_CONFIG_VERSION = '260528a';
 
-async function proxyAitagJson(targetUrl: URL): Promise<Response> {
-  const response = await fetch(targetUrl.toString(), {
-    headers: {
-      'Accept': 'application/json, text/plain, */*',
-      'Referer': `${AITAG_BASE_URL}/`,
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
-    },
-  });
-
-  const text = await response.text();
-  return new Response(text, {
-    status: response.status,
-    headers: {
-      'Content-Type': response.headers.get('Content-Type') || 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-    },
-  });
-}
-
 function buildAitagSearchUrl(sourceUrl: URL) {
   const sort = sourceUrl.searchParams.get('sort') === 'monthly' ? 'monthly' : 'new';
   const timeRange = normalizeAitagTimeRange(sourceUrl.searchParams.get('time_range'), sort);
@@ -1370,7 +1351,6 @@ export async function handleAitagRoute(ctx: RouteContext): Promise<Response | nu
   }
 
   if (path === '/api/aitag/search' && method === 'GET') {
-    const startedAt = Date.now();
     try {
       try { await ensureAitagCacheSchema(db); } catch (e) { await initDB(); }
       const sort = normalizeAitagSort(url.searchParams.get('sort'));
@@ -1409,7 +1389,6 @@ export async function handleAitagRoute(ctx: RouteContext): Promise<Response | nu
   }
 
   if (path.startsWith('/api/aitag/work/') && method === 'GET') {
-    const startedAt = Date.now();
     const target = buildAitagWorkUrl(path);
     if (!target) return error('Invalid aitag work id', 400);
     const workId = path.split('/').pop();

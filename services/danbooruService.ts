@@ -332,9 +332,4 @@ const getCoverCandidatePage = async (tag: string, kind: 'artist' | 'character', 
 
 const getCover = async (tag: string, kind: 'artist' | 'character') => (await getCoverSet(tag, kind)).representative;
 
-export const clearDanbooruCoverCache = () => {
-  coverCache = {};
-  localStorage.removeItem(COVER_CACHE_KEY);
-};
-
 export const danbooruService = { search, getCover, getCoverSet, getCoverCandidatePage };

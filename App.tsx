@@ -590,7 +590,6 @@ const App = () => {
           onRefresh={() => loadArtists(true)}
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
-          currentUser={currentUser}
         />;
       case 'aitag':
         return <AitagGallery

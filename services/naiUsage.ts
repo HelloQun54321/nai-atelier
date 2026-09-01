@@ -37,13 +37,6 @@ export const usageRemainingPercent = (usage: NovelaiUsageState): number => {
   return usage.isNegative || !Number.isFinite(percent) ? 0 : Math.max(0, percent);
 };
 
-/** 每天恢复的百分比：86400 / timeUntilNextPercent，保留一位小数（官方同式）。 */
-export const usagePercentPerDay = (usage: NovelaiUsageState): number => {
-  const seconds = Number(usage.timeUntilNextPercent);
-  if (!Number.isFinite(seconds) || seconds <= 0) return 0;
-  return Math.round((86400 / seconds) * 10) / 10;
-};
-
 /** 剩余可生成张数 ≈ 系数 × 官方真实百分比（系数由网关自动同步）。 */
 export const usageRemainingImages = (usage: NovelaiUsageState, imagesPerPercent = 17.3): number =>
   Math.round(imagesPerPercent * usageRemainingPercent(usage));

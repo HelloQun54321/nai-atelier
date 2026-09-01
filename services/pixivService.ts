@@ -1,4 +1,4 @@
-import { MediaVariant, buildMediaUrl, getMobileOriginalUrl } from './mobileImageCache';
+import { MediaVariant, buildMediaUrl } from './mobileImageCache';
 
 export type PixivFeedMode =
   | 'recommended'
@@ -81,12 +81,6 @@ export interface PixivFeedParams {
   restrict?: string;
   tag?: string;
   illust_id?: string;
-}
-
-export interface PixivTrendingTag {
-  tag: string;
-  translatedName?: string;
-  illust?: PixivIllust | null;
 }
 
 export interface PixivFeedResult<T = PixivIllust> {
@@ -189,15 +183,9 @@ export const pixivService = {
     return result.items || [];
   },
 
-  getTrendingTags: async (): Promise<PixivTrendingTag[]> => {
-    const result = await pixivService.feed<PixivTrendingTag>('trending');
-    return result.items || [];
-  },
 };
 
 export const pixivArtworkUrl = (illust: PixivIllust): string => `https://www.pixiv.net/artworks/${illust.id}`;
-
-export const pixivUserUrl = (userId: string): string => `https://www.pixiv.net/users/${userId}`;
 
 export const pixivPageCount = (illust: PixivIllust): number => Math.max(1, illust.metaPages.length || illust.pageCount || 1);
 
@@ -221,9 +209,6 @@ export const buildPixivMediaUrl = (illust: PixivIllust, pageIndex = 0, variant: 
 /** 通过本机 /api/media 构建预览媒体 URL：large/medium 清晰源经网关缩放，适合详情先出图。 */
 export const buildPixivPreviewMediaUrl = (illust: PixivIllust, pageIndex = 0, variant: MediaVariant = 'thumb-960'): string =>
   buildMediaUrl(getPixivPreviewUrl(illust, pageIndex), variant);
-
-/** 移动端缓存链路：允许 i.pximg.net 走本地媒体代理（缩略图/原图均可）。 */
-export const getPixivCachedDisplayUrl = (source: string): string => getMobileOriginalUrl(source);
 
 const PIXIV_IMAGE_HOST = 'i.pximg.net';
 const MAX_PIXIV_IMAGE_BYTES = 12 * 1024 * 1024;

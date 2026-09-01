@@ -3,7 +3,6 @@ import { LAN_ACCESS_COOKIE } from './sharedWhitelist.mjs';
 import {
   json, error, INIT_SQL,  type Env, type WorkerContext, type RouteContext,
 } from './routes/types';
-import { handlePixivRoute } from './routes/pixivRoutes';
 import { handleDanbooruRoute } from './routes/danbooruRoutes';
 import { handleAitagRoute, ensureAitagCacheSchema } from './routes/aitagRoutes';
 import { handleHistoryRoute, handleAgentRoute } from './routes/historyRoutes';
@@ -183,9 +182,6 @@ export default {
 
       const aitagResult = await handleAitagRoute(routeContext);
       if (aitagResult) return aitagResult;
-
-      const pixivResult = await handlePixivRoute(routeContext);
-      if (pixivResult) return pixivResult;
 
       if (path.startsWith('/api/')) return error('Not Found', 404);
       return env.ASSETS.fetch(request);

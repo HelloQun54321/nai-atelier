@@ -19,19 +19,6 @@ class DBService {
   }
 
 
-  async logClientEvent(event: {
-    category: string;
-    action: string;
-    status?: 'success' | 'error' | 'warning';
-    resourceType?: string;
-    resourceId?: string | number;
-    message?: string;
-    metadata?: Record<string, any>;
-  }): Promise<void> {
-    // Persistent audit logging is disabled in personal mode.
-    void event;
-  }
-
   // --- Chains ---
   async getAllChains(): Promise<PromptChain[]> {
     return await api.get('/chains');

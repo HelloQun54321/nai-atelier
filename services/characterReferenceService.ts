@@ -22,11 +22,6 @@ export const characterReferenceService = {
     return result.items || [];
   },
 
-  get: async (id: string): Promise<CharacterReferenceAsset> => {
-    const result = await api.get(`/character-references/${encodeURIComponent(id)}`);
-    return result.item;
-  },
-
   create: async (file: File, name: string): Promise<{ item: CharacterReferenceAsset; duplicate?: boolean }> => {
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
       throw new Error('只支持 PNG、JPEG 或 WebP 图片');

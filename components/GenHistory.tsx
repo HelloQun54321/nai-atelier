@@ -101,7 +101,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     const [pendingFavoriteIds, setPendingFavoriteIds] = useState<Set<string>>(new Set());
     
     // 缓存管理
-    const [pageCache, setPageCache] = useState<Record<number, LocalGenItem[]>>({});
     const pageCacheRef = useRef<Record<number, LocalGenItem[]>>({});
     const inflightPagesRef = useRef<Record<string, Promise<LocalHistoryPage>>>({});
     const currentPageRef = useRef(1);
@@ -183,7 +182,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
     const setCacheState = (nextCache: Record<number, LocalGenItem[]>) => {
         pageCacheRef.current = nextCache;
-        setPageCache(nextCache);
     };
 
     const getHistoryQueryKey = () => {
@@ -470,32 +468,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         };
     }, []);
 
-    // 生成页码按钮
-    const getPageButtons = (): number[] => {
-        const buttons: number[] = [];
-        const maxButtons = 7; // 最多显示7个页码按钮
-        
-        if (totalPages <= maxButtons) {
-            // 总页数较少，显示所有页码
-            for (let i = 1; i <= totalPages; i++) {
-                buttons.push(i);
-            }
-        } else {
-            // 总页数较多，显示当前页附近的页码
-            const start = Math.min(
-                Math.max(1, currentPage - 3),
-                totalPages - maxButtons + 1
-            );
-            const end = Math.min(totalPages, start + maxButtons - 1);
-            
-            for (let i = start; i <= end; i++) {
-                buttons.push(i);
-            }
-        }
-        
-        return buttons;
-    };
-
     const getDownloadFilename = () => {
         const now = new Date();
         const pad = (n: number) => String(n).padStart(2, '0');
@@ -530,13 +502,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 setCacheState({});
                 inflightPagesRef.current = {};
                 await goToPage(currentPageRef.current, true);
-                void db.logClientEvent({
-                    category: 'history',
-                    action: 'history_delete',
-                    resourceType: 'local_history',
-                    resourceId: id,
-                    message: '删除本地生图历史记录',
-                }).catch(console.error);
             } catch (e: any) {
                 notify('删除失败: ' + (e?.message || '未知错误'), 'error');
             }
@@ -600,13 +565,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             } else {
                 patchFavoriteState(new Set([item.id]), favorite);
             }
-            void db.logClientEvent({
-                category: 'history',
-                action: favorite ? 'history_favorite_add' : 'history_favorite_remove',
-                resourceType: 'local_history',
-                resourceId: item.id,
-                message: favorite ? '收藏历史图片' : '取消收藏历史图片',
-            }).catch(console.error);
         } catch (e: any) {
             notify((favorite ? '收藏失败: ' : '取消收藏失败: ') + (e?.message || '未知错误'), 'error');
         } finally {
@@ -666,7 +624,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             tone: 'danger',
         })) {
             try {
-                const countBefore = await localHistory.getCount();
                 await localHistory.clear();
                 loadRequestRef.current++;
                 setItems([]);
@@ -678,13 +635,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 inflightPagesRef.current = {};
                 setLightbox(null);
                 setShowCleanMenu(false);
-                void db.logClientEvent({
-                    category: 'history',
-                    action: 'history_clear_all',
-                    resourceType: 'local_history',
-                    message: '清空所有本地生图历史',
-                    metadata: { countBefore },
-                }).catch(console.error);
             } catch (e: any) {
                 notify('清空失败: ' + (e?.message || '未知错误'), 'error');
             }
@@ -714,11 +664,10 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 return;
             }
 
-            let deletedCount = 0;
             if (cleanMode === 'days') {
-                deletedCount = await localHistory.deleteOlderThan(normalizedValue);
+                await localHistory.deleteOlderThan(normalizedValue);
             } else {
-                deletedCount = await localHistory.keepOnly(normalizedValue);
+                await localHistory.keepOnly(normalizedValue);
             }
             setShowCleanModal(false);
             // 清空缓存，强制刷新页面数据和总数
@@ -726,28 +675,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             inflightPagesRef.current = {};
             await goToPage(1, true); // 强制重新加载第一页，刷新总数
             notify('清理完成');
-            void db.logClientEvent({
-                category: 'history',
-                action: 'history_cleanup',
-                resourceType: 'local_history',
-                message: cleanMode === 'days' ? `删除 ${normalizedValue} 天前的本地历史` : `本地历史只保留最近 ${normalizedValue} 张`,
-                metadata: {
-                    mode: cleanMode,
-                    days: cleanMode === 'days' ? normalizedValue : undefined,
-                    keepCount: cleanMode === 'count' ? normalizedValue : undefined,
-                    deletedCount,
-                },
-            }).catch(console.error);
         } catch (e: any) {
             notify('清理失败: ' + e.message, 'error');
-            void db.logClientEvent({
-                category: 'history',
-                action: 'history_cleanup',
-                status: 'error',
-                resourceType: 'local_history',
-                message: '本地历史清理失败',
-                metadata: { mode: cleanMode, days: cleanDays, keepCount: cleanCount, error: e.message },
-            }).catch(console.error);
         }
     };
 
@@ -781,19 +710,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             setLightbox(null);
             setShowSuccessModal(true);
             onRefreshInspiration?.();
-            void db.logClientEvent({
-                category: 'history',
-                action: 'history_publish_inspiration',
-                resourceType: 'local_history',
-                resourceId: lightbox.id,
-                message: `从历史加入灵感库：${publishTitle}`,
-                metadata: {
-                    title: publishTitle,
-                    promptLength: importData.prompt.length,
-                    negativeLength: importData.negativePrompt.length,
-                    seed: importData.params.seed ?? 'random',
-                },
-            }).catch(console.error);
         } catch (e: any) {
             notify('加入灵感库失败: ' + e.message, 'error');
             setIsPublishing(false);
@@ -807,20 +723,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         try {
             const importData = await getImportDataFromHistoryItem(lightbox);
             sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(importData));
-            void db.logClientEvent({
-                category: 'history',
-                action: 'history_import_playground',
-                resourceType: 'local_history',
-                resourceId: lightbox.id,
-                message: '从历史导入参数到实验室',
-                metadata: {
-                    promptLength: importData.prompt.length,
-                    negativeLength: importData.negativePrompt.length,
-                    width: importData.params.width,
-                    height: importData.params.height,
-                    seed: importData.params.seed ?? 'random',
-                },
-            }).catch(console.error);
             setLightbox(null);
             notify('参数已准备就绪，正在跳转到编辑器...');
             onNavigateToPlayground?.();

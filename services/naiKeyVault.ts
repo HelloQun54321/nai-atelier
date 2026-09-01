@@ -40,13 +40,6 @@ const broadcastActiveKey = (key: string) => {
   window.dispatchEvent(new CustomEvent<string>('nai-api-key-changed', { detail: key }));
 };
 
-/** 密钥脱敏展示：保留前缀与末 4 位。 */
-export const maskNaiKey = (key: string) => {
-  const trimmed = key.trim();
-  if (trimmed.length <= 8) return trimmed ? '****' : '';
-  return `${trimmed.slice(0, 6)}…${trimmed.slice(-4)}`;
-};
-
 export const naiKeyVault = {
   /** 读取保管箱；首次访问时把当前单密钥收编为默认条目。 */
   list(): NaiKeyEntry[] {
@@ -99,11 +92,6 @@ export const naiKeyVault = {
     if (remember) localStorage.setItem('nai_api_key', entry.key);
     else localStorage.removeItem('nai_api_key');
     broadcastActiveKey(entry.key);
-  },
-
-  /** 当前激活的密钥值（供设置界面高亮）。 */
-  activeKey(): string {
-    return readActiveKey();
   },
 
   /** 清空当前密钥（删除激活条目时使用）。 */

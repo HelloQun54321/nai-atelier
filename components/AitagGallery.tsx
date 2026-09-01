@@ -1036,23 +1036,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     try {
       const importData = parseImageImportData(image);
       sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(importData));
-      void db.logClientEvent({
-        category: 'aitag',
-        action: 'aitag_import_playground',
-        resourceType: 'aitag_image',
-        resourceId: `${image.work_id}/${image.file_name}`,
-        message: `从 aitag 导入参数到实验室：${getImageTitle(image)}`,
-        metadata: {
-          workId: image.work_id,
-          fileName: image.file_name,
-          type: selectedWork ? getAitagType(selectedWork) : image.image_type,
-          promptLength: importData.prompt.length,
-          negativeLength: importData.negativePrompt.length,
-          width: importData.params.width,
-          height: importData.params.height,
-          seed: importData.params.seed ?? 'random',
-        },
-      }).catch(console.error);
       notify('参数已导入实验室，正在跳转...');
       onNavigateToPlayground();
     } catch (e: any) {

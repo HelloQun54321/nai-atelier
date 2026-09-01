@@ -515,22 +515,8 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
 
   // --- NAI Proxy ---
   if (path === '/api/generate' && method === 'POST') {
-    const startedAt = Date.now();
     const body = await request.json();
     const clientAuth = request.headers.get('Authorization');
-    const generationMeta = {
-      model: body?.model,
-      action: body?.action,
-      width: body?.parameters?.width,
-      height: body?.parameters?.height,
-      steps: body?.parameters?.steps,
-      scale: body?.parameters?.scale,
-      sampler: body?.parameters?.sampler,
-      seed: body?.parameters?.seed ?? 'random',
-      promptLength: typeof body?.input === 'string' ? body.input.length : 0,
-      negativeLength: typeof body?.parameters?.negative_prompt === 'string' ? body.parameters.negative_prompt.length : 0,
-      characters: Array.isArray(body?.parameters?.v4_prompt?.caption?.char_captions) ? body.parameters.v4_prompt.caption.char_captions.length : 0,
-    };
     if (!clientAuth) {
       return error('Missing API Key', 401);
     }
@@ -837,13 +823,6 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
         }
     }
     await db.prepare('DELETE FROM artists WHERE id = ?').bind(id).run();
-    return json({ success: true });
-  }
-
-  // Dead code preserved verbatim: this path is intercepted earlier by the
-  // account-management 410 short-circuit in index.ts.
-  if (path === '/api/client-logs' && method === 'POST') {
-    const body = await request.json() as any;
     return json({ success: true });
   }
 

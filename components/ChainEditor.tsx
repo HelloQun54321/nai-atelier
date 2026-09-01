@@ -1,12 +1,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GenerationMode, ImageEditMetadata, ImageEditOperation, PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft, LabImageEditDraft, LabWorkspaceSession } from '../types';
-import { compilePrompt, getEditableGlobalPrompt, mergePromptFields } from '../services/promptUtils';
+import { compilePrompt, mergePromptFields } from '../services/promptUtils';
 import { generateImage, generateImageEdit, generateImageEditStream, generateImageStream } from '../services/naiService';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
-import { db } from '../services/dbService';
 import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData, extractRawMetadataFromJsonText } from '../services/metadataService';
 import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
@@ -167,7 +166,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // --- Testing State ---
     const [activeModules, setActiveModules] = useState<Record<string, boolean>>({});
     const [finalPrompt, setFinalPrompt] = useState('');
-    const globalPrompt = getEditableGlobalPrompt(basePrompt, subjectPrompt);
 
     // --- Generation State ---
     const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
@@ -236,17 +234,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // --- Initialization ---
     const prevChainIdRef = useRef<string | null>(null);
     const [presetSources, setPresetSources] = useState<Partial<Record<PresetSection, PresetSource>>>({});
-    const [modulePresetSources, setModulePresetSources] = useState<Record<string, PresetSource>>({});
     const [characterPresetSources, setCharacterPresetSources] = useState<Record<string, PresetSource>>({});
 
     const markPresetSectionModified = (section: PresetSection) => {
         setPresetSources(previous => previous[section]
             ? { ...previous, [section]: { ...previous[section]!, modified: true } }
-            : previous);
-    };
-    const markModuleSourceModified = (id: string) => {
-        setModulePresetSources(previous => previous[id]
-            ? { ...previous, [id]: { ...previous[id], modified: true } }
             : previous);
     };
     const markCharacterSourceModified = (id: string) => {
@@ -256,7 +248,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
     const clearPresetSources = () => {
         setPresetSources({});
-        setModulePresetSources({});
         setCharacterPresetSources({});
     };
 
@@ -728,44 +719,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (isOwner) setHasChanges(true);
     };
 
-    // --- Handlers: Prompt Editing ---
-    const handleModuleChange = (index: number, key: keyof PromptModule, value: any) => {
-        if (!canEdit) return;
-        const newModules = [...modules];
-        newModules[index] = { ...newModules[index], [key]: value };
-        setModules(newModules);
-        markModuleSourceModified(newModules[index].id);
-        markChange();
-    };
-
-    const addModule = () => {
-        if (!canEdit) return;
-        const newModule: PromptModule = {
-            id: createUuid(),
-            name: '新模块',
-            content: '',
-            isActive: true,
-            position: 'post'
-        };
-        setModules([...modules, newModule]);
-        setActiveModules(prev => ({ ...prev, [newModule.id]: true }));
-        markChange();
-    };
-
-    const removeModule = (index: number) => {
-        if (!canEdit) return;
-        const newModules = [...modules];
-        const removedId = newModules[index]?.id;
-        newModules.splice(index, 1);
-        setModules(newModules);
-        if (removedId) setModulePresetSources(previous => {
-            const next = { ...previous };
-            delete next[removedId];
-            return next;
-        });
-        markChange();
-    };
-
     // --- Character Handlers ---
     const addCharacter = () => {
         if (!canEdit) return;
@@ -876,13 +829,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
             if (options.appendModules) {
                 setModules(prev => [...prev, ...newModules]); // Append
-                setModulePresetSources(previous => ({
-                    ...previous,
-                    ...Object.fromEntries(newModules.map(module => [module.id, source]))
-                }));
             } else {
                 setModules(newModules); // Replace
-                setModulePresetSources(Object.fromEntries(newModules.map(module => [module.id, source])));
             }
 
             // Update active state
@@ -982,25 +930,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 updateEditDraft(activeEditOperation, buildImageEditMetadataPatch(parsed.prompt, parsed.negativePrompt, parsed.params));
                 const modeLabel = activeEditOperation === 'image-to-image' ? '图生图' : activeEditOperation === 'inpaint' ? '局部重绘' : '扩图';
                 notify(`已将完整提示词、角色与生成参数导入当前${modeLabel}页面。`);
-                void db.logClientEvent({
-                    category: 'client',
-                    action: 'metadata_import',
-                    resourceType: chain.id === 'playground' ? 'playground' : 'chain',
-                    resourceId: chain.id,
-                    message: `从${sourceLabel}导入元数据到${modeLabel}`,
-                    metadata: {
-                        source: sourceLabel,
-                        splitMode: 'edit-full',
-                        generationMode: activeEditOperation,
-                        chainName,
-                        promptLength: parsed.prompt.length,
-                        negativeLength: parsed.negativePrompt.length,
-                        model: parsed.params.model,
-                        width: parsed.params.width,
-                        height: parsed.params.height,
-                        seed: parsed.params.seed ?? 'random',
-                    },
-                }).catch(console.error);
                 return;
             }
             setBasePrompt(parsed.prompt);
@@ -1010,35 +939,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             clearPresetSources();
             markChange();
             notify('已将完整提示词导入全局提示词，并恢复角色与生成参数。');
-            void db.logClientEvent({
-                category: 'client',
-                action: 'metadata_import',
-                resourceType: chain.id === 'playground' ? 'playground' : 'chain',
-                resourceId: chain.id,
-                message: `从${sourceLabel}导入元数据`,
-                metadata: {
-                    source: sourceLabel,
-                    splitMode: 'global',
-                    chainName,
-                    promptLength: parsed.prompt.length,
-                    negativeLength: parsed.negativePrompt.length,
-                    model: parsed.params.model,
-                    width: parsed.params.width,
-                    height: parsed.params.height,
-                    seed: parsed.params.seed ?? 'random',
-                },
-            }).catch(console.error);
         } catch (e: any) {
             notify('解析失败: ' + e.message, 'error');
-            void db.logClientEvent({
-                category: 'client',
-                action: 'metadata_import',
-                status: 'error',
-                resourceType: chain.id === 'playground' ? 'playground' : 'chain',
-                resourceId: chain.id,
-                message: `从${sourceLabel}导入元数据失败`,
-                metadata: { source: sourceLabel, error: e.message },
-            }).catch(console.error);
         }
     };
 
@@ -1396,7 +1298,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const toggleModuleActive = (id: string) => {
-        markModuleSourceModified(id);
         setActiveModules(prev => {
             const newState = { ...prev, [id]: !prev[id] };
 
@@ -1516,36 +1417,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 // visible and report only the persistence failure.
                 setPreviewMode('unsaved');
                 notify(`图片已生成，但保存到本地历史失败：${historyError?.message || '未知错误'}`, 'error');
-                void db.logClientEvent({
-                    category: 'generation',
-                    action: 'save_generation_history',
-                    status: 'error',
-                    resourceType: chain.id === 'playground' ? 'playground' : 'chain',
-                    resourceId: chain.id,
-                    message: '图片生成成功，但本地历史保存失败',
-                    metadata: { error: historyError?.message || String(historyError) },
-                }).catch(console.error);
             }
-            void db.logClientEvent({
-                category: 'generation',
-                action: 'generate_image',
-                resourceType: chain.id === 'playground' ? 'playground' : 'chain',
-                resourceId: chain.id,
-                message: chain.id === 'playground' ? '实验室生图成功' : `从串生图成功：${chainName}`,
-                metadata: {
-                    chainName,
-                    width: activeParams.width,
-                    height: activeParams.height,
-                    steps: activeParams.steps,
-                    scale: activeParams.scale,
-                    sampler: activeParams.sampler,
-                    requestedSeed: activeParams.seed ?? 'random',
-                    seed: result.seed,
-                    promptLength: generationPrompt.length,
-                    negativeLength: generationNegativePrompt.length,
-                    characters: activeParams.characters?.length || 0,
-                },
-            }).catch(console.error);
             return true;
         } catch (e: any) {
             if (streamedPreviewShown) {
@@ -1554,26 +1426,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             }
             setErrorMsg(e.message);
             notify(e.message, 'error');
-            void db.logClientEvent({
-                category: 'generation',
-                action: 'generate_image',
-                status: 'error',
-                resourceType: chain.id === 'playground' ? 'playground' : 'chain',
-                resourceId: chain.id,
-                message: chain.id === 'playground' ? '实验室生图失败' : `从串生图失败：${chainName}`,
-                metadata: {
-                    chainName,
-                    error: e.message,
-                    width: generationParams.width,
-                    height: generationParams.height,
-                    steps: generationParams.steps,
-                    scale: generationParams.scale,
-                    sampler: generationParams.sampler,
-                    seed: generationParams.seed ?? 'random',
-                    promptLength: generationPrompt.length,
-                    negativeLength: generationNegativePrompt.length,
-                },
-            }).catch(console.error);
             return false;
         } finally {
             setGenerationProgress(null);
@@ -1838,14 +1690,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 setHasChanges(false);
                 setIsEditingInfo(false);
                 notify(`${isCharacterMode ? '角色串' : '风格串'}已保存，封面已更新`);
-                void db.logClientEvent({
-                    category: 'chain',
-                    action: 'chain_cover_update',
-                    resourceType: chain.type === 'character' ? 'character_chain' : 'style_chain',
-                    resourceId: chain.id,
-                    message: `用当前生成图更新封面并保存：${chainName}`,
-                    metadata: { chainName, coverUrl: uploadRes.url, fileSize: uploadRes.size },
-                }).catch(console.error);
             } catch (e: unknown) {
                 const errMessage = e instanceof Error ? e.message : String(e);
                 notify('设置封面失败: ' + errMessage, 'error');
@@ -1886,14 +1730,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 setHasChanges(false);
                 setIsEditingInfo(false);
                 notify(`${isCharacterMode ? '角色串' : '风格串'}已保存，封面已更新`);
-                void db.logClientEvent({
-                    category: 'chain',
-                    action: 'chain_cover_upload',
-                    resourceType: chain.type === 'character' ? 'character_chain' : 'style_chain',
-                    resourceId: chain.id,
-                    message: `上传新封面并保存：${chainName}`,
-                    metadata: { chainName, fileName: file.name, fileSize: file.size, coverUrl: res.url },
-                }).catch(console.error);
             } catch (err: unknown) {
                 const errMessage = err instanceof Error ? err.message : String(err);
                 notify('上传失败: ' + errMessage, 'error');

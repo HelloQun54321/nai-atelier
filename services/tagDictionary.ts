@@ -191,11 +191,6 @@ export const getPopularArtistDictionary = async (limit = 500): Promise<ArtistDic
   return (manifest.popularArtists || []).slice(0, limit).map(mapArtistEntry);
 };
 
-export const getArtistDictionaryCount = async () => {
-  const manifest = await loadManifest();
-  return manifest.categoryCounts?.artist || 0;
-};
-
 export interface ArtistDictionaryPage {
   entries: ArtistDictionaryEntry[];
   page: number;

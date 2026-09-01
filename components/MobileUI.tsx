@@ -15,28 +15,6 @@ export const MobileIconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonEle
   </button>
 );
 
-export const MobilePageHeader: React.FC<{
-  title: string;
-  subtitle?: React.ReactNode;
-  actions?: React.ReactNode;
-  className?: string;
-}> = ({ title, subtitle, actions, className = '' }) => (
-  <div className={`mobile-page-header md:hidden ${className}`}>
-    <div className="min-w-0 flex-1">
-      <h1 className="truncate text-lg font-bold text-gray-900 dark:text-white">{title}</h1>
-      {subtitle && <div className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">{subtitle}</div>}
-    </div>
-    {actions && <div className="flex flex-none items-center gap-1.5">{actions}</div>}
-  </div>
-);
-
-export const MobileToolbar: React.FC<{
-  children: React.ReactNode;
-  className?: string;
-}> = ({ children, className = '' }) => (
-  <div className={`mobile-toolbar md:hidden ${className}`}>{children}</div>
-);
-
 export const useMobileHistoryLayer = (open: boolean, onClose: () => void, prefix: string) => {
   const reactId = useId();
   const markerRef = useRef(`${prefix}-${reactId}`);

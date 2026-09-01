@@ -309,11 +309,6 @@ export interface ImageEditCanvasResult {
   height: number;
 }
 
-export const clampImageEditValue = (value: number, fallback: number, minimum: number, maximum: number) => {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.max(minimum, Math.min(maximum, numeric)) : fallback;
-};
-
 export const validateImageEditDimensions = (width: number, height: number) => {
   if (!Number.isInteger(width) || !Number.isInteger(height)) return '图片尺寸必须是整数';
   if (width < IMAGE_EDIT_MIN_DIMENSION || height < IMAGE_EDIT_MIN_DIMENSION) return '图片尺寸不能小于 64 像素';

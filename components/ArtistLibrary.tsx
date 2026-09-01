@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Artist, User } from '../types';
+import { Artist } from '../types';
 import { generateImage } from '../services/naiService'; // Import generation service
 import { api } from '../services/api'; // Import api for updating
 import { db } from '../services/dbService'; // Import DB to fetch config
@@ -13,7 +13,7 @@ import { createUuid } from '../services/id';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
-import { Bot, ChevronDown, ClipboardList, Clock3, Dice5, Download, Heart, LoaderCircle, Menu, RefreshCw, Settings2 } from 'lucide-react';
+import { ChevronDown, ClipboardList, Dice5, Download, Heart, LoaderCircle, Menu, RefreshCw } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
@@ -35,7 +35,6 @@ interface ArtistLibraryProps {
     onRefresh: () => Promise<void>;
     notify: (msg: string, type?: 'success' | 'error') => void;
     onNavigateToPlayground?: () => void;
-    currentUser?: User | null; // Add current user prop for permission check
 }
 
 const compressImage = async (source: string, quality = 0.8): Promise<string> => {
@@ -124,7 +123,7 @@ interface LogEntry {
 
 type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
 
-export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRefresh, notify, onNavigateToPlayground, currentUser }) => {
+export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRefresh, notify, onNavigateToPlayground }) => {
     const imageDisplay = useMobileImageDisplayPreferences();
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
     const [artistRatios, setArtistRatios] = useState<Record<string, number>>({});
@@ -287,7 +286,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
     const [showMobileTools, setShowMobileTools] = useState(false);
     const [showGachaTools, setShowGachaTools] = useState(false);
-    const [showMoreTools, setShowMoreTools] = useState(false);
 
     useEffect(() => {
         const media = window.matchMedia('(max-width: 767px)');
@@ -326,12 +324,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     const [taskQueue, setTaskQueue] = useState<GenTask[]>([]);
     const [failedTasks, setFailedTasks] = useState<GenTask[]>([]); // New: Failed Queue
     const [isProcessing, setIsProcessing] = useState(false);
-    const [isPaused, setIsPaused] = useState(false);
     // 队列生命周期：卸载后不再启动新任务（进行中的生成允许完成并落库，避免浪费已扣费额度）；
-    // 暂停需要用 ref 才能在节流等待结束时被旧闭包感知。
     const queueAliveRef = useRef(true);
-    const isPausedRef = useRef(false);
-    useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
     useEffect(() => () => { queueAliveRef.current = false; }, []);
     const [currentTask, setCurrentTask] = useState<GenTask | null>(null);
 
@@ -920,7 +914,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     useEffect(() => {
         const processNext = async () => {
             // Check Pause state
-            if (isProcessing || taskQueue.length === 0 || isPaused) return;
+            if (isProcessing || taskQueue.length === 0) return;
 
             // Delay to prevent 429 (Throttle)
             setIsProcessing(true);
@@ -929,7 +923,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
             await new Promise(res => setTimeout(res, delay));
 
             // 等待期间组件已卸载或队列被暂停：不再启动新的生成
-            if (!queueAliveRef.current || isPausedRef.current) {
+            if (!queueAliveRef.current) {
                 setIsProcessing(false);
                 return;
             }
@@ -986,23 +980,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                 // Refresh UI
                 await onRefresh();
                 addLog(`Generated & Compressed: ${artist.name} (Slot ${task.slot + 1})`, 'success');
-                void db.logClientEvent({
-                    category: 'generation',
-                    action: 'artist_benchmark_generate',
-                    resourceType: 'artist',
-                    resourceId: artist.id,
-                    message: `生成画师基准图：${artist.name} / ${slot.label || `Slot ${task.slot + 1}`}`,
-                    metadata: {
-                        artistName: artist.name,
-                        slot: task.slot,
-                        slotLabel: slot.label,
-                        seed: result.seed ?? seed ?? 'random',
-                        steps: config.steps,
-                        scale: config.scale,
-                        promptLength: prompt.length,
-                        negativeLength: negative.length,
-                    },
-                }).catch(console.error);
 
             } catch (err: any) {
                 const errMsg = err.message || JSON.stringify(err);
@@ -1019,21 +996,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     : `Failed: ${artistName} - ${errMsg}`;
 
                 addLog(logMsg, 'error');
-                void db.logClientEvent({
-                    category: 'generation',
-                    action: 'artist_benchmark_generate',
-                    status: 'error',
-                    resourceType: 'artist',
-                    resourceId: task.artistId,
-                    message: logMsg,
-                    metadata: {
-                        artistId: task.artistId,
-                        artistName,
-                        slot: task.slot,
-                        error: errMsg,
-                        isRateLimited: is429,
-                    },
-                }).catch(console.error);
 
                 // Move to Failed Queue instead of discarding
                 setFailedTasks(prev => [...prev, task]);
@@ -1051,7 +1013,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         };
 
         processNext();
-    }, [taskQueue, isProcessing, isPaused, apiKey, config, artistsData, availableArtists, onRefresh, notify]);
+    }, [taskQueue, isProcessing, apiKey, config, artistsData, availableArtists, onRefresh, notify]);
 
     // Add tasks to queue
     const queueGeneration = (artist: Artist, slots: number[], e: React.MouseEvent) => {
@@ -1079,63 +1041,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         setFailedTasks([]);
         addLog(`Retrying ${failedTasks.length} failed tasks`, 'info');
         notify(`已重新加入 ${failedTasks.length} 个失败任务`);
-    };
-
-    const queueMissingGenerations = () => {
-        if (!apiKey) {
-            notify('请先在设置中配置 API Key', 'error');
-            setShowConfig(true);
-            return;
-        }
-
-        const newTasks: GenTask[] = [];
-        let existsCount = 0;
-
-        // Determine target slots to check
-        const targetSlots = [activeSlot];
-
-        // Scan currently filtered list
-        for (const artist of filteredArtists) {
-            for (const slotIndex of targetSlots) {
-                // Check if image exists for slotIndex
-                let hasImage = false;
-                if (slotIndex === 0) {
-                    // Slot 0: Check benchmark[0] OR legacy previewUrl
-                    if (artist.previewUrl) hasImage = true;
-                    else if (artist.benchmarks && artist.benchmarks[0]) hasImage = true;
-                } else {
-                    // Other slots: Check benchmark[slotIndex]
-                    if (artist.benchmarks && artist.benchmarks[slotIndex]) hasImage = true;
-                }
-
-                if (!hasImage) {
-                    // Check if already queued
-                    const isQueued = taskQueue.some(t => t.artistId === artist.id && t.slot === slotIndex) ||
-                        failedTasks.some(t => t.artistId === artist.id && t.slot === slotIndex) ||
-                        (currentTask?.artistId === artist.id && currentTask?.slot === slotIndex);
-
-                    if (!isQueued) {
-                        newTasks.push({
-                            uniqueId: createUuid(),
-                            artistId: artist.id,
-                            artistName: artist.name,
-                            slot: slotIndex
-                        });
-                    } else {
-                        existsCount++;
-                    }
-                }
-            }
-        }
-
-        if (newTasks.length === 0) {
-            if (existsCount > 0) notify('缺失项已在队列中', 'error');
-            else notify('当前列表无缺失项', 'success');
-            return;
-        }
-
-        setTaskQueue(prev => [...prev, ...newTasks]);
-        notify(`已添加 ${newTasks.length} 个补全任务`);
     };
 
     // --- Lightbox Navigation Logic ---

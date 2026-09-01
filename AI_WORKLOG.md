@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-09-02
+- **Codex (GPT-5)**：执行全仓 Ponytail 过度工程审计，删除个人模式死日志调用、未使用状态与导出、空 Worker Pixiv 路由及无效元数据构造，保留本地数据与兼容边界（refactor: remove personal-mode dead code）。
+
 ## 2026-09-01
 - **Antigravity (Gemini 3.7 Flash)**：修复全屏大画板切换时 Canvas 节点跨树重挂载导致底层位图被清空的缺陷，新增鼠标右键按住拖动平移漫游画板，并将扩图画幅模拟台直接整合进底图面板（fix: retain canvas bitmap on fullscreen toggle, add right-click pan, and unify outpaint stage into base image panel）。
 - **Antigravity (Gemini 3.7 Flash)**：扩图新增自动双向同步与动态填充机制，在选择画幅比例或拖拽原图时即时自动计算并填充上/下/左/右各方向所需的扩展像素数值（fix: auto-fill directional outpaint expansions upon ratio and position changes）。

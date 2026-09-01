@@ -221,11 +221,6 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
-  getModels: async (provider: string): Promise<PromptAgentModel[]> => {
-    const response = await fetch(`/api/prompt-agent/models?provider=${encodeURIComponent(provider)}`, { cache: 'no-store' });
-    if (!response.ok) return readError(response) as never;
-    return (await response.json()).items || [];
-  },
   listSessions: async (): Promise<PromptAgentSession[]> => {
     const response = await fetch('/api/prompt-agent/sessions', { cache: 'no-store' });
     if (!response.ok) return readError(response) as never;
