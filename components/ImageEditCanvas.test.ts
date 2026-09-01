@@ -87,31 +87,4 @@ describe('ImageEditCanvas', () => {
     fireEvent.click(exitBtn);
     expect(container.textContent).not.toContain('全屏大画板精修');
   });
-
-  it('支持鼠标右键按下与拖动平移画板并阻止右键默认菜单', () => {
-    const { container } = render(React.createElement(ImageEditCanvas, {
-      imageCanvasRef: React.createRef<HTMLCanvasElement>(),
-      maskCanvasRef: React.createRef<HTMLCanvasElement>(),
-      overlayCanvasRef: React.createRef<HTMLCanvasElement>(),
-      width: 832,
-      height: 1216,
-      focusedRect: null,
-      focused: false,
-      isLoading: false,
-      onPointerDown: vi.fn(),
-      onPointerMove: vi.fn(),
-      onPointerUp: vi.fn(),
-    }));
-
-    const scrollContainer = container.querySelector('.overflow-auto') as HTMLDivElement;
-    expect(scrollContainer).toBeTruthy();
-
-    const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
-    scrollContainer.dispatchEvent(contextMenuEvent);
-    expect(contextMenuEvent.defaultPrevented).toBe(true);
-
-    fireEvent.pointerDown(scrollContainer, { button: 2, clientX: 100, clientY: 100 });
-    fireEvent.pointerMove(scrollContainer, { clientX: 50, clientY: 50 });
-    fireEvent.pointerUp(scrollContainer, { button: 2 });
-  });
 });

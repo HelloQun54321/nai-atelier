@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-02
+- **Codex (GPT-5)**：提交画板测试清理，移除已不再适用的右键拖动交互测试并保留其余回归覆盖（test: remove obsolete canvas pan interaction test）。
 - **Codex (GPT-5)**：执行全仓 Ponytail 过度工程审计，删除个人模式死日志调用、未使用状态与导出、空 Worker Pixiv 路由及无效元数据构造，保留本地数据与兼容边界（refactor: remove personal-mode dead code）。
 
 ## 2026-09-01
