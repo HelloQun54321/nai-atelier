@@ -4,6 +4,7 @@ import { api } from './api';
 import { getNaiModelInfo } from './naiModels';
 import { DEFAULT_NAI_RUNTIME, NaiRuntimeConfig } from './naiRuntime';
 import { imageEditRequestDimensions } from './imageEdit';
+import type { NovelaiSubscriptionInfo, NovelaiUsageState } from './naiUsage';
 
 export const DEFAULT_ANLAS_BUDGET = 1666;
 export const ANLAS_BUDGET_CHANGED_EVENT = 'nai-anlas-budget-changed';
@@ -39,6 +40,29 @@ export const hashNaiApiKey = async (apiKey: string) => {
 // 成本估算使用的官方常量由网关自动同步（services/naiRuntime.ts），默认值兜底。
 let estimatorRuntime: NaiRuntimeConfig = DEFAULT_NAI_RUNTIME;
 export const applyEstimatorRuntime = (config: NaiRuntimeConfig) => { estimatorRuntime = config; };
+
+/**
+ * 该模型是否受 Opus 免费生成额度约束（V5 等高于 V4.5 的模型）。
+ * 与 estimateV45GenerationCost 内部的 allowanceBlocksFree 判定同源：注册表
+ * 标志 + 网关运行时同步的受限模型清单都要查，保证未知新模型的判断与估算一致。
+ */
+export const isOpusUsageLimitedModel = (model?: string): boolean =>
+  getNaiModelInfo(model).opusUsageLimit || estimatorRuntime.usageLimitedModels.includes(model ?? '');
+
+/**
+ * 生成前判定“Opus 额度是否已透支”：受限模型强制刷新真实额度后再判定，
+ * 非受限模型直接复用本地快照。与 ChainEditor 私有实现同源，供角色库/画师库
+ * 等批量生成入口共享，避免各处复制同一段刷新逻辑。
+ */
+export const usageForCostEstimate = async (
+  usage: NovelaiUsageState | undefined,
+  refreshIfStale: () => Promise<NovelaiSubscriptionInfo | null>,
+  model?: string,
+): Promise<boolean> => {
+  if (!isOpusUsageLimitedModel(model)) return usage?.isNegative === true;
+  const fresh = await refreshIfStale();
+  return fresh?.usage?.isNegative === true;
+};
 
 /** 生成按钮的费用提示：V5 等受限模型的免费档也会消耗 Opus 额度。 */
 export const formatGenerationCostLabel = (cost: number, model?: string): string => {

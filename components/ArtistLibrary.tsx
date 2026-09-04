@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Artist } from '../types';
+import { Artist, NAIParams } from '../types';
 import { generateImage } from '../services/naiService'; // Import generation service
 import { api } from '../services/api'; // Import api for updating
 import { db } from '../services/dbService'; // Import DB to fetch config
@@ -9,6 +9,10 @@ import { ArtistLibraryConfig } from './ArtistLibraryConfig';
 import { ArtistLibraryCart } from './ArtistLibraryCart';
 import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryEntriesAt, getArtistDictionaryPage, searchArtistDictionary } from '../services/tagDictionary';
 import { OriginalImage, SmartImage } from './SmartImage';
+import { useConfirmDialog } from './ConfirmDialog';
+import { useNovelaiUsage } from '../services/naiUsage';
+import { applyEstimatorRuntime, estimateV45GenerationCost, usageForCostEstimate, useAnlasBudget } from '../services/anlasBudget';
+import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import { createUuid } from '../services/id';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
@@ -313,6 +317,27 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     // Benchmark Settings
     const [showConfig, setShowConfig] = useState(false);
     const [config, setConfig] = useState<BenchmarkConfig>(DEFAULT_BENCHMARK_CONFIG);
+
+    const confirmAction = useConfirmDialog();
+    // Opus 限额透支后，受限模型（V5）的免费档不再免费，费用估算需同步真实额度。
+    const { usage: novelaiUsage, refreshIfStale: refreshUsageIfStale } = useNovelaiUsage();
+    const anlasBudget = useAnlasBudget();
+    // 成本估算常量（免费门槛、公式系数、受限模型清单）由网关自动同步。
+    const [naiRuntimeConfig, setNaiRuntimeConfig] = useState<NaiRuntimeConfig | null>(null);
+    useEffect(() => {
+        let active = true;
+        void getNaiRuntimeConfig().then(config => {
+            if (!active) return;
+            applyEstimatorRuntime(config);
+            setNaiRuntimeConfig(config);
+        });
+        return () => { active = false; };
+    }, []);
+    // 同步失效时“免费/扣费”判断可能基于过期规则，批量生成前必须向用户示警。
+    const runtimeSyncUnhealthy = isNaiRuntimeSyncUnhealthy(naiRuntimeConfig);
+    const runtimeSyncWarning = naiRuntimeConfig
+        ? `${describeNaiRuntimeSyncProblem(naiRuntimeConfig)}，费用估算与免费档判断可能过期，继续生成可能意外消耗共享 Anlas`
+        : '';
 
     const [apiKey, setApiKey] = useState('');
     
@@ -1016,13 +1041,38 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     }, [taskQueue, isProcessing, apiKey, config, artistsData, availableArtists, onRefresh, notify]);
 
     // Add tasks to queue
-    const queueGeneration = (artist: Artist, slots: number[], e: React.MouseEvent) => {
+    const queueGeneration = async (artist: Artist, slots: number[], e: React.MouseEvent) => {
         e.stopPropagation();
         if (!apiKey) {
             notify('请先在设置中配置 API Key', 'error');
             setShowConfig(true); // Open config modal
             return;
         }
+
+        // 与队列处理器 processNext 完全一致的请求参数（无 model → 默认 V4.5 Full），
+        // 入队前按任务数统一估算并确认费用，避免批量生成逐张静默扣费。
+        const taskCount = slots.length;
+        const estimateParams: NAIParams = {
+            width: 832, height: 1216, steps: config.steps, scale: config.scale, sampler: 'k_euler_ancestral',
+            seed: config.seed, qualityToggle: true, ucPreset: 0
+        };
+        // 受限额模型（V5）在免费档生成前强制刷新真实 Opus 额度，与 ChainEditor 同源。
+        const perTaskCost = estimateV45GenerationCost(estimateParams, true, await usageForCostEstimate(novelaiUsage, refreshUsageIfStale, estimateParams.model));
+        const totalCost = perTaskCost * taskCount;
+
+        if (totalCost > 0 && anlasBudget.remaining <= 0) {
+            // 本地 Anlas 预算已用尽但仍需扣费：红色警告，由用户确认后才入队。
+            if (!await confirmAction({
+                title: 'Anlas 预算已用尽',
+                message: `本地预算已扣到 0，本次 ${taskCount} 个任务预计共消耗 ${totalCost} Anlas（共享账号额度），继续将透支你手动设定的预算线。\n\n若预算数字过期，可先到全局设置校准。`,
+                confirmLabel: `仍要消耗 ${totalCost} 点生成`,
+                tone: 'danger',
+            })) return;
+        } else if (totalCost > 0 && !await confirmAction({
+            title: '确认批量生成',
+            message: `${taskCount} 个任务 × 每张 ${perTaskCost} 点 ≈ 共 ${totalCost} 点 Anlas${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
+            confirmLabel: `消耗 ${totalCost} 点并生成 ${taskCount} 张`,
+        })) return;
 
         const newTasks = slots.map(s => ({
             uniqueId: createUuid(),

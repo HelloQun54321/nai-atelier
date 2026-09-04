@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PromptChain } from '../types';
+import { NAIParams, PromptChain } from '../types';
 import { generateImage } from '../services/naiService';
 import { api } from '../services/api';
 import { db } from '../services/dbService';
 import { compilePrompt } from '../services/promptUtils';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
+import { useNovelaiUsage } from '../services/naiUsage';
+import { applyEstimatorRuntime, estimateV45GenerationCost, formatGenerationCostLabel, usageForCostEstimate, useAnlasBudget } from '../services/anlasBudget';
+import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import {
   CharacterDictionaryEntry,
   CharacterDictionarySort,
@@ -32,7 +35,7 @@ import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 const CATALOG_MARKER = '__character_catalog__';
 const getDanbooruPostsUrl = (tagName: string) =>
   `https://danbooru.donmai.us/posts?tags=${encodeURIComponent(tagName.trim().replace(/\s+/g, '_'))}`;
-const DEFAULT_PARAMS = {
+const DEFAULT_PARAMS: NAIParams = {
   width: 832,
   height: 1216,
   steps: 28,
@@ -174,6 +177,25 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     };
 
   const confirmAction = useConfirmDialog();
+  // Opus 限额透支后，受限模型（V5）的免费档不再免费，费用估算需同步真实额度。
+  const { usage: novelaiUsage, refreshIfStale: refreshUsageIfStale } = useNovelaiUsage();
+  const anlasBudget = useAnlasBudget();
+  // 成本估算常量（免费门槛、公式系数、受限模型清单）由网关自动同步。
+  const [naiRuntimeConfig, setNaiRuntimeConfig] = useState<NaiRuntimeConfig | null>(null);
+  useEffect(() => {
+    let active = true;
+    void getNaiRuntimeConfig().then(config => {
+      if (!active) return;
+      applyEstimatorRuntime(config);
+      setNaiRuntimeConfig(config);
+    });
+    return () => { active = false; };
+  }, []);
+  // 同步失效时“免费/扣费”判断可能基于过期规则，生成前必须向用户示警。
+  const runtimeSyncUnhealthy = isNaiRuntimeSyncUnhealthy(naiRuntimeConfig);
+  const runtimeSyncWarning = naiRuntimeConfig
+    ? `${describeNaiRuntimeSyncProblem(naiRuntimeConfig)}，费用估算与免费档判断可能过期，继续生成可能意外消耗共享 Anlas`
+    : '';
   const [tab, setTab] = useState<CharacterTab>('all');
   const [showFavOnly, setShowFavOnly] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -618,14 +640,40 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       return;
     }
     if (generatingKey) return;
+    // 先把提示词与参数算出来（与请求时一致），用于费用估算与确认弹窗；
+    // 用户确认前不置 generatingKey，避免弹窗期间按钮误显“生成中…”。
+    const chain = card.chain;
+    const prompt = card.kind === 'catalog'
+      ? `${card.tagName}, solo, character focus, full body, simple background`
+      : compilePrompt(chain!, chain?.variableValues?.subject || '');
+    const negative = chain?.negativePrompt || 'lowres, bad anatomy, bad hands, text, watermark, multiple views';
+    const params = chain?.params || DEFAULT_PARAMS;
+    // 受限额模型（V5）在免费档生成前强制刷新真实 Opus 额度，与 ChainEditor 同源。
+    const cost = estimateV45GenerationCost(params, true, await usageForCostEstimate(novelaiUsage, refreshUsageIfStale, params.model));
+    const costLabel = formatGenerationCostLabel(cost, params.model);
+    // 同步失效时按“免费”估算原本会静默直发，这里必须先警示确认。
+    if (runtimeSyncUnhealthy && cost === 0) {
+      if (!await confirmAction({
+        title: '常量同步异常',
+        message: `${runtimeSyncWarning}。\n\n仍要按当前估算（${costLabel}）继续生成预览吗？`,
+        confirmLabel: '仍要生成',
+        tone: 'danger',
+      })) return;
+    } else if (cost > 0 && anlasBudget.remaining <= 0) {
+      // 本地 Anlas 预算已用尽但仍需扣费：红色警告，由用户确认后才继续。
+      if (!await confirmAction({
+        title: 'Anlas 预算已用尽',
+        message: `本地预算已扣到 0，本次生成仍需消耗 ${cost} Anlas（共享账号额度），继续将透支你手动设定的预算线。\n\n若预算数字过期，可先到全局设置校准。`,
+        confirmLabel: `仍要消耗 ${cost} 点生成`,
+        tone: 'danger',
+      })) return;
+    } else if (cost > 0 && !await confirmAction({
+      title: '确认生成预览',
+      message: `当前参数预计消耗 ${cost} Anlas${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
+      confirmLabel: `消耗 ${cost} 点并生成`,
+    })) return;
     setGeneratingKey(card.key);
     try {
-      const chain = card.chain;
-      const prompt = card.kind === 'catalog'
-        ? `${card.tagName}, solo, character focus, full body, simple background`
-        : compilePrompt(chain!, chain?.variableValues?.subject || '');
-      const negative = chain?.negativePrompt || 'lowres, bad anatomy, bad hands, text, watermark, multiple views';
-      const params = chain?.params || DEFAULT_PARAMS;
       const result = await generateImage(apiKey, prompt, negative, params);
       // generateImage 返回的是会话级 blob: URL，必须先转存为持久资产再写库，
       // 否则重启后封面失效（数据库只保存 /api/assets/covers/... 地址）。

@@ -2,7 +2,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { afterEach, beforeEach, vi } from 'vitest';
-import { ANLAS_BUDGET_CHANGED_EVENT, estimateImageEditCost, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, useAnlasBudget } from './anlasBudget';
+import { ANLAS_BUDGET_CHANGED_EVENT, estimateImageEditCost, estimateV45GenerationCost, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, isOpusUsageLimitedModel, usageForCostEstimate, useAnlasBudget } from './anlasBudget';
 
 const responseFor = (payload: unknown) => ({
   ok: true,
@@ -117,5 +117,43 @@ describe('image edit cost estimation', () => {
     const atZero = estimateImageEditCost(params, 'image-to-image', 0, false, 4, false);
     expect(atZero).toBeLessThan(atFull);
     expect(atZero).toBeLessThanOrEqual(2);
+  });
+});
+
+describe('Opus 额度判定（角色库/画师库批量生成预检共享逻辑）', () => {
+  it('isOpusUsageLimitedModel 只标记 V5 等受限模型', () => {
+    expect(isOpusUsageLimitedModel('nai-diffusion-5-full')).toBe(true);
+    expect(isOpusUsageLimitedModel('nai-diffusion-5-curated')).toBe(true);
+    expect(isOpusUsageLimitedModel('nai-diffusion-4-5-full')).toBe(false);
+    expect(isOpusUsageLimitedModel(undefined)).toBe(false);
+    expect(isOpusUsageLimitedModel('nai-diffusion-4-full')).toBe(false);
+  });
+
+  it('usageForCostEstimate 对非受限模型直接用本地快照、不触发刷新', async () => {
+    const refreshIfStale = vi.fn(async () => ({ tier: 4, active: true, usage: { percent: 0, isNegative: true, timeUntilNextPercent: 30 } }));
+    expect(await usageForCostEstimate({ isNegative: false, percent: 50, timeUntilNextPercent: 100 }, refreshIfStale, 'nai-diffusion-4-5-full')).toBe(false);
+    expect(await usageForCostEstimate({ isNegative: true, percent: 0, timeUntilNextPercent: 30 }, refreshIfStale, 'nai-diffusion-4-5-full')).toBe(true);
+    expect(refreshIfStale).not.toHaveBeenCalled();
+  });
+
+  it('usageForCostEstimate 对受限模型强制刷新真实额度后再判定', async () => {
+    const refreshIfStale = vi.fn(async () => ({ tier: 4, active: true, usage: { percent: 0, isNegative: true, timeUntilNextPercent: 30 } }));
+    // 本地快照非透支，但受限模型仍必须刷新：刷新结果透支 → true
+    expect(await usageForCostEstimate({ isNegative: false, percent: 50, timeUntilNextPercent: 100 }, refreshIfStale, 'nai-diffusion-5-full')).toBe(true);
+    expect(refreshIfStale).toHaveBeenCalledTimes(1);
+  });
+
+  it('usageForCostEstimate 刷新返回 null（请求失败）时按未透支处理', async () => {
+    const refreshIfStale = vi.fn(async () => null);
+    expect(await usageForCostEstimate(undefined, refreshIfStale, 'nai-diffusion-5-full')).toBe(false);
+    expect(refreshIfStale).toHaveBeenCalledTimes(1);
+  });
+
+  it('免费档受限模型成本在透支前后变化，与 usageForCostEstimate 判定联动', () => {
+    const freeParams = { model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' };
+    // 未透支：免费档免费
+    expect(estimateV45GenerationCost(freeParams, true, false)).toBe(0);
+    // 透支：免费档也要扣费
+    expect(estimateV45GenerationCost(freeParams, true, true)).toBeGreaterThan(0);
   });
 });
