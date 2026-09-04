@@ -334,14 +334,14 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}
           >
             <SmartImage src={post.sampleUrl} alt={title.replaceAll('_', ' ')} />
-            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-[10px] text-white">
+            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-micro text-white">
               <span>♥ {formatCount(post.favCount)}</span>
               <span>▲ {formatCount(post.score)}</span>
             </div>
           </div>
           <div className="p-2.5">
             <p data-safe-mode-title="true" className="truncate text-xs font-bold">{title.replaceAll('_', ' ')}</p>
-            <p className="mt-1 truncate text-[10px] text-gray-500">{post.tags.artist.slice(0, 2).join(', ').replaceAll('_', ' ') || `Danbooru #${post.id}`}</p>
+            <p className="mt-1 truncate text-micro text-gray-500">{post.tags.artist.slice(0, 2).join(', ').replaceAll('_', ' ') || `Danbooru #${post.id}`}</p>
           </div>
         </button>
       </article>
@@ -611,7 +611,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
                       </div>
                       <div className="p-2.5">
                         <p className="truncate text-xs font-bold">{item.title}</p>
-                        <p className="mt-1 truncate text-[10px] text-gray-500">{item.artistName || `Danbooru #${item.sourceId}`}</p>
+                        <p className="mt-1 truncate text-micro text-gray-500">{item.artistName || `Danbooru #${item.sourceId}`}</p>
                       </div>
                     </button>
                   </article>
@@ -684,11 +684,11 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             </div>
             <div className="flex items-center gap-2">
               <ImageTaggerAction notify={notify} imageUrl={buildMediaUrl(selected.sampleUrl, 'original')} actionLabel="复制 {count} 个 Tag" />
-              <span className="text-[11px] text-gray-500">反推当前图片（本地识别）</span>
+              <span className="text-meta text-gray-500">反推当前图片（本地识别）</span>
             </div>
             <button type="button" onClick={() => void copyAll(selected)} className="text-xs font-bold text-indigo-600 hover:text-indigo-500 dark:text-indigo-300">复制包含元数据的全部 Tag</button>
             {(Object.keys(categoryLabels) as DanbooruTagCategory[]).map(category => selected.tags[category].length > 0 && <section key={category}>
-              <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-black text-gray-700 dark:text-gray-200">{categoryLabels[category]} · {selected.tags[category].length}</h3><button type="button" onClick={() => void copyText(selected.tags[category].join(', ')).then(() => notify(`已复制${categoryLabels[category]} Tag`))} className="text-[10px] text-gray-500 hover:text-indigo-500">复制</button></div>
+              <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-black text-gray-700 dark:text-gray-200">{categoryLabels[category]} · {selected.tags[category].length}</h3><button type="button" onClick={() => void copyText(selected.tags[category].join(', ')).then(() => notify(`已复制${categoryLabels[category]} Tag`))} className="text-micro text-gray-500 hover:text-indigo-500">复制</button></div>
               <TagChipGroup chips={selected.tags[category].map(tag => ({ label: tag.replaceAll('_', ' '), onClick: () => { setInput(tag.replaceAll('_', ' ')); void load(`${tag} order:score`, 1); } }))} />
             </section>)}
           </div> : <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">选择一张作品后查看图片、Tag 和导入操作。</div>}

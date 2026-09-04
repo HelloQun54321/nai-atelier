@@ -24,7 +24,7 @@ export const GenerationModeNav: React.FC<GenerationModeNavProps> = ({ activeMode
         disabled={disabled}
         aria-current={activeMode === mode ? 'page' : undefined}
         onClick={() => void onSelect(mode)}
-        className={`mobile-touch min-w-0 rounded-lg px-1.5 py-1.5 text-[11px] font-bold transition sm:px-3 sm:text-xs disabled:cursor-not-allowed disabled:opacity-50 ${activeMode === mode ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
+        className={`mobile-touch min-w-0 rounded-lg px-1.5 py-1.5 text-meta font-bold transition sm:px-3 sm:text-xs disabled:cursor-not-allowed disabled:opacity-50 ${activeMode === mode ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
       >
         {label}
       </button>

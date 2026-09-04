@@ -31,7 +31,7 @@ export const ArtistLibraryCart: React.FC<ArtistLibraryCartProps> = ({
                         <div role="dialog" aria-label="画师权重与微调" className="absolute bottom-[calc(100%+0.5rem)] z-50 max-h-60 w-[min(36rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-gray-200 bg-white/95 p-3 shadow-2xl backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
                             <div className="mb-2 flex items-center justify-between px-1 text-xs font-bold text-gray-800 dark:text-white">
                                 <span>微调画师权重</span>
-                                <span className="text-[11px] font-normal text-gray-500">点击 - / + 增减权重括号</span>
+                                <span className="text-meta font-normal text-gray-500">点击 - / + 增减权重括号</span>
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 {cart.map((item, idx) => (

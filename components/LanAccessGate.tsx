@@ -131,7 +131,7 @@ export const LanAccessGate: React.FC<LanAccessGateProps> = ({ children }) => {
         <button type="submit" disabled={submitting || pin.length !== 4} className="mt-2 min-h-14 w-full rounded-2xl bg-indigo-600 px-5 text-base font-bold shadow-lg shadow-indigo-950/40 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40">
           {submitting ? '正在验证…' : '进入项目'}
         </button>
-        <p className="mt-5 text-center text-[11px] leading-5 text-slate-500">连续输错5次会暂停1分钟。请勿将电脑端口映射到公网。</p>
+        <p className="mt-5 text-center text-meta leading-5 text-slate-500">连续输错5次会暂停1分钟。请勿将电脑端口映射到公网。</p>
       </form>
     </div>
   );

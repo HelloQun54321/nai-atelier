@@ -358,7 +358,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                     : 'border-dashed border-gray-300 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'
                 }`}
               >
-                <span className="max-w-48 truncate font-mono text-[10px] text-gray-500 dark:text-gray-400" title={item.displayTag}>{item.displayTag}</span>
+                <span className="max-w-48 truncate font-mono text-micro text-gray-500 dark:text-gray-400" title={item.displayTag}>{item.displayTag}</span>
                 <span className={`max-w-48 truncate text-xs font-medium ${item.source === 'dictionary'
                   ? 'text-purple-600 dark:text-purple-300'
                   : item.source === 'ai'
@@ -370,13 +370,13 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
           </div>
           {(missingTags.length > 0 || translationError) && (
             <div className="mt-1.5 flex min-h-7 items-center justify-end gap-2 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
-              {translationError && <span className="min-w-0 flex-1 truncate text-[10px] text-red-500" title={translationError}>{translationError}</span>}
+              {translationError && <span className="min-w-0 flex-1 truncate text-micro text-red-500" title={translationError}>{translationError}</span>}
               {allowAiTranslation && !disabled && missingTags.length > 0 && (
                 <button
                   type="button"
                   onClick={() => void translateMissing()}
                   disabled={translationLoading}
-                  className="inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-60 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
+                  className="inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-meta font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-60 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
                   title={`使用当前 Agent 模型翻译 ${missingTags.length} 个词库缺失项`}
                 >
                   {translationLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5" />}
@@ -417,11 +417,11 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 <span className="block truncate font-mono">{suggestion.name}</span>
                 <span className="block truncate text-xs text-gray-500 dark:text-gray-400 mt-0.5">{suggestion.chinese}</span>
               </span>
-              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${suggestion.isNovelAI
+              <span className={`shrink-0 rounded px-1.5 py-0.5 text-micro ${suggestion.isNovelAI
                 ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-200'
                 : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
               }`}>{suggestion.categoryLabel}</span>
-              <span className="w-14 shrink-0 text-right text-[10px] text-gray-400">{formatPostCount(suggestion.postCount)}</span>
+              <span className="w-14 shrink-0 text-right text-micro text-gray-400">{formatPostCount(suggestion.postCount)}</span>
             </button>
           ))}
         </div>

@@ -195,7 +195,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                     )}
 
                     {isGenerating && generationProgress && (
-                        <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 rounded-full bg-black/65 px-3 py-1 text-[11px] font-semibold text-white shadow-lg backdrop-blur-sm pointer-events-none">
+                        <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 rounded-full bg-black/65 px-3 py-1 text-meta font-semibold text-white shadow-lg backdrop-blur-sm pointer-events-none">
                             采样 {generationProgress.step} / {generationProgress.total}
                         </div>
                     )}

@@ -240,7 +240,7 @@ export const SegmentedControl = <T extends string = string>({
         >
           <span>{option.label}</span>
           {option.badge !== undefined && option.badge !== null && option.badge !== '' && (
-            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
+            <span className={`rounded-full px-1.5 py-0.5 text-micro font-semibold leading-none ${
               active
                 ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
                 : 'bg-gray-200/80 text-gray-700 dark:bg-gray-700 dark:text-gray-300'

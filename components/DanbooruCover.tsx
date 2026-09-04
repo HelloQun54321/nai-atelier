@@ -144,12 +144,12 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
           onImageLoad?.(image.naturalWidth, image.naturalHeight);
         }
       }} />
-      <span className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-1 text-[9px] font-bold text-white backdrop-blur">{fixedSrc && candidateIndex === null ? '已保存封面' : 'Danbooru'}</span>
+      <span className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-1 text-mini font-bold text-white backdrop-blur">{fixedSrc && candidateIndex === null ? '已保存封面' : 'Danbooru'}</span>
       {canBrowse && <button type="button" disabled={candidateIndex === null || candidateIndex === 0} onClick={event => { event.stopPropagation(); moveCandidate(-1); }} className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-60" title="上一张" aria-label="上一张"><ChevronLeft className="h-4 w-4" /></button>}
       {canBrowse && <button type="button" disabled={isLoadingMore || (candidateIndex !== null && candidateIndex >= candidates.length - 1 && !coverSet?.hasMore)} onClick={event => { event.stopPropagation(); moveCandidate(1); }} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-35" title="下一张" aria-label="下一张"><ChevronRight className="h-4 w-4" /></button>}
     </> : <div className="absolute inset-0 flex flex-col items-center justify-center px-3 text-center text-gray-400">
       <ImageIcon className={`h-7 w-7 ${coverSet === undefined ? 'animate-pulse' : ''}`} />
-      <span className="mt-2 text-[10px]">{coverSet === undefined ? '正在查找参考图…' : 'Danbooru 暂无相关图片'}</span>
+      <span className="mt-2 text-micro">{coverSet === undefined ? '正在查找参考图…' : 'Danbooru 暂无相关图片'}</span>
     </div>}
   </div>;
 };

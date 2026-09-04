@@ -39,7 +39,7 @@ export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, s
         {onBack && <BackButton onClick={onBack} className="mobile-touch aitag-detail-back lg:hidden" />}
         <div className="min-w-0">
           <p data-safe-mode-title={sensitiveTitle ? 'true' : undefined} className="truncate text-sm font-bold">{title}</p>
-          {subInfo && <p className="truncate text-[10px] text-gray-500 dark:text-gray-400">{subInfo}</p>}
+          {subInfo && <p className="truncate text-micro text-gray-500 dark:text-gray-400">{subInfo}</p>}
         </div>
       </div>
       <CloseButton onClick={onClose} className="hidden lg:inline-flex" />
@@ -83,7 +83,7 @@ export const TagChip: React.FC<TagChipDescriptor> = ({ label, onClick }) => (
     type="button"
     onClick={onClick}
     disabled={!onClick}
-    className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-600 transition hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-default disabled:hover:border-gray-200 disabled:hover:text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-500 dark:hover:text-indigo-400 dark:disabled:hover:border-gray-700 dark:disabled:hover:text-gray-300"
+    className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta text-gray-600 transition hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-default disabled:hover:border-gray-200 disabled:hover:text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-500 dark:hover:text-indigo-400 dark:disabled:hover:border-gray-700 dark:disabled:hover:text-gray-300"
   >
     {label}
   </button>

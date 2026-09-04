@@ -121,11 +121,11 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
                                 />
                                 <span className="text-xs text-gray-500 dark:text-gray-400">记住 Key（关闭浏览器后仍保留）</span>
                             </label>
-                            <span className="text-[10px] text-yellow-600 dark:text-yellow-400">
+                            <span className="text-micro text-yellow-600 dark:text-yellow-400">
                                 <span className="flex items-center gap-1">{rememberApiKey ? <AlertTriangle className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}{rememberApiKey ? '持久化存储' : '会话级存储'}</span>
                             </span>
                         </div>
-                        <p className="text-[10px] text-gray-400 mt-1">
+                        <p className="text-micro text-gray-400 mt-1">
                             {rememberApiKey
                                 ? 'Key 将混淆存储在本地，关闭浏览器后仍保留。请确保设备安全。'
                                 : 'Key 仅在当前会话有效，关闭标签页后自动清除。更安全。'}

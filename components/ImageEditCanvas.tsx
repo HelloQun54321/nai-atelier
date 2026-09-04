@@ -203,7 +203,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
             <span className="text-xs text-gray-400">{width} × {height} 像素</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-gray-400 hidden sm:inline">鼠标右键/中键或按住空格拖拽平移 · Ctrl+滚轮缩放</span>
+            <span className="text-meta text-gray-400 hidden sm:inline">鼠标右键/中键或按住空格拖拽平移 · Ctrl+滚轮缩放</span>
             <button
               type="button"
               onClick={() => setIsFullscreen(false)}
@@ -242,7 +242,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
               type="button"
               title="重置缩放 (适应视口)"
               onClick={handleZoomReset}
-              className="px-1.5 py-0.5 font-mono text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 rounded dark:text-indigo-400 dark:hover:bg-indigo-950/40"
+              className="px-1.5 py-0.5 font-mono text-meta font-semibold text-indigo-600 hover:bg-indigo-50 rounded dark:text-indigo-400 dark:hover:bg-indigo-950/40"
             >
               {zoom === 1 ? '适应' : `${Math.round(zoom * 100)}%`}
             </button>
@@ -304,7 +304,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
               role="button"
               tabIndex={0}
               aria-label="移动 Focused 选区"
-              className="pointer-events-auto absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 cursor-move rounded bg-amber-300/90 px-1.5 py-0.5 text-[9px] font-bold text-amber-950 shadow"
+              className="pointer-events-auto absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 cursor-move rounded bg-amber-300/90 px-1.5 py-0.5 text-mini font-bold text-amber-950 shadow"
               onPointerDown={event => onFocusedInteractionStart?.(event, 'move')}
               onPointerMove={onFocusedInteractionMove}
               onPointerUp={onFocusedInteractionEnd}

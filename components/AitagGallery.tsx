@@ -142,7 +142,7 @@ const AitagPreviewFallback: React.FC<{ work: AitagWorkSummary; onRetry: () => vo
   // 卡片整体是 role="button"（点击/Enter 打开详情）：占位内的重试钮与原页链接都要拦掉
   // 键盘/点击冒泡，避免误开详情。原页链接 href 本身可 Tab 聚焦、Enter 在新标签打开。
   <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-100 px-3 dark:bg-gray-800">
-    <span className="text-[11px] text-gray-400">图片加载失败</span>
+    <span className="text-meta text-gray-400">图片加载失败</span>
     <div className="flex items-center gap-2">
       <button
         type="button"
@@ -408,10 +408,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
               }
             }}
           />
-          <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 text-white text-[10px] font-bold">
+          <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 text-white text-micro font-bold">
             {type || 'AI'}
           </div>
-          <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/70 text-white text-[10px]">
+          <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/70 text-white text-micro">
             {imageCount}P
           </div>
         </div>
@@ -434,7 +434,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
               />
             </span>
           </div>
-          <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400 overflow-hidden">
+          <div className="mt-1 flex min-w-0 items-center gap-2 text-meta text-gray-500 dark:text-gray-400 overflow-hidden">
             <span className="truncate">#{work.id}</span>
             <span className="whitespace-nowrap">阅 {formatCount(work.total_view)}</span>
             <span className="whitespace-nowrap">藏 {formatCount(work.total_bookmarks)}</span>
@@ -1379,7 +1379,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                               {generationLabels.length > 0 && (
                                 <div className="flex flex-wrap gap-1">
                                   {generationLabels.map(label => (
-                                    <span key={label} className="rounded bg-indigo-50 dark:bg-indigo-500/10 px-2 py-0.5 text-[11px] font-medium text-indigo-600 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-500/20">
+                                    <span key={label} className="rounded bg-indigo-50 dark:bg-indigo-500/10 px-2 py-0.5 text-meta font-medium text-indigo-600 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-500/20">
                                       {label}
                                     </span>
                                   ))}

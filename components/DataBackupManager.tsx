@@ -143,7 +143,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
           <div className="flex items-center gap-2">
             <h4 className="font-semibold text-gray-900 dark:text-white">重要数据备份</h4>
             {isRunning && (
-              <span className="flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">
+              <span className="flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-meta font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 正在备份
               </span>
@@ -201,7 +201,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
               · {sourceStats.fileCount.toLocaleString('zh-CN')} 个文件
             </span>
           </div>
-          <p className="mt-1 truncate font-mono text-[10px] text-gray-400 dark:text-gray-500" title={status?.sourceDir}>
+          <p className="mt-1 truncate font-mono text-micro text-gray-400 dark:text-gray-500" title={status?.sourceDir}>
             {status?.sourceDir || 'local-data'}
           </p>
         </div>
@@ -217,7 +217,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
               <button
                 type="button"
                 onClick={() => setIsEditingTargetDir(true)}
-                className="text-[11px] font-bold text-indigo-600 hover:underline dark:text-indigo-400"
+                className="text-meta font-bold text-indigo-600 hover:underline dark:text-indigo-400"
               >
                 修改路径
               </button>
@@ -258,7 +258,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                   {status?.targetDir || 'D:\\NaiPromptManager-Backups'}
                 </span>
               </div>
-              <p className="mt-1 flex items-center gap-1 text-[10px] text-gray-400 dark:text-gray-500">
+              <p className="mt-1 flex items-center gap-1 text-micro text-gray-400 dark:text-gray-500">
                 {status?.targetDirExists ? (
                   <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                     <CheckCircle2 className="h-3 w-3" />
@@ -335,7 +335,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
             </div>
 
             {progress.currentItem && (
-              <p className="truncate font-mono text-[10px] text-gray-500 dark:text-gray-400" title={progress.currentItem}>
+              <p className="truncate font-mono text-micro text-gray-500 dark:text-gray-400" title={progress.currentItem}>
                 正在处理: {progress.currentItem}
               </p>
             )}
@@ -355,7 +355,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
             <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
               历史备份存档
             </span>
-            <span className="rounded-full bg-gray-200/80 px-2 py-0.5 text-[10px] font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+            <span className="rounded-full bg-gray-200/80 px-2 py-0.5 text-micro font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-300">
               {backups.length} 个
             </span>
           </div>
@@ -394,17 +394,17 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                               {backup.name}
                             </span>
                             {backup.label && (
-                              <span className="flex-none rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">
+                              <span className="flex-none rounded bg-indigo-50 px-1.5 py-0.5 text-micro font-medium text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">
                                 {backup.label}
                               </span>
                             )}
                             {isZip && (
-                              <span className="flex-none rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                              <span className="flex-none rounded bg-amber-50 px-1.5 py-0.5 text-micro font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
                                 ZIP 压缩包
                               </span>
                             )}
                           </div>
-                          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-gray-400">
+                          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-meta text-gray-400">
                             <span>{formatBackupDate(backup.createdAt)}</span>
                             <span>·</span>
                             <span>{formatBytes(backup.totalBytes)}</span>
@@ -422,7 +422,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                         <button
                           type="button"
                           onClick={() => void handleOpenFolder(backup.path)}
-                          className="mobile-touch flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-medium text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"
+                          className="mobile-touch flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-meta font-medium text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"
                           title="在文件资源管理器中打开此备份"
                         >
                           <ExternalLink className="h-3 w-3" />

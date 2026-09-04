@@ -255,7 +255,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
       {activated && failed && !upgradeLoaded && (
         <button
           type="button"
-          className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-transparent px-2 text-[10px] text-gray-500 dark:text-gray-400"
+          className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-transparent px-2 text-micro text-gray-500 dark:text-gray-400"
           onClick={event => { event.stopPropagation(); setRetryToken(value => value + 1); }}
         >
           <span className="text-lg opacity-70">▧</span><span>加载失败 · 重试</span>

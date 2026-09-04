@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-04
+- **Kimi K3 (Oh My Pi)**：元信息字号 token 化（--text-tiny/mini/micro/meta）并迁移全站 308 处绝对像素任意值，VIP 无限动画纳入 data-motion 与 prefers-reduced-motion 门禁（style: tokenize meta font sizes and gate VIP animations behind motion preference）。
 - **DeepSeek V4 Flash (Oh My Pi 子代理 FixServicesLeft)**：服务层竞态与资源治理——SSE estimatedSpent 透传、滚动恢复到位终止、缩略图缓存 release/401 修复、标签词典代际失效、运行时/额度轮询共享订阅与隐藏暂停、导入进度单调计数、画廊历史写盘失败回滚（fix: service-layer race and resource governance）。
 - **DeepSeek V4 Flash (Oh My Pi 子代理 FixLabUX)**：实验室交互健壮性——生成中禁用模式切换、灯箱 Esc/焦点管理、移动端键盘下生成钮跟随可视区、画板空格拦截守卫、撤销栈 ImageBitmap 化与失败回滚、预览下载失败提示（fix: lab interaction robustness and keyboard accessibility）。
 - **DeepSeek V4 Flash (Oh My Pi 子代理 FixKeyVault)** + **Kimi K3 (Oh My Pi)**：密钥保管箱迁入 local-data——新增 Worker `/api/nai-key-vault` 路由（D1 settings 存储）、前端 vault 服务改异步客户端并自动迁移清除本地副本、GlobalSettings 接线异步化（feat: move NAI key vault into local-data worker storage）。

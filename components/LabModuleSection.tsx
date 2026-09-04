@@ -26,7 +26,7 @@ export const LabModuleSection: React.FC<LabModuleSectionProps> = ({ moduleId, la
   >
     <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-gray-50/70 px-4 py-3 text-xs font-bold text-gray-700 transition hover:bg-gray-100/80 hover:text-indigo-600 dark:bg-gray-800/45 dark:text-gray-300 dark:hover:bg-gray-800/70 dark:hover:text-indigo-300 group-open:border-b group-open:border-gray-200/80 group-open:bg-gray-50/90 dark:group-open:border-gray-800 dark:group-open:bg-gray-800/60 [&::-webkit-details-marker]:hidden">
       <span>{label}</span>
-      <span className="flex items-center gap-1 text-[10px] font-medium text-gray-400">
+      <span className="flex items-center gap-1 text-micro font-medium text-gray-400">
         {open ? '收起' : '展开'}
         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
       </span>

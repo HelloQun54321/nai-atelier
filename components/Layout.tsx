@@ -297,7 +297,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     <button onClick={onClick} className={`relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-500'}`}>
       {active && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-indigo-500" />}
       <span className="flex h-6 w-6 items-center justify-center"><Icon aria-hidden="true" className="h-[19px] w-[19px]" strokeWidth={1.8} /></span>
-      <span className="text-[10px] font-medium">{label}</span>
+      <span className="text-micro font-medium">{label}</span>
     </button>
   );
 
@@ -317,7 +317,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
 
         <nav className={`min-h-0 flex-1 overflow-y-auto py-2 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
           {desktopGroups.map((group, groupIndex) => <div key={group.label} className={groupIndex ? 'mt-2 border-t border-gray-100 pt-2 dark:border-gray-800' : ''}>
-            {!sidebarCollapsed && <div className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400 dark:text-gray-600">{group.label}</div>}
+            {!sidebarCollapsed && <div className="mb-1 px-3 text-micro font-bold uppercase tracking-[0.16em] text-gray-400 dark:text-gray-600">{group.label}</div>}
             <div className="space-y-1">{group.items.map(item => {
               const active = activeView === item.id;
               return <button key={item.id} type="button" title={sidebarCollapsed ? item.label : undefined} aria-label={item.label} onClick={() => onNavigate(item.id as AppView)} className={`relative flex h-11 w-full items-center rounded-xl outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'} ${active ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}>
@@ -334,7 +334,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50/70 dark:border-gray-800/80 dark:bg-gray-900/80">
             <div role="status" title={sidebarCollapsed ? `Anlas 预算：${anlasBudget.loading ? '加载中' : anlasBudget.remaining}` : undefined} aria-label={`Anlas 预算 ${anlasBudget.loading ? '加载中' : anlasBudget.remaining}`} className={`flex h-11 w-full cursor-default select-none items-center border-b border-gray-200 text-indigo-600 dark:border-gray-800/80 dark:text-indigo-300 ${sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'}`}>
               {sidebarCollapsed
-                ? <span className="flex min-w-0 flex-col items-center justify-center gap-0.5"><Gem className="h-3.5 w-3.5" /><span className="max-w-12 truncate text-[10px] font-bold leading-none tabular-nums">{compactAnlasBudget}</span></span>
+                ? <span className="flex min-w-0 flex-col items-center justify-center gap-0.5"><Gem className="h-3.5 w-3.5" /><span className="max-w-12 truncate text-micro font-bold leading-none tabular-nums">{compactAnlasBudget}</span></span>
                 : <><span className="flex items-center"><Gem className="h-4 w-4" /><span className="ml-2 text-xs font-medium text-gray-600 dark:text-gray-300">Anlas</span></span><span className="text-sm font-bold tabular-nums">{anlasBudget.loading ? '…' : anlasBudget.remaining}</span></>}
             </div>
             <OpusUsageBar collapsed={sidebarCollapsed} />
@@ -363,7 +363,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       </button>}
 
       {!hideNav && <>
-        {showResources && <div className="fixed inset-0 z-[950] bg-black/35 backdrop-blur-[2px] md:hidden" onClick={() => setShowResources(false)}><div className="absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900" onClick={event => event.stopPropagation()}><div className="mb-2 flex items-center justify-between px-2"><span className="text-sm font-bold">资源库</span><button onClick={() => setShowResources(false)} className="mobile-touch flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800" aria-label="关闭资源库菜单"><X className="h-[18px] w-[18px]" /></button></div><div className="grid grid-cols-2 gap-2">{resourceItems.map(item => { const ResourceIcon = item.icon; return <button key={item.id} onClick={() => navigateMobile(item.id)} className={`flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-2xl ${activeView === item.id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><span className="flex h-6 w-6 items-center justify-center"><ResourceIcon className="h-[18px] w-[18px]" strokeWidth={1.8} /></span><span className="text-[11px] font-medium leading-none">{item.label}</span></button>; })}</div></div></div>}
+        {showResources && <div className="fixed inset-0 z-[950] bg-black/35 backdrop-blur-[2px] md:hidden" onClick={() => setShowResources(false)}><div className="absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900" onClick={event => event.stopPropagation()}><div className="mb-2 flex items-center justify-between px-2"><span className="text-sm font-bold">资源库</span><button onClick={() => setShowResources(false)} className="mobile-touch flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800" aria-label="关闭资源库菜单"><X className="h-[18px] w-[18px]" /></button></div><div className="grid grid-cols-2 gap-2">{resourceItems.map(item => { const ResourceIcon = item.icon; return <button key={item.id} onClick={() => navigateMobile(item.id)} className={`flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-2xl ${activeView === item.id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><span className="flex h-6 w-6 items-center justify-center"><ResourceIcon className="h-[18px] w-[18px]" strokeWidth={1.8} /></span><span className="text-meta font-medium leading-none">{item.label}</span></button>; })}</div></div></div>}
         <div className="app-mobile-nav fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] items-start border-t border-gray-200 bg-white/95 px-1 pt-1.5 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 md:hidden">
           <MobileNavButton label="风格串" active={activeView === 'list'} icon={icons.list} onClick={() => navigateMobile('list')} />
           <MobileNavButton label="资源库" active={resourceActive || showResources} icon={icons.resources} onClick={() => setShowResources(value => !value)} />

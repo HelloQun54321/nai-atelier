@@ -101,7 +101,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="font-bold text-gray-900 dark:text-white">选择历史图片</h2>
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500 dark:bg-gray-800 dark:text-gray-300">全部 {totalCount} 张</span>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-meta text-gray-500 dark:bg-gray-800 dark:text-gray-300">全部 {totalCount} 张</span>
             </div>
             <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">数据与历史页面一致；默认只替换底图，勾选「同时导入该图参数」才载入提示词与参数。</p>
           </div>
@@ -131,7 +131,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
                   <div className="w-full overflow-hidden bg-gray-100 dark:bg-gray-950" style={{ aspectRatio: getImageRatio(item) }}>
                     <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt="历史生成图片" className="h-full w-full object-contain transition-transform group-hover:scale-[1.02]" />
                   </div>
-                  <div className="truncate border-t border-gray-100 px-2 py-2 text-[11px] text-gray-600 dark:border-gray-700 dark:text-gray-300">{getHistoryTypeLabel(item)} · {new Date(item.createdAt).toLocaleString('zh-CN')}</div>
+                  <div className="truncate border-t border-gray-100 px-2 py-2 text-meta text-gray-600 dark:border-gray-700 dark:text-gray-300">{getHistoryTypeLabel(item)} · {new Date(item.createdAt).toLocaleString('zh-CN')}</div>
                 </button>
               ))}
             </div>

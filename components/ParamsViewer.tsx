@@ -19,7 +19,7 @@ const UC_LABELS: Record<number, string> = {
  */
 const ParamItem = ({ label, value }: { label: string; value: React.ReactNode }) => (
     <div className="bg-gray-50 dark:bg-gray-800 p-2 rounded border border-gray-100 dark:border-gray-700/50">
-        <div className="text-[10px] text-gray-400 uppercase font-bold text-ellipsis overflow-hidden mb-0.5">
+        <div className="text-micro text-gray-400 uppercase font-bold text-ellipsis overflow-hidden mb-0.5">
             {label}
         </div>
         <div
@@ -178,9 +178,9 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                             <div key={`${slot.assetId}-${index}`} className="rounded-lg border border-cyan-100 bg-cyan-50/60 p-2.5 dark:border-cyan-900/60 dark:bg-cyan-950/20">
                                 <div className="flex items-center justify-between gap-2">
                                     <span className="truncate text-xs font-bold text-cyan-700 dark:text-cyan-300">{slot.assetName || `角色参考 ${index + 1}`}</span>
-                                    <span className="flex-none text-[10px] text-gray-500">{slot.type === 'character' ? '角色' : slot.type === 'style' ? '画风' : '角色与画风'}</span>
+                                    <span className="flex-none text-micro text-gray-500">{slot.type === 'character' ? '角色' : slot.type === 'style' ? '画风' : '角色与画风'}</span>
                                 </div>
-                                <p className="mt-1 text-[10px] text-gray-500">强度 {slot.strength.toFixed(2)} · 保真 {slot.fidelity.toFixed(2)}</p>
+                                <p className="mt-1 text-micro text-gray-500">强度 {slot.strength.toFixed(2)} · 保真 {slot.fidelity.toFixed(2)}</p>
                             </div>
                         ))}
                     </div>
@@ -197,12 +197,12 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                             <div key={`${slot.vibeId}-${slot.encodingId}-${index}`} className="rounded-lg border border-violet-100 bg-violet-50/60 p-2.5 dark:border-violet-900/60 dark:bg-violet-950/20">
                                 <div className="flex items-center justify-between gap-2">
                                     <span className="truncate text-xs font-bold text-violet-700 dark:text-violet-300">{slot.vibeName || `Vibe ${index + 1}`}</span>
-                                    <span className="flex-none text-[10px] font-mono text-gray-500">提取量 {slot.informationExtracted.toFixed(2)}</span>
+                                    <span className="flex-none text-micro font-mono text-gray-500">提取量 {slot.informationExtracted.toFixed(2)}</span>
                                 </div>
-                                <p className="mt-1 text-[10px] text-gray-500">原始强度 {slot.strength.toFixed(2)} · 有效强度 {(slot.effectiveStrength ?? slot.strength).toFixed(2)}</p>
+                                <p className="mt-1 text-micro text-gray-500">原始强度 {slot.strength.toFixed(2)} · 有效强度 {(slot.effectiveStrength ?? slot.strength).toFixed(2)}</p>
                             </div>
                         ))}
-                        {params.vibes.sourceGroupName && <p className="text-[10px] text-gray-500">来源组合：{params.vibes.sourceGroupName}</p>}
+                        {params.vibes.sourceGroupName && <p className="text-micro text-gray-500">来源组合：{params.vibes.sourceGroupName}</p>}
                     </div>
                 </div>
             )}
@@ -245,10 +245,10 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                                 className="bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700/50 rounded-lg p-2.5"
                             >
                                 <div className="flex items-center justify-between mb-1.5">
-                                    <span className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 uppercase">
+                                    <span className="text-micro font-bold text-indigo-500 dark:text-indigo-400 uppercase">
                                         角色 {idx + 1}
                                     </span>
-                                    <span className="text-[10px] text-gray-400 font-mono">
+                                    <span className="text-micro text-gray-400 font-mono">
                                         ({char.x.toFixed(2)}, {char.y.toFixed(2)})
                                     </span>
                                 </div>
@@ -257,7 +257,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                                 </p>
                                 {char.negativePrompt && (
                                     <p className="text-xs text-red-400 font-mono break-words leading-relaxed mt-1 border-t border-gray-200 dark:border-gray-700 pt-1">
-                                        <span className="text-[9px] font-bold">角色专属负面:</span>{' '}
+                                        <span className="text-mini font-bold">角色专属负面:</span>{' '}
                                         {char.negativePrompt}
                                     </p>
                                 )}

@@ -225,8 +225,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                     </div>
                                     <div className="p-2 md:p-3 bg-white dark:bg-gray-800 text-center border-t border-gray-100 dark:border-gray-700">
                                         <div data-safe-mode-title="true" className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{artist.name}</div>
-                                        {artist.chineseName && <div data-safe-mode-title="true" className="mt-0.5 truncate text-[10px] text-gray-400" title={artist.chineseName}>{artist.chineseName}</div>}
-                                        {typeof artist.postCount === 'number' && <div className="mt-0.5 text-[10px] font-mono text-gray-500" title="Danbooru 关联作品数">作品 {artist.postCount.toLocaleString('zh-CN')}</div>}
+                                        {artist.chineseName && <div data-safe-mode-title="true" className="mt-0.5 truncate text-micro text-gray-400" title={artist.chineseName}>{artist.chineseName}</div>}
+                                        {typeof artist.postCount === 'number' && <div className="mt-0.5 text-micro font-mono text-gray-500" title="Danbooru 关联作品数">作品 {artist.postCount.toLocaleString('zh-CN')}</div>}
                                     </div>
                                 </div>
                             )
@@ -1341,7 +1341,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     {history.map((h, i) => (
                         <div key={i} onClick={() => { navigator.clipboard.writeText(h.text); notify('已复制') }} className="p-3 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-indigo-500 cursor-pointer transition-colors">
                             <div className="text-xs text-gray-800 dark:text-gray-200 break-all line-clamp-3 font-mono">{h.text}</div>
-                            <div className="text-[10px] text-gray-400 mt-2 text-right">{h.time}</div>
+                            <div className="text-micro text-gray-400 mt-2 text-right">{h.time}</div>
                         </div>
                     ))}
                     {history.length === 0 && <div className="text-center text-gray-400 mt-10">暂无历史</div>}

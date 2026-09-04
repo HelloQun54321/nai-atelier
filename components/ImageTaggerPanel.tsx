@@ -160,7 +160,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
   return <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="图片反推 Tag" className="fixed inset-0 z-[1250] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
     <div className="flex max-h-[94dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl dark:bg-gray-950 md:rounded-2xl">
       <header className="flex h-14 flex-none items-center justify-between border-b border-gray-200 px-4 dark:border-gray-800">
-        <div><h2 className="text-sm font-black">图片反推 Danbooru Tag</h2><p className="text-[10px] text-gray-500">WD Tagger V3 · 图片只在你的电脑上处理</p></div>
+        <div><h2 className="text-sm font-black">图片反推 Danbooru Tag</h2><p className="text-micro text-gray-500">WD Tagger V3 · 图片只在你的电脑上处理</p></div>
         <button type="button" disabled={busy} onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800" aria-label="关闭"><X className="h-4 w-4" /></button>
       </header>
       <div className="grid min-h-0 flex-1 overflow-y-auto md:grid-cols-[300px_minmax(0,1fr)] md:overflow-hidden">
@@ -174,7 +174,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
             <div className="flex items-center gap-2 text-xs font-bold"><SlidersHorizontal className="h-4 w-4" />识别阈值</div>
             <div>
               <div className="mb-1 flex items-center justify-between">
-                <label className="text-[11px] text-gray-500">普通 Tag 阈值</label>
+                <label className="text-meta text-gray-500">普通 Tag 阈值</label>
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
@@ -187,14 +187,14 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
                     onChange={event => setThreshold(Math.max(0.15, Math.min(0.8, (parseInt(event.target.value, 10) || 15) / 100)))}
                     className="w-14 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-violet-600 outline-none transition focus:border-violet-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-violet-400 dark:focus:border-violet-400 dark:focus:bg-gray-900"
                   />
-                  <span className="font-mono text-[11px] text-gray-400">%</span>
+                  <span className="font-mono text-meta text-gray-400">%</span>
                 </div>
               </div>
               <input type="range" min="0.15" max="0.8" step="0.01" aria-label="普通 Tag 阈值" disabled={busy} value={threshold} onChange={event => setThreshold(Number(event.target.value))} className="w-full cursor-pointer accent-violet-600 disabled:cursor-not-allowed disabled:opacity-50" />
             </div>
             <div>
               <div className="mb-1 flex items-center justify-between">
-                <label className="text-[11px] text-gray-500">角色 Tag 阈值</label>
+                <label className="text-meta text-gray-500">角色 Tag 阈值</label>
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
@@ -207,7 +207,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
                     onChange={event => setCharacterThreshold(Math.max(0.4, Math.min(0.95, (parseInt(event.target.value, 10) || 40) / 100)))}
                     className="w-14 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-violet-600 outline-none transition focus:border-violet-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-violet-400 dark:focus:border-violet-400 dark:focus:bg-gray-900"
                   />
-                  <span className="font-mono text-[11px] text-gray-400">%</span>
+                  <span className="font-mono text-meta text-gray-400">%</span>
                 </div>
               </div>
               <input type="range" min="0.4" max="0.95" step="0.01" aria-label="角色 Tag 阈值" disabled={busy} value={characterThreshold} onChange={event => setCharacterThreshold(Number(event.target.value))} className="w-full cursor-pointer accent-violet-600 disabled:cursor-not-allowed disabled:opacity-50" />
@@ -218,19 +218,19 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
         <section className="min-h-72 p-4 md:overflow-y-auto">
           {!result && !busy && <div className="flex h-full min-h-64 flex-col items-center justify-center text-center text-sm text-gray-400"><p className="font-bold">选择一张图片开始识别</p><p className="mt-1 max-w-sm text-xs">结果是模型预测，不等于图片原始 Prompt；模型不会识别画师身份。</p></div>}
           {result && <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-black">识别出 {result.tags.length} 个 Tag</p><p className="text-[10px] text-gray-500">角色 {result.character.length} · 普通 {result.general.length}{result.rating ? ` · 分级预测 ${result.rating.name} ${percent(result.rating.confidence)}` : ''}</p></div><div className="flex gap-2"><button type="button" onClick={() => setSelected(new Set(visibleTags.map(item => item.name)))} className="text-xs font-bold text-violet-600">全选</button><button type="button" onClick={() => setSelected(new Set())} className="text-xs font-bold text-gray-500">清空</button></div></div>
+            <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-black">识别出 {result.tags.length} 个 Tag</p><p className="text-micro text-gray-500">角色 {result.character.length} · 普通 {result.general.length}{result.rating ? ` · 分级预测 ${result.rating.name} ${percent(result.rating.confidence)}` : ''}</p></div><div className="flex gap-2"><button type="button" onClick={() => setSelected(new Set(visibleTags.map(item => item.name)))} className="text-xs font-bold text-violet-600">全选</button><button type="button" onClick={() => setSelected(new Set())} className="text-xs font-bold text-gray-500">清空</button></div></div>
             <div className="grid gap-2 sm:grid-cols-2">{visibleTags.map(tag => {
               const checked = selected.has(tag.name);
               return <button key={tag.name} type="button" onClick={() => toggle(tag.name)} className={`flex min-h-12 items-center gap-2 rounded-xl border px-3 py-2 text-left ${checked ? 'border-violet-400 bg-violet-50 dark:border-violet-700 dark:bg-violet-950/30' : 'border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'}`}>
                 <span className={`flex h-5 w-5 flex-none items-center justify-center rounded-md border ${checked ? 'border-violet-600 bg-violet-600 text-white' : 'border-gray-300 dark:border-gray-600'}`}>{checked && <Check className="h-3.5 w-3.5" />}</span>
-                <span className="min-w-0 flex-1"><span className="block truncate font-mono text-[11px] font-bold">{tag.name.replaceAll('_', ' ')}</span>{tag.chinese && <span className="block truncate text-[10px] text-gray-500">{tag.chinese}</span>}</span>
-                <span className={`text-[10px] font-black ${tag.category === 'character' ? 'text-emerald-600' : 'text-blue-500'}`}>{percent(tag.confidence)}</span>
+                <span className="min-w-0 flex-1"><span className="block truncate font-mono text-meta font-bold">{tag.name.replaceAll('_', ' ')}</span>{tag.chinese && <span className="block truncate text-micro text-gray-500">{tag.chinese}</span>}</span>
+                <span className={`text-micro font-black ${tag.category === 'character' ? 'text-emerald-600' : 'text-blue-500'}`}>{percent(tag.confidence)}</span>
               </button>;
             })}</div>
           </div>}
         </section>
       </div>
-      <footer className="flex flex-none items-center justify-between gap-3 border-t border-gray-200 p-3 dark:border-gray-800"><p className="hidden text-[10px] text-gray-500 sm:block">模型文件保存在 local-cache，不会进入 Git。</p><div className="ml-auto flex items-center gap-2"><button type="button" disabled={!selected.size || busy} onClick={sendToLab} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-40">送往实验室</button><button type="button" disabled={!selected.size || busy} onClick={insert} className="mobile-touch rounded-xl bg-violet-600 px-5 text-sm font-bold text-white disabled:opacity-40">{(actionLabel ?? '追加 {count} 个 Tag 到主体').replace('{count}', String(selected.size))}</button></div></footer>
+      <footer className="flex flex-none items-center justify-between gap-3 border-t border-gray-200 p-3 dark:border-gray-800"><p className="hidden text-micro text-gray-500 sm:block">模型文件保存在 local-cache，不会进入 Git。</p><div className="ml-auto flex items-center gap-2"><button type="button" disabled={!selected.size || busy} onClick={sendToLab} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-40">送往实验室</button><button type="button" disabled={!selected.size || busy} onClick={insert} className="mobile-touch rounded-xl bg-violet-600 px-5 text-sm font-bold text-white disabled:opacity-40">{(actionLabel ?? '追加 {count} 个 Tag 到主体').replace('{count}', String(selected.size))}</button></div></footer>
     </div>
   </div>;
 };

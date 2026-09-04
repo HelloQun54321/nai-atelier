@@ -20,7 +20,7 @@ export type PresetSource = { name: string; modified: boolean };
 export type PresetSection = 'base' | 'subject' | 'negative' | 'settings';
 
 export const PresetSourceBadge: React.FC<{ source?: PresetSource }> = ({ source }) => source ? (
-    <span className="max-w-28 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-40" title={`来自：${source.name}${source.modified ? ' · 已修改' : ''}`}>
+    <span className="max-w-28 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-micro font-medium text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-40" title={`来自：${source.name}${source.modified ? ' · 已修改' : ''}`}>
         来自：{source.name}{source.modified ? ' · 已修改' : ''}
     </span>
 ) : null;

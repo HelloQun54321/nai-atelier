@@ -1008,7 +1008,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   已扫描 {scanProgress.current} / {scanProgress.total} 张
                 </p>
-                <p className="mt-0.5 text-[11px] font-mono text-gray-400 truncate max-w-md">{scanProgress.fileName}</p>
+                <p className="mt-0.5 text-meta font-mono text-gray-400 truncate max-w-md">{scanProgress.fileName}</p>
               </div>
               <div className="w-64 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700 h-1.5">
                 <div
@@ -1120,13 +1120,13 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       </div>
                       {item.isDuplicate && (
                         <div
-                          className="absolute right-1.5 top-1.5 max-w-[65%] truncate rounded bg-gray-900/85 px-1.5 py-0.5 text-[9px] font-medium text-amber-300 border border-gray-700/60 backdrop-blur-sm"
+                          className="absolute right-1.5 top-1.5 max-w-[65%] truncate rounded bg-gray-900/85 px-1.5 py-0.5 text-mini font-medium text-amber-300 border border-gray-700/60 backdrop-blur-sm"
                           title={`已存在同参数预设: ${item.duplicateOfName || '现有预设'}`}
                         >
                           已在库中
                         </div>
                       )}
-                      <span className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-mono text-gray-200 backdrop-blur-sm">
+                      <span className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-mini font-mono text-gray-200 backdrop-blur-sm">
                         {item.params.width}×{item.params.height}
                       </span>
                     </div>
@@ -1141,11 +1141,11 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                           className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-bold text-gray-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                         />
                       </div>
-                      <div className="mt-1 flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400">
+                      <div className="mt-1 flex items-center justify-between text-micro text-gray-500 dark:text-gray-400">
                         <span className="truncate">{getNaiModelDisplayLabel(item.params.model)}</span>
                         <span className="flex-none font-mono">{item.params.steps} 步</span>
                       </div>
-                      <p className="mt-1 line-clamp-2 text-[10px] text-gray-400 font-mono break-all leading-tight">
+                      <p className="mt-1 line-clamp-2 text-micro text-gray-400 font-mono break-all leading-tight">
                         {item.prompt || '(无正面提示词)'}
                       </p>
                     </div>
@@ -1178,7 +1178,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                     <div className="flex items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-200">
                       <EyeOff className="h-3.5 w-3.5 text-amber-500" />
                       <span>标记为「待实测」</span>
-                      <span className="text-[11px] font-normal text-gray-500 dark:text-gray-400">
+                      <span className="text-meta font-normal text-gray-500 dark:text-gray-400">
                         （在工坊首次生成后会自动去除）
                       </span>
                     </div>
@@ -1208,7 +1208,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       <div className="flex items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-200">
                         <Trash2 className="h-3.5 w-3.5 text-indigo-500" />
                         <span>导入后删除本地源文件</span>
-                        <span className="text-[11px] font-normal text-gray-500 dark:text-gray-400 hidden sm:inline">
+                        <span className="text-meta font-normal text-gray-500 dark:text-gray-400 hidden sm:inline">
                           （已转存至工坊，保持文件夹整洁）
                         </span>
                       </div>
@@ -1225,11 +1225,11 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                         <Trash2 className="h-3.5 w-3.5 text-rose-500" />
                         <span>自动清理无用素材</span>
                         {totalJunkCount > 0 ? (
-                          <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+                          <span className="text-meta font-semibold text-rose-600 dark:text-rose-400">
                             （含 {totalJunkCount} 张无元数据/重复图）
                           </span>
                         ) : (
-                          <span className="text-[11px] font-normal text-gray-500 dark:text-gray-400 hidden sm:inline">
+                          <span className="text-meta font-normal text-gray-500 dark:text-gray-400 hidden sm:inline">
                             （无元数据与未导入的重复图）
                           </span>
                         )}
@@ -1438,7 +1438,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                           <div className="truncate text-xs font-bold text-gray-800 dark:text-gray-200" title={item.name}>
                             {item.name}
                           </div>
-                          <div className="mt-0.5 flex items-center gap-2 text-[10px]">
+                          <div className="mt-0.5 flex items-center gap-2 text-micro">
                             <span
                               className={`rounded px-1.5 py-0.5 font-medium ${
                                 item.reasonType === 'no-metadata'
@@ -1461,7 +1461,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
 
             {/* Cleanup Danger Warning & Footer */}
             <div className="flex flex-none flex-col gap-3 border-t border-gray-200 p-4 bg-gray-50/80 dark:border-gray-800 dark:bg-gray-900/60 rounded-b-2xl">
-              <div className="flex items-center gap-2 text-[11px] text-amber-700 dark:text-amber-400">
+              <div className="flex items-center gap-2 text-meta text-amber-700 dark:text-amber-400">
                 <AlertTriangle className="h-4 w-4 flex-none" />
                 <span>注意：删除操作将直接修改本地文件系统，物理删除选中的文件且无法从回收站恢复，请谨慎操作。</span>
               </div>

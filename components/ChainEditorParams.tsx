@@ -111,7 +111,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
         <div className="space-y-4">
             {presetSource && (
                 <div className="mb-3 flex min-w-0 items-center gap-2">
-                    <span className="max-w-48 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-64" title={`来自：${presetSource.name}${presetSource.modified ? ' · 已修改' : ''}`}>来自：{presetSource.name}{presetSource.modified ? ' · 已修改' : ''}</span>
+                    <span className="max-w-48 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-micro font-medium normal-case tracking-normal text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-64" title={`来自：${presetSource.name}${presetSource.modified ? ' · 已修改' : ''}`}>来自：{presetSource.name}{presetSource.modified ? ' · 已修改' : ''}</span>
                 </div>
             )}
 
@@ -233,7 +233,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                                 />
                                 <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">x</span>
                                 {scaleMultiplier >= activeRatioMax.maxScale && (
-                                    <span className="ml-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-normal text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">已达画幅极限</span>
+                                    <span className="ml-1 rounded bg-indigo-50 px-1.5 py-0.5 text-micro font-normal text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">已达画幅极限</span>
                                 )}
                             </div>
                         </div>
@@ -250,7 +250,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                                 className="w-full cursor-pointer accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
                             />
                         </div>
-                        <div className="flex items-center justify-between text-[10px] text-gray-400">
+                        <div className="flex items-center justify-between text-micro text-gray-400">
                             <span className="font-semibold text-emerald-600 dark:text-emerald-400">1.0x Opus 免费基准（0点）</span>
                             <span>{activeRatioMax.maxScale.toFixed(2)}x 官方封顶（{activeRatioMax.width}×{activeRatioMax.height}）</span>
                         </div>
@@ -259,7 +259,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                     <div className="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
                         <div
                             role="status"
-                            className={`rounded-xl px-2.5 py-1 text-[11px] font-medium leading-relaxed tabular-nums border ${
+                            className={`rounded-xl px-2.5 py-1 text-meta font-medium leading-relaxed tabular-nums border ${
                                 isOpusFree
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800/40'
                                     : 'bg-amber-50 text-amber-700 border-amber-200/60 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800/40'
@@ -298,7 +298,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                     <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">
                         <span className="flex items-center justify-between">
                             生成步数
-                            {!enforceFreeStepLimit && <span className="text-[10px] text-amber-600 dark:text-amber-400 font-normal" title="已在全局设置中解除免费步数上限，超出免费门槛的步数将消耗 Anlas">已解除上限</span>}
+                            {!enforceFreeStepLimit && <span className="text-micro text-amber-600 dark:text-amber-400 font-normal" title="已在全局设置中解除免费步数上限，超出免费门槛的步数将消耗 Anlas">已解除上限</span>}
                         </span>
                     </label>
                     <input type="number" className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
@@ -317,7 +317,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                     <label className="text-xs text-gray-500 dark:text-gray-500 flex items-center justify-between font-medium">
                         <span>随机种子</span>
                         {forceEmptySeed && (
-                            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-normal" title={params.seed !== undefined && params.seed !== null ? `原保存种子: ${params.seed}（关闭设置后恢复）` : '当前已在全局设置中强制随机'}>
+                            <span className="text-micro text-amber-600 dark:text-amber-400 font-normal" title={params.seed !== undefined && params.seed !== null ? `原保存种子: ${params.seed}（关闭设置后恢复）` : '当前已在全局设置中强制随机'}>
                                 已强制置空
                             </span>
                         )}
@@ -351,13 +351,13 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                         }}
                         className="col-span-full flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700"
                     >
-                        <span className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-200">透明背景</b><span className="mt-0.5 block text-[10px] text-gray-400">生成透明背景 PNG 图片</span></span>
+                        <span className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-200">透明背景</b><span className="mt-0.5 block text-micro text-gray-400">生成透明背景 PNG 图片</span></span>
                         <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${params.transparent ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${params.transparent ? 'translate-x-5' : ''}`} /></span>
                     </button>
                 )}
 
                 {(params.characters?.length || 0) > currentModelInfo.maxCharacters && (
-                    <p className="col-span-full rounded-md bg-amber-50 px-2.5 py-1.5 text-[11px] leading-4 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                    <p className="col-span-full rounded-md bg-amber-50 px-2.5 py-1.5 text-meta leading-4 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
                         {currentModelInfo.label} 最多支持 {currentModelInfo.maxCharacters} 个角色提示词；当前保留了 {params.characters?.length} 个，请删除多余角色后再生成。
                     </p>
                 )}

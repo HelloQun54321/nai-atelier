@@ -213,8 +213,8 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
       {/* 目标画幅比例选择 pills */}
       <div>
         <div className="mb-1.5 flex items-center justify-between">
-          <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">目标画幅比例（画布外框）</span>
-          <span className="text-[10px] text-gray-400">输出：{targetW} × {targetH} px ({currentPreset.ratio})</span>
+          <span className="text-meta font-semibold text-gray-700 dark:text-gray-300">目标画幅比例（画布外框）</span>
+          <span className="text-micro text-gray-400">输出：{targetW} × {targetH} px ({currentPreset.ratio})</span>
         </div>
         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
           {OUTPAINT_RATIO_PRESETS.map(preset => {
@@ -225,13 +225,13 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
                 type="button"
                 disabled={isBusy}
                 onClick={() => handleRatioSelect(preset.id)}
-                className={`rounded-md border px-2 py-1.5 text-[11px] font-medium transition disabled:opacity-40 ${
+                className={`rounded-md border px-2 py-1.5 text-meta font-medium transition disabled:opacity-40 ${
                   isSelected
                     ? 'border-indigo-500 bg-indigo-50 font-bold text-indigo-700 shadow-sm dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300'
                     : 'border-gray-200 bg-gray-50/70 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800/70 dark:text-gray-300 dark:hover:bg-gray-800'
                 }`}
               >
-                {preset.ratio} <span className="text-[10px] opacity-75">{preset.label.split(' ')[1]}</span>
+                {preset.ratio} <span className="text-micro opacity-75">{preset.label.split(' ')[1]}</span>
               </button>
             );
           })}
@@ -240,9 +240,9 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
 
       {/* 模拟画板（“布”）交互区 */}
       <div className="rounded-xl border border-gray-200 bg-gray-100 p-3 dark:border-gray-800 dark:bg-gray-950/80">
-        <div className="mb-2 flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400">
+        <div className="mb-2 flex items-center justify-between text-meta text-gray-500 dark:text-gray-400">
           <span className="font-semibold text-gray-700 dark:text-gray-200">画幅模拟摆放台</span>
-          <span className="text-[10px]">可直接拖拽原图 · 64px 动态吸附</span>
+          <span className="text-micro">可直接拖拽原图 · 64px 动态吸附</span>
         </div>
 
         <div
@@ -264,22 +264,22 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
 
             {/* 四周扩展数值标签 */}
             {expansion.top > 0 && (
-              <div className="pointer-events-none absolute top-1 left-1/2 -translate-x-1/2 rounded bg-indigo-600/90 px-1.5 py-0.5 text-[9px] font-bold text-white shadow">
+              <div className="pointer-events-none absolute top-1 left-1/2 -translate-x-1/2 rounded bg-indigo-600/90 px-1.5 py-0.5 text-mini font-bold text-white shadow">
                 上 +{expansion.top}px
               </div>
             )}
             {expansion.bottom > 0 && (
-              <div className="pointer-events-none absolute bottom-1 left-1/2 -translate-x-1/2 rounded bg-indigo-600/90 px-1.5 py-0.5 text-[9px] font-bold text-white shadow">
+              <div className="pointer-events-none absolute bottom-1 left-1/2 -translate-x-1/2 rounded bg-indigo-600/90 px-1.5 py-0.5 text-mini font-bold text-white shadow">
                 下 +{expansion.bottom}px
               </div>
             )}
             {expansion.left > 0 && (
-              <div className="pointer-events-none absolute left-1 top-1/2 -translate-y-1/2 rounded bg-indigo-600/90 px-1.5 py-0.5 text-[9px] font-bold text-white shadow">
+              <div className="pointer-events-none absolute left-1 top-1/2 -translate-y-1/2 rounded bg-indigo-600/90 px-1.5 py-0.5 text-mini font-bold text-white shadow">
                 左 +{expansion.left}px
               </div>
             )}
             {expansion.right > 0 && (
-              <div className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-indigo-600/90 px-1.5 py-0.5 text-[9px] font-bold text-white shadow">
+              <div className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-indigo-600/90 px-1.5 py-0.5 text-mini font-bold text-white shadow">
                 右 +{expansion.right}px
               </div>
             )}
@@ -311,10 +311,10 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
               ) : (
                 <div className="pointer-events-none flex flex-col items-center justify-center p-1 text-center">
                   <Move className="mb-0.5 h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                  <span className="text-[10px] font-bold text-indigo-900 dark:text-indigo-200">原图</span>
+                  <span className="text-micro font-bold text-indigo-900 dark:text-indigo-200">原图</span>
                 </div>
               )}
-              <div className="pointer-events-none absolute bottom-0 inset-x-0 bg-indigo-950/80 px-1 py-0.5 text-center text-[8px] font-mono text-white">
+              <div className="pointer-events-none absolute bottom-0 inset-x-0 bg-indigo-950/80 px-1 py-0.5 text-center text-tiny font-mono text-white">
                 {srcW} × {srcH}
               </div>
             </div>
@@ -325,13 +325,13 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
           {deltaW > 0 ? (
             <div>
-              <span className="mb-1 block text-[10px] font-semibold text-gray-500 dark:text-gray-400">水平位置 (多出 {deltaW}px)</span>
+              <span className="mb-1 block text-micro font-semibold text-gray-500 dark:text-gray-400">水平位置 (多出 {deltaW}px)</span>
               <div className="grid grid-cols-3 gap-1">
                 <button
                   type="button"
                   disabled={isBusy}
                   onClick={() => setHorizontalAlign('left')}
-                  className={`rounded border px-1.5 py-1 text-[10px] font-medium transition ${expansion.left === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.left === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
                 >
                   靠左
                 </button>
@@ -339,7 +339,7 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
                   type="button"
                   disabled={isBusy}
                   onClick={() => setHorizontalAlign('center')}
-                  className={`rounded border px-1.5 py-1 text-[10px] font-medium transition ${expansion.left > 0 && expansion.right > 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.left > 0 && expansion.right > 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
                 >
                   居中
                 </button>
@@ -347,27 +347,27 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
                   type="button"
                   disabled={isBusy}
                   onClick={() => setHorizontalAlign('right')}
-                  className={`rounded border px-1.5 py-1 text-[10px] font-medium transition ${expansion.right === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.right === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
                 >
                   靠右
                 </button>
               </div>
             </div>
           ) : (
-            <div className="flex items-center text-[10px] text-gray-400">
+            <div className="flex items-center text-micro text-gray-400">
               水平已填满（无多余宽度）
             </div>
           )}
 
           {deltaH > 0 ? (
             <div>
-              <span className="mb-1 block text-[10px] font-semibold text-gray-500 dark:text-gray-400">垂直位置 (多出 {deltaH}px)</span>
+              <span className="mb-1 block text-micro font-semibold text-gray-500 dark:text-gray-400">垂直位置 (多出 {deltaH}px)</span>
               <div className="grid grid-cols-3 gap-1">
                 <button
                   type="button"
                   disabled={isBusy}
                   onClick={() => setVerticalAlign('top')}
-                  className={`rounded border px-1.5 py-1 text-[10px] font-medium transition ${expansion.top === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.top === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
                 >
                   靠顶
                 </button>
@@ -375,7 +375,7 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
                   type="button"
                   disabled={isBusy}
                   onClick={() => setVerticalAlign('center')}
-                  className={`rounded border px-1.5 py-1 text-[10px] font-medium transition ${expansion.top > 0 && expansion.bottom > 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.top > 0 && expansion.bottom > 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
                 >
                   居中
                 </button>
@@ -383,14 +383,14 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
                   type="button"
                   disabled={isBusy}
                   onClick={() => setVerticalAlign('bottom')}
-                  className={`rounded border px-1.5 py-1 text-[10px] font-medium transition ${expansion.bottom === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.bottom === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
                 >
                   靠底
                 </button>
               </div>
             </div>
           ) : (
-            <div className="flex items-center text-[10px] text-gray-400">
+            <div className="flex items-center text-micro text-gray-400">
               垂直已填满（无多余高度）
             </div>
           )}

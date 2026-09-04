@@ -336,7 +336,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       >
           {isUntestedChain(chain) && (
             <div
-              className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-md bg-black/65 px-1.5 py-0.5 text-[10px] font-medium text-amber-300 backdrop-blur-md shadow-sm border border-amber-400/20"
+              className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-md bg-black/65 px-1.5 py-0.5 text-micro font-medium text-amber-300 backdrop-blur-md shadow-sm border border-amber-400/20"
               title="待实测：在工坊使用该预设生成后自动去除"
             >
               <EyeOff className="h-3 w-3 text-amber-400 shrink-0" />
@@ -370,7 +370,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       <div className="flex h-12 flex-col justify-center px-3">
         <div className="flex items-center justify-between">
           <h3 data-safe-mode-title="true" className="w-full truncate pr-1 text-sm font-bold text-gray-900 dark:text-gray-100 md:pr-2" title={chain.name}>{chain.name}</h3>
-          <span className="ml-1 flex-shrink-0 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300" title="生成模型">{getNaiModelDisplayLabel(chain.params?.model)}</span>
+          <span className="ml-1 flex-shrink-0 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-micro font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300" title="生成模型">{getNaiModelDisplayLabel(chain.params?.model)}</span>
           <FavoriteButton
             active={favorites.has(chain.id)}
             onClick={(e) => toggleFav(chain.id, e)}

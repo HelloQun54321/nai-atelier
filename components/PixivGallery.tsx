@@ -582,14 +582,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             src={previewSrc}
             alt={title}
           />
-          <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-[10px] text-white">
+          <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-micro text-white">
             <span>♥ {formatCount(illust.totalBookmarks)}</span>
             {illust.pageCount > 1 && <span>{illust.pageCount} 页</span>}
           </div>
         </div>
         <div className="p-2.5">
           <p data-safe-mode-title="true" className="truncate text-xs font-bold">{title}</p>
-          <p className="mt-1 truncate text-[10px] text-gray-500">{illust.user.name || `Pixiv #${illust.id}`}</p>
+          <p className="mt-1 truncate text-micro text-gray-500">{illust.user.name || `Pixiv #${illust.id}`}</p>
         </div>
       </button>
     </MediaCardShell>;
@@ -706,7 +706,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             <p className="mb-4 mt-1 text-center text-xs leading-relaxed text-gray-500">使用你平时的默认浏览器打开 Pixiv，保留已有的 Google、Pixiv 登录状态；账号密码只输入 Pixiv 官方页面。</p>
 
             {lanMode ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">请在运行 NAI Atelier 的电脑上登录；登录后手机可浏览</div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-meta leading-relaxed text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">请在运行 NAI Atelier 的电脑上登录；登录后手机可浏览</div>
             ) : (
               <ToolbarButton type="button" tone="primary" className="h-12 w-full text-base" disabled={waiting} onClick={() => void handleStartLogin()}>
                 {waiting ? <><RefreshCw className="animate-spin" />等待完成…</> : <><LogIn />在默认浏览器登录</>}
@@ -715,7 +715,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
 
             {activeLogin && (
               <div className="mt-3 space-y-2">
-                <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] leading-relaxed text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300">
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-meta leading-relaxed text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300">
                   {activeLogin.automaticCallback ? (
                     <>
                       <div className="font-bold">请在默认浏览器点击“继续使用此账号”</div>
@@ -743,14 +743,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
               </div>
             )}
 
-            {loginMessage && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] leading-relaxed text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{loginMessage}</div>}
-            {statusError && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] leading-relaxed text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{statusError}</div>}
+            {loginMessage && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-meta leading-relaxed text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{loginMessage}</div>}
+            {statusError && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-meta leading-relaxed text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{statusError}</div>}
 
             <details className="mt-4 rounded-xl border border-gray-200 dark:border-gray-700">
-              <summary className="cursor-pointer select-none rounded-xl px-3 py-2 text-[11px] font-bold text-gray-500 hover:text-indigo-600 dark:text-gray-400">高级：手动连接</summary>
+              <summary className="cursor-pointer select-none rounded-xl px-3 py-2 text-meta font-bold text-gray-500 hover:text-indigo-600 dark:text-gray-400">高级：手动连接</summary>
               <form onSubmit={handleConnect} className="border-t border-gray-100 p-3 dark:border-gray-800">
-                <p className="mb-3 text-[11px] leading-relaxed text-gray-500">备用方式：粘贴 Pixiv App 的 refresh token。Token 仅以加密形式保存在本机 local-data，操作完成后立即清空。</p>
-                <label className="mb-1 block text-[11px] font-bold text-gray-500 dark:text-gray-400" htmlFor="pixiv-refresh-token">Refresh token</label>
+                <p className="mb-3 text-meta leading-relaxed text-gray-500">备用方式：粘贴 Pixiv App 的 refresh token。Token 仅以加密形式保存在本机 local-data，操作完成后立即清空。</p>
+                <label className="mb-1 block text-meta font-bold text-gray-500 dark:text-gray-400" htmlFor="pixiv-refresh-token">Refresh token</label>
                 <input
                   id="pixiv-refresh-token"
                   type="password"
@@ -764,7 +764,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
               </form>
             </details>
           </div>
-          <p className="mt-4 max-w-sm text-center text-[11px] leading-relaxed text-gray-400">Pixiv 图库仅在本机媒体网关可用；推荐、搜索与榜单接口返回的内容原样展示，不做年龄分级过滤。</p>
+          <p className="mt-4 max-w-sm text-center text-meta leading-relaxed text-gray-400">Pixiv 图库仅在本机媒体网关可用；推荐、搜索与榜单接口返回的内容原样展示，不做年龄分级过滤。</p>
         </div>
       </div>
     );
@@ -858,7 +858,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 }
               }}
               aria-pressed={active}
-              className={`h-9 flex-none whitespace-nowrap rounded-lg border px-2.5 text-[11px] font-semibold transition-colors ${
+              className={`h-9 flex-none whitespace-nowrap rounded-lg border px-2.5 text-meta font-semibold transition-colors ${
                 active
                   ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-600'
                   : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
@@ -872,7 +872,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
           type="button"
           onClick={() => (showHistory ? (setShowHistory(false), void loadFeed('recommended', {})) : loadHistory())}
           aria-pressed={showHistory}
-          className={`h-9 flex-none whitespace-nowrap rounded-lg border px-2.5 text-[11px] font-semibold transition-colors ${
+          className={`h-9 flex-none whitespace-nowrap rounded-lg border px-2.5 text-meta font-semibold transition-colors ${
             showHistory
               ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-600'
               : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
@@ -884,7 +884,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
           <button
             type="button"
             onClick={() => void loadFeed('recommended', {})}
-            className="h-9 flex-none whitespace-nowrap rounded-lg border border-gray-200 bg-white px-2.5 text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+            className="h-9 flex-none whitespace-nowrap rounded-lg border border-gray-200 bg-white px-2.5 text-meta font-bold text-indigo-600 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
           >
             返回推荐
           </button>
@@ -1063,7 +1063,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                       </div>
                       <div className="p-2.5">
                         <p className="truncate text-xs font-bold">{item.title}</p>
-                        <p className="mt-1 truncate text-[10px] text-gray-500">{item.artistName || `Pixiv #${item.sourceId}`}</p>
+                        <p className="mt-1 truncate text-micro text-gray-500">{item.artistName || `Pixiv #${item.sourceId}`}</p>
                       </div>
                     </button>
                   </MediaCardShell>
@@ -1130,11 +1130,11 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 />
               </DetailImageStage>
               {selected.type === 'ugoira' && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-meta text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
                   动图（ugoira）：这里展示首帧，动画请到 Pixiv 查看。
                 </div>
               )}
-              <div className="flex items-center justify-between text-[11px] text-gray-500">
+              <div className="flex items-center justify-between text-meta text-gray-500">
                 <span>♥ {formatCount(selected.totalBookmarks)}</span>
                 <span>浏览 {formatCount(selected.totalViews)}</span>
                 <span className="font-semibold text-indigo-600 dark:text-indigo-400">{selected.user.name}</span>
@@ -1163,7 +1163,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
               </div>
               <div className="flex items-center gap-2">
                 <ImageTaggerAction notify={notify} imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} actionLabel="复制 {count} 个 Tag" />
-                <span className="text-[11px] text-gray-500">反推当前页图片（本地识别）</span>
+                <span className="text-meta text-gray-500">反推当前页图片（本地识别）</span>
               </div>
               {selected.tags.length > 0 && (
                 <section>
@@ -1187,7 +1187,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                     <Sparkles className="size-3.5 text-amber-500" />
                     相关作品推荐
                   </h3>
-                  {loadingRelated && <span className="text-[10px] text-gray-400">正在寻找相似作品…</span>}
+                  {loadingRelated && <span className="text-micro text-gray-400">正在寻找相似作品…</span>}
                 </div>
                 {relatedItems.length > 0 ? (
                   <div className="grid grid-cols-3 gap-2">
@@ -1203,14 +1203,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                           alt={rel.title}
                           className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                         />
-                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1 text-left text-[9px] text-white">
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1 text-left text-mini text-white">
                           <p className="truncate font-semibold">{rel.title}</p>
                         </div>
                       </button>
                     ))}
                   </div>
                 ) : !loadingRelated && (
-                  <p className="text-center text-[11px] text-gray-400">暂无相关推荐</p>
+                  <p className="text-center text-meta text-gray-400">暂无相关推荐</p>
                 )}
               </section>
             </div>

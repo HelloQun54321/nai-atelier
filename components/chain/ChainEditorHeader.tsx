@@ -229,7 +229,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                 >
                     <span className="relative block">
                         <Tags className="h-4 w-4" />
-                        <span aria-hidden="true" className="absolute -bottom-1.5 -right-1.5 text-[9px] font-black leading-none">
+                        <span aria-hidden="true" className="absolute -bottom-1.5 -right-1.5 text-mini font-black leading-none">
                             {tagAssistEnabled ? 'o' : '−'}
                         </span>
                     </span>

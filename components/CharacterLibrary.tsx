@@ -105,8 +105,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                   {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} onCandidateChange={candidate => rememberCoverCandidate(card.key, candidate)} onImageLoad={(width, height) => { const r = width / Math.max(1, height); if (Number.isFinite(r) && r > 0) setCardRatios(previous => (previous[card.key] === r ? previous : { ...previous, [card.key]: r })); }} /> : card.previewImage ? <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} onLoad={event => { const img = event.currentTarget; if (img.naturalWidth > 0 && img.naturalHeight > 0) { const r = img.naturalWidth / img.naturalHeight; if (Number.isFinite(r) && r > 0) setCardRatios(previous => (previous[card.key] === r ? previous : { ...previous, [card.key]: r })); } }} /></button> : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
                       {card.kind === 'catalog' ? <Tag className="h-8 w-8" /> : <UserRound className="h-8 w-8" />}
-                      <span className="mt-2 text-[11px]">尚未生成本地预览</span>
-                      <button disabled={!apiKey || generating} onClick={event => { event.stopPropagation(); void generatePreview(card); }} className="mt-3 rounded bg-indigo-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40">{generating ? '生成中…' : '生成预览'}</button>
+                      <span className="mt-2 text-meta">尚未生成本地预览</span>
+                      <button disabled={!apiKey || generating} onClick={event => { event.stopPropagation(); void generatePreview(card); }} className="mt-3 rounded bg-indigo-600 px-2.5 py-1.5 text-meta font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40">{generating ? '生成中…' : '生成预览'}</button>
                     </div>
                   )}
                   <TagCoverActions
@@ -116,7 +116,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                     onSetCover={card.kind === 'catalog' ? candidate => setDanbooruCover(card, candidate) : undefined}
                     pinPlacement="bottom-right"
                   />
-                  {card.previewImage && <button disabled={generating} onClick={event => { event.stopPropagation(); void generatePreview(card); }} className={`absolute bottom-2 rounded bg-black/60 px-2 py-1 text-[10px] text-white opacity-0 transition group-hover:opacity-100 disabled:opacity-40 ${showPin ? 'right-12' : 'right-2'}`}>{generating ? '生成中…' : '重新生成'}</button>}
+                  {card.previewImage && <button disabled={generating} onClick={event => { event.stopPropagation(); void generatePreview(card); }} className={`absolute bottom-2 rounded bg-black/60 px-2 py-1 text-micro text-white opacity-0 transition group-hover:opacity-100 disabled:opacity-40 ${showPin ? 'right-12' : 'right-2'}`}>{generating ? '生成中…' : '重新生成'}</button>}
                   {card.kind === 'custom' && (
                     <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 transition-opacity md:group-hover:opacity-100">
                       <button
@@ -143,19 +143,19 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                   <div className="flex items-center justify-between gap-1.5">
                     <h2 data-safe-mode-title="true" className="truncate text-sm font-bold text-gray-900 dark:text-white" title={card.name}>{card.name}</h2>
                     {card.kind === 'custom' ? (
-                      <span className="flex-none rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">自定义</span>
+                      <span className="flex-none rounded bg-indigo-50 px-1.5 py-0.5 text-micro font-semibold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">自定义</span>
                     ) : (
-                      <span className="flex-none rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">Tag 词库</span>
+                      <span className="flex-none rounded bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">Tag 词库</span>
                     )}
                   </div>
                   {card.kind === 'catalog' ? <>
-                    <div data-safe-mode-title="true" className="mt-0.5 truncate font-mono text-[10px] text-gray-400" title={card.tagName}>{card.tagName}</div>
-                    <div className="mt-1 flex items-center justify-between gap-1 text-[10px]">
+                    <div data-safe-mode-title="true" className="mt-0.5 truncate font-mono text-micro text-gray-400" title={card.tagName}>{card.tagName}</div>
+                    <div className="mt-1 flex items-center justify-between gap-1 text-micro">
                       <span className="text-gray-500">作品 {(card.postCount || 0).toLocaleString('zh-CN')}</span>
                       {card.matchReason && <span className="truncate rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 dark:bg-gray-700 dark:text-gray-300" title={`匹配：${card.matchReason}`}>匹配：{card.matchReason}</span>}
                     </div>
                   </> : (
-                    <div className="mt-1 flex items-center justify-between gap-1.5 text-[10px]">
+                    <div className="mt-1 flex items-center justify-between gap-1.5 text-micro">
                       <div className="truncate font-mono text-gray-400 dark:text-gray-500" title={card.chain?.basePrompt || card.chain?.description || ''}>
                         {card.chain?.basePrompt || card.chain?.description || '手工组合外貌与服装提示词'}
                       </div>
@@ -946,7 +946,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
        </MobileBottomSheet>
 
       <div ref={scrollRef} onScroll={onScrollRestore} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
-        <div className="mb-3 hidden items-center gap-1.5 text-[11px] text-gray-400 dark:text-gray-500 md:flex">
+        <div className="mb-3 hidden items-center gap-1.5 text-meta text-gray-400 dark:text-gray-500 md:flex">
           <span>显示 {visibleCards.length.toLocaleString('zh-CN')}</span><span className="opacity-50">·</span><span>目录 {catalogTotal.toLocaleString('zh-CN')}</span><span className="opacity-50">·</span><span>自定义 {customChains.length}</span>
         </div>
         {isLoading && (
@@ -994,7 +994,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
               <div role="dialog" aria-label="角色槽位与站位排布" className="absolute bottom-[calc(100%+0.5rem)] z-50 max-h-72 w-[min(38rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-gray-200 bg-white/95 p-3 shadow-2xl backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
                 <div className="mb-2 flex items-center justify-between px-1 text-xs font-bold text-gray-800 dark:text-white">
                   <span>多角色槽位分配（导入时自动填入实验室各角色槽）</span>
-                  <span className="text-[11px] font-normal text-gray-500">支持直接拖拽，也可点 ↑ / ↓ 调整顺序</span>
+                  <span className="text-meta font-normal text-gray-500">支持直接拖拽，也可点 ↑ / ↓ 调整顺序</span>
                 </div>
                 <div className="space-y-1.5">
                   {selectedCards.map((card, idx) => (
@@ -1026,11 +1026,11 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         <GripVertical className="h-3.5 w-3.5 flex-none text-gray-400" />
-                        <span className="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-indigo-600 font-mono text-[10px] font-bold text-white">
+                        <span className="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-indigo-600 font-mono text-micro font-bold text-white">
                           {idx + 1}
                         </span>
                         <span className="truncate font-bold text-gray-800 dark:text-gray-100">{card.name}</span>
-                        {card.tagName && <span className="truncate font-mono text-[10px] text-gray-400">({card.tagName})</span>}
+                        {card.tagName && <span className="truncate font-mono text-micro text-gray-400">({card.tagName})</span>}
                       </div>
                       <div className="flex flex-none items-center gap-1">
                         <button

@@ -90,13 +90,13 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
             />
           </svg>
         )}
-        <span className={`relative font-bold tabular-nums ${syncBroken ? 'text-[17px] leading-none' : percent > 99 ? 'text-[9px]' : 'text-[10px]'}`}>
+        <span className={`relative font-bold tabular-nums ${syncBroken ? 'text-lg leading-none' : percent > 99 ? 'text-mini' : 'text-micro'}`}>
           {syncBroken ? '×' : usage ? `${percent}%` : ''}
         </span>
       </span>
       {!collapsed && <span className="min-w-0 flex-1">
         <span className="block text-xs font-medium text-gray-600 dark:text-gray-300">Opus 限额</span>
-        <span className={`mt-0.5 block text-[10px] font-normal tabular-nums ${error ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
+        <span className={`mt-0.5 block text-micro font-normal tabular-nums ${error ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
           {error ? '同步失败，点击重试' : usage ? `≈${images} 张` : '正在同步…'}
         </span>
       </span>}

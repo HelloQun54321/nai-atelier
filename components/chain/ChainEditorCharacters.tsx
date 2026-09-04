@@ -82,7 +82,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                         <div className="flex gap-3 items-start">
                             <div className="flex-1 space-y-2">
                                 <div>
-                                    <label className="text-[10px] text-gray-500 font-bold mb-1 block">角色提示词</label>
+                                    <label className="text-micro text-gray-500 font-bold mb-1 block">角色提示词</label>
                                     <TagAutocompleteTextarea
                                         tagAssistEnabled={tagAssistEnabled}
                                         disabled={!canEdit}
@@ -93,7 +93,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] text-gray-500 font-bold mb-1 block">角色负面提示词</label>
+                                    <label className="text-micro text-gray-500 font-bold mb-1 block">角色负面提示词</label>
                                     <TagAutocompleteTextarea
                                         tagAssistEnabled={tagAssistEnabled}
                                         disabled={!canEdit}
@@ -106,7 +106,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                             </div>
                             <div className="w-24 flex flex-col gap-2">
                                 <div className={!(params.useCoords ?? true) ? "opacity-40 pointer-events-none grayscale" : ""}>
-                                    <label className="text-[10px] text-gray-500 font-bold mb-1 block">水平位置 (X)</label>
+                                    <label className="text-micro text-gray-500 font-bold mb-1 block">水平位置 (X)</label>
                                     <input
                                         type="number" step="0.1" min="0" max="1"
                                         disabled={!canEdit}
@@ -116,7 +116,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                     />
                                 </div>
                                 <div className={!(params.useCoords ?? true) ? "opacity-40 pointer-events-none grayscale" : ""}>
-                                    <label className="text-[10px] text-gray-500 font-bold mb-1 block">垂直位置 (Y)</label>
+                                    <label className="text-micro text-gray-500 font-bold mb-1 block">垂直位置 (Y)</label>
                                     <input
                                         type="number" step="0.1" min="0" max="1"
                                         disabled={!canEdit}

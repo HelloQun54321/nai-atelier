@@ -154,11 +154,11 @@ const HistoryCard = React.memo(function HistoryCard({
                         <Trash2 className="h-4 w-4" />
                     </button>
                 </div>}
-                <div className="absolute bottom-0 left-0 right-0 hidden p-2 bg-gradient-to-t from-black/80 to-transparent text-white text-[10px] md:block md:opacity-0 group-hover:opacity-100 transition-opacity truncate">
+                <div className="absolute bottom-0 left-0 right-0 hidden p-2 bg-gradient-to-t from-black/80 to-transparent text-white text-micro md:block md:opacity-0 group-hover:opacity-100 transition-opacity truncate">
                     {createdAt}
                 </div>
             </div>
-            <div className="truncate px-2 py-2 text-[11px] text-gray-600 dark:text-gray-300 md:hidden">{createdAt}</div>
+            <div className="truncate px-2 py-2 text-meta text-gray-600 dark:text-gray-300 md:hidden">{createdAt}</div>
         </div>
     );
 });

@@ -41,7 +41,7 @@ export const CollectionButton: React.FC<{
 }> = ({ active, count, icon, label, onClick }) => (
   <button type="button" onClick={onClick} className={`flex h-10 w-full items-center gap-2 rounded-xl border px-3 text-left text-sm font-semibold transition ${active ? 'border-gray-200 bg-white text-indigo-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300' : 'border-transparent text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800'}`}>
     <span className="flex h-5 w-5 items-center justify-center [&_svg]:h-4 [&_svg]:w-4">{icon}</span>
-    <span className="min-w-0 flex-1 truncate">{label}</span><span className="text-[11px] font-medium text-gray-400">{count}</span>
+    <span className="min-w-0 flex-1 truncate">{label}</span><span className="text-meta font-medium text-gray-400">{count}</span>
   </button>
 );
 
