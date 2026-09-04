@@ -51,7 +51,7 @@ const dataUrlToBlob = async (value: string): Promise<Blob> => {
 };
 
 export type LocalHistoryChange = {
-    type: 'add' | 'delete' | 'clear' | 'cleanup' | 'favorite';
+    type: 'add' | 'delete' | 'clear' | 'cleanup' | 'favorite' | 'remote-takeover';
     id?: string;
     favorite?: boolean;
     external?: boolean;
@@ -118,6 +118,13 @@ class LocalHistoryService {
         if (typeof BroadcastChannel !== 'undefined') {
             this.channel = new BroadcastChannel('nai-local-history');
             this.channel.onmessage = (event: MessageEvent<LocalHistoryChange>) => {
+                // 其他标签页已开始把浏览器历史迁移到本地服务：本页之后的写入必须
+                // 直接走远端，否则新记录会落进即将被清空的浏览器库。此消息不是
+                // 数据变更，不转发给订阅者。
+                if (event.data?.type === 'remote-takeover') {
+                    this.remoteEnabled = true;
+                    return;
+                }
                 if (event.data?.type) {
                     this.notifyListeners({ ...event.data, external: true });
                 }
@@ -155,33 +162,52 @@ class LocalHistoryService {
         if (this.migrationPromise) return this.migrationPromise;
 
         this.migrationPromise = (async () => {
-            const total = await this.getBrowserCount();
-            if (total === 0) return 0;
+            // 宣告接管：广播后其他标签页立即把新历史写远端（本实例 remoteEnabled 已缓存为 true）。
+            // 广播先于任何清空操作，把"迁移窗口内新记录落进待清空库"的窗口压到最短。
+            this.channel?.postMessage({ type: 'remote-takeover' } satisfies LocalHistoryChange);
+
+            const initialTotal = await this.getBrowserCount();
+            if (initialTotal === 0) return 0;
 
             const batchSize = 10;
             let migrated = 0;
-            for (let page = 0; migrated < total; page++) {
-                const batch = await this.getBrowserPage(page, batchSize);
-                if (batch.length === 0) break;
-                for (const item of batch) {
-                    const editMask = await this.getEditMask(item.id, item);
-                    if (editMask) {
-                        const image = await dataUrlToBlob(item.imageUrl);
-                        const { imageUrl: _imageUrl, ...metadata } = item;
-                        const formData = new FormData();
-                        formData.append('image', image, `generation.${image.type === 'image/jpeg' ? 'jpg' : image.type.split('/')[1] || 'png'}`);
-                        formData.append('editMask', editMask, 'edit-mask.png');
-                        formData.append('metadata', JSON.stringify(metadata));
-                        await api.postForm('/local-history', formData);
-                    } else {
-                        await api.post('/local-history', normalizeHistoryItem(item));
+            // 迁移期间浏览器库不做任何删除，分页偏移因此稳定；已迁移记录靠 id 集合跳过，
+            // 后续轮次只补迁新增（广播前已开始的事务等滞后写入）。
+            const migratedIds = new Set<string>();
+            for (let round = 0; round < 6; round++) {
+                let roundNew = 0;
+                for (let page = 0; ; page++) {
+                    const batch = await this.getBrowserPage(page, batchSize);
+                    if (batch.length === 0) break;
+                    for (const item of batch) {
+                        if (migratedIds.has(item.id)) continue;
+                        const editMask = await this.getEditMask(item.id, item);
+                        if (editMask) {
+                            const image = await dataUrlToBlob(item.imageUrl);
+                            const { imageUrl: _imageUrl, ...metadata } = item;
+                            const formData = new FormData();
+                            formData.append('image', image, `generation.${image.type === 'image/jpeg' ? 'jpg' : image.type.split('/')[1] || 'png'}`);
+                            formData.append('editMask', editMask, 'edit-mask.png');
+                            formData.append('metadata', JSON.stringify(metadata));
+                            await api.postForm('/local-history', formData);
+                        } else {
+                            await api.post('/local-history', normalizeHistoryItem(item));
+                        }
+                        migratedIds.add(item.id);
+                        migrated++;
+                        roundNew++;
+                        onProgress?.({ current: migrated, total: Math.max(initialTotal, migrated) });
                     }
-                    migrated++;
-                    onProgress?.({ current: migrated, total });
                 }
+                // 完整扫描一轮没有任何新记录，说明滞后写入已被全部补迁。
+                if (roundNew === 0) break;
             }
 
-            if (migrated !== total) throw new Error(`迁移数量不一致：${migrated}/${total}`);
+            const remaining = await this.getBrowserCount();
+            if (remaining > 0) {
+                // 宁可放弃清空也不冒丢数据的风险：远端已有完整副本，浏览器库留待下次迁移重试。
+                throw new Error(`历史迁移后浏览器库仍有 ${remaining} 条新增记录，已保留浏览器数据，请重试迁移`);
+            }
             await this.clearBrowserHistory();
             this.emit({ type: 'add' });
             return migrated;
@@ -565,9 +591,17 @@ class LocalHistoryService {
     async delete(id: string): Promise<void> {
         if (await this.isRemoteEnabled()) {
             await api.delete(`/local-history/${encodeURIComponent(id)}`);
+            // 幂等清理浏览器库中的同 id 残留：远端/本地模式曾翻转或迁移中断时，
+            // 旧副本可能仍留在浏览器库，只删一侧会让记录在翻回本地模式时“复活”。
+            await this.deleteBrowserRecord(id).catch(() => {});
             this.emit({ type: 'delete', id });
             return;
         }
+        await this.deleteBrowserRecord(id);
+        this.emit({ type: 'delete', id });
+    }
+
+    private async deleteBrowserRecord(id: string): Promise<void> {
         const db = await this.open();
         return new Promise((resolve, reject) => {
             const transaction = db.transaction([STORE_NAME, EDIT_MASK_STORE_NAME], 'readwrite');
@@ -575,10 +609,7 @@ class LocalHistoryService {
             const editMaskStore = transaction.objectStore(EDIT_MASK_STORE_NAME);
             const request = store.delete(id);
             editMaskStore.delete(id);
-            transaction.oncomplete = () => {
-                this.emit({ type: 'delete', id });
-                resolve();
-            };
+            transaction.oncomplete = () => resolve();
             transaction.onerror = () => reject(transaction.error);
             request.onerror = () => reject(request.error);
         });
@@ -631,6 +662,8 @@ class LocalHistoryService {
     async clear(): Promise<void> {
         if (await this.isRemoteEnabled()) {
             await api.delete('/local-history');
+            // 与 delete 同理：清空是用户显式的“全部删除”，两侧副本都应清掉。
+            await this.clearBrowserHistory().catch(() => {});
             this.emit({ type: 'clear' });
             return;
         }
