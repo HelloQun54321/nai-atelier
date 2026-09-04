@@ -41,12 +41,12 @@ vi.mock('../services/cloudQueue', () => {
 
 vi.mock('../services/naiKeyVault', () => ({
   naiKeyVault: {
-    list: () => [],
+    list: () => Promise.resolve([]),
     activate: vi.fn(),
     add: vi.fn(),
-    remove: vi.fn(),
+    remove: vi.fn(() => Promise.resolve([])),
     clearActive: vi.fn(),
-    rename: vi.fn(() => []),
+    rename: vi.fn(() => Promise.resolve([])),
   },
 }));
 

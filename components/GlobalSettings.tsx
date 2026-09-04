@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useModalA11y } from './useModalA11y';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
 import { DataBackupManager } from './DataBackupManager';
 import {
@@ -165,6 +166,13 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
   const [editingPresetName, setEditingPresetName] = useState('');
   const importFileRef = React.useRef<HTMLInputElement | null>(null);
+  // P2-2：Esc 与浏览器手势返回共用 requestClose。移动端关闭走 history.back()（异步），
+  // 在 popstate 触发组件卸载前的窗口内再按 Esc 会二次 history.back() 越过标记直接退出页面；
+  // 用 closingRef 挡住“关闭动作已在途”的重复触发，重新打开时复位。
+  const closingRef = useRef(false);
+  useEffect(() => { if (open) closingRef.current = false; }, [open]);
+  // P2-17：模态焦点管理（焦点移入 / Tab 圈禁 / 关闭后归还），ref 挂在内容容器上。
+  const dialogRef = useModalA11y<HTMLDivElement>(open);
   const requestClose = useMobileHistoryLayer(open, onClose, 'settings');
 
   useEffect(() => {
@@ -198,7 +206,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') requestClose();
+      if (event.key === 'Escape' && !closingRef.current) {
+        closingRef.current = true;
+        requestClose();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -284,10 +295,13 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
   useEffect(() => {
     if (!open) return;
-    setKeyVault(naiKeyVault.list());
+    // 保管箱已迁入 local-data（Worker 保管），list 为异步；打开设置时拉取一次。
+    let active = true;
+    void naiKeyVault.list().then(entries => { if (active) setKeyVault(entries); });
+    return () => { active = false; };
   }, [open]);
 
-  const refreshVault = () => setKeyVault(naiKeyVault.list());
+  const refreshVault = async () => setKeyVault(await naiKeyVault.list());
 
   const activateKeyEntry = (entry: NaiKeyEntry) => {
     if (entry.key === readApiKey()) return;
@@ -296,8 +310,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     notify(`已切换到「${entry.name}」`, 'success');
   };
 
-  const addKeyEntry = () => {
-    const result = naiKeyVault.add(newKeyName, newKeyValue);
+  const addKeyEntry = async () => {
+    const result = await naiKeyVault.add(newKeyName, newKeyValue);
     if (result.status === 'empty') {
       notify('密钥不能为空', 'error');
       return;
@@ -312,7 +326,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     }
     setNewKeyName('');
     setNewKeyValue('');
-    refreshVault();
+    await refreshVault();
     notify(`已添加「${result.entry.name}」`, 'success');
   };
 
@@ -324,21 +338,21 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       confirmLabel: '删除',
       tone: 'danger',
     })) return;
-    naiKeyVault.remove(entry.id);
+    await naiKeyVault.remove(entry.id);
     if (active) {
       naiKeyVault.clearActive();
       setApiKey('');
     }
-    refreshVault();
+    await refreshVault();
     notify('密钥已删除');
   };
 
-  const commitRename = (entry: NaiKeyEntry) => {
+  const commitRename = async (entry: NaiKeyEntry) => {
     if (!renameValue.trim()) {
       setRenamingKeyId('');
       return;
     }
-    setKeyVault(naiKeyVault.rename(entry.id, renameValue));
+    setKeyVault(await naiKeyVault.rename(entry.id, renameValue));
     setRenamingKeyId('');
     notify('备注已更新');
   };
@@ -580,7 +594,14 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
   return (
     <div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-center justify-center bg-black/55 p-0 md:p-4" onMouseDown={requestClose}>
-      <div className="settings-dialog ui-modal-enter flex h-[100dvh] max-h-none w-full max-w-none flex-col overflow-hidden border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 md:h-[82vh] md:max-h-[860px] md:max-w-6xl md:rounded-2xl md:border" onMouseDown={event => event.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="全局设置"
+        className="settings-dialog ui-modal-enter flex h-[100dvh] max-h-none w-full max-w-none flex-col overflow-hidden border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 md:h-[82vh] md:max-h-[860px] md:max-w-6xl md:rounded-2xl md:border"
+        onMouseDown={event => event.stopPropagation()}
+      >
         <div className="workspace-command-bar flex items-center justify-between border-b border-gray-200 px-3 dark:border-gray-800 md:px-5">
           <div className="flex min-w-0 items-center gap-2">
             {activeSectionMeta && <button type="button" onClick={() => setActiveSection('home')} className="mobile-touch flex flex-none items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300 md:hidden" aria-label="返回设置分类" title="返回设置分类"><ArrowLeft className="h-[18px] w-[18px]" /></button>}
@@ -1025,10 +1046,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                         value={renameValue}
                         onChange={event => setRenameValue(event.target.value)}
                         onKeyDown={event => {
-                          if (event.key === 'Enter') commitRename(entry);
+                          if (event.key === 'Enter') void commitRename(entry);
                           if (event.key === 'Escape') setRenamingKeyId('');
                         }}
-                        onBlur={() => commitRename(entry)}
+                        onBlur={() => void commitRename(entry)}
                         maxLength={30}
                         className="min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-2 py-1 text-sm outline-none dark:border-indigo-500/50 dark:bg-gray-900"
                         aria-label="密钥备注名"
@@ -1078,14 +1099,14 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <button type="button" onClick={() => setShowNewKeyValue(value => !value)} className="rounded-lg border border-gray-300 px-3 text-sm text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
                   {showNewKeyValue ? '隐藏' : '显示'}
                 </button>
-                <button type="button" onClick={addKeyEntry} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-bold text-white hover:bg-indigo-500">添加</button>
+                <button type="button" onClick={() => void addKeyEntry()} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-bold text-white hover:bg-indigo-500">添加</button>
               </div>
             </div>
             <label className="mt-3 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
               <input type="checkbox" checked={rememberApiKey} onChange={event => updateRememberApiKey(event.target.checked)} className="rounded border-gray-300 text-indigo-600" />
               在本机记住当前使用的 API Key
             </label>
-            <p className="mt-2 text-xs leading-relaxed text-amber-600 dark:text-amber-400">保管箱与备注保存在本机浏览器；不勾选时当前密钥仅保留到浏览器会话结束。浏览器前端无法对密钥提供真正的加密保护。</p>
+            <p className="mt-2 text-xs leading-relaxed text-amber-600 dark:text-amber-400">保管箱与备注由本地服务保存在 local-data 数据目录；「当前使用的密钥」按上方开关保留在本机浏览器。密钥以明文存储于本机，局域网访问受访问密码保护。</p>
             <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
               <label className="flex min-h-11 items-center justify-between gap-3">
                 <span><b className="block text-sm text-gray-800 dark:text-gray-100">多人拼车公共队列</b><span className="mt-0.5 block text-[11px] leading-5 text-gray-500 dark:text-gray-400">兼容 st-chatu8；设置按当前 NovelAI Key 独立保存，切换 Key 后不会串用；相同 Key 的接入者依次生图。</span></span>

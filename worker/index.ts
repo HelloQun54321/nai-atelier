@@ -8,6 +8,7 @@ import { handleAitagRoute, ensureAitagCacheSchema } from './routes/aitagRoutes';
 import { handleHistoryRoute, handleAgentRoute } from './routes/historyRoutes';
 import { handleStBridgeRoute } from './routes/stBridgeRoutes';
 import { handleVibeRoute } from './routes/vibeRoutes';
+import { handleNaiKeyVaultRoute } from './routes/naiKeyVaultRoutes';
 import {
   handleLanRoute, handleSettingsRoute, handleMediaRequest,
   isLoopbackHostname, hasValidLanAccess, lanAccessRequired,
@@ -167,6 +168,9 @@ export default {
 
       const settingsResult = await handleSettingsRoute(routeContext);
       if (settingsResult) return settingsResult;
+
+      const keyVaultResult = await handleNaiKeyVaultRoute(routeContext);
+      if (keyVaultResult) return keyVaultResult;
 
       const vibeResult = await handleVibeRoute(routeContext);
       if (vibeResult) return vibeResult;
