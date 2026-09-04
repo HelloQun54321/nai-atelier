@@ -779,6 +779,12 @@ test('NovelAI 订阅代理转发鉴权并剥离敏感字段', async () => {
   assert.equal(sanitized.paymentProcessorData, undefined);
   // 非 Opus 订阅没有 usage 字段，前端据此隐藏限额组件。
   assert.equal(sanitizeNovelAiSubscription({ tier: 2, active: true }).usage, undefined);
+  // 源头净化：失效 key 官方仍返回 usage（tier:0/active:false/percent:79），
+  // 必须剥除，避免前端把废账号额度当真实剩余展示或参与费用估算。
+  const expired = sanitizeNovelAiSubscription({ tier: 0, active: false, usage: { percent: 79, isNegative: false, timeUntilNextPercent: 7888 } });
+  assert.equal(expired.active, false);
+  assert.equal(expired.usage, undefined);
+  assert.equal(sanitizeNovelAiSubscription({ tier: 3, active: false, usage: { percent: 40 } }).usage, undefined);
 });
 
 test('NovelAI 流式代理使用 SSE 端点并保留鉴权与请求体', async () => {

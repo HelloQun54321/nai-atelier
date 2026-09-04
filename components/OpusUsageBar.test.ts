@@ -92,4 +92,23 @@ describe('OpusUsageBar', () => {
     expect(screen.getByText('当前密钥已失效，点击切换')).toBeTruthy();
     expect(screen.getByText('×').parentElement?.className).toContain('text-red-500');
   });
+
+  it('失效 key 即使官方不带 usage 也显示红叉而非整行消失', async () => {
+    sessionStorage.setItem('nai_api_key', 'pst-opus-expired-nousage-key'); // secret-scan: allow 测试用假密钥，非真实凭据
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('/api/novelai-runtime')) {
+        return responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true, extracted: [], missed: [] } });
+      }
+      // 网关源头净化后：失效 key 不带 usage，只带 active:false。
+      return responseFor({ tier: 0, active: false });
+    }));
+
+    render(React.createElement(OpusUsageBar, { collapsed: false }));
+    await waitFor(() => {
+      expect(screen.getByRole('status', { name: /当前密钥已失效/ })).toBeTruthy();
+    });
+    expect(screen.getByText('×')).toBeTruthy();
+    expect(screen.getByText('当前密钥已失效，点击切换')).toBeTruthy();
+  });
 });

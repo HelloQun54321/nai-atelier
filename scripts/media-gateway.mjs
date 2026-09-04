@@ -912,15 +912,21 @@ export const fetchNovelAiSubscription = (authorization, signal = AbortSignal.tim
 /**
  * 只保留前端需要的订阅字段，剥离 paymentProcessorData 等敏感/冗余数据，
  * usage 三个字段与 NovelAI Web 应用的 Opus 限额映射一一对应。
+ * 源头净化：非活跃或非 Opus（tier<3）的订阅不派发 usage——失效 key 官方仍会
+ * 返回 usage 数字（如 tier:0/active:false/percent:79），透传会让前端把它当真实
+ * 剩余额度展示/参与费用估算。前端只认 usage 是否存在 + active 字段。
  */
 export const sanitizeNovelAiSubscription = payload => {
   const usage = payload?.usage;
   const percent = Number(usage?.percent);
   const timeUntilNextPercent = Number(usage?.timeUntilNextPercent);
+  const active = payload?.active === true;
+  const tier = Number(payload?.tier) || 0;
+  const isActiveOpus = active && tier >= 3;
   return {
-    tier: Number(payload?.tier) || 0,
-    active: payload?.active === true,
-    usage: usage && Number.isFinite(percent) ? {
+    tier,
+    active,
+    usage: isActiveOpus && usage && Number.isFinite(percent) ? {
       percent,
       isNegative: usage.isNegative === true,
       timeUntilNextPercent: Number.isFinite(timeUntilNextPercent) ? timeUntilNextPercent : 0,
@@ -957,7 +963,7 @@ const settleSuccessfulNovelAiGeneration = async ({ payload, authorization, keyHa
       const subscription = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(10_000), requestRemote);
       if (subscription.ok) {
         const sanitized = sanitizeNovelAiSubscription(await subscription.json());
-        setOpusUsageSnapshot(keyHash, sanitized.usage?.isNegative === true, Number(sanitized.tier) >= 3);
+        setOpusUsageSnapshot(keyHash, sanitized.usage?.isNegative === true, sanitized.active === true && Number(sanitized.tier) >= 3);
       }
     } catch {
       // 网络失败时沿用上次快照，不阻塞本次已经完成的生成结算。
@@ -3115,7 +3121,7 @@ const serveDistFile = async (req, res, url) => {
         }
         const payload = await upstream.json();
         const sanitized = sanitizeNovelAiSubscription(payload);
-        setOpusUsageSnapshot(keyHashFromAuthorization(authorization), sanitized.usage?.isNegative === true, Number(sanitized.tier) >= 3);
+        setOpusUsageSnapshot(keyHashFromAuthorization(authorization), sanitized.usage?.isNegative === true, sanitized.active === true && Number(sanitized.tier) >= 3);
         return sendJson(res, 200, sanitized);
       } catch (error) {
         return sendJson(res, 502, { error: error.message || 'NovelAI 订阅信息获取失败' });

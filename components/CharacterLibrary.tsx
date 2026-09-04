@@ -5,7 +5,7 @@ import { api } from '../services/api';
 import { db } from '../services/dbService';
 import { compilePrompt } from '../services/promptUtils';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
-import { isNovelaiSubscriptionActive, useNovelaiUsage } from '../services/naiUsage';
+import { isNovelaiSubscriptionInactive, useNovelaiUsage } from '../services/naiUsage';
 import { applyEstimatorRuntime, estimateV45GenerationCost, formatGenerationCostLabel, usageForCostEstimate, useAnlasBudget } from '../services/anlasBudget';
 import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import {
@@ -676,7 +676,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     const params = chain?.params || DEFAULT_PARAMS;
     // 当前 Key 已失效（官方 active=false）：生成请求必被拒绝，直接拦截避免白等。
     const freshSubscription = await refreshUsageIfStale();
-    if (freshSubscription && !isNovelaiSubscriptionActive(freshSubscription)) {
+    if (isNovelaiSubscriptionInactive(freshSubscription)) {
       notify('当前密钥已失效，请到 全局设置 → 密钥 切换到有效密钥后重试', 'error');
       return;
     }

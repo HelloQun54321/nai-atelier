@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-05
+- **DeepSeek V4 Flash (Oh My Pi)**：按第三方审查修订订阅失效治理——网关源头剥除非活跃/非 Opus 订阅的 usage、结算快照补 active 校验、限额行红叉提前于隐藏分支、生成费用按活跃 Opus 资格计算、守卫统一显式 inactive 判定、Vibe 编码入口补拦截，并删除无用 state（fix: harden expired-key handling after code review）。
 - **DeepSeek V4 Flash (Oh My Pi)**：订阅失效密钥系统性治理——侧栏 Opus 限额行对 active=false 密钥显示红色 × 与切换提示，文生图/图生图/编辑/Agent/角色库/画师库生成前硬拦截失效密钥，设置页保管箱对当前密钥标注「已失效/非 Opus」，判定纯函数落 naiUsage 并补单测（feat: surface expired subscription keys across usage bar, vault and generation guards）。
 - **DeepSeek V4 Flash (Oh My Pi)**：官方常量同步健康修复——同步失败只改进程内状态不落盘，磁盘保留最近完整成功；启动读到旧失败记录降级为 pending；前端降级响应（502 带完整体）合并缓存而非冻结旧值（fix: keep one-off runtime sync failure out of persisted health）。
 

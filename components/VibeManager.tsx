@@ -3,6 +3,7 @@ import { ImageEditOperation, NAIParams, VibeAsset, VibeGroup, VibeSelection } fr
 import { vibeService } from '../services/vibeService';
 import { VIBE_MAX_SLOTS, normalizeVibeSelections } from '../services/vibeUtils';
 import { useAnlasBudget } from '../services/anlasBudget';
+import { isNovelaiSubscriptionInactive, useNovelaiUsage } from '../services/naiUsage';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -29,6 +30,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
   const confirmAction = useConfirmDialog();
   const runtime = useNaiRuntime();
   const anlasBudget = useAnlasBudget();
+  const { refreshIfStale: refreshUsageIfStale } = useNovelaiUsage();
   const imageInputRef = useRef<HTMLInputElement>(null);
   const vibeInputRef = useRef<HTMLInputElement>(null);
   const historyActiveRef = useRef(false);
@@ -167,6 +169,12 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
     }
     if (!apiKey) {
       notify('请先在全局设置中填写 NovelAI API Key', 'error');
+      return null;
+    }
+    // 当前 Key 已失效（官方 active=false）：Vibe 编码请求必被拒绝，先拦截避免白等扣费确认。
+    const freshSubscription = await refreshUsageIfStale();
+    if (isNovelaiSubscriptionInactive(freshSubscription)) {
+      notify('当前密钥已失效，请到 全局设置 → 密钥 切换到有效密钥后重试', 'error');
       return null;
     }
     const accepted = await confirmAction({

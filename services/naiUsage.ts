@@ -154,7 +154,6 @@ export const useNovelaiUsage = () => {
   const [fetchedAt, setFetchedAt] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeApiKey, setActiveApiKey] = useState(() => (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim());
   const infoRef = useRef<NovelaiSubscriptionInfo | null>(null);
   const fetchedAtRef = useRef(0);
   const activeKeyRef = useRef('');
@@ -169,7 +168,6 @@ export const useNovelaiUsage = () => {
       setInfo(null);
       setFetchedAt(0);
       setError(null);
-      setActiveApiKey(apiKey);
     }
     if (!apiKey) {
       infoRef.current = null;
@@ -224,5 +222,5 @@ export const useNovelaiUsage = () => {
     };
   }, [refresh]);
 
-  return { info, usage: info?.usage, loading, error, fetchedAt, activeApiKey, refresh, refreshIfStale };
+  return { info, usage: info?.usage, loading, error, fetchedAt, refresh, refreshIfStale };
 };

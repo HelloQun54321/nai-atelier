@@ -21,7 +21,7 @@ import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildImageEditPresetPatch, canSaveLabModeToLibrary, LabPresetImportOptions } from '../services/labModeTools';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { LabPageLayouts } from '../services/appearancePreferences';
-import { isNovelaiSubscriptionActive, useNovelaiUsage } from '../services/naiUsage';
+import { isNovelaiSubscriptionActive, isNovelaiSubscriptionInactive, isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, useAnlasBudget } from '../services/anlasBudget';
 import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, scopeLabWorkspaceSessionToEntry, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
@@ -85,6 +85,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // 本地 Anlas 预算（账号整体，手动校准）：用尽后扣费生成需要红色警告。
     const anlasBudget = useAnlasBudget();
     const opusUsageExhausted = novelaiUsage?.isNegative === true;
+    // Opus 免费档资格来自「活跃 Opus 订阅」：key 已失效或非 Opus 时没有免费额度，
+    // 费用必须按全价算（否则会显示“免费/消耗额度”与侧栏红叉打架，点击后才被拦）。
+    const opusSubscriptionActive = isActiveOpusSubscription(novelaiSubscription);
     // 成本估算常量（免费门槛、公式系数、受限模型清单）由网关自动同步。
     const [naiRuntimeConfig, setNaiRuntimeConfig] = useState<NaiRuntimeConfig | null>(null);
     const [, setRuntimeAppliedAt] = useState(0);
@@ -104,7 +107,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         ? `${describeNaiRuntimeSyncProblem(naiRuntimeConfig)}，费用估算与免费档判断可能过期，继续生成可能意外消耗共享 Anlas`
         : '';
     const activeModelInfo = getRuntimeNaiModelInfo(params.model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME);
-    const estimatedAnlasCost = estimateV45GenerationCost(params, true, opusUsageExhausted);
+    const estimatedAnlasCost = estimateV45GenerationCost(params, opusSubscriptionActive, opusUsageExhausted);
     const generationCostLabel = formatGenerationCostLabel(estimatedAnlasCost, params.model);
 
     /**
@@ -1557,7 +1560,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         // 直接拦截并提示切换，避免「估算免费/有额度」却白等一轮失败。
         // 仅在拿到显式 inactive 时拦截；null/加载中视为未知，不误报。
         const freshSubscription = await refreshUsageIfStale();
-        if (freshSubscription && isNovelaiSubscriptionActive(freshSubscription) === false) {
+        if (isNovelaiSubscriptionInactive(freshSubscription)) {
             if (!await confirmAction({
                 title: '当前密钥已失效',
                 message: 'NovelAI 返回该密钥订阅已过期，生成请求会被拒绝。\n\n请到 全局设置 → 密钥 切换到有效密钥后重试。',
@@ -1566,7 +1569,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             })) return false;
             return false;
         }
-        const cost = estimateV45GenerationCost(params, true, await usageForCostEstimate(params.model));
+        const cost = estimateV45GenerationCost(params, opusSubscriptionActive, await usageForCostEstimate(params.model));
         // 同步失效时按“免费”估算原本会静默直发，这里必须先警示确认。
         if (runtimeSyncUnhealthy && cost === 0) {
             if (!await confirmAction({
@@ -1612,7 +1615,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
         // 当前 Key 已失效（官方 active=false）：编辑请求必被拒绝，直接拦截。
         const freshSubscription = await refreshUsageIfStale();
-        if (freshSubscription && isNovelaiSubscriptionActive(freshSubscription) === false) {
+        if (isNovelaiSubscriptionInactive(freshSubscription)) {
             const message = '当前密钥已失效，请到 全局设置 → 密钥 切换到有效密钥后重试';
             setErrorMsg(message);
             notify(message, 'error');
@@ -1795,7 +1798,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string): Promise<boolean> => {
         // 当前 Key 已失效：直接拦截，避免 Agent 编排到提交那一步才失败。
         const freshSubscription = await refreshUsageIfStale();
-        if (freshSubscription && isNovelaiSubscriptionActive(freshSubscription) === false) {
+        if (isNovelaiSubscriptionInactive(freshSubscription)) {
             notify('当前密钥已失效，请到 全局设置 → 密钥 切换到有效密钥后重试', 'error');
             return false;
         }

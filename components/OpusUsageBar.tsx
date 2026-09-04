@@ -15,17 +15,18 @@ const OPUS_RING_CIRCUMFERENCE = 2 * Math.PI * 16;
 export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
   const { info, usage, loading, error, refresh } = useNovelaiUsage();
   const runtime = useNaiRuntime();
-  // 请求明确成功但没有 usage 时才表示非 Opus；加载和失败都保留完整状态行。
-  if (!usage && !loading && !error) return null;
+  // Key 已失效（官方 active=false）：额度数字属于废账号，展示没有意义，
+  // 直接红色 × 提示切换，避免「看着有额度、生成必失败」的误导。
+  // 该判定必须先于下方无 usage 的隐藏分支：失效 key 即使不带 usage 也必须显形。
+  const keyInvalid = isNovelaiSubscriptionInactive(info);
+  // 请求明确成功、key 有效但没有 usage 时才表示非 Opus；加载/失败/失效都保留状态行。
+  if (!usage && !keyInvalid && !loading && !error) return null;
   const percent = usage ? usageRemainingPercent(usage) : 0;
   // 活动加成可能让真实额度超过 100%；圆环保持满圈，数字和张数保留真实值。
   const ringPercent = Math.min(100, percent);
   const images = usage ? usageRemainingImages(usage, runtime.imagesPerPercent) : 0;
   const negative = usage?.isNegative === true;
   const low = !negative && percent <= 20;
-  // Key 已失效（官方 active=false）：额度数字属于废账号，展示没有意义，
-  // 直接红色 × 提示切换，避免「看着有额度、生成必失败」的误导。
-  const keyInvalid = isNovelaiSubscriptionInactive(info);
   // 同步健康度：提取失效或超过 48 小时未更新时，直接用红色圆环和叉号示警，
   // 避免「项目能跑但常量早已过期」的静默失效。
   const health = runtime.health;
@@ -51,7 +52,9 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
     : health?.missed?.length
       ? `常量同步部分失效：未命中 ${health.missed.join('、')}（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString() : ''} 同步）`
       : `常量同步正常（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString() : '等待首次同步'}）`;
-  const title = `${!usage
+  const title = `${keyInvalid
+    ? '当前密钥已失效，点击切换'
+    : !usage
     ? error ? 'Opus 限额同步失败，点击立即重试' : '正在同步 Opus 限额'
     : negative
     ? 'Opus 限额已用尽：所有生图将消耗 Anlas，额度恢复后自动回到免费生成'
