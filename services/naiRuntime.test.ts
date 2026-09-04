@@ -33,6 +33,31 @@ describe('naiRuntime refresh', () => {
     expect(second.syncedAt).toBe(456);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it('降级响应（502 带完整体）不被冻结：下一轮成功刷新替换缓存', async () => {
+    const payload = {
+      ...DEFAULT_NAI_RUNTIME,
+      syncedAt: 123,
+      health: { ok: true, extracted: ['all'], missed: [] },
+    };
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue({ ok: true, json: async () => payload } as Response);
+    await refreshNaiRuntimeConfig();
+
+    // 网关降级但响应体仍携带完整 runtime + 健康记录：合并进缓存而不是退回旧值。
+    const degraded = { ...payload, syncedAt: 200, health: { ok: false, reason: 'fetch', error: 'x', attemptedAt: 1 } };
+    fetchMock.mockResolvedValue({ ok: false, status: 502, json: async () => degraded } as Response);
+    const afterDegrade = await refreshNaiRuntimeConfig();
+    expect(afterDegrade.syncedAt).toBe(200);
+    expect(afterDegrade.health).toMatchObject({ ok: false, reason: 'fetch' });
+
+    // 同步恢复后缓存必须被新状态替换，而不是被降级响应永久冻结。
+    const recovered = { ...payload, syncedAt: 456, health: { ok: true, extracted: ['all'], missed: [] } };
+    fetchMock.mockResolvedValue({ ok: true, json: async () => recovered } as Response);
+    const afterRecover = await refreshNaiRuntimeConfig();
+    expect(afterRecover.syncedAt).toBe(456);
+    expect(afterRecover.health?.ok).toBe(true);
+  });
 });
 
 describe('useNaiRuntime 共享订阅', () => {

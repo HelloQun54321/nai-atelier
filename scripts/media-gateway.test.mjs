@@ -26,6 +26,9 @@ import {
   extractNaiMetadataModelMappings,
   fetchNaiRuntimeText,
   computeNaiRuntimeSync,
+  getNaiRuntime,
+  initNaiRuntimeSync,
+  syncNaiRuntime,
   computeGenerationPersonalUsage,
   isNaiUsageLimitedModel,
   applyNaiRuntimeOverride,
@@ -922,6 +925,40 @@ test('同步健康记录：全部命中 / 全部失效 / 部分失效', () => {
   assert.equal(partial.health.ok, true);
   assert.deepEqual(partial.health.missed, ['imagesPerPercent', 'costCoefficients', 'freeTier', 'streamedModels', 'promptPresets', 'metadataModels']);
   assert.equal(partial.runtime.models.length, 1);
+});
+
+test('同步失败只改写进程内健康记录，不覆盖磁盘上的最近成功快照', async () => {
+  const path = join(process.cwd(), 'local-data', 'novelai-webapp-sync.json');
+  const backup = await readFile(path, 'utf8');
+  try {
+    // 远程抓取抛错：失败后 health 变红但磁盘文件逐字节不变（旧版本会在此处落盘失败记录）。
+    const ok = await syncNaiRuntime(async () => { throw new Error('simulated outage'); });
+    assert.equal(ok, false);
+    assert.equal(getNaiRuntime().health.ok, false);
+    assert.equal(getNaiRuntime().health.reason, 'fetch');
+    assert.equal(await readFile(path, 'utf8'), backup);
+  } finally {
+    await writeFile(path, backup);
+  }
+});
+
+test('启动读取到旧版本写入的历史失败记录时降级为 pending', async () => {
+  const path = join(process.cwd(), 'local-data', 'novelai-webapp-sync.json');
+  const backup = await readFile(path, 'utf8');
+  try {
+    const stale = JSON.parse(backup);
+    stale.health = { ok: false, reason: 'fetch', error: 'fetch failed', attemptedAt: Date.now() };
+    await writeFile(path, JSON.stringify(stale, null, 2));
+    // 首次调用生效：启动加载把失败记录转成 pending，等延迟同步刷新真实结果，
+    // 而不是把红色同步警告带进重启后的界面。
+    await initNaiRuntimeSync(async () => { throw new Error('simulated'); });
+    // pending 与进程内初始状态同构（ok:false + reason:pending），
+    // 前端 isNaiRuntimeSyncUnhealthy 先判 reason 短路 → 不示警，等延迟同步刷新真实结果。
+    assert.equal(getNaiRuntime().health.reason, 'pending');
+    assert.equal(getNaiRuntime().syncedAt, Number(stale.syncedAt) || 0);
+  } finally {
+    await writeFile(path, backup);
+  }
 });
 
 test('Precise Reference uses official V4.5 director fields without local IDs', () => {

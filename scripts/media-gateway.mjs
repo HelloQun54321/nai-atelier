@@ -1404,6 +1404,8 @@ const persistNaiRuntimeState = async () => {
   }
 };
 
+// 同步失败只改写进程内 health（供本轮 API 响应与前端提示），不落盘：
+// 磁盘记录始终是最近一次完整成功，避免一次性网络抖动跨重启残留红色同步警告。
 const runNaiRuntimeSync = async (requestRemote = fetch) => {
   let html;
   try {
@@ -1413,7 +1415,6 @@ const runNaiRuntimeSync = async (requestRemote = fetch) => {
       ...naiRuntimeState,
       health: { ok: false, reason: 'fetch', error: error.message || String(error), attemptedAt: Date.now() },
     };
-    await persistNaiRuntimeState();
     console.warn('[nai-runtime] 官方页面抓取失败，沿用最近可用常量：', error.message || error);
     return false;
   }
@@ -1423,7 +1424,6 @@ const runNaiRuntimeSync = async (requestRemote = fetch) => {
       ...naiRuntimeState,
       health: { ok: false, reason: 'page', error: 'official page exposes no chunks', attemptedAt: Date.now() },
     };
-    await persistNaiRuntimeState();
     console.warn('[nai-runtime] 官方页面结构变化（未找到 JS 包），沿用最近可用常量');
     return false;
   }
@@ -1436,7 +1436,6 @@ const runNaiRuntimeSync = async (requestRemote = fetch) => {
       ...naiRuntimeState,
       health: { ...health, ok: false, reason: 'partial', attemptedAt: Date.now() },
     };
-    await persistNaiRuntimeState();
     console.warn('[nai-runtime] 官方常量部分提取失效，将沿用最近完整快照并稍后重试：', health.missed.join(', '));
     return false;
   }
@@ -1468,19 +1467,29 @@ const scheduleNaiRuntimeSync = (delay, requestRemote = fetch) => {
   if (typeof naiRuntimeSyncTimer.unref === 'function') naiRuntimeSyncTimer.unref();
 };
 
-const initNaiRuntimeSync = async (requestRemote = fetch) => {
+export const initNaiRuntimeSync = async (requestRemote = fetch) => {
   if (naiRuntimeSyncInitialized) return;
   naiRuntimeSyncInitialized = true;
   try {
     const saved = JSON.parse(await readFile(NAI_RUNTIME_SYNC_FILE, 'utf8'));
     if (saved?.runtime) {
+      // 历史失败记录只可能由旧版本写入（新版本失败不落盘），加载时降级为 pending，
+      // 由启动后的延迟同步刷新为真实结果，避免跨重启残留红色同步警告。
+      let health;
+      if (!saved.health) {
+        health = { ok: true, extracted: [], missed: [] };
+      } else if (saved.health.missed?.length) {
+        health = { ...saved.health, ok: false, reason: 'partial' };
+      } else if (saved.health.ok === false) {
+        health = { ...saved.health, reason: 'pending' };
+      } else {
+        health = saved.health;
+      }
       naiRuntimeState = {
         ...DEFAULT_NAI_RUNTIME,
         ...saved.runtime,
         syncedAt: Number(saved.syncedAt) || 0,
-        health: saved.health?.missed?.length
-          ? { ...saved.health, ok: false, reason: 'partial' }
-          : saved.health || { ok: true, extracted: [], missed: [] },
+        health,
       };
     }
   } catch {

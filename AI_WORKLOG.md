@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-09-05
+- **DeepSeek V4 Flash (Oh My Pi)**：官方常量同步健康修复——同步失败只改进程内状态不落盘，磁盘保留最近完整成功；启动读到旧失败记录降级为 pending；前端降级响应（502 带完整体）合并缓存而非冻结旧值（fix: keep one-off runtime sync failure out of persisted health）。
+
 ## 2026-09-04
 - **Kimi K3 (Oh My Pi)**：历史灯箱、灵感详情、角色灯箱大图统一豁免安全模式遮挡（data-safe-mode-ignore），外部图库浏览保持遮挡（fix: exempt own-asset big image viewers from safe mode blur consistently）。
 - **Kimi K3 (Oh My Pi)**：元信息字号 token 化（--text-tiny/mini/micro/meta）并迁移全站 308 处绝对像素任意值，VIP 无限动画纳入 data-motion 与 prefers-reduced-motion 门禁（style: tokenize meta font sizes and gate VIP animations behind motion preference）。

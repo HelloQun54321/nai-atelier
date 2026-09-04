@@ -254,19 +254,29 @@ const stopRuntimeDriver = () => {
   }
 };
 
+// 网关 /api/novelai-runtime 正常与降级响应都可能携带完整运行时；
+// 响应体只要带健康记录就视为可信任的状态，替换当前缓存（含同步失效状态）。
+const resolveRuntimePayload = (payload: unknown): NaiRuntimeConfig | null => {
+  const next = payload as NaiRuntimeConfig | null;
+  if (!next || !Array.isArray(next.models) || !next.models.length || !next.health) return null;
+  const resolved: NaiRuntimeConfig = {
+    ...DEFAULT_NAI_RUNTIME,
+    ...next,
+    modelCapabilities: next.modelCapabilities && typeof next.modelCapabilities === 'object'
+      ? { ...DEFAULT_NAI_RUNTIME.modelCapabilities, ...next.modelCapabilities }
+      : DEFAULT_NAI_RUNTIME.modelCapabilities,
+  };
+  return resolved;
+};
+
 const requestNaiRuntimeConfig = async (): Promise<NaiRuntimeConfig> => {
   try {
     const res = await fetch(`/api/novelai-runtime?_t=${Date.now()}`, { cache: 'no-store' });
-    if (res.ok) {
-      const next = await res.json();
-      if (next && Array.isArray(next.models) && next.models.length) {
-        const resolved: NaiRuntimeConfig = {
-          ...DEFAULT_NAI_RUNTIME,
-          ...next,
-          modelCapabilities: next.modelCapabilities && typeof next.modelCapabilities === 'object'
-            ? { ...DEFAULT_NAI_RUNTIME.modelCapabilities, ...next.modelCapabilities }
-            : DEFAULT_NAI_RUNTIME.modelCapabilities,
-        };
+    if (res.ok || res.status === 502 || res.status === 504) {
+      // 网关降级（502/504）时响应体仍可能是网关代理转发的完整 runtime 状态，
+      // 合并它而不是把上一次结果冻结在缓存里，保证下一轮成功刷新能替换缓存。
+      const resolved = resolveRuntimePayload(await res.json());
+      if (resolved) {
         cachedConfig = resolved;
         return resolved;
       }
