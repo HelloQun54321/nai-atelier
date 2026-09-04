@@ -5,6 +5,7 @@ import { ChainList } from './components/ChainList';
 import { useConfirmDialog } from './components/ConfirmDialog';
 import { ImageActivityProvider } from './components/SmartImage';
 import { db } from './services/dbService';
+import { deleteLabWorkspaceSession, getLabWorkspaceSessionKey, markEditorSessionDiscarded } from './services/labWorkspace';
 import {
   applyAppearancePreferences,
   AppearancePreferences,
@@ -417,6 +418,12 @@ const App = () => {
       }
       // User confirmed, reset dirty state
       setIsEditorDirty(false);
+      // 「放弃」必须真实生效：清掉该串的实验室工作区草稿（否则重进会恢复“已放弃”的修改），
+      // 并标记编辑器卸载时跳过自动补封面。
+      if (view === 'edit' && selectedId) {
+        deleteLabWorkspaceSession(getLabWorkspaceSessionKey(selectedId));
+        markEditorSessionDiscarded(selectedId);
+      }
     }
 
     // 记录进入实验室前的内容页，供手机端返回箭头使用；实验室内部切换不覆盖该记录。

@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-04
+- **Kimi K3 (Oh My Pi)**：修复编辑器生成生命周期——放弃离开真实清除工作区草稿并跳过自动补封面、恢复草稿如实标记未保存、流式中断需确认才重发防重复扣费、生成途中离开时历史仍完整落库（fix: honest discard semantics, guarded stream fallback, and unmount-safe generation in lab editor）。
 - **DeepSeek V4 Flash (Oh My Pi 子代理)**：角色库生成预览与画师库实装测试接入与实验室同源的费用估算与确认（预算用尽/同步异常红色警示），批量任务入队时一次性确认总耗（fix: require cost confirmation for character and artist preview generation）。
 - **DeepSeek V4 Flash (Oh My Pi 子代理)**：API 层错误统一为结构化 ApiError（code/status），取消排队按 QUEUE_CANCELLED/499 判定并保留文案兜底；Prompt Agent SSE 逐行容错（refactor: structured API errors with code/status and resilient agent SSE parsing）。
 - **Kimi K3 (Oh My Pi)**：修复实验室编辑资产竞态——同键资产的写入/删除改为按 id 串行队列，并补上资产清理对 resultImageRef 的引用收集，避免新蒙版/编辑结果被误删（fix: serialize lab asset writes and deletes per key and keep result assets referenced）。

@@ -24,7 +24,7 @@ import { LabPageLayouts } from '../services/appearancePreferences';
 import { useNovelaiUsage } from '../services/naiUsage';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, useAnlasBudget } from '../services/anlasBudget';
-import { cleanupLabWorkspaceAssets, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, scopeLabWorkspaceSessionToEntry, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
+import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, scopeLabWorkspaceSessionToEntry, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME, getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
@@ -178,6 +178,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [previewMode, setPreviewMode] = useState<'history' | 'cover' | 'result' | 'unsaved'>('cover');
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const generationInFlightRef = useRef(false);
+    // 生成是长任务：用户在生成途中离开编辑页（edit 视图不常驻）后，异步回调只能写持久层，
+    // 不得再触碰本组件状态。
+    const mountedRef = useRef(true);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => { mountedRef.current = false; };
+    }, []);
+    // 最近一次生成结果的内存 blob：卸载时 blob: 预览可能已被 revoke，自动补封面用它兜底。
+    const lastGeneratedBlobRef = useRef<Blob | null>(null);
     const [imageEditBaseImage, setImageEditBaseImage] = useState<string | null>(null);
     const [imageEditPreviewImage, setImageEditPreviewImage] = useState<string | null>(null);
     const workspaceKey = getLabWorkspaceSessionKey(chain.id);
@@ -404,7 +413,35 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             });
         }
         setActiveModules(initialModules);
-        setHasChanges(false);
+        // 恢复的工作区草稿若与已落库内容不一致，必须如实标记为未保存：
+        // 否则界面显示「已保存」而数据库是旧值，后续保存会把中断前的草稿静默写回。
+        const persistedParams = normalizeParams({
+            seed: undefined,
+            qualityToggle: true, ucPreset: 4, characters: [],
+            useCoords: chain.params?.useCoords ?? false,
+            variety: chain.params?.variety ?? false,
+            cfgRescale: chain.params?.cfgRescale ?? 0,
+            ...(chain.params || {})
+        });
+        const restoredParams = normalizeParams({
+            seed: undefined,
+            qualityToggle: true, ucPreset: 4, characters: [],
+            useCoords: chain.params?.useCoords ?? false,
+            variety: chain.params?.variety ?? false,
+            cfgRescale: chain.params?.cfgRescale ?? 0,
+            ...storedWorkspace.textToImage.params
+        });
+        const moduleStateDiffers = (chain.modules || []).some(m => (initialModules[m.id] ?? m.isActive) !== m.isActive);
+        const restoredDiffers =
+            (storedWorkspace.textToImage.basePrompt || '') !== (chain.basePrompt || '') ||
+            (storedWorkspace.textToImage.negativePrompt || '') !== (chain.negativePrompt || '') ||
+            (storedWorkspace.textToImage.subjectPrompt || '') !== String(chain.variableValues?.subject || '') ||
+            JSON.stringify(restoredParams) !== JSON.stringify(persistedParams) ||
+            moduleStateDiffers;
+        setHasChanges(restoredDiffers);
+        if (restoredDiffers && chain.id !== 'playground') {
+            notify('已恢复上次未保存的修改，保存后才会写回风格串');
+        }
 
         void reloadPreviewHistory(sourceChainId);
 
@@ -1137,9 +1174,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             return { previewImage: decision.source || undefined, changed: false };
         }
 
-        const response = await fetch(decision.source);
-        if (!response.ok) throw new Error(`读取当前预览图片失败（${response.status}）`);
-        const blob = await response.blob();
+        // blob: 预览在卸载 cleanup 中可能已被 revoke；优先使用生成时保留的内存 blob。
+        const coverSource = decision.source;
+        const retainedBlob = coverSource.startsWith('blob:') ? lastGeneratedBlobRef.current : null;
+        const blob = retainedBlob ?? await (async () => {
+            const response = await fetch(coverSource);
+            if (!response.ok) throw new Error(`读取当前预览图片失败（${response.status}）`);
+            return response.blob();
+        })();
         if (!blob.type.startsWith('image/')) throw new Error('当前预览内容不是有效图片');
         const extension = blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/webp' ? 'webp' : 'png';
         const file = new File([blob], `chain-cover.${extension}`, { type: blob.type });
@@ -1176,6 +1218,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const autoSaveCoverOnExitRef = useRef(autoSaveCoverOnExit);
     autoSaveCoverOnExitRef.current = autoSaveCoverOnExit;
     useEffect(() => () => {
+        // 用户在导航守卫里明确选择了「放弃并离开」：跳过自动补封面等所有卸载副作用。
+        if (consumeEditorSessionDiscarded(chain.id)) return;
         void autoSaveCoverOnExitRef.current();
     }, []);
 
@@ -1364,13 +1408,55 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         setGenerationProgress(preview.step ? { step: preview.step, total: activeParams.steps } : null);
                     }, streamSupported);
                 } catch (streamError) {
-                    // 只有 final 尚未到达时 generateImageStream 才会抛错，因此这里回退不会重复生成。
-                    console.warn('生成过程预览不可用，已回退普通生成：', streamError);
                     setGenerationProgress(null);
+                    // 4xx 是上游明确拒绝（参数/鉴权），重发必然同样失败且不计费，直接抛错展示；
+                    // 网络中断/5xx 时无法区分「未达上游」与「上游已完成但 final 丢失」，
+                    // 自动重发可能双扣费，必须改由用户确认。
+                    const streamStatus = (streamError as { status?: unknown })?.status;
+                    if (typeof streamStatus === 'number' && streamStatus >= 400 && streamStatus < 500) throw streamError;
+                    console.warn('生成过程预览中断：', streamError);
+                    const retry = await confirmAction({
+                        title: '过程预览连接中断',
+                        message: '无法确认 NovelAI 是否已完成本次生成。直接重新生成可能产生重复扣费；若刚才已实际扣费，结果会稍晚出现在历史中。',
+                        confirmLabel: '重新生成',
+                        tone: 'danger',
+                    });
+                    if (!retry) throw streamError;
                     result = await generateImage(apiKey, generationPrompt, generationNegativePrompt, activeParams);
                 }
             } else {
                 result = await generateImage(apiKey, generationPrompt, generationNegativePrompt, activeParams);
+            }
+
+            lastGeneratedBlobRef.current = result.blob;
+
+            // Use actual seed returned from generation
+            const finalParams = { ...activeParams, seed: result.seed };
+            // Agent generation can use a draft that has not been applied to
+            // the editor.  Persist that exact draft so re-importing history
+            // reconstructs the image that was actually generated.
+            const generatedStructure = override ?? {
+                basePrompt,
+                subjectPrompt,
+                negativePrompt,
+                modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })),
+                params: activeParams,
+            };
+            const persistSource = {
+                sourceChainId,
+                sourceChainName: chainName,
+                sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
+                basePrompt: generatedStructure.basePrompt,
+                subjectPrompt: generatedStructure.subjectPrompt,
+                modules: generatedStructure.modules,
+            } as const;
+
+            // 用户在生成途中离开了编辑页：历史落库必须继续完成（产物不丢），UI 状态不再触碰。
+            if (!mountedRef.current) {
+                await localHistory.add(result.blob, generationPrompt, finalParams, generationNegativePrompt, persistSource)
+                    .catch((historyError: unknown) => console.error('离开后保存生成历史失败:', historyError));
+                checkAndRemoveUntestedTag();
+                return true;
             }
 
             // Show the completed image before uploading its several-megabyte
@@ -1385,27 +1471,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             // paint the result before JSON serialization/history persistence.
             await new Promise<void>(resolve => window.setTimeout(resolve, 0));
 
-            // Use actual seed returned from generation
-            const finalParams = { ...activeParams, seed: result.seed };
-            // Agent generation can use a draft that has not been applied to
-            // the editor.  Persist that exact draft so re-importing history
-            // reconstructs the image that was actually generated.
-            const generatedStructure = override ?? {
-                basePrompt,
-                subjectPrompt,
-                negativePrompt,
-                modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })),
-                params: activeParams,
-            };
             try {
-                const historyItem = await localHistory.add(result.blob, generationPrompt, finalParams, generationNegativePrompt, {
-                sourceChainId,
-                sourceChainName: chainName,
-                sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
-                basePrompt: generatedStructure.basePrompt,
-                subjectPrompt: generatedStructure.subjectPrompt,
-                modules: generatedStructure.modules,
-            });
+                const historyItem = await localHistory.add(result.blob, generationPrompt, finalParams, generationNegativePrompt, persistSource);
                 setPreviewHistory(prev => [historyItem, ...prev.filter(item => item.id !== historyItem.id)]);
                 setPreviewIndex(0);
                 setPreviewMode('history');
@@ -1420,16 +1487,21 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             }
             return true;
         } catch (e: any) {
-            if (streamedPreviewShown) {
-                setGeneratedImage(previousGeneratedImage);
-                setPreviewMode(previousPreviewMode);
+            if (mountedRef.current) {
+                if (streamedPreviewShown) {
+                    setGeneratedImage(previousGeneratedImage);
+                    setPreviewMode(previousPreviewMode);
+                }
+                setErrorMsg(e.message);
             }
-            setErrorMsg(e.message);
+            // notify 是全局 toast：离开编辑页后仍应告知生成失败。
             notify(e.message, 'error');
             return false;
         } finally {
-            setGenerationProgress(null);
-            setIsGenerating(false);
+            if (mountedRef.current) {
+                setGenerationProgress(null);
+                setIsGenerating(false);
+            }
             generationInFlightRef.current = false;
         }
     };
@@ -1531,19 +1603,34 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         setGenerationProgress(preview.step ? { step: preview.step, total: editParams.steps } : null);
                     }, streamSupported);
                 } catch (streamError) {
-                    console.warn('图片编辑过程预览不可用，已回退普通生成：', streamError);
                     setGenerationProgress(null);
+                    // 与文生图同理：4xx 明确拒绝直接抛错；网络中断/5xx 时结果未知，
+                    // 自动重发可能双扣费，需用户确认。
+                    const streamStatus = (streamError as { status?: unknown })?.status;
+                    if (typeof streamStatus === 'number' && streamStatus >= 400 && streamStatus < 500) throw streamError;
+                    console.warn('图片编辑过程预览中断：', streamError);
+                    const retry = await confirmAction({
+                        title: '过程预览连接中断',
+                        message: '无法确认 NovelAI 是否已完成本次编辑。直接重新生成可能产生重复扣费；若刚才已实际扣费，结果会稍晚出现在历史中。',
+                        confirmLabel: '重新生成',
+                        tone: 'danger',
+                    });
+                    if (!retry) throw streamError;
                     result = await generateImageEdit(apiKey, request.prompt, request.negativePrompt, editParams, request);
                 }
             } else {
                 result = await generateImageEdit(apiKey, request.prompt, request.negativePrompt, editParams, request);
             }
-            setGeneratedImage(result.image);
-            setImageEditPreviewImage(result.image);
-            setPreviewMode('result');
-            if (window.matchMedia('(max-width: 1023px)').matches) setLightboxImg(result.image);
-
-            await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+            lastGeneratedBlobRef.current = result.blob;
+            // 先显示结果再落盘历史；离开编辑页时跳过 UI 更新直接落库。
+            if (mountedRef.current) {
+                setGeneratedImage(result.image);
+                setImageEditPreviewImage(result.image);
+                setPreviewMode('result');
+                if (window.matchMedia('(max-width: 1023px)').matches) setLightboxImg(result.image);
+                // Leave the current task so React can commit and the browser can paint.
+                await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+            }
 
             const keyHash = await hashNaiApiKey(apiKey);
             const editMask = request.mask ? await dataUrlToBlob(request.mask) : undefined;
@@ -1577,6 +1664,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 edit,
                 editMask,
             });
+            // 历史落库完成后才检查挂载态：产物不丢，UI 与工作区草稿仅在仍在编辑页时更新。
+            if (!mountedRef.current) return;
             setPreviewHistory(previous => [historyItem, ...previous.filter(item => item.id !== historyItem.id)]);
             setPreviewIndex(0);
             setPreviewMode('history');
@@ -1596,17 +1685,24 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             checkAndRemoveUntestedTag();
             notify('图片编辑完成，结果已保存为新的历史图片', 'success');
         } catch (editError) {
-            if (streamedPreviewShown) {
-                setGeneratedImage(previousGeneratedImage);
-                setPreviewMode(previousPreviewMode);
-                setImageEditPreviewImage(previousEditPreviewImage);
+            if (mountedRef.current) {
+                if (streamedPreviewShown) {
+                    setGeneratedImage(previousGeneratedImage);
+                    setPreviewMode(previousPreviewMode);
+                    setImageEditPreviewImage(previousEditPreviewImage);
+                }
+                const message = editError instanceof Error ? editError.message : '图片编辑失败';
+                setErrorMsg(message);
+                notify(message, 'error');
+            } else {
+                // 离开编辑页后仍应告知编辑失败（全局 toast）。
+                notify(editError instanceof Error ? editError.message : '图片编辑失败', 'error');
             }
-            const message = editError instanceof Error ? editError.message : '图片编辑失败';
-            setErrorMsg(message);
-            notify(message, 'error');
         } finally {
-            setIsGenerating(false);
-            setGenerationProgress(null);
+            if (mountedRef.current) {
+                setIsGenerating(false);
+                setGenerationProgress(null);
+            }
         }
     };
 
