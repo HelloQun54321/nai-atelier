@@ -51,7 +51,7 @@ import {
   selectThumbnailConcurrency,
   writeLanPin,
 } from './media-gateway.mjs';
-import { PromptAgentService, calculateAgentContextBudget, customProviderRuntime, detectModelCapabilities, estimateContextTokens, parseTranslationResponse, parseWebSearchResponse, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
+import { PromptAgentService, assemblePromptContext, calculateAgentContextBudget, cloneAgentMessages, computeEffectivePreset, computePolicyFingerprint, creativeRevisionHash, customProviderRuntime, detectModelCapabilities, estimateContextTokens, getBuiltinDefaultPreset, normalizeCreativePreset, normalizeCreativeSlots, parseTranslationResponse, parseWebSearchResponse, resolveCapabilities, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
 import { getNovelAiModelProfile, readNovelAiOfficialKnowledge, resolveNovelAiModelFamily, searchNovelAiOfficialKnowledge } from './novelai-agent-knowledge.mjs';
 import { readImageDimensions } from '../worker/imageDimensions.mjs';
 
@@ -1510,6 +1510,428 @@ test('局域网改密：未授权拒绝、改后旧密码立即失效且 secret 
     const wrongMethod = lanTestRes();
     await handleLanPinUpdate(lanTestReq({ method: 'POST', body: { pin: '1111' }, remoteAddress: '127.0.0.1' }), wrongMethod, { secret, configFile: file });
     assert.equal(wrongMethod.statusCode, 405);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// ── 破限提示词与预设实验室：纯函数 normalize / builtin-default / assemble ──
+
+test('creative lab: builtin-default singleton is read-only and maps existing constants by target', () => {
+  const builtin = getBuiltinDefaultPreset(true);
+  assert.equal(builtin.id, 'builtin-default');
+  assert.equal(builtin.name, '内置默认');
+  assert.equal(builtin.isBuiltin, true);
+  const targets = builtin.slots.map(slot => slot.target);
+  // system_middle ← jailbreakBlock；context_head ← creativeSeedMessages 成对帧；
+  // user_preamble ← creativePreamble；其余槽位为空。
+  assert.ok(targets.includes('system_middle'));
+  assert.ok(targets.includes('user_preamble'));
+  assert.ok(targets.includes('context_head'));
+  assert.equal(targets.filter(target => target === 'context_head').length, 4);
+  const middle = builtin.slots.find(slot => slot.target === 'system_middle');
+  assert.ok(middle.content.includes([redacted]));
+  assert.ok(middle.content.includes([redacted]));
+  // 单例不可变：改造副本不影响后续取值。
+  const copy = getBuiltinDefaultPreset(true);
+  copy.slots[0].content = 'mutated';
+  copy.name = 'mutated';
+  assert.notEqual(getBuiltinDefaultPreset(true).name, 'mutated');
+  assert.notEqual(getBuiltinDefaultPreset(true).slots[0].content, 'mutated');
+  // creativeMode=false → 空策略 builtin。
+  const empty = getBuiltinDefaultPreset(false);
+  assert.equal(empty.slots.length, 0);
+});
+
+test('creative lab: strict slot/preset normalize enforces target/role/depth rules and all caps with 400', () => {
+  assert.equal(normalizeCreativeSlots([]).length, 0);
+  // role 与 target 一致性。
+  assert.throws(() => normalizeCreativeSlots([{ name: 'x', target: 'user_preamble', role: 'user', content: '' }]), /不允许携带 role/);
+  assert.throws(() => normalizeCreativeSlots([{ name: 'x', target: 'conversation_tail', role: 'assistant', content: '' }]), /固定为 user/);
+  assert.throws(() => normalizeCreativeSlots([{ name: 'x', target: 'assistant_prefill', role: 'user', content: '' }]), /固定为 assistant/);
+  // context_head 必须显式 role、成对出现、不可同 role 相邻。
+  assert.throws(() => normalizeCreativeSlots([{ name: 'x', target: 'context_head', content: 'u' }]), /必须显式标注 user 或 assistant role/);
+  const validPair = [
+    { name: 'u', target: 'context_head', role: 'user', content: 'u1', pairId: 'p' },
+    { name: 'a', target: 'context_head', role: 'assistant', content: 'a1', pairId: 'p' },
+  ];
+  const pair = normalizeCreativeSlots(validPair);
+  assert.equal(pair.length, 2);
+  assert.equal(pair[0].role, 'user');
+  assert.equal(pair[1].role, 'assistant');
+  assert.throws(() => normalizeCreativeSlots([{ name: 'u', target: 'context_head', role: 'user', content: 'u' }]), /成对/);
+  assert.throws(() => normalizeCreativeSlots([
+    { name: 'u1', target: 'context_head', role: 'user', content: 'u1' },
+    { name: 'u2', target: 'context_head', role: 'user', content: 'u2' },
+  ]), /成对/);
+  // context_depth 必须 ≥1 整数。
+  assert.throws(() => normalizeCreativeSlots([{ name: 'd', target: 'context_depth', content: '', depth: 0 }]), /≥1 的整数/);
+  assert.throws(() => normalizeCreativeSlots([{ name: 'd', target: 'context_depth', content: '', depth: 1.5 }]), /≥1 的整数/);
+  assert.equal(normalizeCreativeSlots([{ name: 'd', target: 'context_depth', content: '', depth: 3 }])[0].depth, 3);
+  // 未知 target / 非数组 / 非法 slot → 400。
+  assert.throws(() => normalizeCreativeSlots('nope'), /必须是数组/);
+  assert.throws(() => normalizeCreativeSlots([{ name: 'x', target: 'bogus', content: '' }]), /缺少有效的注入目标/);
+  assert.throws(() => normalizeCreativeSlots([null]), /槽位格式无效/);
+  // 名称/描述/单槽正文/总正文/槽位数上限：一律 400 而非 text() 截断。
+  assert.throws(() => normalizeCreativePreset({ name: 'n'.repeat(81), slots: [] }), /80 字/);
+  assert.throws(() => normalizeCreativePreset({ name: 'ok', description: 'd'.repeat(241), slots: [] }), /240 字/);
+  assert.throws(() => normalizeCreativePreset({ name: 'ok', description: 'd'.repeat(241), slots: [] }), /400|描述/);
+  const longSlot = { name: 'c', target: 'user_preamble', enabled: true, content: 'c'.repeat(16_001) };
+  assert.throws(() => normalizeCreativeSlots([longSlot]), /16_000|16000/);
+  const overTotal = Array.from({ length: 4 }, () => ({ name: 'c', target: 'user_preamble', enabled: true, content: 'x'.repeat(12_001) }));
+  assert.throws(() => normalizeCreativeSlots(overTotal), /48_000|48000/);
+  const overCount = Array.from({ length: 41 }, (_, i) => ({ name: `s${i}`, target: 'user_preamble', enabled: true, content: '' }));
+  assert.throws(() => normalizeCreativeSlots(overCount), /最多 40 个槽位/);
+  assert.equal(normalizeCreativeSlots(overCount.slice(0, 40)).length, 40);
+  // 名称必填；description 可选。
+  assert.throws(() => normalizeCreativePreset({ name: '  ', slots: [] }), /请填写预设名称/);
+  const normalized = normalizeCreativePreset({ name: ' x ', description: '  d  ', slots: [{ name: 'c', target: 'user_preamble', enabled: true, content: 'hi' }] });
+  assert.equal(normalized.name, 'x');
+  assert.equal(normalized.description, 'd');
+});
+
+test('creative lab: resolveCapabilities default is conservative and anthropic allows prefill', () => {
+  assert.deepEqual(resolveCapabilities('openai-completions', false, 'off'), { assistantPrefill: false, userConversationTail: false });
+  assert.deepEqual(resolveCapabilities('openai-responses', true, 'high'), { assistantPrefill: false, userConversationTail: false });
+  assert.deepEqual(resolveCapabilities('google-generative-ai', false, 'off'), { assistantPrefill: false, userConversationTail: false });
+  assert.deepEqual(resolveCapabilities('anthropic-messages', true, 'off'), { assistantPrefill: true, userConversationTail: true });
+  assert.deepEqual(resolveCapabilities('mistral-conversations', false, 'off'), { assistantPrefill: false, userConversationTail: false });
+  // 自定义 anthropic 系未显式声明 → false。
+  assert.deepEqual(resolveCapabilities('custom-anthropic', false, 'off'), { assistantPrefill: false, userConversationTail: false });
+  assert.deepEqual(resolveCapabilities('custom-anthropic', false, 'off', { assistantPrefill: true }), { assistantPrefill: true, userConversationTail: false });
+});
+
+test('creative lab: assemblePromptContext deep-copies, prepends head seeds in pairs, merges preamble, orders system parts and fingerprints by capability', () => {
+  const builtin = getBuiltinDefaultPreset(true);
+  const baseSystem = '你是 NAI 业务 Agent。\n规则略。\n[规则来源层级]\n- A 权重规则\n[联网研究规则]\n1. 搜索规则';
+  const original = [
+    { role: 'user', content: [{ type: 'text', text: '第一问' }] },
+    { role: 'assistant', content: [{ type: 'text', text: '回答一' }] },
+    { role: 'user', content: '最新请求' },
+  ];
+  const snapshot = JSON.stringify(original);
+  const result = assemblePromptContext({
+    creativeMode: true,
+    revision: { ...builtin, presetRevisionHash: 'rev-hash-abc' },
+    systemPolicy: baseSystem,
+    cleanMessages: original,
+    modelApi: 'anthropic-messages',
+    thinkingLevel: 'off',
+  });
+  // 零原地修改：原数组与嵌套 content 不被触碰；重复调用不累积。
+  assert.equal(JSON.stringify(original), snapshot);
+  const second = assemblePromptContext({
+    creativeMode: true,
+    revision: { ...builtin, presetRevisionHash: 'rev-hash-abc' },
+    systemPolicy: baseSystem,
+    cleanMessages: original,
+    modelApi: 'anthropic-messages',
+    thinkingLevel: 'off',
+  });
+  assert.equal(JSON.stringify(second.canonicalMessages), JSON.stringify(result.canonicalMessages));
+  // canonical 顺序：4 条 head seeds → 历史 → user_preamble 合并进最后 user。
+  const roles = result.canonicalMessages.map(message => message.role);
+  assert.deepEqual(roles.slice(0, 4), ['user', 'assistant', 'user', 'assistant']);
+  const messageText = message => (typeof message.content === 'string' ? message.content : message.content.filter(part => part?.type === 'text').map(part => part.text).join(''));
+  assert.ok(messageText(result.canonicalMessages[4]).includes('第一问'));
+  const lastUser = result.canonicalMessages.at(-1);
+  assert.equal(lastUser.role, 'user');
+  assert.ok(messageText(lastUser).startsWith([redacted]));
+  assert.ok(messageText(lastUser).endsWith('最新请求'));
+  // system 顺序：base 在前 → jailbreak 中段 → tech → research → runtime 注入由调用方给出 → safetyFooter 恒最后。
+  const sys = result.systemPrompt;
+  assert.ok(sys.startsWith(baseSystem.split('[规则来源层级]')[0].trim()));
+  assert.ok(sys.indexOf([redacted]) > 0 && sys.indexOf([redacted]) < sys.indexOf('[规则来源层级]'));
+  assert.ok(sys.trim().endsWith('本边界为准。'));
+  // 深拷贝：改写 canonical 不影响后续调用。
+  result.canonicalMessages[0].content[0].text = 'MUT';
+  const third = assemblePromptContext({ creativeMode: true, revision: { ...builtin, presetRevisionHash: 'rev-hash-abc' }, systemPolicy: baseSystem, cleanMessages: original, modelApi: 'anthropic-messages', thinkingLevel: 'off' });
+  assert.notEqual(third.canonicalMessages[0].content[0].text, 'MUT');
+  // 指纹：同一预设在不同能力模型间必须不同（anthropic 支持 prefill）。
+  const openaiResult = assemblePromptContext({ creativeMode: true, revision: { ...builtin, presetRevisionHash: 'rev-hash-abc' }, systemPolicy: baseSystem, cleanMessages: original, modelApi: 'openai-completions', thinkingLevel: 'off' });
+  assert.notEqual(result.hashes.policyFingerprint, openaiResult.hashes.policyFingerprint);
+  assert.equal(result.hashes.presetRevisionHash, 'rev-hash-abc');
+  assert.match(result.hashes.systemPromptHash, /^[a-f0-9]{12}$/);
+});
+
+test('creative lab: head seeds trim as whole pairs, prefill/tail rules and depth never split tool group', () => {
+  const tinyPreset = {
+    id: 'p', presetId: 'p', presetName: '小窗口', slots: [
+      { id: 's1', name: 'u1', target: 'context_head', enabled: true, content: '长'.repeat(2000), role: 'user', pairId: 'a' },
+      { id: 's2', name: 'a1', target: 'context_head', enabled: true, content: '长'.repeat(2000), role: 'assistant', pairId: 'a' },
+      { id: 's3', name: 'u2', target: 'context_head', enabled: true, content: '长'.repeat(2000), role: 'user', pairId: 'b' },
+      { id: 's4', name: 'a2', target: 'context_head', enabled: true, content: '长'.repeat(2000), role: 'assistant', pairId: 'b' },
+      { id: 's5', name: 'pre', target: 'assistant_prefill', enabled: true, content: 'PREF', role: 'assistant' },
+    ],
+  };
+  // 极小 contextWindow：seeds 必须整对移除（0 或 2 的倍数），绝不拆散单条。
+  const result = assemblePromptContext({
+    creativeMode: true, revision: { ...tinyPreset, contextWindow: 2048, presetRevisionHash: 'h' },
+    systemPolicy: 'SYS', cleanMessages: [{ role: 'user', content: 'hi' }], modelApi: 'anthropic-messages', thinkingLevel: 'off',
+  });
+  const messageText = message => (typeof message.content === 'string' ? message.content : message.content.filter(part => part?.type === 'text').map(part => part.text).join(''));
+  const isToolResult = message => Array.isArray(message.content) && message.content.some(part => part?.type === 'toolResult');
+  const firstInjected = result.canonicalMessages.filter(message => message.injected === true && messageText(message).length === 2000).map(message => message.role);
+  // 若裁掉一对，剩余种子数必为偶数且成对（不可能出现单 user/assistant）。
+  assert.equal(firstInjected.length % 2, 0);
+  // prefill 在支持模型上追加于 user 之后。
+  const prefilled = result.canonicalMessages.at(-1);
+  assert.equal(prefilled.role, 'assistant');
+  assert.equal(messageText(prefilled), 'PREF');
+  // thinkingLevel != off → 跳过 prefill 并 warning。
+  const noPrefill = assemblePromptContext({ creativeMode: true, revision: { ...tinyPreset, contextWindow: 200_000, presetRevisionHash: 'h' }, systemPolicy: 'SYS', cleanMessages: [{ role: 'user', content: 'hi' }], modelApi: 'anthropic-messages', thinkingLevel: 'high' });
+  assert.notEqual(noPrefill.canonicalMessages.at(-1).role, 'assistant');
+  assert.ok(noPrefill.warnings.some(warning => warning.includes('思考模式')));
+  // openai 系不支持 prefill → 跳过 warning。
+  const openai = assemblePromptContext({ creativeMode: true, revision: { ...tinyPreset, contextWindow: 200_000, presetRevisionHash: 'h' }, systemPolicy: 'SYS', cleanMessages: [{ role: 'user', content: 'hi' }], modelApi: 'openai-completions', thinkingLevel: 'off' });
+  assert.ok(openai.warnings.some(warning => warning.includes('不支持 assistant 预填')));
+  // conversation_tail：最后一条为 toolResult 时不附加；不支持连续 user 的模型合并进 user。
+  const tailPreset = { id: 't', presetId: 't', presetName: 'tail', slots: [{ id: 'c', name: 'tail', target: 'conversation_tail', enabled: true, content: 'TAIL', role: 'user' }] };
+  const toolTail = assemblePromptContext({ creativeMode: true, revision: { ...tailPreset, presetRevisionHash: 'h' }, systemPolicy: 'SYS', cleanMessages: [
+    { role: 'user', content: 'ask' },
+    { role: 'assistant', content: [{ type: 'toolCall', id: 'c1', name: 'x', arguments: {} }] },
+    { role: 'user', content: [{ type: 'toolResult', toolCallId: 'c1', content: [{ type: 'text', text: 'res' }] }] },
+  ], modelApi: 'openai-completions', thinkingLevel: 'off' });
+  assert.ok(toolTail.warnings.some(warning => warning.includes('工具结果')));
+  assert.ok(isToolResult(toolTail.canonicalMessages.at(-1)));
+  const merged = assemblePromptContext({ creativeMode: true, revision: { ...tailPreset, presetRevisionHash: 'h' }, systemPolicy: 'SYS', cleanMessages: [{ role: 'user', content: '最后请求' }], modelApi: 'openai-completions', thinkingLevel: 'off' });
+  assert.ok(merged.warnings.some(warning => warning.includes('合并入当前用户消息')));
+  assert.equal(merged.canonicalMessages.length, 1);
+  assert.ok(messageText(merged.canonicalMessages[0]).endsWith('TAIL'));
+  // anthropic 支持连续 user → 独立追加。
+  const independent = assemblePromptContext({ creativeMode: true, revision: { ...tailPreset, presetRevisionHash: 'h' }, systemPolicy: 'SYS', cleanMessages: [{ role: 'user', content: '最后请求' }], modelApi: 'anthropic-messages', thinkingLevel: 'off' });
+  assert.equal(independent.canonicalMessages.length, 2);
+  assert.equal(independent.canonicalMessages.at(-1).role, 'user');
+  assert.equal(messageText(independent.canonicalMessages.at(-1)), 'TAIL');
+  // context_depth 不拆工具组：锚点落在第二个完整 user turn 的整条工具链之后。
+  const depthPreset = { id: 'd', presetId: 'd', presetName: 'depth', slots: [{ id: 'x', name: 'd', target: 'context_depth', enabled: true, content: '深度锚点', depth: 2 }] };
+  const depthMsgs = [
+    { role: 'user', content: '第一问' },
+    { role: 'user', content: '第二问' },
+    { role: 'assistant', content: [{ type: 'toolCall', id: 'c1', name: 'y', arguments: {} }] },
+    { role: 'user', content: [{ type: 'toolResult', toolCallId: 'c1', content: [{ type: 'text', text: 'res' }] }] },
+    { role: 'user', content: '第三问' },
+  ];
+  const depthResult = assemblePromptContext({ creativeMode: true, revision: { ...depthPreset, presetRevisionHash: 'h' }, systemPolicy: 'SYS', cleanMessages: depthMsgs, modelApi: 'anthropic-messages', thinkingLevel: 'off' });
+  const anchorIndex = depthResult.canonicalMessages.findIndex(message => message.injected === true && messageText(message) === '深度锚点');
+  assert.ok(anchorIndex >= 0);
+  assert.ok(isToolResult(depthResult.canonicalMessages[anchorIndex - 1])); // 在工具链之后
+  assert.equal(depthResult.canonicalMessages[anchorIndex + 1].content, '第三问');
+});
+
+// ── 破限提示词与预设实验室：实例 CRUD / active / import-export / 会话绑定 ──
+// 全部在 mkdtemp 临时目录内运行（configFile 注入），不触碰真实 local-data。
+
+const makeLabService = async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'nai-lab-'));
+  const service = new PromptAgentService({ lanSecret: 'test-lan-secret', configFile: dir });
+  await service.init();
+  return { service, dir };
+};
+
+test('creative lab: preset CRUD keeps builtin read-only, records revisions and active deletion falls back', async () => {
+  const { service, dir } = await makeLabService();
+  try {
+    const state = await service.listCreativePresets();
+    assert.equal(state.items[0].id, 'builtin-default');
+    assert.equal(state.items[0].isBuiltin, true);
+    assert.equal(state.activeCreativePresetId, 'builtin-default');
+    // 创建：自动生成 id + slot id。
+    const created = await service.createCreativePreset({
+      name: '我的预设', description: '演示', slots: [
+        { name: '前导', target: 'user_preamble', enabled: true, content: 'pre' },
+        { name: '深度', target: 'context_depth', enabled: true, content: '', depth: 2 },
+      ],
+    });
+    assert.match(created.id, /^preset-/);
+    assert.equal(created.isBuiltin, false);
+    assert.ok(created.slots.every(slot => slot.id));
+    assert.equal(created.slots.find(slot => slot.target === 'context_depth').depth, 2);
+    // 内置不可改/删（403）。
+    await assert.rejects(() => service.updateCreativePreset('builtin-default', { name: 'x' }), error => error.status === 403);
+    await assert.rejects(() => service.deleteCreativePreset('builtin-default'), error => error.status === 403);
+    // 重复名 409。
+    await assert.rejects(() => service.createCreativePreset({ name: '我的预设' }), error => error.status === 409);
+    // 更新（含 name 变更）记录一条最近修订；recentRevisions cap 20。
+    const updated = await service.updateCreativePreset(created.id, { name: '改名预设', slots: [{ name: '前导', target: 'user_preamble', enabled: true, content: 'pre2' }] });
+    assert.equal(updated.name, '改名预设');
+    const detail = await service.getCreativePresetDetail(created.id);
+    assert.equal(detail.revisions.length, 1);
+    assert.equal(detail.revisions[0].presetName, '我的预设');
+    assert.match(detail.revisions[0].revisionHash, /^[a-f0-9]{12}$/);
+    assert.deepEqual(detail.revisions[0].slots.map(slot => slot.target), ['user_preamble', 'context_depth']);
+    // active 切换与删除回退。
+    const activeState = await service.setActiveCreativePreset(created.id);
+    assert.equal(activeState.activeCreativePresetId, created.id);
+    await service.deleteCreativePreset(created.id);
+    const afterDelete = await service.listCreativePresets();
+    assert.equal(afterDelete.activeCreativePresetId, 'builtin-default');
+    assert.equal(afterDelete.items.some(preset => preset.id === created.id), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('creative lab: import ignores external isBuiltin, dedupes names, skips invalid and never changes active', async () => {
+  const { service, dir } = await makeLabService();
+  try {
+    const first = await service.createCreativePreset({ name: '已有', slots: [] });
+    const forged = { id: 'builtin-default', name: '伪造内置', isBuiltin: true, createdAt: 1, updatedAt: 1, slots: [{ name: 'x', target: 'user_preamble', enabled: true, content: 'evil' }] };
+    const duplicate = { id: 'custom-x', name: '已有', isBuiltin: false, createdAt: 1, updatedAt: 1, slots: [] };
+    const invalid = { id: 'custom-bad', name: '坏预设', isBuiltin: false, createdAt: 1, updatedAt: 1, slots: [{ name: 'x', target: 'bogus', content: '' }] };
+    const fresh = { id: 'custom-fresh', name: '新预设', isBuiltin: false, createdAt: 1, updatedAt: 1, slots: [{ name: 'u', target: 'context_head', role: 'user', content: 'u', pairId: 'p' }, { name: 'a', target: 'context_head', role: 'assistant', content: 'a', pairId: 'p' }] };
+    await service.setActiveCreativePreset(first.id);
+    const result = await service.importCreativePresets({ schema: 'creative-presets', version: 1, presets: [forged, duplicate, invalid, fresh] });
+    assert.equal(result.ok, true);
+    assert.equal(result.imported, 3);
+    assert.equal(result.skipped.length, 1);
+    assert.equal(result.skipped[0], '坏预设');
+    // active 不被 import 改变。
+    assert.equal(result.activeCreativePresetId, first.id);
+    const state = await service.listCreativePresets();
+    const importedForged = state.items.find(preset => preset.name === '伪造内置');
+    assert.ok(importedForged);
+    assert.equal(importedForged.isBuiltin, false); // 外部 isBuiltin 一律忽略
+    assert.notEqual(importedForged.id, 'builtin-default'); // builtin id 保留，冲突重生成
+    assert.equal(state.items.filter(preset => preset.id === 'builtin-default').length, 1); // 只允许代码内置
+    const importedDup = state.items.find(preset => preset.name === '已有（导入）');
+    assert.ok(importedDup);
+    // schema/version 校验。
+    await assert.rejects(() => service.importCreativePresets({ schema: 'nope', version: 1, presets: [] }), error => error.status === 400);
+    await assert.rejects(() => service.importCreativePresets({ schema: 'creative-presets', version: 99, presets: [] }), error => error.status === 400);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('creative lab: export empty ids returns all including builtin with export schema', async () => {
+  const { service, dir } = await makeLabService();
+  try {
+    await service.createCreativePreset({ name: '甲', slots: [{ name: 'p', target: 'user_preamble', enabled: true, content: 'x' }] });
+    const all = await service.exportCreativePresets([]);
+    assert.equal(all.schema, 'creative-presets');
+    assert.equal(all.version, 1);
+    assert.ok(Number.isFinite(all.exportedAt));
+    assert.ok(all.presets.some(preset => preset.id === 'builtin-default'));
+    assert.ok(all.presets.some(preset => preset.name === '甲'));
+    // 指定 ids 只导出命中项。
+    const subset = await service.exportCreativePresets(['builtin-default', 'missing-id']);
+    assert.equal(subset.presets.length, 1);
+    assert.equal(subset.presets[0].id, 'builtin-default');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('creative lab: sessions freeze an immutable revision; preset changes never touch old sessions and reset keeps revision', async () => {
+  const { service, dir } = await makeLabService();
+  try {
+    const custom = await service.createCreativePreset({ name: '绑定预设', slots: [{ name: 'p', target: 'user_preamble', enabled: true, content: 'bind' }] });
+    await service.setActiveCreativePreset(custom.id);
+    // creativeMode=true 会话冻结当前 active 预设 revision。
+    const session = await service.createSession({ creativeMode: true });
+    const stored = await service.readSession(session.id);
+    const revision = stored.meta.presetRevision;
+    assert.equal(revision.presetId, custom.id);
+    assert.equal(revision.presetName, '绑定预设');
+    assert.ok(revision.presetRevisionHash);
+    assert.deepEqual(revision.slots.map(slot => slot.content), ['bind']);
+    // 会话元数据对外暴露 name/hash/effectivePolicyFingerprint，不暴露完整 slots。
+    assert.equal(session.presetName, '绑定预设');
+    assert.ok(session.presetRevisionHash);
+    assert.match(session.effectivePolicyFingerprint || '', /^[a-f0-9]{12}$/);
+    assert.equal('presetRevision' in session, false);
+    assert.equal('slots' in session, false);
+    // 改/删预设不影响旧会话（revision 不可变）。
+    await service.updateCreativePreset(custom.id, { slots: [{ name: 'p', target: 'user_preamble', enabled: true, content: 'CHANGED' }] });
+    await service.deleteCreativePreset(custom.id);
+    const stillBound = await service.readSession(session.id);
+    assert.equal(stillBound.meta.presetRevision.slots[0].content, 'bind');
+    // resetSession 保留冻结 revision 与 creativeModeLocked。
+    await service.saveMessages(session.id, [{ role: 'user', content: '第一条' }]);
+    await service.resetSession(session.id);
+    const afterReset = await service.readSession(session.id);
+    assert.equal(afterReset.meta.presetRevision?.presetId, custom.id);
+    assert.equal(afterReset.meta.creativeModeLocked, true);
+    assert.equal(afterReset.messages.length, 0);
+    // 预设改删后 listSessions 展示仍读会话 revision 的 name/hash。
+    const listed = await service.listSessions();
+    const listedSession = listed.find(item => item.id === session.id);
+    assert.equal(listedSession.presetName, '绑定预设');
+    assert.ok(listedSession.presetRevisionHash);
+    await service.deleteSession(session.id);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('creative lab: creativeMode=false session binds empty policy and legacy sessions lazy-backfill idempotently', async () => {
+  const { service, dir } = await makeLabService();
+  try {
+    const custom = await service.createCreativePreset({ name: '不该绑定', slots: [{ name: 'p', target: 'user_preamble', enabled: true, content: 'x' }] });
+    await service.setActiveCreativePreset(custom.id);
+    const session = await service.createSession({ creativeMode: false });
+    const stored = await service.readSession(session.id);
+    assert.equal(stored.meta.presetRevision.emptyPolicy, true);
+    assert.equal(stored.meta.presetRevision.presetName, '');
+    assert.equal(stored.meta.presetRevision.presetRevisionHash, '');
+    assert.deepEqual(stored.meta.presetRevision.slots, []);
+    // 未开始会话切到 creativeMode=true 时重新绑定 active。
+    const switched = await service.updateSession(session.id, { creativeMode: true });
+    const switchedStored = await service.readSession(session.id);
+    assert.equal(switchedStored.meta.presetRevision.emptyPolicy, undefined);
+    assert.equal(switchedStored.meta.presetRevision.presetName, '不该绑定');
+    // 旧会话（有消息、无 revision）惰性补 builtin-default 快照，幂等、不改 messages。
+    const legacy = await service.createSession({ creativeMode: true });
+    const raw = await service.readSession(legacy.id);
+    delete raw.meta.presetRevision;
+    raw.messages = [{ role: 'user', content: '历史消息', timestamp: 1 }];
+    await service.writeSession(legacy.id, raw);
+    const backfilled = await service.ensureSessionPresetRevision(legacy.id);
+    assert.equal(backfilled.presetId, 'builtin-default');
+    assert.equal(backfilled.presetName, '内置默认');
+    assert.ok(backfilled.presetRevisionHash);
+    assert.ok(backfilled.slots.length >= 1);
+    const rawAfter = await service.readSession(legacy.id);
+    assert.equal(rawAfter.messages.length, 1); // messages 未被改动
+    // 二次调用幂等且不再写盘。
+    const again = await service.ensureSessionPresetRevision(legacy.id);
+    assert.equal(again.presetRevisionHash, backfilled.presetRevisionHash);
+    // creativeMode=false 旧会话惰性补空策略。
+    const legacyOff = await service.createSession({ creativeMode: true });
+    const rawOff = await service.readSession(legacyOff.id);
+    delete rawOff.meta.presetRevision;
+    rawOff.meta.creativeMode = false;
+    rawOff.messages = [{ role: 'user', content: '旧消息', timestamp: 1 }];
+    await service.writeSession(legacyOff.id, rawOff);
+    const backfilledOff = await service.ensureSessionPresetRevision(legacyOff.id);
+    assert.equal(backfilledOff.emptyPolicy, true);
+    assert.equal(backfilledOff.presetRevisionHash, '');
+    await service.deleteSession(session.id);
+    await service.deleteSession(legacy.id);
+    await service.deleteSession(legacyOff.id);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('creative lab: audit slim keeps prompt text out of exported log entries', async () => {
+  const { service, dir } = await makeLabService();
+  try {
+    const session = await service.createSession({ creativeMode: true });
+    const exported = await service.getAuditLog(session.id);
+    // 会话创建审计不落 presetRevision slots；展示 policy 为 revision 驱动。
+    const createEntry = exported.entries.find(entry => entry.type === 'session_created');
+    assert.ok(createEntry);
+    assert.equal('presetRevision' in createEntry.session, false);
+    assert.ok(exported.session.presetName || exported.policy.presetName);
+    // 手工追加“瘦身形状”的 run 事件后导出仍保持结构、不落正文。
+    await service.appendAuditLog(session.id, { type: 'model_context', storedConversation: { count: 3, totalTokens: 99 }, systemPromptStart: '', userMessage: { sha256: 'abc', length: 5 } });
+    const slim = await service.getAuditLog(session.id);
+    const ctx = slim.entries.find(entry => entry.type === 'model_context');
+    assert.deepEqual(ctx.storedConversation, { count: 3, totalTokens: 99 });
+    assert.ok(!JSON.stringify(ctx).includes('actual prompt text'));
+    await service.deleteSession(session.id);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

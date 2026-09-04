@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
-import { PromptAgentAuthPrompt, PromptAgentConfig, PromptAgentCustomProvider, PromptAgentModel, PromptAgentProvider, promptAgentService } from '../services/promptAgent';
+import { ArrowLeft, Check, Copy, Download, FileUp, Plus, RotateCcw, Save, Settings2, Star, Trash2, Upload, X } from 'lucide-react';
+import { PromptAgentAuthPrompt, PromptAgentConfig, PromptAgentCreativeInspectResult, PromptAgentCreativePreset, PromptAgentCreativePresetRevision, PromptAgentCreativePresetState, PromptAgentCustomProvider, PromptAgentInjectionItem, PromptAgentLabTarget, PromptAgentModel, PromptAgentProvider, promptAgentService } from '../services/promptAgent';
 import { useConfirmDialog } from './ConfirmDialog';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useModalA11y } from './useModalA11y';
@@ -9,12 +9,79 @@ interface PromptAgentSettingsProps {
   notify: (message: string, type?: 'success' | 'error') => void;
 }
 
-type View = 'home' | 'login' | 'logout' | 'model' | 'vision' | 'auth' | 'key' | 'custom';
+type View = 'home' | 'login' | 'logout' | 'model' | 'vision' | 'auth' | 'key' | 'custom' | 'creative_lab';
 
 const emptyCustomProvider = (): PromptAgentCustomProvider => ({
   name: '', baseUrl: '', api: 'openai-completions', apiKey: '', headers: {},
   models: [{ id: '', name: '', reasoning: false, imageInput: false, contextWindow: 128000, maxTokens: 16384 }],
 });
+
+/** 会话列表/标题副行的破限预设标签文本：存在预设名时展示（含短指纹），无预设返回 null（不拉正文）。 */
+export const formatPresetSessionLabel = (session: { presetName?: string; presetRevisionHash?: string; effectivePolicyFingerprint?: string }): string | null => {
+  if (!session.presetName) return null;
+  const fingerprint = session.effectivePolicyFingerprint || session.presetRevisionHash || '';
+  return fingerprint ? `${session.presetName} · ${fingerprint.slice(0, 7)}` : session.presetName;
+};
+
+/** 9 个破限注入槽位：固定标签、顺序稳定、跨组件一致；仅含已审定 target，无旧键。 */
+export const LAB_SLOTS: ReadonlyArray<{ target: PromptAgentLabTarget; label: string; hint: string; kind: 'text' | 'list' | 'number' }> = [
+  { target: 'system_head', label: '系统提示词（头部）', hint: 'system 段顶部注入，无 role（0 号槽位）', kind: 'text' },
+  { target: 'system_middle', label: '系统提示词（中段）', hint: 'system 段中部注入，无 role（1 号槽位）', kind: 'text' },
+  { target: 'system_tail', label: '系统提示词（尾部）', hint: 'system 段尾部注入，无 role（2 号槽位）', kind: 'text' },
+  { target: 'context_head', label: '上下文头部消息', hint: 'context 头部帧（3 号槽位）；role: user|assistant 成对整体维护', kind: 'list' },
+  { target: 'context_depth', label: '上下文窗口深度', hint: '上下文深度（4 号槽位）；严格数值 depth', kind: 'number' },
+  { target: 'user_preamble', label: '用户消息前导', hint: '用户消息前导帧 header（5 号槽位，#101/#102 约定）', kind: 'text' },
+  { target: 'user_suffix', label: '用户消息尾部', hint: '用户消息尾部拦截元素（6 号槽位）', kind: 'text' },
+  { target: 'conversation_tail', label: '会话尾部拦截', hint: '会话尾部拦截元素（7 号槽位）；role 固定 user', kind: 'text' },
+  { target: 'assistant_prefill', label: 'Assistant 预填', hint: 'assistant 预填（8 号槽位）；role 固定 assistant', kind: 'text' },
+];
+
+/** 生成客户端临时槽位 id：服务端入库时会 normalize 为真实 id；编辑器内仅需同列表唯一，绝不共用 ''。 */
+const makeTempSlotId = () => {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  } catch { /* fall through */ }
+  return `tmp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+/** 与 target 无关的固定项渲染顺序：LAB_SLOTS 即稳定顺序；此处为每个 target 建立新槽位的最小 item。context_depth 默认 1（服务端有效范围从 1 开始）。 */
+export const makeEmptySlot = (target: PromptAgentLabTarget): PromptAgentInjectionItem => ({
+  id: makeTempSlotId(), name: '', target, enabled: true, content: '',
+  role: target === 'conversation_tail' ? 'user' : target === 'assistant_prefill' ? 'assistant' : target === 'context_head' ? 'user' : undefined,
+  depth: target === 'context_depth' ? 1 : undefined,
+});
+
+/** 新建一个空的 context_head 成对（user + assistant），编辑器内立即给出两框正文。 */
+export const makeEmptyContextHeadPair = (): PromptAgentInjectionItem[] => {
+  const pairId = makeTempSlotId();
+  return [
+    { id: makeTempSlotId(), pairId, name: '', target: 'context_head', enabled: true, content: '', role: 'user' },
+    { id: makeTempSlotId(), pairId, name: '', target: 'context_head', enabled: true, content: '', role: 'assistant' },
+  ];
+};
+
+export const defaultPresetId = (presets: PromptAgentCreativePreset[], activeId?: string) => (activeId && presets.some(preset => preset.id === activeId) ? activeId : presets.length ? presets[0].id : null);
+
+/** 生成“每个 target 至少一组可见正文框”的补齐模板：text/number 槽位缺失补真实空槽；context_head 缺失补一对空 user+assistant（两个可编辑正文框）。 */
+export const fillMissingSlots = (slots: PromptAgentInjectionItem[]): PromptAgentInjectionItem[] => {
+  const present = new Set(slots.map(item => item.target));
+  const copy = slots.map(item => ({ ...item }));
+  for (const slot of LAB_SLOTS) {
+    if (slot.target === 'context_head') {
+      if (!present.has(slot.target)) copy.push(...makeEmptyContextHeadPair());
+      continue;
+    }
+    if (!present.has(slot.target)) copy.push(makeEmptySlot(slot.target));
+  }
+  return copy;
+};
+
+/** 加载到编辑器的工作副本：builtin 原样只读；自定义归一化到完整 9 目标（每个 text 槽位必有 textarea，context_head 渲染成对编辑区）。 */
+const buildLabDraft = (preset: PromptAgentCreativePreset | null): PromptAgentInjectionItem[] => {
+  if (!preset) return [];
+  if (preset.isBuiltin) return preset.slots.map(item => ({ ...item }));
+  return fillMissingSlots(preset.slots);
+};
 
 const fuzzyMatch = (value: string, query: string) => {
   const source = value.toLowerCase();
@@ -81,6 +148,352 @@ const CustomProviderForm: React.FC<{
   </div>;
 };
 
+/** 单个槽位在编辑状态中的带内更新。 */
+const patchSlotIn = (slots: PromptAgentInjectionItem[], id: string, patch: Partial<PromptAgentInjectionItem>) => slots.map(item => item.id === id ? { ...item, ...patch } : item);
+
+/** 独立行内子组件：可编辑 9 槽表单。 */
+const EditableSlotForm: React.FC<{
+  value: PromptAgentInjectionItem[];
+  onChange: (next: PromptAgentInjectionItem[]) => void;
+  busy: boolean;
+}> = ({ value, onChange, busy }) => {
+  const addContextHeadPair = () => {
+    const pairId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    onChange([...value,
+      { id: `head-${pairId}-u`, pairId, name: '', target: 'context_head', enabled: true, content: '', role: 'user' },
+      { id: `head-${pairId}-a`, pairId, name: '', target: 'context_head', enabled: true, content: '', role: 'assistant' },
+    ]);
+  };
+  // 成对删除：优先按 pairId 移除同组两项；无 pairId（旧数据/服务端导入）则按相邻反 role 回退配对，绝不孤立单条。
+  const removeContextHeadPair = (item: PromptAgentInjectionItem) => {
+    const siblingId = item.pairId ? '' : siblingIdOf(item, value);
+    const paired = value.filter(candidate => candidate.target === 'context_head' && (item.pairId ? candidate.pairId === item.pairId : candidate.id === item.id || candidate.id === siblingId));
+    onChange(paired.length > 1 ? value.filter(candidate => !paired.includes(candidate)) : value.filter(candidate => candidate.id !== item.id));
+  };
+  const siblingIdOf = (item: PromptAgentInjectionItem, all: PromptAgentInjectionItem[]) => {
+    const heads = all.filter(candidate => candidate.target === 'context_head');
+    const index = heads.findIndex(candidate => candidate.id === item.id);
+    if (index < 0) return '';
+    const neighbor = heads[index + (item.role === 'user' ? 1 : -1)];
+    return neighbor && neighbor.role !== item.role ? neighbor.id : '';
+  };
+
+  return <div className="space-y-4">
+    {LAB_SLOTS.map((slot, index) => {
+      const slotItems = value.filter(item => item.target === slot.target);
+      if (slot.kind === 'list') {
+        return <section key={slot.target} className="rounded-2xl border border-gray-200 p-3 dark:border-gray-700">
+          <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1"><b className="shrink-0 text-sm text-gray-900 dark:text-white">{slot.label}</b><span className="min-w-0 flex-1 text-micro leading-4 text-gray-400">#{index} · {slot.hint}</span><button type="button" onClick={addContextHeadPair} className="mobile-touch inline-flex shrink-0 items-center gap-1 rounded-lg border border-dashed border-violet-300 px-2 py-1 text-xs font-bold text-violet-600 dark:border-violet-800 dark:text-violet-300"><Plus className="h-3.5 w-3.5" />成对添加</button></div>
+          {slotItems.length === 0 ? <p className="rounded-xl border border-dashed border-gray-200 px-3 py-4 text-center text-micro text-gray-400 dark:border-gray-800">context_head 尚无成对内容；成对添加、成对移除，不孤立单条。停用只影响注入，正文仍可编辑。</p> : <div className="space-y-2">{slotItems.map(item => <div key={item.id} className="rounded-xl border border-gray-100 p-2 dark:border-gray-800">
+            <div className="flex flex-wrap items-center gap-2"><span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-micro font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-400">{item.role === 'assistant' ? 'assistant' : 'user'}</span><span className="min-w-0 flex-1 truncate text-micro text-gray-400">{item.name || '（未命名条目）'}</span><button type="button" onClick={() => onChange(patchSlotIn(value, item.id, { enabled: !item.enabled }))} className={`mobile-touch inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-micro font-bold ${item.enabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`} aria-pressed={item.enabled} title={item.enabled ? '停用此条（保留内容）' : '启用此条'}>{item.enabled ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}{item.enabled ? '已启用' : '已停用'}</button><button type="button" onClick={() => removeContextHeadPair(item)} className="mobile-touch inline-flex shrink-0 items-center justify-center rounded-lg p-1 text-gray-300 hover:text-red-500" aria-label="删除此成对" title="删除此成对（连带同组另一条）"><Trash2 className="h-3.5 w-3.5" /></button></div>
+            <input value={item.name || ''} onChange={event => onChange(patchSlotIn(value, item.id, { name: event.target.value }))} placeholder="条目名（可选）" className="mobile-touch mt-1.5 w-full rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-xs dark:border-gray-800 dark:bg-gray-950" />
+            <textarea value={item.content} onChange={event => onChange(patchSlotIn(value, item.id, { content: event.target.value }))} rows={3} disabled={busy} placeholder="内容…" aria-label={`${slot.label} ${item.role === 'assistant' ? 'assistant' : 'user'} 正文`} className="mobile-touch mt-1.5 w-full resize-y rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-xs dark:border-gray-800 dark:bg-gray-950" />
+          </div>)}</div>}
+        </section>;
+      }
+      const slotItem = slotItems[0];
+      return <section key={slot.target} className="rounded-2xl border border-gray-200 p-3 dark:border-gray-700">
+        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1"><b className="shrink-0 text-sm text-gray-900 dark:text-white">{slot.label}</b><span className="min-w-0 flex-1 text-micro leading-4 text-gray-400">#{index} · {slot.hint}</span>{slotItem && <button type="button" onClick={() => onChange(patchSlotIn(value, slotItem.id, { enabled: !slotItem.enabled }))} className={`mobile-touch inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-micro font-bold ${slotItem.enabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`} aria-pressed={slotItem.enabled} title={slotItem.enabled ? '停用此槽位（保留内容，不注入）' : '启用此槽位'}>{slotItem.enabled ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}{slotItem.enabled ? '已启用' : '已停用'}</button>}</div>
+        {!slotItem ? <button type="button" onClick={() => onChange([...value, makeEmptySlot(slot.target)])} className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-dashed border-gray-300 px-3 py-1.5 text-xs font-bold text-gray-500 dark:border-gray-700">＋ 启用此槽位</button> : <div className="flex flex-wrap items-end gap-2"><input value={slotItem.name || ''} onChange={event => onChange(patchSlotIn(value, slotItem.id, { name: event.target.value }))} placeholder={slot.target === 'conversation_tail' || slot.target === 'assistant_prefill' ? '名称（如 安全拦截 / 结尾语）' : '名称（可选）'} className="mobile-touch min-w-0 flex-1 basis-40 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs dark:border-gray-800 dark:bg-gray-950" />{slot.target === 'context_depth' && <label className="text-meta text-gray-500">上下文窗口深度<input type="number" min={1} value={slotItem.depth ?? 1} onChange={event => onChange(patchSlotIn(value, slotItem.id, { depth: Math.max(1, Number(event.target.value) || 1) }))} disabled={busy} className="mobile-touch mt-1 w-36 rounded-xl border border-gray-300 bg-gray-50 px-3 py-1.5 font-mono text-sm dark:border-gray-700 dark:bg-gray-950" /></label>}<button type="button" onClick={() => onChange(value.filter(item => item.id !== slotItem.id))} className="mobile-touch inline-flex shrink-0 items-center justify-center rounded-xl px-2 text-gray-400 hover:text-red-500" aria-label={`移除 ${slot.label}`}><Trash2 className="h-4 w-4" /></button></div>}
+        {slotItem && <textarea value={slotItem.content} onChange={event => onChange(patchSlotIn(value, slotItem.id, { content: event.target.value }))} rows={5} disabled={busy} placeholder={slotItem.enabled ? '在此输入内容…' : '此槽位已停用（停用只影响注入，正文仍可编辑）'} aria-label={`${slot.label} 正文`} className="mobile-touch mt-2 w-full resize-y rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-xs dark:border-gray-800 dark:bg-gray-950" />}
+      </section>;
+    })}
+  </div>;
+};
+
+/** builtin 预设只读面板：全部槽位只读/禁用，供滚动浏览；修改只能走「复制为自定义」。 */
+const BuiltinPresetPanel: React.FC<{ preset: PromptAgentCreativePreset; onFork: () => void }> = ({ preset, onFork }) => {
+  const slots = preset.slots || [];
+  return <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+    <div className="flex flex-wrap items-center gap-2"><b className="text-sm text-gray-900 dark:text-white">内置预设（只读）</b><span className="min-w-0 flex-1 text-micro text-gray-400">按系统策略提供全部正文</span><button type="button" onClick={onFork} className="mobile-touch inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white"><Copy className="h-3.5 w-3.5" />复制为自定义以编辑</button></div>
+    <p className="mt-1 text-micro text-gray-400">内置槽位不可原地修改；如需修改请先复制为自定义预设。</p>
+    <div className="mt-3 space-y-4">{slots.length === 0 && <p className="py-4 text-center text-sm text-gray-500">该内置预设没有槽位内容</p>}{slots.map(item => {
+      const meta = LAB_SLOTS.find(slot => slot.target === item.target);
+      return <div key={item.id} className="rounded-2xl border border-gray-100 p-3 dark:border-gray-800">
+        <div className="flex flex-wrap items-center gap-2"><b className="text-sm text-gray-900 dark:text-white">{meta?.label || item.target}</b>{item.role && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-micro font-bold text-gray-500 dark:bg-gray-800">{item.role}</span>}{item.depth !== undefined && <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-micro font-bold text-indigo-700 dark:bg-indigo-950/60">depth {item.depth}</span>}<span className={`ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-micro font-bold ${item.enabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}>{item.enabled ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}{item.enabled ? '已启用' : '已停用'}</span></div>
+        <textarea readOnly value={item.content || ''} rows={5} aria-label={`${meta?.label || item.target}（只读）`} className="mt-2 w-full resize-y rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-xs dark:border-gray-800 dark:bg-gray-950" />
+      </div>;
+    })}</div>
+  </div>;
+};
+
+/** 自定义预设编辑器：加载草稿 → 就地编辑 9 槽 → 保存为新版修订。保存成功后由父级 reload 刷新列表。 */
+const CustomPresetEditor: React.FC<{
+  preset: PromptAgentCreativePreset;
+  busy: boolean;
+  notify: (message: string, type?: 'success' | 'error') => void;
+  onSaved: () => void;
+}> = ({ preset, busy, notify, onSaved }) => {
+  const [name, setName] = useState(preset.name);
+  const [description, setDescription] = useState(preset.description || '');
+  const [slots, setSlots] = useState<PromptAgentInjectionItem[]>(() => buildLabDraft(preset));
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!name.trim()) { notify('请先填写预设名称', 'error'); return; }
+    setSaving(true);
+    try {
+      await promptAgentService.updateCreativePreset(preset.id, { name: name.trim(), description: description.trim() || undefined, slots });
+      notify('预设已保存');
+      onSaved();
+    } catch (error) { notify(error instanceof Error ? error.message : '保存预设失败', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  return <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+    <div className="flex flex-wrap items-center gap-2"><b className="text-sm text-gray-900 dark:text-white">编辑预设</b><span className="min-w-0 flex-1 text-micro text-gray-400">固定 9 槽位；停用只影响注入，正文始终可编辑；context_head 成对增删</span></div>
+    <div className="mt-3 grid gap-2 sm:grid-cols-2"><input value={name} onChange={event => setName(event.target.value)} placeholder="预设名称" className="mobile-touch rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm dark:border-gray-800 dark:bg-gray-950" /><input value={description} onChange={event => setDescription(event.target.value)} placeholder="描述（可选）" className="mobile-touch rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm dark:border-gray-800 dark:bg-gray-950" /></div>
+    <div className="mt-4"><EditableSlotForm value={slots} onChange={setSlots} busy={busy || saving} /></div>
+    <div className="mt-4 flex gap-2 border-t border-gray-100 pt-3 dark:border-gray-800"><button type="button" disabled={busy || saving || !name.trim()} onClick={() => void save()} className="mobile-touch inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"><Save className="h-4 w-4" />{saving ? '保存中…' : '保存预设'}</button></div>
+  </div>;
+};
+
+/** Inspector 结果展示：完整规范化正文（systemPrompt / canonicalMessages / sourceSegments）+ 数字估算。 */
+const InspectorResultView: React.FC<{ result: PromptAgentCreativeInspectResult }> = ({ result }) => {
+  if (!result.ok) return <p className="py-3 text-sm text-red-500">{result.message || '估算失败'}</p>;
+  const estimate = result.tokenEstimate;
+  return <div className="space-y-3">
+    <div className="flex flex-wrap gap-2 text-micro">{estimate && <span className="rounded-lg bg-indigo-50 px-2 py-1 font-bold text-indigo-700 dark:bg-indigo-950/40">约 {estimate.totalTokens} tokens</span>}{estimate && <span className="rounded-lg bg-gray-100 px-2 py-1 text-gray-600 dark:bg-gray-800 dark:text-gray-300">上下文 {estimate.contextWindow} · 深度 {estimate.contextDepth}</span>}{result.hashes?.presetRevisionHash && <span className="rounded-lg bg-gray-100 px-2 py-1 font-mono text-gray-500 dark:bg-gray-800">{result.hashes.presetRevisionHash}</span>}</div>
+    {result.systemPrompt && <details open={false} className="rounded-xl border border-gray-200 dark:border-gray-800"><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-200">完整系统提示词</summary><pre className="max-h-60 overflow-auto whitespace-pre-wrap px-3 pb-3 font-mono text-micro leading-5 text-gray-600 dark:text-gray-300">{result.systemPrompt}</pre></details>}
+    {result.canonicalMessages && result.canonicalMessages.length > 0 && <details open={false} className="rounded-xl border border-gray-200 dark:border-gray-800"><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-200">规范化消息（{result.canonicalMessages.length}）</summary><div className="max-h-60 space-y-2 overflow-auto px-3 pb-3">{result.canonicalMessages.map((message, index) => <div key={index} className="rounded-lg bg-gray-50 p-2 dark:bg-gray-950"><span className="text-micro font-bold text-indigo-600">{message.role}</span><pre className="mt-1 whitespace-pre-wrap font-mono text-micro leading-5 text-gray-600 dark:text-gray-300">{message.content}</pre></div>)}</div></details>}
+    {result.sourceSegments && result.sourceSegments.length > 0 && <details open={false} className="rounded-xl border border-gray-200 dark:border-gray-800"><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-200">来源片段</summary><div className="max-h-60 space-y-1 overflow-auto px-3 pb-3">{result.sourceSegments.map((segment, index) => <div key={index} className="flex gap-2 text-micro text-gray-600 dark:text-gray-300"><span className="shrink-0 rounded bg-gray-100 px-1.5 text-gray-500 dark:bg-gray-800">{segment.characterCount}字</span><span className="min-w-0 flex-1 truncate">{segment.label}{segment.target ? ` · ${segment.target}` : ''}{segment.presetName ? ` · ${segment.presetName}` : ''}</span></div>)}</div></details>}
+    {estimate && <details open={false} className="rounded-xl border border-gray-200 dark:border-gray-800"><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-200">令牌估算明细</summary><div className="grid grid-cols-2 gap-2 px-3 pb-3 text-micro text-gray-600 dark:text-gray-300"><span>策略 {estimate.policyTokens}</span><span>草稿 {estimate.draftTokens}</span><span>历史 {estimate.historyTokens}</span><span>预设 {estimate.presetTokens}</span><span>总量 {estimate.totalTokens}</span><span>上下文窗口 {estimate.contextWindow}</span><span>深度 {estimate.contextDepth}</span><span>预计余量 {estimate.projectedBuffer}</span></div></details>}
+    {result.warnings && result.warnings.length > 0 && <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{result.warnings.map(warning => <div key={warning}>{warning}</div>)}</div>}
+  </div>;
+};
+
+/** 预设编辑工作区：同一面板内联子状态机的全部子面板（edit / create / inspect / revisions）。 */
+const CreativeLabView: React.FC<{
+  presets: PromptAgentCreativePreset[];
+  activeCreativePresetId?: string;
+  warnings: string[];
+  busy: boolean;
+  notify: (message: string, type?: 'success' | 'error') => void;
+  onStateChanged: (next: PromptAgentCreativePresetState) => void;
+  onDeletePreset: (preset: PromptAgentCreativePreset) => void;
+}> = ({ presets, activeCreativePresetId, warnings, busy, notify, onStateChanged, onDeletePreset }) => {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mode, setMode] = useState<'edit' | 'create'>('edit');
+  const [editorKey, setEditorKey] = useState(0);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [inspectorContent, setInspectorContent] = useState<PromptAgentCreativeInspectResult | null>(null);
+  const [inspectorBusy, setInspectorBusy] = useState(false);
+  const [inspectorMessage, setInspectorMessage] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const importRef = React.useRef<HTMLInputElement | null>(null);
+  const [revisionPresetId, setRevisionPresetId] = useState<string | null>(null);
+  const [revisionItems, setRevisionItems] = useState<PromptAgentCreativePresetRevision[] | null>(null);
+  const [revisionBusy, setRevisionBusy] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createDescription, setCreateDescription] = useState('');
+  const [createSlots, setCreateSlots] = useState<PromptAgentInjectionItem[]>(() => fillMissingSlots([]));
+  const [creating, setCreating] = useState(false);
+
+  const selected = presets.find(preset => preset.id === selectedId) ?? null;
+  const customPresets = presets.filter(preset => !preset.isBuiltin);
+  const initial = defaultPresetId(presets, activeCreativePresetId);
+
+  useEffect(() => {
+    if (selectedId === null && initial !== null) setSelectedId(initial);
+  }, [selectedId, initial]);
+
+  const reloadState = async () => {
+    const state = await promptAgentService.getCreativePresets();
+    onStateChanged(state);
+    setEditorKey(value => value + 1);
+  };
+
+  const runActive = async (presetId: string | null) => {
+    if (busy) return;
+    try {
+      const next = await promptAgentService.setActiveCreativePreset(presetId);
+      onStateChanged(next);
+      notify(presetId ? '已设为默认（作用于新对话）' : '已清除默认预设');
+    } catch (error) { notify(error instanceof Error ? error.message : '设置默认失败', 'error'); }
+  };
+
+  const createNew = async () => {
+    if (busy || creating) return;
+    if (!createName.trim()) { notify('请先填写预设名称', 'error'); return; }
+    setCreating(true);
+    try {
+      const created = await promptAgentService.createCreativePreset({ name: createName.trim(), description: createDescription.trim() || undefined, slots: createSlots });
+      notify(`预设「${created.name}」已创建`);
+      setMode('edit'); setSelectedId(created.id);
+      await reloadState();
+    } catch (error) { notify(error instanceof Error ? error.message : '创建预设失败', 'error'); }
+    finally { setCreating(false); }
+  };
+
+  const openInspector = async (messageOverride?: string) => {
+    if (busy || !selected) return;
+    const runEstimate = async () => {
+      setInspectorBusy(true);
+      try {
+        const result = await promptAgentService.inspectCreativeContext({ presetId: selected.id, draft: { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler' } }, message: messageOverride ?? inspectorMessage });
+        setInspectorContent(result);
+        notify(result.ok ? '规范化上下文估算完成' : '规范化上下文估算失败', result.ok ? undefined : 'error');
+      } catch (error) { notify(error instanceof Error ? error.message : '规范化上下文估算失败', 'error'); }
+      finally { setInspectorBusy(false); }
+    };
+    if (!inspectorOpen) { setInspectorOpen(true); setInspectorContent(null); await runEstimate(); }
+    else { await runEstimate(); }
+  };
+
+  const openRevisions = async () => {
+    if (busy || !selected) return;
+    setRevisionPresetId(selected.id); setRevisionBusy(true);
+    try {
+      const detail = await promptAgentService.getCreativePresetDetail(selected.id);
+      setRevisionItems(detail.revisions || []);
+    } catch (error) { notify(error instanceof Error ? error.message : '读取修订失败', 'error'); }
+    finally { setRevisionBusy(false); }
+  };
+
+  const exportPresets = async (ids: string[]) => {
+    if (exporting || !ids.length) return;
+    setExporting(true);
+    try {
+      const payload = await promptAgentService.exportCreativePresets(ids);
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `creative-presets-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      notify(`已导出 ${payload.presets.length} 个预设`);
+    } catch (error) { notify(error instanceof Error ? error.message : '导出失败', 'error'); }
+    finally { setExporting(false); }
+  };
+
+  const importFromFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onerror = () => notify('读取导入文件失败', 'error');
+    reader.onload = () => {
+      let parsed: unknown;
+      try { parsed = JSON.parse(String(reader.result || '')); }
+      catch { notify('导入文件不是有效 JSON', 'error'); return; }
+      void (async () => {
+        setImporting(true);
+        try {
+          const candidate = parsed as { schema?: unknown; version?: unknown; presets?: unknown };
+          if (!candidate || typeof candidate !== 'object' || !Array.isArray(candidate.presets)) {
+            notify('导入文件缺少 presets 数组', 'error'); return;
+          }
+          const result = await promptAgentService.importCreativePresets({
+            schema: typeof candidate.schema === 'string' ? candidate.schema : 'creative-presets',
+            version: typeof candidate.version === 'number' ? candidate.version : 1,
+            presets: candidate.presets as PromptAgentCreativePreset[],
+          });
+          notify(result.imported ? `已导入 ${result.imported} 个预设${result.skipped.length ? `，跳过 ${result.skipped.length} 个` : ''}` : '没有可导入的预设');
+          if (result.imported) await reloadState();
+        } catch (error) { notify(error instanceof Error ? error.message : '导入失败', 'error'); }
+        finally { setImporting(false); }
+      })();
+    };
+    reader.readAsText(file);
+  };
+
+  const selectPreset = (preset: PromptAgentCreativePreset | null) => {
+    setSelectedId(preset?.id ?? null);
+    setMode('edit');
+    setEditorKey(value => value + 1);
+    setRevisionPresetId(null); setInspectorOpen(false); setInspectorContent(null);
+  };
+
+  const beginCreate = () => {
+    setMode('create');
+    setCreateName(''); setCreateDescription('');
+    setCreateSlots(fillMissingSlots([]));
+    setRevisionPresetId(null); setInspectorOpen(false); setInspectorContent(null);
+  };
+
+  const forkSelected = async (preset: PromptAgentCreativePreset) => {
+    if (busy) return;
+    try {
+      // 另存为语义：只传 name/description/forkFromId，服务端据此复制全部槽位；
+      // 不附带清空的 slots，避免与“新预设”路径产生歧义。
+      const created = await promptAgentService.createCreativePreset({
+        name: `${preset.name}（副本）`, description: preset.description, forkFromId: preset.id,
+      });
+      notify(`已从「${preset.name}」另存为「${created.name}」`);
+      setSelectedId(created.id); setMode('edit');
+      await reloadState();
+    } catch (error) { notify(error instanceof Error ? error.message : '另存为失败', 'error'); }
+  };
+
+  const renderEditor = () => {
+    if (mode === 'create') return <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <div className="flex flex-wrap items-center gap-2"><b className="text-sm text-gray-900 dark:text-white">新建空预设</b><span className="min-w-0 flex-1 text-micro text-gray-400">固定 9 槽位全部可编辑</span></div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2"><input autoFocus value={createName} onChange={event => setCreateName(event.target.value)} placeholder="预设名称" className="mobile-touch rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm dark:border-gray-800 dark:bg-gray-950" /><input value={createDescription} onChange={event => setCreateDescription(event.target.value)} placeholder="描述（可选）" className="mobile-touch rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm dark:border-gray-800 dark:bg-gray-950" /></div>
+      <div className="mt-4"><EditableSlotForm value={createSlots} onChange={setCreateSlots} busy={creating} /></div>
+      <div className="mt-4 flex gap-2 border-t border-gray-100 pt-3 dark:border-gray-800"><button type="button" disabled={creating || !createName.trim()} onClick={() => void createNew()} className="mobile-touch inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"><Save className="h-4 w-4" />{creating ? '创建中…' : '创建预设'}</button><button type="button" disabled={creating} onClick={() => selectPreset(selected)} className="mobile-touch rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300">取消</button></div>
+    </div>;
+    if (!selected) return <div className="p-10 text-center text-sm text-gray-500">请先选择一个预设</div>;
+    const key = `${selected.id}:${editorKey}`;
+    if (selected.isBuiltin) return <BuiltinPresetPanel key={key} preset={selected} onFork={() => void forkSelected(selected)} />;
+    return <CustomPresetEditor key={key} preset={selected} busy={busy} notify={notify} onSaved={() => void reloadState()} />;
+  };
+
+  return <div className="min-h-0 flex-1 overflow-y-auto py-3">
+    <div className="mx-auto flex min-h-0 max-w-2xl flex-col gap-4">
+      <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+        <div className="mb-2 flex items-center gap-2"><span className="text-meta font-bold uppercase tracking-wider text-violet-500">预设</span><span className="min-w-0 flex-1 truncate text-micro text-gray-400">{customPresets.length} 个自定义 · {presets.length - customPresets.length} 个内置</span><button type="button" disabled={busy || importing || !presets.length} onClick={() => exportPresets(presets.map(preset => preset.id))} title="导出全部预设（含内置）" aria-label="导出全部预设" className="mobile-touch inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs font-bold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300"><Download className="h-3.5 w-3.5" /><span className="hidden sm:inline">导出全部</span></button><button type="button" disabled={busy || importing} onClick={() => importRef.current?.click()} aria-label="导入预设 JSON" className="mobile-touch inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs font-bold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300"><Upload className="h-3.5 w-3.5" /><span className="hidden sm:inline">导入 JSON</span></button><input ref={importRef} type="file" accept="application/json,.json" hidden onChange={event => { const file = event.target.files?.[0]; if (file) importFromFile(file); event.currentTarget.value = ''; }} /></div>
+        <div className="space-y-2">
+          <button type="button" disabled={busy} onClick={beginCreate} className="mobile-touch inline-flex w-full items-center gap-1.5 rounded-xl border border-dashed border-violet-300 px-3 py-2 text-sm font-bold text-violet-600 hover:border-violet-500 disabled:opacity-40 dark:border-violet-800 dark:text-violet-300"><Plus className="h-4 w-4" />新建空预设</button>
+          {presets.map(preset => {
+            const isActive = preset.id === activeCreativePresetId;
+            const isSelected = preset.id === selectedId && mode === 'edit';
+            return <div key={preset.id} className={`flex items-center gap-1 rounded-xl border px-2 py-1.5 ${isSelected ? 'border-violet-400 bg-violet-50 dark:border-violet-700 dark:bg-violet-950/30' : 'border-gray-200 dark:border-gray-800'}`}>
+              <button type="button" onClick={() => selectPreset(preset)} className="mobile-touch min-w-0 flex-1 px-1 text-left">
+                <span className="flex items-center gap-1.5"><b className="truncate text-sm text-gray-900 dark:text-white">{preset.name}</b>{isActive && <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-micro font-bold text-violet-700 dark:bg-violet-950/60 dark:text-violet-300"><Star className="h-2.5 w-2.5 fill-current" />默认</span>}{preset.isBuiltin && <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-micro font-bold text-gray-500 dark:bg-gray-800 dark:text-gray-400">内置</span>}</span>
+                <span className="mt-0.5 block truncate text-micro text-gray-400">{preset.description || (preset.isBuiltin ? '内置只读预设' : '自定义预设')} · {preset.slots.length} 个槽位</span>
+              </button>
+              {!preset.isBuiltin && <button type="button" disabled={busy} onClick={() => void runActive(isActive ? null : preset.id)} title={isActive ? '取消默认' : '设为默认'} aria-label={isActive ? '取消默认' : '设为默认'} className="mobile-touch inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-gray-400 hover:text-violet-600 disabled:opacity-40 dark:hover:text-violet-300">{isActive ? <Check className="h-4 w-4" /> : <Star className="h-4 w-4" />}</button>}
+              {!preset.isBuiltin && <button type="button" disabled={busy} onClick={() => void onDeletePreset(preset)} title="删除预设" aria-label={`删除预设 ${preset.name}`} className="mobile-touch inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-gray-400 hover:text-red-500 disabled:opacity-40"><Trash2 className="h-4 w-4" /></button>}
+            </div>;
+          })}
+        </div>
+        {warnings.length > 0 && <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{warnings.map(warning => <div key={warning}>{warning}</div>)}</div>}
+        <div className="mt-3 flex flex-wrap gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
+          <button type="button" disabled={busy} onClick={beginCreate} className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-indigo-200 px-3 py-1.5 text-xs font-bold text-indigo-600 disabled:opacity-40 dark:border-indigo-900 dark:text-indigo-300"><Plus className="h-3.5 w-3.5" />新建</button>
+          <button type="button" disabled={busy || !selected || selected.isBuiltin || mode !== 'edit'} onClick={() => setEditorKey(value => value + 1)} className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300"><RotateCcw className="h-3.5 w-3.5" />重置草稿</button>
+          <button type="button" disabled={busy || !selected} onClick={() => void (selected ? forkSelected(selected) : undefined)} title="以选中预设为模板另存为新预设" className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300"><Copy className="h-3.5 w-3.5" />另存为…</button>
+          <button type="button" disabled={busy || !selected || selected.isBuiltin} onClick={() => void (selected && !selected.isBuiltin ? onDeletePreset(selected) : undefined)} className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-red-200 px-3 py-1.5 text-xs font-bold text-red-500 disabled:opacity-40 dark:border-red-900"><Trash2 className="h-3.5 w-3.5" />删除</button>
+          <button type="button" disabled={busy || !selected || selected.isBuiltin || mode === 'create'} onClick={() => void (selected && !selected.isBuiltin ? runActive(selected.id) : undefined)} className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-violet-200 px-3 py-1.5 text-xs font-bold text-violet-600 disabled:opacity-40 dark:border-violet-900 dark:text-violet-300"><Star className="h-3.5 w-3.5" />设为默认</button>
+          {selected && !selected.isBuiltin && <button type="button" disabled={busy || exporting} onClick={() => void exportPresets([selected.id])} title="导出当前预设" aria-label="导出当前预设" className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300"><Download className="h-3.5 w-3.5" />导出当前</button>}
+        </div>
+      </div>
+      {renderEditor()}
+      {selected && mode === 'edit' && (
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={busy || inspectorBusy} onClick={() => void openInspector()} className="mobile-touch inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"><Settings2 className="h-4 w-4" />规范化上下文估算</button>
+          <button type="button" disabled={busy || selected.isBuiltin} onClick={() => void openRevisions()} className="mobile-touch inline-flex items-center gap-1.5 rounded-xl border border-gray-300 px-4 py-2 text-sm font-bold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300"><FileUp className="h-4 w-4" />修订历史</button>
+        </div>
+      )}
+      {inspectorOpen && (
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+          <div className="mb-2 flex items-center gap-2"><b className="text-sm text-gray-900 dark:text-white">规范化上下文估算</b><button type="button" onClick={() => setInspectorOpen(false)} className="mobile-touch ml-auto text-gray-400 hover:text-gray-600" aria-label="关闭估算面板"><X className="h-4 w-4" /></button></div>
+          <p className="mb-2 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-micro leading-4 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300">Pi 规范化上下文估算（非供应商 wire payload）：展示经破限注入拼装后的 systemPrompt 与规范化消息序列，供核对上下文构成与占用。</p>
+          <div className="mb-3 flex items-end gap-2"><label className="min-w-0 flex-1 text-meta text-gray-500">模拟用户消息<textarea value={inspectorMessage} onChange={event => setInspectorMessage(event.target.value)} rows={2} placeholder="输入一段模拟用户消息，观察其对上下文估算的影响…" aria-label="模拟用户消息" className="mobile-touch mt-1 w-full resize-y rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-xs dark:border-gray-800 dark:bg-gray-950" /></label><button type="button" disabled={inspectorBusy} onClick={() => void openInspector()} className="mobile-touch rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">发送并估算</button></div>
+          {inspectorBusy ? <p className="py-4 text-center text-sm text-gray-500">估算中…</p> : inspectorContent ? <InspectorResultView result={inspectorContent} /> : <p className="py-4 text-center text-sm text-gray-500">输入模拟消息后发送，或直接发送空消息进行估算</p>}
+        </div>
+      )}
+      {revisionPresetId && (
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+          <div className="mb-2 flex items-center gap-2"><b className="text-sm text-gray-900 dark:text-white">修订历史</b><button type="button" onClick={() => setRevisionPresetId(null)} className="mobile-touch ml-auto text-gray-400 hover:text-gray-600" aria-label="关闭修订面板"><X className="h-4 w-4" /></button></div>
+          {revisionBusy ? <p className="py-4 text-center text-sm text-gray-500">读取中…</p> : !revisionItems || revisionItems.length === 0 ? <p className="py-4 text-center text-sm text-gray-500">暂无修订记录</p> :
+            <div className="space-y-2">{revisionItems.map(item => <div key={item.revisionHash} className="rounded-xl border border-gray-100 p-2 text-xs dark:border-gray-800"><div className="flex items-center gap-2"><b className="text-gray-800 dark:text-gray-200">v{item.version}</b><span className="truncate text-gray-500">{new Date(item.createdAt).toLocaleString('zh-CN')}</span></div><div className="mt-1 truncate font-mono text-micro text-gray-400">{item.revisionHash}</div></div>)}</div>}
+        </div>
+      )}
+    </div>
+  </div>;
+};
+
 export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify }) => {
   const confirmAction = useConfirmDialog();
   const [config, setConfig] = useState<PromptAgentConfig | null>(null);
@@ -99,17 +512,24 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
   const [showKey, setShowKey] = useState(false);
   const [busy, setBusy] = useState(false);
   const [customDraft, setCustomDraft] = useState<PromptAgentCustomProvider>(emptyCustomProvider);
+  // 破限提示词与预设实验室：预设列表 / 激活预设 / 服务端警告（编辑工作区由 CreativeLabView 自持）。
+  const [creativePresets, setCreativePresets] = useState<PromptAgentCreativePreset[]>([]);
+  const [activeCreativePresetId, setActiveCreativePresetId] = useState<string | undefined>(undefined);
+  const [creativeWarnings, setCreativeWarnings] = useState<string[]>([]);
   // P2-17：子页覆盖层（全屏）的焦点管理：进入时移入、Tab 圈禁、返回 home 后归还。
   const subViewRef = useModalA11y<HTMLDivElement>(view !== 'home');
 
   const reload = async () => {
-    const [nextConfig, nextProviders, nextModels, nextCustomProviders] = await Promise.all([
-      promptAgentService.getConfig(), promptAgentService.getProviders(), promptAgentService.getAvailableModels(), promptAgentService.getCustomProviders(),
+    const [nextConfig, nextProviders, nextModels, nextCustomProviders, nextCreative] = await Promise.all([
+      promptAgentService.getConfig(), promptAgentService.getProviders(), promptAgentService.getAvailableModels(), promptAgentService.getCustomProviders(), promptAgentService.getCreativePresets(),
     ]);
     setConfig(nextConfig);
     setProviders(nextProviders);
     setModels(nextModels);
     setCustomProviders(nextCustomProviders);
+    setCreativePresets(nextCreative.items || []);
+    setActiveCreativePresetId(nextCreative.activeCreativePresetId);
+    setCreativeWarnings(nextCreative.warnings || []);
     window.dispatchEvent(new CustomEvent('nai-agent-runtime-changed'));
   };
 
@@ -257,6 +677,19 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
     finally { setBusy(false); }
   };
 
+  /** 删除自定义预设（builtin 只读，不在列表提供删除）。删除 active 时后端原子回退到内置默认，无需前端补 setActive(null)。 */
+  const handleDeletePreset = async (preset: PromptAgentCreativePreset) => {
+    if (preset.isBuiltin) return;
+    if (!await confirmAction({ title: `删除预设「${preset.name}」？`, message: '该操作不可撤销；若这是当前默认预设，将自动回退到内置默认。不影响已建立的 Agent 对话。', confirmLabel: '删除预设', tone: 'danger' })) return;
+    setBusy(true);
+    try {
+      await promptAgentService.deleteCreativePreset(preset.id);
+      await reload();
+      notify('预设已删除');
+    } catch (error) { notify(error instanceof Error ? error.message : '删除预设失败', 'error'); }
+    finally { setBusy(false); }
+  };
+
   const currentModel = models.find(model => model.current) || (config ? { id: config.model, name: config.model, provider: config.provider } : null);
   const currentVisionModel = models.find(model => model.currentVision) || (config?.visionAvailable ? { id: config.visionModel, name: config.visionModel, provider: config.visionProvider } : null);
   const configured = providers.filter(provider => provider.configured);
@@ -276,6 +709,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         <button type="button" disabled={!models.some(model => model.imageInput)} onClick={() => openView('vision')} className="mobile-touch rounded-xl border border-violet-200 bg-white px-3 text-left text-sm font-bold text-gray-800 shadow-sm disabled:opacity-40 dark:border-violet-900 dark:bg-gray-900 dark:text-gray-100"><span className="mr-2 text-violet-500">◉</span>选择视觉模型</button>
         <button type="button" disabled={configured.length === 0} onClick={() => openView('logout')} className="mobile-touch rounded-xl border border-gray-200 bg-white px-3 text-left text-sm font-bold text-gray-800 shadow-sm disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"><span className="mr-2 text-red-500">−</span>退出模型服务</button>
         <button type="button" onClick={() => openCustom()} className="mobile-touch rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-left text-sm font-bold text-indigo-700 shadow-sm dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-300"><span className="mr-2">⌁</span>添加自定义接口</button>
+        <button type="button" onClick={() => setView('creative_lab')} className="mobile-touch rounded-xl border border-violet-200 bg-white px-3 text-left text-sm font-bold text-violet-700 shadow-sm dark:border-violet-900 dark:bg-gray-900 dark:text-violet-300"><span className="mr-2">✎</span>破限预设实验室</button>
       </div>
       {customProviders.length > 0 && <div className="rounded-2xl border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900"><div className="px-2 py-1 text-meta font-bold text-gray-400">自定义接口</div>{customProviders.map(provider => <div key={provider.id} className="flex items-center gap-2 rounded-xl px-2 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"><span className="h-2.5 w-2.5 rounded-full bg-indigo-500"/><div className="min-w-0 flex-1"><b className="block truncate text-sm dark:text-white">{provider.name}</b><span className="block truncate text-micro text-gray-400">{provider.baseUrl} · {provider.models.length} 个模型</span></div><button type="button" onClick={() => openCustom(provider)} className="mobile-touch rounded-xl px-3 text-xs font-bold text-indigo-600">编辑</button><button type="button" onClick={() => void deleteCustom(provider)} className="mobile-touch rounded-xl px-3 text-xs font-bold text-red-500">删除</button></div>)}</div>}
       {configured.length > 0 && <div className="flex flex-wrap gap-1.5">{configured.map(provider => <span key={provider.id} className="rounded-full bg-emerald-50 px-2 py-1 text-meta font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">✓ {provider.name}</span>)}</div>}
@@ -287,16 +721,16 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         ref={subViewRef}
         role="dialog"
         aria-modal="true"
-        aria-label={view === 'login' ? '选择要配置的服务' : view === 'logout' ? '选择要退出的服务' : view === 'model' ? '选择 Agent 模型' : view === 'vision' ? '选择视觉模型' : view === 'auth' ? '选择登录方式' : view === 'custom' ? (customDraft.id ? '编辑自定义接口' : '添加自定义接口') : '登录模型服务'}
+        aria-label={view === 'login' ? '选择要配置的服务' : view === 'logout' ? '选择要退出的服务' : view === 'model' ? '选择 Agent 模型' : view === 'vision' ? '选择视觉模型' : view === 'auth' ? '选择登录方式' : view === 'custom' ? (customDraft.id ? '编辑自定义接口' : '添加自定义接口') : view === 'creative_lab' ? '破限提示词与预设实验室' : '登录模型服务'}
         className="fixed inset-0 z-[1100] flex flex-col bg-gray-50 dark:bg-gray-950"
       >
       <header className="workspace-command-bar flex flex-none items-center gap-3 border-b border-gray-200 bg-white px-3 dark:border-gray-800 dark:bg-gray-900 md:px-5">
         <button type="button" onClick={view === 'key' ? () => { setView('login'); setApiKey(''); } : requestClose} className="mobile-touch flex items-center justify-center text-gray-500" aria-label="返回"><ArrowLeft className="h-5 w-5" /></button>
-        <div className="min-w-0 flex-1"><h2 className="font-black text-gray-900 dark:text-white">{view === 'login' ? '选择要配置的服务' : view === 'logout' ? '选择要退出的服务' : view === 'model' ? '选择 Agent 模型' : view === 'vision' ? '选择视觉模型' : view === 'auth' ? '选择登录方式' : view === 'custom' ? (customDraft.id ? '编辑自定义接口' : '添加自定义接口') : `登录 ${targetProvider?.name || ''}`}</h2><p className="text-meta text-gray-500">{view === 'model' ? '主模型负责推理和调用工具' : view === 'vision' ? '只显示支持图片输入的已配置模型' : view === 'key' ? (loginAuthType === 'oauth' ? '按官方 OAuth 流程完成登录' : '使用 API Key 登录') : view === 'custom' ? '自定义模型服务配置' : view === 'auth' ? targetProvider?.name : '输入文字可立即筛选'}</p></div>
+        <div className="min-w-0 flex-1"><h2 className="font-black text-gray-900 dark:text-white">{view === 'login' ? '选择要配置的服务' : view === 'logout' ? '选择要退出的服务' : view === 'model' ? '选择 Agent 模型' : view === 'vision' ? '选择视觉模型' : view === 'auth' ? '选择登录方式' : view === 'custom' ? (customDraft.id ? '编辑自定义接口' : '添加自定义接口') : view === 'creative_lab' ? '破限提示词与预设实验室' : `登录 ${targetProvider?.name || ''}`}</h2><p className="text-meta text-gray-500">{view === 'model' ? '主模型负责推理和调用工具' : view === 'vision' ? '只显示支持图片输入的已配置模型' : view === 'key' ? (loginAuthType === 'oauth' ? '按官方 OAuth 流程完成登录' : '使用 API Key 登录') : view === 'custom' ? '自定义模型服务配置' : view === 'auth' ? targetProvider?.name : view === 'creative_lab' ? '9 个注入槽位：预设编辑与激活管理' : '输入文字可立即筛选'}</p></div>
       </header>
       <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col p-3 md:p-5">
-        {view !== 'key' && view !== 'auth' && view !== 'custom' && <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder={view === 'model' || view === 'vision' ? '搜索模型名称、ID或供应商…' : '搜索模型服务…'} className="mobile-touch w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-900" />}
-        {view === 'custom' ? <CustomProviderForm value={customDraft} onChange={setCustomDraft} busy={busy} onTest={() => void testCustom()} onFetch={() => void fetchCustom()} onSave={() => void saveCustom()} /> : view === 'auth' ? <div className="mx-auto mt-10 w-full max-w-md space-y-3 rounded-3xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-800 dark:bg-gray-900"><p className="text-sm font-black dark:text-white">{targetProvider?.name}</p>{targetProvider?.authTypes.map(authType => <button key={authType} type="button" disabled={busy} onClick={() => void advanceLogin(targetProvider, [], authType)} className="mobile-touch w-full rounded-xl border border-gray-200 px-4 text-left text-sm font-bold hover:border-indigo-500 dark:border-gray-800">{authType === 'oauth' ? 'OAuth / 订阅账号登录' : 'API Key 登录'}</button>)}</div> : view === 'key' ? <div className="mx-auto mt-10 w-full max-w-md rounded-3xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-800 dark:bg-gray-900 md:p-6"><div className="text-sm font-black text-gray-900 dark:text-white">{targetProvider?.name}</div><p className="mt-1 text-xs leading-5 text-gray-500">{loginPrompt?.message || '正在准备登录…'}</p>{loginEvents.map((event, index) => <div key={index} className="mt-3 rounded-xl bg-indigo-50 p-3 text-xs leading-5 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300">{event.message}{event.instructions && <div>{event.instructions}</div>}{event.url && <a href={event.url} target="_blank" rel="noreferrer" className="mt-1 block break-all font-bold underline">打开授权页面</a>}{event.verificationUri && <a href={event.verificationUri} target="_blank" rel="noreferrer" className="mt-1 block break-all font-bold underline">打开设备授权页面</a>}{event.userCode && <div className="mt-1 font-mono font-black">设备码：{event.userCode}</div>}{event.links?.map(link => <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="mt-1 block break-all font-bold underline">{link.label || link.url}</a>)}</div>)}{loginPrompt?.type === 'select' ? <div className="mt-4 space-y-2">{loginPrompt.options.map(option => <button key={option.id} type="button" disabled={busy} onClick={() => submitLoginAnswer(option.id)} className="mobile-touch w-full rounded-xl border border-gray-200 px-3 text-left text-sm font-bold hover:border-indigo-500 dark:border-gray-800"><span className="block">{option.label}</span>{option.description && <span className="mt-0.5 block text-meta font-normal text-gray-500">{option.description}</span>}</button>)}</div> : <><div className="mt-4 flex gap-2"><input autoFocus type={loginPrompt?.type === 'secret' && !showKey ? 'password' : 'text'} value={apiKey} onChange={event => setApiKey(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') submitLoginAnswer(); }} placeholder={loginPrompt?.placeholder || '请输入'} autoComplete="new-password" className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 font-mono text-sm dark:border-gray-800 dark:bg-gray-950" />{loginPrompt?.type === 'secret' && <button type="button" onClick={() => setShowKey(value => !value)} className="mobile-touch rounded-xl border border-gray-200 px-3 text-sm dark:border-gray-800">{showKey ? '隐藏' : '显示'}</button>}</div><button type="button" disabled={busy || !apiKey.trim()} onClick={() => submitLoginAnswer()} className="mobile-touch mt-4 w-full rounded-xl bg-indigo-600 text-sm font-bold text-white disabled:opacity-40">{busy ? '继续…' : '继续'}</button></>}<p className="mt-4 text-meta leading-5 text-gray-400">登录凭据只加密保存到运行本项目的电脑本地。</p></div> :
+        {view !== 'key' && view !== 'auth' && view !== 'custom' && view !== 'creative_lab' && <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder={view === 'model' || view === 'vision' ? '搜索模型名称、ID或供应商…' : '搜索模型服务…'} className="mobile-touch w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-900" />}
+        {view === 'custom' ? <CustomProviderForm value={customDraft} onChange={setCustomDraft} busy={busy} onTest={() => void testCustom()} onFetch={() => void fetchCustom()} onSave={() => void saveCustom()} /> : view === 'creative_lab' ? <CreativeLabView presets={creativePresets} activeCreativePresetId={activeCreativePresetId} warnings={creativeWarnings} busy={busy} notify={notify} onStateChanged={next => { setCreativePresets(next.items || []); setActiveCreativePresetId(next.activeCreativePresetId); setCreativeWarnings(next.warnings || []); }} onDeletePreset={preset => void handleDeletePreset(preset)} /> : view === 'auth' ? <div className="mx-auto mt-10 w-full max-w-md space-y-3 rounded-3xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-800 dark:bg-gray-900"><p className="text-sm font-black dark:text-white">{targetProvider?.name}</p>{targetProvider?.authTypes.map(authType => <button key={authType} type="button" disabled={busy} onClick={() => void advanceLogin(targetProvider, [], authType)} className="mobile-touch w-full rounded-xl border border-gray-200 px-4 text-left text-sm font-bold hover:border-indigo-500 dark:border-gray-800">{authType === 'oauth' ? 'OAuth / 订阅账号登录' : 'API Key 登录'}</button>)}</div> : view === 'key' ? <div className="mx-auto mt-10 w-full max-w-md rounded-3xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-800 dark:bg-gray-900 md:p-6"><div className="text-sm font-black text-gray-900 dark:text-white">{targetProvider?.name}</div><p className="mt-1 text-xs leading-5 text-gray-500">{loginPrompt?.message || '正在准备登录…'}</p>{loginEvents.map((event, index) => <div key={index} className="mt-3 rounded-xl bg-indigo-50 p-3 text-xs leading-5 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300">{event.message}{event.instructions && <div>{event.instructions}</div>}{event.url && <a href={event.url} target="_blank" rel="noreferrer" className="mt-1 block break-all font-bold underline">打开授权页面</a>}{event.verificationUri && <a href={event.verificationUri} target="_blank" rel="noreferrer" className="mt-1 block break-all font-bold underline">打开设备授权页面</a>}{event.userCode && <div className="mt-1 font-mono font-black">设备码：{event.userCode}</div>}{event.links?.map(link => <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="mt-1 block break-all font-bold underline">{link.label || link.url}</a>)}</div>)}{loginPrompt?.type === 'select' ? <div className="mt-4 space-y-2">{loginPrompt.options.map(option => <button key={option.id} type="button" disabled={busy} onClick={() => submitLoginAnswer(option.id)} className="mobile-touch w-full rounded-xl border border-gray-200 px-3 text-left text-sm font-bold hover:border-indigo-500 dark:border-gray-800"><span className="block">{option.label}</span>{option.description && <span className="mt-0.5 block text-meta font-normal text-gray-500">{option.description}</span>}</button>)}</div> : <><div className="mt-4 flex gap-2"><input autoFocus type={loginPrompt?.type === 'secret' && !showKey ? 'password' : 'text'} value={apiKey} onChange={event => setApiKey(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') submitLoginAnswer(); }} placeholder={loginPrompt?.placeholder || '请输入'} autoComplete="new-password" className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 font-mono text-sm dark:border-gray-800 dark:bg-gray-950" />{loginPrompt?.type === 'secret' && <button type="button" onClick={() => setShowKey(value => !value)} className="mobile-touch rounded-xl border border-gray-200 px-3 text-sm dark:border-gray-800">{showKey ? '隐藏' : '显示'}</button>}</div><button type="button" disabled={busy || !apiKey.trim()} onClick={() => submitLoginAnswer()} className="mobile-touch mt-4 w-full rounded-xl bg-indigo-600 text-sm font-bold text-white disabled:opacity-40">{busy ? '继续…' : '继续'}</button></>}<p className="mt-4 text-meta leading-5 text-gray-400">登录凭据只加密保存到运行本项目的电脑本地。</p></div> :
           <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
             {view === 'vision' && <button type="button" disabled={busy} onClick={() => void selectVisionAuto()} className="flex min-h-16 w-full items-center gap-3 border-b border-violet-100 bg-violet-50/60 px-4 text-left hover:bg-violet-100 disabled:opacity-40 dark:border-violet-900 dark:bg-violet-950/20 dark:hover:bg-violet-950/40"><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs ${config?.visionMode === 'auto' ? 'bg-violet-600 text-white' : 'bg-white text-violet-500 dark:bg-gray-800'}`}>{config?.visionMode === 'auto' ? '✓' : '↻'}</span><span><b className="block text-sm text-gray-900 dark:text-white">自动匹配视觉模型</b><span className="block text-meta text-gray-500">主模型不能识图时，优先选择同一接口的多模态模型，再从其他已配置接口中选择</span></span></button>}
             {(view === 'model' || view === 'vision' ? filteredModels : filteredProviders).map(item => view === 'model' || view === 'vision' ? (() => { const model = item as PromptAgentModel; const selected = view === 'vision' ? model.currentVision : model.current; return <button key={`${model.provider}/${model.id}`} type="button" disabled={busy} onClick={() => void (view === 'vision' ? selectVisionModel(model) : selectModel(model))} className="flex min-h-16 w-full items-center gap-3 border-b border-gray-100 px-4 text-left last:border-0 hover:bg-indigo-50 dark:border-gray-800 dark:hover:bg-indigo-950/20"><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs ${selected ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}>{selected ? '✓' : '→'}</span><span className="min-w-0 flex-1"><b className="block truncate text-sm text-gray-900 dark:text-white">{model.id}</b><span className="block truncate text-meta text-gray-500">[{model.provider}] {model.name}</span></span><span className="hidden shrink-0 text-right text-micro leading-4 text-gray-400 sm:block">上下文 {formatContext(model.contextWindow)}<br />{model.reasoning ? '推理' : '普通'}{model.imageInput ? ' · 识图' : ''}</span></button>; })() : (() => { const provider = item as PromptAgentProvider; return <button key={provider.id} type="button" disabled={busy} onClick={() => view === 'logout' ? void logout(provider) : startProviderLogin(provider)} className="flex min-h-16 w-full items-center gap-3 border-b border-gray-100 px-4 text-left last:border-0 hover:bg-indigo-50 dark:border-gray-800 dark:hover:bg-indigo-950/20"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${provider.configured ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}`} /><span className="min-w-0 flex-1"><b className="block truncate text-sm text-gray-900 dark:text-white">{provider.name}</b><span className="block truncate text-meta text-gray-500">{provider.id} · {provider.authTypes.map(value => value === 'oauth' ? 'OAuth' : 'API key').join(' / ')} · {provider.modelCount} 个模型</span></span><span className={`shrink-0 text-xs font-bold ${provider.configured ? 'text-emerald-600' : 'text-gray-400'}`}>{provider.configured ? '✓ 已配置' : '未配置'}</span></button>; })())}
