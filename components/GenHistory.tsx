@@ -1164,7 +1164,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                     <div className="bg-white dark:bg-gray-900 w-full max-w-6xl h-[100dvh] md:h-[90vh] rounded-none md:rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row" onClick={e => e.stopPropagation()}>
                         {/* Image Area */}
                         <div className="flex-1 bg-gray-100 dark:bg-black/50 flex items-center justify-center p-4 relative h-[45%] md:h-auto border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800">
-                            <OriginalImage src={lightbox.imageUrl} alt="历史生成图片预览" className="max-w-full max-h-full object-contain shadow-lg" decoding="async" />
+                            <OriginalImage src={lightbox.imageUrl} alt="历史生成图片预览" className="max-w-full max-h-full object-contain shadow-lg" decoding="async" data-safe-mode-ignore="true" />
                         </div>
 
                         {/* Details Area */}

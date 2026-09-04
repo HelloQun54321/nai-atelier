@@ -108,7 +108,7 @@ export const InspirationDetail: React.FC<Props> = ({ item, items, boards, curren
   return <div className="ui-backdrop-enter fixed inset-0 z-[1500] flex items-center justify-center bg-black/80 p-0 backdrop-blur-sm md:p-6" onClick={closeLayer}>
     <div data-safe-mode-work="true" className="ui-modal-enter flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-950 md:h-[92vh] md:rounded-2xl md:border md:border-gray-800 lg:flex-row" onClick={event => event.stopPropagation()}>
       <section className="relative flex min-h-[36vh] flex-1 items-center justify-center overflow-hidden bg-gray-100 dark:bg-black/60 lg:min-h-0">
-        <OriginalImage src={draft.imageUrl} alt={draft.title} className="max-h-full max-w-full object-contain" />
+        <OriginalImage src={draft.imageUrl} alt={draft.title} className="max-h-full max-w-full object-contain" data-safe-mode-ignore="true" />
         <button type="button" onClick={closeLayer} className="absolute left-3 top-[max(.75rem,env(safe-area-inset-top))] flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur lg:hidden" aria-label="关闭"><X className="h-5 w-5" /></button>
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-2"><span className="inline-flex items-center gap-1.5 rounded-full border border-white/70 bg-white/90 px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm backdrop-blur dark:border-white/15 dark:bg-black/60 dark:text-white"><SourceIcon className="h-3.5 w-3.5" />{sourceLabel(draft.sourceType)}</span>{draft.parentId && <span className="rounded-full border border-white/20 bg-black/60 px-3 py-1.5 text-xs text-white backdrop-blur">衍生自 {draft.parentId}</span>}</div>
       </section>

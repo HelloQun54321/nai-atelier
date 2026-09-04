@@ -1109,7 +1109,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
        {lightbox?.previewImage && (
          <div role="dialog" aria-modal="true" aria-label={lightbox.name} className="ui-backdrop-enter fixed inset-0 z-[1500] hidden items-center justify-center bg-black/90 p-4 backdrop-blur-sm md:flex" onClick={() => setLightbox(null)}>
-          <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" onClick={event => event.stopPropagation()} />
+          <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" onClick={event => event.stopPropagation()} data-safe-mode-ignore="true" />
           <div className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded bg-black/65 px-4 py-2 text-center text-sm text-white">{lightbox.name}{lightbox.tagName ? ` · ${lightbox.tagName}` : ''}</div>
           <button onClick={() => setLightbox(null)} className="absolute right-5 top-5 text-3xl text-white">×</button>
         </div>
@@ -1119,7 +1119,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
          <button onClick={() => sendToPlayground(lightbox)} className="mobile-touch flex-1 rounded-xl bg-indigo-600 font-bold text-white">导入实验室</button>
        </> : null}>
          {lightbox && <div className="space-y-4 p-3">
-           <div className="overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{lightbox.previewImage ? <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="w-full object-contain" /> : <div className="flex aspect-[2/3] items-center justify-center text-gray-400">尚未生成预览</div>}</div>
+           <div className="overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{lightbox.previewImage ? <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="w-full object-contain" data-safe-mode-ignore="true" /> : <div className="flex aspect-[2/3] items-center justify-center text-gray-400">尚未生成预览</div>}</div>
            <div className="rounded-2xl bg-white p-4 text-sm shadow-sm dark:bg-gray-800">
              <div className="font-bold dark:text-white">{lightbox.name}</div>
              {lightbox.tagName && <div className="mt-1 break-all font-mono text-xs text-gray-500">{lightbox.tagName}</div>}
