@@ -62,7 +62,15 @@ interface ImageEditPanelProps {
   onGenerateBarChange?: (bar: { generate: () => void; costLabel: string; canGenerate: boolean }) => void;
 }
 
-type MaskSnapshot = { data: string; rect: { x: number; y: number; width: number; height: number } | null };
+type MaskSnapshot = {
+  data: string;
+  rect: { x: number; y: number; width: number; height: number } | null;
+  /** 解码完成的位图快照（仅当浏览器支持 createImageBitmap 时异步生成）。恢复时优先按像素精确回贴，
+   *  不经过二次 PNG 编码；生成期间或解码失败时回退到 data 字段的 dataURL 解码。 */
+  bitmap?: ImageBitmap;
+  /** 异步位图解码进行中标记：清栈/释放时置 false，让挂起的解码结果自我丢弃。 */
+  bitmapPending?: boolean;
+};
 type ImageEditPanelState = {
   width: number;
   height: number;
@@ -131,6 +139,15 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const focusedRectRef = useRef<ImageEditPanelState['focusedRect']>(draft.focusedRect || null);
   const undoRef = useRef<MaskSnapshot[]>([]);
   const redoRef = useRef<MaskSnapshot[]>([]);
+  // 卸载时释放撤销/重做栈中残留的位图快照，避免组件销毁后 GPU 位图泄漏
+  useEffect(() => {
+    return () => {
+      undoRef.current.forEach(releaseSnapshotBitmap);
+      redoRef.current.forEach(releaseSnapshotBitmap);
+    };
+    // 仅挂载时注册一次卸载清理；releaseSnapshotBitmap/undoRef/redoRef 均为稳定引用
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [strength, setStrength] = useState(draft.strength);
   const [noise, setNoise] = useState(draft.noise);
   const [brushSize, setBrushSize] = useState(draft.brushSize);
@@ -201,16 +218,30 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     if (!canvas) return;
     const restoreRevision = maskRestoreRevisionRef.current + 1;
     maskRestoreRevisionRef.current = restoreRevision;
-    const image = new Image();
-    image.onload = () => {
-      if (restoreRevision !== maskRestoreRevisionRef.current) return;
-      const context = canvas.getContext('2d');
-      if (!context) return;
+    // 位图优先：已是解码后的像素快照，直接同步回贴，避免经 dataURL 二次解码
+    const context = canvas.getContext('2d');
+    if (item.bitmap && context) {
       context.clearRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, 0, 0);
+      context.drawImage(item.bitmap, 0, 0);
       focusedRectRef.current = item.rect;
       setState(previous => ({ ...previous, focusedRect: item.rect }));
       renderOverlay();
+      return;
+    }
+    const image = new Image();
+    image.onload = () => {
+      if (restoreRevision !== maskRestoreRevisionRef.current) return;
+      const loadContext = canvas.getContext('2d');
+      if (!loadContext) return;
+      loadContext.clearRect(0, 0, canvas.width, canvas.height);
+      loadContext.drawImage(image, 0, 0);
+      focusedRectRef.current = item.rect;
+      setState(previous => ({ ...previous, focusedRect: item.rect }));
+      renderOverlay();
+    };
+    // 快照 dataURL 解码失败：仅告警并保持当前画布原状（画布内容已是撤销前的状态，堆栈已出栈）
+    image.onerror = () => {
+      console.warn('蒙版快照解码失败，撤销/重做已跳过该步骤', item.rect);
     };
     image.src = item.data;
   };
@@ -223,6 +254,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     canvas.height = height;
     canvas.getContext('2d')?.clearRect(0, 0, width, height);
     if (clearHistory) {
+      disposeSnapshotBitmaps();
       undoRef.current = [];
       redoRef.current = [];
     }
@@ -243,6 +275,10 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       context.clearRect(0, 0, canvas.width, canvas.height);
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       renderOverlay();
+    };
+    // 草稿蒙版解码失败：画布保持原状并告警，不静默丢失用户笔迹；后续同 data 的恢复仍会重试
+    image.onerror = () => {
+      console.warn('外部蒙版解码失败，保留当前画布内容');
     };
     image.src = data;
   };
@@ -374,12 +410,68 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
+  /** 释放一张快照的位图；bitmapPending=false 会让挂起的解码结果自我丢弃（见 ensureSnapshotBitmap）。 */
+  const releaseSnapshotBitmap = (item: MaskSnapshot) => {
+    if (item.bitmap) {
+      item.bitmap.close();
+      item.bitmap = undefined;
+    }
+    item.bitmapPending = false;
+  };
+
+  /** 为快照异步生成位图并回填。同步置位 bitmapPending 后异步解码：
+   *  快照 data 一经压栈即不可变，解码结果只属于该快照自身，不会过期；
+   *  唯一需要否决的场景是该快照已被释放（清栈/淘汰/弹出）——此时 bitmapPending 被置 false，
+   *  挂起的解码结果自我丢弃，防止把位图重新挂到已释放对象上。解码失败无妨，恢复走 data 兜底。 */
+  const ensureSnapshotBitmap = (item: MaskSnapshot) => {
+    if (item.bitmap || item.bitmapPending || typeof createImageBitmap !== 'function') return;
+    item.bitmapPending = true;
+    const capturedItem = item;
+    void (async () => {
+      try {
+        const blob = await dataUrlToBlob(capturedItem.data);
+        const decoded = await createImageBitmap(blob);
+        if (capturedItem.bitmapPending !== true) {
+          // 快照已被释放（清栈/淘汰/弹出）：丢弃这次解码结果
+          decoded.close();
+          return;
+        }
+        capturedItem.bitmap = decoded;
+      } catch {
+        // 解码失败不影响功能：恢复时回退到 data 字段的 dataURL 路径
+      } finally {
+        capturedItem.bitmapPending = false;
+      }
+    })();
+  };
+
+  /** 释放快照栈中所有未关闭的位图（清空/更换画布尺寸时调用，防止 GPU 位图泄漏）。 */
+  const disposeSnapshotBitmaps = () => {
+    undoRef.current.forEach(releaseSnapshotBitmap);
+    redoRef.current.forEach(releaseSnapshotBitmap);
+  };
+
   const commitSnapshot = () => {
     const item = snapshot();
     if (item) {
+      // 与撤销栈顶去重：同一撤销点重复入栈（如同一 stroke 中重复落点/点击）只保留最后一张，
+      // 避免用户多点几下撤销时看似"没反应"；同时避免重复触发位图解码。
+      // 数据与选区矩形都相同才算同一撤销点（选区移动可能不改像素，但仍应作为可撤销步骤保留）
+      const top = undoRef.current[undoRef.current.length - 1];
+      const sameState = top && top.data === item.data && JSON.stringify(top.rect) === JSON.stringify(item.rect);
+      if (sameState) {
+        releaseSnapshotBitmap(item);
+        return;
+      }
       undoRef.current.push(item);
-      if (undoRef.current.length > 30) undoRef.current.shift();
+      if (undoRef.current.length > 30) {
+        const evicted = undoRef.current.shift();
+        if (evicted) releaseSnapshotBitmap(evicted);
+      }
+      ensureSnapshotBitmap(item);
     }
+    // 新撤销点使整条重做分支失效：释放其中快照的位图再清栈
+    redoRef.current.forEach(releaseSnapshotBitmap);
     redoRef.current = [];
   };
 
@@ -494,10 +586,16 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     const previous = undoRef.current.pop();
     if (!current || !previous) return;
     redoRef.current.push(current);
-    if (redoRef.current.length > 30) redoRef.current.shift();
+    if (redoRef.current.length > 30) {
+      const evicted = redoRef.current.shift();
+      if (evicted) releaseSnapshotBitmap(evicted);
+    }
+    ensureSnapshotBitmap(current);
     restoreSnapshot(previous);
     lastAppliedMaskRef.current = previous.data;
     onDraftChange({ maskData: previous.data, focusedRect: previous.rect || undefined });
+    // 该快照已从栈中弹出且不再被引用：释放其位图（恢复若走同步位图路径则此时已回贴完毕）
+    releaseSnapshotBitmap(previous);
   };
 
   const redo = () => {
@@ -505,10 +603,16 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     const next = redoRef.current.pop();
     if (!current || !next) return;
     undoRef.current.push(current);
-    if (undoRef.current.length > 30) undoRef.current.shift();
+    if (undoRef.current.length > 30) {
+      const evicted = undoRef.current.shift();
+      if (evicted) releaseSnapshotBitmap(evicted);
+    }
+    ensureSnapshotBitmap(current);
     restoreSnapshot(next);
     lastAppliedMaskRef.current = next.data;
     onDraftChange({ maskData: next.data, focusedRect: next.rect || undefined });
+    // 该快照已从栈中弹出且不再被引用：释放其位图（恢复若走同步位图路径则此时已回贴完毕）
+    releaseSnapshotBitmap(next);
   };
 
   const resetFocusedRect = () => {
@@ -625,6 +729,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       mask.height = result.height;
       mask.getContext('2d')?.drawImage(result.mask, 0, 0);
       // 画布尺寸已变，旧快照按原尺寸回贴会把扩图白边错误恢复成"保留"语义，必须清空撤销/重做栈
+      disposeSnapshotBitmaps();
       undoRef.current = [];
       redoRef.current = [];
       focusedRectRef.current = null;
@@ -695,6 +800,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       maskCanvas.getContext('2d')?.drawImage(mask, 0, 0);
     }
     focusedRectRef.current = nextFocusedRect ? limitFocusedImageEditRect(targetWidth, targetHeight, nextFocusedRect) : null;
+    disposeSnapshotBitmaps();
     undoRef.current = [];
     redoRef.current = [];
     setState({ width: targetWidth, height: targetHeight, focusedRect: focusedRectRef.current });

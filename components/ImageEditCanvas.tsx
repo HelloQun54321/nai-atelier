@@ -80,13 +80,35 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
 
   // Space 键监听与 Esc 全屏退出
   useEffect(() => {
+    // 编辑器是否真正可见：自身或任一祖先 hidden / display:none / visibility 隐藏时
+    // 不应响应空格（画布被覆盖或卸载时劫持空格会吞掉按钮激活与页面滚动）。
+    // 不用 offsetParent 判定：jsdom 与 display:contents 场景下不可靠。
+    const isEditorVisible = (): boolean => {
+      let node: HTMLElement | null = containerRef.current;
+      if (!node) return false;
+      while (node) {
+        if (node.hidden) return false;
+        const style = window.getComputedStyle(node);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+        node = node.parentElement;
+      }
+      return true;
+    };
+    // 焦点落在可交互控件上时不劫持空格（按钮/下拉/链接等需要空格原生激活或滚动）
+    const isInteractiveTarget = (event: KeyboardEvent): boolean => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return false;
+      if (target.isContentEditable) return true;
+      return Boolean(target.closest('input, textarea, select, button, [role="button"], [role="checkbox"], [role="switch"], [role="tab"], [role="menuitem"], a[href]'));
+    };
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.code === 'Space') {
-        const target = event.target as HTMLElement | null;
-        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+        if (isInteractiveTarget(event) || !isEditorVisible()) return;
         event.preventDefault();
         setSpacePressed(true);
       }
+      // 全屏模式必须保留 Esc 退出逻辑：无论焦点落在画布内哪个控件上都应能退出全屏
       if (event.key === 'Escape' && isFullscreen) {
         setIsFullscreen(false);
       }

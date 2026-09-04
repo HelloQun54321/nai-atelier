@@ -61,6 +61,34 @@ describe('ChainEditorModeHeader', () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 
+  it('实验室生成进行中禁用四模式切换并透传到模式导航', () => {
+    const onSelectMode = vi.fn();
+    render(React.createElement(ChainEditorModeHeader, {
+      isLaboratory: true,
+      chainName: '不应显示',
+      entityLabel: '风格串',
+      isOwner: true,
+      activeMode: 'outpaint',
+      isGenerating: true,
+      onSelectMode,
+      onEditInfo: vi.fn(),
+      onBack: vi.fn(),
+    }));
+
+    const nav = screen.getByRole('navigation', { name: '生成模式' });
+    expect(nav).toBeTruthy();
+    // 4 个模式按钮 + 1 个手机端返回箭头
+    const buttons = screen.getAllByRole('button');
+    expect(buttons).toHaveLength(5);
+    const navButtons = nav.querySelectorAll('button');
+    expect(navButtons).toHaveLength(4);
+    navButtons.forEach(button => {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: '局部重绘' }));
+    expect(onSelectMode).not.toHaveBeenCalled();
+  });
+
   it('角色串详情使用对应的返回与编辑文案', () => {
     render(React.createElement(ChainEditorModeHeader, {
       isLaboratory: false,

@@ -54,6 +54,8 @@ export interface ChainEditorHeaderProps {
     onTagAssistEnabledChange: (enabled: boolean) => void;
     activeGenerationMode: GenerationMode;
     selectGenerationMode: (mode: GenerationMode) => void | Promise<void>;
+    /** 生成进行中禁用模式切换（透传至模式导航）。 */
+    isGenerating?: boolean;
     onBack: () => void | Promise<void>;
     markChange: () => void;
     handleReset: () => void;
@@ -88,6 +90,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     onTagAssistEnabledChange,
     activeGenerationMode,
     selectGenerationMode,
+    isGenerating = false,
     onBack,
     markChange,
     handleReset,
@@ -114,6 +117,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     isOwner={isOwner}
                     activeMode={activeGenerationMode}
                     onSelectMode={selectGenerationMode}
+                    isGenerating={isGenerating}
                     onEditInfo={() => setIsEditingInfo(true)}
                     onBack={onBack}
                 />

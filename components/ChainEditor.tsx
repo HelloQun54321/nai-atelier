@@ -58,7 +58,7 @@ interface ChainEditorProps {
 }
 
 export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, enforceFreeStepLimit = true, labPageLayouts, safeMode, onBack }) => {
-    const [keyboardOpen, setKeyboardOpen] = useState(false);
+    const [keyboardOffset, setKeyboardOffset] = useState(0);
     const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
     const isOwner = true;
@@ -222,19 +222,26 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     useEffect(() => {
         const viewport = window.visualViewport;
         if (!viewport) return;
-        const updateKeyboardState = () => {
+        const updateKeyboardOffset = () => {
             const active = document.activeElement;
             const editingPrompt = active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement;
-            setKeyboardOpen(editingPrompt && window.innerHeight - viewport.height > 120);
+            // 软键盘弹起时 visualViewport 会被压缩（高度小于布局视口），
+            // 底部悬浮胶囊据此上移避让，而不是直接隐藏（隐藏后键盘收起时状态残留不可点）。
+            const lift = window.innerHeight - viewport.height;
+            if (editingPrompt && lift > 120) {
+                setKeyboardOffset(lift);
+            } else if (lift <= 120) {
+                setKeyboardOffset(0);
+            }
         };
-        updateKeyboardState();
-        viewport.addEventListener('resize', updateKeyboardState);
-        window.addEventListener('focusin', updateKeyboardState);
-        window.addEventListener('focusout', updateKeyboardState);
+        updateKeyboardOffset();
+        viewport.addEventListener('resize', updateKeyboardOffset);
+        window.addEventListener('focusin', updateKeyboardOffset);
+        window.addEventListener('focusout', updateKeyboardOffset);
         return () => {
-            viewport.removeEventListener('resize', updateKeyboardState);
-            window.removeEventListener('focusin', updateKeyboardState);
-            window.removeEventListener('focusout', updateKeyboardState);
+            viewport.removeEventListener('resize', updateKeyboardOffset);
+            window.removeEventListener('focusin', updateKeyboardOffset);
+            window.removeEventListener('focusout', updateKeyboardOffset);
         };
     }, []);
 
@@ -488,23 +495,61 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         };
     }, []);
 
+    // 大图灯箱键盘可达性：Esc 关闭（不受历史张数限制）、打开会话时焦点移入关闭按钮、
+    // 会话结束（关闭）后把焦点归还给触发元素。左右方向键仅在多张历史时切换。
+    // 用 latest-ref 调用最新 handler；effect 仅依赖 lightboxImg，避免历史切换重注册时误抢焦点。
+    const lightboxCloseBtnRef = useRef<HTMLButtonElement | null>(null);
+    const lightboxOpenerRef = useRef<HTMLElement | null>(null);
+    const lightboxSessionOpenRef = useRef(false);
+    const lightboxHistoryCountRef = useRef(previewHistory.length);
+    lightboxHistoryCountRef.current = previewHistory.length;
+    const lightboxNavRef = useRef({ showPreviousHistory, showNextHistory });
+    lightboxNavRef.current = { showPreviousHistory, showNextHistory };
+    const closeLightboxRef = useRef(() => setLightboxImg(null));
+    closeLightboxRef.current = () => setLightboxImg(null);
+
     useEffect(() => {
-        if (!lightboxImg || previewHistory.length <= 1) return;
+        if (!lightboxImg) {
+            // 灯箱会话结束：把焦点还给打开它的元素（仍挂载在文档中才聚焦）
+            lightboxSessionOpenRef.current = false;
+            const opener = lightboxOpenerRef.current;
+            lightboxOpenerRef.current = null;
+            if (opener && opener.isConnected && opener !== document.body) {
+                opener.focus({ preventScroll: true });
+            }
+            return;
+        }
+        const freshOpen = !lightboxSessionOpenRef.current;
+        lightboxSessionOpenRef.current = true;
+        if (freshOpen) {
+            // 仅首次打开记录触发元素：按钮/缩略图点开时焦点就在其上；程序自动弹出（如生成完成）则不强求归还
+            const active = document.activeElement;
+            if (active instanceof HTMLElement && active !== document.body) {
+                lightboxOpenerRef.current = active;
+            }
+            // 焦点移入弹层内关闭按钮，让键盘/读屏用户进入弹层上下文
+            lightboxCloseBtnRef.current?.focus({ preventScroll: true });
+        }
 
         const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                closeLightboxRef.current();
+                return;
+            }
+            if (lightboxHistoryCountRef.current <= 1) return;
             if (event.key === 'ArrowLeft') {
                 event.preventDefault();
-                showPreviousHistory();
-            }
-            if (event.key === 'ArrowRight') {
+                lightboxNavRef.current.showPreviousHistory();
+            } else if (event.key === 'ArrowRight') {
                 event.preventDefault();
-                showNextHistory();
+                lightboxNavRef.current.showNextHistory();
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [lightboxImg, previewHistory, previewIndex]);
+    }, [lightboxImg]);
 
 
     // --- Logic: Compilation ---
@@ -701,6 +746,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const selectGenerationMode = async (mode: GenerationMode) => {
+        // 生成进行中不允许切换模式：视觉层（模式导航禁用）+ 逻辑层（此处拦截）双保险
+        if (isGenerating) return;
         if (activeEditOperation) await flushMaskSave(activeEditOperation).catch(error => console.warn('切换编辑模式前保存蒙版失败:', error));
         // 切模式前先清空蒙版态：否则 Panel 会以「新 operation + 上一模式的 maskData」渲染，
         // loadBaseImage 的默认恢复参数把旧模式蒙版画进新模式画布并随请求发出。
@@ -1883,6 +1930,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onTagAssistEnabledChange={onTagAssistEnabledChange}
                 activeGenerationMode={activeGenerationMode}
                 selectGenerationMode={selectGenerationMode}
+                isGenerating={isGenerating}
                 onBack={onBack}
                 markChange={markChange}
                 handleReset={handleReset}
@@ -2073,6 +2121,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     generationCostLabel={generationCostLabel}
                     transparentPreview={activeModelInfo.supportsTransparentBackground && params.transparent === true}
                     generationProgress={generationProgress}
+                    notify={notify}
                 />
                 </div>
             </div>
@@ -2212,8 +2261,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onGenerateBarChange={handleImageEditGenerateBarChange}
             /> : null}
 
-            {!lightboxImg && !showImportPreset && !importCandidate && <div className={`${keyboardOpen ? 'hidden' : 'flex'} fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden`}>
-                {errorMsg && <div role="alert" className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] right-4 left-4 z-[900] rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-600 shadow-lg dark:border-red-900/60 dark:bg-red-950/80 dark:text-red-300">{errorMsg}</div>}
+            {!lightboxImg && !showImportPreset && !importCandidate && <div className="flex fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden" style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + max(1rem, env(safe-area-inset-bottom)))` } : undefined}>
+                {errorMsg && <div role="alert" style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + 5.5rem + env(safe-area-inset-bottom))` } : undefined} className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] right-4 left-4 z-[900] rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-600 shadow-lg dark:border-red-900/60 dark:bg-red-950/80 dark:text-red-300">{errorMsg}</div>}
                 {mobileFloatingPreviewImage && <button type="button" onClick={() => setLightboxImg(mobileFloatingPreviewImage)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-800" aria-label="查看当前预览图"><SmartImage src={mobileFloatingPreviewImage || ''} alt="当前预览图" /></button>}
                 {queueStatus
                     ? <InlineCloudQueueStatus compact className="min-w-64 max-w-[calc(100vw-5rem)]" />
@@ -2222,7 +2271,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
             {/* Lightbox Modal */}
             {lightboxImg && (
-                <div className="fixed inset-0 z-[1500] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setLightboxImg(null)}>
+                <div role="dialog" aria-modal="true" aria-label="图片预览" className="fixed inset-0 z-[1500] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setLightboxImg(null)}>
                     <div className="absolute top-4 left-4 z-10 flex gap-2" onClick={e => e.stopPropagation()}>
                         <button type="button" onClick={handleLightboxDownload} className="mobile-touch rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-white backdrop-blur transition-colors hover:bg-white/20">下载</button>
                         {isOwner && lightboxImg === generatedImage && chain.id !== 'playground' && (
@@ -2265,7 +2314,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             {previewIndex + 1} / {previewHistory.length} · {new Date(lightboxItem.createdAt).toLocaleString('zh-CN')}
                         </div>
                     )}
-                    <button className="absolute top-4 right-4 text-white hover:text-gray-300" onClick={() => setLightboxImg(null)} aria-label="关闭大图">
+                    <button ref={lightboxCloseBtnRef} className="absolute top-4 right-4 text-white hover:text-gray-300" onClick={() => setLightboxImg(null)} aria-label="关闭大图">
                         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                 </div>

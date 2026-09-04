@@ -11,6 +11,8 @@ interface ChainEditorModeHeaderProps {
   isOwner: boolean;
   activeMode: GenerationMode;
   onSelectMode: (mode: GenerationMode) => void | Promise<void>;
+  /** 生成进行中禁用模式切换（透传至 GenerationModeNav）。 */
+  isGenerating?: boolean;
   onEditInfo: () => void;
   onBack: () => void | Promise<void>;
 }
@@ -22,6 +24,7 @@ export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
   isOwner,
   activeMode,
   onSelectMode,
+  isGenerating = false,
   onEditInfo,
   onBack,
 }) => {
@@ -31,7 +34,7 @@ export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
       <IconButton label="退出实验室，返回上一页面" onClick={() => void onBack()} className="flex-none md:hidden">
         <ArrowLeft className="h-4 w-4" />
       </IconButton>
-      <GenerationModeNav activeMode={activeMode} onSelect={onSelectMode} />
+      <GenerationModeNav activeMode={activeMode} onSelect={onSelectMode} disabled={isGenerating} />
     </div>
   );
 

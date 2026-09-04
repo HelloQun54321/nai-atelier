@@ -33,6 +33,8 @@ interface ChainEditorPreviewProps {
     showQueueStatus?: boolean;
     generationDisabled?: boolean;
     hideGenerateButtonOnMobile?: boolean;
+    /** 下载失败时除 console.error 外同时走全局提示（若外部提供）。 */
+    notify?: (msg: string, type?: 'success' | 'error') => void;
 }
 
 export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
@@ -64,6 +66,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     showQueueStatus = true,
     hideGenerateButtonOnMobile = false,
     generationDisabled = false,
+    notify,
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDownloading, setIsDownloading] = useState(false);
@@ -91,7 +94,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         } catch (error) {
             console.error('下载失败:', error);
-            // 可选：这里可以添加 notify 提示用户下载失败
+            notify?.('下载失败: ' + (error instanceof Error ? error.message : String(error)), 'error');
         } finally {
             setIsDownloading(false);
         }

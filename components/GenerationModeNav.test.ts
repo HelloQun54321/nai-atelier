@@ -22,4 +22,20 @@ describe('GenerationModeNav', () => {
     fireEvent.click(screen.getByRole('button', { name: '扩图' }));
     expect(onSelect).toHaveBeenCalledWith('outpaint');
   });
+
+  it('生成进行中禁用模式切换：按钮不可点且不触发 onSelect', () => {
+    const onSelect = vi.fn();
+    render(React.createElement(GenerationModeNav, { activeMode: 'inpaint', onSelect, disabled: true }));
+
+    const buttons = screen.getAllByRole('button');
+    expect(buttons).toHaveLength(4);
+    buttons.forEach(button => {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+      expect(button.className).toContain('disabled:cursor-not-allowed');
+      expect(button.className).toContain('disabled:opacity-50');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '扩图' }));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });
