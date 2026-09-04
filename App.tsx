@@ -82,14 +82,15 @@ const App = () => {
 
   // 连续 notify 时旧计时器会把新 toast 提前清掉，先清旧再挂新
   const toastTimerRef = useRef<number | null>(null);
-  const notify = (message: string, type: 'success' | 'error' = 'success') => {
+  // useCallback 保持稳定引用：notify 被多处 effect 依赖，每次渲染新建会导致监听反复重挂。
+  const notify = React.useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => {
       setToast(null);
       toastTimerRef.current = null;
     }, 3000);
-  };
+  }, []);
 
   // Personal mode enters directly without a login session.
   useEffect(() => {
@@ -102,6 +103,8 @@ const App = () => {
     });
   }, []);
 
+  // Agent 事件桥接：handleNavigate 每次渲染都会重建，经 ref 转发以保持监听只注册一次。
+  const handleNavigateRef = useRef<(view: ViewState, id?: string) => void>(() => {});
   useEffect(() => {
     const applyPreferences = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
@@ -111,7 +114,7 @@ const App = () => {
     };
     const navigate = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      if (['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'inspiration', 'history', 'playground'].includes(detail.view)) void handleNavigate(detail.view, detail.id);
+      if (['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'inspiration', 'history', 'playground'].includes(detail.view)) void handleNavigateRef.current(detail.view, detail.id);
     };
     window.addEventListener('nai-agent-ui-preferences', applyPreferences);
     window.addEventListener('nai-agent-navigate', navigate);
@@ -119,7 +122,8 @@ const App = () => {
       window.removeEventListener('nai-agent-ui-preferences', applyPreferences);
       window.removeEventListener('nai-agent-navigate', navigate);
     };
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // refreshData 并发守卫：创建/删除/Agent 数据变更事件可能同时触发多次刷新，
   // 先完成者的 finally 会提前清掉后者的 loading，响应乱序时还会互相覆盖
@@ -442,6 +446,7 @@ const App = () => {
     if (newView === 'inspiration') loadInspirations();
 
   };
+  handleNavigateRef.current = (targetView, targetId) => { void handleNavigate(targetView, targetId); };
 
   const handleUpdatePlaygroundChain = async (id: string, updates: Partial<PromptChain>) => {
     setPlaygroundChain(prev => prev ? { ...prev, ...updates } : null);
