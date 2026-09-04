@@ -9,16 +9,65 @@ const getHeaders = (extraHeaders?: Record<string, string>) => {
   return headers;
 };
 
-// Handle response globally
-const handleResponse = async (res: Response) => {
-    if (res.status === 401) {
-        const cloned = res.clone();
-        const payload = await cloned.json().catch(() => null);
-        if (payload?.code === 'LAN_ACCESS_REQUIRED' && typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('nai-lan-access-required'));
-        }
+/** 网关返回的结构化业务错误：code 为错误码（如 QUEUE_CANCELLED），status 为 HTTP 状态。 */
+export class ApiError extends Error {
+  code?: string;
+  status?: number;
+
+  constructor(message: string, status?: number, code?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    if (code !== undefined) this.code = code;
+  }
+}
+
+/** 取消排队终态的结构化标识（见 scripts/media-gateway.mjs 的 499 + QUEUE_CANCELLED）。 */
+const QUEUE_CANCELLED_CODE = 'QUEUE_CANCELLED';
+const QUEUE_CANCELLED_STATUS = 499;
+
+/** 统一解析网关错误响应：优先 JSON 的结构化 { error, message, code }，取用户可见 message；JSON 解析失败时回退截断后的响应文本。 */
+export const parseErrorResponse = async (res: Response): Promise<ApiError> => {
+  let message = `请求失败 (${res.status})`;
+  let code: string | undefined;
+  const truncated = (text: string) => text.length > 500 ? `${text.slice(0, 500)}…` : text;
+  try {
+    const payload: unknown = await res.clone().json();
+    if (payload && typeof payload === 'object') {
+      const record = payload as Record<string, unknown>;
+      const error = typeof record.error === 'string' ? record.error : undefined;
+      const fallbackMessage = typeof record.message === 'string' ? record.message : undefined;
+      if (typeof record.code === 'string' && record.code) code = record.code;
+      const candidate = error || fallbackMessage || code;
+      if (candidate) message = truncated(candidate);
     }
-    if (!res.ok) throw new Error(await res.text());
+  } catch {
+    // 响应体不是 JSON（HTML/纯文本等），回退截断原文。
+    try {
+      message = truncated((await res.clone().text()).trim() || message);
+    } catch { /* 响应体不可读时保留默认文案。 */ }
+  }
+  return new ApiError(message, res.status, code);
+};
+
+/** 网关终态判定：结构化 code 为 QUEUE_CANCELLED 或 HTTP 499，兜底匹配旧的“已取消排队”文案。 */
+export const isQueueCancelledError = (error: unknown): boolean => {
+  if (error instanceof ApiError && (error.code === QUEUE_CANCELLED_CODE || error.status === QUEUE_CANCELLED_STATUS)) return true;
+  return error instanceof Error && error.message.includes('已取消排队');
+};
+
+/** 401 时按结构化 code 通知全局 LAN 解锁流程。 */
+const notifyLanAccessRequired = (res: Response) => {
+  if (res.status !== 401 || typeof window === 'undefined') return;
+  void res.clone().json().then(payload => {
+    const code = (payload as Record<string, unknown> | null)?.code;
+    if (code === 'LAN_ACCESS_REQUIRED') window.dispatchEvent(new CustomEvent('nai-lan-access-required'));
+  }).catch(() => { /* 非 JSON 的 401 响应体无需处理。 */ });
+};
+
+const handleResponse = async (res: Response) => {
+    notifyLanAccessRequired(res);
+    if (!res.ok) throw await parseErrorResponse(res);
     return res.json();
 };
 
@@ -144,13 +193,8 @@ export const api = {
       headers: getHeaders(headers),
       body: JSON.stringify(data),
     });
-    if (res.status === 401) {
-      const payload = await res.clone().json().catch(() => null);
-      if (payload?.code === 'LAN_ACCESS_REQUIRED' && typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('nai-lan-access-required'));
-      }
-    }
-    if (!res.ok) throw new Error(await res.text());
+    notifyLanAccessRequired(res);
+    if (!res.ok) throw await parseErrorResponse(res);
     const remaining = res.headers.get('x-nai-anlas-remaining');
     if (remaining !== null) emitBudgetChanged(Number(remaining), options.budgetKeyHash);
     const spent = res.headers.get('x-nai-anlas-estimated-spent') ?? res.headers.get('x-nai-anlas-spent');
@@ -174,13 +218,8 @@ export const api = {
       headers: getHeaders({ Accept: 'text/event-stream', ...headers }),
       body: JSON.stringify(data),
     });
-    if (res.status === 401) {
-      const payload = await res.clone().json().catch(() => null);
-      if (payload?.code === 'LAN_ACCESS_REQUIRED' && typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('nai-lan-access-required'));
-      }
-    }
-    if (!res.ok) throw new Error(await res.text());
+    notifyLanAccessRequired(res);
+    if (!res.ok) throw await parseErrorResponse(res);
     if (!res.body) throw new Error('流式生成没有返回响应体');
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -205,13 +244,8 @@ export const api = {
 
   getBlob: async (endpoint: string) => {
     const res = await fetch(`${API_BASE}${endpoint}`, { headers: getHeaders() });
-    if (res.status === 401) {
-      const payload = await res.clone().json().catch(() => null);
-      if (payload?.code === 'LAN_ACCESS_REQUIRED' && typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('nai-lan-access-required'));
-      }
-    }
-    if (!res.ok) throw new Error(await res.text());
+    notifyLanAccessRequired(res);
+    if (!res.ok) throw await parseErrorResponse(res);
     return res.blob();
   },
 

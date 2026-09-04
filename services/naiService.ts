@@ -1,7 +1,7 @@
 
 import JSZip from 'jszip';
 import { ImageEditOperation, NAIParams } from '../types';
-import { api } from './api';
+import { api, isQueueCancelledError } from './api';
 import { getRuntimeNaiModelInfo } from './naiModels';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 import { hashNaiApiKey } from './anlasBudget';
@@ -90,7 +90,7 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
       } : {}),
     }, { budgetKeyHash });
   } catch (error) {
-    terminalPhase = error instanceof Error && error.message.includes('已取消排队') ? 'cancelled' : 'error';
+    terminalPhase = isQueueCancelledError(error) ? 'cancelled' : 'error';
     terminalError = error instanceof Error ? error.message : '生成失败';
     if (queue.enabled) {
       emitCloudQueueStatus({
@@ -227,7 +227,7 @@ export const generateImageEdit = async (
     const composed = await composeImageEditResult(fileData, prepared);
     return { image: URL.createObjectURL(composed), blob: composed, seed: actualSeed, estimatedCost: binaryResult.estimatedCost, requestWidth: prepared.requestWidth, requestHeight: prepared.requestHeight, focusedGeometry: prepared.focusedGeometry };
   } catch (error) {
-    terminalPhase = error instanceof Error && error.message.includes('已取消排队') ? 'cancelled' : 'error';
+    terminalPhase = isQueueCancelledError(error) ? 'cancelled' : 'error';
     terminalError = error instanceof Error ? error.message : '图片编辑失败';
     throw error;
   } finally {
@@ -297,7 +297,7 @@ export const generateImageStream = async (
     const blob = blobFromDataUri(finalImage);
     return { image: URL.createObjectURL(blob), blob, seed: finalSeed };
   } catch (error) {
-    terminalPhase = error instanceof Error && error.message.includes('已取消排队') ? 'cancelled' : 'error';
+    terminalPhase = isQueueCancelledError(error) ? 'cancelled' : 'error';
     terminalError = error instanceof Error ? error.message : '流式生成失败';
     if (queue.enabled) emitCloudQueueStatus({ taskId, phase: terminalPhase, error: terminalError, cancelable: false }, queueApiKey);
     throw error;
@@ -402,7 +402,7 @@ export const generateImageEditStream = async (
       focusedGeometry: prepared.focusedGeometry,
     };
   } catch (error) {
-    terminalPhase = error instanceof Error && error.message.includes('已取消排队') ? 'cancelled' : 'error';
+    terminalPhase = isQueueCancelledError(error) ? 'cancelled' : 'error';
     terminalError = error instanceof Error ? error.message : '流式图片编辑失败';
     if (queue.enabled) emitCloudQueueStatus({ taskId, phase: terminalPhase, error: terminalError, cancelable: false }, queueApiKey);
     throw error;

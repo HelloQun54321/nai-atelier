@@ -1,4 +1,5 @@
 import { PromptAgentAction, PromptAgentDraft } from '../types';
+import { parseErrorResponse } from './api';
 
 export interface PromptAgentConfig {
   provider: string;
@@ -151,8 +152,7 @@ export type PromptAgentEvent =
   | { type: 'error'; error: string };
 
 const readError = async (response: Response) => {
-  const payload = await response.json().catch(() => null);
-  throw new Error(payload?.error || `请求失败 (${response.status})`);
+  throw await parseErrorResponse(response);
 };
 
 export const promptAgentService = {
@@ -295,9 +295,23 @@ export const promptAgentService = {
       buffer += decoder.decode(value, { stream: !done });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
-      for (const line of lines) if (line.trim()) onEvent(JSON.parse(line));
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        // 逐行容错：单行坏 JSON 只跳过该行，不能因此中断整个 Agent 会话。
+        try {
+          onEvent(JSON.parse(line));
+        } catch {
+          console.warn('[promptAgent] 跳过无法解析的事件行', line.slice(0, 200));
+        }
+      }
       if (done) break;
     }
-    if (buffer.trim()) onEvent(JSON.parse(buffer));
+    if (buffer.trim()) {
+      try {
+        onEvent(JSON.parse(buffer));
+      } catch {
+        console.warn('[promptAgent] 跳过无法解析的尾部事件行', buffer.slice(0, 200));
+      }
+    }
   },
 };

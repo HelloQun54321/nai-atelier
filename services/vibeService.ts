@@ -1,5 +1,5 @@
 import { VibeAsset, VibeGroup, VibeSelection } from '../types';
-import { api } from './api';
+import { api, parseErrorResponse } from './api';
 import { ANLAS_BUDGET_CHANGED_EVENT } from './anlasBudget';
 
 const fileToText = (file: File) => new Promise<string>((resolve, reject) => {
@@ -22,10 +22,7 @@ const createThumbnailBlob = async (file: File) => {
   } catch { return undefined; }
 };
 
-const responseError = async (response: Response) => {
-  const payload = await response.json().catch(() => null);
-  throw new Error(payload?.error || `请求失败 (${response.status})`);
-};
+const responseError = (response: Response) => parseErrorResponse(response);
 
 export const vibeService = {
   list: async (query = '', archived = false): Promise<VibeAsset[]> => {
@@ -55,7 +52,7 @@ export const vibeService = {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({ informationExtracted }),
     });
-    if (!response.ok) return responseError(response) as never;
+    if (!response.ok) return await responseError(response) as never;
     const result = await response.json();
     if (result.anlasBudget) {
       window.dispatchEvent(new CustomEvent(ANLAS_BUDGET_CHANGED_EVENT, { detail: result.anlasBudget }));
@@ -70,7 +67,7 @@ export const vibeService = {
 
   download: async (asset: VibeAsset) => {
     const response = await fetch(`/api/vibes/${encodeURIComponent(asset.id)}/file`);
-    if (!response.ok) return responseError(response);
+    if (!response.ok) return await responseError(response);
     const url = URL.createObjectURL(await response.blob());
     const anchor = document.createElement('a');
     anchor.href = url;
