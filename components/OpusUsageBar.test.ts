@@ -69,4 +69,27 @@ describe('OpusUsageBar', () => {
     });
     expect(container.querySelectorAll('circle')[1]?.getAttribute('stroke-dashoffset')).toBe('0');
   });
+
+  it('订阅已失效（active=false）时显示红色 × 与切换提示，而非额度数字', async () => {
+    sessionStorage.setItem('nai_api_key', 'pst-opus-expired-key');
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('/api/novelai-runtime')) {
+        return responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true, extracted: [], missed: [] } });
+      }
+      // 过期 key：官方仍返回 tier:0/active:false/usage 79%，但界面必须识破为失效。
+      return responseFor({ tier: 0, active: false, usage: { percent: 79, isNegative: false, timeUntilNextPercent: 7888 } });
+    }));
+
+    render(React.createElement(OpusUsageBar, { collapsed: false }));
+    await waitFor(() => {
+      expect(screen.getByRole('status', { name: /当前密钥已失效/ })).toBeTruthy();
+    });
+    // 中央是 × 而非 79%
+    expect(screen.getByText('×')).toBeTruthy();
+    expect(screen.queryByText('79%')).toBeNull();
+    // 副文案提示切换而非张数
+    expect(screen.getByText('当前密钥已失效，点击切换')).toBeTruthy();
+    expect(screen.getByText('×').parentElement?.className).toContain('text-red-500');
+  });
 });

@@ -21,7 +21,7 @@ import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildImageEditPresetPatch, canSaveLabModeToLibrary, LabPresetImportOptions } from '../services/labModeTools';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { LabPageLayouts } from '../services/appearancePreferences';
-import { useNovelaiUsage } from '../services/naiUsage';
+import { isNovelaiSubscriptionActive, useNovelaiUsage } from '../services/naiUsage';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, useAnlasBudget } from '../services/anlasBudget';
 import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, scopeLabWorkspaceSessionToEntry, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
@@ -1553,6 +1553,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
     };
     const handleGenerate = async () => {
+        // 当前 Key 已失效（官方 active=false）：生成请求必被 NovelAI 拒绝，
+        // 直接拦截并提示切换，避免「估算免费/有额度」却白等一轮失败。
+        // 仅在拿到显式 inactive 时拦截；null/加载中视为未知，不误报。
+        const freshSubscription = await refreshUsageIfStale();
+        if (freshSubscription && isNovelaiSubscriptionActive(freshSubscription) === false) {
+            if (!await confirmAction({
+                title: '当前密钥已失效',
+                message: 'NovelAI 返回该密钥订阅已过期，生成请求会被拒绝。\n\n请到 全局设置 → 密钥 切换到有效密钥后重试。',
+                confirmLabel: '知道了',
+                tone: 'danger',
+            })) return false;
+            return false;
+        }
         const cost = estimateV45GenerationCost(params, true, await usageForCostEstimate(params.model));
         // 同步失效时按“免费”估算原本会静默直发，这里必须先警示确认。
         if (runtimeSyncUnhealthy && cost === 0) {
@@ -1593,6 +1606,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const handleImageEditGenerate = async (request: ImageEditRequest) => {
         if (!apiKey) {
             const message = '请先在“全局设置”中配置 NovelAI API Key';
+            setErrorMsg(message);
+            notify(message, 'error');
+            return;
+        }
+        // 当前 Key 已失效（官方 active=false）：编辑请求必被拒绝，直接拦截。
+        const freshSubscription = await refreshUsageIfStale();
+        if (freshSubscription && isNovelaiSubscriptionActive(freshSubscription) === false) {
+            const message = '当前密钥已失效，请到 全局设置 → 密钥 切换到有效密钥后重试';
             setErrorMsg(message);
             notify(message, 'error');
             return;
@@ -1772,6 +1793,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string): Promise<boolean> => {
+        // 当前 Key 已失效：直接拦截，避免 Agent 编排到提交那一步才失败。
+        const freshSubscription = await refreshUsageIfStale();
+        if (freshSubscription && isNovelaiSubscriptionActive(freshSubscription) === false) {
+            notify('当前密钥已失效，请到 全局设置 → 密钥 切换到有效密钥后重试', 'error');
+            return false;
+        }
         const cost = estimateV45GenerationCost(draft.params, true, await usageForCostEstimate(draft.params.model));
         const draftGenerationCostLabel = formatGenerationCostLabel(cost, draft.params.model);
         if (runtimeSyncUnhealthy && cost === 0) {

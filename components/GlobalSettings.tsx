@@ -14,6 +14,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { DesktopImageColumns, getMobileImageDisplayPreferences, MobileImageColumns, MobileImageLayout, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { anlasBudgetService, DEFAULT_ANLAS_BUDGET, getActiveKeyHash, useAnlasBudget } from '../services/anlasBudget';
 import { getNaiRuntimeConfig } from '../services/naiRuntime';
+import { isNovelaiSubscriptionActive, isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { CLOUD_QUEUE_SERVICE_URL, getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 import { naiKeyVault, NaiKeyEntry } from '../services/naiKeyVault';
 import { PromptAgentSettings } from './PromptAgentSettings';
@@ -153,6 +154,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [draggingLabModule, setDraggingLabModule] = useState<{ pageId: LabPageId; moduleId: LabPageModuleId } | null>(null);
   const [expandedLabPages, setExpandedLabPages] = useState<Record<LabPageId, boolean>>(() => Object.fromEntries(LAB_PAGE_IDS.map((pageId, index) => [pageId, index === 0])) as Record<LabPageId, boolean>);
   const anlasBudget = useAnlasBudget();
+  // 当前使用密钥的订阅健康状态：每分钟轮询 + 切 Key 自动刷新，零额外探测请求。
+  // 保管箱据此只对「当前使用」的 key 标失效，非当前 key 不做探测。
+  const { info: currentSubscription, error: subscriptionError, loading: subscriptionLoading, refresh: refreshSubscription } = useNovelaiUsage();
   // 个人 Opus 免费图折算百分比用的换算系数（网关自动同步，17.3 张 ≈ 1%）。
   const [naiRuntimeCoefficient, setNaiRuntimeCoefficient] = useState(17.3);
   const [anlasInput, setAnlasInput] = useState(String(DEFAULT_ANLAS_BUDGET));
@@ -1038,6 +1042,20 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               )}
               {keyVault.map(entry => {
                 const active = entry.key === apiKey;
+                // 只对「当前使用」的 key 显示订阅健康（复用轮询结果，不额外探测）；
+                // 加载中/请求失败时不妄断失效，避免误标。
+                const activeKeySubscription = active
+                  ? { info: currentSubscription, error: subscriptionError, loading: subscriptionLoading, refresh: refreshSubscription }
+                  : null;
+                const keyInvalid = Boolean(activeKeySubscription)
+                  && !activeKeySubscription!.loading
+                  && !activeKeySubscription!.error
+                  && isNovelaiSubscriptionActive(activeKeySubscription!.info) === false;
+                const keyNonOpus = Boolean(activeKeySubscription)
+                  && !activeKeySubscription!.loading
+                  && !activeKeySubscription!.error
+                  && isNovelaiSubscriptionActive(activeKeySubscription!.info) === true
+                  && !isActiveOpusSubscription(activeKeySubscription!.info);
                 return (
                   <div key={entry.id} className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${active ? 'border-indigo-300 bg-indigo-50/70 dark:border-indigo-500/40 dark:bg-indigo-950/30' : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/60'}`}>
                     {renamingKeyId === entry.id ? (
@@ -1059,6 +1077,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                         <div className="flex items-center gap-2">
                           <span className="truncate text-sm font-bold text-gray-800 dark:text-gray-100" title={entry.name}>{entry.name}</span>
                           {!entry.key.startsWith('pst-') && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title="NovelAI 官方密钥以 pst- 开头，这可能是误存的其他服务密钥（例如被浏览器自动填入）">格式可疑</span>}
+                          {keyInvalid && <span className="flex-none rounded-full bg-red-100 px-1.5 py-0.5 text-micro font-bold text-red-700 dark:bg-red-950/50 dark:text-red-300" title="NovelAI 返回该密钥订阅已失效；生成请求会被拒绝，请切换其他密钥">已失效</span>}
+                          {keyNonOpus && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title="当前订阅不是 Opus 档，无免费生成额度，按 Anlas 扣费生成">非 Opus</span>}
                         </div>
                         <p className="mt-0.5 truncate font-mono text-meta text-gray-500 dark:text-gray-400">{maskNaiKeyForDisplay(entry.key)}</p>
                       </div>

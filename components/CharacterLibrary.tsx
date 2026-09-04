@@ -5,7 +5,7 @@ import { api } from '../services/api';
 import { db } from '../services/dbService';
 import { compilePrompt } from '../services/promptUtils';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
-import { useNovelaiUsage } from '../services/naiUsage';
+import { isNovelaiSubscriptionActive, useNovelaiUsage } from '../services/naiUsage';
 import { applyEstimatorRuntime, estimateV45GenerationCost, formatGenerationCostLabel, usageForCostEstimate, useAnlasBudget } from '../services/anlasBudget';
 import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import {
@@ -674,6 +674,12 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       : compilePrompt(chain!, chain?.variableValues?.subject || '');
     const negative = chain?.negativePrompt || 'lowres, bad anatomy, bad hands, text, watermark, multiple views';
     const params = chain?.params || DEFAULT_PARAMS;
+    // 当前 Key 已失效（官方 active=false）：生成请求必被拒绝，直接拦截避免白等。
+    const freshSubscription = await refreshUsageIfStale();
+    if (freshSubscription && !isNovelaiSubscriptionActive(freshSubscription)) {
+      notify('当前密钥已失效，请到 全局设置 → 密钥 切换到有效密钥后重试', 'error');
+      return;
+    }
     // 受限额模型（V5）在免费档生成前强制刷新真实 Opus 额度，与 ChainEditor 同源。
     const cost = estimateV45GenerationCost(params, true, await usageForCostEstimate(novelaiUsage, refreshUsageIfStale, params.model));
     const costLabel = formatGenerationCostLabel(cost, params.model);

@@ -24,6 +24,22 @@ export interface NovelaiSubscriptionInfo {
   usage?: NovelaiUsageState;
 }
 
+/**
+ * 订阅是否处于可生图状态。NovelAI 对所有不活跃的持久令牌一律返回 401，
+ * 因此 active=false 是「该 Key 已失效、生成必然失败」的硬信号，而非额度问题。
+ * 参数接受缺省 active 的对象：运行时 API 可能不完整，未知状态不得误判。
+ */
+export const isNovelaiSubscriptionActive = (info: { active?: boolean } | null | undefined): boolean =>
+  info?.active === true;
+
+/** 显式收到官方 active=false（区别于 null/加载中：未知状态不得误报为已失效）。 */
+export const isNovelaiSubscriptionInactive = (info: { active?: boolean } | null | undefined): boolean =>
+  info?.active === false;
+
+/** 是否为活跃 Opus 订阅（唯一带免费生成额度概念、且额度有效的档位）。 */
+export const isActiveOpusSubscription = (info: NovelaiSubscriptionInfo | null | undefined): boolean =>
+  info?.active === true && Number(info.tier) >= 3;
+
 // ===== 官方接口字段映射 =====
 
 /**
@@ -138,6 +154,7 @@ export const useNovelaiUsage = () => {
   const [fetchedAt, setFetchedAt] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeApiKey, setActiveApiKey] = useState(() => (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim());
   const infoRef = useRef<NovelaiSubscriptionInfo | null>(null);
   const fetchedAtRef = useRef(0);
   const activeKeyRef = useRef('');
@@ -152,6 +169,7 @@ export const useNovelaiUsage = () => {
       setInfo(null);
       setFetchedAt(0);
       setError(null);
+      setActiveApiKey(apiKey);
     }
     if (!apiKey) {
       infoRef.current = null;
@@ -206,5 +224,5 @@ export const useNovelaiUsage = () => {
     };
   }, [refresh]);
 
-  return { info, usage: info?.usage, loading, error, fetchedAt, refresh, refreshIfStale };
+  return { info, usage: info?.usage, loading, error, fetchedAt, activeApiKey, refresh, refreshIfStale };
 };
