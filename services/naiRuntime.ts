@@ -201,6 +201,59 @@ export const NAI_RUNTIME_STALE_MS = 48 * 60 * 60 * 1000;
 export const NAI_RUNTIME_REFRESH_EVENT = 'nai-runtime-refresh';
 const NAI_RUNTIME_REFRESH_INTERVAL = 60 * 1000;
 
+/**
+ * 模块级共享订阅驱动：多个 keep-alive 页面各自 useNaiRuntime 时只维护
+ * 一个 interval 与一份事件监听（引用计数：首个订阅启动、末个卸载停止），
+ * 并遵循 document.hidden：页面隐藏暂停轮询，恢复可见立即刷新一次再重启。
+ */
+type RuntimeSubscriber = { poll: () => void };
+const runtimeSubscribers = new Set<RuntimeSubscriber>();
+let runtimeDriverAttached = false;
+let runtimePollTimer: number | null = null;
+
+const runtimePollAll = () => {
+  runtimeSubscribers.forEach(subscriber => subscriber.poll());
+};
+
+const onRuntimeVisibilityChange = () => {
+  if (document.visibilityState === 'hidden') {
+    if (runtimePollTimer !== null) {
+      window.clearInterval(runtimePollTimer);
+      runtimePollTimer = null;
+    }
+  } else {
+    runtimePollAll();
+    startRuntimePollTimer();
+  }
+};
+
+const startRuntimePollTimer = () => {
+  if (runtimePollTimer !== null) return;
+  runtimePollTimer = window.setInterval(runtimePollAll, NAI_RUNTIME_REFRESH_INTERVAL);
+};
+
+const startRuntimeDriver = () => {
+  if (runtimeDriverAttached) return;
+  runtimeDriverAttached = true;
+  window.addEventListener(NAI_RUNTIME_REFRESH_EVENT, runtimePollAll);
+  window.addEventListener('focus', runtimePollAll);
+  document.addEventListener('visibilitychange', onRuntimeVisibilityChange);
+  if (document.visibilityState === 'hidden') return;
+  startRuntimePollTimer();
+};
+
+const stopRuntimeDriver = () => {
+  if (!runtimeDriverAttached) return;
+  runtimeDriverAttached = false;
+  window.removeEventListener(NAI_RUNTIME_REFRESH_EVENT, runtimePollAll);
+  window.removeEventListener('focus', runtimePollAll);
+  document.removeEventListener('visibilitychange', onRuntimeVisibilityChange);
+  if (runtimePollTimer !== null) {
+    window.clearInterval(runtimePollTimer);
+    runtimePollTimer = null;
+  }
+};
+
 const requestNaiRuntimeConfig = async (): Promise<NaiRuntimeConfig> => {
   try {
     const res = await fetch(`/api/novelai-runtime?_t=${Date.now()}`, { cache: 'no-store' });
@@ -280,23 +333,24 @@ export const useNaiRuntime = () => {
   const [config, setConfig] = useState<NaiRuntimeConfig>(DEFAULT_NAI_RUNTIME);
   useEffect(() => {
     let active = true;
-    const update = (force = false) => {
-      const request = force ? refreshNaiRuntimeConfig() : getNaiRuntimeConfig();
-      void request.then(next => {
-        if (active) setConfig(next);
-      });
+    // 订阅共享驱动：force 刷新由驱动发起（共享一份请求 + 广播），实例只接收结果
+    const subscriber: RuntimeSubscriber = {
+      poll: () => {
+        void refreshNaiRuntimeConfig().then(next => {
+          if (active) setConfig(next);
+        });
+      },
     };
-    update();
-    const onRefresh = () => update(true);
-    const onFocus = () => update(true);
-    window.addEventListener(NAI_RUNTIME_REFRESH_EVENT, onRefresh);
-    window.addEventListener('focus', onFocus);
-    const timer = window.setInterval(() => update(true), NAI_RUNTIME_REFRESH_INTERVAL);
+    runtimeSubscribers.add(subscriber);
+    startRuntimeDriver();
+    // 实例挂载时先取一次缓存（未取过则触发一次拉取）
+    void getNaiRuntimeConfig().then(next => {
+      if (active) setConfig(next);
+    });
     return () => {
       active = false;
-      window.removeEventListener(NAI_RUNTIME_REFRESH_EVENT, onRefresh);
-      window.removeEventListener('focus', onFocus);
-      window.clearInterval(timer);
+      runtimeSubscribers.delete(subscriber);
+      if (runtimeSubscribers.size === 0) stopRuntimeDriver();
     };
   }, []);
   return config;

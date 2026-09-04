@@ -270,8 +270,9 @@ export const generateImageStream = async (
   const statusWatcher = queue.enabled ? watchCloudQueueTask(taskId, () => requestFinished, queueApiKey) : Promise.resolve();
   try {
     const budgetKeyHash = await hashNaiApiKey(apiKey);
+    let sseEstimatedCost: number | undefined;
     try {
-      await api.postSse('/generate-stream', payload, {
+      const sseResult = await api.postSse('/generate-stream', payload, {
         Authorization: `Bearer ${apiKey}`,
         ...(queue.enabled ? { 'X-Nai-Queue-Task-Id': taskId } : {}),
       }, ({ event, data }) => {
@@ -288,6 +289,7 @@ export const generateImageStream = async (
           onPreview?.({ image, step: params.steps });
         }
       }, { budgetKeyHash });
+      sseEstimatedCost = sseResult.estimatedCost;
     } catch (error) {
       // final 图片已经完整到达时，不得回退后再生成一次；保留成品并让额度刷新自行校准。
       if (!finalImage) throw error;
@@ -295,7 +297,7 @@ export const generateImageStream = async (
     if (!finalImage) throw new Error('流式生成没有返回最终图片');
     terminalPhase = 'completed';
     const blob = blobFromDataUri(finalImage);
-    return { image: URL.createObjectURL(blob), blob, seed: finalSeed };
+    return { image: URL.createObjectURL(blob), blob, seed: finalSeed, estimatedCost: sseEstimatedCost };
   } catch (error) {
     terminalPhase = isQueueCancelledError(error) ? 'cancelled' : 'error';
     terminalError = error instanceof Error ? error.message : '流式生成失败';
@@ -367,8 +369,9 @@ export const generateImageEditStream = async (
   const statusWatcher = queue.enabled ? watchCloudQueueTask(taskId, () => requestFinished, queueApiKey) : Promise.resolve();
   try {
     const budgetKeyHash = await hashNaiApiKey(apiKey);
+    let sseEstimatedCost: number | undefined;
     try {
-      await api.postSse('/generate-stream', payload, {
+      const sseResult = await api.postSse('/generate-stream', payload, {
         Authorization: `Bearer ${apiKey}`,
         ...(queue.enabled ? { 'X-Nai-Queue-Task-Id': taskId } : {}),
       }, ({ event, data }) => {
@@ -385,6 +388,7 @@ export const generateImageEditStream = async (
           onPreview?.({ image, step: params.steps });
         }
       }, { budgetKeyHash });
+      sseEstimatedCost = sseResult.estimatedCost;
     } catch (error) {
       if (!finalImage) throw error;
     }
@@ -396,7 +400,7 @@ export const generateImageEditStream = async (
       image: URL.createObjectURL(composed),
       blob: composed,
       seed: finalSeed,
-      estimatedCost: undefined as number | undefined,
+      estimatedCost: sseEstimatedCost,
       requestWidth: prepared.requestWidth,
       requestHeight: prepared.requestHeight,
       focusedGeometry: prepared.focusedGeometry,

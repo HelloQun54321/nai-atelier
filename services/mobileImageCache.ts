@@ -35,6 +35,8 @@ interface ActiveImageResource {
   controller: AbortController;
   references: number;
   objectUrl: string;
+  /** 网络取图是否已完成（false = 仍在途，release 可安全 abort；true = 已拿到 blob，等待生成 objectUrl/写缓存） */
+  networkDone: boolean;
 }
 
 const activeResources = new Map<string, ActiveImageResource>();
@@ -44,6 +46,18 @@ let accessFlushTimer: number | null = null;
 let pruneTimer: number | null = null;
 let migrationPromise: Promise<void> | null = null;
 let cacheGeneration = 0;
+// 401 广播节流：并发多图同时 401 时只广播一次，避免 LanAccessGate 反复锁屏
+const LAN_ACCESS_BROADCAST_MIN_GAP_MS = 5_000;
+let lastLanAccessBroadcastAt = 0;
+
+/** 401 时通知全局 LAN 解锁流程（与 api.ts 的 nai-lan-access-required 同一事件）。 */
+const broadcastLanAccessRequired = () => {
+  if (typeof window === 'undefined') return;
+  const now = Date.now();
+  if (now - lastLanAccessBroadcastAt < LAN_ACCESS_BROADCAST_MIN_GAP_MS) return;
+  lastLanAccessBroadcastAt = now;
+  window.dispatchEvent(new CustomEvent('nai-lan-access-required'));
+};
 
 const emitCacheChanged = () => window.dispatchEvent(new CustomEvent('nai-mobile-cache-changed'));
 
@@ -303,7 +317,10 @@ const loadThumbnail = async (url: string, signal: AbortSignal): Promise<Blob> =>
   }
 
   const response = await fetch(url, { cache: 'default', credentials: 'same-origin', signal });
-  if (!response.ok) throw new Error(response.status === 401 ? '局域网访问已失效' : '图片加载失败');
+  if (!response.ok) {
+    if (response.status === 401) broadcastLanAccessRequired();
+    throw new Error(response.status === 401 ? '局域网访问已失效' : '图片加载失败');
+  }
   const blob = await response.blob();
   if (!blob.type.startsWith('image/')) throw new Error('返回内容不是图片');
   if (canPersist && generation === cacheGeneration) {
@@ -324,8 +341,16 @@ export const acquireMobileThumbnailUrl = (url: string) => {
   let resource = activeResources.get(url);
   if (!resource) {
     const controller = new AbortController();
-    const entry: ActiveImageResource = { promise: Promise.resolve(''), controller, references: 0, objectUrl: '' };
+    const entry: ActiveImageResource = {
+      promise: Promise.resolve(''),
+      controller,
+      references: 0,
+      objectUrl: '',
+      networkDone: false,
+    };
     entry.promise = loadThumbnail(url, controller.signal).then(blob => {
+      // 网络已完成（blob 到手）；标记后仍可能写缓存中，abort 不再影响 blob 落地
+      entry.networkDone = true;
       if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
       entry.objectUrl = URL.createObjectURL(blob);
       return entry.objectUrl;
@@ -348,7 +373,9 @@ export const acquireMobileThumbnailUrl = (url: string) => {
       current.references--;
       if (current.references > 0) return;
       activeResources.delete(url);
-      current.controller.abort();
+      // 仅在网络仍进行中时 abort：已完成（blob 到手、待写缓存）的请求 abort 会
+      // 让 .then 里的 aborted 检查抛错，导致已下载完成的图拿不到 objectUrl
+      if (!current.networkDone) current.controller.abort();
       if (current.objectUrl) URL.revokeObjectURL(current.objectUrl);
     },
   };

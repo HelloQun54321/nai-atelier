@@ -45,6 +45,9 @@ const shardPromises = new Map<string, Promise<TagDictionaryEntry[]>>();
 const characterSearchShardPromises = new Map<number, Promise<Record<string, number[]>>>();
 let characterSearchRecordsPromise: Promise<[name: string, chinese: string, postCount: number][]> | null = null;
 let cacheVersion = Date.now();
+// 单调递增代际计数：resetTagDictionaryCache 使所有在途旧代请求作废，
+// 落地时若发现代际不匹配说明 reset 已发生，丢弃旧结果并按新 URL 重试一次
+let dictionaryGeneration = 0;
 
 export const normalizeTagQuery = (value: string) => value
   .replaceAll('_', ' ')
@@ -52,9 +55,11 @@ export const normalizeTagQuery = (value: string) => value
   .trim()
   .toLowerCase();
 
-const loadManifest = () => {
+const loadManifest = async (retried = false): Promise<TagDictionaryManifest> => {
+  const generation = dictionaryGeneration;
   if (!manifestPromise) {
-    manifestPromise = fetch(`/tag-data/manifest.json?v=${cacheVersion}`, { cache: 'no-store' })
+    const url = `/tag-data/manifest.json?v=${cacheVersion}`;
+    manifestPromise = fetch(url, { cache: 'no-store' })
       .then(response => {
         if (!response.ok) throw new Error(`Tag dictionary manifest failed: ${response.status}`);
         return response.json() as Promise<TagDictionaryManifest>;
@@ -64,16 +69,24 @@ const loadManifest = () => {
         throw error;
       });
   }
-  return manifestPromise;
+  const manifest = await manifestPromise;
+  // reset 后在途旧请求落地：结果过期，用新 manifest（新 URL）重试一次
+  if (generation !== dictionaryGeneration) {
+    if (retried) return manifest;
+    return loadManifest(true);
+  }
+  return manifest;
 };
 
-const loadShard = async (manifest: TagDictionaryManifest, key: string, language: 'english' | 'chinese') => {
+const loadShard = async (manifest: TagDictionaryManifest, key: string, language: 'english' | 'chinese', retried = false) => {
+  const generation = dictionaryGeneration;
   const filename = language === 'chinese' ? manifest.chineseShards[key] : manifest.shards[key];
   if (!filename) return [];
   const cacheKey = `${language}:${key}`;
   const directory = language === 'chinese' ? 'zh-shards' : 'shards';
-  if (!shardPromises.has(cacheKey)) {
-    shardPromises.set(cacheKey, fetch(`/tag-data/${directory}/${filename}?v=${encodeURIComponent(manifest.generatedAt)}`)
+  let shardPromise = shardPromises.get(cacheKey);
+  if (!shardPromise) {
+    shardPromise = fetch(`/tag-data/${directory}/${filename}?v=${encodeURIComponent(manifest.generatedAt)}`)
       .then(response => {
         if (!response.ok) throw new Error(`Tag dictionary shard failed: ${response.status}`);
         return response.json() as Promise<TagDictionaryEntry[]>;
@@ -81,9 +94,18 @@ const loadShard = async (manifest: TagDictionaryManifest, key: string, language:
       .catch(error => {
         shardPromises.delete(cacheKey);
         throw error;
-      }));
+      });
+    shardPromises.set(cacheKey, shardPromise);
   }
-  return shardPromises.get(cacheKey)!;
+  const entries = await shardPromise;
+  // reset 后在途旧分片落地：结果过期，丢弃并按新 manifest（新 URL）重试一次
+  if (generation !== dictionaryGeneration) {
+    if (retried) return entries;
+    shardPromises.delete(cacheKey);
+    const freshManifest = await loadManifest();
+    return loadShard(freshManifest, key, language, true);
+  }
+  return entries;
 };
 
 const loadQueryEntries = async (manifest: TagDictionaryManifest, query: string) => {
@@ -207,7 +229,9 @@ const loadDictionaryPhysicalPage = async (
   kind: 'artist' | 'character',
   physicalPage: number,
   nameSort: boolean,
+  retried = false,
 ) => {
+  const generation = dictionaryGeneration;
   const files = kind === 'artist'
     ? (nameSort ? manifest.artistNamePages : manifest.artistPages)
     : (nameSort ? manifest.characterNamePages : manifest.characterPages);
@@ -215,8 +239,9 @@ const loadDictionaryPhysicalPage = async (
   if (!filename) return [];
   const directory = `${kind}${nameSort ? '-name' : ''}-pages`;
   const cacheKey = `${directory}:${physicalPage}`;
-  if (!shardPromises.has(cacheKey)) {
-    shardPromises.set(cacheKey, fetch(`/tag-data/${directory}/${filename}?v=${encodeURIComponent(manifest.generatedAt)}`)
+  let pagePromise = shardPromises.get(cacheKey);
+  if (!pagePromise) {
+    pagePromise = fetch(`/tag-data/${directory}/${filename}?v=${encodeURIComponent(manifest.generatedAt)}`)
       .then(response => {
         if (!response.ok) throw new Error(`${kind} dictionary page failed: ${response.status}`);
         return response.json() as Promise<TagDictionaryEntry[]>;
@@ -224,9 +249,18 @@ const loadDictionaryPhysicalPage = async (
       .catch(error => {
         shardPromises.delete(cacheKey);
         throw error;
-      }));
+      });
+    shardPromises.set(cacheKey, pagePromise);
   }
-  return shardPromises.get(cacheKey)!;
+  const entries = await pagePromise;
+  // reset 后在途旧分页落地：结果过期，丢弃并按新 manifest 重试一次
+  if (generation !== dictionaryGeneration) {
+    if (retried) return entries;
+    shardPromises.delete(cacheKey);
+    const freshManifest = await loadManifest();
+    return loadDictionaryPhysicalPage(freshManifest, kind, physicalPage, nameSort, true);
+  }
+  return entries;
 };
 
 const loadVirtualDictionaryPage = async (
@@ -395,11 +429,13 @@ const hashCharacterSearchToken = (token: string, shardCount: number) => {
   return (hash >>> 0) % shardCount;
 };
 
-const loadCharacterSearchShard = async (manifest: TagDictionaryManifest, shardIndex: number) => {
+const loadCharacterSearchShard = async (manifest: TagDictionaryManifest, shardIndex: number, retried = false) => {
+  const generation = dictionaryGeneration;
   const filename = manifest.characterSearchShards?.[shardIndex];
   if (!filename) return {};
-  if (!characterSearchShardPromises.has(shardIndex)) {
-    characterSearchShardPromises.set(shardIndex, fetch(`/tag-data/character-search-shards/${filename}?v=${encodeURIComponent(manifest.generatedAt)}`)
+  let shardPromise = characterSearchShardPromises.get(shardIndex);
+  if (!shardPromise) {
+    shardPromise = fetch(`/tag-data/character-search-shards/${filename}?v=${encodeURIComponent(manifest.generatedAt)}`)
       .then(response => {
         if (!response.ok) throw new Error(`Character search shard failed: ${response.status}`);
         return response.json() as Promise<Record<string, number[]>>;
@@ -407,12 +443,22 @@ const loadCharacterSearchShard = async (manifest: TagDictionaryManifest, shardIn
       .catch(error => {
         characterSearchShardPromises.delete(shardIndex);
         throw error;
-      }));
+      });
+    characterSearchShardPromises.set(shardIndex, shardPromise);
   }
-  return characterSearchShardPromises.get(shardIndex)!;
+  const result = await shardPromise;
+  // reset 后在途旧分片落地：结果过期，丢弃并按新 manifest 重试一次
+  if (generation !== dictionaryGeneration) {
+    if (retried) return result;
+    characterSearchShardPromises.delete(shardIndex);
+    const freshManifest = await loadManifest();
+    return loadCharacterSearchShard(freshManifest, shardIndex, true);
+  }
+  return result;
 };
 
-const loadCharacterSearchRecords = async (manifest: TagDictionaryManifest) => {
+const loadCharacterSearchRecords = async (manifest: TagDictionaryManifest, retried = false) => {
+  const generation = dictionaryGeneration;
   if (!characterSearchRecordsPromise) {
     characterSearchRecordsPromise = fetch(`/tag-data/${manifest.characterSearchRecords}?v=${encodeURIComponent(manifest.generatedAt)}`)
       .then(response => {
@@ -424,7 +470,15 @@ const loadCharacterSearchRecords = async (manifest: TagDictionaryManifest) => {
         throw error;
       });
   }
-  return characterSearchRecordsPromise;
+  const records = await characterSearchRecordsPromise;
+  // reset 后在途旧记录落地：结果过期，丢弃并按新 manifest 重试一次
+  if (generation !== dictionaryGeneration) {
+    if (retried) return records;
+    characterSearchRecordsPromise = null;
+    const freshManifest = await loadManifest();
+    return loadCharacterSearchRecords(freshManifest, true);
+  }
+  return records;
 };
 
 const getCharacterMatch = (entry: CharacterDictionaryEntry, rawQuery: string) => {
@@ -516,6 +570,7 @@ export const preloadTagDictionary = () => {
 
 export const resetTagDictionaryCache = () => {
   cacheVersion = Date.now();
+  dictionaryGeneration++;
   manifestPromise = null;
   shardPromises.clear();
   characterSearchShardPromises.clear();

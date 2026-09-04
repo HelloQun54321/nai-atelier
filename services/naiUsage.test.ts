@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useNovelaiUsage } from './naiUsage';
+import { NOVELAI_USAGE_REFRESH_EVENT, useNovelaiUsage } from './naiUsage';
 
 const responseFor = (payload: unknown) => ({
   ok: true,
@@ -125,5 +125,59 @@ describe('useNovelaiUsage', () => {
     expect(hook.result.current.usage).toBeUndefined();
     expect(hook.result.current.error).toBeNull();
     hook.unmount();
+  });
+
+  it('页面隐藏时暂停轮询，恢复可见后立即刷新一次', async () => {
+    const apiKey = 'pst-visibility-key';
+    sessionStorage.setItem('nai_api_key', apiKey);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(responseFor({ tier: 4, active: true, usage: { percent: 64, isNegative: false, timeUntilNextPercent: 1500 } }))
+      .mockResolvedValue(responseFor({ tier: 4, active: true, usage: { percent: 60, isNegative: false, timeUntilNextPercent: 1500 } }));
+    vi.stubGlobal('fetch', fetchMock);
+    // jsdom 默认可见
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+
+    const hook = renderHook(() => useNovelaiUsage());
+    await waitFor(() => expect(hook.result.current.usage?.percent).toBe(64));
+    const callsAfterMount = fetchMock.mock.calls.length;
+
+    // 切后台：暂停轮询，此后不产生新请求
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    // 切回可见：立即刷新一次（interval 是否重启由驱动保证，这里验证立即刷新）
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBe(callsAfterMount + 1));
+    await waitFor(() => expect(hook.result.current.usage?.percent).toBe(60));
+    hook.unmount();
+  });
+
+  it('多个实例共享同一驱动：切 Key / 刷新事件只产生一份订阅请求', async () => {
+    const apiKey = 'pst-shared-key';
+    sessionStorage.setItem('nai_api_key', apiKey);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(responseFor({ tier: 4, active: true, usage: { percent: 64, isNegative: false, timeUntilNextPercent: 1500 } }))
+      .mockResolvedValue(responseFor({ tier: 4, active: true, usage: { percent: 61, isNegative: false, timeUntilNextPercent: 1500 } }));
+    vi.stubGlobal('fetch', fetchMock);
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+
+    const first = renderHook(() => useNovelaiUsage());
+    const second = renderHook(() => useNovelaiUsage());
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1)); // 共享请求（in-flight 去重）
+    await waitFor(() => {
+      expect(first.result.current.usage?.percent).toBe(64);
+      expect(second.result.current.usage?.percent).toBe(64);
+    });
+
+    // 生图完成事件驱动刷新：驱动广播给所有订阅实例，仍只发一份请求
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
+    });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(first.result.current.usage?.percent).toBe(61);
+    expect(second.result.current.usage?.percent).toBe(61);
+    first.unmount();
+    second.unmount();
   });
 });

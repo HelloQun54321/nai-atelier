@@ -55,6 +55,64 @@ export const USAGE_SNAPSHOT_TTL = 15 * 1000;
 /** 同一把 Key 的并发刷新共用一个请求，避免切换事件与多个组件重复打到订阅接口。 */
 const inFlightUsageRequests = new Map<string, Promise<NovelaiSubscriptionInfo>>();
 
+/**
+ * 模块级共享订阅驱动：多个 keep-alive 页面各自 useNovelaiUsage 时只维护
+ * 一个 interval 与一份事件监听（引用计数：首个订阅启动、末个卸载停止），
+ * 并遵循 document.hidden：页面隐藏暂停轮询，恢复可见立即刷新一次再重启。
+ */
+type UsageSubscriber = { poll: () => void };
+const usageSubscribers = new Set<UsageSubscriber>();
+let usageDriverAttached = false;
+let usagePollTimer: number | null = null;
+
+const usagePollAll = () => {
+  usageSubscribers.forEach(subscriber => subscriber.poll());
+};
+
+const onUsageVisibilityChange = () => {
+  if (document.visibilityState === 'hidden') {
+    // 页面隐藏（切后台）：暂停轮询，节省请求；事件驱动的刷新不受影响
+    if (usagePollTimer !== null) {
+      window.clearInterval(usagePollTimer);
+      usagePollTimer = null;
+    }
+  } else {
+    // 恢复可见：立即刷新一次并重启轮询
+    usagePollAll();
+    startUsagePollTimer();
+  }
+};
+
+const startUsagePollTimer = () => {
+  if (usagePollTimer !== null) return;
+  usagePollTimer = window.setInterval(usagePollAll, SUBSCRIPTION_REFRESH_INTERVAL);
+};
+
+const startUsageDriver = () => {
+  if (usageDriverAttached) return;
+  usageDriverAttached = true;
+  window.addEventListener(NOVELAI_USAGE_REFRESH_EVENT, usagePollAll);
+  window.addEventListener('nai-api-key-changed', usagePollAll);
+  window.addEventListener('focus', usagePollAll);
+  document.addEventListener('visibilitychange', onUsageVisibilityChange);
+  // 后台标签页打开时不空转轮询，等恢复可见再刷新
+  if (document.visibilityState === 'hidden') return;
+  startUsagePollTimer();
+};
+
+const stopUsageDriver = () => {
+  if (!usageDriverAttached) return;
+  usageDriverAttached = false;
+  window.removeEventListener(NOVELAI_USAGE_REFRESH_EVENT, usagePollAll);
+  window.removeEventListener('nai-api-key-changed', usagePollAll);
+  window.removeEventListener('focus', usagePollAll);
+  document.removeEventListener('visibilitychange', onUsageVisibilityChange);
+  if (usagePollTimer !== null) {
+    window.clearInterval(usagePollTimer);
+    usagePollTimer = null;
+  }
+};
+
 const requestNovelaiSubscription = (apiKey: string): Promise<NovelaiSubscriptionInfo> => {
   const existing = inFlightUsageRequests.get(apiKey);
   if (existing) return existing;
@@ -137,27 +195,14 @@ export const useNovelaiUsage = () => {
 
   useEffect(() => {
     void refresh();
-    const onRefresh = () => void refresh();
-    const onKeyChange = () => {
-      activeKeyRef.current = '';
-      infoRef.current = null;
-      fetchedAtRef.current = 0;
-      setInfo(null);
-      setFetchedAt(0);
-      setError(null);
-      setLoading(true);
-      void refresh();
-    };
-    const onFocus = () => void refresh();
-    window.addEventListener(NOVELAI_USAGE_REFRESH_EVENT, onRefresh);
-    window.addEventListener('nai-api-key-changed', onKeyChange);
-    window.addEventListener('focus', onFocus);
-    const timer = window.setInterval(onRefresh, SUBSCRIPTION_REFRESH_INTERVAL);
+    // 订阅共享驱动：interval、visibilitychange 与全局事件只由驱动维护一份；
+    // 驱动 tick 时唤醒各实例刷新（实例各自持有自己的 state/key refs）
+    const subscriber: UsageSubscriber = { poll: () => void refresh() };
+    usageSubscribers.add(subscriber);
+    startUsageDriver();
     return () => {
-      window.removeEventListener(NOVELAI_USAGE_REFRESH_EVENT, onRefresh);
-      window.removeEventListener('nai-api-key-changed', onKeyChange);
-      window.removeEventListener('focus', onFocus);
-      window.clearInterval(timer);
+      usageSubscribers.delete(subscriber);
+      if (usageSubscribers.size === 0) stopUsageDriver();
     };
   }, [refresh]);
 

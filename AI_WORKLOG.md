@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-04
+- **DeepSeek V4 Flash (Oh My Pi 子代理 FixServicesLeft)**：服务层竞态与资源治理——SSE estimatedSpent 透传、滚动恢复到位终止、缩略图缓存 release/401 修复、标签词典代际失效、运行时/额度轮询共享订阅与隐藏暂停、导入进度单调计数、画廊历史写盘失败回滚（fix: service-layer race and resource governance）。
 - **DeepSeek V4 Flash (Oh My Pi 子代理 FixLabUX)**：实验室交互健壮性——生成中禁用模式切换、灯箱 Esc/焦点管理、移动端键盘下生成钮跟随可视区、画板空格拦截守卫、撤销栈 ImageBitmap 化与失败回滚、预览下载失败提示（fix: lab interaction robustness and keyboard accessibility）。
 - **DeepSeek V4 Flash (Oh My Pi 子代理 FixKeyVault)** + **Kimi K3 (Oh My Pi)**：密钥保管箱迁入 local-data——新增 Worker `/api/nai-key-vault` 路由（D1 settings 存储）、前端 vault 服务改异步客户端并自动迁移清除本地副本、GlobalSettings 接线异步化（feat: move NAI key vault into local-data worker storage）。
 - **DeepSeek V4 Flash (Oh My Pi 子代理 FixManagers)**：模态层可访问性统一（useModalA11y 焦点管理 + role/aria），角色参考青色改主题色，手写图标/加载态收敛共享组件，移动端详情安全模式标题通道，角色库触底失败提示，设置 Esc 双发守卫（fix: unify modal a11y and manager UI atoms）。

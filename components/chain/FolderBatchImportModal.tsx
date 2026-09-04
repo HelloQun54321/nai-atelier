@@ -53,6 +53,17 @@ export const computeChainFingerprint = (
   return `${p}:::${np}`;
 };
 
+/**
+ * 进度计数单调推进：并发任务完成顺序不定，直接用「任务下标」上报会回跳/越界。
+ * 调用方为每次完成传入当前已完成数 raw（单调递增来源，如 ref 累加），
+ * 本函数保证上报值不回退且不超 total：以 max(prev, raw) 为下一次进度。
+ */
+export const advanceProgress = (prev: number, raw: number, total: number): number => {
+  const boundedTotal = Math.max(0, Math.floor(Number(total) || 0));
+  const next = Math.min(Math.max(prev, Math.floor(Number(raw) || 0)), boundedTotal);
+  return boundedTotal === 0 ? 0 : next;
+};
+
 const getCleanPresetName = (fileName: string): string => {
   return fileName.replace(/\.[^/.]+$/, '').trim() || '未命名预设';
 };
@@ -362,93 +373,106 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
     const scannedBatchFingerprints = new Set<string>();
 
     const BATCH_SIZE = 4;
+    // 已完成文件数：批内并发任务完成顺序不定，直接上报「任务下标」会回跳；
+    // 用 ref 在每次任务真正结束时原子 +1 再 setState，保证只增不减且不超过 total
+    const completedCountRef = { current: 0 };
+    const reportScanned = (fileName: string) => {
+      completedCountRef.current = advanceProgress(completedCountRef.current, completedCountRef.current + 1, fileEntries.length);
+      setScanProgress({ current: completedCountRef.current, total: fileEntries.length, fileName });
+    };
+
+    // 单个文件的扫描与元数据提取：收集结果到 newDetected/newIgnored（并发安全），
+    // 任何路径（含抛错）都只从一个出口推进完成计数
+    const scanOneFile = async (entry: { file: File; dirHandle?: any; relativePath?: string }, currentIndex: number) => {
+      try {
+        const { file, dirHandle, relativePath } = entry;
+        const isPng = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png');
+        if (!isPng) {
+          const previewUrl = file.type.startsWith('image/') || file.name.match(/\.(jpe?g|webp|gif|bmp)$/i)
+            ? URL.createObjectURL(file)
+            : undefined;
+          newIgnored.push({
+            id: `ignored-${file.name}-${file.size}-${currentIndex}`,
+            file,
+            dirHandle,
+            relativePath,
+            name: file.name,
+            size: file.size,
+            reason: 'non-png',
+            reasonText: '非 PNG 格式（NovelAI 元数据多存储于 PNG）',
+            previewUrl,
+          });
+          return;
+        }
+
+        try {
+          const rawMeta = await extractMetadata(file);
+          if (rawMeta) {
+            const parsed = parseNovelAIMetadata(rawMeta);
+            if (parsed.prompt || parsed.params.steps || parsed.negativePrompt) {
+              const previewUrl = URL.createObjectURL(file);
+              const fp = computeChainFingerprint(parsed.prompt, parsed.negativePrompt, parsed.params);
+              const existing = existingFingerprintsMap.get(fp);
+              const isExistingDuplicate = Boolean(existing);
+              const isBatchDuplicate = scannedBatchFingerprints.has(fp);
+              scannedBatchFingerprints.add(fp);
+
+              const isDuplicate = isExistingDuplicate || isBatchDuplicate;
+
+              newDetected.push({
+                id: `${file.name}-${file.size}-${currentIndex}-${Math.random().toString(36).slice(2, 6)}`,
+                file,
+                dirHandle,
+                relativePath,
+                name: getCleanPresetName(file.name),
+                prompt: parsed.prompt,
+                negativePrompt: parsed.negativePrompt,
+                params: parsed.params,
+                previewUrl,
+                selected: !isDuplicate, // 新图片默认勾选，已有或批次重复默认不勾选
+                isDuplicate,
+                duplicateOfName: existing?.name || (isBatchDuplicate ? '本次导入的前序重复图' : undefined),
+                isBatchDuplicate,
+              });
+              return;
+            }
+          }
+
+          const previewUrl = URL.createObjectURL(file);
+          newIgnored.push({
+            id: `ignored-${file.name}-${file.size}-${currentIndex}`,
+            file,
+            dirHandle,
+            relativePath,
+            name: file.name,
+            size: file.size,
+            reason: 'no-metadata',
+            reasonText: '未检测到 NovelAI 生成元数据',
+            previewUrl,
+          });
+        } catch {
+          const previewUrl = URL.createObjectURL(file);
+          newIgnored.push({
+            id: `ignored-${file.name}-${file.size}-${currentIndex}`,
+            file,
+            dirHandle,
+            relativePath,
+            name: file.name,
+            size: file.size,
+            reason: 'parse-error',
+            reasonText: '生成参数解析失败或损坏',
+            previewUrl,
+          });
+        }
+      } finally {
+        reportScanned(entry.file.name);
+      }
+    };
+
     for (let i = 0; i < fileEntries.length; i += BATCH_SIZE) {
       const batch = fileEntries.slice(i, i + BATCH_SIZE);
       await Promise.all(
-        batch.map(async (entry, batchIdx) => {
-          const currentIndex = i + batchIdx + 1;
-          const { file, dirHandle, relativePath } = entry;
-          setScanProgress({ current: currentIndex, total: fileEntries.length, fileName: file.name });
-
-          const isPng = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png');
-          if (!isPng) {
-            const previewUrl = file.type.startsWith('image/') || file.name.match(/\.(jpe?g|webp|gif|bmp)$/i)
-              ? URL.createObjectURL(file)
-              : undefined;
-            newIgnored.push({
-              id: `ignored-${file.name}-${file.size}-${currentIndex}`,
-              file,
-              dirHandle,
-              relativePath,
-              name: file.name,
-              size: file.size,
-              reason: 'non-png',
-              reasonText: '非 PNG 格式（NovelAI 元数据多存储于 PNG）',
-              previewUrl,
-            });
-            return;
-          }
-
-          try {
-            const rawMeta = await extractMetadata(file);
-            if (rawMeta) {
-              const parsed = parseNovelAIMetadata(rawMeta);
-              if (parsed.prompt || parsed.params.steps || parsed.negativePrompt) {
-                const previewUrl = URL.createObjectURL(file);
-                const fp = computeChainFingerprint(parsed.prompt, parsed.negativePrompt, parsed.params);
-                const existing = existingFingerprintsMap.get(fp);
-                const isExistingDuplicate = Boolean(existing);
-                const isBatchDuplicate = scannedBatchFingerprints.has(fp);
-                scannedBatchFingerprints.add(fp);
-
-                const isDuplicate = isExistingDuplicate || isBatchDuplicate;
-
-                newDetected.push({
-                  id: `${file.name}-${file.size}-${currentIndex}-${Math.random().toString(36).slice(2, 6)}`,
-                  file,
-                  dirHandle,
-                  relativePath,
-                  name: getCleanPresetName(file.name),
-                  prompt: parsed.prompt,
-                  negativePrompt: parsed.negativePrompt,
-                  params: parsed.params,
-                  previewUrl,
-                  selected: !isDuplicate, // 新图片默认勾选，已有或批次重复默认不勾选
-                  isDuplicate,
-                  duplicateOfName: existing?.name || (isBatchDuplicate ? '本次导入的前序重复图' : undefined),
-                  isBatchDuplicate,
-                });
-                return;
-              }
-            }
-
-            const previewUrl = URL.createObjectURL(file);
-            newIgnored.push({
-              id: `ignored-${file.name}-${file.size}-${currentIndex}`,
-              file,
-              dirHandle,
-              relativePath,
-              name: file.name,
-              size: file.size,
-              reason: 'no-metadata',
-              reasonText: '未检测到 NovelAI 生成元数据',
-              previewUrl,
-            });
-          } catch {
-            const previewUrl = URL.createObjectURL(file);
-            newIgnored.push({
-              id: `ignored-${file.name}-${file.size}-${currentIndex}`,
-              file,
-              dirHandle,
-              relativePath,
-              name: file.name,
-              size: file.size,
-              reason: 'parse-error',
-              reasonText: '生成参数解析失败或损坏',
-              previewUrl,
-            });
-          }
-        })
+        batch.map((entry, batchIdx) => scanOneFile(entry, i + batchIdx + 1))
       );
     }
 
@@ -808,10 +832,13 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
     let successCount = 0;
     let failCount = 0;
     const importedSuccessfullyIds = new Set<string>();
+    // 导入进度同样以 ref 单调累加（与扫描一致），防止未来并行化/异常顺序导致回跳
+    const importedCountRef = { current: 0 };
 
     for (let i = 0; i < targets.length; i++) {
       const item = targets[i];
-      setImportProgress({ current: i + 1, total: targets.length, name: item.name });
+      importedCountRef.current = advanceProgress(importedCountRef.current, i + 1, targets.length);
+      setImportProgress({ current: importedCountRef.current, total: targets.length, name: item.name });
 
       try {
         // 1. 上传图片作为封面，无需二次生成

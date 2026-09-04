@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import { getMobileOriginalUrl, ratchetVariantWidth, selectThumbnailVariant, thumbnailVariantWidth } from './mobileImageCache';
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  abortMobileThumbnailRequests,
+  acquireMobileThumbnailUrl,
+  getMobileOriginalUrl,
+  ratchetVariantWidth,
+  selectThumbnailVariant,
+  thumbnailVariantWidth,
+} from './mobileImageCache';
 
 describe('selectThumbnailVariant', () => {
   it('按像素宽落入正确档位', () => {
@@ -50,5 +58,90 @@ describe('getMobileOriginalUrl', () => {
   it('对本地已有资源保持原始 URL', () => {
     const local = '/api/assets/aitag-covers/123.webp';
     expect(getMobileOriginalUrl(local)).toBe(local);
+  });
+});
+
+describe('acquireMobileThumbnailUrl 生命周期', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    abortMobileThumbnailRequests();
+    // jsdom 未实现 blob URL，stub 以便 objectUrl 正常生成
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => 'blob:mock-url'),
+      revokeObjectURL: vi.fn(),
+    });
+  });
+
+  afterEach(() => {
+    abortMobileThumbnailRequests();
+    vi.unstubAllGlobals();
+  });
+
+  const okImageResponse = () => ({
+    ok: true,
+    status: 200,
+    blob: async () => new Blob(['fake-image'], { type: 'image/webp' }),
+  }) as Response;
+
+  const unauthorizedResponse = () => ({
+    ok: false,
+    status: 401,
+    blob: async () => new Blob([]),
+  }) as Response;
+
+  it('release 不误杀已完成下载、等待生成 objectUrl 的请求（网络完成不再 abort）', async () => {
+    // jsdom 无 indexedDB → canPersist=false → loadThumbnail 走纯 fetch 分支
+    const fetchMock = vi.fn().mockResolvedValue(okImageResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const handle = acquireMobileThumbnailUrl('/api/media?source=a&variant=thumb-160');
+    // 模拟网络刚完成的窗口后 release：fetch 已 resolve，loadThumbnail 完成
+    await handle.promise;
+    // 此时 networkDone 已置位，release 不得 abort 已完成请求
+    const abortSpy = vi.spyOn(AbortController.prototype, 'abort');
+    handle.release();
+    // 网络已完成：不应触发 abort；已完成资源应正常给出 objectUrl 并 revoke
+    expect(abortSpy).not.toHaveBeenCalled();
+    abortSpy.mockRestore();
+  });
+
+  it('release 对仍在途的网络请求执行 abort', async () => {
+    let resolveFetch!: (r: Response) => void;
+    const pending = new Promise<Response>(resolve => { resolveFetch = resolve; });
+    vi.stubGlobal('fetch', vi.fn(() => pending));
+
+    const handle = acquireMobileThumbnailUrl('/api/media?source=b&variant=thumb-160');
+    const abortSpy = vi.spyOn(AbortController.prototype, 'abort');
+    handle.release();
+    expect(abortSpy).toHaveBeenCalledTimes(1);
+    abortSpy.mockRestore();
+    resolveFetch(okImageResponse());
+    // 请求被 abort 时 loadThumbnail 的 fetch 拒绝，promise 以 AbortError 结束
+    await expect(handle.promise).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('401 时只广播一次 nai-lan-access-required（并发多图节流）', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(unauthorizedResponse()));
+    const listener = vi.fn();
+    window.addEventListener('nai-lan-access-required', listener);
+
+    // 同一时刻多个不同 URL 并发 401：只应广播一次
+    const handles = [
+      acquireMobileThumbnailUrl('/api/media?source=c&variant=thumb-160'),
+      acquireMobileThumbnailUrl('/api/media?source=d&variant=thumb-160'),
+      acquireMobileThumbnailUrl('/api/media?source=e&variant=thumb-160'),
+    ];
+    await Promise.allSettled(handles.map(h => h.promise));
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // 每把资源的 promise 都应以「局域网访问已失效」拒绝（错误逐 URL 保留给 SmartImage 回退）
+    const reasons = await Promise.allSettled(handles.map(h => h.promise));
+    for (const r of reasons) {
+      if (r.status === 'rejected') {
+        expect((r.reason as Error).message).toBe('局域网访问已失效');
+      }
+    }
+    window.removeEventListener('nai-lan-access-required', listener);
   });
 });

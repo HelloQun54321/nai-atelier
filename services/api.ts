@@ -212,7 +212,7 @@ export const api = {
     headers: Record<string, string>,
     onEvent: (event: ParsedSseEvent) => void,
     options: BinaryRequestOptions = {},
-  ) => {
+  ): Promise<{ estimatedCost?: number }> => {
     const res = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
       headers: getHeaders({ Accept: 'text/event-stream', ...headers }),
@@ -223,11 +223,17 @@ export const api = {
     if (!res.body) throw new Error('流式生成没有返回响应体');
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
+    // SSE 中 nai_usage 事件（final 图片之后到达）携带网关结算的真实 estimatedSpent，
+    // 累积随 postSse 返回，供流式生成本地历史写入真实估算成本。
+    let estimatedCost: number | undefined;
     const parser = createSseParser(event => {
       if (event.event === 'nai_usage' && event.data && typeof event.data === 'object') {
-        const remaining = Number((event.data as { remaining?: unknown }).remaining);
+        const usageData = event.data as { remaining?: unknown; estimatedSpent?: unknown };
+        const remaining = Number(usageData.remaining);
         if (Number.isFinite(remaining)) emitBudgetChanged(remaining, options.budgetKeyHash);
         else requestPersonalUsageRefresh(options.budgetKeyHash);
+        const spent = Number(usageData.estimatedSpent);
+        if (Number.isFinite(spent)) estimatedCost = spent;
       }
       if (event.event === 'nai_usage_error') {
         requestPersonalUsageRefresh(options.budgetKeyHash);
@@ -240,6 +246,7 @@ export const api = {
       if (done) break;
     }
     parser.finish();
+    return { ...(estimatedCost !== undefined ? { estimatedCost } : {}) };
   },
 
   getBlob: async (endpoint: string) => {

@@ -53,27 +53,42 @@ class GalleryHistoryService {
     return this.cache;
   }
 
-  private persist() {
-    if (!this.cache) return;
-    const limited = this.cache.slice(0, MAX_HISTORY_ITEMS);
-    this.cache = limited;
-    try {
-      const storage = getStorage();
-      if (storage) {
-        storage.setItem(STORAGE_KEY, JSON.stringify(limited));
-      }
-    } catch {
-      // 存储满：淘汰一半并同步更新内存态，避免内存态与实际存储脱节
-      this.cache = limited.slice(0, 50);
+  /**
+   * 写入本地存储。storage 不可用（无 localStorage/已被禁用）视为环境不支持，不算失败。
+   * 失败时按序降级：先砍半重试（保留原「淘汰一半」行为，仍不够则继续对半递减），
+   * 直到写入成功；若始终失败，则把内存态回滚为 storage 中上次成功落盘的真实内容
+   * （避免内存态与实际存储脱节），返回 false。
+   */
+  private persist(): boolean {
+    if (!this.cache) return true;
+    let snapshot = this.cache.slice(0, MAX_HISTORY_ITEMS);
+    const storage = getStorage();
+    if (!storage) {
+      // 无存储可用时内存态即唯一事实来源，仅截断上限。
+      this.cache = snapshot;
+      return true;
+    }
+    for (let attempt = 0; attempt < MAX_HISTORY_ITEMS; attempt++) {
       try {
-        const storage = getStorage();
-        if (storage) {
-          storage.setItem(STORAGE_KEY, JSON.stringify(this.cache));
-        }
+        storage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+        // 写入成功：内存态与存储保持一致（截断后可能少于缓存上限）。
+        this.cache = snapshot;
+        return true;
       } catch {
-        // ignore
+        // 存储满等异常：对半递减重试（200→100→50→25→…），空列表无需再试。
+        snapshot = snapshot.slice(0, Math.floor(snapshot.length / 2));
+        if (snapshot.length === 0) break;
       }
     }
+    // 写入始终失败：回滚内存态为 storage 中实际存在的内容（无则空），保证与存储一致。
+    try {
+      const raw = storage.getItem(STORAGE_KEY);
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      this.cache = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      this.cache = [];
+    }
+    return false;
   }
 
   public recordView(item: Omit<GalleryHistoryItem, 'viewedAt'>) {
@@ -92,7 +107,7 @@ class GalleryHistoryService {
     if (list.length > MAX_HISTORY_ITEMS) {
       list.length = MAX_HISTORY_ITEMS;
     }
-    this.persist();
+    return this.persist();
   }
 
   public getHistory(source?: 'pixiv' | 'danbooru'): GalleryHistoryItem[] {

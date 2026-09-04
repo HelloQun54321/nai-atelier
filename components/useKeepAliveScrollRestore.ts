@@ -10,7 +10,8 @@ import { ImageActivityContext } from './SmartImage';
  * 本 hook 在滚动时把 scrollTop 持续写入模块级缓存（视图间共享，天然跨 keep-alive 生命周期），
  * 并在视图重新激活（ImageActivityContext.active 变 true）或容器重新可见时恢复：
  * - useLayoutEffect 绘制前同步首帧恢复，消除切页闪动；
- * - 异步追赶在 1.2s 内每 50ms 追赶，直到实际滚动到位或达到容器可滚最大极限；
+ * - 异步追赶每 50ms 追赶，直到至少成功写回过一次且实际滚动逼近目标（≤2px）
+ *   或达到容器可滚最大极限；总时长上限 3s 兜底，容器隐藏期间不终止；
  * - 容器隐藏（clientHeight 为 0，如窄屏打开详情）期间不终止追赶，等恢复可见后自动完成；
  * - 恢复期间锁定 handleScroll 写入，防止容器恢复瞬间浏览器的虚假 0 事件冲刷有效缓存。
  */
@@ -64,6 +65,8 @@ export const useKeepAliveScrollRestore = (
     restore();
 
     let chaseTimeoutId: number | null = null;
+    // 本轮追赶是否至少成功写回过一次 scrollTop（避免目标值瞬时不可达时误判完成）
+    let hasWrittenOnce = false;
 
     const stopChasing = () => {
       if (restoreTimerRef.current !== null) {
@@ -80,18 +83,24 @@ export const useKeepAliveScrollRestore = (
     const tryRestore = () => {
       const currentRoot = scrollRef.current;
       if (!currentRoot || !activeRef.current) return;
-      restore();
+      // restore() 返回本次是否成功写回 scrollTop（容器隐藏/目标不可达时不写）
+      const written = restore();
+      if (written) hasWrittenOnce = true;
       // 容器仍隐藏（如窄屏打开详情）时继续等待，不终止追赶
       if (currentRoot.clientHeight === 0) return;
       const currentSaved = scrollCache.get(viewKey) ?? 0;
       const maxScroll = Math.max(0, currentRoot.scrollHeight - currentRoot.clientHeight);
-      // 正确终止条件：当前实际 scrollTop 已达到 saved，或者已达到当前 DOM 能滚动的最大极限
-      if (currentRoot.scrollTop >= currentSaved || (maxScroll > 0 && currentRoot.scrollTop >= maxScroll)) {
+      const targetReached = Math.abs(currentRoot.scrollTop - currentSaved) <= 2;
+      const reachedScrollLimit = maxScroll > 0 && currentRoot.scrollTop >= maxScroll - 1;
+      // 终止条件：至少成功写回过一次，且（已逼近目标值，或已到当前 DOM 可滚动极限——
+      // 后者覆盖「图片异步加载前目标高于当前极限」的场景，等待新内容再恢复会由后续激活重新触发）。
+      if (hasWrittenOnce && (targetReached || reachedScrollLimit)) {
         stopChasing();
       }
     };
 
     const scheduleChaseTimeout = () => {
+      // 总时长上限兜底：容器可见但内容始终未撑开到目标时，3s 后停止避免永久空转
       chaseTimeoutId = window.setTimeout(() => {
         const currentRoot = scrollRef.current;
         if (currentRoot && currentRoot.clientHeight === 0) {
@@ -100,7 +109,7 @@ export const useKeepAliveScrollRestore = (
           return;
         }
         stopChasing();
-      }, 1200);
+      }, 3000);
     };
 
     if (restoreTimerRef.current !== null) window.clearInterval(restoreTimerRef.current);

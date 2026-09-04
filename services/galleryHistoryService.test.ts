@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { galleryHistoryService } from './galleryHistoryService';
+import { galleryHistoryService, type GalleryHistoryItem } from './galleryHistoryService';
 
 // Mock localStorage for Node test runner
 const createMockStorage = () => {
@@ -151,6 +151,44 @@ describe('galleryHistoryService', () => {
 
     // 触发配额超限降级后，内存中的缓存应同步截断到 50 条
     expect(galleryHistoryService.getHistory().length).toBeLessThanOrEqual(50);
+  });
+
+  it('写入彻底失败时返回失败标志并把内存态回滚为已落盘内容，不与存储脱节', () => {
+    // 先成功写入两条真实历史
+    mockStorage.setItem = (key: string, value: string) => {
+      if (key === 'nai_gallery_view_history_v1') {
+        // 不再允许任何写入（模拟存储被禁用/永久配额满）
+        throw new Error('QuotaExceededError');
+      }
+    };
+    // 预置一条已成功落盘的历史（代表上次写入成功的真实存储内容）
+    const persisted: GalleryHistoryItem[] = [{
+      id: 'pixiv:prev',
+      source: 'pixiv',
+      sourceId: 'prev',
+      title: 'Prev',
+      previewUrl: 'https://example.com/prev.jpg',
+      sampleUrl: 'https://example.com/prev.jpg',
+      tags: [],
+      viewedAt: 1000,
+    }];
+    mockStorage.getItem = (key: string) => (key === 'nai_gallery_view_history_v1' ? JSON.stringify(persisted) : null);
+
+    const ok = galleryHistoryService.recordView({
+      id: 'pixiv:new',
+      source: 'pixiv',
+      sourceId: 'new',
+      title: 'New',
+      previewUrl: 'https://example.com/new.jpg',
+      sampleUrl: 'https://example.com/new.jpg',
+      tags: [],
+    });
+
+    // 写入失败：返回 false，且内存态回滚为 storage 中已落盘内容（不含 new）
+    expect(ok).toBe(false);
+    const history = galleryHistoryService.getHistory();
+    expect(history).toHaveLength(1);
+    expect(history[0].id).toBe('pixiv:prev');
   });
 });
 

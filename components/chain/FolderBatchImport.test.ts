@@ -62,6 +62,33 @@ describe('FolderBatchImport & Untested Tag Lifecycle', () => {
     expect(fpBase).not.toBe(fpDifferentNegative);
   });
 
+  it('advanceProgress 单调推进：并发完成顺序乱序时进度不回跳、不越界、不越 total', async () => {
+    const { advanceProgress } = await import('./FolderBatchImportModal');
+
+    // 模拟 4 并发扫描，任务完成顺序与启动顺序不同（模拟 await extractMetadata 乱序返回）：
+    // 每完成一个文件，completedCount 原始累加值递增，advanceProgress 保证上报不回退
+    const total = 12;
+    let reported = 0;
+    const completed = [3, 1, 2, 4, 5, 8, 6, 7, 9, 10, 12, 11]; // 乱序完成序号
+    const sequence: number[] = [];
+    for (const raw of completed) {
+      reported = advanceProgress(reported, raw, total);
+      sequence.push(reported);
+    }
+    // 单调不减
+    for (let i = 1; i < sequence.length; i++) {
+      expect(sequence[i]).toBeGreaterThanOrEqual(sequence[i - 1]);
+    }
+    // 永不超过 total，最后完成所有文件时达到 total
+    expect(Math.max(...sequence)).toBeLessThanOrEqual(total);
+    expect(sequence[sequence.length - 1]).toBe(total);
+
+    // 完成数超过 total（防御：重复上报）也被钳制在 total
+    expect(advanceProgress(12, 13, 12)).toBe(12);
+    // total 为 0 时不会越界
+    expect(advanceProgress(0, 1, 0)).toBe(0);
+  });
+
   it('正确计算自动清理候选集（computeAutoCleanupTargets）', async () => {
     const { computeAutoCleanupTargets } = await import('./FolderBatchImportModal');
 
