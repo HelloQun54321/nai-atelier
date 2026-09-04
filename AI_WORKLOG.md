@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-04
+- **Kimi K3 (Oh My Pi)**：修复实验室编辑资产竞态——同键资产的写入/删除改为按 id 串行队列，并补上资产清理对 resultImageRef 的引用收集，避免新蒙版/编辑结果被误删（fix: serialize lab asset writes and deletes per key and keep result assets referenced）。
 - **Kimi K3 (Oh My Pi)**：修复历史迁移竞态——迁移开始即广播远端接管、多轮补迁增量、清空前校验无残留，删除/清空操作对远端与浏览器库双侧幂等清理（fix: make history migration race-safe with takeover broadcast and delta re-migration）。
 - **Kimi K3 (Oh My Pi)**：修复角色库「生成预览」把会话级 blob: URL 写入数据库封面导致重启后失效的缺陷，改为先上传持久资产再落库，并在 dbService 读写边界统一拦截 blob: 封面（fix: persist character preview cover as uploaded asset instead of session blob URL）。
 

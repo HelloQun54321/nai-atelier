@@ -150,6 +150,30 @@ export const saveLabWorkspaceSession = (key: string, session: LabWorkspaceSessio
   }
 };
 
+/** 删除指定工作区的会话草稿（「放弃未保存更改」路径使用，重进时从数据库原值重新开始）。 */
+export const deleteLabWorkspaceSession = (key: string) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.removeItem(`${SESSION_PREFIX}${key}`);
+  } catch {
+    // 忽略存储异常。
+  }
+};
+
+/**
+ * 「放弃未保存的更改」是一次性语义：导航守卫确认放弃后标记，编辑器卸载时消费一次。
+ * 仅跳过本次卸载副作用（自动补封面等），不影响之后正常的进出。
+ */
+const discardedEditorSessions = new Set<string>();
+export const markEditorSessionDiscarded = (chainId: string) => {
+  discardedEditorSessions.add(chainId);
+};
+export const consumeEditorSessionDiscarded = (chainId: string): boolean => {
+  const discarded = discardedEditorSessions.has(chainId);
+  if (discarded) discardedEditorSessions.delete(chainId);
+  return discarded;
+};
+
 const openAssetDb = async (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
   const request = indexedDB.open(ASSET_DB_NAME, ASSET_DB_VERSION);
   request.onupgradeneeded = () => {
@@ -160,14 +184,31 @@ const openAssetDb = async (): Promise<IDBDatabase> => new Promise((resolve, reje
   request.onerror = () => reject(request.error || new Error('无法打开图片编辑资产存储'));
 });
 
+/**
+ * 同一资产 id 的写入/删除按发起顺序串行执行。
+ * 蒙版自动保存与「换底图/重置模式」的删除使用确定性同键（getLabWorkspaceAssetId），
+ * 异步并发下删除可能落在后写入之后、误删新资产；按 id 排队从结构上消除该竞态。
+ */
+const assetOperationQueues = new Map<string, Promise<unknown>>();
+const enqueueAssetOperation = <T>(id: string, operation: () => Promise<T>): Promise<T> => {
+  const previous = assetOperationQueues.get(id) || Promise.resolve();
+  const next = previous.catch(() => undefined).then(operation);
+  assetOperationQueues.set(id, next.finally(() => {
+    if (assetOperationQueues.get(id) === next) assetOperationQueues.delete(id);
+  }));
+  return next;
+};
+
 export const saveLabWorkspaceAsset = async (blob: Blob, id: string = crypto.randomUUID()): Promise<string> => {
-  const db = await openAssetDb();
-  await new Promise<void>((resolve, reject) => {
-    const request = db.transaction(ASSET_STORE_NAME, 'readwrite').objectStore(ASSET_STORE_NAME).put({ id, blob, mimeType: blob.type, updatedAt: Date.now() });
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error || new Error('保存图片编辑资产失败'));
+  await enqueueAssetOperation(id, async () => {
+    const db = await openAssetDb();
+    await new Promise<void>((resolve, reject) => {
+      const request = db.transaction(ASSET_STORE_NAME, 'readwrite').objectStore(ASSET_STORE_NAME).put({ id, blob, mimeType: blob.type, updatedAt: Date.now() });
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error || new Error('保存图片编辑资产失败'));
+    });
+    db.close();
   });
-  db.close();
   return id;
 };
 
@@ -176,13 +217,15 @@ export const getLabWorkspaceAssetId = (sessionKey: string, operation: ImageEditO
 
 export const deleteLabWorkspaceAsset = async (id: string | undefined) => {
   if (!id) return;
-  const db = await openAssetDb();
-  await new Promise<void>((resolve, reject) => {
-    const request = db.transaction(ASSET_STORE_NAME, 'readwrite').objectStore(ASSET_STORE_NAME).delete(id);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error || new Error('删除图片编辑资产失败'));
+  await enqueueAssetOperation(id, async () => {
+    const db = await openAssetDb();
+    await new Promise<void>((resolve, reject) => {
+      const request = db.transaction(ASSET_STORE_NAME, 'readwrite').objectStore(ASSET_STORE_NAME).delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error || new Error('删除图片编辑资产失败'));
+    });
+    db.close();
   });
-  db.close();
 };
 
 export const readLabWorkspaceAsset = async (id: string): Promise<Blob | null> => {
@@ -221,6 +264,8 @@ const collectReferencedAssetIds = () => {
       for (const edit of edits) {
         if (typeof edit?.baseImageRef === 'string') referenced.add(edit.baseImageRef);
         if (typeof edit?.maskRef === 'string') referenced.add(edit.maskRef);
+        // 编辑结果同样是会话引用的资产，漏收会被当作孤儿误删
+        if (typeof edit?.resultImageRef === 'string') referenced.add(edit.resultImageRef);
       }
     } catch {
       // 损坏的会话由正常的工作区恢复逻辑处理，这里不阻断清理。
