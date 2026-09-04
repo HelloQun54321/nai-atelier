@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useModalA11y } from './useModalA11y';
 
 export interface ConfirmDialogOptions {
     title: string;
@@ -17,16 +18,29 @@ const ConfirmDialogContext = createContext<ConfirmDialogContextValue | null>(nul
 export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [options, setOptions] = useState<ConfirmDialogOptions | null>(null);
     const resolverRef = useRef<((confirmed: boolean) => void) | null>(null);
+    // 打开确认框前的焦点元素：确认框卸载后归还焦点，保证键盘用户留在触发点附近。
+    const openerRef = useRef<HTMLElement | null>(null);
+    // P2-17：焦点管理（取消键已有 autoFocus，此 hook 负责 Tab 圈禁与归还）。
+    const dialogRef = useModalA11y<HTMLDivElement>(Boolean(options));
 
     const closeDialog = useCallback((confirmed: boolean) => {
         const resolve = resolverRef.current;
         resolverRef.current = null;
         setOptions(null);
+        // 归还焦点给触发确认框的元素（若仍挂载且可聚焦）。
+        const opener = openerRef.current;
+        openerRef.current = null;
+        if (opener && opener.isConnected && !(opener instanceof HTMLButtonElement && opener.disabled)) {
+            opener.focus({ preventScroll: true });
+        }
         resolve?.(confirmed);
     }, []);
 
     const confirmAction = useCallback((nextOptions: ConfirmDialogOptions) => {
         resolverRef.current?.(false);
+        // 记录打开确认框时的焦点元素：多数入口是按钮，对话框关闭后把焦点归还给它。
+        const active = document.activeElement;
+        openerRef.current = active instanceof HTMLElement && active !== document.body ? active : null;
         setOptions(nextOptions);
         return new Promise<boolean>(resolve => {
             resolverRef.current = resolve;
@@ -57,6 +71,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                     onClick={() => closeDialog(false)}
                 >
                     <div
+                        ref={dialogRef}
                         role="alertdialog"
                         aria-modal="true"
                         aria-labelledby="confirm-dialog-title"

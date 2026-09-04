@@ -4,6 +4,7 @@ import { PAGINATION_CONFIG } from '../config/pagination';
 import { localHistory } from '../services/localHistory';
 import { LocalGenItem } from '../types';
 import { SmartImage } from './SmartImage';
+import { useModalA11y } from './useModalA11y';
 
 interface HistoryImagePickerProps {
   open: boolean;
@@ -31,6 +32,8 @@ const getHistoryTypeLabel = (item: LocalGenItem) => {
 
 export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, onClose, onSelect }) => {
   const [items, setItems] = useState<LocalGenItem[]>([]);
+  // P2-17：模态焦点管理（焦点移入 / Tab 圈禁 / 关闭后归还）。
+  const dialogRef = useModalA11y<HTMLDivElement>(open);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -86,6 +89,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-[1250] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-6"
       role="dialog"
       aria-modal="true"

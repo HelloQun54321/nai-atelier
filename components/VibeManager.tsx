@@ -7,6 +7,8 @@ import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
+import { BackButton, CloseButton, PageSpinner } from './DesignSystem';
+import { useModalA11y } from './useModalA11y';
 
 interface VibeManagerProps {
   params: NAIParams;
@@ -23,8 +25,6 @@ const emptyVibes = (): NonNullable<NAIParams['vibes']> => ({
   slots: [],
 });
 
-const BackIcon = () => <svg className="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>;
-
 export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, markChange, apiKey, notify, operation }) => {
   const confirmAction = useConfirmDialog();
   const runtime = useNaiRuntime();
@@ -34,6 +34,8 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
   const historyActiveRef = useRef(false);
   const detailRef = useRef<VibeAsset | null>(null);
   const [open, setOpen] = useState(false);
+  // P2-17：模态焦点管理（焦点移入 / Tab 圈禁 / 关闭后归还）。
+  const dialogRef = useModalA11y<HTMLDivElement>(open);
   const [assets, setAssets] = useState<VibeAsset[]>([]);
   const [groups, setGroups] = useState<VibeGroup[]>([]);
   const [search, setSearch] = useState('');
@@ -319,12 +321,16 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
         onClick={event => { if (event.target === event.currentTarget) closeLayer(); }}
       >
         <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={detail ? detail.name : 'Vibe Transfer'}
           className="ui-modal-enter flex h-[100dvh] w-full max-w-5xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-900 md:h-[88vh] md:max-h-[850px] md:rounded-2xl md:border md:border-gray-800"
           onClick={event => event.stopPropagation()}
         >
           <header className="flex flex-none items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900 md:px-5">
             <div className="flex min-w-0 items-center gap-2">
-              {detail && <button type="button" onClick={() => setDetail(null)} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="返回列表"><BackIcon /></button>}
+              {detail && <BackButton onClick={() => setDetail(null)} className="mobile-touch" />}
               <div className="min-w-0">
                 <h2 className="truncate text-base font-bold text-gray-900 dark:text-white">{detail ? detail.name : 'Vibe Transfer (氛围参考)'}</h2>
                 <p className="text-[11px] text-gray-500">永久 Vibe 编码 · V4.5 Full</p>
@@ -332,14 +338,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
             </div>
             <div className="flex items-center gap-2">
               {!detail && <span className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-300">已选 {vibes.slots.length}/{VIBE_MAX_SLOTS}</span>}
-              <button
-                type="button"
-                onClick={closeLayer}
-                className="mobile-touch flex h-9 w-9 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200 transition-colors"
-                aria-label="关闭"
-              >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+              <CloseButton onClick={closeLayer} size="sm" />
             </div>
           </header>
 
@@ -366,7 +365,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
             <main className="workspace-manager-split grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_340px]">
               <section className="workspace-manager-list overflow-y-auto p-3 md:p-5">
                 <div className="mb-3 flex items-center justify-between"><h3 className="font-bold text-gray-900 dark:text-white">{archived ? '已归档' : '我的 Vibe'}</h3><button type="button" onClick={() => setArchived(value => !value)} className="mobile-touch rounded-lg px-3 text-xs font-medium text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-800">{archived ? '返回资料库' : '查看归档'}</button></div>
-                {loading ? <div className="py-20 text-center text-sm text-gray-500">加载中…</div> : assets.length ? <div className="workspace-card-grid workspace-manager-grid grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{assets.map(asset => { const selected = vibes.slots.some(slot => slot.vibeId === asset.id); const usableCount = asset.encodings.filter(item => item.model === 'nai-diffusion-4-5-full').length; return <article key={asset.id} className={`group overflow-hidden rounded-2xl border bg-white shadow-sm transition dark:bg-gray-900 ${selected ? 'border-violet-500 ring-2 ring-violet-500/20' : 'border-gray-200 dark:border-gray-800'}`}><button type="button" onClick={() => archived ? showDetail(asset) : void addAsset(asset)} className="block w-full text-left"><div className="relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">{asset.thumbnailUrl ? <SmartImage src={asset.thumbnailUrl} alt={asset.name} /> : <div className="flex h-full items-center justify-center p-4 text-center text-xs text-gray-500">仅编码</div>}{selected && <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white shadow">✓</span>}</div><div className="p-3"><p className="truncate text-sm font-bold">{asset.name}</p><p className="mt-1 text-[11px] text-gray-500">{usableCount ? `${usableCount} 个 V4.5 编码` : asset.hasOriginal ? '待编码 · 2 Anlas' : '暂不支持的模型'}</p></div></button><button type="button" onClick={() => showDetail(asset)} className="mobile-touch w-full border-t border-gray-100 text-xs font-medium text-gray-500 dark:border-gray-800">详情</button></article>; })}</div> : <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 text-center dark:border-gray-800"><p className="font-bold">{archived ? '没有已归档的 Vibe' : '还没有永久 Vibe'}</p><p className="mt-1 text-xs text-gray-500">上传图片进行编码，或导入现有 .naiv4vibe</p></div>}
+                {loading ? <PageSpinner label="加载中…" className="py-20" /> : assets.length ? <div className="workspace-card-grid workspace-manager-grid grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{assets.map(asset => { const selected = vibes.slots.some(slot => slot.vibeId === asset.id); const usableCount = asset.encodings.filter(item => item.model === 'nai-diffusion-4-5-full').length; return <article key={asset.id} className={`group overflow-hidden rounded-2xl border bg-white shadow-sm transition dark:bg-gray-900 ${selected ? 'border-violet-500 ring-2 ring-violet-500/20' : 'border-gray-200 dark:border-gray-800'}`}><button type="button" onClick={() => archived ? showDetail(asset) : void addAsset(asset)} className="block w-full text-left"><div className="relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">{asset.thumbnailUrl ? <SmartImage src={asset.thumbnailUrl} alt={asset.name} /> : <div className="flex h-full items-center justify-center p-4 text-center text-xs text-gray-500">仅编码</div>}{selected && <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white shadow">✓</span>}</div><div className="p-3"><p className="truncate text-sm font-bold">{asset.name}</p><p className="mt-1 text-[11px] text-gray-500">{usableCount ? `${usableCount} 个 V4.5 编码` : asset.hasOriginal ? '待编码 · 2 Anlas' : '暂不支持的模型'}</p></div></button><button type="button" onClick={() => showDetail(asset)} className="mobile-touch w-full border-t border-gray-100 text-xs font-medium text-gray-500 dark:border-gray-800">详情</button></article>; })}</div> : <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 text-center dark:border-gray-800"><p className="font-bold">{archived ? '没有已归档的 Vibe' : '还没有永久 Vibe'}</p><p className="mt-1 text-xs text-gray-500">上传图片进行编码，或导入现有 .naiv4vibe</p></div>}
               </section>
               <aside className="workspace-manager-selection mobile-safe-bottom overflow-y-auto border-t border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 md:border-l md:border-t-0 flex flex-col justify-between">
                 <div>

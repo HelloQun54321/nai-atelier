@@ -4,6 +4,7 @@ import { ImageTaggerResult, imageTaggerService } from '../services/imageTaggerSe
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
 import { IconButton } from './DesignSystem';
 import { MobileIconButton } from './MobileUI';
+import { useModalA11y } from './useModalA11y';
 
 interface ImageTaggerPanelProps {
   open: boolean;
@@ -40,6 +41,8 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
   const [characterThreshold, setCharacterThreshold] = useState(0.85);
   const [downloaded, setDownloaded] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
+  // P2-17：模态焦点管理（焦点移入 / Tab 圈禁 / 关闭后归还）。
+  const dialogRef = useModalA11y<HTMLDivElement>(open);
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
   useEffect(() => {
@@ -154,7 +157,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
 
   if (!open) return null;
 
-  return <div className="fixed inset-0 z-[1250] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+  return <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="图片反推 Tag" className="fixed inset-0 z-[1250] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
     <div className="flex max-h-[94dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl dark:bg-gray-950 md:rounded-2xl">
       <header className="flex h-14 flex-none items-center justify-between border-b border-gray-200 px-4 dark:border-gray-800">
         <div><h2 className="text-sm font-black">图片反推 Danbooru Tag</h2><p className="text-[10px] text-gray-500">WD Tagger V3 · 图片只在你的电脑上处理</p></div>

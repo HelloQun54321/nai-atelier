@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef } from 'react';
 import { ArrowLeft, X } from 'lucide-react';
+import { useModalA11y } from './useModalA11y';
 
 export const MobileIconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
@@ -57,6 +58,8 @@ export const MobileBottomSheet: React.FC<{
 }> = ({ open, title, onClose, children, footer }) => {
   const requestClose = useMobileHistoryLayer(open, onClose, 'sheet');
   const dragStart = useRef<number | null>(null);
+  // P2-17：底部弹层焦点管理（移入 / Tab 圈禁 / 关闭后归还）。
+  const dialogRef = useModalA11y<HTMLElement>(open);
   if (!open) return null;
 
   return (
@@ -64,6 +67,7 @@ export const MobileBottomSheet: React.FC<{
       if (event.target === event.currentTarget) requestClose();
     }}>
       <section
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -94,19 +98,30 @@ export const MobileDetailView: React.FC<{
   actions?: React.ReactNode;
   footer?: React.ReactNode;
   children: React.ReactNode;
-}> = ({ open, title, subtitle, onClose, actions, footer, children }) => {
+  /** 将本详情整体接入安全模式的点击揭示逻辑（标题 + 内嵌作品图一起随 work 组显示）。 */
+  sensitiveTitle?: boolean;
+}> = ({ open, title, subtitle, onClose, actions, footer, children, sensitiveTitle = false }) => {
   const requestClose = useMobileHistoryLayer(open, onClose, 'detail');
+  // P2-17：全屏详情层焦点管理（移入 / Tab 圈禁 / 关闭后归还）。
+  const dialogRef = useModalA11y<HTMLElement>(open);
   if (!open) return null;
 
   return (
-    <section className="mobile-detail md:hidden" role="dialog" aria-modal="true" aria-label={title}>
+    <section
+      ref={dialogRef}
+      className="mobile-detail md:hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      data-safe-mode-work={sensitiveTitle ? 'true' : undefined}
+    >
       <header className="mobile-detail-header">
         <MobileIconButton label="返回" onClick={requestClose} className="text-gray-600 dark:text-gray-300">
           <ArrowLeft className="h-6 w-6" />
         </MobileIconButton>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-base font-bold text-gray-900 dark:text-white">{title}</h2>
-          {subtitle && <div className="truncate text-xs text-gray-500 dark:text-gray-400">{subtitle}</div>}
+          <h2 data-safe-mode-title={sensitiveTitle ? 'true' : undefined} className="truncate text-base font-bold text-gray-900 dark:text-white">{title}</h2>
+          {subtitle && <div data-safe-mode-title={sensitiveTitle ? 'true' : undefined} className="truncate text-xs text-gray-500 dark:text-gray-400">{subtitle}</div>}
         </div>
         {actions && <div className="flex flex-none items-center gap-1">{actions}</div>}
       </header>

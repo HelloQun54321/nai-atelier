@@ -21,7 +21,8 @@ import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileU
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
 import { Check, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Dice5, Eye, GripVertical, Heart, LoaderCircle, Menu, Pencil, Plus, RefreshCw, Settings2, SlidersHorizontal, Tag, UserRound, X } from 'lucide-react';
-import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, EmptyState } from './DesignSystem';
+import { useModalA11y } from './useModalA11y';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
@@ -243,11 +244,29 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
+  // P2-17：新建角色模态的焦点管理（移入 / Tab 圈禁 / 关闭后归还）；
+  // 移动详情层的焦点管理已内置在 MobileDetailView 内。
+  const createDialogRef = useModalA11y<HTMLDivElement>(showCreate);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const catalogGenerationRef = useRef(0);
   const searchGenerationRef = useRef(0);
   const recentGachaRef = useRef<number[][]>([]);
+  // 无限加载失败的时间戳：失败后 300ms 内挡住哨兵的立即重触发，避免静默失败循环。
+  const lastLoadMoreErrorAtRef = useRef(0);
+
+  // 新建角色 / 图片灯箱等模态：Esc 关闭。新建表单内没有依赖 Esc 取消的中间状态，
+  // 直接关闭即可；灯箱同理。
+  useEffect(() => {
+    if (!showCreate && !lightbox) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (showCreate) { setShowCreate(false); return; }
+      setLightbox(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showCreate, lightbox]);
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 767px)');
@@ -348,6 +367,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
   const loadMore = useCallback(async () => {
     if (isLoadingMore || nextPage >= pageCount || searchTerm.trim() || gachaCards) return;
+    // 失败后 300ms 内防抖：哨兵仍在视口内会立即再次触发，失败静默会变成无限重试循环。
+    if (Date.now() - lastLoadMoreErrorAtRef.current < 300) return;
     const generation = catalogGenerationRef.current;
     setIsLoadingMore(true);
     try {
@@ -355,10 +376,15 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       if (generation !== catalogGenerationRef.current) return;
       setLoadedCatalog(previous => [...previous, ...result.entries]);
       setNextPage(result.page + 1);
+    } catch (error) {
+      // 失败也要对用户可见，而不是由哨兵在后台静默反复重试。
+      lastLoadMoreErrorAtRef.current = Date.now();
+      notify('加载更多角色失败，请稍后重试', 'error');
+      console.warn('Character tag catalog loadMore failed:', error);
     } finally {
       if (generation === catalogGenerationRef.current) setIsLoadingMore(false);
     }
-  }, [gachaCards, isLoadingMore, nextPage, pageCount, searchTerm, sort]);
+  }, [gachaCards, isLoadingMore, nextPage, pageCount, searchTerm, sort, notify]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -923,7 +949,14 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
         <div className="mb-3 hidden items-center gap-1.5 text-[11px] text-gray-400 dark:text-gray-500 md:flex">
           <span>显示 {visibleCards.length.toLocaleString('zh-CN')}</span><span className="opacity-50">·</span><span>目录 {catalogTotal.toLocaleString('zh-CN')}</span><span className="opacity-50">·</span><span>自定义 {customChains.length}</span>
         </div>
-        {isLoading && <div className="absolute inset-x-0 top-3 z-20 flex justify-center"><span className="rounded-full bg-gray-900/80 px-4 py-2 text-xs text-white">正在加载角色目录…</span></div>}
+        {isLoading && (
+          <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
+            <span className="flex items-center gap-1.5 rounded-full bg-gray-900/80 px-4 py-2 text-xs text-white dark:bg-gray-950/90">
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+              正在加载角色目录…
+            </span>
+          </div>
+        )}
         {imageDisplay.layout === 'masonry' ? (
           <ShortestColumnMasonry<CharacterCard>
             items={visibleCards}
@@ -943,7 +976,13 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             {isLoadingMore ? '正在加载更多角色…' : nextPage < pageCount ? <button onClick={() => void loadMore()} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">继续向下滚动加载更多</button> : catalogTotal ? '已加载完整角色目录' : null}
           </div>
         )}
-        {!isLoading && visibleCards.length === 0 && <div className="py-20 text-center text-gray-400">没有找到符合条件的角色</div>}
+        {!isLoading && visibleCards.length === 0 && (
+          <EmptyState
+            title="没有找到符合条件的角色"
+            className="py-20"
+            icon={<UserRound className="h-8 w-8" aria-hidden="true" />}
+          />
+        )}
       </div>
 
       {/* 底部悬浮多选操作栏 */}
@@ -1069,13 +1108,13 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       </div>
 
        {lightbox?.previewImage && (
-         <div className="ui-backdrop-enter fixed inset-0 z-[1500] hidden items-center justify-center bg-black/90 p-4 backdrop-blur-sm md:flex" onClick={() => setLightbox(null)}>
+         <div role="dialog" aria-modal="true" aria-label={lightbox.name} className="ui-backdrop-enter fixed inset-0 z-[1500] hidden items-center justify-center bg-black/90 p-4 backdrop-blur-sm md:flex" onClick={() => setLightbox(null)}>
           <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" onClick={event => event.stopPropagation()} />
           <div className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded bg-black/65 px-4 py-2 text-center text-sm text-white">{lightbox.name}{lightbox.tagName ? ` · ${lightbox.tagName}` : ''}</div>
           <button onClick={() => setLightbox(null)} className="absolute right-5 top-5 text-3xl text-white">×</button>
         </div>
        )}
-       <MobileDetailView open={Boolean(lightbox)} title={lightbox?.name || '角色详情'} subtitle={lightbox?.tagName} onClose={() => setLightbox(null)} footer={lightbox ? <>
+       <MobileDetailView open={Boolean(lightbox)} title={lightbox?.name || '角色详情'} subtitle={lightbox?.tagName} onClose={() => setLightbox(null)} sensitiveTitle={Boolean(lightbox)} footer={lightbox ? <>
          <button onClick={() => void copyCharacter(lightbox)} className="mobile-touch flex-1 rounded-xl bg-gray-200 font-bold text-gray-700 dark:bg-gray-700 dark:text-white">复制</button>
          <button onClick={() => sendToPlayground(lightbox)} className="mobile-touch flex-1 rounded-xl bg-indigo-600 font-bold text-white">导入实验室</button>
        </> : null}>
@@ -1095,7 +1134,14 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
       {showCreate && (
         <div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setShowCreate(false)}>
-          <div className="ui-modal-enter w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-800 dark:bg-gray-900" onClick={event => event.stopPropagation()}>
+          <div
+            ref={createDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="新建自定义还原角色"
+            className="ui-modal-enter w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-800 dark:bg-gray-900"
+            onClick={event => event.stopPropagation()}
+          >
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">新建自定义还原角色</h2>
             <p className="mt-1 text-sm text-gray-500">适合 NovelAI 没有收录角色 Tag，需要手工组合外貌与服装的角色。</p>
             <input autoFocus value={newName} onChange={event => setNewName(event.target.value)} placeholder="角色名称，例如：穆宁雪" className="mt-5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900 dark:text-white" />

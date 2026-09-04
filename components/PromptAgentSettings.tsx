@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { PromptAgentAuthPrompt, PromptAgentConfig, PromptAgentCustomProvider, PromptAgentModel, PromptAgentProvider, promptAgentService } from '../services/promptAgent';
 import { useConfirmDialog } from './ConfirmDialog';
 import { useMobileHistoryLayer } from './MobileUI';
+import { useModalA11y } from './useModalA11y';
 
 interface PromptAgentSettingsProps {
   notify: (message: string, type?: 'success' | 'error') => void;
@@ -97,6 +99,8 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
   const [showKey, setShowKey] = useState(false);
   const [busy, setBusy] = useState(false);
   const [customDraft, setCustomDraft] = useState<PromptAgentCustomProvider>(emptyCustomProvider);
+  // P2-17：子页覆盖层（全屏）的焦点管理：进入时移入、Tab 圈禁、返回 home 后归还。
+  const subViewRef = useModalA11y<HTMLDivElement>(view !== 'home');
 
   const reload = async () => {
     const [nextConfig, nextProviders, nextModels, nextCustomProviders] = await Promise.all([
@@ -278,9 +282,16 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
       <p className="text-[11px] leading-5 text-gray-500 dark:text-gray-400">这里选择的是新对话默认主模型；已有对话在对话顶部单独切换。视觉模型会按每个对话的主模型独立解析，可分析附件与历史原图。Agent 还可受限搜索公网并读取搜索结果，不能访问本机或局域网地址。密钥加密保存在电脑，不进入浏览器存储。</p>
     </div>
 
-    {view !== 'home' && <div className="fixed inset-0 z-[1100] flex flex-col bg-gray-50 dark:bg-gray-950">
+    {view !== 'home' && (
+      <div
+        ref={subViewRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={view === 'login' ? '选择要配置的服务' : view === 'logout' ? '选择要退出的服务' : view === 'model' ? '选择 Agent 模型' : view === 'vision' ? '选择视觉模型' : view === 'auth' ? '选择登录方式' : view === 'custom' ? (customDraft.id ? '编辑自定义接口' : '添加自定义接口') : '登录模型服务'}
+        className="fixed inset-0 z-[1100] flex flex-col bg-gray-50 dark:bg-gray-950"
+      >
       <header className="workspace-command-bar flex flex-none items-center gap-3 border-b border-gray-200 bg-white px-3 dark:border-gray-800 dark:bg-gray-900 md:px-5">
-        <button type="button" onClick={view === 'key' ? () => { setView('login'); setApiKey(''); } : requestClose} className="mobile-touch flex items-center justify-center text-gray-500" aria-label="返回"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7 7-7m-7 7h18" /></svg></button>
+        <button type="button" onClick={view === 'key' ? () => { setView('login'); setApiKey(''); } : requestClose} className="mobile-touch flex items-center justify-center text-gray-500" aria-label="返回"><ArrowLeft className="h-5 w-5" /></button>
         <div className="min-w-0 flex-1"><h2 className="font-black text-gray-900 dark:text-white">{view === 'login' ? '选择要配置的服务' : view === 'logout' ? '选择要退出的服务' : view === 'model' ? '选择 Agent 模型' : view === 'vision' ? '选择视觉模型' : view === 'auth' ? '选择登录方式' : view === 'custom' ? (customDraft.id ? '编辑自定义接口' : '添加自定义接口') : `登录 ${targetProvider?.name || ''}`}</h2><p className="text-[11px] text-gray-500">{view === 'model' ? '主模型负责推理和调用工具' : view === 'vision' ? '只显示支持图片输入的已配置模型' : view === 'key' ? (loginAuthType === 'oauth' ? '按官方 OAuth 流程完成登录' : '使用 API Key 登录') : view === 'custom' ? '自定义模型服务配置' : view === 'auth' ? targetProvider?.name : '输入文字可立即筛选'}</p></div>
       </header>
       <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col p-3 md:p-5">
@@ -292,6 +303,6 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
             {(view === 'model' || view === 'vision' ? filteredModels : filteredProviders).length === 0 && <div className="p-10 text-center text-sm text-gray-500">{query ? '没有匹配结果' : view === 'vision' ? '没有支持识图的模型，请先配置模型服务' : view === 'model' ? '没有可用模型，请先登录模型服务' : '没有可用服务'}</div>}
           </div>}
       </main>
-    </div>}
+    </div>)}
   </>;
 };

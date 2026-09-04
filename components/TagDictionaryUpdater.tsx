@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { resetTagDictionaryCache } from '../services/tagDictionary';
 import { getTagUpdateStatus, startTagUpdate, TagUpdatePhase, TagUpdateStatus } from '../services/tagDictionaryUpdater';
+import { CloseButton } from './DesignSystem';
+import { useModalA11y } from './useModalA11y';
 
 interface TagDictionaryUpdaterProps {
   notify: (message: string, type?: 'success' | 'error') => void;
@@ -28,6 +30,8 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
   const [status, setStatus] = useState<TagUpdateStatus | null>(null);
   const [connectionError, setConnectionError] = useState('');
   const appliedResultRef = useRef<string | null>(null);
+  // P2-17：模态焦点管理（焦点移入 / Tab 圈禁 / 关闭后归还）。
+  const dialogRef = useModalA11y<HTMLDivElement>(isOpen);
 
   const loadStatus = async () => {
     try {
@@ -107,15 +111,20 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
 
       {isOpen && (
         <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 p-4" onMouseDown={() => !isRunning && setIsOpen(false)}>
-          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Tag 补全词库"
+            className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-2xl"
+            onMouseDown={event => event.stopPropagation()}
+          >
             <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 px-5 py-4">
               <div>
                 <h2 className="font-bold text-gray-900 dark:text-white">Tag 补全词库</h2>
                 <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Danbooru 中英双语词库</p>
               </div>
-              <button type="button" disabled={isRunning} onClick={() => setIsOpen(false)} className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30" aria-label="关闭">
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+              <CloseButton onClick={() => { if (!isRunning) setIsOpen(false); }} className={isRunning ? 'pointer-events-none opacity-40' : ''} size="sm" />
             </div>
 
             <div className="space-y-4 px-5 py-5">
