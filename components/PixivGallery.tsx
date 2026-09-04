@@ -24,7 +24,7 @@ import { createUuid } from '../services/id';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { NAIParams, User } from '../types';
-import { FilterPill, IconButton, MediaCardShell, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, FilterPill, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ImageTaggerAction } from './ImageTaggerPanel';
@@ -986,8 +986,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
         </div>
       )}
 
-      <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
-        <main ref={scrollRef} onScroll={onScrollRestore} className={`${selected ? 'hidden xl:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
+      <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
+        <main ref={scrollRef} onScroll={onScrollRestore} className={`${selected ? 'hidden lg:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
           {showHistory ? (
             <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
               <span className="font-bold text-gray-700 dark:text-gray-200">本地 Pixiv 浏览足迹 ({historyItems.length} 条)</span>
@@ -1070,13 +1070,10 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 ))}
               </div>
             ) : (
-              <div className="flex min-h-72 flex-col items-center justify-center text-center text-sm text-gray-500">
-                <p className="font-bold">暂无 Pixiv 浏览足迹</p>
-                <p className="mt-1 text-xs">点开作品后将自动记录到此处，方便秒级回溯。</p>
-              </div>
+              <EmptyState className="min-h-72 py-10" icon={<Clock className="h-8 w-8" />} title="暂无 Pixiv 浏览足迹" hint="点开作品后将自动记录到此处，方便秒级回溯。" />
             )
           ) : loading && !items.length ? (
-            <div className="flex min-h-72 items-center justify-center text-sm text-gray-400">正在读取 Pixiv…</div>
+            <PageSpinner label="正在读取 Pixiv…" className="min-h-72" />
           ) : items.length ? (
             imageDisplay.layout === 'masonry' ? (
               <ShortestColumnMasonry
@@ -1092,10 +1089,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
               </div>
             )
           ) : !loading && (
-            <div className="flex min-h-72 flex-col items-center justify-center text-center text-sm text-gray-500">
-              <p className="font-bold">没有找到作品</p>
-              <p className="mt-1 text-xs">请尝试其他关键词、排行榜或关注列表。</p>
-            </div>
+            <EmptyState className="min-h-72 py-10" icon={<Search className="h-8 w-8" />} title="没有找到作品" hint="请尝试其他关键词、排行榜或关注列表。" />
           )}
 
           {!showHistory && nextCursor && (

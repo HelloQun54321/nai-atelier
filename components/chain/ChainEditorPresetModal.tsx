@@ -1,8 +1,8 @@
 import React from 'react';
-import { X } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { PromptChain } from '../../types';
 import { LabPresetImportOptions } from '../../services/labModeTools';
-import { isInternalChainTag } from '../DesignSystem';
+import { CloseButton, isInternalChainTag } from '../DesignSystem';
 import { SmartImage } from '../SmartImage';
 
 export interface ChainEditorPresetModalProps {
@@ -87,9 +87,7 @@ export const ChainEditorPresetModal: React.FC<ChainEditorPresetModalProps> = ({
                                 </span>
                             </button>
                             <span className="relative">
-                                <svg className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
+                                <Info className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-400 transition-colors" />
                                 <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                                     开启后点击预设直接导入，关闭则显示详细选项
                                 </span>
@@ -111,7 +109,7 @@ export const ChainEditorPresetModal: React.FC<ChainEditorPresetModalProps> = ({
                             </button>
                         </div>
 
-                        <button onClick={() => setShowImportPreset(false)} className="mobile-touch absolute right-3 top-3 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 md:static" aria-label="关闭引用预设"><X className="h-[18px] w-[18px] md:h-5 md:w-5" /></button>
+                        <CloseButton onClick={() => setShowImportPreset(false)} label="关闭引用预设" size="sm" className="absolute right-3 top-3 md:static" />
                     </div>
                     <div className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4">
                         {/* Extract all unique tags from the filtered list for this modal */}

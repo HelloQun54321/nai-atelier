@@ -3,6 +3,12 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-09-04
+### 优化:画廊与设计系统一致性收敛
+- DesignSystem 新增共享 CloseButton/BackButton/PageSpinner/EmptyState/FavoriteButton；各画廊与列表的手写 SVG 图标、自绘收藏心形、页面级加载/空态全部收敛到共享组件。
+- 图库详情侧栏断点从 xl 收敛到 lg：768–1279px 平板宽度改为桌面网格+侧栏详情，不再整屏覆盖跳层。
+- AITag 预览图候选源修复：候选列表 memo 化（无关渲染不再重置重试进度），全部失败时显示带重试与原页链接的占位；详情轮询连续 3 轮无推进自动停止。
+- 生成历史卡片抽为 memo 组件，单图加载/收藏只重渲染相关卡片。
+
 ### 修复:应用级事件监听每次渲染反复重挂
 - `nai-agent-ui-preferences`/`nai-agent-navigate` 监听 effect 补依赖数组并经 ref 转发导航；全局 toast 的 `notify` 改为稳定引用，连带消除全局设置等页面的监听重复重挂。
 

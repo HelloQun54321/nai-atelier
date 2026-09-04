@@ -23,7 +23,7 @@ import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
 import { ExternalLink, Filter, FlaskConical, Menu, Package, RefreshCw, Search, Star } from 'lucide-react';
-import { IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { FavoriteButton, IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { ImageTaggerAction } from './ImageTaggerPanel';
@@ -133,31 +133,97 @@ const buildPreviewDetail = (work: AitagWorkSummary): AitagWorkDetail | null => {
   };
 };
 
+/**
+ * 首图候选全部加载失败后的占位：给出「重试」「打开原页」两个出口，避免只留灰块。
+ * - 重试：重置 SmartImage 的 key（连同失败态一并清空），从候选列表第一个重新尝试；
+ * - 打开原页：优先 aitag 原页（带 SPA 视口加载），fallback 到 Pixiv 原页。
+ */
+const AitagPreviewFallback: React.FC<{ work: AitagWorkSummary; onRetry: () => void }> = ({ work, onRetry }) => (
+  // 卡片整体是 role="button"（点击/Enter 打开详情）：占位内的重试钮与原页链接都要拦掉
+  // 键盘/点击冒泡，避免误开详情。原页链接 href 本身可 Tab 聚焦、Enter 在新标签打开。
+  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-100 px-3 dark:bg-gray-800">
+    <span className="text-[11px] text-gray-400">图片加载失败</span>
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={event => { event.stopPropagation(); onRetry(); }}
+        onKeyDown={event => { event.stopPropagation(); }}
+        className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+      >
+        重试
+      </button>
+      <a
+        href={getAitagUrl(work)}
+        target="_blank"
+        rel="noreferrer"
+        onClick={event => event.stopPropagation()}
+        onKeyDown={event => { event.stopPropagation(); }}
+        className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-bold text-indigo-600 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-400"
+      >
+        打开原页
+      </a>
+    </div>
+  </div>
+);
+
 const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDetail; onImageLoad?: (width: number, height: number) => void }> = ({ work, detail, onImageLoad }) => {
-  const candidates = uniqueUrls([
+  // 候选源只由这些标量字段决定：本地/远程封面 URL、首图对象里 local/remote 就绪情况与文件名、
+  // work.id。合成一个值稳定的签名串作 useMemo 依赖——过去每次渲染新建数组 + join 依赖的
+  // useEffect 会在“列表项更新/比例状态变更”等无关重渲染时把 index 重置回 0，
+  // 已加载的图片因此反复重试闪断；现在只有在缓存推进（如首图本地化完成）时才重建候选。
+  const firstImage = work.firstImage;
+  const legacyFirstImage = work.first_image;
+  const detailImage = detail?.images?.[0];
+  const candidatesKey = [
     work.localFirstImageUrl || '',
     work.local_cover_url || '',
-    work.firstImage ? buildAitagImageUrl(work.firstImage) : '',
-    work.first_image ? buildAitagImageUrl(work.first_image) : '',
-    detail?.images?.[0] ? buildAitagImageUrl(detail.images[0]) : '',
+    work.remoteFirstImageUrl || '',
+    work.remote_cover_url || '',
+    firstImage?.local_image_url || '',
+    firstImage?.remote_image_url || '',
+    firstImage?.file_name || '',
+    legacyFirstImage?.local_image_url || '',
+    legacyFirstImage?.file_name || '',
+    detailImage?.local_image_url || '',
+    detailImage?.file_name || '',
+    work.id,
+  ].join('|');
+  // 依赖用上面的标量签名串 candidatesKey 表达；函数体内引用的 work/detail 字段全部被其覆盖，
+  // 不再逐字罗列（保持签名变化即重建的语义）
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const candidates = useMemo(() => uniqueUrls([
+    work.localFirstImageUrl || '',
+    work.local_cover_url || '',
+    firstImage ? buildAitagImageUrl(firstImage) : '',
+    legacyFirstImage ? buildAitagImageUrl(legacyFirstImage) : '',
+    detailImage ? buildAitagImageUrl(detailImage) : '',
     work.remoteFirstImageUrl || '',
     work.remote_cover_url || '',
     buildAitagPreviewUrl(work),
-  ]);
+  ]), [candidatesKey]);
   const [index, setIndex] = useState(0);
+  // 显式重试意图：候选源变化时重置 index；用户点「重试」时把 key 重置以清掉 SmartImage 失败态
+  const [retryKey, setRetryKey] = useState(0);
 
+  // 候选列表（useMemo 身份稳定）真正变化时：当前 index 若已越界（如全部失败显示占位后，
+  // 某候选才完成本地缓存并入列表），回到 0 从头尝试新的最优源；仍在界内则保持不动，
+  // 交给 SmartImage 的 src 变化重置，避免把正在显示的图无谓重载。
   useEffect(() => {
-    setIndex(0);
-  }, [candidates.join('|')]);
+    setIndex(current => (current >= candidates.length ? 0 : current));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidates]);
 
   const src = candidates[index] || '';
 
   if (!src) {
     return <div className="w-full h-full bg-gray-200 dark:bg-gray-800" />;
   }
-
+  if (index >= candidates.length) {
+    return <AitagPreviewFallback work={work} onRetry={() => { setIndex(0); setRetryKey(value => value + 1); }} />;
+  }
   return (
     <SmartImage
+      key={retryKey}
       src={src}
       alt=""
       className="w-full h-full object-cover"
@@ -168,6 +234,7 @@ const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDe
         }
       }}
       onError={() => {
+        // 只在候选内前进：耗尽后不再自增，渲染上面的占位而不是空白
         setIndex(current => Math.min(current + 1, candidates.length));
       }}
     />
@@ -353,27 +420,19 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             <div data-safe-mode-title="true" className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate min-w-0 flex-1">
               {work.title || `#${work.id}`}
             </div>
-            <button
-              type="button"
-              onClick={e => {
-                e.stopPropagation();
-                toggleFavorite(work);
-              }}
-              onKeyDown={e => {
-                e.stopPropagation();
-              }}
-              title={isFavorite ? '取消收藏' : '收藏'}
-              aria-label={isFavorite ? '取消收藏' : '收藏'}
-              className={`flex-shrink-0 w-8 h-8 rounded-full border flex items-center justify-center shadow transition-colors ${
-                isFavorite
-                  ? 'border-rose-400 bg-rose-500 text-white hover:bg-rose-400'
-                  : 'border-white/60 bg-black/30 text-gray-500 dark:text-white/85 hover:bg-black/45 hover:text-gray-800 dark:hover:text-white'
-              }`}
-            >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20.8 4.6c-1.7-1.7-4.5-1.7-6.2 0L12 7.2 9.4 4.6c-1.7-1.7-4.5-1.7-6.2 0s-1.7 4.5 0 6.2L12 19.6l8.8-8.8c1.7-1.7 1.7-4.5 0-6.2z" />
-              </svg>
-            </button>
+            {/* 卡片本身可点（含 Enter 键冒泡打开详情）：用外层 span 拦掉键盘冒泡，
+                收藏按钮的鼠标点击已在 onClick 里 stopPropagation */}
+            <span onKeyDownCapture={e => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
+              <FavoriteButton
+                overlay
+                active={isFavorite}
+                onClick={e => {
+                  e.stopPropagation();
+                  void toggleFavorite(work);
+                }}
+                className="flex-shrink-0"
+              />
+            </span>
           </div>
           <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400 overflow-hidden">
             <span className="truncate">#{work.id}</span>
@@ -792,13 +851,45 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   useEffect(() => {
     if (!allowBackgroundChecks || !selectedId || !selectedDetail || selectedDetail.isPreviewOnly || detailHasFullyCachedImages(selectedDetail)) return;
 
+    // 后台缓存进度签名：对比相邻两次轮询读到的作品缓存字段，判断是否有真实推进。
+    // 只看内容不看对象引用——searchCache 每次返回的都是新对象，引用比较恒为“变化”。
+    const cacheProgressKey = (work?: AitagWorkSummary | null) => {
+      if (!work) return '';
+      return [
+        work.hasFullyCachedImages ? 1 : 0,
+        work.hasCachedDetail ? 1 : 0,
+        work.localFirstImageUrl || '',
+        work.local_cover_url || '',
+        work.firstImage?.local_image_url || '',
+        work.first_image?.local_image_url || '',
+        work.firstImageCachedAt || 0,
+        work.cover_cached_at || 0,
+        work.detailCachedAt || 0,
+      ].join('|');
+    };
+
     let isRefreshing = false;
+    let unchangedRounds = 0;
+    let lastSignature = cacheProgressKey(selectedDetail.work);
+
     const timer = window.setInterval(async () => {
       if (isRefreshing) return;
       isRefreshing = true;
       try {
         const refreshedWork = await refreshSelectedWorkFromCache(selectedId);
-        if (!refreshedWork?.hasFullyCachedImages) return;
+        if (!refreshedWork?.hasFullyCachedImages) {
+          // 尚未完整缓存：对比签名，连续 3 次无变化即停止轮询（后台可能永远完成不了，
+          // 如上游失联的作品组），避免无限拉取缓存状态；有推进则归零继续等待。
+          const signature = cacheProgressKey(refreshedWork);
+          if (signature === lastSignature) {
+            unchangedRounds += 1;
+            if (unchangedRounds >= 3) window.clearInterval(timer);
+          } else {
+            lastSignature = signature;
+            unchangedRounds = 0;
+          }
+          return;
+        }
 
         const detail = await aitagService.getWork(selectedId);
 
@@ -819,6 +910,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         window.clearInterval(timer);
       } catch (e) {
         console.error(e);
+        // 拉取失败同样按“无推进”累计：避免因接口持续异常而无限轮询
+        unchangedRounds += 1;
+        if (unchangedRounds >= 3) window.clearInterval(timer);
       } finally {
         isRefreshing = false;
       }
@@ -1148,11 +1242,11 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         </div>
       </MobileBottomSheet>
 
-      <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selectedWork ? 'xl:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
+      <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selectedWork ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main
           ref={mainScrollRef}
           onScroll={onMainScrollRestore}
-          className={`${selectedWork ? 'hidden xl:block' : 'block'} min-h-0 overflow-y-auto p-4 md:p-6`}
+          className={`${selectedWork ? 'hidden lg:block' : 'block'} min-h-0 overflow-y-auto p-4 md:p-6`}
         >
           {error && (
             <div className={`mb-4 rounded border px-4 py-3 text-sm ${

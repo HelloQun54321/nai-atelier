@@ -13,8 +13,8 @@ import { ImageActivityContext, OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, Layers, ListChecks, LoaderCircle, Pencil, RefreshCw, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
-import { IconButton, ToolbarButton, ToolbarLink, WorkspaceToolbar } from './DesignSystem';
+import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Download, Heart, Layers, ListChecks, LoaderCircle, Pencil, RefreshCw, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { CloseButton, EmptyState, FavoriteButton, IconButton, PageSpinner, ToolbarButton, ToolbarLink, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -63,6 +63,106 @@ const prewarmHistoryThumbnails = async (items: LocalGenItem[]) => {
     await Promise.all(workers);
 };
 
+/**
+ * 单张历史卡的展示比例：真实测量比（加载后纠正错误元数据）→ 有效 params 宽高比 → 默认 832/1216。
+ * 防御 0/负数/NaN/Infinity/缺失；估算列高与卡片实渲染共用同一套逻辑。
+ */
+const resolveHistoryImageRatio = (item: LocalGenItem, measuredRatio?: number) => {
+    if (typeof measuredRatio === 'number' && Number.isFinite(measuredRatio) && measuredRatio > 0) return measuredRatio;
+    const { width, height } = item.params || {};
+    if (typeof width === 'number' && typeof height === 'number' && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) return width / height;
+    return 832 / 1216;
+};
+
+/**
+ * 生成历史卡片（React.memo）：瀑布流/网格大量卡片时避免每张卡片随父级重渲染整块重建。
+ * 纯 props 化：状态（选中/待收藏）以布尔传入，回调都以 item 作第一参（父级稳定 useCallback，
+ * 内容仅随对应状态/集合变化而重建），让 memo 浅比较在绝大多数无关渲染下直接短路。
+ */
+const HistoryCard = React.memo(function HistoryCard({
+    item,
+    measuredRatio,
+    isSelected,
+    selectionMode,
+    isFavoritePending,
+    onToggleSelect,
+    onLongPressSelect,
+    onOpen,
+    onFavorite,
+    onDelete,
+    onImageLoadRatio,
+}: {
+    item: LocalGenItem;
+    /** 已加载测量的真实比例（纠正错误元数据），缺省时卡片用 params/默认比例兜底 */
+    measuredRatio?: number;
+    isSelected: boolean;
+    selectionMode: boolean;
+    isFavoritePending: boolean;
+    onToggleSelect: (itemId: string) => void;
+    onLongPressSelect: (itemId: string) => void;
+    onOpen: (item: LocalGenItem) => void;
+    onFavorite: (item: LocalGenItem, e: React.MouseEvent) => void;
+    onDelete: (item: LocalGenItem, e: React.MouseEvent) => void;
+    onImageLoadRatio: (itemId: string, ratio: number) => void;
+}) {
+    // 卡片自身的手势时间戳放在组件内：长按进入多选，结束时清除计时，避免误触选择。
+    const longPressTimerRef = useRef<number | null>(null);
+    const longPressTriggeredRef = useRef(false);
+
+    // 图片区展示比例：真实测量比 → params → 默认；父级传下来时随真实比例更新（只影响这张卡）
+    const ratio = useMemo(() => resolveHistoryImageRatio(item, measuredRatio), [item, measuredRatio]);
+
+    const createdAt = useMemo(() => new Date(item.createdAt).toLocaleString(), [item.createdAt]);
+
+    return (
+        <div
+            className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border hover:border-indigo-500 transition-colors ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
+            onPointerDown={() => {
+                longPressTriggeredRef.current = false;
+                longPressTimerRef.current = window.setTimeout(() => {
+                    longPressTriggeredRef.current = true;
+                    onLongPressSelect(item.id);
+                }, 550);
+            }}
+            onPointerUp={() => { if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current); }}
+            onPointerCancel={() => { if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current); }}
+            onClick={() => {
+                if (longPressTriggeredRef.current) return;
+                if (selectionMode) onToggleSelect(item.id);
+                else onOpen(item);
+            }}
+        >
+            <div className="mobile-gallery-frame md:aspect-square relative w-full overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': `${ratio}` } as React.CSSProperties}>
+                <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt={`生成于 ${createdAt} 的图片`} className="w-full h-full object-cover" onLoad={event => {
+                    const image = event.currentTarget;
+                    const imageRatio = image.naturalWidth / Math.max(1, image.naturalHeight);
+                    if (Number.isFinite(imageRatio) && imageRatio > 0) onImageLoadRatio(item.id, imageRatio);
+                }} />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                {selectionMode && <div className={`absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-sm font-bold shadow backdrop-blur transition ${isSelected ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/80 bg-black/35 text-transparent'}`}>{isSelected ? '✓' : ''}</div>}
+                {!selectionMode && (isFavoritePending ? (
+                    // 收藏写入中：角上显示小型旋转指示，操作完成后由父级把 pending 置空、还原为心形钮
+                    <span className="pointer-events-none absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-black/45 text-white shadow backdrop-blur"><LoaderCircle className="h-4 w-4 animate-spin" /></span>
+                ) : (
+                    // 阻止 pointerdown 冒泡：不触发卡片的“长按进入多选”手势
+                    <span className="absolute right-2 top-2" onPointerDown={event => event.stopPropagation()}>
+                        <FavoriteButton overlay active={Boolean(item.isFavorite)} onClick={e => onFavorite(item, e)} />
+                    </span>
+                ))}
+                {!selectionMode && <div className="absolute right-2 top-12 hidden opacity-0 transition-opacity group-hover:opacity-100 md:block">
+                    <button onClick={e => onDelete(item, e)} className="rounded-full bg-red-500 p-1.5 text-white shadow hover:bg-red-600" aria-label="删除历史图片" title="删除">
+                        <Trash2 className="h-4 w-4" />
+                    </button>
+                </div>}
+                <div className="absolute bottom-0 left-0 right-0 hidden p-2 bg-gradient-to-t from-black/80 to-transparent text-white text-[10px] md:block md:opacity-0 group-hover:opacity-100 transition-opacity truncate">
+                    {createdAt}
+                </div>
+            </div>
+            <div className="truncate px-2 py-2 text-[11px] text-gray-600 dark:text-gray-300 md:hidden">{createdAt}</div>
+        </div>
+    );
+});
+
 export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, notify, onNavigateToPlayground, onRefreshInspiration }) => {
     const confirmAction = useConfirmDialog();
     const imageDisplay = useMobileImageDisplayPreferences();
@@ -84,8 +184,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [selectionMode, setSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-    const longPressTimerRef = useRef<number | null>(null);
-    const longPressTriggeredRef = useRef(false);
 
     // 分页相关状态
     const [currentPage, setCurrentPage] = useState(1);
@@ -769,70 +867,64 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     }, [items]);
     const selectionFavoritePending = Array.from(selectedIds).some(id => pendingFavoriteIds.has(id));
 
-    // 历史卡比例读取：真实图片比例 → 有效 params 比例 → 默认 832/1216；防御 0/负数/NaN/Infinity/缺失
-    const getHistoryImageRatio = useCallback((item: LocalGenItem) => {
-        const actual = actualImageRatios[item.id];
-        if (Number.isFinite(actual) && actual > 0) return actual;
-        const { width, height } = item.params || {};
-        if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) return width / height;
-        return 832 / 1216;
-    }, [actualImageRatios]);
-
     // 历史卡预计高度：图片区（列宽 / 图片比例）+ 边框 2px + 列间 12px 间距；手机端另计底部时间行。
     const estimateHistoryCardHeight = useCallback(
         (item: LocalGenItem, columnWidth: number) => {
-            const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, getHistoryImageRatio(item));
+            // 估算高度 = 图区（列宽 / 展示比例）+ 手机底部时间行 + 边框 + 列距；与卡片实测共用同一比例解析
+            const ratio = resolveHistoryImageRatio(item, actualImageRatios[item.id]);
+            const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
             return imageHeight + (isMobileViewport ? 34 : 0) + 2 + 12;
         },
-        [isMobileViewport, getHistoryImageRatio],
+        [isMobileViewport, actualImageRatios],
     );
 
+    // 卡片回调全部以 item 作参数、useCallback 保持稳定：某一张图加载完成/收藏状态变化时，
+    // 其余卡片的 memo 浅比较直接短路，只有真正相关的卡片重渲染。
+    const handleToggleSelect = useCallback((itemId: string) => {
+        setSelectedIds(previous => {
+            const next = new Set(previous);
+            next.has(itemId) ? next.delete(itemId) : next.add(itemId);
+            return next;
+        });
+    }, []);
+
+    const handleLongPressSelect = useCallback((itemId: string) => {
+        // 长按进入多选并把当前卡片选中；已处于多选时仅累加选中，不重复开启
+        setSelectionMode(true);
+        setSelectedIds(previous => new Set(previous).add(itemId));
+    }, []);
+
+    const handleOpenHistoryItem = useCallback((item: LocalGenItem) => {
+        setLightbox(item);
+    }, []);
+
+    const handleCardFavorite = useCallback((item: LocalGenItem, event: React.MouseEvent) => {
+        void handleFavorite(item, event);
+    }, [handleFavorite]);
+
+    const handleCardDelete = useCallback((item: LocalGenItem, event: React.MouseEvent) => {
+        void handleDelete(item.id, event);
+    }, [handleDelete]);
+
+    const handleImageLoadRatio = useCallback((itemId: string, ratio: number) => {
+        setActualImageRatios(previous => (previous[itemId] === ratio ? previous : { ...previous, [itemId]: ratio }));
+    }, []);
+
     const renderHistoryCard = (item: LocalGenItem) => (
-        <div
+        <HistoryCard
             key={item.id}
-            className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border hover:border-indigo-500 transition-colors ${selectedIds.has(item.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
-            onPointerDown={() => {
-                longPressTriggeredRef.current = false;
-                longPressTimerRef.current = window.setTimeout(() => {
-                    longPressTriggeredRef.current = true;
-                    setSelectionMode(true);
-                    setSelectedIds(previous => new Set(previous).add(item.id));
-                }, 550);
-            }}
-            onPointerUp={() => { if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current); }}
-            onPointerCancel={() => { if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current); }}
-            onClick={() => {
-                if (longPressTriggeredRef.current) return;
-                if (selectionMode) setSelectedIds(previous => { const next = new Set(previous); next.has(item.id) ? next.delete(item.id) : next.add(item.id); return next; });
-                else setLightbox(item);
-            }}
-        >
-            <div className="mobile-gallery-frame md:aspect-square relative w-full overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': `${getHistoryImageRatio(item)}` } as React.CSSProperties}>
-              <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt={`生成于 ${new Date(item.createdAt).toLocaleString()} 的图片`} className="w-full h-full object-cover"
-                onLoad={event => {
-                  const image = event.currentTarget;
-                  const ratio = image.naturalWidth / Math.max(1, image.naturalHeight);
-                  if (Number.isFinite(ratio) && ratio > 0 && actualImageRatios[item.id] !== ratio) {
-                    setActualImageRatios(previous => (previous[item.id] === ratio ? previous : { ...previous, [item.id]: ratio }));
-                  }
-                }}
-              />
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-              {selectionMode && <div className={`absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-sm font-bold shadow backdrop-blur transition ${selectedIds.has(item.id) ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/80 bg-black/35 text-transparent'}`}>{selectedIds.has(item.id) ? '✓' : ''}</div>}
-              {!selectionMode && <button type="button" onPointerDown={event => event.stopPropagation()} onClick={event => void handleFavorite(item, event)} disabled={pendingFavoriteIds.has(item.id)} title={item.isFavorite ? '取消收藏' : '收藏'} aria-label={item.isFavorite ? '取消收藏' : '收藏'} aria-pressed={Boolean(item.isFavorite)} className={`mobile-size-locked absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border shadow backdrop-blur transition ${item.isFavorite ? 'border-rose-400 bg-rose-500 text-white hover:bg-rose-400' : 'border-white/60 bg-black/45 text-white hover:bg-black/65'} disabled:cursor-wait disabled:opacity-70`}>
-                {pendingFavoriteIds.has(item.id) ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Heart className={`h-4 w-4 ${item.isFavorite ? 'fill-current' : ''}`} />}
-              </button>}
-              {!selectionMode && <div className="absolute right-2 top-12 hidden opacity-0 transition-opacity group-hover:opacity-100 md:block">
-                <button onClick={(e) => handleDelete(item.id, e)} className="rounded-full bg-red-500 p-1.5 text-white shadow hover:bg-red-600" aria-label="删除历史图片" title="删除">
-                    <Trash2 className="h-4 w-4" />
-                </button>
-              </div>}
-              <div className="absolute bottom-0 left-0 right-0 hidden p-2 bg-gradient-to-t from-black/80 to-transparent text-white text-[10px] md:block md:opacity-0 group-hover:opacity-100 transition-opacity truncate">
-                {new Date(item.createdAt).toLocaleString()}
-              </div>
-            </div>
-            <div className="truncate px-2 py-2 text-[11px] text-gray-600 dark:text-gray-300 md:hidden">{new Date(item.createdAt).toLocaleString()}</div>
-        </div>
+            item={item}
+            measuredRatio={actualImageRatios[item.id]}
+            isSelected={selectedIds.has(item.id)}
+            selectionMode={selectionMode}
+            isFavoritePending={pendingFavoriteIds.has(item.id)}
+            onToggleSelect={handleToggleSelect}
+            onLongPressSelect={handleLongPressSelect}
+            onOpen={handleOpenHistoryItem}
+            onFavorite={handleCardFavorite}
+            onDelete={handleCardDelete}
+            onImageLoadRatio={handleImageLoadRatio}
+        />
     );
 
     return (
@@ -1004,16 +1096,14 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                     </div>
                 )}
                 {isLoading ? (
-                    <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                        <RefreshCw className="mb-3 h-8 w-8 animate-spin" />
-                        <p>加载中...</p>
-                    </div>
+                    <PageSpinner label="加载中…" className="h-full" />
                 ) : items.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                        {favoriteOnly ? <Heart className="mb-3 h-10 w-10" /> : <Clock3 className="mb-3 h-10 w-10" />}
-                        <p>{favoriteOnly ? '还没有收藏历史图片' : '暂无生成记录'}</p>
-                        <p className="text-sm mt-2">{favoriteOnly ? '点击图片右上角的爱心即可收藏' : '在实验室中生成的图片会自动保存到历史记录'}</p>
-                    </div>
+                    <EmptyState
+                        className="h-full py-10"
+                        icon={favoriteOnly ? <Heart className="h-8 w-8" /> : <Clock3 className="h-8 w-8" />}
+                        title={favoriteOnly ? '还没有收藏历史图片' : '暂无生成记录'}
+                        hint={favoriteOnly ? '点击图片右上角的爱心即可收藏' : '在实验室中生成的图片会自动保存到历史记录'}
+                    />
                 ) : (
                     <>
                         <div className="space-y-6">
@@ -1083,9 +1173,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">图片详情</h2>
                                 <div className="flex items-center gap-2">
                                     <IconButton label={lightbox.isFavorite ? '取消收藏' : '收藏'} tone={lightbox.isFavorite ? 'favorite' : 'neutral'} onClick={event => void handleFavorite(lightbox, event)} disabled={pendingFavoriteIds.has(lightbox.id)} aria-pressed={Boolean(lightbox.isFavorite)}>{pendingFavoriteIds.has(lightbox.id) ? <LoaderCircle className="animate-spin" /> : <Heart className={lightbox.isFavorite ? 'fill-current' : ''} />}</IconButton>
-                                    <button onClick={closeLightbox} aria-label="关闭图片详情" className="mobile-touch text-gray-500 hover:text-gray-900 dark:hover:text-white p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                    </button>
+                                    <CloseButton onClick={closeLightbox} label="关闭图片详情" size="sm" className="!border-0 !bg-transparent !shadow-none hover:!bg-gray-100 hover:!text-gray-900 dark:hover:!bg-gray-800 dark:hover:!text-white" />
                                 </div>
                             </div>
 
@@ -1130,7 +1218,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                     </div>
                                 </div>
                                 <ToolbarLink href={lightbox.imageUrl} download={getDownloadFilename()} className="w-full">
-                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                    <Download />
                                     下载原图
                                 </ToolbarLink>
                                 <ToolbarButton tone="danger" className="mobile-touch w-full md:hidden" onClick={event => void handleDelete(lightbox.id, event)}>删除这张历史图片</ToolbarButton>

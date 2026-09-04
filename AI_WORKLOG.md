@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-04
+- **DeepSeek V4 Flash (Oh My Pi 子代理 FixGalleries)**：画廊与设计系统收敛——DesignSystem 新增五个共享组件，手写 SVG/自绘收藏/空态加载全部归一，详情侧栏断点 xl→lg，AITag 预览候选 memo 与失败占位，GenHistory 卡片 memo 化（refactor: unify gallery UI atoms and detail breakpoints, fix aitag preview fallback）。
 - **Kimi K3 (Oh My Pi)**：修复应用级事件监听每渲染重挂（补依赖数组 + ref 转发导航），notify 改稳定引用消除下游重复订阅（fix: stabilize app-level event listeners and notify callback identity）。
 - **Kimi K3 (Oh My Pi)**：修复编辑器生成生命周期——放弃离开真实清除工作区草稿并跳过自动补封面、恢复草稿如实标记未保存、流式中断需确认才重发防重复扣费、生成途中离开时历史仍完整落库（fix: honest discard semantics, guarded stream fallback, and unmount-safe generation in lab editor）。
 - **DeepSeek V4 Flash (Oh My Pi 子代理)**：角色库生成预览与画师库实装测试接入与实验室同源的费用估算与确认（预算用尽/同步异常红色警示），批量任务入队时一次性确认总耗（fix: require cost confirmation for character and artist preview generation）。

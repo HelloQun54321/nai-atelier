@@ -6,8 +6,8 @@ import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { SmartImage } from './SmartImage';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Copy, EyeOff, Filter, FolderUp, Heart, Menu, Plus, RefreshCw, Trash2 } from 'lucide-react';
-import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isInternalChainTag, isUntestedChain } from './DesignSystem';
+import { Copy, EyeOff, Filter, FolderUp, Heart, Image, Menu, Plus, RefreshCw, Trash2, User } from 'lucide-react';
+import { FavoriteButton, IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isInternalChainTag, isUntestedChain } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
@@ -359,9 +359,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           ) : (
               <div className="text-gray-400 dark:text-gray-700">
                    {type === 'character' ? (
-                      <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                      <User className="h-12 w-12" strokeWidth={1.5} />
                    ) : (
-                      <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                      <Image className="h-12 w-12" strokeWidth={1.5} />
                    )}
               </div>
           )}
@@ -371,20 +371,12 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         <div className="flex items-center justify-between">
           <h3 data-safe-mode-title="true" className="w-full truncate pr-1 text-sm font-bold text-gray-900 dark:text-gray-100 md:pr-2" title={chain.name}>{chain.name}</h3>
           <span className="ml-1 flex-shrink-0 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300" title="生成模型">{getNaiModelDisplayLabel(chain.params?.model)}</span>
-          <button
-            type="button"
+          <FavoriteButton
+            active={favorites.has(chain.id)}
             onClick={(e) => toggleFav(chain.id, e)}
-            className={`mobile-touch ml-1 flex translate-x-1 flex-shrink-0 items-center justify-center rounded-full p-0 ${
-              favorites.has(chain.id)
-                ? 'text-rose-500'
-                : 'text-gray-300 hover:text-rose-400 dark:text-gray-500 dark:hover:text-rose-400'
-            }`}
-            title={favorites.has(chain.id) ? '取消收藏' : '收藏该串'}
-          >
-            <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill={favorites.has(chain.id) ? 'currentColor' : 'none'} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78Z" />
-            </svg>
-          </button>
+            label={favorites.has(chain.id) ? '取消收藏' : '收藏该串'}
+            className="ml-1 flex-shrink-0"
+          />
         </div>
       </div>
     </div>

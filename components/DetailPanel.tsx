@@ -1,11 +1,12 @@
 import React from 'react';
-import { IconButton } from './DesignSystem';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { BackButton, CloseButton, IconButton } from './DesignSystem';
 
 /**
- * 图库详情层共享组件：统一"移动端全屏覆盖 → xl 桌面右侧栏"的面板骨架。
+ * 图库详情层共享组件：统一"移动端/平板全屏覆盖 → lg 桌面右侧栏"的面板骨架。
  * 规范（各图库详情页一律遵守，见 docs/plans 统一方案）：
- * - 断点：xl(1280px) 起变侧栏；移动/平板为 fixed 覆盖层（配 aitag-split 网格）。
- * - 头部：h-14 固定高、底边框；返回钮仅在覆盖形态显示（xl:hidden）。
+ * - 断点：lg(1024px) 起变侧栏；<1024px（手机与平板竖屏/窄窗口）为 fixed 覆盖层（配 aitag-split 网格）。
+ * - 头部：h-14 固定高、底边框；返回钮仅在覆盖形态显示（lg:hidden）。
  * - 图片容器：圆角 2xl、max-h 62vh 基准（DetailImageStage）。
  * - 操作按钮一律使用 DesignSystem 的 ToolbarButton/ToolbarLink/IconButton。
  */
@@ -30,18 +31,18 @@ interface DetailSidePanelProps {
 export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, sensitiveTitle = false, subInfo, onClose, onBack, bodyRef, onBodyScroll, children }) => (
   <aside
     data-safe-mode-work={sensitiveTitle ? 'true' : undefined}
-    className={`aitag-detail-panel ${open ? 'aitag-detail-panel--open flex' : 'aitag-detail-panel--closed hidden'} fixed inset-0 z-[1100] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 xl:static xl:z-auto xl:border-l`}
+    className={`aitag-detail-panel ${open ? 'aitag-detail-panel--open flex' : 'aitag-detail-panel--closed hidden'} fixed inset-0 z-[1100] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:static lg:z-auto lg:border-l`}
     aria-label={title}
   >
     <header className="flex h-14 flex-none items-center justify-between gap-2 border-b border-gray-200 px-4 dark:border-gray-800">
       <div className="flex min-w-0 items-center gap-2">
-        {onBack && <IconButton label="返回" onClick={onBack} className="mobile-touch aitag-detail-back xl:hidden"><DetailBackIcon /></IconButton>}
+        {onBack && <BackButton onClick={onBack} className="mobile-touch aitag-detail-back lg:hidden" />}
         <div className="min-w-0">
           <p data-safe-mode-title={sensitiveTitle ? 'true' : undefined} className="truncate text-sm font-bold">{title}</p>
           {subInfo && <p className="truncate text-[10px] text-gray-500 dark:text-gray-400">{subInfo}</p>}
         </div>
       </div>
-      <IconButton label="关闭" onClick={onClose} className="hidden xl:inline-flex"><DetailCloseIcon /></IconButton>
+      <CloseButton onClick={onClose} className="hidden lg:inline-flex" />
     </header>
     <div ref={bodyRef} onScroll={onBodyScroll} className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
   </aside>
@@ -63,9 +64,9 @@ export const DetailImageStage: React.FC<DetailImageStageProps> = ({ pager, child
     <div className="overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{children}</div>
     {pager && pager.count > 1 && (
       <div className="flex items-center justify-center gap-3">
-        <IconButton label="上一页" disabled={pager.page <= 0} onClick={pager.onPrev}><DetailPrevIcon /></IconButton>
+        <IconButton label="上一页" disabled={pager.page <= 0} onClick={pager.onPrev}><ChevronLeft /></IconButton>
         <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{pager.page + 1} / {pager.count}</span>
-        <IconButton label="下一页" disabled={pager.page >= pager.count - 1} onClick={pager.onNext}><DetailNextIcon /></IconButton>
+        <IconButton label="下一页" disabled={pager.page >= pager.count - 1} onClick={pager.onNext}><ChevronRight /></IconButton>
       </div>
     )}
   </div>
@@ -92,18 +93,4 @@ export const TagChipGroup: React.FC<{ chips: TagChipDescriptor[] }> = ({ chips }
   <div className="flex flex-wrap gap-1.5">
     {chips.map(chip => <TagChip key={chip.label} {...chip} />)}
   </div>
-);
-
-/** 移动端覆盖形态返回用的箭头图标（与各页现用 lucide ArrowLeft 同形）。 */
-const DetailBackIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></svg>
-);
-const DetailCloseIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-);
-const DetailPrevIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
-);
-const DetailNextIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
 );

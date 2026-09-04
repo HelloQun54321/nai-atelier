@@ -7,7 +7,7 @@ import { extractMetadata, parseNovelAIMetadata } from '../services/metadataServi
 import { createUuid } from '../services/id';
 import { normalizeInspirationTags, sourceLabel } from '../services/inspirationUtils';
 import { useConfirmDialog } from './ConfirmDialog';
-import { IconButton, MediaCardShell, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, IconButton, MediaCardShell, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { SmartImage } from './SmartImage';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
@@ -261,7 +261,15 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
               <button type="button" onClick={() => setDetail(item)} className="min-w-0 flex-1 p-3 text-left"><div className="flex items-start gap-2"><h3 data-safe-mode-title="true" className="min-w-0 flex-1 truncate text-sm font-black text-gray-950 dark:text-white">{item.title}</h3>{(item.rating || 0) > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-amber-500"><Star className="h-3 w-3 fill-current" />{item.rating}</span>}</div>{item.notes ? <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-gray-500 dark:text-gray-400">{item.notes}</p> : <p className="mt-1 truncate font-mono text-[10px] text-gray-400">{item.prompt || '尚未填写提示词'}</p>}{(item.tags || []).length > 0 && <div className="mt-2 flex gap-1 overflow-hidden">{item.tags?.slice(0, 3).map(tag => <span key={tag} className="max-w-24 truncate rounded-md bg-gray-100 px-1.5 py-0.5 text-[9px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">#{tag}</span>)}{(item.tags?.length || 0) > 3 && <span className="text-[9px] text-gray-400">+{(item.tags?.length || 0) - 3}</span>}</div>}<div className="mt-2 flex items-center justify-between text-[10px] text-gray-400"><span>{boardNameById.get(item.boardId || '') || '未整理'}</span><span>使用 {item.useCount || 0} 次</span></div></button>
             </MediaCardShell>;
           })}
-        </div> : <div className="flex min-h-[45vh] flex-col items-center justify-center px-6 text-center"><div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-indigo-50 text-indigo-500 dark:bg-indigo-950/40"><Sparkles className="h-8 w-8" /></div><h3 className="mt-4 text-lg font-black text-gray-900 dark:text-white">这里还没有匹配的灵感</h3><p className="mt-2 max-w-sm text-sm text-gray-500">从生成历史快速收藏，再在这里补充板、标签和备注；也可以直接上传参考图。</p><button type="button" onClick={() => setUploadOpen(true)} className="mt-5 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white">加入第一条灵感</button></div>}
+        </div> : (
+          <EmptyState
+            className="min-h-[45vh] px-6"
+            icon={<Sparkles className="h-8 w-8" />}
+            title="这里还没有匹配的灵感"
+            hint="从生成历史快速收藏，再在这里补充板、标签和备注；也可以直接上传参考图。"
+            action={<button type="button" onClick={() => setUploadOpen(true)} className="mobile-touch rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white">加入第一条灵感</button>}
+          />
+        )}
       </main>
     </div>
 
