@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PromptChain } from '../types';
 import { generateImage } from '../services/naiService';
+import { api } from '../services/api';
 import { db } from '../services/dbService';
 import { compilePrompt } from '../services/promptUtils';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
@@ -626,6 +627,12 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       const negative = chain?.negativePrompt || 'lowres, bad anatomy, bad hands, text, watermark, multiple views';
       const params = chain?.params || DEFAULT_PARAMS;
       const result = await generateImage(apiKey, prompt, negative, params);
+      // generateImage 返回的是会话级 blob: URL，必须先转存为持久资产再写库，
+      // 否则重启后封面失效（数据库只保存 /api/assets/covers/... 地址）。
+      const extension = result.blob.type === 'image/jpeg' ? 'jpg' : (result.blob.type.split('/')[1] || 'png');
+      const file = new File([result.blob], `character-cover.${extension}`, { type: result.blob.type });
+      const upload = await api.uploadFile(file, 'covers');
+      URL.revokeObjectURL(result.image);
       let chainId = chain?.id;
       if (!chainId) {
         chainId = await db.createChain(card.chinese || card.tagName || card.name, `角色 Tag：${card.tagName}`, undefined, 'character');
@@ -637,7 +644,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
           params: DEFAULT_PARAMS,
         });
       }
-      await db.updateChain(chainId, { previewImage: result.image });
+      await db.updateChain(chainId, { previewImage: upload.url });
       await onRefresh();
       notify('角色预览已生成并保存到本地');
     } catch (error) {

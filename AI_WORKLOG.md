@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-09-04
+- **Kimi K3 (Oh My Pi)**：修复角色库「生成预览」把会话级 blob: URL 写入数据库封面导致重启后失效的缺陷，改为先上传持久资产再落库，并在 dbService 读写边界统一拦截 blob: 封面（fix: persist character preview cover as uploaded asset instead of session blob URL）。
+
 ## 2026-09-02
 - **Codex (GPT-5)**：提交画板测试清理，移除已不再适用的右键拖动交互测试并保留其余回归覆盖（test: remove obsolete canvas pan interaction test）。
 - **Codex (GPT-5)**：执行全仓 Ponytail 过度工程审计，删除个人模式死日志调用、未使用状态与导出、空 Worker Pixiv 路由及无效元数据构造，保留本地数据与兼容边界（refactor: remove personal-mode dead code）。

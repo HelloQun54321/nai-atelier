@@ -2,6 +2,16 @@
 import { PromptChain, Artist, Inspiration, InspirationBoard, User, ChainType } from '../types';
 import { api } from './api';
 
+/**
+ * blob: URL 只在创建它的页面会话内有效，落库后重启即失效。
+ * 历史缺陷曾把会话级 blob: 封面直接写入数据库；读取与写入两侧统一拦截：
+ * 读取时视为无封面，写入时直接丢弃，防止再次出现“保存成功但刷新后封面空白”。
+ */
+const isSessionOnlyUrl = (url: unknown): url is string => typeof url === 'string' && url.startsWith('blob:');
+
+const sanitizeChain = <T extends PromptChain>(chain: T): T =>
+  isSessionOnlyUrl(chain.previewImage) ? { ...chain, previewImage: undefined } : chain;
+
 class DBService {
   // Personal-mode local owner metadata.
   async getMe(): Promise<User> {
@@ -21,7 +31,8 @@ class DBService {
 
   // --- Chains ---
   async getAllChains(): Promise<PromptChain[]> {
-    return await api.get('/chains');
+    const chains: PromptChain[] = await api.get('/chains');
+    return chains.map(sanitizeChain);
   }
 
   async createChain(name: string, description: string, copyFrom?: PromptChain, type: ChainType = 'style'): Promise<string> {
@@ -31,7 +42,7 @@ class DBService {
       payload.negativePrompt = copyFrom.negativePrompt;
       payload.modules = copyFrom.modules;
       payload.params = copyFrom.params;
-      payload.previewImage = copyFrom.previewImage;
+      payload.previewImage = isSessionOnlyUrl(copyFrom.previewImage) ? undefined : copyFrom.previewImage;
       // Don't copy type if it's explicitly passed, otherwise assume same type
       if (!type && copyFrom.type) payload.type = copyFrom.type;
 
@@ -54,6 +65,7 @@ class DBService {
   }
 
   async updateChain(id: string, updates: Partial<PromptChain>): Promise<void> {
+    if (isSessionOnlyUrl(updates.previewImage)) delete updates.previewImage;
     await api.put(`/chains/${id}`, updates);
   }
 
