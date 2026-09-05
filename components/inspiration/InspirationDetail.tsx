@@ -4,11 +4,11 @@ import {
   Copy,
   Download,
   ExternalLink,
+  FlaskConical,
   ImagePlus,
   Palette,
   Pencil,
   Pin,
-  Play,
   Plus,
   Sparkles,
   UserRound,
@@ -553,124 +553,134 @@ export const InspirationDetail: React.FC<Props> = ({
             )}
           </div>
 
-          {/* 底部单行操作条：导入实验室（带底图模式） + 提取资产 + 原图下载 */}
-          <footer className="flex-none border-t border-gray-200 p-3 dark:border-gray-800">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                {/* 导入实验室（带底图模式分流） */}
-                <div className="relative inline-flex rounded-xl bg-indigo-600 shadow-sm shadow-indigo-600/20">
-                  <button
-                    type="button"
-                    disabled={Boolean(busy)}
-                    onClick={() => void importToPlayground()}
-                    className="mobile-touch flex items-center justify-center gap-1.5 rounded-l-xl px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-500 whitespace-nowrap"
-                  >
-                    <Play className="h-3.5 w-3.5 fill-current" />
-                    导入实验室
-                  </button>
-                  <button
-                    type="button"
-                    disabled={Boolean(busy)}
-                    onClick={() => { setLabMenuOpen(!labMenuOpen); setAssetMenuOpen(false); }}
-                    aria-label="更多底图模式"
-                    className="mobile-touch flex items-center justify-center border-l border-indigo-500/60 px-2 py-2 text-white hover:bg-indigo-500 rounded-r-xl"
-                  >
-                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${labMenuOpen ? 'rotate-180' : ''}`} />
-                  </button>
+          {/* 底部单行操作条：主行动自适应撑开（导入实验室 + 底图模式） + 提取资产 + 原图下载 */}
+          <footer className="flex-none border-t border-gray-200 p-3.5 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/60 backdrop-blur-sm">
+            <div className="flex items-center gap-2.5">
+              {/* 导入实验室（带底图模式分流，自适应撑开左侧，消除大面积留白） */}
+              <div className="relative flex-1 min-w-0 flex h-10 rounded-xl bg-indigo-600 shadow-sm shadow-indigo-600/20 hover:bg-indigo-500 transition-colors">
+                <button
+                  type="button"
+                  disabled={Boolean(busy)}
+                  onClick={() => void importToPlayground()}
+                  className="mobile-touch flex flex-1 min-w-0 items-center justify-center gap-2 px-3.5 text-xs font-bold text-white whitespace-nowrap"
+                >
+                  <FlaskConical className="h-4 w-4 shrink-0" />
+                  <span className="truncate">导入实验室</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(busy)}
+                  onClick={() => { setLabMenuOpen(!labMenuOpen); setAssetMenuOpen(false); }}
+                  aria-label="更多底图模式"
+                  title="选择导入模式"
+                  className="mobile-touch flex items-center justify-center px-3 text-white/80 hover:text-white hover:bg-black/15 border-l border-white/15 transition-colors rounded-r-xl"
+                >
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${labMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
 
-                  {labMenuOpen && (
-                    <>
-                      <div className="fixed inset-0 z-20" onClick={() => setLabMenuOpen(false)} />
-                      <div className="absolute bottom-12 left-0 z-30 w-48 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                        <button
-                          type="button"
-                          disabled={Boolean(busy)}
-                          onClick={() => { setLabMenuOpen(false); void importAsBaseImage('image-to-image'); }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                        >
-                          <ImagePlus className="h-3.5 w-3.5 text-indigo-500" />
-                          底图：图生图
-                        </button>
-                        <button
-                          type="button"
-                          disabled={Boolean(busy)}
-                          onClick={() => { setLabMenuOpen(false); void importAsBaseImage('inpaint'); }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                        >
-                          <Wand2 className="h-3.5 w-3.5 text-indigo-500" />
-                          底图：局部重绘
-                        </button>
-                        <button
-                          type="button"
-                          disabled={Boolean(busy)}
-                          onClick={() => { setLabMenuOpen(false); void importAsBaseImage('outpaint'); }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5 text-indigo-500" />
-                          底图：扩图
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
+                {labMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-20" onClick={() => setLabMenuOpen(false)} />
+                    <div className="absolute bottom-12 left-0 z-30 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                      <button
+                        type="button"
+                        disabled={Boolean(busy)}
+                        onClick={() => { setLabMenuOpen(false); void importToPlayground(); }}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold text-gray-800 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+                      >
+                        <FlaskConical className="h-3.5 w-3.5 text-indigo-500" />
+                        完整导入（文生图）
+                      </button>
+                      <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+                      <button
+                        type="button"
+                        disabled={Boolean(busy)}
+                        onClick={() => { setLabMenuOpen(false); void importAsBaseImage('image-to-image'); }}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                      >
+                        <ImagePlus className="h-3.5 w-3.5 text-indigo-500" />
+                        底图：图生图
+                      </button>
+                      <button
+                        type="button"
+                        disabled={Boolean(busy)}
+                        onClick={() => { setLabMenuOpen(false); void importAsBaseImage('inpaint'); }}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                      >
+                        <Wand2 className="h-3.5 w-3.5 text-indigo-500" />
+                        底图：局部重绘
+                      </button>
+                      <button
+                        type="button"
+                        disabled={Boolean(busy)}
+                        onClick={() => { setLabMenuOpen(false); void importAsBaseImage('outpaint'); }}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5 text-indigo-500" />
+                        底图：扩图
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
 
-                {/* 提取资产 */}
-                <div className="relative">
-                  <button
-                    type="button"
-                    disabled={Boolean(busy)}
-                    onClick={() => { setAssetMenuOpen(!assetMenuOpen); setLabMenuOpen(false); }}
-                    className="mobile-touch flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 whitespace-nowrap"
-                  >
-                    <Sparkles className="h-3.5 w-3.5 text-pink-500" />
-                    提取资产
-                    <ChevronDown className={`h-3 w-3 text-gray-400 transition-transform ${assetMenuOpen ? 'rotate-180' : ''}`} />
-                  </button>
+              {/* 提取资产 */}
+              <div className="relative flex-none">
+                <button
+                  type="button"
+                  disabled={Boolean(busy)}
+                  onClick={() => { setAssetMenuOpen(!assetMenuOpen); setLabMenuOpen(false); }}
+                  className="mobile-touch flex h-10 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3.5 text-xs font-bold text-gray-700 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-700 dark:hover:bg-gray-800/80 whitespace-nowrap transition-colors"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400" />
+                  提取资产
+                  <ChevronDown className={`h-3 w-3 text-gray-400 transition-transform ${assetMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
 
-                  {assetMenuOpen && (
-                    <>
-                      <div className="fixed inset-0 z-20" onClick={() => setAssetMenuOpen(false)} />
-                      <div className="absolute bottom-12 left-0 z-30 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                        <button
-                          type="button"
-                          disabled={!onCreateArtistChain || Boolean(busy)}
-                          onClick={() => { setAssetMenuOpen(false); void createArtistChain(); }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800"
-                        >
-                          <Palette className="h-3.5 w-3.5 text-violet-500" />
-                          创建风格串
-                        </button>
-                        <button
-                          type="button"
-                          disabled={Boolean(busy)}
-                          onClick={() => { setAssetMenuOpen(false); void createAsset('character'); }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                        >
-                          <UserRound className="h-3.5 w-3.5 text-amber-500" />
-                          创建角色参考
-                        </button>
-                        <button
-                          type="button"
-                          disabled={Boolean(busy)}
-                          onClick={() => { setAssetMenuOpen(false); void createAsset('vibe'); }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                        >
-                          <Sparkles className="h-3.5 w-3.5 text-pink-500" />
-                          创建 Vibe
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
+                {assetMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-20" onClick={() => setAssetMenuOpen(false)} />
+                    <div className="absolute bottom-12 right-0 z-30 w-48 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                      <button
+                        type="button"
+                        disabled={!onCreateArtistChain || Boolean(busy)}
+                        onClick={() => { setAssetMenuOpen(false); void createArtistChain(); }}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800"
+                      >
+                        <Palette className="h-3.5 w-3.5 text-violet-500" />
+                        创建风格串
+                      </button>
+                      <button
+                        type="button"
+                        disabled={Boolean(busy)}
+                        onClick={() => { setAssetMenuOpen(false); void createAsset('character'); }}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
+                      >
+                        <UserRound className="h-3.5 w-3.5 text-amber-500" />
+                        创建角色参考
+                      </button>
+                      <button
+                        type="button"
+                        disabled={Boolean(busy)}
+                        onClick={() => { setAssetMenuOpen(false); void createAsset('vibe'); }}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
+                      >
+                        <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
+                        创建 Vibe
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* 原图下载 */}
-              <div className="flex flex-none items-center gap-1.5">
+              <div className="flex flex-none items-center">
                 <a
                   href={draft.imageUrl}
                   download={`${draft.title || 'inspiration'}.png`}
                   title="下载原图"
-                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 text-gray-500 transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+                  aria-label="下载原图"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 text-gray-500 transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-800 dark:text-gray-400 dark:hover:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-white"
                 >
                   <Download className="h-4 w-4" />
                 </a>
