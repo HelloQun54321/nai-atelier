@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Clock3, Contrast, Eraser, ImagePlus, Images, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
-import { ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem, NAIParams } from '../types';
+import { Clock3, Contrast, Eraser, ImagePlus, Images, Lightbulb, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
+import { ImageEditCanvasExpansion, ImageEditOperation, Inspiration, LabImageEditDraft, LocalGenItem, NAIParams } from '../types';
 import { DEFAULT_LAB_PAGE_LAYOUTS, LabPageLayout } from '../services/appearancePreferences';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
@@ -8,6 +8,7 @@ import { calculateOutpaintTargetExpansion, ImageEditNormalizationMode, OUTPAINT_
 import { ChainEditorParams } from './ChainEditorParams';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { HistoryImagePicker } from './HistoryImagePicker';
+import { InspirationImagePicker } from './InspirationImagePicker';
 import { ImageEditCanvas, ImageEditCanvasProps } from './ImageEditCanvas';
 import { LabModuleSection } from './LabModuleSection';
 import { OutpaintCanvasStage } from './OutpaintCanvasStage';
@@ -45,8 +46,8 @@ interface ImageEditControlsProps {
   onPromptSource: (source: LabImageEditDraft['promptSource']) => void;
   onDraftChange: (patch: Partial<LabImageEditDraft> & { maskData?: string }) => void;
   onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  /** importParams：是否同时载入该图的提示词与参数（历史选择器开关；generated 恒为 false）。 */
-  onSelectImageSource: (item: LocalGenItem, source: 'generated' | 'history', importParams?: boolean) => void;
+  /** importParams：是否同时载入该图的提示词与参数（历史/灵感选择器开关；generated 恒为 false）。 */
+  onSelectImageSource: (item: LocalGenItem | Inspiration, source: 'generated' | 'history' | 'inspiration', importParams?: boolean) => void;
   onStrengthChange: (value: number) => void;
   onNoiseChange: (value: number) => void;
   onBrushSizeChange: (value: number) => void;
@@ -75,6 +76,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   onMinimumContextAreaChange, onToolChange, manualMaskEditing = false, onManualMaskEditingChange = () => undefined, onClearMask, onInvertMask, onUndo, onRedo, onExpansionChange, onApplyOutpaint, onResetFocusedRect = () => undefined, normalization = null, onNormalize = () => undefined,
 }) => {
   const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
+  const [inspirationPickerOpen, setInspirationPickerOpen] = useState(false);
   const [selectedRatioId, setSelectedRatioId] = useState<string>('16:9');
 
   const runtime = useNaiRuntime();
@@ -127,14 +129,15 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
 
       <LabModuleSection moduleId="baseImage" label="底图与导入" order={getModuleOrder(layout, 'baseImage')} defaultCollapsed={isModuleCollapsed(layout, 'baseImage')}>
         <section className="space-y-3">
-          <div className="mb-3 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100">底图来源</label><span className="truncate text-micro text-gray-400">{draft.baseImageSource === 'history' ? '历史图片' : draft.baseImageSource === 'generated' ? '文生图结果' : draft.baseImageSource === 'upload' ? '本地上传' : '尚未选择'}</span></div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="mb-3 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100">底图来源</label><span className="truncate text-micro text-gray-400">{draft.baseImageSource === 'history' ? '历史图片' : draft.baseImageSource === 'inspiration' ? '灵感库' : draft.baseImageSource === 'generated' ? '文生图结果' : draft.baseImageSource === 'upload' ? '本地上传' : '尚未选择'}</span></div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onFileChange} />
             <button disabled={isBusy} type="button" onClick={() => fileInputRef.current?.click()} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><ImagePlus className="h-4 w-4" />上传图片</button>
             <button disabled={isBusy || !latestTextToImageItem} type="button" onClick={() => latestTextToImageItem && onSelectImageSource(latestTextToImageItem, 'generated')} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" title={latestTextToImageItem ? '使用文生图最近一次生成结果' : '当前没有可用的文生图结果'}><Images className="h-4 w-4" />文生图最新</button>
             <button disabled={isBusy} type="button" onClick={() => setHistoryPickerOpen(true)} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><Clock3 className="h-4 w-4" />选择历史图片</button>
+            <button disabled={isBusy} type="button" onClick={() => setInspirationPickerOpen(true)} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><Lightbulb className="h-4 w-4" />选择灵感图片</button>
           </div>
-          <div className="mt-2 text-meta text-gray-500 dark:text-gray-400">载入底图默认保留当前提示词与参数；从历史选择器勾选「同时导入该图参数」才会载入该图配置。</div>
+          <div className="mt-2 text-meta text-gray-500 dark:text-gray-400">载入底图默认保留当前提示词与参数；从历史或灵感选择器勾选「同时导入该图参数」才会载入对应配置。</div>
           {operation === 'image-to-image' ? <>
             {baseImagePreview ? (
               <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
@@ -147,7 +150,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-white/70 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-400">图生图不需要绘制蒙版；请先上传、选择文生图最新结果或历史图片作为底图。</div>
+              <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-white/70 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-400">图生图不需要绘制蒙版；请先上传、选择文生图最新结果、历史图片或灵感图片作为底图。</div>
             )}
             <div className="hidden" aria-hidden="true"><canvas ref={canvasProps.imageCanvasRef} /></div>
           </> : operation === 'outpaint' && !manualMaskEditing ? (
@@ -406,6 +409,14 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
     onSelect={(item, importParams) => {
       onSelectImageSource(item, 'history', importParams);
       setHistoryPickerOpen(false);
+    }}
+  />
+  <InspirationImagePicker
+    open={inspirationPickerOpen}
+    onClose={() => setInspirationPickerOpen(false)}
+    onSelect={(item, importParams) => {
+      onSelectImageSource(item, 'inspiration', importParams);
+      setInspirationPickerOpen(false);
     }}
   />
   </>;

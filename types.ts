@@ -143,7 +143,7 @@ export interface ImageEditCanvasExpansion {
 export interface ImageEditMetadata {
   operation: ImageEditOperation;
   parentHistoryId?: string;
-  baseImageSource?: 'generated' | 'history' | 'upload';
+  baseImageSource?: 'generated' | 'history' | 'upload' | 'inspiration';
   strength?: number;
   noise?: number;
   /** 旧版本把完整蒙版 Base64 直接写进历史；新记录只通过独立资产读取。 */
@@ -171,7 +171,7 @@ export interface LabImageEditDraft {
   negativePrompt: string;
   params: NAIParams;
   baseImageRef?: string;
-  baseImageSource?: 'generated' | 'history' | 'upload';
+  baseImageSource?: 'generated' | 'history' | 'upload' | 'inspiration';
   parentHistoryId?: string;
   maskRef?: string;
   strength: number;

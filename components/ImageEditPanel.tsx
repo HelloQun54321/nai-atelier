@@ -12,7 +12,7 @@ export interface ImageEditRequest {
   canvasWidth: number;
   canvasHeight: number;
   parentHistoryId?: string;
-  baseImageSource?: 'generated' | 'history' | 'upload';
+  baseImageSource?: 'generated' | 'history' | 'upload' | 'inspiration';
   mask?: string;
   strength: number;
   noise: number;
@@ -45,7 +45,7 @@ interface ImageEditPanelProps {
   onNegativePromptChange: (value: string) => void;
   onPromptSource: (source: LabImageEditDraft['promptSource']) => void;
   onDraftChange: (patch: Partial<LabImageEditDraft> & { maskData?: string }) => void;
-  onBaseImageChange: (dataUrl: string, source: 'generated' | 'history' | 'upload', parentHistoryId?: string, meta?: { prompt?: string; negativePrompt?: string; params?: import('../types').NAIParams }) => void;
+  onBaseImageChange: (dataUrl: string, source: 'generated' | 'history' | 'upload' | 'inspiration', parentHistoryId?: string, meta?: { prompt?: string; negativePrompt?: string; params?: import('../types').NAIParams }) => void;
   onCanvasChange: (imageData: string, maskData?: string) => void;
   onGenerate: (request: ImageEditRequest) => Promise<void>;
   latestTextToImageItem?: LocalGenItem;
@@ -849,7 +849,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       image: canvasToDataUrl(imageCanvas),
       canvasWidth: imageCanvas.width,
       canvasHeight: imageCanvas.height,
-      parentHistoryId: draft.baseImageSource === 'upload' ? undefined : draft.parentHistoryId,
+      parentHistoryId: draft.baseImageSource === 'upload' || draft.baseImageSource === 'inspiration' ? undefined : draft.parentHistoryId,
       baseImageSource: draft.baseImageSource,
       mask: operation === 'image-to-image' ? undefined : canvasToDataUrl(maskCanvas!),
       strength,
@@ -923,7 +923,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         onPromptSource={onPromptSource}
         onDraftChange={onDraftChange}
         onFileChange={handleUpload}
-        onSelectImageSource={(item, source, importParams) => onBaseImageChange(item.imageUrl, source, item.id, importParams ? {
+        onSelectImageSource={(item, source, importParams) => onBaseImageChange(item.imageUrl, source, source === 'inspiration' ? undefined : item.id, importParams ? {
           prompt: item.prompt,
           negativePrompt: item.negativePrompt,
           params: item.params,

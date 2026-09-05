@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bot, History, Image, Sparkles, Star, Upload } from 'lucide-react';
+import { Bot, Brush, History, Image, Images, Sparkles, Star, Upload } from 'lucide-react';
 import { Inspiration, InspirationSourceType, NAIParams, User } from '../../types';
 import { normalizeInspirationTags } from '../../services/inspirationUtils';
 
@@ -16,6 +16,8 @@ export const BOARD_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f97316', '#eab30
 export const sourceIcon = (source?: InspirationSourceType) => {
   if (source === 'history') return History;
   if (source === 'aitag') return Sparkles;
+  if (source === 'danbooru') return Images;
+  if (source === 'pixiv') return Brush;
   if (source === 'upload') return Upload;
   if (source === 'agent') return Bot;
   return Image;

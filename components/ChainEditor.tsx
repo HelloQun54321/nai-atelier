@@ -709,11 +709,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         updateWorkspace(previous => ({ ...previous, edits: { ...previous.edits, [operation]: defaultDraft } }));
     };
 
-    const createEditDraftFromSource = async (operation: ImageEditOperation, sourceImage: string | undefined, source: 'generated' | 'history' | 'upload', parentHistoryId?: string, sourcePrompt = finalPrompt, sourceNegativePrompt = negativePrompt, sourceParams = params, editMetadata?: ImageEditMetadata, reuseEditMask = false) => {
+    const createEditDraftFromSource = async (operation: ImageEditOperation, sourceImage: string | undefined, source: 'generated' | 'history' | 'upload' | 'inspiration', parentHistoryId?: string, sourcePrompt = finalPrompt, sourceNegativePrompt = negativePrompt, sourceParams = params, editMetadata?: ImageEditMetadata, reuseEditMask = false) => {
         const draft = createLabImageEditDraft(operation, sourcePrompt, sourceNegativePrompt, sourceParams, {
             baseImageSource: source,
             parentHistoryId,
-            promptSource: source === 'history' ? 'history' : 'current',
+            promptSource: (source === 'history' || source === 'inspiration') ? 'history' : 'current',
             strength: editMetadata?.strength ?? (operation === 'image-to-image' ? 0.7 : 1),
             noise: editMetadata?.noise ?? 0,
             focused: operation === 'inpaint' && Boolean(editMetadata?.focused),
@@ -1156,10 +1156,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const applyImportData = (data: PendingImportData) => {
         if (data.mode === 'image-edit' && data.baseImageUrl) {
             const operation = data.imageEditOperation || 'image-to-image';
+            const source = data.sourceInspirationId ? 'inspiration' : (data.parentHistoryId ? 'history' : 'upload');
             void createEditDraftFromSource(
                 operation,
                 data.baseImageUrl,
-                data.parentHistoryId ? 'history' : 'upload',
+                source,
                 data.parentHistoryId,
                 data.prompt || finalPrompt,
                 data.negativePrompt || negativePrompt,
@@ -2223,7 +2224,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         if (meta) {
                             if (meta.prompt) {
                                 inheritedPrompt = meta.prompt;
-                                promptSource = source === 'history' ? 'history' : 'current';
+                                promptSource = (source === 'history' || source === 'inspiration') ? 'history' : 'current';
                             }
                             if (meta.negativePrompt !== undefined) {
                                 inheritedNegative = meta.negativePrompt;
@@ -2244,7 +2245,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         updateEditDraft(activeEditOperation, {
                             baseImageRef: ref,
                             baseImageSource: source,
-                            parentHistoryId: source === 'upload' ? undefined : parentHistoryId,
+                            parentHistoryId: (source === 'upload' || source === 'inspiration') ? undefined : parentHistoryId,
                             maskRef: undefined,
                             maskData: undefined,
                             focusedRect: undefined,
@@ -2262,7 +2263,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         // 换底图后右侧等待新结果；底图在左侧展示
                         setImageEditPreviewImage(null);
                         setImageEditMaskData(undefined);
-                        if (parentHistoryId) {
+                        if (parentHistoryId && source === 'history') {
                             const selectedIndex = previewHistory.findIndex(item => item.id === parentHistoryId);
                             if (selectedIndex >= 0) {
                                 setPreviewIndex(selectedIndex);

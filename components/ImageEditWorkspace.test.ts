@@ -32,6 +32,23 @@ vi.mock('./SmartImage', () => ({
   SmartImage: ({ thumbnailVariant: _thumbnailVariant, ...props }: React.ImgHTMLAttributes<HTMLImageElement> & { thumbnailVariant?: string }) => React.createElement('img', props),
 }));
 
+vi.mock('../services/dbService', () => ({
+  db: {
+    getAllInspirations: vi.fn(async () => [
+      {
+        id: 'insp-1',
+        title: '测试灵感',
+        imageUrl: 'data:image/png;base64,fixture-insp',
+        prompt: 'masterpiece, 1girl',
+        negativePrompt: 'low quality',
+        params: { width: 832, height: 1216 },
+        createdAt: Date.now(),
+      },
+    ]),
+    getInspirationBoards: vi.fn(async () => []),
+  },
+}));
+
 vi.mock('../services/localHistory', () => ({
   localHistory: {
     getPage: vi.fn(async (page: number) => ({
@@ -264,6 +281,15 @@ describe('ImageEditControls', () => {
     expect(screen.getByRole('dialog', { name: '选择历史图片' })).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: /选择历史生成图片/ }));
     expect(onSelectImageSource).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'history-1' }), 'history', false);
+  });
+
+  it('底图区域支持选择灵感图片并展示灵感库来源状态', async () => {
+    const { onSelectImageSource } = renderControls('image-to-image');
+
+    fireEvent.click(screen.getByRole('button', { name: /选择灵感图片/ }));
+    expect(screen.getByRole('dialog', { name: '选择灵感图片' })).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: /选择灵感图片：测试灵感/ }));
+    expect(onSelectImageSource).toHaveBeenCalledWith(expect.objectContaining({ id: 'insp-1' }), 'inspiration', false);
   });
 
   it('历史选择器读取全局分页数据并完整显示缩略图', async () => {
