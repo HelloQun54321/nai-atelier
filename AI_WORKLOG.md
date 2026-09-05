@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **Antigravity (Gemini 3.8 Flash)**：将防社死安全模式归入外观与画廊分类，维护区收敛提炼为纯粹的数据与维护并置顶重要数据备份，文生图实验室调节折叠块统一为默认收起，同步更新单测（refactor: relocate safe mode to appearance and collapse lab pages by default）。
 - **Antigravity (Gemini 3.8 Flash)**：全局设置页面重构为 5 分类独立架构（外观与画廊、生图偏好与实验室、NovelAI 与 Anlas、项目 Agent、数据与安全维护），明暗模式与画廊布局置顶，抽离生图偏好与实验室模块定制，安全模式与数据备份提至维护区首位，更新 Layout 导航事件及回归测试（feat: restructure global settings into 5 focused functional sections）。
 - **Gemini 3.8 Flash**：修复桌面端图库卡片在竖向卡片（2:3）与方形（1:1）布局切换时被硬编码工具类覆盖导致无变化的问题，调整比例规则为高优先级非 layer 样式并补充回归测试（fix: allow desktop gallery layout switch between portrait and square）。
 - **Gemini 3.8 Flash**：修复主题卡片选中状态下微缩骨架条与底部色标未随强调色微调实时联动，以及深色模式下 --color-indigo-200 混黑导致选中按钮文字对比度不足看不清的问题，补充单元测试（fix: sync active theme accent preview and enhance dark mode button text contrast）。

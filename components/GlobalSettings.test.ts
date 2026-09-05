@@ -96,15 +96,18 @@ describe('GlobalSettings', () => {
     vi.unstubAllGlobals();
   });
 
-  it('打开设置并切换实验室布局折叠块时不会因失效事件对象崩溃', async () => {
+  it('打开设置并切换实验室布局折叠块时不会因失效事件对象崩溃，且默认全部收起', async () => {
     const { container } = render(React.createElement(SettingsHarness, { initialSection: 'generation' }));
 
     expect(await screen.findByText('实验室模块布局')).toBeTruthy();
     const details = container.querySelectorAll('details');
     expect(details).toHaveLength(4);
 
-    fireEvent.click(details[1].querySelector('summary')!);
-    await waitFor(() => expect(details[1].open).toBe(true));
+    // 验证文生图与其他三项一致，默认均处于收起状态
+    details.forEach(d => expect(d.open).toBe(false));
+
+    fireEvent.click(details[0].querySelector('summary')!);
+    await waitFor(() => expect(details[0].open).toBe(true));
     expect(screen.getByText('实验室模块布局')).toBeTruthy();
   });
 
@@ -116,10 +119,12 @@ describe('GlobalSettings', () => {
     expect(screen.getByRole('button', { name: /生图偏好与实验室/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /NovelAI 与 Anlas/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /项目 Agent/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /数据与安全维护/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /数据与维护/ })).toBeTruthy();
 
-    // 初始外观区包含明暗模式与图片列表布局
+    // 初始外观区包含明暗模式、安全模式（防社死）与图片列表布局
     expect(screen.getByText('明暗模式')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^安全模式/ })).toBeTruthy();
+    expect(screen.getByText('启动时自动开启安全模式')).toBeTruthy();
     expect(screen.getByText('图片列表布局')).toBeTruthy();
 
     // 切换至「生图偏好与实验室」
@@ -129,11 +134,10 @@ describe('GlobalSettings', () => {
     expect(screen.getByText('生成步数锁定在免费额度内')).toBeTruthy();
     expect(screen.getByText('实验室模块布局')).toBeTruthy();
 
-    // 切换至「数据与安全维护」
-    fireEvent.click(screen.getByRole('button', { name: /数据与安全维护/ }));
-    expect(await screen.findByRole('button', { name: /^安全模式/ })).toBeTruthy();
-    expect(screen.getByText('启动时自动开启安全模式')).toBeTruthy();
-    expect(screen.getByText('重要数据备份')).toBeTruthy();
+    // 切换至「数据与维护」
+    fireEvent.click(screen.getByRole('button', { name: /数据与维护/ }));
+    expect(await screen.findByText('重要数据备份')).toBeTruthy();
+    expect(screen.getByText('局域网访问密码')).toBeTruthy();
   });
 
   it('选中的主题卡片强调色与色标会随着外观偏好的强调色改变而同步联动', async () => {
