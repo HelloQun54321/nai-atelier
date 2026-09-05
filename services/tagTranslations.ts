@@ -13,6 +13,7 @@ export interface PromptTagToken {
   groupEnd?: number;
   groupWeight?: string;
   groupKind?: 'numeric' | 'brace' | 'bracket';
+  groupLevel?: number;
 }
 
 export interface PromptTagTranslation extends PromptTagToken {
@@ -35,7 +36,7 @@ const unwrapToken = (raw: string, start = 0, group?: Partial<PromptTagToken>) =>
   const artistPrefix = /^artist\s*:\s*/i.test(value);
   if (artistPrefix) value = value.replace(/^artist\s*:\s*/i, '').trim();
   const { id: _id, ...metadata } = group || {};
-  return { displayTag: raw.trim(), lookupTag: normalizeTagQuery(value), start, end: start + raw.length, ...metadata };
+  return { displayTag: value, lookupTag: normalizeTagQuery(value), start, end: start + raw.length, ...metadata };
 };
 
 const parseSegment = (prompt: string, rawStart: number, rawEnd: number, group?: Partial<PromptTagToken>): Array<Omit<PromptTagToken, 'id'>> =>
@@ -53,13 +54,38 @@ export const parsePromptTags = (prompt: string): PromptTagToken[] => {
   let numericStart = -1;
   const flush = (end: number, contentStart = segmentStart, contentEnd = end) => {
     if (end <= segmentStart || contentEnd <= contentStart) return;
-    const leading = prompt.slice(contentStart, contentEnd).search(/\S/);
-    const start = leading < 0 ? contentStart : contentStart + leading;
-    const groupKind = numericStart >= 0 ? 'numeric' : braceDepth > 0 ? 'brace' : bracketDepth > 0 ? 'bracket' : undefined;
-    const groupWeight = numericStart >= 0 ? prompt.slice(segmentStart, numericStart).trim() : undefined;
-    const groupStart = groupKind ? segmentStart : undefined;
-    const groupEnd = groupKind ? end : undefined;
-    tokens.push(...parseSegment(prompt, start, contentEnd, groupKind ? { groupId: `${groupStart}:${groupEnd}`, groupStart, groupEnd, groupWeight, groupKind } : undefined));
+    const trimmed = prompt.slice(segmentStart, end).trim();
+    const leading = trimmed.search(/\S/);
+    const groupStart = leading < 0 ? segmentStart : segmentStart + leading;
+    const groupEnd = groupStart + trimmed.length;
+    const raw = prompt.slice(groupStart, groupEnd);
+    let start = contentStart;
+    let finalEnd = contentEnd;
+    let groupKind: PromptTagToken['groupKind'];
+    let groupWeight: string | undefined;
+    let groupLevel: number | undefined;
+
+    if (numericStart >= 0 && raw.endsWith('::')) {
+      groupKind = 'numeric';
+      groupWeight = prompt.slice(groupStart, numericStart).trim();
+      start = numericStart + 2;
+      finalEnd = groupEnd - 2;
+    } else {
+      const braceMatch = raw.match(/^(\{+)([\s\S]*)(\}+)$|^(\[+)([\s\S]*)(\]+)$/);
+      if (braceMatch) {
+        const opening = braceMatch[1] || braceMatch[4];
+        const closing = braceMatch[3] || braceMatch[6];
+        if (opening.length === closing.length) {
+          groupKind = braceMatch[1] ? 'brace' : 'bracket';
+          groupLevel = opening.length;
+          start = groupStart + opening.length;
+          finalEnd = groupEnd - closing.length;
+        }
+      }
+    }
+
+    const group = groupKind ? { groupId: `${groupStart}:${groupEnd}`, groupStart, groupEnd, groupWeight, groupKind, groupLevel } : undefined;
+    tokens.push(...parseSegment(prompt, start, finalEnd, group));
   };
   for (let i = 0; i < prompt.length; i += 1) {
     const char = prompt[i];
@@ -84,6 +110,46 @@ export const parsePromptTags = (prompt: string): PromptTagToken[] => {
   }
   flush(prompt.length);
   return tokens.map((item, index) => ({ ...item, id: `${index}:${item.lookupTag}` }));
+};
+
+export type PromptWeightAction = 'up' | 'down' | 'remove' | 'numeric';
+
+const formatNumericWeight = (value: number) => String(Number(Math.max(0.1, value).toFixed(2)));
+
+export const transformPromptWeight = (
+  raw: string,
+  token: PromptTagToken,
+  action: PromptWeightAction,
+  numericWeight?: number,
+): string => {
+  if (action === 'remove') {
+    if (token.groupKind === 'numeric') return raw.replace(/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::/, '').replace(/::$/, '');
+    if (token.groupKind === 'brace') return raw.replace(/^\{+/, '').replace(/\}+$/, '');
+    if (token.groupKind === 'bracket') return raw.replace(/^\[+/, '').replace(/\]+$/, '');
+    return raw;
+  }
+
+  if (token.groupKind === 'numeric') {
+    const current = Number(token.groupWeight || 1);
+    const next = action === 'numeric' ? numericWeight : current + (action === 'up' ? 0.1 : -0.1);
+    if (typeof next !== 'number' || !Number.isFinite(next)) return raw;
+    return raw.replace(/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::/, `${formatNumericWeight(next)}::`);
+  }
+
+  const plain = token.groupKind === 'brace'
+    ? raw.replace(/^\{+/, '').replace(/\}+$/, '')
+    : token.groupKind === 'bracket'
+      ? raw.replace(/^\[+/, '').replace(/\]+$/, '')
+      : raw;
+  const level = token.groupLevel || 1;
+  if (action === 'up') {
+    if (token.groupKind === 'bracket' && level > 1) return `${'['.repeat(level - 1)}${plain}${']'.repeat(level - 1)}`;
+    if (token.groupKind === 'bracket') return plain;
+    return `${'{'.repeat(token.groupKind === 'brace' ? level + 1 : 1)}${plain}${'}'.repeat(token.groupKind === 'brace' ? level + 1 : 1)}`;
+  }
+  if (token.groupKind === 'brace' && level > 1) return `${'{'.repeat(level - 1)}${plain}${'}'.repeat(level - 1)}`;
+  if (token.groupKind === 'brace') return `[${plain}]`;
+  return `${'['.repeat(token.groupKind === 'bracket' ? level + 1 : 1)}${plain}${']'.repeat(token.groupKind === 'bracket' ? level + 1 : 1)}`;
 };
 
 const emitTranslationChange = () => listeners.forEach(listener => listener());

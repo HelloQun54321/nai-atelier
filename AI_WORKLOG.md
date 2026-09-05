@@ -5,6 +5,9 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-05
+- **Codex (GPT-5)**：统一 Tag 操作区主题色，移除翻译状态色，保持权重菜单与选择状态，并按括号层级实现最简减权（fix: refine weighted tag controls and theme colors）。
+
+## 2026-09-05
 - **Codex (GPT-5)**：修正权重 Tag 解析测试以匹配权重标识与 Tag 文本分离后的展示语义（fix: align weighted tag parser expectation）。
 
 ## 2026-09-05

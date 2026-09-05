@@ -8,6 +8,7 @@ import {
   PromptTagTranslation,
   resolvePromptTranslations,
   subscribeTagTranslations,
+  transformPromptWeight,
   translateMissingPromptTags,
 } from '../services/tagTranslations';
 
@@ -143,8 +144,20 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   };
 
   const selectedTokens = promptTokens.filter(token => selectedTagIds.has(token.id));
+  useEffect(() => {
+    const validIds = new Set(promptTokens.map(token => token.id));
+    setSelectedTagIds(current => {
+      const next = new Set([...current].filter(id => validIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [promptTokens]);
+
   const applyWeight = (mode: 'up' | 'down' | 'remove' | 'numeric') => {
     if (!selectedTokens.length) return;
+    const numericWeight = mode === 'numeric'
+      ? Number(window.prompt('输入数值权重', selectedTokens[0].groupWeight || '1.2'))
+      : undefined;
+    if (mode === 'numeric' && !Number.isFinite(numericWeight)) return;
     const groups = new Map<string, PromptTagToken[]>();
     selectedTokens.forEach(token => groups.set(token.groupId || token.id, [...(groups.get(token.groupId || token.id) || []), token]));
     const replacements = [...groups.values()].map(tokens => {
@@ -152,22 +165,11 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       const start = first.groupStart ?? first.start ?? 0;
       const end = first.groupEnd ?? first.end ?? start;
       const raw = value.slice(start, end);
-      if (mode === 'remove') {
-        return { start, end, value: raw.replace(/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::/, '').replace(/::$/, '').replace(/^\{+|\}+$/g, '').replace(/^\[+|\]+$/g, '') };
-      }
-      if (first.groupKind === 'numeric') {
-        const current = Number(first.groupWeight || 1);
-        const next = mode === 'up' ? current + 0.1 : mode === 'down' ? current - 0.1 : Number(prompt('权重', String(current)));
-        if (!Number.isFinite(next)) return null;
-        return { start, end, value: raw.replace(/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::/, `${Math.max(0.1, next).toFixed(2)}::`) };
-      }
-      const wrapper = mode === 'down' ? ['[', ']'] : ['{', '}'];
-      return { start, end, value: `${wrapper[0]}${raw}${wrapper[1]}` };
+      return { start, end, value: transformPromptWeight(raw, first, mode, numericWeight) };
     }).filter((item): item is { start: number; end: number; value: string } => Boolean(item)).sort((a, b) => b.start - a.start);
     let nextValue = value;
     replacements.forEach(item => { nextValue = nextValue.slice(0, item.start) + item.value + nextValue.slice(item.end); });
     onValueChange(nextValue);
-    setSelectedTagIds(new Set());
   };
 
   useEffect(() => () => {
@@ -387,41 +389,27 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                   return next;
                 })}
                 key={item.id}
-                className={`inline-flex max-w-full flex-col rounded-md border px-2 py-1 text-left leading-tight ${selectedTagIds.has(item.id) ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40' : item.groupKind === 'numeric'
-                  ? 'border-amber-300 bg-amber-50/70 dark:border-amber-800/70 dark:bg-amber-950/25'
-                  : item.groupKind === 'brace'
-                    ? 'border-purple-300 bg-purple-50/70 dark:border-purple-800/70 dark:bg-purple-950/25'
-                    : item.groupKind === 'bracket'
-                      ? 'border-sky-300 bg-sky-50/70 dark:border-sky-800/70 dark:bg-sky-950/25'
-                      : item.source === 'dictionary'
-                  ? 'border-purple-200/80 bg-purple-50/70 dark:border-purple-800/70 dark:bg-purple-950/25'
-                  : item.source === 'ai'
-                    ? 'border-emerald-200/80 bg-emerald-50/70 dark:border-emerald-800/70 dark:bg-emerald-950/25'
-                    : 'border-dashed border-gray-300 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'
-                }`}
+                className="inline-flex max-w-full flex-col rounded-md border border-gray-200 bg-white/60 px-2 py-1 text-left leading-tight transition-colors hover:border-[var(--nai-accent)] dark:border-gray-700 dark:bg-gray-900/50"
+                style={selectedTagIds.has(item.id) ? { borderColor: 'var(--nai-accent)', backgroundColor: 'color-mix(in srgb, var(--nai-accent) 12%, transparent)' } : undefined}
+                aria-pressed={selectedTagIds.has(item.id)}
               >
                 <span className="flex max-w-52 items-center gap-1.5">
-                  {item.groupKind && <span className={`shrink-0 rounded px-1 font-mono text-micro font-bold ${item.groupKind === 'numeric' ? 'text-amber-700 dark:text-amber-300' : item.groupKind === 'brace' ? 'text-purple-700 dark:text-purple-300' : 'text-sky-700 dark:text-sky-300'}`}>
+                  {item.groupKind && <span className="shrink-0 rounded bg-[color-mix(in_srgb,var(--nai-accent)_12%,transparent)] px-1 font-mono text-micro font-bold text-[var(--nai-accent)]">
                     {item.groupKind === 'numeric' ? item.groupWeight : item.groupKind === 'brace' ? '{}' : '[]'}
                   </span>}
                   <span className="truncate font-mono text-micro text-gray-500 dark:text-gray-400" title={item.displayTag}>{item.displayTag}</span>
                 </span>
-                <span className={`max-w-48 truncate text-xs font-medium ${item.source === 'dictionary'
-                  ? 'text-purple-600 dark:text-purple-300'
-                  : item.source === 'ai'
-                    ? 'text-emerald-600 dark:text-emerald-300'
-                    : 'text-gray-400 dark:text-gray-500'
-                }`} title={item.chinese || '词库暂无翻译'}>{item.chinese || '待翻译'}</span>
+                <span className="max-w-48 truncate text-xs font-medium text-gray-500 dark:text-gray-400" title={item.chinese || '词库暂无翻译'}>{item.chinese || '待翻译'}</span>
               </button>
             ))}
           </div>
           {selectedTokens.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-2 dark:border-gray-700/70">
-              <button type="button" onClick={() => applyWeight('up')} className="rounded-md bg-indigo-600 px-2 py-1 text-meta font-bold text-white">增强</button>
-              <button type="button" onClick={() => applyWeight('down')} className="rounded-md bg-indigo-600 px-2 py-1 text-meta font-bold text-white">减弱</button>
-              <button type="button" onClick={() => applyWeight('numeric')} className="rounded-md border border-gray-300 px-2 py-1 text-meta font-bold dark:border-gray-700">数值</button>
-              <button type="button" onClick={() => applyWeight('remove')} className="rounded-md border border-gray-300 px-2 py-1 text-meta font-bold dark:border-gray-700">移除权重</button>
-              <button type="button" onClick={() => setSelectedTagIds(new Set())} className="ml-auto px-2 py-1 text-meta text-gray-500">取消选择</button>
+              <button type="button" onClick={() => applyWeight('up')} className="rounded-md px-2 py-1 text-meta font-bold text-white hover:opacity-90" style={{ backgroundColor: 'var(--nai-accent)' }}>增强</button>
+              <button type="button" onClick={() => applyWeight('down')} className="rounded-md px-2 py-1 text-meta font-bold text-white hover:opacity-90" style={{ backgroundColor: 'var(--nai-accent)' }}>减弱</button>
+              <button type="button" onClick={() => applyWeight('numeric')} className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)]">数值</button>
+              <button type="button" onClick={() => applyWeight('remove')} className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)]">移除权重</button>
+              <button type="button" onClick={() => setSelectedTagIds(new Set())} className="ml-auto px-2 py-1 text-meta text-[var(--nai-accent)]">取消选择</button>
             </div>
           )}
           {(missingTags.length > 0 || translationError) && (
@@ -432,7 +420,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                   type="button"
                   onClick={() => void translateMissing()}
                   disabled={translationLoading}
-                  className="inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-meta font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-60 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
+                  className="inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
                   title={`使用当前 Agent 模型翻译 ${missingTags.length} 个词库缺失项`}
                 >
                   {translationLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5" />}
