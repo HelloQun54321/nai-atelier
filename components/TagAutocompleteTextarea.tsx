@@ -380,28 +380,43 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       {tagAssistEnabled && showTranslations && translations.length > 0 && (
         <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50/80 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-900/55" aria-label="提示词中文翻译">
           <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto overscroll-contain pr-0.5">
-            {translations.map(item => (
-              <button
-                type="button"
-                onClick={() => setSelectedTagIds(current => {
-                  const next = new Set(current);
-                  if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
-                  return next;
-                })}
-                key={item.id}
-                className="inline-flex max-w-full flex-col rounded-md border border-gray-200 bg-white/60 px-2 py-1 text-left leading-tight transition-colors hover:border-[var(--nai-accent)] dark:border-gray-700 dark:bg-gray-900/50"
-                style={selectedTagIds.has(item.id) ? { borderColor: 'var(--nai-accent)', backgroundColor: 'color-mix(in srgb, var(--nai-accent) 12%, transparent)' } : undefined}
-                aria-pressed={selectedTagIds.has(item.id)}
-              >
-                <span className="flex max-w-52 items-center gap-1.5">
-                  {item.groupKind && <span className="shrink-0 rounded bg-[color-mix(in_srgb,var(--nai-accent)_12%,transparent)] px-1 font-mono text-micro font-bold text-[var(--nai-accent)]">
-                    {item.groupKind === 'numeric' ? item.groupWeight : item.groupKind === 'brace' ? '{}' : '[]'}
-                  </span>}
-                  <span className="truncate font-mono text-micro text-gray-500 dark:text-gray-400" title={item.displayTag}>{item.displayTag}</span>
-                </span>
-                <span className="max-w-48 truncate text-xs font-medium text-gray-500 dark:text-gray-400" title={item.chinese || '词库暂无翻译'}>{item.chinese || '待翻译'}</span>
-              </button>
-            ))}
+            {translations.map(item => {
+              const openSyntax = item.groupKind === 'numeric' ? `${item.groupWeight || '1'}::`
+                : item.groupKind === 'brace' ? '{'.repeat(item.groupLevel || 1)
+                  : item.groupKind === 'bracket' ? '['.repeat(item.groupLevel || 1) : '';
+              const closeSyntax = item.groupKind === 'numeric' ? '::'
+                : item.groupKind === 'brace' ? '}'.repeat(item.groupLevel || 1)
+                  : item.groupKind === 'bracket' ? ']'.repeat(item.groupLevel || 1) : '';
+              const selected = selectedTagIds.has(item.id);
+              return (
+                <button
+                  type="button"
+                  onClick={() => setSelectedTagIds(current => {
+                    const next = new Set(current);
+                    if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+                    return next;
+                  })}
+                  key={item.id}
+                  className={`inline-flex max-w-full flex-col rounded-md border px-2 py-1 text-left leading-tight transition-colors hover:border-[var(--nai-accent)] ${selected
+                    ? 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]'
+                    : item.groupKind
+                      ? 'border-[color-mix(in_srgb,var(--nai-accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--nai-accent)_7%,transparent)]'
+                      : 'border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
+                  aria-pressed={selected}
+                >
+                  <span className="flex max-w-52 items-center gap-0.5">
+                    {openSyntax && (item.groupEdge === 'open' || item.groupEdge === 'both') && (
+                      <span className="shrink-0 font-mono text-micro font-bold text-[var(--nai-accent)]">{openSyntax}</span>
+                    )}
+                    <span className="truncate font-mono text-micro text-gray-500 dark:text-gray-400" title={item.displayTag}>{item.displayTag}</span>
+                    {closeSyntax && (item.groupEdge === 'close' || item.groupEdge === 'both') && (
+                      <span className="shrink-0 font-mono text-micro font-bold text-[var(--nai-accent)]">{closeSyntax}</span>
+                    )}
+                  </span>
+                  <span className="max-w-48 truncate text-xs font-medium text-gray-500 dark:text-gray-400" title={item.chinese || '词库暂无翻译'}>{item.chinese || '待翻译'}</span>
+                </button>
+              );
+            })}
           </div>
           {selectedTokens.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-2 dark:border-gray-700/70">

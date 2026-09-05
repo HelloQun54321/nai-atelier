@@ -14,6 +14,7 @@ export interface PromptTagToken {
   groupWeight?: string;
   groupKind?: 'numeric' | 'brace' | 'bracket';
   groupLevel?: number;
+  groupEdge?: 'open' | 'close' | 'both';
 }
 
 export interface PromptTagTranslation extends PromptTagToken {
@@ -74,7 +75,8 @@ export const parsePromptTags = (prompt: string): PromptTagToken[] => {
       start = numericStart + 2;
       finalEnd = groupEnd - 2;
     } else {
-      const braceMatch = raw.match(/^(\{+)([\s\S]*)(\}+)$|^(\[+)([\s\S]*)(\]+)$/);
+      // 内容组必须懒惰匹配：贪婪会把多花括号的一个闭合符吞进内容，导致开口/闭合数量不等而整组失配。
+      const braceMatch = raw.match(/^(\{+)([\s\S]*?)(\}+)$|^(\[+)([\s\S]*?)(\]+)$/);
       if (braceMatch) {
         const opening = braceMatch[1] || braceMatch[4];
         const closing = braceMatch[3] || braceMatch[6];
@@ -112,6 +114,17 @@ export const parsePromptTags = (prompt: string): PromptTagToken[] => {
     }
   }
   flush(prompt.length);
+  // 标记每个 token 在权重组内的位置：一对权重包裹多个 Tag 时，开口语法渲染在首项、闭合语法渲染在末项。
+  const groupTotals = new Map<string, number>();
+  tokens.forEach(token => { if (token.groupId) groupTotals.set(token.groupId, (groupTotals.get(token.groupId) || 0) + 1); });
+  const groupSeen = new Map<string, number>();
+  tokens.forEach(token => {
+    if (!token.groupId) return;
+    const seen = groupSeen.get(token.groupId) || 0;
+    const total = groupTotals.get(token.groupId) || 1;
+    token.groupEdge = total === 1 ? 'both' : seen === 0 ? 'open' : seen === total - 1 ? 'close' : undefined;
+    groupSeen.set(token.groupId, seen + 1);
+  });
   return tokens.map((item, index) => ({ ...item, id: `${index}:${item.lookupTag}` }));
 };
 
