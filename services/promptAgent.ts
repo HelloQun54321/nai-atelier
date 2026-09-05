@@ -283,6 +283,14 @@ const readError = async (response: Response) => {
   throw await parseErrorResponse(response);
 };
 
+/** 显示用模型名：剥掉 id 里的「厂商/」前缀（如 deepseek/deepseek-v4-flash → deepseek-v4-flash）。
+ *  仅用于界面展示；请求与选择仍用完整 model.id（中转站要求完整 id）。 */
+export const displayModelName = (modelId: string | undefined | null): string => {
+  if (!modelId) return '';
+  const slash = modelId.indexOf('/');
+  return slash > 0 && slash < modelId.length - 1 ? modelId.slice(slash + 1) : modelId;
+};
+
 export const promptAgentService = {
   getConfig: async (): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/config', { cache: 'no-store' });

@@ -3,6 +3,9 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-09-05
+### 优化:模型列表名剥掉厂商前缀，显示更干净
+- 模型名显示不再带「厂商/」前缀（如 deepseek/deepseek-v4-flash → deepseek-v4-flash），来源由独立标注（command-goat/bukun/rightapi/DeepSeek）承担；仅界面展示剥前缀，请求与选择仍用完整模型 id，不影响实际调用。
+
 ### 修复:模型列表显示可读来源名而非内部 ID
 - Agent 模型选择列表与设置页来源标注不再显示 custom-UUID 内部标识，改为显示可读中转站名（command-goat / bukun / rightapi / DeepSeek）；API 层新增 providerName 字段，provider 内部 id 保持不变不影响选择逻辑。
 

@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-05
+- **DeepSeek V4 Flash (Oh My Pi)**：模型名显示剥掉「厂商/」前缀（displayModelName 纯函数，覆盖模型菜单/会话列表/设置页多处），来源由 providerName 独立标注，请求仍用完整 id（refactor: strip vendor prefix from displayed model names）。
 - **DeepSeek V4 Flash (Oh My Pi)**：Agent 模型列表与设置页来源标注显示可读中转站名（command-goat/bukun/rightapi/DeepSeek），替换 custom-UUID；API 加 providerName 字段、provider 内部 id 不变（fix: show readable provider names in model lists）。
 - **DeepSeek V4 Flash (Oh My Pi)**：模型配置迁移——保留官方 deepseek，新增 command-goat(deepseek×4)/bukun(gemini×2)/rightapi(grok×2) 中转源；定位并修复 rightapi/bukun 连接 403（OpenAI SDK 默认 UA 被中转屏蔽，配 User-Agent header）+ 服务进程环境异常，默认主模型 command-goat deepseek-v4-flash、视觉 rightapi grok-4.6。
 - **Antigravity CLI (agy) + DeepSeek V4 Flash (Oh My Pi)**：注入预设导出/导入图标方向按产品直觉互换（导出=↑送出、导入=↓收进），主控同步更新组件测试旧名断言（fix: swap export/import icon directions in injection presets）。
