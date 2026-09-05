@@ -102,4 +102,43 @@ describe('GlobalSettings', () => {
     await waitFor(() => expect(details[1].open).toBe(true));
     expect(screen.getByText('实验室模块布局')).toBeTruthy();
   });
+
+  it('选中的主题卡片强调色与色标会随着外观偏好的强调色改变而同步联动', async () => {
+    const { container } = render(React.createElement(SettingsHarness));
+
+    const activeCard = container.querySelector('.atelier-theme-card');
+    expect(activeCard).toBeTruthy();
+
+    // 初始状态下卡片底部色标为 #0ea5e9
+    expect(activeCard?.textContent).toContain('#0ea5e9');
+
+    // 点击第二个强调色（靛蓝 #6366f1）
+    const indigoButton = screen.getByRole('button', { name: '强调色：靛蓝' });
+    fireEvent.click(indigoButton);
+
+    // 选中卡片的微缩骨架高亮条与卡片底部的十六进制色标应同步变为 #6366f1
+    await waitFor(() => {
+      expect(activeCard?.textContent).toContain('#6366f1');
+    });
+
+    const previewAccentBar = activeCard?.querySelector('.atelier-theme-preview span[style*="background-color"]');
+    expect(previewAccentBar).toBeTruthy();
+    expect(previewAccentBar?.getAttribute('style')).toContain('rgb(99, 102, 241)');
+  });
+
+  it('明暗模式和外观选项被选中时具有 dark:text-indigo-300 保证暗色高对比度', async () => {
+    render(React.createElement(SettingsHarness));
+
+    // 默认 standard 选项（界面密度、圆角语言、字号）均被选中且具有 dark:text-indigo-300
+    const standardButtons = screen.getAllByRole('button', { name: '标准' });
+    expect(standardButtons.length).toBeGreaterThan(0);
+    standardButtons.forEach(btn => {
+      expect(btn.className).toContain('dark:text-indigo-300');
+    });
+
+    // SettingsHarness 中当前 themeMode 为 'light'，因此「浅色」是选中的
+    const lightModeBtn = screen.getByRole('button', { name: /浅色/ });
+    expect(lightModeBtn.className).toContain('dark:text-indigo-300');
+  });
 });
+

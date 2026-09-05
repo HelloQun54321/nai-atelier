@@ -116,7 +116,7 @@ const AppearanceOptionGroup: React.FC<{
         key={option.value}
         type="button"
         onClick={() => onChange(option.value)}
-        className={`mobile-touch min-w-0 rounded-xl border px-2 py-2 text-center transition md:min-h-10 ${value === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500/15 dark:bg-indigo-500/10 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-600'}`}
+        className={`mobile-touch min-w-0 rounded-xl border px-2 py-2 text-center transition md:min-h-10 ${value === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500/15 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-600'}`}
       >
         <span className="block truncate text-xs font-bold">{option.label}</span>
         {option.description && <span className="mt-0.5 block truncate text-micro font-normal opacity-65">{option.description}</span>}
@@ -737,7 +737,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   {allPresets.map(preset => {
                     const isSelected = activePresetId === preset.id;
                     const isEditing = editingPresetId === preset.id;
-                    const presetAccent = preset.accentColor || '#0ea5e9';
+                    const presetAccent = isSelected ? (appearancePreferences.accentColor || '#0ea5e9') : (preset.accentColor || '#0ea5e9');
                     return (
                       <div
                         key={preset.id}
@@ -878,7 +878,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
                 <div className="mb-2 text-xs font-bold text-gray-700 dark:text-gray-200">明暗模式</div>
                 <div className="grid grid-cols-3 gap-2">
-                  {([{ value: 'system', label: '跟随系统', icon: Monitor }, { value: 'light', label: '浅色', icon: Sun }, { value: 'dark', label: '深色', icon: Moon }] as const).map(option => { const ModeIcon = option.icon; return <button key={option.value} type="button" onClick={() => setThemeMode(option.value)} className={`mobile-touch flex min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2 text-xs font-bold transition md:h-10 ${themeMode === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}><ModeIcon className="h-3.5 w-3.5 flex-none" /><span className="truncate">{option.label}</span></button>; })}
+                  {([{ value: 'system', label: '跟随系统', icon: Monitor }, { value: 'light', label: '浅色', icon: Sun }, { value: 'dark', label: '深色', icon: Moon }] as const).map(option => { const ModeIcon = option.icon; return <button key={option.value} type="button" onClick={() => setThemeMode(option.value)} className={`mobile-touch flex min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2 text-xs font-bold transition md:h-10 ${themeMode === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}><ModeIcon className="h-3.5 w-3.5 flex-none" /><span className="truncate">{option.label}</span></button>; })}
                 </div>
               </div>
 

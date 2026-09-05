@@ -142,9 +142,9 @@ html[data-design-theme='nai-atelier'].dark {
   --color-gray-900: #11141b;
   --color-gray-950: #0a0c10;
 
-  --color-indigo-50: color-mix(in srgb, var(--nai-accent) 12%, #0d0f14);
-  --color-indigo-100: color-mix(in srgb, var(--nai-accent) 18%, #0d0f14);
-  --color-indigo-200: color-mix(in srgb, var(--nai-accent) 28%, #0d0f14);
+  --color-indigo-50: color-mix(in srgb, var(--nai-accent) 12%, white);
+  --color-indigo-100: color-mix(in srgb, var(--nai-accent) 24%, white);
+  --color-indigo-200: color-mix(in srgb, var(--nai-accent) 40%, white);
   --color-indigo-300: color-mix(in srgb, var(--nai-accent) 60%, white);
   --color-indigo-400: color-mix(in srgb, var(--nai-accent) 80%, white);
   --color-indigo-500: var(--nai-accent);

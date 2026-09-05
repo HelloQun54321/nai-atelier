@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-09-06
+- **Gemini 3.8 Flash**：修复主题卡片选中状态下微缩骨架条与底部色标未随强调色微调实时联动，以及深色模式下 --color-indigo-200 混黑导致选中按钮文字对比度不足看不清的问题，补充单元测试（fix: sync active theme accent preview and enhance dark mode button text contrast）。
+
 ## 2026-09-05
 - **Codex (GPT-5)**：修复 AITag 导入风格串/实验室后费用状态异步加载期间误显示 Anlas 点数的问题（fix: avoid transient generation cost mislabel）。
 - **Codex (GPT-5)**：移除 Agent 输入框默认占位提示文字，保留加载、排队和编辑状态提示（fix: remove default agent input placeholder）。
