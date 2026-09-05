@@ -54,8 +54,11 @@ export const parsePromptTags = (prompt: string): PromptTagToken[] => {
   let numericStart = -1;
   const flush = (end: number, contentStart = segmentStart, contentEnd = end) => {
     if (end <= segmentStart || contentEnd <= contentStart) return;
-    const trimmed = prompt.slice(segmentStart, end).trim();
-    const leading = trimmed.search(/\S/);
+    // leading 必须取自未 trim 的切片：trimmed.search(/\S/) 恒为 0，会让 raw 首部多算空白、
+    // 尾部少截同样长度，导致 `", 1.2::tag::"` 之类的后续权重组因 raw 不以 :: 结尾而丢失分组。
+    const segment = prompt.slice(segmentStart, end);
+    const trimmed = segment.trim();
+    const leading = segment.search(/\S/);
     const groupStart = leading < 0 ? segmentStart : segmentStart + leading;
     const groupEnd = groupStart + trimmed.length;
     const raw = prompt.slice(groupStart, groupEnd);

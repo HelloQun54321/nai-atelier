@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-09-06
+- **ZCode (GLM-5.3)**：修复 Tag 解析器中分隔符空格导致后续权重组（数值/花括号）丢失分组标识与角标的问题，补充回归测试（fix: recognize weighted tag groups after leading whitespace）。
+
 ## 2026-09-05
 - **Codex (GPT-5)**：统一 Tag 操作区主题色，移除翻译状态色，保持权重菜单与选择状态，并按括号层级实现最简减权（fix: refine weighted tag controls and theme colors）。
 

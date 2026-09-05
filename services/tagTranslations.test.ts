@@ -25,6 +25,18 @@ describe('parsePromptTags', () => {
     expect(tags[2].groupId).toBeUndefined();
   });
 
+  it('分隔符空格之后的权重组仍能被识别', () => {
+    const tags = parsePromptTags('1.35::anime illustration, professional illustration::, 1.2::slightly fashionable cg::, 0.85::stylized digital human::, year_2026, 1.4::anime style::, {ink wash style}, 1.5::fine lineart, intricate linework::');
+    expect(tags[0]).toMatchObject({ groupKind: 'numeric', groupWeight: '1.35' });
+    expect(tags[2]).toMatchObject({ displayTag: 'slightly fashionable cg', groupKind: 'numeric', groupWeight: '1.2' });
+    expect(tags[3]).toMatchObject({ displayTag: 'stylized digital human', groupKind: 'numeric', groupWeight: '0.85' });
+    expect(tags[4].groupKind).toBeUndefined();
+    expect(tags[5]).toMatchObject({ displayTag: 'anime style', groupKind: 'numeric', groupWeight: '1.4' });
+    expect(tags[6]).toMatchObject({ displayTag: 'ink wash style', groupKind: 'brace', groupLevel: 1 });
+    expect(tags[7]).toMatchObject({ displayTag: 'fine lineart', groupKind: 'numeric', groupWeight: '1.5' });
+    expect(tags[8]).toMatchObject({ lookupTag: 'intricate linework', groupKind: 'numeric', groupWeight: '1.5', groupId: tags[7].groupId });
+  });
+
   it('按最简原则调整括号权重', () => {
     expect(transformPromptWeight('{{tag}}', { id: '1', displayTag: 'tag', lookupTag: 'tag', groupKind: 'brace', groupLevel: 2 }, 'down')).toBe('{tag}');
     expect(transformPromptWeight('{tag}', { id: '1', displayTag: 'tag', lookupTag: 'tag', groupKind: 'brace', groupLevel: 1 }, 'down')).toBe('[tag]');
