@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **ZCode (GLM-5.3)**：应用户要求把未授权公开的内置破限预设正文外置到 local-data JSON（gitignore），代码改为运行时加载 + 中性回退，测试断言同步去字面量化（refactor: move builtin agent preset content into local-data）。
 - **ZCode (GLM-5.3)**：审计并补全 .gitignore（临时文件 .tmp*/ *.tmp / *.bak / *~，Windows 系统文件 Thumbs.db 等），为将来拆分公开仓库做准备（chore: harden gitignore for public split）。
 - **ZCode (GLM-5.3)**：左侧权重类型改为三选一选择器（互斥高亮），「添加权重」按钮按所选类型作用于选中组（fix: select weight type before applying it）。
 - **ZCode (GLM-5.3)**：「添加权重」由灰色文字标签改为真实按钮，按输入框数值添加数值权重（fix: make add weight label clickable）。

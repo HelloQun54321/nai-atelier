@@ -4,6 +4,7 @@ import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completio
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'crypto';
+import { readFileSync } from 'node:fs';
 import { appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from 'fs/promises';
 import { lookup } from 'dns/promises';
 import { isIP } from 'net';
@@ -639,7 +640,20 @@ const baseSystemPrompt = `你是 NAI Atelier 的项目业务 Agent。你的职�
 10. Precise/角色参考每张每次生图增加 5 Anlas，当前与 Vibe Transfer 互斥；设置其中一项时必须关闭另一项。
 11. 必须严格区分三类正面提示词：basePrompt 只放画师名、媒介、渲染和可复用画风；subjectPrompt 只放整图主体、场景、动作、构图和其他全局动态内容；params.characters 通过 set_characters 存放角色专属外貌、服装、身份 Tag 与角色专属负面词。用户说“角色提示词”“人物提示词”“角色外貌”或要求填写某个角色时，即使只有一个角色，也必须优先调用 set_characters，除非用户明确指定放到主体／变量提示词框。不得把角色专属提示词写入 subjectPrompt。若当前界面是“单一全局提示词”，则只使用 basePrompt 存放完整正面提示词并保持 subjectPrompt 为空。`;
 
-const jailbreakBlock = ''; // [redacted]
+// 内置预设正文（jailbreakBlock / creativePreamble / creativeSeedMessages / presetSlots）仅存于
+// local-data/agent/builtin-preset-content.json（.gitignore 覆盖，未经授权不得公开）。
+// 文件缺失时回退为空正文，内置预设退化为中性结构，公开部署下此功能优雅降级。
+const agentPresetContent = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL('../local-data/agent/builtin-preset-content.json', import.meta.url), 'utf8'));
+  } catch {
+    return null;
+  }
+})();
+const jailbreakBlock = typeof agentPresetContent?.jailbreakBlock === 'string' ? agentPresetContent.jailbreakBlock : '';
+const creativePreamble = typeof agentPresetContent?.creativePreamble === 'string' ? agentPresetContent.creativePreamble : '';
+const creativeSeedMessages = Array.isArray(agentPresetContent?.creativeSeedMessages) ? agentPresetContent.creativeSeedMessages : [];
+const builtinPresetSlots = Array.isArray(agentPresetContent?.presetSlots) ? agentPresetContent.presetSlots : [];
 
 const techBlock = `
 [规则来源层级]
@@ -778,20 +792,13 @@ const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
 // 复刻酒馆"同帧淹没"机制：在 agent 模式下，每轮用户请求前重发一遍浓缩破甲前导，
 // 让破甲话术与触发词在同一帧内同时占据模型注意力，最大化压制第一层犹豫。
 // systemPrompt 已含完整破甲但模型可能当成背景；此前导作为判定帧前台话术生效。
-const creativePreamble = ''; // [redacted]
+// creativePreamble 正文同上（统一由上方 agentPresetContent 加载）。
 
 // ── 破限提示词与预设实验室：builtin-default 代码单例 ────────────────────────
 // builtin-default 永不落盘（非 customPresets 成员），list 时按展示顺序合并。
 // 内容与既有常量映射保持正文完全一致：system_middle ← jailbreakBlock、
 // context_head ← creativeSeedMessages 成对帧、user_preamble ← creativePreamble，
 // 其余槽位为空；新增的 system_tail 由运行链路承载 safetyFooter。
-const PRESET_BUILTIN_SEED_USAGE = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
-const creativeSeedMessages = [
-  { role: 'user', content: [{ type: 'text', text: [redacted] }], timestamp: 1 },
-  { role: 'assistant', content: [{ type: 'text', text: [redacted] }], timestamp: 2, usage: PRESET_BUILTIN_SEED_USAGE, model: '', provider: '', stopReason: 'stop' },
-  { role: 'user', content: [{ type: 'text', text: [redacted] }], timestamp: 3 },
-  { role: 'assistant', content: [{ type: 'text', text: [redacted] }], timestamp: 4, usage: PRESET_BUILTIN_SEED_USAGE, model: '', provider: '', stopReason: 'stop' },
-];
 
 // creativeMode 关闭时运行链路冻结的“空策略”预设（builtin 缺省策略）。
 const EMPTY_CREATIVE_PRESET = Object.freeze({
@@ -799,7 +806,6 @@ const EMPTY_CREATIVE_PRESET = Object.freeze({
   createdAt: 0, updatedAt: 0, slots: [],
 });
 
-const creativePresetPair = (target, role, text, pairId) => ({ id: `${CREATIVE_BUILTIN_PRESET_ID}-${target}-${role}`, name: text, target, enabled: true, content: text, role, pairId });
 
 const BUILTIN_CREATIVE_PRESET = Object.freeze({
   id: CREATIVE_BUILTIN_PRESET_ID,
@@ -808,14 +814,7 @@ const BUILTIN_CREATIVE_PRESET = Object.freeze({
   isBuiltin: true,
   createdAt: 0,
   updatedAt: 0,
-  slots: Object.freeze([
-    { id: `${CREATIVE_BUILTIN_PRESET_ID}-system_middle`, name: [redacted], target: 'system_middle', enabled: true, content: jailbreakBlock },
-    creativePresetPair('context_head', 'user', [redacted], 'builtin-head-1'),
-    creativePresetPair('context_head', 'assistant', [redacted], 'builtin-head-1'),
-    creativePresetPair('context_head', 'user', [redacted], 'builtin-head-2'),
-    creativePresetPair('context_head', 'assistant', [redacted], 'builtin-head-2'),
-    { id: `${CREATIVE_BUILTIN_PRESET_ID}-user_preamble`, name: '破限前导', target: 'user_preamble', enabled: true, content: creativePreamble },
-  ]),
+  slots: Object.freeze(builtinPresetSlots),
 });
 
 // 兼容遗留展示（publicConfig.policyFingerprint / audit policy），基于常量正文 +
@@ -3880,7 +3879,7 @@ export class PromptAgentService {
             systemPromptContainsRoll: assembled.systemPrompt.includes('{{roll'),
             systemPromptRollCount: (assembled.systemPrompt.match(/\{\{roll/g) || []).length,
             systemPromptStart: '', // 审计瘦身：不再记录提示词正文
-            systemPromptHasJailbreak: assembled.systemPrompt.includes([redacted]) && assembled.systemPrompt.includes([redacted]) && assembled.systemPrompt.includes([redacted]),
+            systemPromptHasJailbreak: jailbreakBlock !== '' && assembled.systemPrompt.includes(jailbreakBlock),
             presetRevisionHash: boundRevision.presetRevisionHash || '',
             presetName: boundRevision.presetName || '',
             effectivePolicyFingerprint: assembled.hashes.policyFingerprint,
@@ -3972,3 +3971,4 @@ export class PromptAgentService {
     }
   }
 }
+

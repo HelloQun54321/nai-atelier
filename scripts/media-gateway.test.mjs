@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHmac } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+// 内置预设正文仅存于 local-data（gitignore）；缺失时相关断言走中性回退分支。
+const agentPresetContentFile = new URL('../local-data/agent/builtin-preset-content.json', import.meta.url);
+const agentPresetContent = existsSync(agentPresetContentFile) ? JSON.parse(readFileSync(agentPresetContentFile, 'utf8')) : null;
 import {
   VibeEncodingMemoryCache,
   buildCachedVibeReferences,
@@ -1533,10 +1537,13 @@ test('creative lab: builtin-default singleton is read-only and maps existing con
   assert.ok(targets.includes('system_middle'));
   assert.ok(targets.includes('user_preamble'));
   assert.ok(targets.includes('context_head'));
-  assert.equal(targets.filter(target => target === 'context_head').length, 4);
+  assert.equal(targets.filter(target => target === 'context_head').length, agentPresetContent ? agentPresetContent.creativeSeedMessages.length : 0);
   const middle = builtin.slots.find(slot => slot.target === 'system_middle');
-  assert.ok(middle.content.includes([redacted]));
-  assert.ok(middle.content.includes([redacted]));
+  if (agentPresetContent) {
+    assert.equal(middle.content, agentPresetContent.jailbreakBlock);
+  } else {
+    assert.equal(middle.content, '');
+  }
   // 单例不可变：改造副本不影响后续取值。
   const copy = getBuiltinDefaultPreset(true);
   copy.slots[0].content = 'mutated';
@@ -1642,12 +1649,13 @@ test('creative lab: assemblePromptContext deep-copies, prepends head seeds in pa
   assert.ok(messageText(result.canonicalMessages[4]).includes('第一问'));
   const lastUser = result.canonicalMessages.at(-1);
   assert.equal(lastUser.role, 'user');
-  assert.ok(messageText(lastUser).startsWith([redacted]));
+  if (agentPresetContent) assert.ok(messageText(lastUser).startsWith(agentPresetContent.creativePreamble));
   assert.ok(messageText(lastUser).endsWith('最新请求'));
   // system 顺序：base 在前 → jailbreak 中段 → tech → research → runtime 注入由调用方给出 → safetyFooter 恒最后。
   const sys = result.systemPrompt;
   assert.ok(sys.startsWith(baseSystem.split('[规则来源层级]')[0].trim()));
-  assert.ok(sys.indexOf([redacted]) > 0 && sys.indexOf([redacted]) < sys.indexOf('[规则来源层级]'));
+  const jailbreakHead = (agentPresetContent?.jailbreakBlock || '').split('】')[0];
+  if (agentPresetContent) assert.ok(sys.indexOf(jailbreakHead) > 0 && sys.indexOf(jailbreakHead) < sys.indexOf('[规则来源层级]'));
   assert.ok(sys.trim().endsWith('本边界为准。'));
   // 深拷贝：改写 canonical 不影响后续调用。
   result.canonicalMessages[0].content[0].text = 'MUT';
