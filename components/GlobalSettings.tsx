@@ -89,7 +89,7 @@ interface AppearanceOption {
 }
 
 const LAB_MODULE_META: Record<LabPageModuleId, { label: string; description: string }> = {
-  prompt: { label: '提示词输入', description: '全局提示词、拆分后的风格与主体，以及提示词模块' },
+  prompt: { label: '全局提示词', description: '整张图片共用的画风、环境与主体描述' },
   characters: { label: '角色专属提示词', description: '角色描述、专属负面与构图坐标' },
   params: { label: '参数设置', description: '模型、尺寸、采样器、步数和 CFG' },
   negative: { label: '全局负面提示词', description: '整张图片共用的负面约束' },

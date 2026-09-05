@@ -86,14 +86,19 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
 
   return <><div className="chain-editor-main order-2 flex min-h-full w-full shrink-0 flex-col border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 lg:order-1 lg:w-1/2 lg:flex-1 lg:overflow-y-auto lg:border-b-0 lg:border-r">
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 pb-24 md:p-6 md:pb-24">
-      <LabModuleSection moduleId="prompt" label="提示词输入" order={getModuleOrder(layout, 'prompt')} defaultCollapsed={isModuleCollapsed(layout, 'prompt')}>
+      <LabModuleSection moduleId="prompt" label="全局提示词" order={getModuleOrder(layout, 'prompt')} defaultCollapsed={isModuleCollapsed(layout, 'prompt')}>
         <section className="space-y-4">
           <div>
             <div className="mb-2 flex items-center justify-between gap-3">
-              <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-meta font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
-                {draft.promptSource === 'history' ? '底图原提示词' : draft.promptSource === 'current' ? '文生图提示词' : '自定义编辑提示词'}
+              <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                {operation === 'outpaint' ? '扩图提示词' : operation === 'inpaint' ? '重绘提示词' : '图生图提示词'}
               </span>
-              <span className="text-micro text-gray-400">{getOperationLabel(operation)} · 独立保存</span>
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-meta font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+                  {draft.promptSource === 'history' ? '底图原提示词' : draft.promptSource === 'current' ? '文生图提示词' : '自定义编辑提示词'}
+                </span>
+                <span className="text-micro text-gray-400">{getOperationLabel(operation)} · 独立保存</span>
+              </div>
             </div>
             <TagAutocompleteTextarea
               tagAssistEnabled={tagAssistEnabled}

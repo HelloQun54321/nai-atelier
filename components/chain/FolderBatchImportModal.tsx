@@ -1146,7 +1146,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                         <span className="flex-none font-mono">{item.params.steps} 步</span>
                       </div>
                       <p className="mt-1 line-clamp-2 text-micro text-gray-400 font-mono break-all leading-tight">
-                        {item.prompt || '(无正面提示词)'}
+                        {item.prompt || '(无提示词)'}
                       </p>
                     </div>
 
