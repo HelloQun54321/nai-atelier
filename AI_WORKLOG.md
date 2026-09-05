@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **Antigravity (Gemini 3.8 Flash)**：将 WD Tagger「反推 Tag」移至底部操作栏前台（置于「导入实验室」左侧），彻底移除标签头部「自动整理」伪功能与冗余按钮，更新配套单测（refactor: relocate image tagger to inspiration footer and remove auto-organize tags）。
 - **Antigravity (Gemini 3.8 Flash)**：重构灵感详情底部操作栏排版与视觉平衡（主行动自适应撑开消灭中段留白断层、消除生硬割裂切线、统一 40px 高度、对齐烧瓶图标与纯化资产图标配色）（fix: rebalance inspiration detail footer layout and harmonize control aesthetics）。
 - **Antigravity (Gemini 3.8 Flash)**：灵感详情底栏极致重构为双核工具条（导入实验室分流底图 + 提取资产 3 大项 + 原图下载），顶栏新增即时图钉置顶，彻底移除画廊与详情页中的归档功能残留和设为风格串封面伪需求（feat: simplify inspiration detail actions into dual-core lab and asset workflows）。
 - **Antigravity (Gemini 3.8 Flash)**：重构灵感画廊侧边栏（剔除智能分类虚名、仅保留视图核心项、移除 0 计数来源）并转为顶部动态来源筛选胶囊，纯化灵感详情交互（移除五星/置顶/归档/编辑堆叠、支持失焦即时保存、折叠负面提示词、轻量 Chip 标签）（feat: streamline inspiration detail layout and declutter gallery sidebar）。

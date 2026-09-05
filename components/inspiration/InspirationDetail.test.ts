@@ -24,6 +24,7 @@ vi.mock('../ParamsViewer', () => ({
 
 vi.mock('../ImageTaggerPanel', () => ({
   ImageTaggerAction: () => React.createElement('button', { type: 'button' }, '反推 Tag'),
+  ImageTaggerPanel: (props: any) => props.open ? React.createElement('div', { 'data-testid': 'image-tagger-panel' }, '反推面板') : null,
 }));
 
 vi.mock('../MobileUI', () => ({
@@ -108,10 +109,30 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(screen.getByText('#夏日')).toBeTruthy();
     expect(screen.getByText('#少女')).toBeTruthy();
 
-    // 底部工具条包含高亮主按钮「导入实验室」、次按钮「提取资产」与下载
+    // 底部工具条包含「反推 Tag」、高亮主按钮「导入实验室」、次按钮「提取资产」与下载
+    expect(screen.getByRole('button', { name: /反推 Tag/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /导入实验室/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /提取资产/ })).toBeTruthy();
     expect(screen.getByRole('link', { name: '下载原图' })).toBeTruthy();
+  });
+
+  it('底部点击反推 Tag 按钮弹出 WD Tagger 反推面板', () => {
+    render(
+      React.createElement(InspirationDetail, {
+        item: mockItem,
+        items: [mockItem],
+        boards: mockBoards,
+        currentUser: mockUser,
+        notify: vi.fn(),
+        onClose: vi.fn(),
+        onRefresh: vi.fn(),
+        onOpenItem: vi.fn(),
+      })
+    );
+
+    const taggerBtn = screen.getByRole('button', { name: /反推 Tag/ });
+    fireEvent.click(taggerBtn);
+    expect(screen.getByTestId('image-tagger-panel')).toBeTruthy();
   });
 
   it('顶栏切换画板即时持久化到数据库', async () => {

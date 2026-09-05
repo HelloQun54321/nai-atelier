@@ -21,12 +21,12 @@ import { IMPORT_SESSION_KEY, PendingImportData } from '../../services/metadataSe
 import { createUuid } from '../../services/id';
 import { characterReferenceService } from '../../services/characterReferenceService';
 import { vibeService } from '../../services/vibeService';
-import { inspirationSimilarity, normalizeInspirationTags, sourceLabel, suggestInspirationTags } from '../../services/inspirationUtils';
+import { inspirationSimilarity, normalizeInspirationTags, sourceLabel } from '../../services/inspirationUtils';
 import { CloseButton } from '../DesignSystem';
 import { OriginalImage, SmartImage } from '../SmartImage';
 import { ParamsViewer } from '../ParamsViewer';
 import { useMobileHistoryLayer } from '../MobileUI';
-import { ImageTaggerAction } from '../ImageTaggerPanel';
+import { ImageTaggerPanel } from '../ImageTaggerPanel';
 import { canEditItem, DEFAULT_PARAMS, fetchImageFile, formatDate, sourceIcon, splitTags } from './InspirationShared';
 
 interface Props {
@@ -57,6 +57,7 @@ export const InspirationDetail: React.FC<Props> = ({
   const closeLayer = useMobileHistoryLayer(true, onClose, 'inspiration-detail');
   const [draft, setDraft] = useState(item);
   const [busy, setBusy] = useState('');
+  const [taggerOpen, setTaggerOpen] = useState(false);
   const [labMenuOpen, setLabMenuOpen] = useState(false);
   const [assetMenuOpen, setAssetMenuOpen] = useState(false);
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -65,6 +66,7 @@ export const InspirationDetail: React.FC<Props> = ({
 
   useEffect(() => {
     setDraft(item);
+    setTaggerOpen(false);
     setLabMenuOpen(false);
     setAssetMenuOpen(false);
     setIsAddingTag(false);
@@ -366,7 +368,7 @@ export const InspirationDetail: React.FC<Props> = ({
               </details>
             ) : null}
 
-            {/* 标签区：胶囊化展示 + WD Tagger + 自动建议 + 轻量添加 */}
+            {/* 标签区：胶囊化展示 + 轻量添加 */}
             <div>
               <div className="mb-1.5 flex items-center justify-between">
                 <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
@@ -375,30 +377,6 @@ export const InspirationDetail: React.FC<Props> = ({
                     <span className="ml-1 text-micro font-normal text-gray-400">（{(draft.tags || []).length}）</span>
                   )}
                 </span>
-                <div className="flex items-center gap-2">
-                  <ImageTaggerAction
-                    notify={notify}
-                    imageUrl={draft.imageUrl}
-                    actionLabel="追加 {count} 个 Tag 到灵感标签"
-                    onInsert={(newTags) => {
-                      const combined = normalizeInspirationTags([...(draft.tags || []), ...splitTags(newTags)]);
-                      void updateAndPersist('tags', combined, `已追加 ${splitTags(newTags).length} 个反推 Tag`);
-                    }}
-                  />
-                  {editable && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const tags = suggestInspirationTags({ ...draft, tags: draft.tags || [] });
-                        void updateAndPersist('tags', tags, '已自动整理标签');
-                      }}
-                      className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
-                    >
-                      <Wand2 className="h-3.5 w-3.5" />
-                      自动整理
-                    </button>
-                  )}
-                </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5">
@@ -553,16 +531,31 @@ export const InspirationDetail: React.FC<Props> = ({
             )}
           </div>
 
-          {/* 底部单行操作条：主行动自适应撑开（导入实验室 + 底图模式） + 提取资产 + 原图下载 */}
+          {/* 底部单行操作条：反推 Tag + 导入实验室（带底图模式） + 提取资产 + 原图下载 */}
           <footer className="flex-none border-t border-gray-200 p-3.5 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/60 backdrop-blur-sm">
-            <div className="flex items-center gap-2.5">
-              {/* 导入实验室（带底图模式分流，自适应撑开左侧，消除大面积留白） */}
+            <div className="flex items-center gap-2 sm:gap-2.5">
+              {/* 反推 Tag（置于导入实验室左侧） */}
+              <div className="flex-none">
+                <button
+                  type="button"
+                  disabled={Boolean(busy)}
+                  onClick={() => setTaggerOpen(true)}
+                  aria-label="反推 Tag"
+                  title="使用 WD Tagger 反推图片标签"
+                  className="mobile-touch flex h-10 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-2.5 text-xs font-bold text-gray-700 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-700 dark:hover:bg-gray-800/80 whitespace-nowrap transition-colors sm:px-3.5"
+                >
+                  <ImagePlus className="h-3.5 w-3.5 text-violet-500 dark:text-violet-400" />
+                  <span>反推 Tag</span>
+                </button>
+              </div>
+
+              {/* 导入实验室（带底图模式分流，自适应撑开，居于视觉核心） */}
               <div className="relative flex-1 min-w-0 flex h-10 rounded-xl bg-indigo-600 shadow-sm shadow-indigo-600/20 hover:bg-indigo-500 transition-colors">
                 <button
                   type="button"
                   disabled={Boolean(busy)}
                   onClick={() => void importToPlayground()}
-                  className="mobile-touch flex flex-1 min-w-0 items-center justify-center gap-2 px-3.5 text-xs font-bold text-white whitespace-nowrap"
+                  className="mobile-touch flex flex-1 min-w-0 items-center justify-center gap-1.5 px-2.5 text-xs font-bold text-white whitespace-nowrap sm:gap-2 sm:px-3.5"
                 >
                   <FlaskConical className="h-4 w-4 shrink-0" />
                   <span className="truncate">导入实验室</span>
@@ -573,7 +566,7 @@ export const InspirationDetail: React.FC<Props> = ({
                   onClick={() => { setLabMenuOpen(!labMenuOpen); setAssetMenuOpen(false); }}
                   aria-label="更多底图模式"
                   title="选择导入模式"
-                  className="mobile-touch flex items-center justify-center px-3 text-white/80 hover:text-white hover:bg-black/15 border-l border-white/15 transition-colors rounded-r-xl"
+                  className="mobile-touch flex items-center justify-center px-2.5 text-white/80 hover:text-white hover:bg-black/15 border-l border-white/15 transition-colors rounded-r-xl sm:px-3"
                 >
                   <ChevronDown className={`h-3.5 w-3.5 transition-transform ${labMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
@@ -630,7 +623,7 @@ export const InspirationDetail: React.FC<Props> = ({
                   type="button"
                   disabled={Boolean(busy)}
                   onClick={() => { setAssetMenuOpen(!assetMenuOpen); setLabMenuOpen(false); }}
-                  className="mobile-touch flex h-10 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3.5 text-xs font-bold text-gray-700 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-700 dark:hover:bg-gray-800/80 whitespace-nowrap transition-colors"
+                  className="mobile-touch flex h-10 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-2.5 text-xs font-bold text-gray-700 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-700 dark:hover:bg-gray-800/80 whitespace-nowrap transition-colors sm:px-3.5"
                 >
                   <Sparkles className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400" />
                   提取资产
@@ -689,6 +682,20 @@ export const InspirationDetail: React.FC<Props> = ({
           </footer>
         </section>
       </div>
+
+      {taggerOpen && (
+        <ImageTaggerPanel
+          open={taggerOpen}
+          onClose={() => setTaggerOpen(false)}
+          imageUrl={draft.imageUrl}
+          notify={notify}
+          actionLabel="追加 {count} 个 Tag 到灵感标签"
+          onInsert={(newTags) => {
+            const combined = normalizeInspirationTags([...(draft.tags || []), ...splitTags(newTags)]);
+            void updateAndPersist('tags', combined, `已追加 ${splitTags(newTags).length} 个反推 Tag`);
+          }}
+        />
+      )}
     </div>
   );
 };
