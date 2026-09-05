@@ -1308,7 +1308,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             }
             setHasChanges(false);
             setIsEditingInfo(false);
-            notify(`${isCharacterMode ? '角色串' : '风格串'}已保存${cover.changed ? '，当前图片已设为封面' : ''}`);
+            notify(`${isCharacterMode ? '自定义角色' : '风格串'}已保存${cover.changed ? '，当前图片已设为封面' : ''}`);
         } catch (error: any) {
             notify(`保存失败：${error?.message || '未知错误'}`, 'error');
         } finally {
@@ -1864,7 +1864,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 });
                 setHasChanges(false);
                 setIsEditingInfo(false);
-                notify(`${isCharacterMode ? '角色串' : '风格串'}已保存，封面已更新`);
+                notify(`${isCharacterMode ? '自定义角色' : '风格串'}已保存，封面已更新`);
             } catch (e: unknown) {
                 const errMessage = e instanceof Error ? e.message : String(e);
                 notify('设置封面失败: ' + errMessage, 'error');
@@ -1904,7 +1904,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 });
                 setHasChanges(false);
                 setIsEditingInfo(false);
-                notify(`${isCharacterMode ? '角色串' : '风格串'}已保存，封面已更新`);
+                notify(`${isCharacterMode ? '自定义角色' : '风格串'}已保存，封面已更新`);
             } catch (err: unknown) {
                 const errMessage = err instanceof Error ? err.message : String(err);
                 notify('上传失败: ' + errMessage, 'error');

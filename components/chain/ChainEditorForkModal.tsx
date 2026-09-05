@@ -50,7 +50,7 @@ export const ChainEditorForkModal: React.FC<ChainEditorForkModalProps> = ({
                     className="flex flex-col items-center justify-center p-4 rounded-xl bg-pink-50 dark:bg-pink-900/20 border-2 border-pink-200 dark:border-pink-800 hover:bg-pink-100 dark:hover:bg-pink-900/40 transition-colors gap-2"
                 >
                     <UserRound className="h-6 w-6 text-indigo-500" />
-                    <span className="font-bold text-pink-700 dark:text-pink-300">角色串</span>
+                    <span className="font-bold text-pink-700 dark:text-pink-300">自定义角色</span>
                 </button>
             </div>
             <button

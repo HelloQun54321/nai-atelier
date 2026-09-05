@@ -92,7 +92,7 @@ export const createLabWorkspaceSession = (
   };
 };
 
-/** 只有实验室入口允许恢复图片编辑模式；风格串／角色串详情始终是文生图工作区。 */
+/** 只有实验室入口允许恢复图片编辑模式；风格串／自定义角色详情始终是文生图工作区。 */
 export const scopeLabWorkspaceSessionToEntry = (entryId: string, session: LabWorkspaceSession): LabWorkspaceSession => (
   entryId === 'playground' || session.activeMode === 'text-to-image'
     ? session

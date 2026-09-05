@@ -2807,7 +2807,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'search_project_library', label: '搜索项目资料', description: '搜索风格串、角色串、灵感和画师资料。kind可为all、chains、inspirations、artists。',
+        name: 'search_project_library', label: '搜索项目资料', description: '搜索风格串、自定义角色、灵感和画师资料。kind可为all、chains、inspirations、artists。',
         parameters: Type.Object({ query: Type.Optional(Type.String()), kind: Type.Optional(Type.String()), limit: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => {
           const query = text(args.query).trim().toLowerCase();
@@ -2830,7 +2830,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'get_chain', label: '读取完整风格串或角色', description: '按搜索结果中的id读取一条风格串或角色串的完整提示词、模块、参数、Vibe和角色参考快照。修改或复用预设前必须先读取。',
+        name: 'get_chain', label: '读取完整风格串或自定义角色', description: '按搜索结果中的id读取一条风格串或自定义角色的完整提示词、模块、参数、Vibe和角色参考快照。修改或复用预设前必须先读取。',
         parameters: Type.Object({ id: Type.String() }),
         execute: async (_id, args) => {
           const value = await readProject(`/api/chains/${encodeURIComponent(text(args.id).slice(0, 200))}`);
@@ -2919,7 +2919,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'set_chain_cover_from_history', label: '设置风格串封面', description: '把一张项目生成历史原图设为指定风格串或角色串封面。historyId必须来自list_generation_history，chainId必须来自项目搜索。',
+        name: 'set_chain_cover_from_history', label: '设置风格串封面', description: '把一张项目生成历史原图设为指定风格串或自定义角色封面。historyId必须来自list_generation_history，chainId必须来自项目搜索。',
         parameters: Type.Object({ historyId: Type.String(), chainId: Type.String() }),
         execute: async (_id, args) => {
           if (!project?.requestBuffer) throw new Error('电脑历史图片服务不可用');
@@ -2953,7 +2953,7 @@ export class PromptAgentService {
             changed('vibes');
           } else {
             const chainId = text(args.chainId).slice(0, 200);
-            if (!chainId) throw new Error('设为封面时必须提供风格串或角色串id');
+            if (!chainId) throw new Error('设为封面时必须提供风格串或自定义角色id');
             result = await readProject(`/api/chains/${encodeURIComponent(chainId)}`, { method: 'PUT', body: { previewImage: source.imageData } });
             changed('chains');
           }
@@ -2961,7 +2961,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'create_chain', label: '新建风格串或角色', description: '在项目中创建风格串或角色串。type为style或character。',
+        name: 'create_chain', label: '新建风格串或角色', description: '在项目中创建风格串或自定义角色。type为style或character。',
         parameters: Type.Object({ type: Type.Union([Type.Literal('style'), Type.Literal('character')]), name: Type.String(), description: Type.Optional(Type.String()), basePrompt: Type.Optional(Type.String()), subjectPrompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), modules: Type.Optional(Type.Array(Type.Object({ name: Type.String(), content: Type.String(), isActive: Type.Optional(Type.Boolean()), position: Type.Optional(Type.Union([Type.Literal('pre'), Type.Literal('post')])) }))), params: Type.Optional(Type.Any()) }),
         execute: async (_id, args) => {
           const body = { type: args.type, name: text(args.name).slice(0, 160), description: text(args.description).slice(0, 1000), basePrompt: text(args.basePrompt), negativePrompt: text(args.negativePrompt), tags: (args.tags || []).slice(0, 40).map(value => text(value).slice(0, 80)), modules: Array.isArray(args.modules) ? sanitizeDraft({ modules: args.modules, params: {} }).modules : [], params: args.params && typeof args.params === 'object' ? sanitizeParams(args.params) : undefined, variableValues: { subject: text(args.subjectPrompt) } };
@@ -2971,12 +2971,12 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'update_chain', label: '更新风格串或角色', description: '更新已有风格串或角色串的业务字段。id必须来自项目搜索。',
+        name: 'update_chain', label: '更新风格串或角色', description: '更新已有风格串或自定义角色的业务字段。id必须来自项目搜索。',
         parameters: Type.Object({ id: Type.String(), name: Type.Optional(Type.String()), description: Type.Optional(Type.String()), basePrompt: Type.Optional(Type.String()), subjectPrompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), modules: Type.Optional(Type.Array(Type.Object({ name: Type.String(), content: Type.String(), isActive: Type.Optional(Type.Boolean()), position: Type.Optional(Type.Union([Type.Literal('pre'), Type.Literal('post')])) }))), params: Type.Optional(Type.Any()) }),
         execute: async (_id, args) => {
           const currentValue = await readProject(`/api/chains/${encodeURIComponent(text(args.id).slice(0, 200))}`);
           const current = currentValue.item || currentValue;
-          if (!current?.id) throw new Error('找不到要更新的风格串或角色串');
+          if (!current?.id) throw new Error('找不到要更新的风格串或自定义角色');
           const body = {};
           for (const key of ['name', 'description', 'basePrompt', 'negativePrompt']) if (typeof args[key] === 'string') body[key] = text(args[key]);
           if (Array.isArray(args.tags)) body.tags = args.tags.slice(0, 40).map(value => text(value).slice(0, 80));

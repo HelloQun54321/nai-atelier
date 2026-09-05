@@ -89,11 +89,11 @@ describe('ChainEditorModeHeader', () => {
     expect(onSelectMode).not.toHaveBeenCalled();
   });
 
-  it('角色串详情使用对应的返回与编辑文案', () => {
+  it('自定义角色详情使用对应的返回与编辑文案', () => {
     render(React.createElement(ChainEditorModeHeader, {
       isLaboratory: false,
-      chainName: '角色串名称',
-      entityLabel: '角色串',
+      chainName: '自定义角色名称',
+      entityLabel: '自定义角色',
       isOwner: true,
       activeMode: 'text-to-image',
       onSelectMode: vi.fn(),
@@ -101,7 +101,7 @@ describe('ChainEditorModeHeader', () => {
       onBack: vi.fn(),
     }));
 
-    expect(screen.getByRole('button', { name: '返回角色串列表' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '编辑角色串信息' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '返回自定义角色列表' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '编辑自定义角色信息' })).toBeTruthy();
   });
 });

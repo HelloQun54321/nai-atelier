@@ -147,7 +147,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(screen.queryByRole('button', { name: /全屏/ })).toBeNull();
   });
 
-  it('顶栏副行移除外置的破限选择下拉框与视觉搭配模型展示，模型名称完整舒展展示', async () => {
+  it('顶栏副行移除外置的注入选择下拉框与视觉搭配模型展示，模型名称完整舒展展示', async () => {
     stubServices({
       creativeMode: false,
       model: 'deepseek-chat',
@@ -161,7 +161,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
       expect(screen.getByRole('heading', { name: '新对话' })).toBeTruthy();
     });
 
-    expect(screen.queryByLabelText('选择本会话破限预设')).toBeNull();
+    expect(screen.queryByLabelText('选择本会话注入预设')).toBeNull();
     expect(screen.getByText('deepseek-chat')).toBeTruthy();
     expect(screen.queryByText('普通')).toBeNull();
 
@@ -171,7 +171,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(screen.queryByText(/识图/)).toBeNull();
   });
 
-  it('当开启破限时，顶栏副行仅以紧凑只读角标提示破限状态，不挤压模型名', async () => {
+  it('当开启注入时，顶栏副行仅以紧凑只读角标提示注入状态，不挤压模型名', async () => {
     stubServices({ creativeMode: true, presetName: '内置默认', model: 'deepseek-chat' });
     renderPanel(false);
 
@@ -179,8 +179,8 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
       expect(screen.getByRole('heading', { name: '新对话' })).toBeTruthy();
     });
 
-    expect(screen.queryByLabelText('选择本会话破限预设')).toBeNull();
-    const badge = screen.getByText('破限');
+    expect(screen.queryByLabelText('选择本会话注入预设')).toBeNull();
+    const badge = screen.getByText('注入');
     expect(badge).toBeTruthy();
     expect(badge.className).toContain('shrink-0');
     expect(screen.getByText('deepseek-chat')).toBeTruthy();

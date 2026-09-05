@@ -954,7 +954,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <span className="min-w-0">
                   <b className="block text-xs text-gray-800 dark:text-gray-100">强制清空随机种子（始终随机）</b>
                   <span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">
-                    开启后，工坊与实验室的随机种子输入框将暂时置空并使用全随机种子生图，不会修改预设原本保存的数值；关闭后立即恢复。
+                    开启后，风格串与实验室的随机种子输入框将暂时置空并使用全随机种子生图，不会修改预设原本保存的数值；关闭后立即恢复。
                   </span>
                 </span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.forceEmptySeed ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
@@ -966,7 +966,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <span className="min-w-0">
                   <b className="block text-xs text-gray-800 dark:text-gray-100">生成步数锁定在免费额度内</b>
                   <span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">
-                    开启时，工坊与实验室的生成步数上限锁定在官方免费门槛（当前 28 步）内，避免无意跨入 Anlas 计费；关闭后可手动输入更高步数（至多 50），费用估算会按实际步数计费。
+                    开启时，风格串与实验室的生成步数上限锁定在官方免费门槛（当前 28 步）内，避免无意跨入 Anlas 计费；关闭后可手动输入更高步数（至多 50），费用估算会按实际步数计费。
                   </span>
                 </span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.enforceFreeStepLimit ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>

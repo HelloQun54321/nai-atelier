@@ -315,7 +315,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             type="button"
             onClick={async event => {
               event.stopPropagation();
-              if (await confirmAction({ title: `删除“${chain.name}”？`, message: `该${chain.type === 'character' ? '角色串' : '风格串'}及其配置将被永久删除，此操作无法撤销。`, confirmLabel: '确认删除', tone: 'danger' })) onDelete(chain.id);
+              if (await confirmAction({ title: `删除“${chain.name}”？`, message: `该${chain.type === 'character' ? '自定义角色' : '风格串'}及其配置将被永久删除，此操作无法撤销。`, confirmLabel: '确认删除', tone: 'danger' })) onDelete(chain.id);
             }}
             className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-red-50 hover:text-red-500 dark:bg-black/70 dark:text-gray-300 dark:hover:text-red-400"
             title="删除"
@@ -337,7 +337,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           {isUntestedChain(chain) && (
             <div
               className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-md bg-black/65 px-1.5 py-0.5 text-micro font-medium text-amber-300 backdrop-blur-md shadow-sm border border-amber-400/20"
-              title="待实测：在工坊使用该预设生成后自动去除"
+              title="待实测：在此风格串生成后自动去除"
             >
               <EyeOff className="h-3 w-3 text-amber-400 shrink-0" />
               <span>待实测</span>
@@ -382,8 +382,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     </div>
   );
 
-  const title = type === 'character' ? '我的角色串' : '我的风格串';
-  const createLabel = type === 'character' ? '新建角色串' : '新建风格串';
+  const title = type === 'character' ? '我的自定义角色' : '我的风格串';
+  const createLabel = type === 'character' ? '新建自定义角色' : '新建风格串';
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
@@ -474,7 +474,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                   className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  placeholder="例如：新预设"
+                  placeholder={type === 'character' ? '例如：新角色' : '例如：新风格串'}
                   autoFocus
                 />
               </div>
@@ -484,7 +484,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                   className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none h-24 resize-none"
                   value={newDesc}
                   onChange={(e) => setNewDesc(e.target.value)}
-                  placeholder="描述这个预设的用途..."
+                  placeholder={type === 'character' ? '描述这个角色的用途...' : '描述这个风格串的用途...'}
                 />
               </div>
             </div>

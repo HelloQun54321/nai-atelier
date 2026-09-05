@@ -65,7 +65,7 @@ export const advanceProgress = (prev: number, raw: number, total: number): numbe
 };
 
 const getCleanPresetName = (fileName: string): string => {
-  return fileName.replace(/\.[^/.]+$/, '').trim() || '未命名预设';
+  return fileName.replace(/\.[^/.]+$/, '').trim() || '未命名风格串';
 };
 
 const formatFileSize = (bytes: number): string => {
@@ -712,7 +712,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
           name: item.name,
           size: item.file.size,
           reasonType: 'duplicate',
-          reasonText: item.duplicateOfName ? `与预设「${item.duplicateOfName}」提示词完全重复` : '与工坊已有预设提示词重复',
+          reasonText: item.duplicateOfName ? `与风格串「${item.duplicateOfName}」提示词完全重复` : '与已有风格串提示词重复',
           previewUrl: item.previewUrl,
           isDetected: true,
         });
@@ -854,10 +854,10 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
           });
         }
 
-        // 3. 创建风格预设
-        const chainId = await db.createChain(item.name || '批量导入预设', '批量导入自本地图片', undefined, 'style');
+        // 3. 创建风格串
+        const chainId = await db.createChain(item.name || '批量导入风格串', '批量导入自本地图片', undefined, 'style');
 
-        // 4. 更新预设完整内容与封面
+        // 4. 更新风格串完整内容与封面
         await db.updateChain(chainId, {
           tags,
           basePrompt: item.prompt,
@@ -921,7 +921,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-gray-900 dark:text-white">批量导入文件夹图片为风格串</h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">智能过滤已存在预设并使用原图作为封面</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">智能过滤已存在风格串并使用原图作为封面</p>
             </div>
           </div>
           <button
@@ -958,7 +958,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                 将图片文件夹或多张图片拖到此处
               </h3>
               <p className="mb-6 max-w-md text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                自动提取 NovelAI 生成参数、智能排除已存在的相同预设，并以原图为封面沉淀为风格串
+                自动提取 NovelAI 生成参数、智能排除已存在的相同风格串，并以原图为封面沉淀为风格串
               </p>
 
               <div className="flex flex-wrap items-center justify-center gap-3">
@@ -1027,7 +1027,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400 flex-none" />
                   <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">
-                    成功识别 <b className="text-indigo-600 dark:text-indigo-400">{detectedItems.length}</b> 张有效预设
+                    成功识别 <b className="text-indigo-600 dark:text-indigo-400">{detectedItems.length}</b> 个有效风格串
                     {duplicateItemsCount > 0 ? (
                       <>
                         （含 <b className="text-emerald-600 dark:text-emerald-400">{newItemsCount}</b> 张新素材，
@@ -1121,7 +1121,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       {item.isDuplicate && (
                         <div
                           className="absolute right-1.5 top-1.5 max-w-[65%] truncate rounded bg-gray-900/85 px-1.5 py-0.5 text-mini font-medium text-amber-300 border border-gray-700/60 backdrop-blur-sm"
-                          title={`已存在同参数预设: ${item.duplicateOfName || '现有预设'}`}
+                          title={`已存在同参数风格串: ${item.duplicateOfName || '现有风格串'}`}
                         >
                           已在库中
                         </div>
@@ -1137,7 +1137,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                           type="text"
                           value={item.name}
                           onChange={e => updateItemName(item.id, e.target.value)}
-                          placeholder="预设名称"
+                          placeholder="风格串名称"
                           className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-bold text-gray-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                         />
                       </div>
@@ -1179,7 +1179,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       <EyeOff className="h-3.5 w-3.5 text-amber-500" />
                       <span>标记为「待实测」</span>
                       <span className="text-meta font-normal text-gray-500 dark:text-gray-400">
-                        （在工坊首次生成后会自动去除）
+                        （首次生成后会自动去除）
                       </span>
                     </div>
                   </label>
@@ -1209,7 +1209,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                         <Trash2 className="h-3.5 w-3.5 text-indigo-500" />
                         <span>导入后删除本地源文件</span>
                         <span className="text-meta font-normal text-gray-500 dark:text-gray-400 hidden sm:inline">
-                          （已转存至工坊，保持文件夹整洁）
+                          （已转存至本地，保持文件夹整洁）
                         </span>
                       </div>
                     </label>
@@ -1266,9 +1266,9 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
           <div className="text-xs text-gray-500 dark:text-gray-400">
             {detectedItems.length > 0 && !isScanning && !isImporting && (
               <span>
-                已选中 <b className="text-indigo-600 dark:text-indigo-400">{selectedCount}</b> / {detectedItems.length} 个预设
+                已选中 <b className="text-indigo-600 dark:text-indigo-400">{selectedCount}</b> / {detectedItems.length} 个风格串
                 {duplicateItemsCount > 0 && (
-                  <span className="ml-1 text-gray-400">（已自动排除 {duplicateItemsCount} 个已有预设）</span>
+                  <span className="ml-1 text-gray-400">（已自动排除 {duplicateItemsCount} 个已有风格串）</span>
                 )}
               </span>
             )}
@@ -1374,7 +1374,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                         : 'text-gray-600 hover:bg-gray-200/60 dark:text-gray-300 dark:hover:bg-gray-800'
                     }`}
                   >
-                    重复预设 ({duplicateItemsCount})
+                    重复风格串 ({duplicateItemsCount})
                   </button>
                 )}
               </div>

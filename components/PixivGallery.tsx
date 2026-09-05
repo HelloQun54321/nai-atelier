@@ -481,7 +481,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     event?.preventDefault();
     const word = searchInput.trim();
     if (!word) {
-      notify('请输入 Pixiv 标签', 'error');
+      notify('请输入 Pixiv Tag', 'error');
       return;
     }
     void loadFeed('search', { word });
@@ -646,7 +646,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       mode: 'append-prompt',
     };
     sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(pending));
-    notify('Pixiv 标签已送往实验室');
+    notify('Pixiv Tag 已送往实验室');
     onNavigateToPlayground();
   };
 
@@ -778,7 +778,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             <ToolbarSearch
               value={searchInput}
               onChange={event => setSearchInput(event.target.value)}
-              placeholder="Pixiv 标签搜索，回车直接检索"
+              placeholder="Pixiv Tag 搜索，回车直接检索"
               aria-label="搜索 Pixiv"
               containerClassName="min-w-[12rem] flex-1 md:max-w-none"
             />
@@ -1167,7 +1167,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
               </div>
               {selected.tags.length > 0 && (
                 <section>
-                  <h3 className="mb-2 text-xs font-black text-gray-700 dark:text-gray-200">标签 · {selected.tags.length}</h3>
+                  <h3 className="mb-2 text-xs font-black text-gray-700 dark:text-gray-200">Tag · {selected.tags.length}</h3>
                   <TagChipGroup
                     chips={selected.tags.map(tag => ({
                       label: tag,

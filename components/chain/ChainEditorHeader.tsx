@@ -113,7 +113,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                 <ChainEditorModeHeader
                     isLaboratory={isPlayground}
                     chainName={chainName}
-                    entityLabel={isCharacterMode ? '角色串' : '风格串'}
+                    entityLabel={isCharacterMode ? '自定义角色' : '风格串'}
                     isOwner={isOwner}
                     activeMode={activeGenerationMode}
                     onSelectMode={selectGenerationMode}
@@ -121,7 +121,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     onEditInfo={() => setIsEditingInfo(true)}
                     onBack={onBack}
                 />
-                {!isPlayground && isEditingInfo && isOwner && <div role="dialog" aria-label={`编辑${isCharacterMode ? '角色串' : '风格串'}信息`} className="absolute left-12 top-[calc(100%+0.5rem)] z-50 w-[min(40rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                {!isPlayground && isEditingInfo && isOwner && <div role="dialog" aria-label={`编辑${isCharacterMode ? '自定义角色' : '风格串'}信息`} className="absolute left-12 top-[calc(100%+0.5rem)] z-50 w-[min(40rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                     <div className="grid gap-3 sm:grid-cols-2">
                         <label className="text-xs font-bold text-gray-500">名称<input type="text" value={chainName} onChange={e => { setChainName(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-800 dark:text-white" placeholder="名称" /></label>
                         <label className="text-xs font-bold text-gray-500">描述<input type="text" value={chainDesc} onChange={e => { setChainDesc(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-300" placeholder="描述" /></label>

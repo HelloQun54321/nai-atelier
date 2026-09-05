@@ -134,7 +134,7 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
 
                     <div className="space-y-4">
                         <div className="flex justify-between items-center">
-                            <label className="block text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase">测试分组 (Slots)</label>
+                            <label className="block text-xs font-bold text-indigo-600 dark:text-indigo-400">测试分组</label>
                             <button onClick={addSlot} className="text-xs bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded hover:bg-indigo-200 dark:hover:bg-indigo-800">
                                 + 添加分组
                             </button>
@@ -165,14 +165,14 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
                                     className="w-full h-16 p-2 bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg text-xs dark:text-white font-mono resize-none focus:ring-1 focus:ring-indigo-500 outline-none"
                                     value={slot.prompt}
                                     onChange={e => updateSlot(i, 'prompt', e.target.value)}
-                                    placeholder="输入测试 Prompt..."
+                                    placeholder="输入测试提示词..."
                                 />
                             </div>
                         ))}
                     </div>
 
                     <div>
-                        <label className="block text-xs font-bold text-red-500 dark:text-red-400 mb-1 uppercase">通用负面 (Negative Prompt)</label>
+                        <label className="block text-xs font-bold text-red-500 dark:text-red-400 mb-1">通用负面提示词</label>
                         <textarea 
                             className="w-full h-16 p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-xs dark:text-white font-mono resize-none focus:ring-1 focus:ring-red-500 outline-none"
                             value={draftConfig.negative}
@@ -182,7 +182,7 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
 
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                         <div>
-                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Seed (-1 = Random)</label>
+                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">随机种子（-1 为随机）</label>
                             <div className="flex gap-2">
                             <input 
                                 type="number" 
@@ -200,16 +200,16 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
                             </div>
                         </div>
                         <div>
-                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Steps / Scale</label>
+                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">生成步数 / 提示词相关性</label>
                             <div className="flex gap-2">
                                 <input 
-                                    type="number" placeholder="Steps"
+                                    type="number" placeholder="步数"
                                     className="w-1/2 p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-sm dark:text-white"
                                     value={draftConfig.steps}
                                     onChange={e => setDraftConfig({...draftConfig, steps: parseInt(e.target.value)})}
                                 />
                                 <input 
-                                    type="number" placeholder="Scale"
+                                    type="number" placeholder="相关性"
                                     className="w-1/2 p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-sm dark:text-white"
                                     value={draftConfig.scale}
                                     onChange={e => setDraftConfig({...draftConfig, scale: parseFloat(e.target.value)})}

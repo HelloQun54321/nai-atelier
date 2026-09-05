@@ -7,7 +7,7 @@ import { IconButton } from './DesignSystem';
 interface ChainEditorModeHeaderProps {
   isLaboratory: boolean;
   chainName: string;
-  entityLabel: '风格串' | '角色串';
+  entityLabel: '风格串' | '自定义角色';
   isOwner: boolean;
   activeMode: GenerationMode;
   onSelectMode: (mode: GenerationMode) => void | Promise<void>;
