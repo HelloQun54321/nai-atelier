@@ -1173,7 +1173,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
         if (data.mode === 'append-prompt') {
             setBasePrompt(current => mergePromptFields(current, data.prompt));
-            setSubjectPrompt('');
             markChange();
             notify('已把灵感 Prompt 追加到全局提示词。');
             return;
