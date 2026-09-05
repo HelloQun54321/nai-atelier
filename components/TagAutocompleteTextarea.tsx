@@ -6,10 +6,12 @@ import {
   parsePromptTags,
   PromptTagToken,
   PromptTagTranslation,
+  PromptWeightKind,
   resolvePromptTranslations,
   subscribeTagTranslations,
   transformPromptWeight,
   translateMissingPromptTags,
+  wrapPromptTag,
 } from '../services/tagTranslations';
 
 interface CompletionTarget {
@@ -166,22 +168,28 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     applyWeight('numeric', next);
   };
 
-  const applyWeight = (mode: 'up' | 'down' | 'remove' | 'numeric', numericWeight?: number, step = 0.1) => {
+  const replaceSelectedGroups = (transform: (raw: string, token: PromptTagToken) => string) => {
     if (!selectedTokens.length) return;
-    if (mode === 'numeric' && !Number.isFinite(numericWeight)) return;
     const groups = new Map<string, PromptTagToken[]>();
     selectedTokens.forEach(token => groups.set(token.groupId || token.id, [...(groups.get(token.groupId || token.id) || []), token]));
     const replacements = [...groups.values()].map(tokens => {
       const first = tokens[0];
       const start = first.groupStart ?? first.start ?? 0;
       const end = first.groupEnd ?? first.end ?? start;
-      const raw = value.slice(start, end);
-      return { start, end, value: transformPromptWeight(raw, first, mode, numericWeight, step) };
-    }).filter((item): item is { start: number; end: number; value: string } => Boolean(item)).sort((a, b) => b.start - a.start);
+      const next = transform(value.slice(start, end), first);
+      return { start, end, value: next };
+    }).filter((item): item is { start: number; end: number; value: string } => Boolean(item.value)).sort((a, b) => b.start - a.start);
     let nextValue = value;
     replacements.forEach(item => { nextValue = nextValue.slice(0, item.start) + item.value + nextValue.slice(item.end); });
     onValueChange(nextValue);
   };
+
+  const applyWeight = (mode: 'up' | 'down' | 'remove' | 'numeric', numericWeight?: number, step = 0.1) => {
+    if (mode === 'numeric' && !Number.isFinite(numericWeight)) return;
+    replaceSelectedGroups((raw, token) => transformPromptWeight(raw, token, mode, numericWeight, step));
+  };
+
+  const applyWeightWrap = (kind: PromptWeightKind) => replaceSelectedGroups((raw, token) => wrapPromptTag(raw, token, kind));
 
   useEffect(() => () => {
     if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
@@ -467,6 +475,29 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             })()}
           </div>
           <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
+            <div className={`flex items-stretch overflow-hidden rounded-md border transition-colors ${selectedTokens.length ? 'border-[var(--nai-accent)]' : 'border-gray-300 opacity-40 dark:border-gray-600'}`}>
+              <button
+                type="button"
+                onClick={() => applyWeightWrap('brace')}
+                disabled={!selectedTokens.length}
+                className="px-2 py-1 font-mono text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none"
+                title="添加/转为花括号增强：{tag}（已是花括号则归位一层）"
+              >{'{ }'}</button>
+              <button
+                type="button"
+                onClick={() => applyWeightWrap('bracket')}
+                disabled={!selectedTokens.length}
+                className="border-x border-gray-200 px-2 py-1 font-mono text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none dark:border-gray-700"
+                title="添加/转为方括号减弱：[tag]"
+              >{'[ ]'}</button>
+              <button
+                type="button"
+                onClick={() => applyWeightWrap('numeric')}
+                disabled={!selectedTokens.length}
+                className="px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none"
+                title="转为数值权重：1.1::tag::（右侧输入框可继续改数值）"
+              >数值</button>
+            </div>
             {translationError && <span className="min-w-0 flex-1 truncate text-micro text-red-500" title={translationError}>{translationError}</span>}
             <div className={`ml-auto flex items-stretch overflow-hidden rounded-md border transition-colors ${selectedTokens.length ? 'border-[var(--nai-accent)]' : 'border-gray-300 opacity-40 dark:border-gray-600'}`}>
               <button

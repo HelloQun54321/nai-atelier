@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parsePromptTags, transformPromptWeight } from './tagTranslations';
+import { parsePromptTags, transformPromptWeight, wrapPromptTag } from './tagTranslations';
 
 describe('parsePromptTags', () => {
   it('英文与中文逗号都作为 Tag 分隔符', () => {
@@ -57,5 +57,17 @@ describe('parsePromptTags', () => {
     const token = { id: '1', displayTag: 'tag', lookupTag: 'tag', groupKind: 'numeric' as const, groupWeight: '1.2' };
     expect(transformPromptWeight('1.2::tag::', token, 'up', undefined, 0.01)).toBe('1.21::tag::');
     expect(transformPromptWeight('1.2::tag::', token, 'numeric', 0.95)).toBe('0.95::tag::');
+  });
+
+  it('添加权重按类型设定包装并可互相转换', () => {
+    const plain = { id: '1', displayTag: 'tag', lookupTag: 'tag' };
+    expect(wrapPromptTag('tag', plain, 'brace')).toBe('{tag}');
+    expect(wrapPromptTag('tag', plain, 'bracket')).toBe('[tag]');
+    expect(wrapPromptTag('tag', plain, 'numeric')).toBe('1.1::tag::');
+    const numeric = { id: '1', displayTag: 'tag', lookupTag: 'tag', groupKind: 'numeric' as const, groupWeight: '1.2' };
+    expect(wrapPromptTag('1.2::tag::', numeric, 'numeric', 1.35)).toBe('1.35::tag::');
+    expect(wrapPromptTag('1.2::tag::', numeric, 'brace')).toBe('{tag}');
+    expect(wrapPromptTag('{{tag}}', { id: '1', displayTag: 'tag', lookupTag: 'tag', groupKind: 'brace', groupLevel: 2 }, 'brace')).toBe('{tag}');
+    expect(wrapPromptTag('a, b', plain, 'brace')).toBe('{a, b}');
   });
 });

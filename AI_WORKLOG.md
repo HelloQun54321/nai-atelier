@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **ZCode (GLM-5.3)**：底栏左侧新增按权重类型添加/转换的三分段按钮（{ } / [ ] / 数值），服务层新增 wrapPromptTag 支持类型设定与互相转换（feat: add weight type controls for selected tags）。
 - **ZCode (GLM-5.3)**：移除权重调节的浏览器原生 prompt 弹窗，改为底栏内联数值输入（回车应用整组）+ −/+ 步进按钮（Shift+点击 ±0.01），调节组右移至底栏右侧（fix: inline weight stepper replaces native prompt）。
 - **ZCode (GLM-5.3)**：权重操作按钮常驻底栏（未选中置灰），未选中权重组回归中性灰白外观，强调色只表达选中态（fix: persist weight actions and reserve accent for selection）。
 - **ZCode (GLM-5.3)**：权重操作按钮并入底栏与「翻译缺失项」同行显示，移除多余的「取消选择」按钮（fix: merge weight actions into translation footer row）。

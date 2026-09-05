@@ -129,8 +129,23 @@ export const parsePromptTags = (prompt: string): PromptTagToken[] => {
 };
 
 export type PromptWeightAction = 'up' | 'down' | 'remove' | 'numeric';
+export type PromptWeightKind = 'brace' | 'bracket' | 'numeric';
 
 const formatNumericWeight = (value: number) => String(Number(Math.max(0.1, value).toFixed(2)));
+
+// 把选中组设定为目标权重类型：先剥离现有包装，再按类型重新包裹；普通 Tag 直接包装。
+export const wrapPromptTag = (raw: string, token: PromptTagToken, kind: PromptWeightKind, numericWeight = 1.1): string => {
+  const plain = token.groupKind === 'numeric'
+    ? raw.replace(/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::/, '').replace(/::$/, '')
+    : token.groupKind === 'brace'
+      ? raw.replace(/^\{+/, '').replace(/\}+$/, '')
+      : token.groupKind === 'bracket'
+        ? raw.replace(/^\[+/, '').replace(/\]+$/, '')
+        : raw;
+  if (kind === 'numeric') return `${formatNumericWeight(numericWeight)}::${plain}::`;
+  if (kind === 'bracket') return `[${plain}]`;
+  return `{${plain}}`;
+};
 
 export const transformPromptWeight = (
   raw: string,
