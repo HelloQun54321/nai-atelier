@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **ZCode (GLM-5.3)**：权重操作按钮常驻底栏（未选中置灰），未选中权重组回归中性灰白外观，强调色只表达选中态（fix: persist weight actions and reserve accent for selection）。
 - **ZCode (GLM-5.3)**：权重操作按钮并入底栏与「翻译缺失项」同行显示，移除多余的「取消选择」按钮（fix: merge weight actions into translation footer row）。
 - **ZCode (GLM-5.3)**：权重组渲染改为连续胶囊（成员无缝、强调色贯穿、语法在两端），选择粒度改为整组选中/解除，权重操作始终作用于完整组（fix: bind weighted tag groups into seamless capsules）。
 - **ZCode (GLM-5.3)**：按反馈重构权重 Tag 展示：权重语法（数字::/::、多层花括号）还原到 Tag 文本两侧，权重组以强调色相连并区分首尾；顺带修复正则贪婪匹配导致 `{{tag}}` 层级失配的问题（fix: render weight syntax around weighted tag chips）。

@@ -402,8 +402,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                         : 'border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
                       aria-pressed={selected}
                     >
-                      <span className="max-w-52 truncate font-mono text-micro text-gray-500 dark:text-gray-400" title={item.displayTag}>{item.displayTag}</span>
-                      <span className="max-w-48 truncate text-xs font-medium text-gray-500 dark:text-gray-400" title={item.chinese || '词库暂无翻译'}>{item.chinese || '待翻译'}</span>
+                      <span className={`max-w-52 truncate font-mono text-micro ${selected ? 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.displayTag}>{item.displayTag}</span>
+                      <span className={`max-w-48 truncate text-xs font-medium ${selected ? 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.chinese || '词库暂无翻译'}>{item.chinese || '待翻译'}</span>
                     </button>,
                   );
                   cursor += 1;
@@ -423,6 +423,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                   : last.groupKind === 'brace' ? '}'.repeat(last.groupLevel || 1)
                     : last.groupKind === 'bracket' ? ']'.repeat(last.groupLevel || 1) : '';
                 const groupSelected = members.every(member => selectedTagIds.has(member.id));
+                // 未选中时权重组与散 Tag 同为中性灰白，强调色只留给选中态。
+                const groupTextTone = groupSelected ? 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400';
                 nodes.push(
                   <button
                     type="button"
@@ -436,48 +438,42 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                     key={item.groupId}
                     className={`inline-flex max-w-full flex-wrap items-start overflow-hidden rounded-md border text-left leading-tight transition-colors hover:border-[var(--nai-accent)] ${groupSelected
                       ? 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]'
-                      : 'border-[color-mix(in_srgb,var(--nai-accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--nai-accent)_7%,transparent)]'}`}
+                      : 'border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
                     aria-pressed={groupSelected}
                   >
-                    {openSyntax && <span className="shrink-0 py-1 pl-2 font-mono text-micro font-bold text-[var(--nai-accent)]">{openSyntax}</span>}
+                    {openSyntax && <span className={`shrink-0 py-1 pl-2 font-mono text-micro font-bold ${groupTextTone}`}>{openSyntax}</span>}
                     {members.map((member, memberIndex) => (
-                      <span key={member.id} className={`flex min-w-0 flex-col px-2 py-1 ${memberIndex > 0 ? 'border-l border-[color-mix(in_srgb,var(--nai-accent)_18%,transparent)]' : ''}`}>
-                        <span className="max-w-52 truncate font-mono text-micro text-gray-500 dark:text-gray-400" title={member.displayTag}>{member.displayTag}</span>
-                        <span className="max-w-48 truncate text-xs font-medium text-gray-500 dark:text-gray-400" title={member.chinese || '词库暂无翻译'}>{member.chinese || '待翻译'}</span>
+                      <span key={member.id} className={`flex min-w-0 flex-col px-2 py-1 ${memberIndex > 0 ? (groupSelected ? 'border-l border-[color-mix(in_srgb,var(--nai-accent)_25%,transparent)]' : 'border-l border-gray-200 dark:border-gray-700') : ''}`}>
+                        <span className={`max-w-52 truncate font-mono text-micro ${groupTextTone}`} title={member.displayTag}>{member.displayTag}</span>
+                        <span className={`max-w-48 truncate text-xs font-medium ${groupTextTone}`} title={member.chinese || '词库暂无翻译'}>{member.chinese || '待翻译'}</span>
                       </span>
                     ))}
-                    {closeSyntax && <span className="shrink-0 py-1 pr-2 font-mono text-micro font-bold text-[var(--nai-accent)]">{closeSyntax}</span>}
+                    {closeSyntax && <span className={`shrink-0 py-1 pr-2 font-mono text-micro font-bold ${groupTextTone}`}>{closeSyntax}</span>}
                   </button>,
                 );
               }
               return nodes;
             })()}
           </div>
-          {(selectedTokens.length > 0 || missingTags.length > 0 || translationError) && (
-            <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
-              {selectedTokens.length > 0 && (
-                <>
-                  <button type="button" onClick={() => applyWeight('up')} className="rounded-md px-2 py-1 text-meta font-bold text-white hover:opacity-90" style={{ backgroundColor: 'var(--nai-accent)' }}>增强</button>
-                  <button type="button" onClick={() => applyWeight('down')} className="rounded-md px-2 py-1 text-meta font-bold text-white hover:opacity-90" style={{ backgroundColor: 'var(--nai-accent)' }}>减弱</button>
-                  <button type="button" onClick={() => applyWeight('numeric')} className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)]">数值</button>
-                  <button type="button" onClick={() => applyWeight('remove')} className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)]">移除权重</button>
-                </>
-              )}
-              {translationError && <span className="min-w-0 flex-1 truncate text-micro text-red-500" title={translationError}>{translationError}</span>}
-              {allowAiTranslation && !disabled && missingTags.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => void translateMissing()}
-                  disabled={translationLoading}
-                  className="ml-auto inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
-                  title={`使用当前 Agent 模型翻译 ${missingTags.length} 个词库缺失项`}
-                >
-                  {translationLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5" />}
-                  {translationLoading ? '翻译中' : `翻译缺失项 ${missingTags.length}`}
-                </button>
-              )}
-            </div>
-          )}
+          <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
+            <button type="button" onClick={() => applyWeight('up')} disabled={!selectedTokens.length} className="rounded-md px-2 py-1 text-meta font-bold text-white hover:opacity-90 disabled:opacity-40" style={{ backgroundColor: 'var(--nai-accent)' }}>增强</button>
+            <button type="button" onClick={() => applyWeight('down')} disabled={!selectedTokens.length} className="rounded-md px-2 py-1 text-meta font-bold text-white hover:opacity-90 disabled:opacity-40" style={{ backgroundColor: 'var(--nai-accent)' }}>减弱</button>
+            <button type="button" onClick={() => applyWeight('numeric')} disabled={!selectedTokens.length} className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)] disabled:opacity-40">数值</button>
+            <button type="button" onClick={() => applyWeight('remove')} disabled={!selectedTokens.length} className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)] disabled:opacity-40">移除权重</button>
+            {translationError && <span className="min-w-0 flex-1 truncate text-micro text-red-500" title={translationError}>{translationError}</span>}
+            {allowAiTranslation && !disabled && missingTags.length > 0 && (
+              <button
+                type="button"
+                onClick={() => void translateMissing()}
+                disabled={translationLoading}
+                className="ml-auto inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
+                title={`使用当前 Agent 模型翻译 ${missingTags.length} 个词库缺失项`}
+              >
+                {translationLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5" />}
+                {translationLoading ? '翻译中' : `翻译缺失项 ${missingTags.length}`}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
