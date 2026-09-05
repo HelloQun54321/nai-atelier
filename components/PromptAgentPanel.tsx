@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PromptAgentDraft } from '../types';
-import { PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, PromptAgentVisionUsage, promptAgentService } from '../services/promptAgent';
+import { PromptAgentCreativePreset, PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, PromptAgentVisionUsage, promptAgentService } from '../services/promptAgent';
 import { formatPresetSessionLabel } from './PromptAgentSettings';
 import { vibeService } from '../services/vibeService';
 import { useMobileHistoryLayer } from './MobileUI';
@@ -142,11 +142,11 @@ const AgentMessageList = React.memo(({
         {message.role === 'agent' && <span className="min-w-0 flex-1 truncate pr-1">{message.model || ''}{message.usage && typeof message.usage.totalTokens === 'number' ? ` · ${message.usage.totalTokens.toLocaleString()} tokens${message.usage.cost?.total ? ` · $${message.usage.cost.total.toFixed(4)}` : ''}` : ''}{message.stopReason && message.stopReason !== 'stop' ? ` · ${message.stopReason}` : ''}</span>}
         {message.role !== 'agent' && <span className="flex-1" />}
         <div className="flex flex-none items-center gap-0.5 whitespace-nowrap">
-          <button type="button" onClick={() => onCopy(message)} className="mobile-touch flex items-center justify-center rounded-lg font-bold hover:bg-black/5" title={copiedMessageId === message.id ? '已复制' : '复制'} aria-label={copiedMessageId === message.id ? '已复制' : '复制'}>
+          <button type="button" onClick={() => onCopy(message)} className={`mobile-touch flex items-center justify-center rounded-lg font-bold transition-colors ${message.role === 'user' ? 'hover:bg-white/20' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`} title={copiedMessageId === message.id ? '已复制' : '复制'} aria-label={copiedMessageId === message.id ? '已复制' : '复制'}>
             {copiedMessageId === message.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             <span className="ml-1 hidden md:inline">{copiedMessageId === message.id ? '已复制' : '复制'}</span>
           </button>
-          {message.role === 'user' && !running && !message.queued && <button type="button" onClick={() => onEdit(message)} className="mobile-touch rounded-lg px-1.5 font-bold whitespace-nowrap hover:bg-white/10">编辑重发</button>}
+          {message.role === 'user' && !running && !message.queued && <button type="button" onClick={() => onEdit(message)} className="mobile-touch rounded-lg px-1.5 font-bold whitespace-nowrap hover:bg-white/20">编辑重发</button>}
           {message.role === 'agent' && index === visibleMessages.length - 1 && !running && <button type="button" onClick={onRetry} className="mobile-touch flex items-center justify-center rounded-lg font-bold text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-950/40" title="重新生成" aria-label="重新生成"><RotateCcw className="h-3.5 w-3.5" /><span className="ml-1 hidden md:inline">重新生成</span></button>}
         </div>
       </div>
@@ -166,6 +166,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [models, setModels] = useState<PromptAgentModel[]>([]);
   const [showSessions, setShowSessions] = useState(false);
   const [showModelMenu, setShowModelMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [creativePresets, setCreativePresets] = useState<PromptAgentCreativePreset[]>([]);
   const [queueMode, setQueueMode] = useState<'steer' | 'followUp'>('steer');
   const [busySessionAction, setBusySessionAction] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState('');
@@ -196,6 +198,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [sessionInitError, setSessionInitError] = useState('');
   const panelRef = useRef<HTMLDivElement | null>(null);
   const modelMenuRef = useRef<HTMLDivElement | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
   const pendingPanelWidthRef = useRef(panelWidth);
   const pendingMobileHeightRef = useRef(mobileHeight);
   const messageActionsRef = useRef({
@@ -304,16 +307,34 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     if (next) setActiveSessionId(next);
   };
 
+  const loadCreativePresets = async () => {
+    try {
+      const state = await promptAgentService.getCreativePresets();
+      setCreativePresets(state.items || []);
+    } catch {
+      // 容错：预设读取失败不影响 Agent 主流程
+    }
+  };
+
   useEffect(() => {
     if (!props.open) return;
     setSessionInitError('');
-    void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(setModels)])
-      .catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行'));
+    void Promise.all([
+      refreshSessions(),
+      promptAgentService.getAvailableModels().then(setModels),
+      loadCreativePresets(),
+    ]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行'));
   }, [props.open]);
 
   useEffect(() => {
     if (!props.open) return;
-    const refreshRuntime = () => { void Promise.all([refreshSessions(activeSessionId), promptAgentService.getAvailableModels().then(setModels)]).catch(() => {}); };
+    const refreshRuntime = () => {
+      void Promise.all([
+        refreshSessions(activeSessionId),
+        promptAgentService.getAvailableModels().then(setModels),
+        loadCreativePresets(),
+      ]).catch(() => {});
+    };
     window.addEventListener('nai-agent-runtime-changed', refreshRuntime);
     return () => window.removeEventListener('nai-agent-runtime-changed', refreshRuntime);
   }, [props.open, activeSessionId]);
@@ -413,10 +434,45 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   useEffect(() => {
     if (!props.open) return;
-    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') closePanel(); };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (sessionMenuId) {
+          setSessionMenuId('');
+          return;
+        }
+        if (showMoreMenu) {
+          setShowMoreMenu(false);
+          return;
+        }
+        if (showModelMenu) {
+          setShowModelMenu(false);
+          return;
+        }
+        if (showSessions) {
+          setShowSessions(false);
+          return;
+        }
+        if (editingMessageId) {
+          setEditingMessageId('');
+          setInput('');
+          return;
+        }
+        closePanel();
+      }
+    };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [props.open]);
+  }, [props.open, sessionMenuId, showMoreMenu, showModelMenu, showSessions, editingMessageId]);
+
+  useEffect(() => {
+    if (!sessionMenuId) return;
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof HTMLElement && event.target.closest('[data-session-menu]')) return;
+      setSessionMenuId('');
+    };
+    window.addEventListener('pointerdown', closeOnOutsidePointerDown);
+    return () => window.removeEventListener('pointerdown', closeOnOutsidePointerDown);
+  }, [sessionMenuId]);
 
   useEffect(() => {
     if (!showModelMenu) return;
@@ -426,6 +482,15 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     window.addEventListener('pointerdown', closeOnOutsidePointerDown);
     return () => window.removeEventListener('pointerdown', closeOnOutsidePointerDown);
   }, [showModelMenu]);
+
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !moreMenuRef.current?.contains(event.target)) setShowMoreMenu(false);
+    };
+    window.addEventListener('pointerdown', closeOnOutsidePointerDown);
+    return () => window.removeEventListener('pointerdown', closeOnOutsidePointerDown);
+  }, [showMoreMenu]);
 
   if (!props.open && !hasOpened) return null;
 
@@ -678,6 +743,48 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     }
   };
 
+  const selectSessionPreset = async (targetPresetId: string | 'off') => {
+    if (!activeSession || running || activeSession.creativeModeLocked || activeSession.messageCount) return;
+    try {
+      if (targetPresetId === 'off') {
+        const updated = await promptAgentService.updateSession(activeSession.id, { creativeMode: false });
+        setSessions(previous => previous.map(item => item.id === updated.id ? {
+          ...item,
+          ...updated,
+          presetName: undefined,
+          presetRevisionHash: undefined,
+          effectivePolicyFingerprint: undefined,
+        } : item));
+        return;
+      }
+      // 阶段三：切换预设只作用于当前这条新会话（方案 A）
+      const presetState = await promptAgentService.getCreativePresets();
+      const originalActive = presetState.activeCreativePresetId || null;
+      await promptAgentService.setActiveCreativePreset(targetPresetId);
+      try {
+        if (activeSession.creativeMode) {
+          await promptAgentService.updateSession(activeSession.id, { creativeMode: false });
+        }
+        const updated = await promptAgentService.updateSession(activeSession.id, { creativeMode: true });
+        setSessions(previous => previous.map(item => item.id === updated.id ? {
+          ...item,
+          ...updated,
+        } : item));
+      } finally {
+        await promptAgentService.setActiveCreativePreset(originalActive);
+      }
+    } catch (error) {
+      setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '切换破限预设失败' }]);
+    }
+  };
+
+  const defaultPresetId = creativePresets.find(p => p.isBuiltin)?.id || creativePresets[0]?.id || 'builtin-default';
+  const getSessionPresetValue = (session: PromptAgentSession | null) => {
+    if (!session || !session.creativeMode) return 'off';
+    if (!session.presetName) return defaultPresetId;
+    return creativePresets.find(p => p.name === session.presetName)?.id || defaultPresetId;
+  };
+
   const formatUsage = (usage?: PromptAgentUsage) => usage && typeof usage.totalTokens === 'number'
     ? `${usage.totalTokens.toLocaleString()} tokens${usage.cost?.total ? ` · $${usage.cost.total.toFixed(4)}` : ''}`
     : '';
@@ -731,29 +838,35 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   return createPortal(<div aria-hidden={!props.open} className={`agent-overlay pointer-events-none fixed inset-0 z-[1100] ${props.open ? 'agent-overlay--open' : 'agent-overlay--closed'}`}>
     <div
       ref={panelRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Agent 控制面板"
       className={`agent-panel pointer-events-auto absolute flex overflow-hidden border-gray-200 bg-gray-50 shadow-2xl transition-[width,height,border-radius] dark:border-gray-800 dark:bg-gray-950 ${fullscreen ? 'agent-panel--fullscreen' : ''}`}
       style={{ '--agent-mobile-height': `${mobileHeight}dvh`, '--agent-width': `${panelWidth}px` } as React.CSSProperties}
     >
     {!fullscreen && <button type="button" aria-label="调整 Agent 宽度" onPointerDown={startDesktopResize} className="agent-resize-handle-desktop" />}
     {!fullscreen && <button type="button" aria-label="调整 Agent 高度" onPointerDown={startMobileResize} className="agent-resize-handle-mobile"><span /></button>}
     {showSessions && <button type="button" aria-label="关闭会话列表" onClick={() => { setShowSessions(false); setSessionMenuId(''); }} className="absolute inset-0 z-10 bg-black/35" />}
-    <aside className={`${showSessions ? 'translate-x-0' : '-translate-x-full'} absolute inset-y-0 left-0 z-20 flex w-[min(82%,19rem)] flex-col border-r border-gray-200 bg-white pt-[env(safe-area-inset-top)] shadow-2xl transition-transform dark:border-gray-800 dark:bg-gray-900`}>
+    <aside aria-label="Agent 会话历史" className={`${showSessions ? 'translate-x-0' : '-translate-x-full'} absolute inset-y-0 left-0 z-20 flex w-[min(82%,19rem)] flex-col border-r border-gray-200 bg-white pt-[env(safe-area-inset-top)] shadow-2xl transition-transform dark:border-gray-800 dark:bg-gray-900`}>
       <div className="flex h-14 items-center gap-2 border-b border-gray-100 px-3 dark:border-gray-800">
         <b className="min-w-0 flex-1 truncate text-sm dark:text-white">Agent 对话</b>
         <button type="button" onClick={() => void createSession()} disabled={running || busySessionAction} className="mobile-touch flex items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-500/20 disabled:opacity-40" aria-label="新建对话" title="新建对话"><Plus className="h-4 w-4" /></button>
+        <button type="button" onClick={() => { setShowSessions(false); setSessionMenuId(''); }} className="mobile-touch flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="关闭会话列表" title="关闭"><X className="h-4 w-4" /></button>
       </div>
       <div className="px-2 py-2"><input value={sessionSearch} onChange={event => setSessionSearch(event.target.value)} placeholder="搜索对话" className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-xs text-gray-800 outline-none placeholder:text-gray-400 focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-600" /></div>
       <div className="flex-1 space-y-1 overflow-y-auto px-2 pb-3">
-        {sessions.filter(session => session.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())).map(session => <div key={session.id} className={`group relative min-h-[4.75rem] rounded-xl border ${session.id === activeSessionId ? 'border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
-          {editingSessionId === session.id ? <form onSubmit={event => { event.preventDefault(); void saveSessionTitle(session); }} className="flex min-h-[4.75rem] items-center px-2 pr-12"><input autoFocus value={editingTitle} onChange={event => setEditingTitle(event.target.value)} onBlur={() => void saveSessionTitle(session)} className="h-9 min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-2 text-xs text-gray-800 outline-none dark:bg-gray-950 dark:text-gray-100" /></form> : <button type="button" disabled={running && session.id !== activeSessionId} onClick={() => { if (!running) { setActiveSessionId(session.id); setShowSessions(false); setSessionMenuId(''); } }} className="block min-h-[4.75rem] w-full py-2 pl-3 pr-12 text-left">
+        {sessions.filter(session => session.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())).length === 0 ? (
+          <div className="py-8 text-center text-xs text-gray-400">没有找到匹配的对话</div>
+        ) : sessions.filter(session => session.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())).map(session => <div key={session.id} className={`group relative min-h-[4.75rem] rounded-xl border ${session.id === activeSessionId ? 'border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+          {editingSessionId === session.id ? <form onSubmit={event => { event.preventDefault(); void saveSessionTitle(session); }} className="flex min-h-[4.75rem] items-center px-2 pr-12"><input autoFocus value={editingTitle} onChange={event => setEditingTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setEditingSessionId(''); }} onBlur={() => void saveSessionTitle(session)} className="h-9 min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-2 text-xs text-gray-800 outline-none dark:bg-gray-950 dark:text-gray-100" /></form> : <button type="button" disabled={running && session.id !== activeSessionId} onClick={() => { if (!running) { setActiveSessionId(session.id); setShowSessions(false); setSessionMenuId(''); } }} className="block min-h-[4.75rem] w-full py-2 pl-3 pr-12 text-left">
             <span className="block truncate text-sm font-bold text-gray-800 dark:text-gray-100">{session.title}</span>
             <span className="mt-0.5 block truncate text-micro text-gray-400">{session.model} · {session.messageCount || 0} 轮 · {new Date(session.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
             <span className="mt-1 flex items-center gap-1.5 text-mini font-bold"><span className={`rounded-full px-1.5 py-0.5 ${session.creativeMode ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>破限{session.creativeMode ? '开' : '关'}</span>{(() => { const presetLabel = formatPresetSessionLabel(session); return presetLabel ? <span title={presetLabel} className="max-w-28 truncate rounded-full bg-violet-100 px-1.5 py-0.5 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">{presetLabel}</span> : null; })()}{session.running ? <span className="text-indigo-600">工作中</span> : session.taskStatus === 'interrupted' ? <span className="text-amber-600">上次中断</span> : session.taskStatus === 'failed' ? <span className="text-red-500">上次失败</span> : <span className="text-emerald-600">就绪</span>}</span>
           </button>}
-          <button type="button" onClick={() => setSessionMenuId(value => value === session.id ? '' : session.id)} className="mobile-touch absolute right-1 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 hover:bg-white/70 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="会话操作" title="会话操作"><MoreHorizontal className="h-4 w-4" /></button>
-          {sessionMenuId === session.id && <div className="absolute right-1 top-[calc(50%+1.45rem)] z-30 w-28 overflow-hidden rounded-xl border border-gray-200 bg-white p-1 shadow-xl dark:border-gray-700 dark:bg-gray-850">
+          <button type="button" data-session-menu onClick={() => setSessionMenuId(value => value === session.id ? '' : session.id)} className="mobile-touch absolute right-1 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 hover:bg-white/70 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="会话操作" title="会话操作"><MoreHorizontal className="h-4 w-4" /></button>
+          {sessionMenuId === session.id && <div data-session-menu className="absolute right-1 top-[calc(50%+1.45rem)] z-30 w-28 overflow-hidden rounded-xl border border-gray-200 bg-white p-1 shadow-xl ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900">
             <button type="button" onClick={() => { setSessionMenuId(''); setEditingSessionId(session.id); setEditingTitle(session.title); }} disabled={running} className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"><Pencil className="h-3.5 w-3.5" />重命名</button>
-            <button type="button" onClick={() => { setSessionMenuId(''); void deleteSession(session); }} disabled={running || sessions.length <= 1} className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-red-500 hover:bg-red-50 disabled:opacity-30 dark:hover:bg-red-950/30"><Trash2 className="h-3.5 w-3.5" />删除</button>
+            <button type="button" onClick={() => { setSessionMenuId(''); void deleteSession(session); }} disabled={running || sessions.length <= 1} className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-30 dark:text-rose-400 dark:hover:bg-rose-950/30"><Trash2 className="h-3.5 w-3.5 text-rose-500" />删除</button>
           </div>}
         </div>)}
       </div>
@@ -761,29 +874,191 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     </aside>
 
     <section className="relative flex min-w-0 flex-1 flex-col">
+      {/* 顶栏与状态栏合流为单行（节省约 36px 空间） */}
       <header className="border-b border-gray-200 bg-white pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900">
         <div className="flex h-12 items-center gap-1 px-2 md:px-3">
           <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="返回"><ArrowLeft className="h-[18px] w-[18px]" /></button>
-          <button type="button" onClick={() => setShowSessions(true)} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="会话列表"><List className="h-5 w-5" /></button>
-          <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-black text-gray-900 dark:text-white">{activeSession?.title || '项目 Agent'}</h2><p className="flex min-w-0 items-center gap-1.5 truncate text-micro text-gray-500">{activeSession?.model || '未选择模型'}{(() => { const presetLabel = activeSession ? formatPresetSessionLabel(activeSession) : null; return presetLabel ? <><span aria-hidden="true">·</span><span className="truncate rounded bg-violet-50 px-1 font-bold text-violet-600 dark:bg-violet-950/50 dark:text-violet-300" title={presetLabel}>{presetLabel}</span></> : null; })()}{activeSession?.visionDedicated ? ` · 视觉 ${activeSession.visionModel}` : supportsImages ? ' · 支持识图' : ' · 不支持识图'}</p></div>
+          <button type="button" onClick={() => { setShowSessions(true); setShowModelMenu(false); setShowMoreMenu(false); }} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="会话列表"><List className="h-5 w-5" /></button>
+
+          {/* 标题与执行状态圆点合流 */}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${
+                  running
+                    ? 'animate-pulse bg-indigo-500'
+                    : !sessionReady
+                      ? 'animate-pulse bg-gray-400'
+                      : editingMessageId
+                        ? 'bg-amber-500'
+                        : 'bg-emerald-500'
+                }`}
+                title={executionStatus}
+              />
+              <h2 className="truncate text-sm font-black text-gray-900 dark:text-white">
+                {activeSession?.title || '项目 Agent'}
+              </h2>
+            </div>
+            <div className="flex min-w-0 items-center gap-1.5 truncate text-micro text-gray-500">
+              {running ? (
+                <span className="truncate font-bold text-indigo-600 dark:text-indigo-400">
+                  {executionStatus}
+                </span>
+              ) : (
+                <>
+                  <span className="truncate">{activeSession?.model || '未选择模型'}</span>
+                  <span aria-hidden="true" className="text-gray-300 dark:text-gray-600">·</span>
+                  {activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount ? (
+                    <select
+                      aria-label="选择本会话破限预设"
+                      disabled={running}
+                      value={getSessionPresetValue(activeSession)}
+                      onChange={event => void selectSessionPreset(event.target.value)}
+                      className="h-5 max-w-[8.5rem] truncate rounded border border-violet-200 bg-violet-50/80 px-1 text-mini font-bold text-violet-700 outline-none hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-300"
+                      title="切换本会话破限预设（首条消息前可选）"
+                    >
+                      <option value="off">破限：关</option>
+                      <optgroup label="内置预设">
+                        {creativePresets.filter(p => p.isBuiltin).map(p => (
+                          <option key={p.id} value={p.id}>破限：{p.name}</option>
+                        ))}
+                      </optgroup>
+                      {creativePresets.some(p => !p.isBuiltin) && (
+                        <optgroup label="自定义预设">
+                          {creativePresets.filter(p => !p.isBuiltin).map(p => (
+                            <option key={p.id} value={p.id}>破限：{p.name}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                  ) : (() => {
+                    const presetLabel = activeSession ? formatPresetSessionLabel(activeSession) : null;
+                    return presetLabel ? (
+                      <span className="truncate rounded bg-violet-50 px-1 font-bold text-violet-600 dark:bg-violet-950/50 dark:text-violet-300" title={presetLabel}>
+                        {presetLabel}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">普通</span>
+                    );
+                  })()}
+                  {activeSession?.visionDedicated ? (
+                    <span className="hidden truncate sm:inline"> · 视觉 {activeSession.visionModel}</span>
+                  ) : supportsImages ? (
+                    <span className="hidden sm:inline"> · 识图</span>
+                  ) : null}
+                  {activeSession?.thinkingLevel && activeSession.thinkingLevel !== 'off' && (
+                    <span className="hidden truncate md:inline"> · 思考:{thinkingLevelLabels[activeSession.thinkingLevel]}</span>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* 撤销修改：醒目克制地提升到主顶栏 */}
+          {props.canUndo && (
+            <button
+              type="button"
+              onClick={props.onUndo}
+              disabled={running}
+              className="mobile-touch inline-flex h-8 items-center gap-1 rounded-xl border border-amber-300/80 bg-amber-50 px-2 text-xs font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-40 sm:px-2.5 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/70"
+              title="撤销最近一次 Agent 对项目的修改"
+              aria-label="撤销修改"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">撤销修改</span>
+            </button>
+          )}
+
+          {/* 模型与思考设置菜单 */}
           <div ref={modelMenuRef} className="static flex items-center gap-1 md:relative">
-            <button type="button" onClick={() => setShowModelMenu(value => !value)} className={`mobile-touch flex h-9 items-center justify-center rounded-xl px-2 text-gray-500 dark:text-gray-400 ${showModelMenu ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`} aria-label="模型与思考设置" title="模型与思考设置"><SlidersHorizontal className="h-[18px] w-[18px]" /></button>
+            <button type="button" onClick={() => setShowModelMenu(value => { const next = !value; if (next) setShowMoreMenu(false); return next; })} className={`mobile-touch flex h-9 items-center justify-center rounded-xl px-2 text-gray-500 dark:text-gray-400 ${showModelMenu ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`} aria-label="模型与思考设置" title="模型与思考设置"><SlidersHorizontal className="h-[18px] w-[18px]" /></button>
             {showModelMenu && <div className="absolute inset-x-2 bottom-2 top-12 z-30 flex w-auto max-h-none flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 md:inset-x-auto md:bottom-auto md:right-0 md:top-11 md:max-h-[min(76vh,42rem)] md:w-[min(20rem,calc(100vw-1rem))]">
-              <div className="border-b border-gray-100 p-3 dark:border-gray-800"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-100">模型与思考</b><span className="mt-0.5 block truncate text-micro text-gray-400">{activeSession?.model || '正在加载对话…'}</span></div><span className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-micro font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">最高：{thinkingLevelLabels[availableThinkingLevels.at(-1) || 'off']}</span></div><label className="mt-3 flex items-center gap-2 text-meta text-gray-500"><span className="flex-1">思考等级</span><select aria-label="思考等级" disabled={!sessionReady || running || availableThinkingLevels.length <= 1} value={selectedThinkingLevel} onChange={event => void updateThinkingLevel(event.target.value as PromptAgentThinkingLevel)} className="h-9 min-w-24 rounded-lg border border-gray-200 bg-gray-50 px-2 text-xs font-bold text-gray-700 outline-none disabled:opacity-40 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">{availableThinkingLevels.map(level => <option key={level} value={level}>{thinkingLevelLabels[level]}</option>)}</select></label>{activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount && <div className="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-2.5 text-meta text-gray-500 dark:border-gray-800"><span>破限模式（首条消息前可选）</span><button type="button" role="switch" aria-checked={activeSession.creativeMode} aria-label="切换本对话破限模式" onClick={() => void updateCreativeMode(!activeSession.creativeMode)} className="mobile-touch flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-0 bg-transparent p-0 shadow-none" ><span className={`relative block h-5 w-10 rounded-full transition-colors ${activeSession.creativeMode ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${activeSession.creativeMode ? 'left-5' : 'left-0.5'}`} /></span></button></div>}{activeSession?.creativeModeLocked && <p className="mt-3 border-t border-gray-100 pt-2.5 text-micro text-gray-400 dark:border-gray-800">破限模式已随首条消息锁定。</p>}</div>
+              <div className="border-b border-gray-100 p-3 dark:border-gray-800"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-100">模型与思考</b><span className="mt-0.5 block truncate text-micro text-gray-400">{activeSession?.model || '正在加载对话…'}</span></div><div className="flex items-center gap-1.5"><span className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-micro font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">最高：{thinkingLevelLabels[availableThinkingLevels.at(-1) || 'off']}</span><button type="button" onClick={() => setShowModelMenu(false)} className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200 md:hidden" aria-label="关闭模型菜单" title="关闭"><X className="h-4 w-4" /></button></div></div><label className="mt-3 flex items-center gap-2 text-meta text-gray-500"><span className="flex-1">思考等级</span><select aria-label="思考等级" disabled={!sessionReady || running || availableThinkingLevels.length <= 1} value={selectedThinkingLevel} onChange={event => void updateThinkingLevel(event.target.value as PromptAgentThinkingLevel)} className="h-9 min-w-24 rounded-lg border border-gray-200 bg-gray-50 px-2 text-xs font-bold text-gray-700 outline-none disabled:opacity-40 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">{availableThinkingLevels.map(level => <option key={level} value={level}>{thinkingLevelLabels[level]}</option>)}</select></label>{activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount && <div className="mt-3 border-t border-gray-100 pt-2.5 dark:border-gray-800"><div className="flex items-center justify-between gap-2"><span className="text-meta text-gray-600 dark:text-gray-300">破限预设</span><select aria-label="切换本对话破限模式" disabled={running} value={getSessionPresetValue(activeSession)} onChange={event => void selectSessionPreset(event.target.value)} className="h-8 max-w-[10rem] rounded-lg border border-gray-200 bg-gray-50 px-2 text-xs font-bold text-violet-700 outline-none dark:border-gray-700 dark:bg-gray-950 dark:text-violet-300"><option value="off">关闭破限</option><optgroup label="内置预设">{creativePresets.filter(p => p.isBuiltin).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>{creativePresets.some(p => !p.isBuiltin) && <optgroup label="自定义预设">{creativePresets.filter(p => !p.isBuiltin).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>}</select></div><span className="mt-1 block text-micro text-gray-400">仅对当前对话生效，首条消息后锁定</span></div>}{activeSession?.creativeModeLocked && <div className="mt-3 border-t border-gray-100 pt-2.5 text-micro text-gray-400 dark:border-gray-800">破限模式：<b className="text-gray-600 dark:text-gray-300">{activeSession.creativeMode ? (activeSession.presetName || '已开启') : '已关闭'}</b>（已随首条消息锁定）</div>}</div>
               <div className="overflow-y-auto p-2"><button type="button" onClick={() => { setShowModelMenu(false); window.dispatchEvent(new CustomEvent('nai-open-global-settings', { detail: { section: 'agent' } })); }} className="mb-2 flex w-full items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-left text-xs font-bold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-300 dark:hover:bg-indigo-950/50"><span>配置模型服务</span><span aria-hidden="true">→</span></button>{models.map(model => <button key={`${model.provider}/${model.id}`} type="button" disabled={!sessionReady || running} onClick={() => void updateSessionModel(model)} className={`block w-full rounded-xl px-3 py-2 text-left disabled:cursor-not-allowed disabled:opacity-40 ${model.provider === activeSession?.provider && model.id === activeSession?.model ? 'bg-indigo-50 dark:bg-indigo-950/40' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}><b className="block truncate text-xs text-gray-800 dark:text-white">{model.id}</b><span className="block text-micro text-gray-400">{model.provider} · {model.reasoning ? `推理，最高 ${thinkingLevelLabels[model.thinkingLevels.at(-1) || 'off']}` : '普通'}{model.imageInput ? ' · 识图' : ''}</span></button>)}</div>
               {!fullscreen && <div className="hidden border-t border-gray-100 p-3 md:block dark:border-gray-800"><div className="mb-2 text-micro font-bold text-gray-400">面板宽度</div><div className="grid grid-cols-3 gap-1">{[{ label: '窄', width: 440 }, { label: '标准', width: 540 }, { label: '宽', width: 680 }].map(item => <button key={item.width} type="button" onClick={() => choosePanelWidth(item.width)} className={`h-8 rounded-lg text-meta font-bold ${Math.abs(panelWidth - item.width) < 30 ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{item.label}</button>)}</div></div>}
             </div>}
           </div>
-          <button type="button" onClick={() => void exportAuditLog()} disabled={exportingLog || !activeSessionId} className="mobile-touch flex h-9 items-center justify-center rounded-xl px-2 text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800" aria-label="导出本会话 Agent 日志" title="导出本会话 Agent 日志（含步骤、工具调用与流式响应）"><Download className="h-[17px] w-[17px]" /><span className="ml-1 hidden text-meta font-bold lg:inline">{exportingLog ? '导出中' : '日志'}</span></button>
+
+          {/* 全屏切换 */}
           <button type="button" onClick={() => setFullscreen(value => !value)} className="mobile-touch flex h-9 items-center justify-center rounded-xl px-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={fullscreen ? '退出全屏' : '全屏显示'} title={fullscreen ? '退出全屏' : '全屏显示'}>{fullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}</button>
+
+          {/* 新增：“…” 更多菜单（收进：导出会话日志、清空当前对话） */}
+          <div ref={moreMenuRef} className="relative flex items-center">
+            <button
+              type="button"
+              onClick={() => setShowMoreMenu(value => { const next = !value; if (next) setShowModelMenu(false); return next; })}
+              className={`mobile-touch flex h-9 items-center justify-center rounded-xl px-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 ${showMoreMenu ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+              aria-label="更多会话操作"
+              title="更多会话操作"
+            >
+              <MoreHorizontal className="h-5 w-5" />
+            </button>
+            {showMoreMenu && (
+              <div className="absolute right-0 top-11 z-30 w-44 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMoreMenu(false);
+                    void exportAuditLog();
+                  }}
+                  disabled={exportingLog || !activeSessionId}
+                  className="flex h-9 w-full items-center gap-2 rounded-xl px-2.5 text-left text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"
+                  aria-label="导出本会话 Agent 日志"
+                >
+                  <Download className="h-4 w-4 text-gray-400" />
+                  <span>{exportingLog ? '正在导出…' : '导出会话日志'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMoreMenu(false);
+                    void reset();
+                  }}
+                  disabled={!sessionReady || running || !messages.length}
+                  className="flex h-9 w-full items-center gap-2 rounded-xl px-2.5 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-30 dark:text-rose-400 dark:hover:bg-rose-950/30"
+                  aria-label="清空对话"
+                >
+                  <Trash2 className="h-4 w-4 text-rose-500" />
+                  <span>清空当前对话</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-          <div className="flex min-h-9 items-center gap-2 border-t border-gray-100 px-3 py-1.5 text-micro dark:border-gray-800 md:px-4"><span className={`flex items-center gap-1.5 font-bold ${running ? 'text-indigo-600 dark:text-indigo-300' : !sessionReady ? 'text-gray-400' : editingMessageId ? 'text-amber-600 dark:text-amber-300' : 'text-emerald-600 dark:text-emerald-300'}`}><span className={`h-1.5 w-1.5 rounded-full ${running ? 'animate-pulse bg-indigo-500' : !sessionReady ? 'animate-pulse bg-gray-400' : editingMessageId ? 'bg-amber-500' : 'bg-emerald-500'}`} />{executionStatus}</span><span className="hidden min-w-0 truncate text-gray-400 sm:block">{running ? '可在下方选择如何追加要求' : !sessionReady ? '请稍候，正在读取本地对话' : activeSession?.creativeMode ? '破限模式已选定' : '普通模式'}</span><span className="ml-auto flex items-center gap-1"><span className="hidden text-gray-400 sm:inline">{activeSession?.thinkingLevel ? `思考：${thinkingLevelLabels[activeSession.thinkingLevel]}` : ''}</span>{props.canUndo && <button type="button" onClick={props.onUndo} disabled={running} className="mobile-touch rounded-lg px-2 py-1 font-bold text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 dark:text-indigo-300 dark:hover:bg-indigo-950/40">撤销修改</button>}<button type="button" onClick={() => void reset()} disabled={!sessionReady || running || !messages.length} className="mobile-touch rounded-lg px-2 py-1 font-bold text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-gray-800">清空对话</button></span></div>
       </header>
-      {logExportError && <div role="status" className="absolute right-3 top-[calc(5.25rem+env(safe-area-inset-top)+.25rem)] z-40 max-w-[min(28rem,calc(100%-1.5rem))] rounded-lg bg-red-50 px-2 py-1 text-micro font-bold text-red-600 shadow dark:bg-red-950/80 dark:text-red-300">{logExportError}</div>}
+      {logExportError && <div role="status" className="absolute right-3 top-[calc(3.25rem+env(safe-area-inset-top))] z-40 max-w-[min(28rem,calc(100%-1.5rem))] rounded-lg bg-red-50 px-2 py-1 text-micro font-bold text-red-600 shadow dark:bg-red-950/80 dark:text-red-300">{logExportError}</div>}
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
         <div ref={scrollRef} onScroll={event => { const element = event.currentTarget; const next = element.scrollHeight - element.scrollTop - element.clientHeight < 80; followBottomRef.current = next; setFollowingBottom(next); }} className="relative flex-1 space-y-3 overflow-y-auto p-3 md:p-4">
-          {messages.length === 0 && <div className="mt-8 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">告诉我你想在项目里做什么</h3><p className="mt-1 text-sm text-gray-500">{sessionReady ? '这是一条独立对话，可在项目的任何页面继续。' : sessionInitError || '正在加载这条对话…'}</p>{!sessionReady && sessionInitError && <button type="button" onClick={() => { setSessionInitError(''); void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(setModels)]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行')); }} className="mobile-touch mt-3 rounded-xl border border-indigo-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">重试</button>}{activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount && <div className="mx-auto mt-4 flex max-w-sm items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-2 text-left dark:border-gray-700 dark:bg-gray-900"><span><b className="block text-xs text-gray-800 dark:text-gray-100">破限模式</b><span className="block text-micro text-gray-500">只能在发送第一条消息前选择</span></span><button type="button" role="switch" aria-checked={activeSession.creativeMode} aria-label="切换本对话破限模式" onClick={() => void updateCreativeMode(!activeSession.creativeMode)} className="mobile-touch flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-0 bg-transparent p-0 shadow-none"><span className={`relative block h-5 w-10 rounded-full transition-colors ${activeSession.creativeMode ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${activeSession.creativeMode ? 'left-5' : 'left-0.5'}`} /></span></button></div>}<div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '查看当前设置和 Anlas 预算'].map(value => <button key={value} type="button" disabled={!sessionReady} onClick={() => void run(value)} className="mobile-touch rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold text-gray-700 shadow-sm hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{value}</button>)}</div></div>}
+          {messages.length === 0 && <div className="mt-8 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">告诉我你想在项目里做什么</h3><p className="mt-1 text-sm text-gray-500">{sessionReady ? '这是一条独立对话，可在项目的任何页面继续。' : sessionInitError || '正在加载这条对话…'}</p>{!sessionReady && sessionInitError && <button type="button" onClick={() => { setSessionInitError(''); void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(setModels)]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行')); }} className="mobile-touch mt-3 rounded-xl border border-indigo-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">重试</button>}{activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount && (
+            <div className="mx-auto mt-4 flex max-w-sm items-center justify-between gap-3 rounded-2xl border border-violet-200 bg-violet-50/50 p-3 text-left shadow-sm dark:border-violet-900/50 dark:bg-violet-950/20">
+              <div className="min-w-0 flex-1">
+                <b className="block text-xs font-bold text-gray-800 dark:text-gray-100">破限预设</b>
+                <span className="block text-micro text-gray-500">首条消息前可选，发送后锁定</span>
+              </div>
+              <select
+                aria-label="选择破限预设"
+                disabled={running}
+                value={getSessionPresetValue(activeSession)}
+                onChange={event => void selectSessionPreset(event.target.value)}
+                className="mobile-touch max-w-[11rem] rounded-xl border border-violet-300 bg-white px-2.5 py-1 text-xs font-bold text-violet-700 shadow-sm outline-none dark:border-violet-800 dark:bg-gray-900 dark:text-violet-300"
+              >
+                <option value="off">关闭破限（普通模式）</option>
+                <optgroup label="内置预设">
+                  {creativePresets.filter(p => p.isBuiltin).map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </optgroup>
+                {creativePresets.some(p => !p.isBuiltin) && (
+                  <optgroup label="自定义预设">
+                    {creativePresets.filter(p => !p.isBuiltin).map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </div>
+          )}<div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '查看当前设置和 Anlas 预算'].map(value => <button key={value} type="button" disabled={!sessionReady} onClick={() => void run(value)} className="mobile-touch rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold text-gray-700 shadow-sm hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{value}</button>)}</div></div>}
           <AgentMessageList
             messages={messages}
             visibleMessageCount={visibleMessageCount}
@@ -794,13 +1069,106 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             onEdit={message => messageActionsRef.current.edit(message)}
             onRetry={() => messageActionsRef.current.retry()}
           />
-          {!followingBottom && <button type="button" onClick={() => { followBottomRef.current = true; setFollowingBottom(true); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }} className="sticky bottom-1 mx-auto flex items-center gap-1 rounded-full bg-gray-900 px-3 py-1.5 text-xs font-bold text-white shadow-lg dark:bg-white dark:text-gray-900"><ArrowDown className="h-3.5 w-3.5" />回到底部</button>}
+          {!followingBottom && <button type="button" onClick={() => { followBottomRef.current = true; setFollowingBottom(true); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }} className="sticky bottom-2 mx-auto flex items-center gap-1 rounded-full bg-gray-900/90 px-3 py-1.5 text-xs font-bold text-white shadow-lg backdrop-blur-xs transition hover:scale-105 active:scale-95 dark:bg-white/90 dark:text-gray-900"><ArrowDown className="h-3.5 w-3.5" />回到底部</button>}
         </div>
           <div className="border-t border-gray-200 bg-white p-2 pb-[max(.5rem,env(safe-area-inset-bottom))] dark:border-gray-800 dark:bg-gray-900 md:p-3" aria-busy={!sessionReady}>
           {editingMessageId && !running && <div className="mb-2 flex items-center rounded-xl bg-amber-50 px-3 py-1.5 text-meta text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"><b>正在编辑旧消息</b><span className="ml-1">发送后会从这里重新执行，后面的旧回答将被替换。</span><span className="flex-1" /><button type="button" onClick={() => { setEditingMessageId(''); setInput(''); }} className="font-bold">取消</button></div>}
-          {running && <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-indigo-100 bg-indigo-50/70 px-2 py-1.5 text-meta dark:border-indigo-900/60 dark:bg-indigo-950/25"><span className="mr-0.5 flex items-center gap-1 font-bold text-indigo-600 dark:text-indigo-300"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-500" />追加方式</span><button type="button" onClick={() => setQueueMode('steer')} className={`rounded-lg px-2 py-1 font-bold ${queueMode === 'steer' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:bg-white/80 dark:text-gray-400 dark:hover:bg-gray-900/60'}`}>转向当前任务</button><button type="button" onClick={() => setQueueMode('followUp')} className={`rounded-lg px-2 py-1 font-bold ${queueMode === 'followUp' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:bg-white/80 dark:text-gray-400 dark:hover:bg-gray-900/60'}`}>排到任务之后</button><span className="hidden min-w-0 flex-1 truncate text-gray-400 md:block">发送后会{queueMode === 'steer' ? '在当前步骤后转向' : '等待本轮完成后执行'}</span><span className="flex-1 md:hidden" /><button type="button" onClick={() => void promptAgentService.control(activeSessionId, 'clear')} className="rounded-lg px-2 py-1 font-bold text-gray-500 hover:bg-white/80 dark:text-gray-400 dark:hover:bg-gray-900/60">清空排队</button><button type="button" onClick={() => void promptAgentService.control(activeSessionId, 'abort')} className="flex items-center gap-1 rounded-lg px-2 py-1 font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"><Square className="h-3 w-3 fill-current" />停止</button></div>}
-          {!!attachments.length && <div className="mb-2 flex flex-wrap gap-1.5">{attachments.map((attachment, index) => <span key={`${attachment.name}-${index}`} className="flex max-w-48 items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-micro text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200"><span className="truncate">{attachment.name}</span><button type="button" onClick={() => setAttachments(previous => previous.filter((_, itemIndex) => itemIndex !== index))} className="font-black">×</button></span>)}</div>}
-          <div className="flex min-w-0 items-end gap-2"><label title={!sessionReady ? '正在加载对话' : supportsImages ? '添加图片' : '没有可用的视觉模型'} aria-disabled={!sessionReady || running || attachments.length >= 4 || !supportsImages} className={`mobile-touch flex h-11 w-11 flex-none items-center justify-center rounded-xl border border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400 ${sessionReady && supportsImages && !running && attachments.length < 4 ? 'cursor-pointer hover:border-indigo-400 hover:text-indigo-500' : 'cursor-not-allowed opacity-35'}`}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden onChange={event => { addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachments.length >= 4 || !supportsImages} /></label><textarea ref={inputRef} value={input} disabled={!sessionReady} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void run(); } }} rows={1} placeholder={!sessionReady ? '正在加载对话…' : running ? (queueMode === 'steer' ? '补充或纠正当前任务…' : '添加完成后继续处理的任务…') : editingMessageId ? '修改这条消息后重新发送…' : '告诉 Agent 你想让它查看、修改或生成什么…'} className="min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-gray-300 bg-gray-50 px-3 py-2.5 text-sm leading-5 text-gray-900 outline-none placeholder:text-gray-400 focus:border-indigo-500 disabled:cursor-wait disabled:opacity-55 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-600" /><button type="button" onClick={() => void run()} disabled={!sessionReady || (!input.trim() && !attachments.length)} className="mobile-touch flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-indigo-600 p-0 text-white shadow-lg shadow-indigo-500/15 transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none dark:disabled:bg-gray-800 dark:disabled:text-gray-600" aria-label={!sessionReady ? '正在加载对话' : running ? '追加要求' : editingMessageId ? '重新发送' : '执行'} title={!sessionReady ? '正在加载对话' : running ? '追加要求' : editingMessageId ? '重新发送' : '执行'}><Send className="h-[18px] w-[18px]" /></button></div>
+          {running && (
+            <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 px-2.5 py-1.5 text-xs dark:border-indigo-950/60 dark:bg-indigo-950/30">
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1 font-bold text-indigo-700 dark:text-indigo-300">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-500" />
+                  追加模式
+                </span>
+                <div className="inline-flex rounded-lg bg-indigo-100/70 p-0.5 dark:bg-indigo-900/50">
+                  <button
+                    type="button"
+                    onClick={() => setQueueMode('steer')}
+                    className={`rounded-md px-2 py-0.5 text-micro font-bold transition ${
+                      queueMode === 'steer'
+                        ? 'bg-white text-indigo-700 shadow-sm dark:bg-gray-800 dark:text-indigo-300'
+                        : 'text-gray-500 hover:text-indigo-700 dark:text-gray-400 dark:hover:text-indigo-200'
+                    }`}
+                  >
+                    转向当前任务
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQueueMode('followUp')}
+                    className={`rounded-md px-2 py-0.5 text-micro font-bold transition ${
+                      queueMode === 'followUp'
+                        ? 'bg-white text-indigo-700 shadow-sm dark:bg-gray-800 dark:text-indigo-300'
+                        : 'text-gray-500 hover:text-indigo-700 dark:text-gray-400 dark:hover:text-indigo-200'
+                    }`}
+                  >
+                    排到任务之后
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => void promptAgentService.control(activeSessionId, 'abort')}
+                  className="mobile-touch flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 text-micro font-bold text-rose-600 transition hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-900/60"
+                  title="停止当前 Agent 任务"
+                >
+                  <Square className="h-2.5 w-2.5 fill-current" />
+                  停止任务
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void promptAgentService.control(activeSessionId, 'clear')}
+                  className="mobile-touch rounded px-1.5 py-0.5 text-micro font-bold text-gray-400 transition-colors hover:text-rose-600 dark:hover:text-rose-400"
+                  title="清空已排队的任务要求"
+                >
+                  清空排队
+                </button>
+              </div>
+            </div>
+          )}
+          {!!attachments.length && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {attachments.map((attachment, index) => (
+                <span key={`${attachment.name}-${index}`} className="flex max-w-48 items-center gap-1.5 rounded-full bg-indigo-50 py-1 pl-2.5 pr-1.5 text-micro text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200">
+                  <span className="truncate">{attachment.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAttachments(previous => previous.filter((_, itemIndex) => itemIndex !== index))}
+                    className="flex h-4 w-4 items-center justify-center rounded-full text-indigo-400 hover:bg-indigo-200/60 hover:text-rose-600 dark:hover:bg-indigo-900 dark:hover:text-rose-300"
+                    aria-label={`移除附件 ${attachment.name}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex min-w-0 items-end gap-2">
+            <label title={!sessionReady ? '正在加载对话' : supportsImages ? '添加图片' : '没有可用的视觉模型'} aria-disabled={!sessionReady || running || attachments.length >= 4 || !supportsImages} className={`mobile-touch flex h-11 w-11 flex-none items-center justify-center rounded-xl border border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400 ${sessionReady && supportsImages && !running && attachments.length < 4 ? 'cursor-pointer hover:border-indigo-400 hover:text-indigo-500' : 'cursor-not-allowed opacity-35'}`}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片附件" onChange={event => { addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachments.length >= 4 || !supportsImages} /></label>
+            <textarea ref={inputRef} value={input} disabled={!sessionReady} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void run(); } }} rows={1} placeholder={!sessionReady ? '正在加载对话…' : running ? (queueMode === 'steer' ? '补充或纠正当前任务…' : '添加完成后继续处理的任务…') : editingMessageId ? '修改这条消息后重新发送…' : '告诉 Agent 你想让它查看、修改或生成什么…'} className="min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-gray-300 bg-gray-50 px-3 py-2.5 text-sm leading-5 text-gray-900 outline-none placeholder:text-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 disabled:cursor-wait disabled:opacity-55 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-600 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20" />
+            {running && !input.trim() && !attachments.length ? (
+              <button
+                type="button"
+                onClick={() => void promptAgentService.control(activeSessionId, 'abort')}
+                className="mobile-touch flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-rose-600 p-0 text-white shadow-lg shadow-rose-600/20 transition hover:bg-rose-500 active:scale-95"
+                aria-label="停止"
+                title="停止当前 Agent 任务"
+              >
+                <Square className="h-3.5 w-3.5 fill-current" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void run()}
+                disabled={!sessionReady || (!input.trim() && !attachments.length)}
+                className="mobile-touch flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-indigo-600 p-0 text-white shadow-lg shadow-indigo-500/15 transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none dark:disabled:bg-gray-800 dark:disabled:text-gray-600"
+                aria-label={!sessionReady ? '正在加载对话' : running ? '追加要求' : editingMessageId ? '重新发送' : '执行'}
+                title={!sessionReady ? '正在加载对话' : running ? '追加要求' : editingMessageId ? '重新发送' : '执行'}
+              >
+                <Send className="h-[18px] w-[18px]" />
+              </button>
+            )}
+          </div>
         </div>
       </main>
     </section>
