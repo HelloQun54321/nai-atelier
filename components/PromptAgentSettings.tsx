@@ -942,7 +942,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
       </div>
       {config?.credentialWarning && <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{config.credentialWarning}</div>}
 
-      {/* 阶段二：层级 2 - 破限预设实验室专属卡片 */}
+      {/* 层级 2 - 注入预设专属卡片 */}
       {(() => {
         const effectiveActiveId = activeCreativePresetId || defaultPresetId(creativePresets);
         const activePreset = creativePresets.find(p => p.id === effectiveActiveId);
@@ -954,7 +954,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-meta font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">破限预设实验室</span>
+                  <span className="text-meta font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">注入预设</span>
                   {activePreset && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-violet-100/80 px-2 py-0.5 text-micro font-bold text-violet-700 dark:bg-violet-950/70 dark:text-violet-300">
                       <Star className="h-2.5 w-2.5 fill-current" />
@@ -971,10 +971,10 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
               <button
                 type="button"
                 onClick={() => setView('creative_lab')}
-                aria-label="进入破限预设实验室"
+                aria-label="进入注入预设管理"
                 className="mobile-touch inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-violet-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-violet-700 active:scale-98"
               >
-                进入实验室
+                管理注入预设
                 <span aria-hidden="true">→</span>
               </button>
             </div>
@@ -1096,7 +1096,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         ref={subViewRef}
         role="dialog"
         aria-modal="true"
-        aria-label={view === 'login' ? '选择要配置的服务' : view === 'logout' ? '选择要退出的服务' : view === 'model' ? '选择 Agent 模型' : view === 'vision' ? '选择视觉模型' : view === 'auth' ? '选择登录方式' : view === 'custom' ? (customDraft.id ? '编辑自定义接口' : '添加自定义接口') : view === 'creative_lab' ? '破限提示词与预设实验室' : '登录模型服务'}
+        aria-label={view === 'login' ? '选择要配置的服务' : view === 'logout' ? '选择要退出的服务' : view === 'model' ? '选择 Agent 模型' : view === 'vision' ? '选择视觉模型' : view === 'auth' ? '选择登录方式' : view === 'custom' ? (customDraft.id ? '编辑自定义接口' : '添加自定义接口') : view === 'creative_lab' ? '注入预设管理' : '登录模型服务'}
         className="fixed inset-0 z-[1100] flex flex-col bg-gray-50 dark:bg-gray-950"
       >
       <header className="workspace-command-bar flex flex-none items-center gap-3 border-b border-gray-200 bg-white px-3 pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900 md:px-5">
