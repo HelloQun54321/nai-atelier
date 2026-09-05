@@ -104,7 +104,7 @@ const App = () => {
   }, []);
 
   // Agent 事件桥接：handleNavigate 每次渲染都会重建，经 ref 转发以保持监听只注册一次。
-  const handleNavigateRef = useRef<(view: ViewState, id?: string) => void>(() => {});
+  const handleNavigateRef = useRef<(view: ViewState, id?: string, options?: { externalImport?: boolean; refreshData?: boolean }) => void>(() => {});
   useEffect(() => {
     const applyPreferences = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
@@ -114,7 +114,9 @@ const App = () => {
     };
     const navigate = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      if (['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'inspiration', 'history', 'playground'].includes(detail.view)) void handleNavigateRef.current(detail.view, detail.id);
+      if (['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'inspiration', 'history', 'playground'].includes(detail.view)) {
+        void handleNavigateRef.current(detail.view, detail.id, { externalImport: detail.externalImport === true });
+      }
     };
     window.addEventListener('nai-agent-ui-preferences', applyPreferences);
     window.addEventListener('nai-agent-navigate', navigate);
@@ -446,7 +448,7 @@ const App = () => {
     if (newView === 'inspiration') loadInspirations();
 
   };
-  handleNavigateRef.current = (targetView, targetId) => { void handleNavigate(targetView, targetId); };
+  handleNavigateRef.current = (targetView, targetId, options) => { void handleNavigate(targetView, targetId, options); };
 
   const handleUpdatePlaygroundChain = async (id: string, updates: Partial<PromptChain>) => {
     setPlaygroundChain(prev => prev ? { ...prev, ...updates } : null);

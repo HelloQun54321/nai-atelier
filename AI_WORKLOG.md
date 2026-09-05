@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **Codex (GPT-5)**：修复追加反推 Tag 后引用预设会覆盖 Tag，以及实验室常驻时重复发送 Tag 无法被消费的问题（fix: preserve appended tags across preset imports and repeated lab sends）。
 - **Codex (GPT-5)**：修复反推 Tag/追加提示词导入实验室时清空已有主体提示词的问题，恢复提示词结构的可叠加性（fix: preserve subject prompt when appending tags）。
 - **Antigravity (Gemini 3.8 Flash)**：将 WD Tagger「反推 Tag」移至底部操作栏前台（置于「导入实验室」左侧），彻底移除标签头部「自动整理」伪功能与冗余按钮，更新配套单测（refactor: relocate image tagger to inspiration footer and remove auto-organize tags）。
 - **Antigravity (Gemini 3.8 Flash)**：重构灵感详情底部操作栏排版与视觉平衡（主行动自适应撑开消灭中段留白断层、消除生硬割裂切线、统一 40px 高度、对齐烧瓶图标与纯化资产图标配色）（fix: rebalance inspiration detail footer layout and harmonize control aesthetics）。

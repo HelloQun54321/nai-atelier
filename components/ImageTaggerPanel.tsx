@@ -149,7 +149,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
       const pending: PendingImportData = { prompt: tags, negativePrompt: '', params: { ...TAGGER_DEFAULT_PARAMS }, mode: 'append-prompt' };
       sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(pending));
       onClose();
-      window.dispatchEvent(new CustomEvent('nai-agent-navigate', { detail: { view: 'playground' } }));
+      window.dispatchEvent(new CustomEvent('nai-agent-navigate', { detail: { view: 'playground', externalImport: true } }));
     } catch {
       notify('送往实验室失败，请重试', 'error');
     }

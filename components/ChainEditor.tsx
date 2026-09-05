@@ -896,7 +896,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
         // 1. Prompt (Base + Subject)
         if (options.importBasePrompt) {
-            setBasePrompt(target.basePrompt || '');
+            setBasePrompt(current => mergePromptFields(current, target.basePrompt || ''));
             setPresetSources(previous => ({ ...previous, base: source }));
         }
         if (options.importSubject) {
