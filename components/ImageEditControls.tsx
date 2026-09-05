@@ -114,11 +114,6 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                   : '输入图生图提示词'
               }
             />
-            {operation === 'outpaint' && (
-              <p className="mt-1 text-meta text-gray-500 dark:text-gray-400">
-                💡 <b>扩图提示</b>：NovelAI 扩图依赖提示词构想扩展区域的内容。系统已自动保留原图场景描述，您可在此修改或追加环境词（如 <code>wide angle, detailed background</code>）。
-              </p>
-            )}
             <div className="mt-2 flex flex-wrap gap-1.5">
               <button type="button" onClick={() => onPromptSource('history')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">底图原提示词</button>
               <button type="button" onClick={() => onPromptSource('current')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">当前文生图提示词</button>

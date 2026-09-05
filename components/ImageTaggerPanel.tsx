@@ -230,14 +230,14 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
           </div>}
         </section>
       </div>
-      <footer className="flex flex-none items-center justify-between gap-3 border-t border-gray-200 p-3 dark:border-gray-800"><p className="hidden text-micro text-gray-500 sm:block">模型文件保存在 local-cache，不会进入 Git。</p><div className="ml-auto flex items-center gap-2"><button type="button" disabled={!selected.size || busy} onClick={sendToLab} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-40">送往实验室</button><button type="button" disabled={!selected.size || busy} onClick={insert} className="mobile-touch rounded-xl bg-violet-600 px-5 text-sm font-bold text-white disabled:opacity-40">{(actionLabel ?? '追加 {count} 个 Tag 到主体').replace('{count}', String(selected.size))}</button></div></footer>
+      <footer className="flex flex-none items-center justify-between gap-3 border-t border-gray-200 p-3 dark:border-gray-800"><p className="hidden text-micro text-gray-500 sm:block">模型文件保存在本地缓存，首次加载后可完全离线运行。</p><div className="ml-auto flex items-center gap-2"><button type="button" disabled={!selected.size || busy} onClick={sendToLab} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-40">送往实验室</button><button type="button" disabled={!selected.size || busy} onClick={insert} className="mobile-touch rounded-xl bg-violet-600 px-5 text-sm font-bold text-white disabled:opacity-40">{(actionLabel ?? '追加 {count} 个 Tag 到全局提示词').replace('{count}', String(selected.size))}</button></div></footer>
     </div>
   </div>;
 };
 
 interface ImageTaggerActionProps {
   notify: (message: string, type?: 'success' | 'error') => void;
-  /** 默认把选中 Tag 复制到剪贴板；实验室等页面传入追加到主体的逻辑 */
+  /** 默认把选中 Tag 复制到剪贴板；实验室等页面传入追加到全局提示词的逻辑 */
   onInsert?: (tags: string) => void;
   /** 底部按钮文案，{count} 会被替换为选中 Tag 数量 */
   actionLabel?: string;
@@ -258,6 +258,6 @@ export const ImageTaggerAction: React.FC<ImageTaggerActionProps> = ({ notify, on
   return <>
     <IconButton label="图片反推 Tag" onClick={() => setOpen(true)} className={`max-md:hidden ${className}`}><ImagePlus className="h-4 w-4" /></IconButton>
     <MobileIconButton label="图片反推 Tag" onClick={() => setOpen(true)} className={`border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden ${className}`}><ImagePlus className="h-5 w-5" /></MobileIconButton>
-    {open && <ImageTaggerPanel open={open} onClose={() => setOpen(false)} onInsert={handleInsert} notify={notify} actionLabel={actionLabel ?? (onInsert ? '追加 {count} 个 Tag 到主体' : '复制 {count} 个 Tag')} imageUrl={imageUrl} />}
+    {open && <ImageTaggerPanel open={open} onClose={() => setOpen(false)} onInsert={handleInsert} notify={notify} actionLabel={actionLabel ?? (onInsert ? '追加 {count} 个 Tag 到全局提示词' : '复制 {count} 个 Tag')} imageUrl={imageUrl} />}
   </>;
 };

@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **Antigravity (Gemini 3.8 Flash)**：清理反推面板/画廊/扩图中的冗余说教与技术自语，收敛旧概念术语（主体->全局提示词、基础画风、对称质量预设），修正标点残留与人称一致性（fix: prune redundant explanatory copy and align terminology）。
 - **Antigravity (Gemini 3.8 Flash)**：将实验室四模式与全局设置中的提示词体系全面对齐收敛为「全局提示词」，补齐图像编辑三模式正向标题与文生图复制/占位文案，更新预设弹窗与批量导入（fix: harmonize global prompt terminology across lab modes and settings）。
 - **Antigravity (Gemini 3.8 Flash)**：全面收敛全站前端语义与术语一致性（Agent「注入」消除破限、消除幽灵「工坊」称谓、统一收敛为「风格串」与「自定义角色」、提示词中英文混杂收敛为规范中文、各图站流转词元统一为「Tag」），同步更新组件、文档与测试（fix: harmonize frontend terminology and semantic consistency）。
 - **Antigravity (Gemini 3.8 Flash)**：将侧边栏与移动端底栏的「风格串」导航图标由 Archive（收纳箱）更换为语义更贴切的 Layers（图层）（style: replace style chain navigation icon with layers）。

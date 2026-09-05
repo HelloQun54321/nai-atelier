@@ -230,7 +230,7 @@ export const ChainEditorPresetModal: React.FC<ChainEditorPresetModalProps> = ({
 
                         <label className="flex items-center gap-3 cursor-pointer select-none">
                             <input type="checkbox" checked={importOptions.importSubject} onChange={e => setImportOptions({ ...importOptions, importSubject: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                            <span className="text-sm font-medium dark:text-gray-200">主体提示词</span>
+                            <span className="text-sm font-medium dark:text-gray-200">全局提示词</span>
                         </label>
 
                         <label className="flex items-center gap-3 cursor-pointer select-none">

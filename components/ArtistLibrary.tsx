@@ -1314,7 +1314,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                         />
                         <div className="mt-4 text-center">
                             <h3 className="text-lg font-bold text-gray-800 dark:text-white drop-shadow-md">{currentLightboxImage.name}</h3>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">点击图片或背景关闭 | 左右点击翻页 | 键盘 ← → 切换</p>
                         </div>
                     </div>
 

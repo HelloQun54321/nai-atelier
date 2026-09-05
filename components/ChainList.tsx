@@ -104,7 +104,7 @@ const CopyModal: React.FC<{
                         <label className="flex items-start gap-2 p-3 rounded-xl border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer">
                             <input type="checkbox" checked={checkBase} onChange={e => setCheckBase(e.target.checked)} className="mt-1" />
                             <div className="flex-1 min-w-0">
-                                <div className="font-bold text-sm dark:text-white">基础 Prompt (Base)</div>
+                                <div className="font-bold text-sm dark:text-white">基础画风</div>
                                 <div className="text-xs text-gray-500 dark:text-gray-400 font-mono line-clamp-2 break-all">{chain.basePrompt || '(空)'}</div>
                             </div>
                         </label>
@@ -130,7 +130,7 @@ const CopyModal: React.FC<{
                         <label className="flex items-start gap-2 p-3 rounded-xl border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer">
                             <input type="checkbox" checked={checkSubject} onChange={e => setCheckSubject(e.target.checked)} className="mt-1" />
                             <div className="flex-1 min-w-0">
-                                <div className="font-bold text-sm dark:text-white">变量/主体 (Subject)</div>
+                                <div className="font-bold text-sm dark:text-white">全局提示词 (变量)</div>
                                 <div className="text-xs text-gray-500 dark:text-gray-400 font-mono line-clamp-1">{chain.variableValues?.subject || '(空)'}</div>
                             </div>
                         </label>
@@ -139,7 +139,7 @@ const CopyModal: React.FC<{
                     {/* Negative Prompt Quick Copy */}
                     <div className="pt-4 border-t border-gray-200 dark:border-gray-800">
                         <div className="flex justify-between items-center mb-1">
-                            <span className="font-bold text-xs text-red-500 uppercase">负面 Prompt</span>
+                            <span className="font-bold text-xs text-red-500 uppercase">全局负面提示词</span>
                             <button onClick={copyNegative} className="text-xs text-indigo-600 hover:underline">仅复制负面</button>
                         </div>
                         <div className="text-xs text-gray-400 bg-gray-50 dark:bg-gray-900 p-2 rounded-xl font-mono max-h-20 overflow-y-auto">

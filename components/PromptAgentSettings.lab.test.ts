@@ -155,7 +155,7 @@ describe('CreativeLab UI', () => {
     fireEvent.click(await screen.findByRole('button', { name: /进入注入预设管理/ }));
     await screen.findByRole('dialog', { name: /注入预设管理/ });
     fireEvent.click(await screen.findByRole('button', { name: /规范化上下文估算/ }));
-    expect(await screen.findByText(/Pi 规范化上下文估算（非供应商 wire payload）/)).toBeTruthy();
+    expect(await screen.findByText(/规范化上下文估算：展示经注入拼装后的系统提示词/)).toBeTruthy();
     const textarea = screen.getByLabelText('模拟用户消息');
     fireEvent.change(textarea, { target: { value: '你好，测试消息' } });
     fireEvent.click(screen.getByRole('button', { name: /发送并估算/ }));
