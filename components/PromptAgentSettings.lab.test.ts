@@ -59,8 +59,8 @@ const stubConfig = () => {
 const openLab = async () => {
   stubConfig();
   render(React.createElement(SettingsHarness));
-  fireEvent.click(await screen.findByRole('button', { name: /破限预设实验室/ }));
-  await screen.findByRole('dialog', { name: /破限提示词与预设实验室/ });
+  fireEvent.click(await screen.findByRole('button', { name: /进入注入预设管理/ }));
+  await screen.findByRole('dialog', { name: /注入预设管理/ });
 };
 
 afterEach(() => {
@@ -116,8 +116,8 @@ describe('CreativeLab UI', () => {
     });
     vi.stubGlobal('fetch', fetcher);
     render(React.createElement(SettingsHarness));
-    fireEvent.click(await screen.findByRole('button', { name: /破限预设实验室/ }));
-    await screen.findByRole('dialog', { name: /破限提示词与预设实验室/ });
+    fireEvent.click(await screen.findByRole('button', { name: /进入注入预设管理/ }));
+    await screen.findByRole('dialog', { name: /注入预设管理/ });
 
     const file = new File([JSON.stringify({ schema: 'creative-presets', version: 1, presets: [customPreset] })], 'presets.json', { type: 'application/json' });
     const input = document.querySelector<HTMLInputElement>('input[type=file]');
@@ -152,8 +152,8 @@ describe('CreativeLab UI', () => {
     });
     vi.stubGlobal('fetch', fetcher);
     render(React.createElement(SettingsHarness));
-    fireEvent.click(await screen.findByRole('button', { name: /破限预设实验室/ }));
-    await screen.findByRole('dialog', { name: /破限提示词与预设实验室/ });
+    fireEvent.click(await screen.findByRole('button', { name: /进入注入预设管理/ }));
+    await screen.findByRole('dialog', { name: /注入预设管理/ });
     fireEvent.click(await screen.findByRole('button', { name: /规范化上下文估算/ }));
     expect(await screen.findByText(/Pi 规范化上下文估算（非供应商 wire payload）/)).toBeTruthy();
     const textarea = screen.getByLabelText('模拟用户消息');
@@ -394,8 +394,8 @@ describe('前端切片修复专项验证', () => {
     });
     vi.stubGlobal('fetch', fetcher);
     render(React.createElement(SettingsHarness));
-    fireEvent.click(await screen.findByRole('button', { name: /破限预设实验室/ }));
-    await screen.findByRole('dialog', { name: /破限提示词与预设实验室/ });
+    fireEvent.click(await screen.findByRole('button', { name: /进入注入预设管理/ }));
+    await screen.findByRole('dialog', { name: /注入预设管理/ });
 
     // 选中自定义预设（编辑状态）
     fireEvent.click(screen.getByText('我的预设'));
@@ -438,8 +438,8 @@ describe('前端切片修复专项验证', () => {
     });
     vi.stubGlobal('fetch', fetcher);
     render(React.createElement(SettingsHarness));
-    fireEvent.click(await screen.findByRole('button', { name: /破限预设实验室/ }));
-    await screen.findByRole('dialog', { name: /破限提示词与预设实验室/ });
+    fireEvent.click(await screen.findByRole('button', { name: /进入注入预设管理/ }));
+    await screen.findByRole('dialog', { name: /注入预设管理/ });
 
     fireEvent.click(screen.getByRole('button', { name: /另存为…/ }));
     await waitFor(() => {
@@ -464,8 +464,8 @@ describe('前端切片修复专项验证', () => {
     });
     vi.stubGlobal('fetch', fetcher);
     render(React.createElement(SettingsHarness));
-    fireEvent.click(await screen.findByRole('button', { name: /破限预设实验室/ }));
-    await screen.findByRole('dialog', { name: /破限提示词与预设实验室/ });
+    fireEvent.click(await screen.findByRole('button', { name: /进入注入预设管理/ }));
+    await screen.findByRole('dialog', { name: /注入预设管理/ });
 
     // 点击保存预设
     fireEvent.click(screen.getByRole('button', { name: /保存预设/ }));

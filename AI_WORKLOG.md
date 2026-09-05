@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-05
+- **Antigravity CLI (agy) + DeepSeek V4 Flash (Oh My Pi)**：注入预设导出/导入图标方向按产品直觉互换（导出=↑送出、导入=↓收进），主控同步更新组件测试旧名断言（fix: swap export/import icon directions in injection presets）。
 - **DeepSeek V4 Flash (Oh My Pi)**：破限预设入口「实验室」改名「注入预设」，消除与生图实验室页的命名冲突（refactor: rename creative presets entry to injection presets）。
 - **Antigravity CLI (agy)**：项目 Agent 前端界面重构三轮迭代（设计顾问方案 + 两轮自由打磨）——设置页三层架构（模型卡/破限实验室卡/服务管理）、移除冗余按钮与红「退出」、实验室双栏+移动端分段、Panel 顶栏单行化+预设直选+运行态停止键、莫兰迪配色、Escape 分层/菜单互斥/a11y 补齐（refactor: redesign prompt agent settings and panel UI）。
 - **Antigravity CLI (agy)**：外包修复破限提示词预设实验室交叉复审查出的 10 项缺陷——前端（context_head 成对启停、删除选中预设回退、空槽默认停用+保存清洗、creativeMode 关闭清残留预设标签、另存为防重/截断、Inspector 多模态渲染兼容）、服务层（export 改标准多值 query、canonicalMessages 类型联合、补 budget 字段）、网关（多模态 content 注入保留图片、anthropic 连续 user 修正、context_depth 交替冲突防护、空槽整对剔除、保留字 id 拦截、token 重复计入、审计瘦身、modelApi 推导统一），三 A 实现 + 三 B 独立复审全通过（fix: harden creative presets lab injection, export, and multimodal handling）。

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Check, Copy, Download, FileUp, LogIn, Plus, RotateCcw, Save, Settings2, Star, Trash2, Upload, X } from 'lucide-react';
+import { ArrowLeft, Check, Copy, Download, FileUp, LogIn, Plus, Save, Settings2, Star, Trash2, Upload, X } from 'lucide-react';
 import { PromptAgentAuthPrompt, PromptAgentConfig, PromptAgentCreativeInspectResult, PromptAgentCreativePreset, PromptAgentCreativePresetRevision, PromptAgentCreativePresetState, PromptAgentCustomProvider, PromptAgentInjectionItem, PromptAgentLabTarget, PromptAgentModel, PromptAgentProvider, promptAgentService } from '../services/promptAgent';
 import { useConfirmDialog } from './ConfirmDialog';
 import { useMobileHistoryLayer } from './MobileUI';
@@ -281,7 +281,7 @@ const BuiltinPresetPanel: React.FC<{
         aria-label="导出当前预设"
         className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
       >
-        <Download className="h-3.5 w-3.5" />
+        <Upload className="h-3.5 w-3.5" />
         导出当前
       </button>
     </div>
@@ -386,7 +386,7 @@ const CustomPresetEditor: React.FC<{
         aria-label="导出当前预设"
         className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3.5 py-2 text-xs font-bold text-gray-600 transition hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
       >
-        <Download className="h-3.5 w-3.5" />
+        <Upload className="h-3.5 w-3.5" />
         导出当前
       </button>
       <button
@@ -649,7 +649,7 @@ const CreativeLabView: React.FC<{
       <div className="flex min-h-0 flex-col gap-4 md:grid md:grid-cols-[300px_1fr] md:gap-4 items-start">
         {/* 左栏：预设列表 */}
         <div className={`rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 self-start w-full ${mobileTab === 'list' ? 'block' : 'hidden md:block'}`}>
-          <div className="mb-2 flex items-center gap-2"><span className="text-meta font-bold uppercase tracking-wider text-violet-500">预设</span><span className="min-w-0 flex-1 truncate text-micro text-gray-400">{customPresets.length} 个自定义 · {presets.length - customPresets.length} 个内置</span><button type="button" disabled={busy || importing || !presets.length} onClick={() => exportPresets(presets.map(preset => preset.id))} title="导出全部预设（含内置）" aria-label="导出全部预设" className="mobile-touch inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs font-bold text-gray-600 transition hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"><Download className="h-3.5 w-3.5" /><span className="hidden sm:inline">导出全部</span></button><button type="button" disabled={busy || importing} onClick={() => importRef.current?.click()} aria-label="导入预设 JSON" className="mobile-touch inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs font-bold text-gray-600 transition hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"><Upload className="h-3.5 w-3.5" /><span className="hidden sm:inline">导入 JSON</span></button><input ref={importRef} type="file" accept="application/json,.json" hidden onChange={event => { const file = event.target.files?.[0]; if (file) importFromFile(file); event.currentTarget.value = ''; }} /></div>
+          <div className="mb-2 flex items-center gap-2"><span className="text-meta font-bold uppercase tracking-wider text-violet-500">预设</span><span className="min-w-0 flex-1 truncate text-micro text-gray-400">{customPresets.length} 个自定义 · {presets.length - customPresets.length} 个内置</span><button type="button" disabled={busy || importing || !presets.length} onClick={() => exportPresets(presets.map(preset => preset.id))} title="导出全部预设（含内置）" aria-label="导出全部预设" className="mobile-touch inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs font-bold text-gray-600 transition hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"><Upload className="h-3.5 w-3.5" /><span className="hidden sm:inline">导出全部</span></button><button type="button" disabled={busy || importing} onClick={() => importRef.current?.click()} aria-label="导入预设 JSON" className="mobile-touch inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs font-bold text-gray-600 transition hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"><Download className="h-3.5 w-3.5" /><span className="hidden sm:inline">导入 JSON</span></button><input ref={importRef} type="file" accept="application/json,.json" hidden onChange={event => { const file = event.target.files?.[0]; if (file) importFromFile(file); event.currentTarget.value = ''; }} /></div>
           <div className="space-y-2">
             <button type="button" disabled={busy} onClick={beginCreate} className="mobile-touch inline-flex w-full items-center gap-1.5 rounded-xl border border-dashed border-violet-300 px-3 py-2 text-sm font-bold text-violet-600 transition hover:border-violet-500 hover:bg-violet-50/50 disabled:opacity-40 dark:border-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/20"><Plus className="h-4 w-4" />新建空预设</button>
             {presets.length === 0 && (
