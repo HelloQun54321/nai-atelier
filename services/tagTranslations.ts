@@ -6,6 +6,13 @@ export interface PromptTagToken {
   id: string;
   displayTag: string;
   lookupTag: string;
+  start?: number;
+  end?: number;
+  groupId?: string;
+  groupStart?: number;
+  groupEnd?: number;
+  groupWeight?: string;
+  groupKind?: 'numeric' | 'brace' | 'bracket';
 }
 
 export interface PromptTagTranslation extends PromptTagToken {
@@ -18,22 +25,66 @@ const aiTranslations = new Map<string, string>();
 const listeners = new Set<TranslationListener>();
 const lookupRequests = new Map<string, Promise<void>>();
 
-const unwrapToken = (raw: string) => {
+const unwrapToken = (raw: string, start = 0, group?: Partial<PromptTagToken>) => {
   let value = raw.trim();
   value = value.replace(/^[{\[\s]+/, '').replace(/[}\]\s]+$/, '').trim();
+  value = value.replace(/^\{+([\s\S]*?)\}+$/, '$1').replace(/^\[+([\s\S]*?)\]+$/, '$1').trim();
   value = value.replace(/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::\s*/, '').replace(/\s*::$/, '').trim();
   value = value.replace(/^\(([\s\S]*?)(?::\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+))\)$/, '$1').trim();
   value = value.replace(/^\(([\s\S]*)\)$/, '$1').trim();
   const artistPrefix = /^artist\s*:\s*/i.test(value);
   if (artistPrefix) value = value.replace(/^artist\s*:\s*/i, '').trim();
-  return { displayTag: raw.trim(), lookupTag: normalizeTagQuery(value) };
+  const { id: _id, ...metadata } = group || {};
+  return { displayTag: raw.trim(), lookupTag: normalizeTagQuery(value), start, end: start + raw.length, ...metadata };
 };
 
-export const parsePromptTags = (prompt: string): PromptTagToken[] => prompt
-  .split(/[,，\n|]+/)
-  .map(unwrapToken)
-  .filter(item => item.lookupTag && /[\p{L}\p{N}]/u.test(item.lookupTag))
-  .map((item, index) => ({ ...item, id: `${index}:${item.lookupTag}` }));
+const parseSegment = (prompt: string, rawStart: number, rawEnd: number, group?: Partial<PromptTagToken>): Array<Omit<PromptTagToken, 'id'>> =>
+  prompt.slice(rawStart, rawEnd).split(/[,，\n|]+/).flatMap((raw, index, parts) => {
+    const offset = parts.slice(0, index).reduce((sum, part) => sum + part.length + 1, 0);
+    const token = unwrapToken(raw, rawStart + offset, group);
+    return token.lookupTag && /[\p{L}\p{N}]/u.test(token.lookupTag) ? [token] : [];
+  });
+
+export const parsePromptTags = (prompt: string): PromptTagToken[] => {
+  const tokens: Array<Omit<PromptTagToken, 'id'>> = [];
+  let segmentStart = 0;
+  let braceDepth = 0;
+  let bracketDepth = 0;
+  let numericStart = -1;
+  const flush = (end: number, contentStart = segmentStart, contentEnd = end) => {
+    if (end <= segmentStart || contentEnd <= contentStart) return;
+    const leading = prompt.slice(contentStart, contentEnd).search(/\S/);
+    const start = leading < 0 ? contentStart : contentStart + leading;
+    const groupKind = numericStart >= 0 ? 'numeric' : braceDepth > 0 ? 'brace' : bracketDepth > 0 ? 'bracket' : undefined;
+    const groupWeight = numericStart >= 0 ? prompt.slice(segmentStart, numericStart).trim() : undefined;
+    const groupStart = groupKind ? segmentStart : undefined;
+    const groupEnd = groupKind ? end : undefined;
+    tokens.push(...parseSegment(prompt, start, contentEnd, groupKind ? { groupId: `${groupStart}:${groupEnd}`, groupStart, groupEnd, groupWeight, groupKind } : undefined));
+  };
+  for (let i = 0; i < prompt.length; i += 1) {
+    const char = prompt[i];
+    if (char === ':' && prompt[i + 1] === ':' && numericStart >= 0) {
+      flush(i + 2, numericStart + 2, i);
+      segmentStart = i + 2;
+      numericStart = -1;
+      i += 1;
+    } else if (char === ':' && prompt[i + 1] === ':' && numericStart < 0) {
+      const prefix = prompt.slice(segmentStart, i).trim();
+      if (/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(prefix)) numericStart = i;
+      i += 1;
+    } else if (char === '{') braceDepth += 1;
+    else if (char === '}' && braceDepth) braceDepth -= 1;
+    else if (char === '[') bracketDepth += 1;
+    else if (char === ']' && bracketDepth) bracketDepth -= 1;
+    if ((char === ',' || char === '，' || char === '\n' || char === '|') && !braceDepth && !bracketDepth && numericStart < 0) {
+      flush(i);
+      segmentStart = i + 1;
+      numericStart = -1;
+    }
+  }
+  flush(prompt.length);
+  return tokens.map((item, index) => ({ ...item, id: `${index}:${item.lookupTag}` }));
+};
 
 const emitTranslationChange = () => listeners.forEach(listener => listener());
 
