@@ -453,24 +453,23 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               return nodes;
             })()}
           </div>
-          {selectedTokens.length > 0 && (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-2 dark:border-gray-700/70">
-              <button type="button" onClick={() => applyWeight('up')} className="rounded-md px-2 py-1 text-meta font-bold text-white hover:opacity-90" style={{ backgroundColor: 'var(--nai-accent)' }}>增强</button>
-              <button type="button" onClick={() => applyWeight('down')} className="rounded-md px-2 py-1 text-meta font-bold text-white hover:opacity-90" style={{ backgroundColor: 'var(--nai-accent)' }}>减弱</button>
-              <button type="button" onClick={() => applyWeight('numeric')} className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)]">数值</button>
-              <button type="button" onClick={() => applyWeight('remove')} className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)]">移除权重</button>
-              <button type="button" onClick={() => setSelectedTagIds(new Set())} className="ml-auto px-2 py-1 text-meta text-[var(--nai-accent)]">取消选择</button>
-            </div>
-          )}
-          {(missingTags.length > 0 || translationError) && (
-            <div className="mt-1.5 flex min-h-7 items-center justify-end gap-2 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
+          {(selectedTokens.length > 0 || missingTags.length > 0 || translationError) && (
+            <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
+              {selectedTokens.length > 0 && (
+                <>
+                  <button type="button" onClick={() => applyWeight('up')} className="rounded-md px-2 py-1 text-meta font-bold text-white hover:opacity-90" style={{ backgroundColor: 'var(--nai-accent)' }}>增强</button>
+                  <button type="button" onClick={() => applyWeight('down')} className="rounded-md px-2 py-1 text-meta font-bold text-white hover:opacity-90" style={{ backgroundColor: 'var(--nai-accent)' }}>减弱</button>
+                  <button type="button" onClick={() => applyWeight('numeric')} className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)]">数值</button>
+                  <button type="button" onClick={() => applyWeight('remove')} className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)]">移除权重</button>
+                </>
+              )}
               {translationError && <span className="min-w-0 flex-1 truncate text-micro text-red-500" title={translationError}>{translationError}</span>}
               {allowAiTranslation && !disabled && missingTags.length > 0 && (
                 <button
                   type="button"
                   onClick={() => void translateMissing()}
                   disabled={translationLoading}
-                  className="inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
+                  className="ml-auto inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
                   title={`使用当前 Agent 模型翻译 ${missingTags.length} 个词库缺失项`}
                 >
                   {translationLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5" />}
