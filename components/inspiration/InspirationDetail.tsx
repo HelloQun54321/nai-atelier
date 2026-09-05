@@ -1,13 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Archive,
   ChevronDown,
   Copy,
   Download,
   ExternalLink,
-  Folder,
   ImagePlus,
-  MoreHorizontal,
   Palette,
   Pencil,
   Pin,
@@ -20,7 +17,7 @@ import {
 } from 'lucide-react';
 import { ImageEditOperation, Inspiration, InspirationBoard, PromptChain, User } from '../../types';
 import { db } from '../../services/dbService';
-import { IMPORT_SESSION_KEY, ImportMode, PendingImportData } from '../../services/metadataService';
+import { IMPORT_SESSION_KEY, PendingImportData } from '../../services/metadataService';
 import { createUuid } from '../../services/id';
 import { characterReferenceService } from '../../services/characterReferenceService';
 import { vibeService } from '../../services/vibeService';
@@ -37,13 +34,11 @@ interface Props {
   items: Inspiration[];
   boards: InspirationBoard[];
   currentUser: User;
-  chains: PromptChain[];
   notify: (msg: string, type?: 'success' | 'error') => void;
   onClose: () => void;
   onRefresh: () => Promise<void>;
   onNavigateToPlayground?: () => void;
   onCreateArtistChain?: (chain: PromptChain) => Promise<void>;
-  onSetChainCover?: (chainId: string, imageUrl: string) => Promise<void>;
   onOpenItem: (item: Inspiration) => void;
 }
 
@@ -52,27 +47,26 @@ export const InspirationDetail: React.FC<Props> = ({
   items,
   boards,
   currentUser,
-  chains,
   notify,
   onClose,
   onRefresh,
   onNavigateToPlayground,
   onCreateArtistChain,
-  onSetChainCover,
   onOpenItem,
 }) => {
   const closeLayer = useMobileHistoryLayer(true, onClose, 'inspiration-detail');
   const [draft, setDraft] = useState(item);
   const [busy, setBusy] = useState('');
-  const [moreOpen, setMoreOpen] = useState(false);
-  const [coverModalOpen, setCoverModalOpen] = useState(false);
-  const [coverChainId, setCoverChainId] = useState('');
+  const [labMenuOpen, setLabMenuOpen] = useState(false);
+  const [assetMenuOpen, setAssetMenuOpen] = useState(false);
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const editable = canEditItem(item, currentUser);
 
   useEffect(() => {
     setDraft(item);
+    setLabMenuOpen(false);
+    setAssetMenuOpen(false);
     setIsAddingTag(false);
     setNewTagInput('');
   }, [item]);
@@ -135,19 +129,19 @@ export const InspirationDetail: React.FC<Props> = ({
     notify(`${label}已复制`);
   };
 
-  const importToPlayground = async (mode: ImportMode) => {
-    setBusy(mode);
+  const importToPlayground = async () => {
+    setBusy('import');
     try {
       const payload: PendingImportData = {
         prompt: draft.prompt || '',
         negativePrompt: draft.negativePrompt || '',
         params: draft.params || DEFAULT_PARAMS,
-        mode,
+        mode: 'replace',
         sourceInspirationId: draft.id,
       };
       sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(payload));
       await db.markInspirationUsed(draft.id);
-      notify(mode === 'replace' ? '完整参数已送往实验室' : '选定内容已送往实验室');
+      notify('完整参数已送往实验室');
       onClose();
       onNavigateToPlayground?.();
     } catch (error: any) {
@@ -206,7 +200,7 @@ export const InspirationDetail: React.FC<Props> = ({
       });
       await db.markInspirationUsed(draft.id);
       notify('已创建风格串');
-      setMoreOpen(false);
+      setAssetMenuOpen(false);
     } catch (error: any) {
       notify(error?.message || '创建风格串失败', 'error');
     } finally {
@@ -222,25 +216,9 @@ export const InspirationDetail: React.FC<Props> = ({
       else await vibeService.create(file, draft.title || '灵感 Vibe');
       await db.markInspirationUsed(draft.id);
       notify(kind === 'character' ? '已创建角色参考' : '已创建 Vibe 资产');
-      setMoreOpen(false);
+      setAssetMenuOpen(false);
     } catch (error: any) {
       notify(error?.message || '创建资产失败', 'error');
-    } finally {
-      setBusy('');
-    }
-  };
-
-  const handleSetCover = async () => {
-    if (!coverChainId || !onSetChainCover) return;
-    setBusy('cover');
-    try {
-      await onSetChainCover(coverChainId, draft.imageUrl);
-      await db.markInspirationUsed(draft.id);
-      notify('风格串封面已更新');
-      setCoverModalOpen(false);
-      setCoverChainId('');
-    } catch (error: any) {
-      notify(error?.message || '设置封面失败', 'error');
     } finally {
       setBusy('');
     }
@@ -295,17 +273,21 @@ export const InspirationDetail: React.FC<Props> = ({
                     <option key={board.id} value={board.id}>📁 {board.name}</option>
                   ))}
                 </select>
-                {draft.isPinned && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
-                    <Pin className="h-2.5 w-2.5 fill-current" />
-                    已置顶
-                  </span>
-                )}
-                {draft.archived && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-1.5 py-0.5 text-micro font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-                    已归档
-                  </span>
-                )}
+                <button
+                  type="button"
+                  disabled={!editable}
+                  onClick={() => void updateAndPersist('isPinned', !draft.isPinned, draft.isPinned ? '已取消置顶' : '已置顶')}
+                  title={draft.isPinned ? '已置顶（点击取消）' : '置顶灵感'}
+                  aria-label={draft.isPinned ? '已置顶' : '置顶灵感'}
+                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-micro font-bold transition ${
+                    draft.isPinned
+                      ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-950/70 dark:text-amber-300'
+                      : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300'
+                  }`}
+                >
+                  <Pin className={`h-3 w-3 ${draft.isPinned ? 'fill-current' : ''}`} />
+                  <span>{draft.isPinned ? '已置顶' : '置顶'}</span>
+                </button>
               </div>
 
               <input
@@ -571,158 +553,118 @@ export const InspirationDetail: React.FC<Props> = ({
             )}
           </div>
 
-          {/* 底部单行操作条：完整导入 + 追加提示词 + 更多复用 + 原图下载 */}
+          {/* 底部单行操作条：导入实验室（带底图模式） + 提取资产 + 原图下载 */}
           <footer className="flex-none border-t border-gray-200 p-3 dark:border-gray-800">
             <div className="flex items-center justify-between gap-2">
               <div className="flex min-w-0 flex-1 items-center gap-2">
-                <button
-                  type="button"
-                  disabled={Boolean(busy)}
-                  onClick={() => void importToPlayground('replace')}
-                  className="mobile-touch flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-sm shadow-indigo-600/20 hover:bg-indigo-500 whitespace-nowrap"
-                >
-                  <Play className="h-3.5 w-3.5 fill-current" />
-                  完整导入
-                </button>
-                <button
-                  type="button"
-                  disabled={Boolean(busy)}
-                  onClick={() => void importToPlayground('append-prompt')}
-                  className="mobile-touch hidden sm:flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 whitespace-nowrap"
-                >
-                  追加提示词
-                </button>
+                {/* 导入实验室（带底图模式分流） */}
+                <div className="relative inline-flex rounded-xl bg-indigo-600 shadow-sm shadow-indigo-600/20">
+                  <button
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() => void importToPlayground()}
+                    className="mobile-touch flex items-center justify-center gap-1.5 rounded-l-xl px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-500 whitespace-nowrap"
+                  >
+                    <Play className="h-3.5 w-3.5 fill-current" />
+                    导入实验室
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() => { setLabMenuOpen(!labMenuOpen); setAssetMenuOpen(false); }}
+                    aria-label="更多底图模式"
+                    className="mobile-touch flex items-center justify-center border-l border-indigo-500/60 px-2 py-2 text-white hover:bg-indigo-500 rounded-r-xl"
+                  >
+                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${labMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
 
+                  {labMenuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-20" onClick={() => setLabMenuOpen(false)} />
+                      <div className="absolute bottom-12 left-0 z-30 w-48 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                        <button
+                          type="button"
+                          disabled={Boolean(busy)}
+                          onClick={() => { setLabMenuOpen(false); void importAsBaseImage('image-to-image'); }}
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
+                        >
+                          <ImagePlus className="h-3.5 w-3.5 text-indigo-500" />
+                          底图：图生图
+                        </button>
+                        <button
+                          type="button"
+                          disabled={Boolean(busy)}
+                          onClick={() => { setLabMenuOpen(false); void importAsBaseImage('inpaint'); }}
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
+                        >
+                          <Wand2 className="h-3.5 w-3.5 text-indigo-500" />
+                          底图：局部重绘
+                        </button>
+                        <button
+                          type="button"
+                          disabled={Boolean(busy)}
+                          onClick={() => { setLabMenuOpen(false); void importAsBaseImage('outpaint'); }}
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5 text-indigo-500" />
+                          底图：扩图
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* 提取资产 */}
                 <div className="relative">
                   <button
                     type="button"
-                    onClick={() => setMoreOpen(!moreOpen)}
+                    disabled={Boolean(busy)}
+                    onClick={() => { setAssetMenuOpen(!assetMenuOpen); setLabMenuOpen(false); }}
                     className="mobile-touch flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 whitespace-nowrap"
                   >
-                    <MoreHorizontal className="h-3.5 w-3.5" />
-                    更多复用
-                    <ChevronDown className="h-3 w-3" />
+                    <Sparkles className="h-3.5 w-3.5 text-pink-500" />
+                    提取资产
+                    <ChevronDown className={`h-3 w-3 text-gray-400 transition-transform ${assetMenuOpen ? 'rotate-180' : ''}`} />
                   </button>
-                  {moreOpen && (
-                    <div className="absolute bottom-12 left-0 z-30 w-60 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                      <button
-                        type="button"
-                        disabled={Boolean(busy)}
-                        onClick={() => { setMoreOpen(false); void importToPlayground('append-prompt'); }}
-                        className="flex sm:hidden w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-gray-100 dark:hover:bg-gray-800"
-                      >
-                        追加提示词
-                      </button>
-                      {([
-                        ['prompt-only', '仅使用正向提示词'],
-                        ['negative-only', '仅使用负面提示词'],
-                        ['params-only', '仅使用生成参数'],
-                      ] as [ImportMode, string][]).map(([mode, label]) => (
+
+                  {assetMenuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-20" onClick={() => setAssetMenuOpen(false)} />
+                      <div className="absolute bottom-12 left-0 z-30 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                         <button
-                          key={mode}
                           type="button"
-                          onClick={() => { setMoreOpen(false); void importToPlayground(mode); }}
-                          className="w-full rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
+                          disabled={!onCreateArtistChain || Boolean(busy)}
+                          onClick={() => { setAssetMenuOpen(false); void createArtistChain(); }}
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800"
                         >
-                          {label}
+                          <Palette className="h-3.5 w-3.5 text-violet-500" />
+                          创建风格串
                         </button>
-                      ))}
-                      <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
-                      <button
-                        type="button"
-                        disabled={Boolean(busy)}
-                        onClick={() => { setMoreOpen(false); void importAsBaseImage('image-to-image'); }}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                      >
-                        <ImagePlus className="h-3.5 w-3.5 text-indigo-500" />
-                        底图：图生图
-                      </button>
-                      <button
-                        type="button"
-                        disabled={Boolean(busy)}
-                        onClick={() => { setMoreOpen(false); void importAsBaseImage('inpaint'); }}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                      >
-                        <Wand2 className="h-3.5 w-3.5 text-indigo-500" />
-                        底图：局部重绘
-                      </button>
-                      <button
-                        type="button"
-                        disabled={Boolean(busy)}
-                        onClick={() => { setMoreOpen(false); void importAsBaseImage('outpaint'); }}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5 text-indigo-500" />
-                        底图：扩图
-                      </button>
-                      <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
-                      <button
-                        type="button"
-                        disabled={!onCreateArtistChain || Boolean(busy)}
-                        onClick={() => void createArtistChain()}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800"
-                      >
-                        <Palette className="h-3.5 w-3.5 text-violet-500" />
-                        创建风格串
-                      </button>
-                      <button
-                        type="button"
-                        disabled={Boolean(busy)}
-                        onClick={() => void createAsset('character')}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                      >
-                        <UserRound className="h-3.5 w-3.5 text-amber-500" />
-                        创建角色参考
-                      </button>
-                      <button
-                        type="button"
-                        disabled={Boolean(busy)}
-                        onClick={() => void createAsset('vibe')}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                      >
-                        <Sparkles className="h-3.5 w-3.5 text-pink-500" />
-                        创建 Vibe
-                      </button>
-                      {onSetChainCover && chains.some(chain => chain.type === 'style') && (
                         <button
                           type="button"
-                          onClick={() => { setMoreOpen(false); setCoverModalOpen(true); }}
+                          disabled={Boolean(busy)}
+                          onClick={() => { setAssetMenuOpen(false); void createAsset('character'); }}
                           className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
                         >
-                          <Folder className="h-3.5 w-3.5 text-blue-500" />
-                          设为风格串封面...
+                          <UserRound className="h-3.5 w-3.5 text-amber-500" />
+                          创建角色参考
                         </button>
-                      )}
-                      <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
-                      <button
-                        type="button"
-                        disabled={!editable || Boolean(busy)}
-                        onClick={() => {
-                          setMoreOpen(false);
-                          void updateAndPersist('isPinned', !draft.isPinned, draft.isPinned ? '已取消置顶' : '已置顶');
-                        }}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                      >
-                        <Pin className="h-3.5 w-3.5 text-amber-500" />
-                        {draft.isPinned ? '取消置顶' : '设为置顶'}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!editable || Boolean(busy)}
-                        onClick={() => {
-                          setMoreOpen(false);
-                          void updateAndPersist('archived', !draft.archived, draft.archived ? '已恢复' : '已归档');
-                        }}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                      >
-                        <Archive className="h-3.5 w-3.5 text-gray-500" />
-                        {draft.archived ? '从归档恢复' : '归档灵感'}
-                      </button>
-                    </div>
+                        <button
+                          type="button"
+                          disabled={Boolean(busy)}
+                          onClick={() => { setAssetMenuOpen(false); void createAsset('vibe'); }}
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
+                        >
+                          <Sparkles className="h-3.5 w-3.5 text-pink-500" />
+                          创建 Vibe
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
 
+              {/* 原图下载 */}
               <div className="flex flex-none items-center gap-1.5">
                 <a
                   href={draft.imageUrl}
@@ -737,48 +679,6 @@ export const InspirationDetail: React.FC<Props> = ({
           </footer>
         </section>
       </div>
-
-      {/* 设为风格串封面弹窗 */}
-      {coverModalOpen && (
-        <div className="fixed inset-0 z-[1600] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setCoverModalOpen(false)}>
-          <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-800 dark:bg-gray-900" onClick={e => e.stopPropagation()}>
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white">设为风格串封面</h3>
-              <button type="button" onClick={() => setCoverModalOpen(false)} className="rounded-lg p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">选择将当前灵感图作为哪个风格串的预览封面：</p>
-            <select
-              value={coverChainId}
-              onChange={e => setCoverChainId(e.target.value)}
-              className="mb-4 h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200"
-            >
-              <option value="">请选择目标风格串...</option>
-              {chains.filter(chain => chain.type === 'style').map(chain => (
-                <option key={chain.id} value={chain.id}>{chain.name}</option>
-              ))}
-            </select>
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setCoverModalOpen(false)}
-                className="rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                disabled={!coverChainId || busy === 'cover'}
-                onClick={() => void handleSetCover()}
-                className="rounded-xl bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-40"
-              >
-                确认设为封面
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

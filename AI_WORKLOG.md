@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **Antigravity (Gemini 3.8 Flash)**：灵感详情底栏极致重构为双核工具条（导入实验室分流底图 + 提取资产 3 大项 + 原图下载），顶栏新增即时图钉置顶，彻底移除画廊与详情页中的归档功能残留和设为风格串封面伪需求（feat: simplify inspiration detail actions into dual-core lab and asset workflows）。
 - **Antigravity (Gemini 3.8 Flash)**：重构灵感画廊侧边栏（剔除智能分类虚名、仅保留视图核心项、移除 0 计数来源）并转为顶部动态来源筛选胶囊，纯化灵感详情交互（移除五星/置顶/归档/编辑堆叠、支持失焦即时保存、折叠负面提示词、轻量 Chip 标签）（feat: streamline inspiration detail layout and declutter gallery sidebar）。
 - **Antigravity (Gemini 3.8 Flash)**：重构灵感作品详情（InspirationDetail）为浏览/编辑双模式，单行工具条收敛底部三层，顶栏轻量化置顶/归档与画板即时持久化，提示词卡片独立复制（feat: redesign inspiration detail modal for streamlined curation and reuse）。
 - **Antigravity (Gemini 3.8 Flash)**：打通灵感库与实验室底图互通链路（双向导入/选择器），灵感详情集成 WD Tagger 反推追加，收敛未整理心智为无灵感板归属，补齐 Danbooru/Pixiv 来源筛选与图标（feat: integrate inspiration library with lab image editor and harmonize source filters）。

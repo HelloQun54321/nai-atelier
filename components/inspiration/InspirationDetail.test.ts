@@ -80,7 +80,7 @@ const mockItem: Inspiration = {
 };
 
 describe('InspirationDetail 全新重构界面走查', () => {
-  it('默认进入清爽浏览态，具备独立复制、顶栏画板快速切换与单行 Footer', () => {
+  it('默认进入清爽浏览态，具备独立复制、顶栏画板快速切换与极简双核 Footer', () => {
     const notify = vi.fn();
     render(
       React.createElement(InspirationDetail, {
@@ -88,7 +88,6 @@ describe('InspirationDetail 全新重构界面走查', () => {
         items: [mockItem],
         boards: mockBoards,
         currentUser: mockUser,
-        chains: [],
         notify,
         onClose: vi.fn(),
         onRefresh: vi.fn(),
@@ -109,10 +108,9 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(screen.getByText('#夏日')).toBeTruthy();
     expect(screen.getByText('#少女')).toBeTruthy();
 
-    // 底部工具条包含高亮主按钮「完整导入」、次按钮「追加提示词」、更多复用与下载
-    expect(screen.getByRole('button', { name: /完整导入/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /追加提示词/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /更多复用/ })).toBeTruthy();
+    // 底部工具条包含高亮主按钮「导入实验室」、次按钮「提取资产」与下载
+    expect(screen.getByRole('button', { name: /导入实验室/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /提取资产/ })).toBeTruthy();
     expect(screen.getByRole('link', { name: '下载原图' })).toBeTruthy();
   });
 
@@ -124,7 +122,6 @@ describe('InspirationDetail 全新重构界面走查', () => {
         items: [mockItem],
         boards: mockBoards,
         currentUser: mockUser,
-        chains: [],
         notify: vi.fn(),
         onClose: vi.fn(),
         onRefresh,
@@ -139,32 +136,55 @@ describe('InspirationDetail 全新重构界面走查', () => {
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
   });
 
-  it('在更多复用菜单中切换置顶与归档状态并即时保存', async () => {
+  it('顶栏图钉切换置顶状态并即时保存', async () => {
+    const onRefresh = vi.fn();
     render(
       React.createElement(InspirationDetail, {
         item: mockItem,
         items: [mockItem],
         boards: mockBoards,
         currentUser: mockUser,
-        chains: [],
         notify: vi.fn(),
         onClose: vi.fn(),
-        onRefresh: vi.fn(),
+        onRefresh,
         onOpenItem: vi.fn(),
       })
     );
 
-    const moreBtn = screen.getByRole('button', { name: /更多复用/ });
-    fireEvent.click(moreBtn);
-
-    const pinBtn = screen.getByRole('button', { name: '设为置顶' });
+    const pinBtn = screen.getByRole('button', { name: '置顶灵感' });
     fireEvent.click(pinBtn);
     expect(db.updateInspiration).toHaveBeenCalledWith('insp-1', { isPinned: true });
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
 
-    fireEvent.click(moreBtn);
-    const archiveBtn = screen.getByRole('button', { name: '归档灵感' });
-    fireEvent.click(archiveBtn);
-    expect(db.updateInspiration).toHaveBeenCalledWith('insp-1', { archived: true });
+  it('底部双核工具条展开底图模式与资产提取子项', () => {
+    render(
+      React.createElement(InspirationDetail, {
+        item: mockItem,
+        items: [mockItem],
+        boards: mockBoards,
+        currentUser: mockUser,
+        notify: vi.fn(),
+        onClose: vi.fn(),
+        onRefresh: vi.fn(),
+        onOpenItem: vi.fn(),
+        onCreateArtistChain: vi.fn(),
+      })
+    );
+
+    // 展开底图菜单
+    const labMenuBtn = screen.getByRole('button', { name: '更多底图模式' });
+    fireEvent.click(labMenuBtn);
+    expect(screen.getByRole('button', { name: /底图：图生图/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /底图：局部重绘/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /底图：扩图/ })).toBeTruthy();
+
+    // 展开资产菜单
+    const assetBtn = screen.getByRole('button', { name: /提取资产/ });
+    fireEvent.click(assetBtn);
+    expect(screen.getByRole('button', { name: /创建风格串/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /创建角色参考/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /创建 Vibe/ })).toBeTruthy();
   });
 
   it('标题修改失焦后即时持久化保存', () => {
@@ -174,7 +194,6 @@ describe('InspirationDetail 全新重构界面走查', () => {
         items: [mockItem],
         boards: mockBoards,
         currentUser: mockUser,
-        chains: [],
         notify: vi.fn(),
         onClose: vi.fn(),
         onRefresh: vi.fn(),
