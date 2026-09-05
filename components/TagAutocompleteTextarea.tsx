@@ -476,6 +476,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
           </div>
           <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
             <div className={`flex items-stretch overflow-hidden rounded-md border transition-colors ${selectedTokens.length ? 'border-[var(--nai-accent)]' : 'border-gray-300 opacity-40 dark:border-gray-600'}`}>
+              <span className="border-r border-gray-200 px-2 py-1 text-meta font-medium text-gray-400 dark:border-gray-700 dark:text-gray-500">添加权重</span>
               <button
                 type="button"
                 onClick={() => applyWeightWrap('brace')}
