@@ -7,6 +7,18 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# 临时/草稿文件（本地排查脚本与一次性输出，永不入库）
+*.tmp
+.tmp*
+*.bak
+*~
+
+# OS 生成物（Windows）
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
 node_modules
 dist
 dist-ssr
