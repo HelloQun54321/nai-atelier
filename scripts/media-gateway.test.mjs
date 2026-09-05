@@ -113,7 +113,7 @@ test('prompt agent discovers model capabilities from metadata, Pi catalog and co
   const metadata = detectModelCapabilities({ id: 'vendor/model-x', display_name: 'Model X', input_modalities: ['text', 'image'], capabilities: { reasoning: true }, context_window: 262144, max_output_tokens: 32768 });
   assert.deepEqual({ imageInput: metadata.imageInput, reasoning: metadata.reasoning, contextWindow: metadata.contextWindow, maxTokens: metadata.maxTokens }, { imageInput: true, reasoning: true, contextWindow: 262144, maxTokens: 32768 });
   assert.deepEqual(metadata.capabilityDetection, { imageInput: 'metadata', reasoning: 'metadata' });
-  const catalog = detectModelCapabilities('gemini-2.5-flash');
+  const catalog = detectModelCapabilities('deepseek-v4-flash-vision-exp');
   assert.equal(catalog.imageInput, true);
   assert.equal(catalog.reasoning, true);
   assert.equal(catalog.capabilityDetection.imageInput, 'pi_catalog');
@@ -130,23 +130,21 @@ test('prompt agent discovers model capabilities from metadata, Pi catalog and co
 
 test('prompt agent automatically gives a text-only main model a configured vision model', () => {
   const sameProviderService = new PromptAgentService({ lanSecret: 'test-lan-secret' });
-  sameProviderService.setCredential('openai', { type: 'api_key', key: 'openai-key' });
-  sameProviderService.setCredential('google', { type: 'api_key', key: 'google-key' });
-  sameProviderService.config.provider = 'openai';
-  sameProviderService.config.model = 'gpt-4';
+  sameProviderService.setCredential('deepseek', { type: 'api_key', key: 'deepseek-key' });
+  sameProviderService.config.provider = 'deepseek';
+  sameProviderService.config.model = 'deepseek-v4-flash';
   sameProviderService.config.visionMode = 'auto';
-  const sameProviderVision = sameProviderService.syncAutomaticVisionSelection('openai', 'gpt-4');
-  assert.equal(sameProviderVision.provider, 'openai');
-  assert.equal(sameProviderVision.model, 'gpt-5-mini');
+  const sameProviderVision = sameProviderService.syncAutomaticVisionSelection('deepseek', 'deepseek-v4-flash');
+  assert.equal(sameProviderVision.provider, 'deepseek');
+  assert.equal(sameProviderVision.model, 'deepseek-v4-flash-vision-exp');
 
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
   service.setCredential('deepseek', { type: 'api_key', key: 'deepseek-key' });
-  service.setCredential('google', { type: 'api_key', key: 'google-key' });
   service.config.provider = 'deepseek';
   service.config.model = 'deepseek-v4-flash';
   service.config.visionMode = 'auto';
   const vision = service.syncAutomaticVisionSelection('deepseek', 'deepseek-v4-flash');
-  assert.equal(vision.provider, 'google');
+  assert.equal(vision.provider, 'deepseek');
   assert.equal(vision.info.imageInput, true);
   assert.equal(service.publicConfig().visionDedicated, true);
   assert.equal(service.publicConfig().visionMode, 'auto');
@@ -156,10 +154,10 @@ test('prompt agent automatically gives a text-only main model a configured visio
   service.config.visionModel = 'missing-model';
   service.syncAutomaticVisionSelection('deepseek', 'deepseek-v4-flash');
   assert.equal(service.config.visionMode, 'auto');
-  assert.equal(service.config.visionProvider, 'google');
+  assert.equal(service.config.visionProvider, 'deepseek');
 
   const sessionMeta = service.publicSessionMeta({ id: 'session', provider: 'deepseek', model: 'deepseek-v4-flash' });
-  assert.equal(sessionMeta.visionProvider, 'google');
+  assert.equal(sessionMeta.visionProvider, 'deepseek');
   assert.equal(sessionMeta.visionDedicated, true);
 });
 
@@ -264,7 +262,7 @@ test('prompt agent preserves vision usage in history without feeding it back to 
   const session = await service.createSession({ creativeMode: false });
   const firstMessages = [
     { role: 'user', content: 'inspect', timestamp: 1 },
-    { role: 'assistant', content: 'done', timestamp: 2, provider: 'deepseek', model: 'deepseek-v4-flash', visionUsage: [{ provider: 'google', model: 'gemini-2.5-flash', imageCount: 1, usage: { totalTokens: 12, cost: { total: 0.001 } } }] },
+    { role: 'assistant', content: 'done', timestamp: 2, provider: 'deepseek', model: 'deepseek-v4-flash', visionUsage: [{ provider: 'deepseek', model: 'deepseek-v4-flash-vision-exp', imageCount: 1, usage: { totalTokens: 12, cost: { total: 0.001 } } }] },
   ];
   try {
     await service.saveMessages(session.id, firstMessages);
@@ -281,16 +279,22 @@ test('prompt agent preserves vision usage in history without feeding it back to 
 test('prompt agent keeps API keys encrypted and out of its public config', async () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
   const encrypted = service.encrypt('private-llm-key');
-  service.config.encryptedKeys.google = encrypted;
+  service.config.encryptedKeys.deepseek = encrypted;
   assert.equal(service.decrypt(encrypted), 'private-llm-key');
   assert.equal(JSON.stringify(encrypted).includes('private-llm-key'), false);
   assert.equal(JSON.stringify(service.publicConfig()).includes('private-llm-key'), false);
-  assert.deepEqual(service.publicConfig().configuredProviders, ['google']);
+  assert.deepEqual(service.publicConfig().configuredProviders, ['deepseek']);
   assert.equal(service.publicConfig().configured, true);
-  assert.equal(service.listProviders().find(provider => provider.id === 'google').configured, true);
-  assert.equal(service.listProviders().some(provider => provider.id === 'deepseek'), true);
-  assert.equal(service.listAvailableModels().every(model => model.provider === 'google'), true);
-  assert.equal(service.listAvailableModels().some(model => model.id === 'gemini-2.5-flash'), true);
+  assert.equal(service.listProviders().find(provider => provider.id === 'deepseek').configured, true);
+  assert.equal(service.listAvailableModels().every(model => model.provider === 'deepseek'), true);
+  assert.deepEqual(service.listAvailableModels().map(model => model.id), [
+    'deepseek-v4-flash',
+    'deepseek-v4-flash-vision-exp',
+    'deepseek-v4-pro',
+  ]);
+  assert.equal(service.listAvailableModels().find(model => model.id === 'deepseek-v4-flash-vision-exp').imageInput, true);
+  assert.equal(service.publicConfig().visionProvider, 'deepseek');
+  assert.equal(service.publicConfig().visionModel, 'deepseek-v4-flash-vision-exp');
   const runtime = service.publicConfig();
   assert.match(runtime.policyVersion, /^\d{4}-\d{2}-\d{2}\.\d+$/);
   assert.match(runtime.policyFingerprint, /^[a-f0-9]{12}$/);

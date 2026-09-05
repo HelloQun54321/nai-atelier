@@ -3,6 +3,11 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-09-05
+### 修复:Prompt Agent 收敛为 OpenAI-compatible 并内置 DeepSeek
+- 移除对 pi-ai 官方多厂商静态 provider 目录的依赖，Prompt Agent 默认使用 `https://api.deepseek.com` 的 OpenAI Completions 兼容接口。
+- 内置 DeepSeek V4 Flash、V4 Flash Vision Exp 与 V4 Pro 模型配置，保留现有 `deepseek` provider ID 和加密凭据，旧配置无需重新登录。
+- 自定义 OpenAI-compatible、OpenAI Responses 与 Anthropic 接口继续可用。
+
 ### 优化:模型列表名剥掉厂商前缀，显示更干净
 - 模型名显示不再带「厂商/」前缀（如 deepseek/deepseek-v4-flash → deepseek-v4-flash），来源由独立标注（command-goat/bukun/rightapi/DeepSeek）承担；仅界面展示剥前缀，请求与选择仍用完整模型 id，不影响实际调用。
 

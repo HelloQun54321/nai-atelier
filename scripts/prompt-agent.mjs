@@ -1,6 +1,5 @@
 import { Agent } from '@earendil-works/pi-agent-core';
-import { InMemoryCredentialStore, Type, createProvider, getSupportedThinkingLevels } from '@earendil-works/pi-ai';
-import { builtinModels, builtinProviders, getBuiltinModels } from '@earendil-works/pi-ai/providers/all';
+import { InMemoryCredentialStore, Type, createModels, createProvider, getSupportedThinkingLevels } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy';
@@ -19,12 +18,27 @@ const TASK_DIR = 'local-data/prompt-agent-tasks';
 const AUDIT_LOG_DIR = 'local-data/prompt-agent-logs';
 const TAG_TRANSLATION_FILE = 'local-data/tag-translations.json';
 const TAG_ROOT = 'public/tag-data';
-const PROVIDER_CATALOG = new Map(builtinProviders().map(provider => [provider.id, provider]));
 const CUSTOM_PROVIDERS = new Map();
+const DEEPSEEK_MODELS = [
+  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', reasoning: true, input: ['text'], cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 }, contextWindow: 1_000_000, maxTokens: 384_000, compat: { supportsStore: false, supportsDeveloperRole: false, requiresReasoningContentOnAssistantMessages: true, thinkingFormat: 'deepseek' }, thinkingLevelMap: { minimal: null, low: null, medium: null, high: 'high', max: 'max' } },
+  { id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek V4 Flash Vision Exp', reasoning: true, input: ['text', 'image'], cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 }, contextWindow: 1_000_000, maxTokens: 384_000, compat: { supportsStore: false, supportsDeveloperRole: false, requiresReasoningContentOnAssistantMessages: true, thinkingFormat: 'deepseek' }, thinkingLevelMap: { minimal: null, low: 'low', medium: null, high: 'high', max: 'max' } },
+  { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', reasoning: true, input: ['text'], cost: { input: 0.435, output: 0.87, cacheRead: 0.003625, cacheWrite: 0 }, contextWindow: 1_000_000, maxTokens: 384_000, compat: { supportsStore: false, supportsDeveloperRole: false, requiresReasoningContentOnAssistantMessages: true, thinkingFormat: 'deepseek' }, thinkingLevelMap: { minimal: null, low: null, medium: null, high: 'high', max: 'max' } },
+].map(model => ({ ...model, api: 'openai-completions', provider: 'deepseek', baseUrl: 'https://api.deepseek.com' }));
+const DEEPSEEK_PROVIDER = createProvider({
+  id: 'deepseek',
+  name: 'DeepSeek',
+  baseUrl: 'https://api.deepseek.com',
+  auth: { apiKey: {
+    name: 'DeepSeek API Key',
+    resolve: async ({ credential }) => credential?.key ? { auth: { apiKey: credential.key }, env: credential.env, source: 'stored credential' } : undefined,
+  } },
+  models: DEEPSEEK_MODELS,
+  api: openAICompletionsApi(),
+});
+const PROVIDER_CATALOG = new Map([['deepseek', DEEPSEEK_PROVIDER]]);
 const PROMPT_AGENT_CONFIG_VERSION = 6;
 const PREFERRED_MODELS = {
-  deepseek: 'deepseek-v4-flash', google: 'gemini-2.5-flash', xai: 'grok-4.3',
-  openrouter: 'google/gemini-2.5-flash', openai: 'gpt-5-mini', anthropic: 'claude-sonnet-4-6',
+  deepseek: 'deepseek-v4-flash',
 };
 const CATEGORY_LABELS = { 0: '普通', 1: '画师', 3: '作品', 4: '角色', 5: '元数据', 6: 'NovelAI' };
 const MAX_SESSION_MESSAGES = 200;
@@ -300,7 +314,7 @@ const extractAitagPromptData = image => {
   return { prompt: text(prompt), negativePrompt: text(negativePrompt), params: parsed?.parameters && typeof parsed.parameters === 'object' ? parsed.parameters : undefined };
 };
 
-const normalizeProvider = value => PROVIDER_CATALOG.has(value) || CUSTOM_PROVIDERS.has(value) ? value : 'google';
+const normalizeProvider = value => PROVIDER_CATALOG.has(value) || CUSTOM_PROVIDERS.has(value) ? value : 'deepseek';
 const supportedThinkingLevelsFor = model => {
   // Pi owns the compatibility table. A public model has the precomputed list,
   // while a runtime model has Pi's reasoning / thinkingLevelMap metadata.
@@ -322,15 +336,15 @@ const listModels = provider => {
   const normalized = normalizeProvider(provider);
   const custom = CUSTOM_PROVIDERS.get(normalized);
   if (custom) return custom.models.map(model => publicModel(model, normalized));
-  return getBuiltinModels(normalized).map(model => publicModel(model, normalized));
+  return PROVIDER_CATALOG.get(normalized)?.getModels().map(model => publicModel(model, normalized)) || [];
 };
 const resolveModelApi = (provider, modelId) => {
   const normalized = normalizeProvider(provider);
   const custom = CUSTOM_PROVIDERS.get(normalized);
   if (custom?.api) return custom.api;
   if (PROVIDER_CATALOG.has(normalized)) {
-    const builtin = getBuiltinModels(normalized).find(item => item.id === modelId);
-    if (builtin?.api) return builtin.api;
+    const model = PROVIDER_CATALOG.get(normalized)?.getModels().find(item => item.id === modelId);
+    if (model?.api) return model.api;
   }
   return '';
 };
@@ -362,6 +376,13 @@ export const customProviderRuntime = custom => {
     models,
     api: apiFactory(),
   });
+};
+
+export const createPromptAgentModelRuntime = (credentials, customProviders = [...CUSTOM_PROVIDERS.values()]) => {
+  const runtime = createModels({ credentials });
+  for (const provider of PROVIDER_CATALOG.values()) runtime.setProvider(provider);
+  for (const provider of customProviders) runtime.setProvider(customProviderRuntime(provider));
+  return runtime;
 };
 
 export const sanitizeCustomProvider = raw => {
@@ -412,13 +433,13 @@ const defaultModelFor = provider => {
   return models.some(model => model.id === PREFERRED_MODELS[provider]) ? PREFERRED_MODELS[provider] : models[0]?.id || '';
 };
 
-let builtinCapabilityIndex;
-const getBuiltinCapabilityIndex = () => {
-  if (builtinCapabilityIndex) return builtinCapabilityIndex;
+let promptAgentCapabilityIndex;
+const getPromptAgentCapabilityIndex = () => {
+  if (promptAgentCapabilityIndex) return promptAgentCapabilityIndex;
   const exact = new Map();
   const basename = new Map();
   for (const provider of PROVIDER_CATALOG.keys()) {
-    for (const model of getBuiltinModels(provider)) {
+    for (const model of PROVIDER_CATALOG.get(provider).getModels()) {
       const capability = publicModel(model, provider);
       const id = String(model.id || '').toLowerCase();
       if (!id) continue;
@@ -429,8 +450,8 @@ const getBuiltinCapabilityIndex = () => {
       basename.set(tail, matches);
     }
   }
-  builtinCapabilityIndex = { exact, basename };
-  return builtinCapabilityIndex;
+  promptAgentCapabilityIndex = { exact, basename };
+  return promptAgentCapabilityIndex;
 };
 
 const firstBoolean = (value, paths) => {
@@ -462,7 +483,7 @@ export const detectModelCapabilities = raw => {
   const id = text(item.id || item.model).trim().slice(0, 160);
   if (!id) return null;
   const normalizedId = id.toLowerCase();
-  const catalog = getBuiltinCapabilityIndex();
+  const catalog = getPromptAgentCapabilityIndex();
   const tailMatches = catalog.basename.get(normalizedId.split('/').at(-1)) || [];
   const catalogModel = catalog.exact.get(normalizedId) || (tailMatches.length === 1 ? tailMatches[0] : null);
   const modalityTokens = modelModalityTokens(item);
@@ -1348,7 +1369,7 @@ export class PromptAgentService {
     this.encryptionKey = this.legacyEncryptionKey;
     this.credentialKeyError = '';
     this.credentialWarning = '';
-    this.config = { version: PROMPT_AGENT_CONFIG_VERSION, provider: 'google', model: defaultModelFor('google'), visionProvider: '', visionModel: '', visionMode: 'auto', encryptedKeys: {}, customProviders: [], creativeMode: true };
+    this.config = { version: PROMPT_AGENT_CONFIG_VERSION, provider: 'deepseek', model: defaultModelFor('deepseek'), visionProvider: '', visionModel: '', visionMode: 'auto', encryptedKeys: {}, customProviders: [], creativeMode: true };
     this.activeAgents = new Map();
     this.startingAgents = new Set();
     this.pendingConfirmations = new Map();
@@ -1443,7 +1464,7 @@ export class PromptAgentService {
           ...storedCredential,
           ...(this.outboundProxyUrl ? { env: { ...(storedCredential.env || {}), HTTPS_PROXY: this.outboundProxyUrl, HTTP_PROXY: this.outboundProxyUrl } } : {}),
         }));
-        const modelRuntime = builtinModels({ credentials });
+        const modelRuntime = createPromptAgentModelRuntime(credentials);
         const customProvider = CUSTOM_PROVIDERS.get(provider);
         if (customProvider) modelRuntime.setProvider(customProviderRuntime(customProvider));
         const model = modelRuntime.getModel(provider, modelId);
@@ -1768,7 +1789,7 @@ export class PromptAgentService {
     delete this.config.encryptedKeys[providerId];
     this.refreshCredentialWarning();
     if (this.config.provider === providerId) {
-      const next = this.configuredProviderIds()[0] || 'google';
+      const next = this.configuredProviderIds()[0] || 'deepseek';
       this.config.provider = next;
       this.config.model = defaultModelFor(next);
     }
@@ -1806,7 +1827,7 @@ export class PromptAgentService {
     this.refreshCredentialWarning();
     this.config.customProviders = [...CUSTOM_PROVIDERS.values()];
     if (this.config.provider === providerId) {
-      const next = this.configuredProviderIds()[0] || 'google';
+      const next = this.configuredProviderIds()[0] || 'deepseek';
       this.config.provider = next;
       this.config.model = defaultModelFor(next);
     }
@@ -1839,8 +1860,7 @@ export class PromptAgentService {
       const probeProvider = { ...custom, models: [{ ...candidate, cost: candidate.cost || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] };
       const credentials = new InMemoryCredentialStore();
       await credentials.modify(probeProvider.id, async () => ({ type: 'api_key', key }));
-      const modelRuntime = builtinModels({ credentials });
-      modelRuntime.setProvider(customProviderRuntime(probeProvider));
+      const modelRuntime = createPromptAgentModelRuntime(credentials, [probeProvider]);
       const model = modelRuntime.getModel(probeProvider.id, candidate.id);
       if (!model) throw Object.assign(new Error('Pi 无法加载这个模型配置'), { status: 400 });
       let toolCalled = false;
@@ -3748,11 +3768,7 @@ export class PromptAgentService {
           ...(this.outboundProxyUrl ? { env: { ...(credential.env || {}), HTTPS_PROXY: this.outboundProxyUrl, HTTP_PROXY: this.outboundProxyUrl } } : {}),
         }));
       }
-      const modelRuntime = builtinModels({ credentials });
-      for (const runtimeProvider of runtimeProviders) {
-        const customProvider = CUSTOM_PROVIDERS.get(runtimeProvider);
-        if (customProvider) modelRuntime.setProvider(customProviderRuntime(customProvider));
-      }
+      const modelRuntime = createPromptAgentModelRuntime(credentials);
       const model = modelRuntime.getModel(provider, modelId);
       if (!model) throw new Error('无法加载所选模型');
       const dedicatedVision = Boolean(visionSelection && (visionSelection.provider !== provider || visionSelection.model !== modelId));
