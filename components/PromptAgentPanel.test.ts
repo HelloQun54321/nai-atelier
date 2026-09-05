@@ -4,6 +4,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PromptAgentPanel } from './PromptAgentPanel';
 import { ConfirmDialogProvider } from './ConfirmDialog';
+import { NAIParams } from '../types';
 
 vi.mock('./MobileUI', () => ({
   useMobileHistoryLayer: (_open: boolean, onClose: () => void) => onClose,
@@ -98,7 +99,7 @@ const renderPanel = (canUndo = false) => {
             sampler: 'k_euler',
             seed: 0,
             model: 'nai-diffusion-4-full',
-          } as any,
+          } as unknown as NAIParams,
         },
         apiKey: '',
         onRunStart: () => {},
@@ -123,7 +124,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     vi.clearAllMocks();
   });
 
-  it('顶栏纯图标按钮（返回、会话列表、模型设置、全屏、更多）具有统一的 h-9 w-9 尺寸规范', async () => {
+  it('顶栏纯图标按钮（返回、会话列表、模型设置、更多）具有统一的 h-9 w-9 尺寸规范，且彻底移除全屏按钮', async () => {
     stubServices();
     renderPanel(false);
 
@@ -134,18 +135,26 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     const backBtn = screen.getByRole('button', { name: '返回' });
     const listBtn = screen.getByRole('button', { name: '会话列表' });
     const modelBtn = screen.getByRole('button', { name: '模型与思考设置' });
-    const fullscreenBtn = screen.getByRole('button', { name: '全屏显示' });
     const moreBtn = screen.getByRole('button', { name: '更多会话操作' });
 
-    for (const btn of [backBtn, listBtn, modelBtn, fullscreenBtn, moreBtn]) {
+    for (const btn of [backBtn, listBtn, modelBtn, moreBtn]) {
       expect(btn.className).toContain('h-9');
       expect(btn.className).toContain('w-9');
       expect(btn.className).not.toContain('px-2');
     }
+
+    // 根本不需要 agent 全屏，全屏按钮已彻底移除
+    expect(screen.queryByRole('button', { name: /全屏/ })).toBeNull();
   });
 
-  it('顶栏副行移除外置的破限选择下拉框，未开破限时不渲染破限噪点，模型名称完整展示', async () => {
-    stubServices({ creativeMode: false, model: 'deepseek-chat' });
+  it('顶栏副行移除外置的破限选择下拉框与视觉搭配模型展示，模型名称完整舒展展示', async () => {
+    stubServices({
+      creativeMode: false,
+      model: 'deepseek-chat',
+      visionDedicated: true,
+      visionModel: 'grok-4.6-vision',
+      visionAvailable: true,
+    });
     renderPanel(false);
 
     await waitFor(() => {
@@ -155,6 +164,11 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(screen.queryByLabelText('选择本会话破限预设')).toBeNull();
     expect(screen.getByText('deepseek-chat')).toBeTruthy();
     expect(screen.queryByText('普通')).toBeNull();
+
+    // 不把视觉搭配模型显示在副行中，避免造成拥挤
+    expect(screen.queryByText(/grok-4.6-vision/)).toBeNull();
+    expect(screen.queryByText(/视觉/)).toBeNull();
+    expect(screen.queryByText(/识图/)).toBeNull();
   });
 
   it('当开启破限时，顶栏副行仅以紧凑只读角标提示破限状态，不挤压模型名', async () => {
