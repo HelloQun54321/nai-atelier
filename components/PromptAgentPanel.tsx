@@ -668,7 +668,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     if (!activeSession || running || activeSession.creativeModeLocked || activeSession.messageCount) return;
     try {
       const updated = await promptAgentService.updateSession(activeSession.id, { creativeMode });
-      setSessions(previous => previous.map(item => item.id === updated.id ? { ...item, ...updated } : item));
+      setSessions(previous => previous.map(item => item.id === updated.id ? {
+        ...item,
+        ...updated,
+        ...(creativeMode === false ? { presetName: undefined, presetRevisionHash: undefined, effectivePolicyFingerprint: undefined } : {}),
+      } : item));
     } catch (error) {
       setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '切换破限模式失败' }]);
     }

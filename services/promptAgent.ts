@@ -224,6 +224,8 @@ export interface PromptAgentCreativePresetDetail extends PromptAgentCreativePres
   revisions: PromptAgentCreativePresetRevision[];
 }
 
+export type PromptAgentMessageContentPart = { type: string; text?: string; [key: string]: unknown };
+
 /** 规范化上下文估算（Inspector）输出：完整规范化数据，而非仅数字。 */
 export interface PromptAgentCreativeInspectResult {
   ok: boolean;
@@ -231,7 +233,7 @@ export interface PromptAgentCreativeInspectResult {
   /** 拼装完成的完整系统提示词（9 槽注入后）。 */
   systemPrompt?: string;
   /** 规范化后的标准消息序列（role/content，含注入的 head/tail/prefill 帧）。 */
-  canonicalMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  canonicalMessages?: Array<{ role: 'user' | 'assistant'; content: string | PromptAgentMessageContentPart[]; injected?: boolean }>;
   /** 来源片段：每个注入项/历史段在拼装中的归属，便于溯源。 */
   sourceSegments?: Array<{
     label: string;
@@ -257,6 +259,14 @@ export interface PromptAgentCreativeInspectResult {
     policyFingerprint?: string;
     presetRevisionHash?: string;
     systemPromptHash?: string;
+  };
+  /** 服务端上下文预算明细。 */
+  budget?: {
+    contextWindow: number;
+    outputReserve: number;
+    protocolReserve: number;
+    conversationTokenBudget: number;
+    storedConversation: Array<{ role: 'user' | 'assistant'; content: string | PromptAgentMessageContentPart[]; injected?: boolean }>;
   };
 }
 
@@ -467,10 +477,9 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
-  exportCreativePresets: async (presetIds: string[]): Promise<{ schema: string; version: number; exportedAt: number; presets: PromptAgentCreativePreset[] }> => {
-    // 每个 id 先 encode 再把字面逗号转 %2C，再以裸逗号连接：后端可先在原始串上按 , 切分再逐段 decode。
-    const ids = presetIds.map(id => encodeURIComponent(id).replace(/,/g, '%2C')).join(',');
-    const response = await fetch(`/api/prompt-agent/creative-presets/export?ids=${ids}`, { cache: 'no-store' });
+  exportCreativePresets: async (presetIds: string[] = []): Promise<{ schema: string; version: number; exportedAt: number; presets: PromptAgentCreativePreset[] }> => {
+    const query = presetIds.length ? `?${presetIds.map(id => `ids=${encodeURIComponent(id)}`).join('&')}` : '';
+    const response = await fetch(`/api/prompt-agent/creative-presets/export${query}`, { cache: 'no-store' });
     if (!response.ok) return readError(response) as never;
     return response.json();
   },

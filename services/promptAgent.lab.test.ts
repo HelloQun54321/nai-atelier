@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PromptAgentInjectionItem, promptAgentService } from './promptAgent';
+import { PromptAgentCreativeInspectResult, PromptAgentInjectionItem, promptAgentService } from './promptAgent';
 
 /** 破限提示词与预设实验室服务客户端行为测试（fetch-stub）。 */
 
@@ -61,12 +61,54 @@ describe('promptAgentService creative-presets lab client', () => {
     expect(result).toEqual({ ok: true });
   });
 
-  it('PUT creative-presets/active 支持设默认与清空（id: null）', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ items: [], activeCreativePresetId: undefined })));
-    await promptAgentService.setActiveCreativePreset(null);
-    const [, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(init.method).toBe('PUT');
-    expect(JSON.parse(init.body)).toEqual({ id: null });
+  it('PUT creative-presets/active 支持设默认/正常激活（非 null）与清空（id: null）', async () => {
+    const mockFetch = vi.fn(async () => jsonResponse({ items: [samplePreset], activeCreativePresetId: 'preset-a' }));
+    vi.stubGlobal('fetch', mockFetch);
+
+    // 正常激活非 null 分支
+    const activated = await promptAgentService.setActiveCreativePreset('preset-a');
+    expect(mockFetch).toHaveBeenCalledWith('/api/prompt-agent/creative-presets/active', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 'preset-a' }),
+    });
+    expect(activated.activeCreativePresetId).toBe('preset-a');
+
+    // 清空分支（id: null）
+    mockFetch.mockResolvedValueOnce(jsonResponse({ items: [], activeCreativePresetId: undefined }));
+    const cleared = await promptAgentService.setActiveCreativePreset(null);
+    expect(mockFetch).toHaveBeenLastCalledWith('/api/prompt-agent/creative-presets/active', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: null }),
+    });
+    expect(cleared.activeCreativePresetId).toBeUndefined();
+  });
+
+  it('特殊字符 presetId（含 /、空格、中文）在 update/delete/detail 路径中正确 encodeURIComponent 转义', async () => {
+    const mockFetch = vi.fn(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', mockFetch);
+    const specialId = '测试 预设/sub:id';
+    const encoded = encodeURIComponent(specialId);
+
+    await promptAgentService.updateCreativePreset(specialId, { name: '更新名' });
+    expect(mockFetch).toHaveBeenCalledWith(
+      `/api/prompt-agent/creative-presets/${encoded}`,
+      expect.objectContaining({ method: 'PUT' }),
+    );
+
+    await promptAgentService.deleteCreativePreset(specialId);
+    expect(mockFetch).toHaveBeenCalledWith(
+      `/api/prompt-agent/creative-presets/${encoded}`,
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+
+    mockFetch.mockResolvedValueOnce(jsonResponse({ ...samplePreset, id: specialId, revisions: [] }));
+    await promptAgentService.getCreativePresetDetail(specialId);
+    expect(mockFetch).toHaveBeenCalledWith(
+      `/api/prompt-agent/creative-presets/${encoded}?detail=1`,
+      { cache: 'no-store' },
+    );
   });
 
   it('GET detail 通过 ?detail=1 返回修订列表', async () => {
@@ -78,16 +120,26 @@ describe('promptAgentService creative-presets lab client', () => {
     expect(result.revisions[0].version).toBe(1);
   });
 
-  it('export ids 单次 encode：内部逗号转 %2C，分隔逗号为裸逗号，可无损切分', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ schema: 'creative-presets', version: 1, exportedAt: 4, presets: [samplePreset] })));
-    const ids = ['a b', 'c,d'];
+  it('exportCreativePresets 采用标准多值 query（ids=a&ids=b），支持含逗号/空格/中文 id，真实 searchParams 解析无损', async () => {
+    const mockFetch = vi.fn(async () => jsonResponse({ schema: 'creative-presets', version: 1, exportedAt: 4, presets: [samplePreset] }));
+    vi.stubGlobal('fetch', mockFetch);
+    const ids = ['a b', 'c,d', '预设,中文/1'];
     await promptAgentService.exportCreativePresets(ids);
-    const [url] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    // fetch 层会把 URL 规整（%2C→,），故对最终 query 断言“还原后可无损切分出两个原始 id”。
-    const raw = url.slice(url.indexOf('ids=') + 4);
-    expect(raw.split(',').map((segment: string) => decodeURIComponent(segment))).toEqual(['a b', 'c,d']);
-    // 服务端同一切分逻辑可无损还原：这保证后端按裸逗号切分后逐段 decode 的契约成立。
-    expect(raw.split(',').map((segment: string) => decodeURIComponent(segment)).join('|')).toBe('a b|c,d');
+    const [url] = (mockFetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit?];
+    const parsed = new URL(url, 'http://localhost');
+    expect(parsed.pathname).toBe('/api/prompt-agent/creative-presets/export');
+    expect(parsed.searchParams.getAll('ids')).toEqual(ids);
+  });
+
+  it('exportCreativePresets([]) 空数组时省略 query，全量导出', async () => {
+    const mockFetch = vi.fn(async () => jsonResponse({ schema: 'creative-presets', version: 1, exportedAt: 4, presets: [samplePreset] }));
+    vi.stubGlobal('fetch', mockFetch);
+    await promptAgentService.exportCreativePresets([]);
+    const [url] = (mockFetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit?];
+    const parsed = new URL(url, 'http://localhost');
+    expect(parsed.pathname).toBe('/api/prompt-agent/creative-presets/export');
+    expect(parsed.search).toBe('');
+    expect(parsed.searchParams.getAll('ids')).toEqual([]);
   });
 
   it('import 透传 schema/version/presets 并返回 imported/skipped', async () => {
@@ -99,15 +151,29 @@ describe('promptAgentService creative-presets lab client', () => {
     expect(result).toEqual({ ok: true, imported: 1, skipped: ['x'], activeCreativePresetId: 'preset-a' });
   });
 
-  it('inspect POST 携带 draft/message/presetId 并回传完整规范化结构', async () => {
-    const inspectResult = {
+  it('inspect POST 携带 draft/message/presetId 并回传完整规范化结构（含字符串与对象数组 content、injected 及 budget）', async () => {
+    const inspectResult: PromptAgentCreativeInspectResult = {
       ok: true,
       systemPrompt: 'system…',
-      canonicalMessages: [{ role: 'user' as const, content: 'hi' }],
-      sourceSegments: [{ label: 'context_head', target: 'context_head' as const, presetName: '破限示例', characterCount: 2 }],
+      canonicalMessages: [
+        { role: 'user', content: 'hi' },
+        { role: 'user', content: [{ type: 'text', text: 'tail-part' }], injected: true },
+        { role: 'assistant', content: [{ type: 'text', text: 'prefill-part' }, { type: 'custom', extra: 1 }], injected: true },
+      ],
+      sourceSegments: [{ label: 'context_head', target: 'context_head', presetName: '破限示例', characterCount: 2 }],
       tokenEstimate: { policyTokens: 1, draftTokens: 2, historyTokens: 3, presetTokens: 4, totalTokens: 10, contextWindow: 128000, contextDepth: 2, projectedBuffer: 100 },
       warnings: [],
       hashes: { presetRevisionHash: 'abc' },
+      budget: {
+        contextWindow: 128000,
+        outputReserve: 16384,
+        protocolReserve: 2048,
+        conversationTokenBudget: 100000,
+        storedConversation: [
+          { role: 'user', content: 'hi' },
+          { role: 'user', content: [{ type: 'text', text: 'tail-part' }], injected: true },
+        ],
+      },
     };
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(inspectResult)));
     const result = await promptAgentService.inspectCreativeContext({ presetId: 'preset-a', draft: { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler' } }, message: '测试' });
@@ -116,10 +182,20 @@ describe('promptAgentService creative-presets lab client', () => {
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toMatchObject({ presetId: 'preset-a', message: '测试' });
     expect(result.systemPrompt).toBe('system…');
-    expect(result.canonicalMessages).toHaveLength(1);
+    expect(result.canonicalMessages).toHaveLength(3);
+    expect(result.canonicalMessages?.[0].content).toBe('hi');
+    expect(result.canonicalMessages?.[1].injected).toBe(true);
+    expect(Array.isArray(result.canonicalMessages?.[1].content)).toBe(true);
+    expect(result.canonicalMessages?.[2].injected).toBe(true);
     expect(result.sourceSegments?.[0].target).toBe('context_head');
     expect(result.tokenEstimate?.totalTokens).toBe(10);
     expect(result.hashes?.presetRevisionHash).toBe('abc');
+    expect(result.budget).toBeDefined();
+    expect(result.budget?.contextWindow).toBe(128000);
+    expect(result.budget?.outputReserve).toBe(16384);
+    expect(result.budget?.protocolReserve).toBe(2048);
+    expect(result.budget?.conversationTokenBudget).toBe(100000);
+    expect(result.budget?.storedConversation).toHaveLength(2);
   });
 
   it('非 2xx 响应抛错（沿用 parseErrorResponse 约定）', async () => {

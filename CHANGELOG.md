@@ -3,6 +3,16 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-09-05
+### 修复:破限提示词预设实验室交叉复审缺陷修复
+- 多模态消息注入修复：user_preamble/user_suffix/conversation_tail 改写消息时不再整体覆写 content，改为保留 image 等非文本 part、只更新文本 part，视觉链路不再因注入丢图。
+- Anthropic 消息轮次修复：取消 anthropic-messages 的连续 user 尾注能力（违反严格交替会 400），conversation_tail 改为合并进末尾用户消息；context_depth 锚点注入前检查交替冲突，会破坏轮次的场景降级为合并文本并提示。
+- 空槽防御：新建/补齐的预设空槽默认停用，保存前清洗空内容槽；服务端装配时整对剔除空内容的 context_head，杜绝空文本帧触发上游 400。
+- 预设导出契约修复：export 改为标准多值 query（ids=a&ids=b），网关改用 getAll 解析，消除含特殊字符 id 被劈裂/二次解码报错；单测改用真实 URL 解析断言，清除假阳性。
+- 预设导入/创建拦截保留字 id（active/import/export/inspect/builtin-default），缺失或冲突 id 自动重生成，避免静态路由遮蔽与幽灵预设。
+- Inspector 规范化消息类型修正：canonicalMessages content 类型扩展为 string 或多模态 part 数组（含 injected），前端渲染兼容两种形态，不再因对象数组渲染崩溃；补 budget 字段类型。
+- 预设管理交互修复：context_head 启停改为成对联动；删除当前选中预设后自动回退选中项不再卡死；另存为加防重并截断超长名；context_depth 输入加 1-100 整型约束；修订历史 key 消除重复；导出下载延迟释放对象 URL；破限关闭时清除残留预设标签展示。
+- 审计与估算修复：会话消息修订审计不再落全文只留 sha256+长度；上下文估算消除 history/preset 重复计入；旧会话惰性补齐统一模型 API 推导，指纹与新会话一致。
+
 ### 功能: Prompt Agent 新增破限提示词预设（实验室）
 - 预设以 9 个固定注入槽位组织（系统提示词头/中/尾、上下文头帧、上下文窗口深度、用户消息前导/尾部、会话尾帧、assistant 预填），跨组件槽位契约一致。
 - 支持创建/编辑/复制/删除预设、设为当前激活、批量导入导出与基于上下文的审查（Inspector）。

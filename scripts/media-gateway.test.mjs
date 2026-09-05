@@ -42,6 +42,7 @@ import {
   fetchNovelAiGeneration,
   fetchNovelAiGenerationStream,
   getValidatedSource,
+  handleCreativePresetsRequest,
   handleLanPinUpdate,
   handleLanUnlock,
   isPixivConnectionMutationAllowed,
@@ -51,7 +52,7 @@ import {
   selectThumbnailConcurrency,
   writeLanPin,
 } from './media-gateway.mjs';
-import { PromptAgentService, assemblePromptContext, calculateAgentContextBudget, cloneAgentMessages, computeEffectivePreset, computePolicyFingerprint, creativeRevisionHash, customProviderRuntime, detectModelCapabilities, estimateContextTokens, getBuiltinDefaultPreset, normalizeCreativePreset, normalizeCreativeSlots, parseTranslationResponse, parseWebSearchResponse, resolveCapabilities, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
+import { PromptAgentService, CREATIVE_PRESET_RESERVED_IDS, assemblePromptContext, calculateAgentContextBudget, cloneAgentMessages, computeEffectivePreset, computePolicyFingerprint, creativeRevisionHash, customProviderRuntime, detectModelCapabilities, estimateContextTokens, getBuiltinDefaultPreset, normalizeCreativePreset, normalizeCreativeSlots, parseTranslationResponse, parseWebSearchResponse, resolveCapabilities, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
 import { getNovelAiModelProfile, readNovelAiOfficialKnowledge, resolveNovelAiModelFamily, searchNovelAiOfficialKnowledge } from './novelai-agent-knowledge.mjs';
 import { readImageDimensions } from '../worker/imageDimensions.mjs';
 
@@ -1594,11 +1595,12 @@ test('creative lab: resolveCapabilities default is conservative and anthropic al
   assert.deepEqual(resolveCapabilities('openai-completions', false, 'off'), { assistantPrefill: false, userConversationTail: false });
   assert.deepEqual(resolveCapabilities('openai-responses', true, 'high'), { assistantPrefill: false, userConversationTail: false });
   assert.deepEqual(resolveCapabilities('google-generative-ai', false, 'off'), { assistantPrefill: false, userConversationTail: false });
-  assert.deepEqual(resolveCapabilities('anthropic-messages', true, 'off'), { assistantPrefill: true, userConversationTail: true });
+  assert.deepEqual(resolveCapabilities('anthropic-messages', true, 'off'), { assistantPrefill: true, userConversationTail: false });
   assert.deepEqual(resolveCapabilities('mistral-conversations', false, 'off'), { assistantPrefill: false, userConversationTail: false });
   // 自定义 anthropic 系未显式声明 → false。
   assert.deepEqual(resolveCapabilities('custom-anthropic', false, 'off'), { assistantPrefill: false, userConversationTail: false });
   assert.deepEqual(resolveCapabilities('custom-anthropic', false, 'off', { assistantPrefill: true }), { assistantPrefill: true, userConversationTail: false });
+  assert.deepEqual(resolveCapabilities('custom-anthropic', false, 'off', { assistantPrefill: true, userConversationTail: true }), { assistantPrefill: true, userConversationTail: true });
 });
 
 test('creative lab: assemblePromptContext deep-copies, prepends head seeds in pairs, merges preamble, orders system parts and fingerprints by capability', () => {
@@ -1698,12 +1700,17 @@ test('creative lab: head seeds trim as whole pairs, prefill/tail rules and depth
   assert.ok(merged.warnings.some(warning => warning.includes('合并入当前用户消息')));
   assert.equal(merged.canonicalMessages.length, 1);
   assert.ok(messageText(merged.canonicalMessages[0]).endsWith('TAIL'));
-  // anthropic 支持连续 user → 独立追加。
-  const independent = assemblePromptContext({ creativeMode: true, revision: { ...tailPreset, presetRevisionHash: 'h' }, systemPolicy: 'SYS', cleanMessages: [{ role: 'user', content: '最后请求' }], modelApi: 'anthropic-messages', thinkingLevel: 'off' });
+  // anthropic 不支持连续 user 文本帧 → 合并入当前用户消息。
+  const anthropicTail = assemblePromptContext({ creativeMode: true, revision: { ...tailPreset, presetRevisionHash: 'h' }, systemPolicy: 'SYS', cleanMessages: [{ role: 'user', content: '最后请求' }], modelApi: 'anthropic-messages', thinkingLevel: 'off' });
+  assert.equal(anthropicTail.canonicalMessages.length, 1);
+  assert.ok(messageText(anthropicTail.canonicalMessages[0]).endsWith('TAIL'));
+  assert.ok(anthropicTail.warnings.some(warning => warning.includes('合并入当前用户消息')));
+  // 显式声明 userConversationTail: true 的 provider 独立追加。
+  const independent = assemblePromptContext({ creativeMode: true, revision: { ...tailPreset, presetRevisionHash: 'h' }, systemPolicy: 'SYS', cleanMessages: [{ role: 'user', content: '最后请求' }], modelApi: 'custom-anthropic', thinkingLevel: 'off', model: { userConversationTail: true } });
   assert.equal(independent.canonicalMessages.length, 2);
   assert.equal(independent.canonicalMessages.at(-1).role, 'user');
   assert.equal(messageText(independent.canonicalMessages.at(-1)), 'TAIL');
-  // context_depth 不拆工具组：锚点落在第二个完整 user turn 的整条工具链之后。
+  // context_depth 不拆工具组：插入点后为 user 导致连续 user 时，合并入该 turn user 消息并 warning
   const depthPreset = { id: 'd', presetId: 'd', presetName: 'depth', slots: [{ id: 'x', name: 'd', target: 'context_depth', enabled: true, content: '深度锚点', depth: 2 }] };
   const depthMsgs = [
     { role: 'user', content: '第一问' },
@@ -1713,10 +1720,8 @@ test('creative lab: head seeds trim as whole pairs, prefill/tail rules and depth
     { role: 'user', content: '第三问' },
   ];
   const depthResult = assemblePromptContext({ creativeMode: true, revision: { ...depthPreset, presetRevisionHash: 'h' }, systemPolicy: 'SYS', cleanMessages: depthMsgs, modelApi: 'anthropic-messages', thinkingLevel: 'off' });
-  const anchorIndex = depthResult.canonicalMessages.findIndex(message => message.injected === true && messageText(message) === '深度锚点');
-  assert.ok(anchorIndex >= 0);
-  assert.ok(isToolResult(depthResult.canonicalMessages[anchorIndex - 1])); // 在工具链之后
-  assert.equal(depthResult.canonicalMessages[anchorIndex + 1].content, '第三问');
+  assert.ok(depthResult.warnings.some(warning => warning.includes('连续 user') || warning.includes('合并入锚点轮次')));
+  assert.ok(messageText(depthResult.canonicalMessages[1]).includes('深度锚点'));
 });
 
 // ── 破限提示词与预设实验室：实例 CRUD / active / import-export / 会话绑定 ──
@@ -1931,6 +1936,258 @@ test('creative lab: audit slim keeps prompt text out of exported log entries', a
     const ctx = slim.entries.find(entry => entry.type === 'model_context');
     assert.deepEqual(ctx.storedConversation, { count: 3, totalTokens: 99 });
     assert.ok(!JSON.stringify(ctx).includes('actual prompt text'));
+    await service.deleteSession(session.id);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+const makeMockReq = ({ method = 'GET', url = '/', body = null, headers = {} }) => {
+  const data = body !== null ? (typeof body === 'string' ? Buffer.from(body) : Buffer.from(JSON.stringify(body))) : null;
+  const handlers = {};
+  const req = {
+    method,
+    url,
+    headers: { 'content-type': 'application/json', ...headers },
+    setTimeout: () => {},
+    destroy: () => {},
+    on: (event, handler) => {
+      handlers[event] = handler;
+      if (event === 'end') {
+        process.nextTick(() => {
+          if (data && handlers.data) handlers.data(data);
+          if (handlers.end) handlers.end();
+        });
+      }
+      return req;
+    },
+  };
+  return req;
+};
+
+const makeMockRes = () => {
+  const res = {
+    statusCode: 200,
+    headers: {},
+    body: '',
+    writeHead(status, headers = {}) {
+      this.statusCode = status;
+      this.headers = headers;
+      return this;
+    },
+    end(data) {
+      this.body = Buffer.isBuffer(data) ? data.toString('utf8') : String(data || '');
+      this.ended = true;
+      return this;
+    },
+    json() {
+      return this.body ? JSON.parse(this.body) : null;
+    },
+  };
+  return res;
+};
+
+test('creative lab: REST routes handle export multi-ids, enforce 404/405 and regenerate reserved IDs', async () => {
+  const { service, dir } = await makeLabService();
+  try {
+    const dispatch = async (method, path, body = null) => {
+      const req = makeMockReq({ method, url: path, body });
+      const res = makeMockRes();
+      const url = new URL(path, 'http://127.0.0.1');
+      await handleCreativePresetsRequest(req, res, url, service);
+      return res;
+    };
+
+    // 1. GET /api/prompt-agent/creative-presets 返回列表含 builtin-default
+    const listRes = await dispatch('GET', '/api/prompt-agent/creative-presets');
+    assert.equal(listRes.statusCode, 200);
+    assert.ok(listRes.json().items.some(item => item.id === 'builtin-default'));
+
+    // 2. 405 Method Not Allowed
+    const putListRes = await dispatch('PUT', '/api/prompt-agent/creative-presets', {});
+    assert.equal(putListRes.statusCode, 405);
+    const postExportRes = await dispatch('POST', '/api/prompt-agent/creative-presets/export', {});
+    assert.equal(postExportRes.statusCode, 405);
+    const getImportRes = await dispatch('GET', '/api/prompt-agent/creative-presets/import');
+    assert.equal(getImportRes.statusCode, 405);
+    const getActiveRes = await dispatch('GET', '/api/prompt-agent/creative-presets/active');
+    assert.equal(getActiveRes.statusCode, 405);
+    const getInspectRes = await dispatch('GET', '/api/prompt-agent/creative-presets/inspect');
+    assert.equal(getInspectRes.statusCode, 405);
+
+    // 3. POST 创建预设：传入保留字 id（如 'active'、'export'）必须被重生成为 preset-${uuid}
+    for (const reservedId of ['active', 'export', 'import', 'inspect', 'builtin-default']) {
+      const createRes = await dispatch('POST', '/api/prompt-agent/creative-presets', {
+        id: reservedId,
+        name: `测试保留字-${reservedId}`,
+        slots: [{ name: 'pre', target: 'user_preamble', enabled: true, content: 'test' }],
+      });
+      assert.equal(createRes.statusCode, 201);
+      const created = createRes.json();
+      assert.notEqual(created.id, reservedId);
+      assert.ok(created.id.startsWith('preset-'));
+    }
+
+    // 4. GET export 支持多值 ids=a&ids=b 与空值全量导出
+    const createdP1 = (await dispatch('POST', '/api/prompt-agent/creative-presets', { name: '预设A', slots: [] })).json();
+    const createdP2 = (await dispatch('POST', '/api/prompt-agent/creative-presets', { name: '预设B', slots: [] })).json();
+
+    // 多值 ids
+    const exportMultiRes = await dispatch('GET', `/api/prompt-agent/creative-presets/export?ids=${createdP1.id}&ids=${createdP2.id}`);
+    assert.equal(exportMultiRes.statusCode, 200);
+    const multiData = exportMultiRes.json();
+    assert.equal(multiData.presets.length, 2);
+    assert.ok(multiData.presets.some(p => p.id === createdP1.id));
+    assert.ok(multiData.presets.some(p => p.id === createdP2.id));
+
+    // 无参 / 空 ids 全量导出
+    const exportAllRes = await dispatch('GET', '/api/prompt-agent/creative-presets/export');
+    assert.equal(exportAllRes.statusCode, 200);
+    assert.ok(exportAllRes.json().presets.length >= 3); // builtin + A + B
+
+    // 5. POST inspect 端点正常估算 tokens
+    const inspectRes = await dispatch('POST', '/api/prompt-agent/creative-presets/inspect', {
+      presetId: 'builtin-default',
+      draft: { basePrompt: '1girl, masterpiece', subjectPrompt: '', negativePrompt: '' },
+      message: '测试用户消息',
+    });
+    assert.equal(inspectRes.statusCode, 200);
+    const inspectData = inspectRes.json();
+    assert.equal(inspectData.ok, true);
+    assert.ok(Number.isFinite(inspectData.tokenEstimate.totalTokens));
+    assert.ok(inspectData.tokenEstimate.totalTokens > 0);
+    assert.ok(Array.isArray(inspectData.canonicalMessages));
+
+    // 6. POST import 端点拦截保留字 id 并重生成
+    const importRes = await dispatch('POST', '/api/prompt-agent/creative-presets/import', {
+      schema: 'creative-presets',
+      version: 1,
+      presets: [
+        { id: 'active', name: '外部active', slots: [] },
+        { id: 'inspect', name: '外部inspect', slots: [] },
+        { id: 'custom-valid-id', name: '合法ID预设', slots: [] },
+      ],
+    });
+    assert.equal(importRes.statusCode, 200);
+    const importedPresets = (await dispatch('GET', '/api/prompt-agent/creative-presets')).json().items;
+    const fromActive = importedPresets.find(p => p.name === '外部active');
+    assert.ok(fromActive);
+    assert.notEqual(fromActive.id, 'active');
+    assert.ok(fromActive.id.startsWith('preset-'));
+    const fromInspect = importedPresets.find(p => p.name === '外部inspect');
+    assert.ok(fromInspect);
+    assert.notEqual(fromInspect.id, 'inspect');
+    assert.ok(fromInspect.id.startsWith('preset-'));
+
+    // 7. 404 Not Found
+    const notFoundRes = await dispatch('GET', '/api/prompt-agent/creative-presets/non-existent-preset-id');
+    assert.equal(notFoundRes.statusCode, 404);
+    const notFoundDelRes = await dispatch('DELETE', '/api/prompt-agent/creative-presets/non-existent-preset-id');
+    assert.equal(notFoundDelRes.statusCode, 404);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('creative lab: multimodal content parts are preserved without string overwrite across preamble/suffix/tail', () => {
+  const multimodalMessage = {
+    role: 'user',
+    content: [
+      { type: 'image', data: 'base64imagebytes==', mimeType: 'image/png' },
+      { type: 'text', text: '原用户文本' },
+    ],
+  };
+  const presetWithPreambleAndTail = {
+    id: 'p-multi',
+    presetId: 'p-multi',
+    presetName: 'multimodal',
+    slots: [
+      { id: 's1', target: 'user_preamble', enabled: true, content: 'PREAMBLE' },
+      { id: 's2', target: 'user_suffix', enabled: true, content: 'SUFFIX' },
+      { id: 's3', target: 'conversation_tail', enabled: true, content: 'TAIL' },
+    ],
+  };
+  // anthropic 不支持连续 user，conversation_tail 会合并入末尾 user
+  const result = assemblePromptContext({
+    creativeMode: true,
+    revision: presetWithPreambleAndTail,
+    systemPolicy: 'SYS',
+    cleanMessages: [multimodalMessage],
+    modelApi: 'anthropic-messages',
+    thinkingLevel: 'off',
+  });
+  assert.equal(result.canonicalMessages.length, 1);
+  const finalMsg = result.canonicalMessages[0];
+  assert.ok(Array.isArray(finalMsg.content), 'content 必须保持多模态数组形态');
+  const imagePart = finalMsg.content.find(part => part?.type === 'image');
+  assert.ok(imagePart, '图片 part 必须保留');
+  assert.equal(imagePart.data, 'base64imagebytes==');
+  const textPart = finalMsg.content.find(part => part?.type === 'text');
+  assert.ok(textPart, '文本 part 必须存在');
+  assert.ok(textPart.text.includes('PREAMBLE'));
+  assert.ok(textPart.text.includes('原用户文本'));
+  assert.ok(textPart.text.includes('SUFFIX'));
+  assert.ok(textPart.text.includes('TAIL'));
+
+  // 仅含图片无文本 part 的消息：前导/后缀/tail 不丢失图片且正确 unshift 文本
+  const onlyImageMessage = {
+    role: 'user',
+    content: [{ type: 'image', data: 'imgonly', mimeType: 'image/png' }],
+  };
+  const resultImgOnly = assemblePromptContext({
+    creativeMode: true,
+    revision: presetWithPreambleAndTail,
+    systemPolicy: 'SYS',
+    cleanMessages: [onlyImageMessage],
+    modelApi: 'anthropic-messages',
+    thinkingLevel: 'off',
+  });
+  const finalImgOnly = resultImgOnly.canonicalMessages[0];
+  assert.ok(Array.isArray(finalImgOnly.content));
+  assert.equal(finalImgOnly.content.find(p => p.type === 'image')?.data, 'imgonly');
+  assert.ok(finalImgOnly.content.find(p => p.type === 'text')?.text.includes('PREAMBLE'));
+});
+
+test('creative lab: context_head filters out empty content pairs before assembling seed messages', () => {
+  const presetWithEmptyHead = {
+    id: 'head-test',
+    presetId: 'head-test',
+    presetName: 'head-test',
+    slots: [
+      { id: 'h1', pairId: 'p1', role: 'user', target: 'context_head', enabled: true, content: '   ' },
+      { id: 'h2', pairId: 'p1', role: 'assistant', target: 'context_head', enabled: true, content: '有效回答' },
+      { id: 'h3', pairId: 'p2', role: 'user', target: 'context_head', enabled: true, content: '问二' },
+      { id: 'h4', pairId: 'p2', role: 'assistant', target: 'context_head', enabled: true, content: '答二' },
+    ],
+  };
+  const result = assemblePromptContext({
+    creativeMode: true,
+    revision: presetWithEmptyHead,
+    systemPolicy: 'SYS',
+    cleanMessages: [{ role: 'user', content: '当前问题' }],
+    modelApi: 'anthropic-messages',
+    thinkingLevel: 'off',
+  });
+  // p1 因为 user 为空整对被过滤；只有 p2 注入（2 条）+ cleanMessages（1 条）= 3 条
+  assert.equal(result.canonicalMessages.length, 3);
+  assert.equal(result.canonicalMessages[0].content[0].text, '问二');
+  assert.equal(result.canonicalMessages[1].content[0].text, '答二');
+  assert.equal(result.canonicalMessages[2].content, '当前问题');
+});
+test('creative lab: reviseSessionMessage audit log records sha256 and length instead of raw prompt text', async () => {
+  const { service, dir } = await makeLabService();
+  try {
+    const session = await service.createSession({ creativeMode: true });
+    await service.saveMessages(session.id, [{ role: 'user', content: '原始文本' }]);
+    const revisedText = '这是修改后的长提示词内容，不应直接明文暴露在审计日志中';
+    await service.reviseSessionMessage(session.id, 'saved-0', revisedText);
+    const auditLog = await service.getAuditLog(session.id);
+    const revisedEntry = auditLog.entries.find(e => e.type === 'message_revised');
+    assert.ok(revisedEntry, '必须包含 message_revised 审计记录');
+    assert.equal(typeof revisedEntry.content, 'object', '审计 content 应为对象而不是原文');
+    assert.equal(typeof revisedEntry.content.sha256, 'string');
+    assert.equal(revisedEntry.content.length, revisedText.length);
+    assert.ok(!JSON.stringify(revisedEntry).includes(revisedText), '审计日志中严禁出现修改后提示词全文');
     await service.deleteSession(session.id);
   } finally {
     await rm(dir, { recursive: true, force: true });

@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-05
+- **Antigravity CLI (agy)**：外包修复破限提示词预设实验室交叉复审查出的 10 项缺陷——前端（context_head 成对启停、删除选中预设回退、空槽默认停用+保存清洗、creativeMode 关闭清残留预设标签、另存为防重/截断、Inspector 多模态渲染兼容）、服务层（export 改标准多值 query、canonicalMessages 类型联合、补 budget 字段）、网关（多模态 content 注入保留图片、anthropic 连续 user 修正、context_depth 交替冲突防护、空槽整对剔除、保留字 id 拦截、token 重复计入、审计瘦身、modelApi 推导统一），三 A 实现 + 三 B 独立复审全通过（fix: harden creative presets lab injection, export, and multimodal handling）。
 - **Antigravity CLI (agy)**：外包收口 PromptAgent 破限提示词预设实验室功能——9 槽注入契约（system_head/middle/tail、context_head/depth、user_preamble/suffix、conversation_tail、assistant_prefill）、预设 CRUD/激活/导入导出/审查 REST 路由、会话绑定预设展示与 lab 测试（feat: add prompt agent creative presets lab）。
 - **DeepSeek V4 Flash (Oh My Pi)**：按第三方审查修订订阅失效治理——网关源头剥除非活跃/非 Opus 订阅的 usage、结算快照补 active 校验、限额行红叉提前于隐藏分支、生成费用按活跃 Opus 资格计算、守卫统一显式 inactive 判定、Vibe 编码入口补拦截，并删除无用 state（fix: harden expired-key handling after code review）。
 - **DeepSeek V4 Flash (Oh My Pi)**：订阅失效密钥系统性治理——侧栏 Opus 限额行对 active=false 密钥显示红色 × 与切换提示，文生图/图生图/编辑/Agent/角色库/画师库生成前硬拦截失效密钥，设置页保管箱对当前密钥标注「已失效/非 Opus」，判定纯函数落 naiUsage 并补单测（feat: surface expired subscription keys across usage bar, vault and generation guards）。

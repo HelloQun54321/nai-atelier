@@ -17,10 +17,25 @@ const emptyCustomProvider = (): PromptAgentCustomProvider => ({
 });
 
 /** 会话列表/标题副行的破限预设标签文本：存在预设名时展示（含短指纹），无预设返回 null（不拉正文）。 */
-export const formatPresetSessionLabel = (session: { presetName?: string; presetRevisionHash?: string; effectivePolicyFingerprint?: string }): string | null => {
-  if (!session.presetName) return null;
+export const formatPresetSessionLabel = (session: { presetName?: string; presetRevisionHash?: string; effectivePolicyFingerprint?: string; creativeMode?: boolean }): string | null => {
+  if (session.creativeMode === false || !session.presetName) return null;
   const fingerprint = session.effectivePolicyFingerprint || session.presetRevisionHash || '';
   return fingerprint ? `${session.presetName} · ${fingerprint.slice(0, 7)}` : session.presetName;
+};
+
+/** 兼容 string 或 part[] 结构的规范化消息正文渲染。 */
+export const formatMessageContent = (content: unknown): string => {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map(part => {
+      if (typeof part === 'string') return part;
+      if (part && typeof part === 'object' && 'text' in part && typeof (part as { text?: unknown }).text === 'string') {
+        return (part as { text: string }).text;
+      }
+      return '';
+    }).filter(Boolean).join('');
+  }
+  return content ? String(content) : '';
 };
 
 /** 9 个破限注入槽位：固定标签、顺序稳定、跨组件一致；仅含已审定 target，无旧键。 */
@@ -44,21 +59,25 @@ const makeTempSlotId = () => {
   return `tmp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
-/** 与 target 无关的固定项渲染顺序：LAB_SLOTS 即稳定顺序；此处为每个 target 建立新槽位的最小 item。context_depth 默认 1（服务端有效范围从 1 开始）。 */
+/** 与 target 无关的固定项渲染顺序：LAB_SLOTS 即稳定顺序；此处为每个 target 建立新槽位的最小 item。context_depth 默认 1（服务端有效范围从 1 开始）。新建补齐空槽默认 enabled: false 避免注入空文本帧。 */
 export const makeEmptySlot = (target: PromptAgentLabTarget): PromptAgentInjectionItem => ({
-  id: makeTempSlotId(), name: '', target, enabled: true, content: '',
+  id: makeTempSlotId(), name: '', target, enabled: false, content: '',
   role: target === 'conversation_tail' ? 'user' : target === 'assistant_prefill' ? 'assistant' : target === 'context_head' ? 'user' : undefined,
   depth: target === 'context_depth' ? 1 : undefined,
 });
 
-/** 新建一个空的 context_head 成对（user + assistant），编辑器内立即给出两框正文。 */
+/** 新建一个空的 context_head 成对（user + assistant），编辑器内立即给出两框正文。空槽默认 enabled: false。 */
 export const makeEmptyContextHeadPair = (): PromptAgentInjectionItem[] => {
   const pairId = makeTempSlotId();
   return [
-    { id: makeTempSlotId(), pairId, name: '', target: 'context_head', enabled: true, content: '', role: 'user' },
-    { id: makeTempSlotId(), pairId, name: '', target: 'context_head', enabled: true, content: '', role: 'assistant' },
+    { id: makeTempSlotId(), pairId, name: '', target: 'context_head', enabled: false, content: '', role: 'user' },
+    { id: makeTempSlotId(), pairId, name: '', target: 'context_head', enabled: false, content: '', role: 'assistant' },
   ];
 };
+
+/** 保存前对 slots 进行清洗：空内容槽位（trim 后为空）统一置为 enabled: false，防止向服务端装配空帧。 */
+export const sanitizeSlotsForSave = (slots: PromptAgentInjectionItem[]): PromptAgentInjectionItem[] =>
+  slots.map(slot => (slot.content || '').trim() === '' ? { ...slot, enabled: false } : slot);
 
 export const defaultPresetId = (presets: PromptAgentCreativePreset[], activeId?: string) => (activeId && presets.some(preset => preset.id === activeId) ? activeId : presets.length ? presets[0].id : null);
 
@@ -160,9 +179,18 @@ const EditableSlotForm: React.FC<{
   const addContextHeadPair = () => {
     const pairId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     onChange([...value,
-      { id: `head-${pairId}-u`, pairId, name: '', target: 'context_head', enabled: true, content: '', role: 'user' },
-      { id: `head-${pairId}-a`, pairId, name: '', target: 'context_head', enabled: true, content: '', role: 'assistant' },
+      { id: `head-${pairId}-u`, pairId, name: '', target: 'context_head', enabled: false, content: '', role: 'user' },
+      { id: `head-${pairId}-a`, pairId, name: '', target: 'context_head', enabled: false, content: '', role: 'assistant' },
     ]);
+  };
+  // 成对启停：按 pairId 或相邻反 role 联动切换同组两项 enabled 状态，保持轮次交替契约。
+  const toggleContextHeadPair = (item: PromptAgentInjectionItem) => {
+    const nextEnabled = !item.enabled;
+    const siblingId = item.pairId ? '' : siblingIdOf(item, value);
+    const isPaired = (candidate: PromptAgentInjectionItem) =>
+      candidate.target === 'context_head' &&
+      (item.pairId ? candidate.pairId === item.pairId : candidate.id === item.id || candidate.id === siblingId);
+    onChange(value.map(candidate => isPaired(candidate) ? { ...candidate, enabled: nextEnabled } : candidate));
   };
   // 成对删除：优先按 pairId 移除同组两项；无 pairId（旧数据/服务端导入）则按相邻反 role 回退配对，绝不孤立单条。
   const removeContextHeadPair = (item: PromptAgentInjectionItem) => {
@@ -185,7 +213,7 @@ const EditableSlotForm: React.FC<{
         return <section key={slot.target} className="rounded-2xl border border-gray-200 p-3 dark:border-gray-700">
           <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1"><b className="shrink-0 text-sm text-gray-900 dark:text-white">{slot.label}</b><span className="min-w-0 flex-1 text-micro leading-4 text-gray-400">#{index} · {slot.hint}</span><button type="button" onClick={addContextHeadPair} className="mobile-touch inline-flex shrink-0 items-center gap-1 rounded-lg border border-dashed border-violet-300 px-2 py-1 text-xs font-bold text-violet-600 dark:border-violet-800 dark:text-violet-300"><Plus className="h-3.5 w-3.5" />成对添加</button></div>
           {slotItems.length === 0 ? <p className="rounded-xl border border-dashed border-gray-200 px-3 py-4 text-center text-micro text-gray-400 dark:border-gray-800">context_head 尚无成对内容；成对添加、成对移除，不孤立单条。停用只影响注入，正文仍可编辑。</p> : <div className="space-y-2">{slotItems.map(item => <div key={item.id} className="rounded-xl border border-gray-100 p-2 dark:border-gray-800">
-            <div className="flex flex-wrap items-center gap-2"><span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-micro font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-400">{item.role === 'assistant' ? 'assistant' : 'user'}</span><span className="min-w-0 flex-1 truncate text-micro text-gray-400">{item.name || '（未命名条目）'}</span><button type="button" onClick={() => onChange(patchSlotIn(value, item.id, { enabled: !item.enabled }))} className={`mobile-touch inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-micro font-bold ${item.enabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`} aria-pressed={item.enabled} title={item.enabled ? '停用此条（保留内容）' : '启用此条'}>{item.enabled ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}{item.enabled ? '已启用' : '已停用'}</button><button type="button" onClick={() => removeContextHeadPair(item)} className="mobile-touch inline-flex shrink-0 items-center justify-center rounded-lg p-1 text-gray-300 hover:text-red-500" aria-label="删除此成对" title="删除此成对（连带同组另一条）"><Trash2 className="h-3.5 w-3.5" /></button></div>
+            <div className="flex flex-wrap items-center gap-2"><span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-micro font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-400">{item.role === 'assistant' ? 'assistant' : 'user'}</span><span className="min-w-0 flex-1 truncate text-micro text-gray-400">{item.name || '（未命名条目）'}</span><button type="button" onClick={() => toggleContextHeadPair(item)} className={`mobile-touch inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-micro font-bold ${item.enabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`} aria-pressed={item.enabled} title={item.enabled ? '停用此成对（保留内容，不注入）' : '启用此成对'}>{item.enabled ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}{item.enabled ? '已启用' : '已停用'}</button><button type="button" onClick={() => removeContextHeadPair(item)} className="mobile-touch inline-flex shrink-0 items-center justify-center rounded-lg p-1 text-gray-300 hover:text-red-500" aria-label="删除此成对" title="删除此成对（连带同组另一条）"><Trash2 className="h-3.5 w-3.5" /></button></div>
             <input value={item.name || ''} onChange={event => onChange(patchSlotIn(value, item.id, { name: event.target.value }))} placeholder="条目名（可选）" className="mobile-touch mt-1.5 w-full rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-xs dark:border-gray-800 dark:bg-gray-950" />
             <textarea value={item.content} onChange={event => onChange(patchSlotIn(value, item.id, { content: event.target.value }))} rows={3} disabled={busy} placeholder="内容…" aria-label={`${slot.label} ${item.role === 'assistant' ? 'assistant' : 'user'} 正文`} className="mobile-touch mt-1.5 w-full resize-y rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-xs dark:border-gray-800 dark:bg-gray-950" />
           </div>)}</div>}
@@ -194,7 +222,7 @@ const EditableSlotForm: React.FC<{
       const slotItem = slotItems[0];
       return <section key={slot.target} className="rounded-2xl border border-gray-200 p-3 dark:border-gray-700">
         <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1"><b className="shrink-0 text-sm text-gray-900 dark:text-white">{slot.label}</b><span className="min-w-0 flex-1 text-micro leading-4 text-gray-400">#{index} · {slot.hint}</span>{slotItem && <button type="button" onClick={() => onChange(patchSlotIn(value, slotItem.id, { enabled: !slotItem.enabled }))} className={`mobile-touch inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-micro font-bold ${slotItem.enabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`} aria-pressed={slotItem.enabled} title={slotItem.enabled ? '停用此槽位（保留内容，不注入）' : '启用此槽位'}>{slotItem.enabled ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}{slotItem.enabled ? '已启用' : '已停用'}</button>}</div>
-        {!slotItem ? <button type="button" onClick={() => onChange([...value, makeEmptySlot(slot.target)])} className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-dashed border-gray-300 px-3 py-1.5 text-xs font-bold text-gray-500 dark:border-gray-700">＋ 启用此槽位</button> : <div className="flex flex-wrap items-end gap-2"><input value={slotItem.name || ''} onChange={event => onChange(patchSlotIn(value, slotItem.id, { name: event.target.value }))} placeholder={slot.target === 'conversation_tail' || slot.target === 'assistant_prefill' ? '名称（如 安全拦截 / 结尾语）' : '名称（可选）'} className="mobile-touch min-w-0 flex-1 basis-40 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs dark:border-gray-800 dark:bg-gray-950" />{slot.target === 'context_depth' && <label className="text-meta text-gray-500">上下文窗口深度<input type="number" min={1} value={slotItem.depth ?? 1} onChange={event => onChange(patchSlotIn(value, slotItem.id, { depth: Math.max(1, Number(event.target.value) || 1) }))} disabled={busy} className="mobile-touch mt-1 w-36 rounded-xl border border-gray-300 bg-gray-50 px-3 py-1.5 font-mono text-sm dark:border-gray-700 dark:bg-gray-950" /></label>}<button type="button" onClick={() => onChange(value.filter(item => item.id !== slotItem.id))} className="mobile-touch inline-flex shrink-0 items-center justify-center rounded-xl px-2 text-gray-400 hover:text-red-500" aria-label={`移除 ${slot.label}`}><Trash2 className="h-4 w-4" /></button></div>}
+        {!slotItem ? <button type="button" onClick={() => onChange([...value, makeEmptySlot(slot.target)])} className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-dashed border-gray-300 px-3 py-1.5 text-xs font-bold text-gray-500 dark:border-gray-700">＋ 启用此槽位</button> : <div className="flex flex-wrap items-end gap-2"><input value={slotItem.name || ''} onChange={event => onChange(patchSlotIn(value, slotItem.id, { name: event.target.value }))} placeholder={slot.target === 'conversation_tail' || slot.target === 'assistant_prefill' ? '名称（如 安全拦截 / 结尾语）' : '名称（可选）'} className="mobile-touch min-w-0 flex-1 basis-40 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs dark:border-gray-800 dark:bg-gray-950" />{slot.target === 'context_depth' && <label className="text-meta text-gray-500">上下文窗口深度<input type="number" min={1} max={100} step={1} value={slotItem.depth ?? 1} onChange={event => { const raw = Number(event.target.value); const clamped = Math.min(100, Math.max(1, Math.floor(Number.isFinite(raw) ? raw : 1))); onChange(patchSlotIn(value, slotItem.id, { depth: clamped })); }} disabled={busy} className="mobile-touch mt-1 w-36 rounded-xl border border-gray-300 bg-gray-50 px-3 py-1.5 font-mono text-sm dark:border-gray-700 dark:bg-gray-950" /></label>}<button type="button" onClick={() => onChange(value.filter(item => item.id !== slotItem.id))} className="mobile-touch inline-flex shrink-0 items-center justify-center rounded-xl px-2 text-gray-400 hover:text-red-500" aria-label={`移除 ${slot.label}`}><Trash2 className="h-4 w-4" /></button></div>}
         {slotItem && <textarea value={slotItem.content} onChange={event => onChange(patchSlotIn(value, slotItem.id, { content: event.target.value }))} rows={5} disabled={busy} placeholder={slotItem.enabled ? '在此输入内容…' : '此槽位已停用（停用只影响注入，正文仍可编辑）'} aria-label={`${slot.label} 正文`} className="mobile-touch mt-2 w-full resize-y rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-xs dark:border-gray-800 dark:bg-gray-950" />}
       </section>;
     })}
@@ -202,10 +230,10 @@ const EditableSlotForm: React.FC<{
 };
 
 /** builtin 预设只读面板：全部槽位只读/禁用，供滚动浏览；修改只能走「复制为自定义」。 */
-const BuiltinPresetPanel: React.FC<{ preset: PromptAgentCreativePreset; onFork: () => void }> = ({ preset, onFork }) => {
+const BuiltinPresetPanel: React.FC<{ preset: PromptAgentCreativePreset; forking?: boolean; onFork: () => void }> = ({ preset, forking, onFork }) => {
   const slots = preset.slots || [];
   return <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-    <div className="flex flex-wrap items-center gap-2"><b className="text-sm text-gray-900 dark:text-white">内置预设（只读）</b><span className="min-w-0 flex-1 text-micro text-gray-400">按系统策略提供全部正文</span><button type="button" onClick={onFork} className="mobile-touch inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white"><Copy className="h-3.5 w-3.5" />复制为自定义以编辑</button></div>
+    <div className="flex flex-wrap items-center gap-2"><b className="text-sm text-gray-900 dark:text-white">内置预设（只读）</b><span className="min-w-0 flex-1 text-micro text-gray-400">按系统策略提供全部正文</span><button type="button" disabled={forking} onClick={onFork} className="mobile-touch inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40"><Copy className="h-3.5 w-3.5" />复制为自定义以编辑</button></div>
     <p className="mt-1 text-micro text-gray-400">内置槽位不可原地修改；如需修改请先复制为自定义预设。</p>
     <div className="mt-3 space-y-4">{slots.length === 0 && <p className="py-4 text-center text-sm text-gray-500">该内置预设没有槽位内容</p>}{slots.map(item => {
       const meta = LAB_SLOTS.find(slot => slot.target === item.target);
@@ -233,7 +261,9 @@ const CustomPresetEditor: React.FC<{
     if (!name.trim()) { notify('请先填写预设名称', 'error'); return; }
     setSaving(true);
     try {
-      await promptAgentService.updateCreativePreset(preset.id, { name: name.trim(), description: description.trim() || undefined, slots });
+      const sanitized = sanitizeSlotsForSave(slots);
+      setSlots(sanitized);
+      await promptAgentService.updateCreativePreset(preset.id, { name: name.trim(), description: description.trim() || undefined, slots: sanitized });
       notify('预设已保存');
       onSaved();
     } catch (error) { notify(error instanceof Error ? error.message : '保存预设失败', 'error'); }
@@ -255,7 +285,7 @@ const InspectorResultView: React.FC<{ result: PromptAgentCreativeInspectResult }
   return <div className="space-y-3">
     <div className="flex flex-wrap gap-2 text-micro">{estimate && <span className="rounded-lg bg-indigo-50 px-2 py-1 font-bold text-indigo-700 dark:bg-indigo-950/40">约 {estimate.totalTokens} tokens</span>}{estimate && <span className="rounded-lg bg-gray-100 px-2 py-1 text-gray-600 dark:bg-gray-800 dark:text-gray-300">上下文 {estimate.contextWindow} · 深度 {estimate.contextDepth}</span>}{result.hashes?.presetRevisionHash && <span className="rounded-lg bg-gray-100 px-2 py-1 font-mono text-gray-500 dark:bg-gray-800">{result.hashes.presetRevisionHash}</span>}</div>
     {result.systemPrompt && <details open={false} className="rounded-xl border border-gray-200 dark:border-gray-800"><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-200">完整系统提示词</summary><pre className="max-h-60 overflow-auto whitespace-pre-wrap px-3 pb-3 font-mono text-micro leading-5 text-gray-600 dark:text-gray-300">{result.systemPrompt}</pre></details>}
-    {result.canonicalMessages && result.canonicalMessages.length > 0 && <details open={false} className="rounded-xl border border-gray-200 dark:border-gray-800"><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-200">规范化消息（{result.canonicalMessages.length}）</summary><div className="max-h-60 space-y-2 overflow-auto px-3 pb-3">{result.canonicalMessages.map((message, index) => <div key={index} className="rounded-lg bg-gray-50 p-2 dark:bg-gray-950"><span className="text-micro font-bold text-indigo-600">{message.role}</span><pre className="mt-1 whitespace-pre-wrap font-mono text-micro leading-5 text-gray-600 dark:text-gray-300">{message.content}</pre></div>)}</div></details>}
+    {result.canonicalMessages && result.canonicalMessages.length > 0 && <details open={false} className="rounded-xl border border-gray-200 dark:border-gray-800"><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-200">规范化消息（{result.canonicalMessages.length}）</summary><div className="max-h-60 space-y-2 overflow-auto px-3 pb-3">{result.canonicalMessages.map((message, index) => <div key={index} className="rounded-lg bg-gray-50 p-2 dark:bg-gray-950"><span className="text-micro font-bold text-indigo-600">{message.role}</span><pre className="mt-1 whitespace-pre-wrap font-mono text-micro leading-5 text-gray-600 dark:text-gray-300">{formatMessageContent(message.content)}</pre></div>)}</div></details>}
     {result.sourceSegments && result.sourceSegments.length > 0 && <details open={false} className="rounded-xl border border-gray-200 dark:border-gray-800"><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-200">来源片段</summary><div className="max-h-60 space-y-1 overflow-auto px-3 pb-3">{result.sourceSegments.map((segment, index) => <div key={index} className="flex gap-2 text-micro text-gray-600 dark:text-gray-300"><span className="shrink-0 rounded bg-gray-100 px-1.5 text-gray-500 dark:bg-gray-800">{segment.characterCount}字</span><span className="min-w-0 flex-1 truncate">{segment.label}{segment.target ? ` · ${segment.target}` : ''}{segment.presetName ? ` · ${segment.presetName}` : ''}</span></div>)}</div></details>}
     {estimate && <details open={false} className="rounded-xl border border-gray-200 dark:border-gray-800"><summary className="cursor-pointer px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-200">令牌估算明细</summary><div className="grid grid-cols-2 gap-2 px-3 pb-3 text-micro text-gray-600 dark:text-gray-300"><span>策略 {estimate.policyTokens}</span><span>草稿 {estimate.draftTokens}</span><span>历史 {estimate.historyTokens}</span><span>预设 {estimate.presetTokens}</span><span>总量 {estimate.totalTokens}</span><span>上下文窗口 {estimate.contextWindow}</span><span>深度 {estimate.contextDepth}</span><span>预计余量 {estimate.projectedBuffer}</span></div></details>}
     {result.warnings && result.warnings.length > 0 && <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{result.warnings.map(warning => <div key={warning}>{warning}</div>)}</div>}
@@ -289,14 +319,17 @@ const CreativeLabView: React.FC<{
   const [createDescription, setCreateDescription] = useState('');
   const [createSlots, setCreateSlots] = useState<PromptAgentInjectionItem[]>(() => fillMissingSlots([]));
   const [creating, setCreating] = useState(false);
+  const [forking, setForking] = useState(false);
 
   const selected = presets.find(preset => preset.id === selectedId) ?? null;
   const customPresets = presets.filter(preset => !preset.isBuiltin);
   const initial = defaultPresetId(presets, activeCreativePresetId);
 
   useEffect(() => {
-    if (selectedId === null && initial !== null) setSelectedId(initial);
-  }, [selectedId, initial]);
+    if (selectedId === null || !presets.some(preset => preset.id === selectedId)) {
+      setSelectedId(initial);
+    }
+  }, [selectedId, presets, initial]);
 
   const reloadState = async () => {
     const state = await promptAgentService.getCreativePresets();
@@ -318,7 +351,8 @@ const CreativeLabView: React.FC<{
     if (!createName.trim()) { notify('请先填写预设名称', 'error'); return; }
     setCreating(true);
     try {
-      const created = await promptAgentService.createCreativePreset({ name: createName.trim(), description: createDescription.trim() || undefined, slots: createSlots });
+      const sanitized = sanitizeSlotsForSave(createSlots);
+      const created = await promptAgentService.createCreativePreset({ name: createName.trim(), description: createDescription.trim() || undefined, slots: sanitized });
       notify(`预设「${created.name}」已创建`);
       setMode('edit'); setSelectedId(created.id);
       await reloadState();
@@ -364,7 +398,7 @@ const CreativeLabView: React.FC<{
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       notify(`已导出 ${payload.presets.length} 个预设`);
     } catch (error) { notify(error instanceof Error ? error.message : '导出失败', 'error'); }
     finally { setExporting(false); }
@@ -413,17 +447,20 @@ const CreativeLabView: React.FC<{
   };
 
   const forkSelected = async (preset: PromptAgentCreativePreset) => {
-    if (busy) return;
+    if (busy || forking) return;
+    setForking(true);
     try {
       // 另存为语义：只传 name/description/forkFromId，服务端据此复制全部槽位；
       // 不附带清空的 slots，避免与“新预设”路径产生歧义。
+      const baseName = preset.name.slice(0, 76);
       const created = await promptAgentService.createCreativePreset({
-        name: `${preset.name}（副本）`, description: preset.description, forkFromId: preset.id,
+        name: `${baseName}（副本）`, description: preset.description, forkFromId: preset.id,
       });
       notify(`已从「${preset.name}」另存为「${created.name}」`);
       setSelectedId(created.id); setMode('edit');
       await reloadState();
     } catch (error) { notify(error instanceof Error ? error.message : '另存为失败', 'error'); }
+    finally { setForking(false); }
   };
 
   const renderEditor = () => {
@@ -435,7 +472,7 @@ const CreativeLabView: React.FC<{
     </div>;
     if (!selected) return <div className="p-10 text-center text-sm text-gray-500">请先选择一个预设</div>;
     const key = `${selected.id}:${editorKey}`;
-    if (selected.isBuiltin) return <BuiltinPresetPanel key={key} preset={selected} onFork={() => void forkSelected(selected)} />;
+    if (selected.isBuiltin) return <BuiltinPresetPanel key={key} preset={selected} forking={forking} onFork={() => void forkSelected(selected)} />;
     return <CustomPresetEditor key={key} preset={selected} busy={busy} notify={notify} onSaved={() => void reloadState()} />;
   };
 
@@ -462,7 +499,7 @@ const CreativeLabView: React.FC<{
         <div className="mt-3 flex flex-wrap gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
           <button type="button" disabled={busy} onClick={beginCreate} className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-indigo-200 px-3 py-1.5 text-xs font-bold text-indigo-600 disabled:opacity-40 dark:border-indigo-900 dark:text-indigo-300"><Plus className="h-3.5 w-3.5" />新建</button>
           <button type="button" disabled={busy || !selected || selected.isBuiltin || mode !== 'edit'} onClick={() => setEditorKey(value => value + 1)} className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300"><RotateCcw className="h-3.5 w-3.5" />重置草稿</button>
-          <button type="button" disabled={busy || !selected} onClick={() => void (selected ? forkSelected(selected) : undefined)} title="以选中预设为模板另存为新预设" className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300"><Copy className="h-3.5 w-3.5" />另存为…</button>
+          <button type="button" disabled={busy || forking || !selected} onClick={() => void (selected ? forkSelected(selected) : undefined)} title="以选中预设为模板另存为新预设" className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300"><Copy className="h-3.5 w-3.5" />另存为…</button>
           <button type="button" disabled={busy || !selected || selected.isBuiltin} onClick={() => void (selected && !selected.isBuiltin ? onDeletePreset(selected) : undefined)} className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-red-200 px-3 py-1.5 text-xs font-bold text-red-500 disabled:opacity-40 dark:border-red-900"><Trash2 className="h-3.5 w-3.5" />删除</button>
           <button type="button" disabled={busy || !selected || selected.isBuiltin || mode === 'create'} onClick={() => void (selected && !selected.isBuiltin ? runActive(selected.id) : undefined)} className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-violet-200 px-3 py-1.5 text-xs font-bold text-violet-600 disabled:opacity-40 dark:border-violet-900 dark:text-violet-300"><Star className="h-3.5 w-3.5" />设为默认</button>
           {selected && !selected.isBuiltin && <button type="button" disabled={busy || exporting} onClick={() => void exportPresets([selected.id])} title="导出当前预设" aria-label="导出当前预设" className="mobile-touch inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300"><Download className="h-3.5 w-3.5" />导出当前</button>}
@@ -487,7 +524,7 @@ const CreativeLabView: React.FC<{
         <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
           <div className="mb-2 flex items-center gap-2"><b className="text-sm text-gray-900 dark:text-white">修订历史</b><button type="button" onClick={() => setRevisionPresetId(null)} className="mobile-touch ml-auto text-gray-400 hover:text-gray-600" aria-label="关闭修订面板"><X className="h-4 w-4" /></button></div>
           {revisionBusy ? <p className="py-4 text-center text-sm text-gray-500">读取中…</p> : !revisionItems || revisionItems.length === 0 ? <p className="py-4 text-center text-sm text-gray-500">暂无修订记录</p> :
-            <div className="space-y-2">{revisionItems.map(item => <div key={item.revisionHash} className="rounded-xl border border-gray-100 p-2 text-xs dark:border-gray-800"><div className="flex items-center gap-2"><b className="text-gray-800 dark:text-gray-200">v{item.version}</b><span className="truncate text-gray-500">{new Date(item.createdAt).toLocaleString('zh-CN')}</span></div><div className="mt-1 truncate font-mono text-micro text-gray-400">{item.revisionHash}</div></div>)}</div>}
+            <div className="space-y-2">{revisionItems.map(item => <div key={`${item.revisionHash}-${item.version}`} className="rounded-xl border border-gray-100 p-2 text-xs dark:border-gray-800"><div className="flex items-center gap-2"><b className="text-gray-800 dark:text-gray-200">v{item.version}</b><span className="truncate text-gray-500">{new Date(item.createdAt).toLocaleString('zh-CN')}</span></div><div className="mt-1 truncate font-mono text-micro text-gray-400">{item.revisionHash}</div></div>)}</div>}
         </div>
       )}
     </div>

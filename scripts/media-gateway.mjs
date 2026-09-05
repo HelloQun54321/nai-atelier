@@ -2581,6 +2581,59 @@ const proxyRequest = (req, res, workerPort) => {
   req.pipe(upstream);
 };
 
+export const handleCreativePresetsRequest = async (req, res, url, promptAgent) => {
+  try {
+    if (url.pathname === '/api/prompt-agent/creative-presets') {
+      if (req.method === 'GET') return sendJson(res, 200, await promptAgent.listCreativePresets());
+      if (req.method === 'POST') {
+        const body = JSON.parse((await readRequestBody(req, 256 * 1024)).toString('utf8') || '{}');
+        return sendJson(res, 201, await promptAgent.createCreativePreset(body));
+      }
+      return sendJson(res, 405, { error: 'Method not allowed' });
+    }
+    if (url.pathname === '/api/prompt-agent/creative-presets/active') {
+      if (req.method !== 'PUT') return sendJson(res, 405, { error: 'Method not allowed' });
+      const body = JSON.parse((await readRequestBody(req, 8 * 1024)).toString('utf8') || '{}');
+      const presetId = body.id === null || body.id === undefined ? null : String(body.id || '').slice(0, 200);
+      return sendJson(res, 200, await promptAgent.setActiveCreativePreset(presetId));
+    }
+    if (url.pathname === '/api/prompt-agent/creative-presets/import') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+      const body = JSON.parse((await readRequestBody(req, 512 * 1024)).toString('utf8') || '{}');
+      return sendJson(res, 200, await promptAgent.importCreativePresets(body));
+    }
+    if (url.pathname === '/api/prompt-agent/creative-presets/export') {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+      const ids = url.searchParams.getAll('ids').filter(Boolean);
+      return sendJson(res, 200, await promptAgent.exportCreativePresets(ids));
+    }
+    if (url.pathname === '/api/prompt-agent/creative-presets/inspect') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+      const body = JSON.parse((await readRequestBody(req, 256 * 1024)).toString('utf8') || '{}');
+      return sendJson(res, 200, await promptAgent.inspectCreativeContext(body));
+    }
+    if (url.pathname.startsWith('/api/prompt-agent/creative-presets/')) {
+      const presetId = decodeURIComponent(url.pathname.slice('/api/prompt-agent/creative-presets/'.length));
+      if (presetId) {
+        if (req.method === 'PUT') {
+          const body = JSON.parse((await readRequestBody(req, 256 * 1024)).toString('utf8') || '{}');
+          return sendJson(res, 200, await promptAgent.updateCreativePreset(presetId, body));
+        }
+        if (req.method === 'DELETE') return sendJson(res, 200, await promptAgent.deleteCreativePreset(presetId));
+        if (req.method === 'GET') {
+          if (url.searchParams.get('detail') === '1') return sendJson(res, 200, await promptAgent.getCreativePresetDetail(presetId));
+          return sendJson(res, 200, await promptAgent.getCreativePreset(presetId));
+        }
+        return sendJson(res, 405, { error: 'Method not allowed' });
+      }
+      return sendJson(res, 404, { error: '预设不存在' });
+    }
+    return false;
+  } catch (error) {
+    return sendJson(res, Number(error.status) || 400, { error: error.message || 'Agent 请求失败' });
+  }
+};
+
 export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSecret = '', outboundProxyUrl = '', pixivFetch, pixivTokenDir, pixivWebLogin } = {}) {
 // 静态前端资源直接由网关从 dist/ 提供：页面与资源加载不依赖 workerd，也不占用其请求槽。
 const STATIC_CONTENT_TYPES = {
@@ -2891,52 +2944,8 @@ const serveDistFile = async (req, res, url) => {
           return sendJson(res, 200, { items: promptAgent.getModels(url.searchParams.get('provider') || '') });
         }
         // ── 破限提示词与预设实验室（静态路由一律先于 /:id 判断）──
-        if (url.pathname === '/api/prompt-agent/creative-presets') {
-          if (req.method === 'GET') return sendJson(res, 200, await promptAgent.listCreativePresets());
-          if (req.method === 'POST') {
-            const body = JSON.parse((await readRequestBody(req, 256 * 1024)).toString('utf8') || '{}');
-            return sendJson(res, 201, await promptAgent.createCreativePreset(body));
-          }
-          return sendJson(res, 405, { error: 'Method not allowed' });
-        }
-        if (url.pathname === '/api/prompt-agent/creative-presets/active') {
-          if (req.method !== 'PUT') return sendJson(res, 405, { error: 'Method not allowed' });
-          const body = JSON.parse((await readRequestBody(req, 8 * 1024)).toString('utf8') || '{}');
-          const presetId = body.id === null || body.id === undefined ? null : String(body.id || '').slice(0, 200);
-          return sendJson(res, 200, await promptAgent.setActiveCreativePreset(presetId));
-        }
-        if (url.pathname === '/api/prompt-agent/creative-presets/import') {
-          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
-          const body = JSON.parse((await readRequestBody(req, 512 * 1024)).toString('utf8') || '{}');
-          return sendJson(res, 200, await promptAgent.importCreativePresets(body));
-        }
-        if (url.pathname === '/api/prompt-agent/creative-presets/export') {
-          if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
-          // 前端契约：原始 query 按裸逗号切分后逐段 decodeURIComponent。
-          const raw = url.searchParams.get('ids') || '';
-          const ids = raw ? raw.split(',').map(segment => decodeURIComponent(segment)) : [];
-          return sendJson(res, 200, await promptAgent.exportCreativePresets(ids));
-        }
-        if (url.pathname === '/api/prompt-agent/creative-presets/inspect') {
-          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
-          const body = JSON.parse((await readRequestBody(req, 256 * 1024)).toString('utf8') || '{}');
-          return sendJson(res, 200, await promptAgent.inspectCreativeContext(body));
-        }
-        if (url.pathname.startsWith('/api/prompt-agent/creative-presets/')) {
-          const presetId = decodeURIComponent(url.pathname.slice('/api/prompt-agent/creative-presets/'.length));
-          if (presetId) {
-            if (req.method === 'PUT') {
-              const body = JSON.parse((await readRequestBody(req, 256 * 1024)).toString('utf8') || '{}');
-              return sendJson(res, 200, await promptAgent.updateCreativePreset(presetId, body));
-            }
-            if (req.method === 'DELETE') return sendJson(res, 200, await promptAgent.deleteCreativePreset(presetId));
-            if (req.method === 'GET') {
-              if (url.searchParams.get('detail') === '1') return sendJson(res, 200, await promptAgent.getCreativePresetDetail(presetId));
-              return sendJson(res, 200, await promptAgent.getCreativePreset(presetId));
-            }
-            return sendJson(res, 405, { error: 'Method not allowed' });
-          }
-          return sendJson(res, 404, { error: '预设不存在' });
+        if (url.pathname === '/api/prompt-agent/creative-presets' || url.pathname.startsWith('/api/prompt-agent/creative-presets/')) {
+          return await handleCreativePresetsRequest(req, res, url, promptAgent);
         }
         if (url.pathname === '/api/prompt-agent/sessions') {
           if (req.method === 'GET') return sendJson(res, 200, { items: await promptAgent.listSessions() });

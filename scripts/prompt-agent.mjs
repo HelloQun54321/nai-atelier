@@ -50,6 +50,13 @@ const MAX_CREATIVE_PRESET_CONTENT_CHARS = 48_000;
 const MAX_CREATIVE_PRESET_SLOTS = 40;
 const MAX_CREATIVE_PRESET_REVISIONS = 20;
 const CREATIVE_BUILTIN_PRESET_ID = 'builtin-default';
+export const CREATIVE_PRESET_RESERVED_IDS = new Set([
+  CREATIVE_BUILTIN_PRESET_ID,
+  'active',
+  'import',
+  'export',
+  'inspect',
+]);
 // 预设修订/指纹的短 sha256 前缀长度（前端 formatPresetSessionLabel 展示 7 位）。
 const CREATIVE_HASH_PREFIX = 12;
 const shorthandHash = (value, length = CREATIVE_HASH_PREFIX) => createHash('sha256').update(String(value ?? '')).digest('hex').slice(0, length);
@@ -316,6 +323,16 @@ const listModels = provider => {
   const custom = CUSTOM_PROVIDERS.get(normalized);
   if (custom) return custom.models.map(model => publicModel(model, normalized));
   return getBuiltinModels(normalized).map(model => publicModel(model, normalized));
+};
+const resolveModelApi = (provider, modelId) => {
+  const normalized = normalizeProvider(provider);
+  const custom = CUSTOM_PROVIDERS.get(normalized);
+  if (custom?.api) return custom.api;
+  if (PROVIDER_CATALOG.has(normalized)) {
+    const builtin = getBuiltinModels(normalized).find(item => item.id === modelId);
+    if (builtin?.api) return builtin.api;
+  }
+  return '';
 };
 export const customProviderRuntime = custom => {
   const apiFactory = custom.api === 'anthropic-messages' ? anthropicMessagesApi
@@ -829,7 +846,7 @@ export const resolveCapabilities = (modelApi, reasoning, thinkingLevel, model) =
   // Anthropic Messages 可注入 assistant 首帧；其余 openai 系/Google/mistral 等
   // 无 assistant 起始帧能力，一律 false（保守默认）。自定义 provider 可显式声明。
   const api = String(modelApi || model?.api || '').toLowerCase();
-  if (api === 'anthropic-messages') return { assistantPrefill: true, userConversationTail: true };
+  if (api === 'anthropic-messages') return { assistantPrefill: true, userConversationTail: false };
   if (api === 'custom-anthropic') return { assistantPrefill: model?.assistantPrefill === true, userConversationTail: model?.userConversationTail === true };
   return { assistantPrefill: false, userConversationTail: false };
 };
@@ -1018,8 +1035,64 @@ const agentMessageText = message => {
   if (!Array.isArray(message?.content)) return '';
   return message.content.filter(part => part?.type === 'text').map(part => String(part.text || '')).join('');
 };
-const isTextUserMessage = message => message?.role === 'user' && (typeof message.content === 'string' || (Array.isArray(message.content) && message.content.some(part => part?.type === 'text')));
 const isToolResultMessage = message => message?.role === 'user' && Array.isArray(message.content) && message.content.some(part => part?.type === 'toolResult');
+const isTextUserMessage = message => message?.role === 'user' && !isToolResultMessage(message);
+
+// 把文本前导/后缀并入消息 content，保留多模态 part（图片帧等原样保留）。
+const mergeMessageTextContent = (message, { prefix = '', suffix = '' } = {}) => {
+  const currentText = agentMessageText(message);
+  const nextText = `${prefix ? `${prefix}\n` : ''}${currentText}${suffix ? `\n${suffix}` : ''}`.trim();
+  if (Array.isArray(message?.content)) {
+    const nextParts = message.content.map(part => (part && typeof part === 'object' ? { ...part } : part));
+    const textIndex = nextParts.findIndex(part => part?.type === 'text');
+    if (textIndex >= 0) {
+      nextParts[textIndex] = { ...nextParts[textIndex], text: nextText };
+    } else {
+      nextParts.unshift({ type: 'text', text: nextText });
+    }
+    return { ...message, content: nextParts };
+  }
+  return { ...message, content: nextText };
+};
+
+// 过滤成对且正文非空的 context_head 槽位（防 Anthropic 空文本块 400）。
+const filterValidHeadSlotPairs = headSlots => {
+  const list = (Array.isArray(headSlots) ? headSlots : []).filter(slot => slot && slot.enabled !== false && slot.target === 'context_head');
+  if (!list.length) return [];
+  const byPairId = new Map();
+  const withoutPairId = [];
+  for (const slot of list) {
+    const pid = typeof slot.pairId === 'string' && slot.pairId ? slot.pairId : '';
+    if (pid) {
+      if (!byPairId.has(pid)) byPairId.set(pid, []);
+      byPairId.get(pid).push(slot);
+    } else {
+      withoutPairId.push(slot);
+    }
+  }
+  const validSlots = [];
+  for (const [, pair] of byPairId) {
+    if (pair.length === 2) {
+      const userSlot = pair.find(s => s.role === 'user');
+      const assistantSlot = pair.find(s => s.role === 'assistant');
+      if (userSlot && assistantSlot) {
+        if (String(userSlot.content || '').trim() !== '' && String(assistantSlot.content || '').trim() !== '') {
+          validSlots.push(userSlot, assistantSlot);
+        }
+      }
+    }
+  }
+  for (let i = 0; i < withoutPairId.length - 1; i += 2) {
+    const first = withoutPairId[i];
+    const second = withoutPairId[i + 1];
+    if (first.role === 'user' && second.role === 'assistant') {
+      if (String(first.content || '').trim() !== '' && String(second.content || '').trim() !== '') {
+        validSlots.push(first, second);
+      }
+    }
+  }
+  return validSlots;
+};
 
 // 装配预算：system + 全部注入 + 历史 + 当前 user + 工具 schema 之后必须
 // ≤ contextWindow − outputReserve − protocolReserve。估算用 estimateContextTokens。
@@ -1040,7 +1113,7 @@ const assembleBudget = (contextWindow, configuredOutput, systemTokens, toolSchem
 // 最近完整 user turn，不累积。
 const findContextDepthAnchor = (messages, depth) => {
   let userTurns = 0;
-  let anchorIndex = -1;
+  let anchorUserIndex = -1;
   const warnings = [];
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -1050,14 +1123,14 @@ const findContextDepthAnchor = (messages, depth) => {
       userTurns += 1;
       if (userTurns === depth) {
         // 该 user turn 的文本消息 index；再向前走到该 turn 工具链尾部。
-        anchorIndex = index;
+        anchorUserIndex = index;
         break;
       }
     }
   }
-  if (anchorIndex >= 0) {
+  if (anchorUserIndex >= 0) {
     // 从 anchor user 之后开始：连续 toolCall/toolResult 属同一 turn，跳过至其末端。
-    let cursor = anchorIndex + 1;
+    let cursor = anchorUserIndex + 1;
     while (cursor < messages.length) {
       const message = messages[cursor];
       const isToolAssistant = message?.role === 'assistant' && Array.isArray(message.content) && message.content.some(part => part?.type === 'toolCall');
@@ -1065,10 +1138,10 @@ const findContextDepthAnchor = (messages, depth) => {
       cursor += 1;
     }
     // 插入点 = 该 turn 工具链结束之后（若无工具链则紧邻 user 文本之后）。
-    return { anchorIndex: cursor - 1, depth, warnings };
+    return { anchorIndex: cursor - 1, userIndex: anchorUserIndex, depth, warnings };
   }
   warnings.push('未找到足够深的完整用户轮次，context_depth 锚点未插入');
-  return { anchorIndex: -1, depth, warnings };
+  return { anchorIndex: -1, userIndex: -1, depth, warnings };
 };
 
 // 按整对从尾部移除 head seeds，直到放得进预算（绝不拆散 user/assistant）。
@@ -1088,8 +1161,8 @@ const fitHeadSeeds = (seedMessages, budget) => {
   return { seeds: used <= budget ? seedMessages : [], removedPairs: used <= budget ? 0 : removedPairs || Math.ceil(seedMessages.length / 2) };
 };
 
-export const assemblePromptContext = ({ creativeMode = true, revision = null, systemPolicy = '', runtimeContext = '', safetyFooter = PRESET_SAFETY_FOOTER, cleanMessages = [], modelApi = '', modelReasoning = false, thinkingLevel = 'off', toolDescriptors = [], hasVisionImages = false }) => {
-  const capabilities = resolveCapabilities(modelApi, modelReasoning, thinkingLevel);
+export const assemblePromptContext = ({ creativeMode = true, revision = null, systemPolicy = '', runtimeContext = '', safetyFooter = PRESET_SAFETY_FOOTER, cleanMessages = [], modelApi = '', modelReasoning = false, thinkingLevel = 'off', toolDescriptors = [], hasVisionImages = false, model = null }) => {
+  const capabilities = resolveCapabilities(modelApi, modelReasoning, thinkingLevel, model);
   const preset = revision && typeof revision === 'object' ? revision : null;
   const presetId = preset?.presetId || preset?.id || '';
   const presetName = preset?.presetName || preset?.name || '';
@@ -1136,19 +1209,31 @@ export const assemblePromptContext = ({ creativeMode = true, revision = null, sy
   const working = cloneAgentMessages(cleanMessages);
 
   // 2) context_depth：先从尾向前定位第 N 个完整 user turn（只数真实历史，
-  //    不含稍后注入的 seed 帧），在其边界后插锚点；再整体前插 head seeds。
+  //    不含稍后注入的 seed 帧），在其边界后插锚点；若破坏交替则并入该 turn user 尾部。
   const depthText = (textByTarget.context_depth || '').trim();
   if (depthText) {
     recordSegment('context_depth', 'context_depth', depthText);
-    const { anchorIndex, warnings: depthWarnings } = findContextDepthAnchor(working, contextDepth);
+    const { anchorIndex, userIndex, warnings: depthWarnings } = findContextDepthAnchor(working, contextDepth);
     warnings.push(...depthWarnings);
     if (anchorIndex >= 0) {
-      working.splice(anchorIndex + 1, 0, { role: 'user', content: [{ type: 'text', text: depthText }], injected: true });
+      const insertIndex = anchorIndex + 1;
+      const prevMessage = insertIndex > 0 ? working[insertIndex - 1] : null;
+      const nextMessage = insertIndex < working.length ? working[insertIndex] : null;
+      const wouldCauseConsecutiveUser = prevMessage?.role === 'user' || nextMessage?.role === 'user';
+      if (wouldCauseConsecutiveUser) {
+        warnings.push('context_depth：插入点会造成连续 user，文本已合并入锚点轮次用户消息');
+        const targetUserIndex = userIndex >= 0 ? userIndex : anchorIndex;
+        if (targetUserIndex >= 0 && targetUserIndex < working.length) {
+          working[targetUserIndex] = mergeMessageTextContent(working[targetUserIndex], { suffix: depthText });
+        }
+      } else {
+        working.splice(insertIndex, 0, { role: 'user', content: [{ type: 'text', text: depthText }], injected: true });
+      }
     }
   }
 
-  // 1) context_head：头部 seeds 整对前插；预算超限按整对从后移除，绝不拆散。
-  const headSlots = slots.filter(slot => slot.target === 'context_head');
+  // 1) context_head：头部 seeds 整对前插；剔除空内容槽位，预算超限按整对从后移除，绝不拆散。
+  const headSlots = filterValidHeadSlotPairs(slots);
   const seedMessages = headSlots.map(slot => ({ role: slot.role === 'assistant' ? 'assistant' : 'user', content: [{ type: 'text', text: String(slot.content || '') }], injected: true }));
   const seedBudget = assembleBudget(contextWindow, configuredOutput, systemTokens, estimateContextTokens(toolDescriptors || []), working);
   const { seeds, removedPairs } = fitHeadSeeds(seedMessages, seedBudget.conversationBudget);
@@ -1160,7 +1245,7 @@ export const assemblePromptContext = ({ creativeMode = true, revision = null, sy
     }
   }
 
-  // 3) user_preamble / user_suffix：只改写最后一条真实 user 的文本副本。
+  // 3) user_preamble / user_suffix：只改写最后一条真实 user 的文本副本，保留多模态 part。
   const preambleText = (textByTarget.user_preamble || '').trim();
   const suffixText = (textByTarget.user_suffix || '').trim();
   let lastUserIndex = -1;
@@ -1169,9 +1254,7 @@ export const assemblePromptContext = ({ creativeMode = true, revision = null, sy
   }
   if (lastUserIndex >= 0 && (preambleText || suffixText)) {
     const targetMessage = working[lastUserIndex];
-    const currentText = agentMessageText(targetMessage);
-    const nextText = `${preambleText ? `${preambleText}\n` : ''}${currentText}${suffixText ? `\n${suffixText}` : ''}`.trim();
-    if (nextText !== currentText) working[lastUserIndex] = { ...targetMessage, content: nextText };
+    working[lastUserIndex] = mergeMessageTextContent(targetMessage, { prefix: preambleText, suffix: suffixText });
     if (preambleText) recordSegment('user_preamble', 'user_preamble', preambleText);
     if (suffixText) recordSegment('user_suffix', 'user_suffix', suffixText);
   }
@@ -1186,7 +1269,7 @@ export const assemblePromptContext = ({ creativeMode = true, revision = null, sy
     if (isToolResultMessage(tailMessage)) warnings.push('conversation_tail：最后一条为工具结果，未附加（避免打断工具组）');
     else if (isTextUserMessage(tailMessage) && capabilities.userConversationTail !== true) {
       warnings.push('conversation_tail：当前模型不支持连续 user，文本已合并入当前用户消息');
-      working[tailIndex] = { ...tailMessage, content: `${agentMessageText(tailMessage)}\n${conversationTailText}`.trim() };
+      working[tailIndex] = mergeMessageTextContent(tailMessage, { suffix: conversationTailText });
     } else {
       working.push({ role: 'user', content: [{ type: 'text', text: conversationTailText }], injected: true });
     }
@@ -1217,7 +1300,7 @@ export const assemblePromptContext = ({ creativeMode = true, revision = null, sy
       draftTokens: 0,
       historyTokens,
       presetTokens,
-      totalTokens: systemTokens + presetTokens + historyTokens + estimateContextTokens(canonicalMessages),
+      totalTokens: systemTokens + estimateContextTokens(canonicalMessages),
       contextWindow,
       contextDepth,
       projectedBuffer: finalBudget.projectedBuffer,
@@ -2234,10 +2317,7 @@ export class PromptAgentService {
     const provider = normalizeProvider(meta?.provider || this.config.provider);
     const modelInfo = listModels(provider).find(item => item.id === (meta?.model || this.config.model)) || {};
     // publicModel 不携带 runtime 的 api/adapter 字段：从 Pi 运行时模型推导。
-    const custom = CUSTOM_PROVIDERS.get(provider);
-    const modelApi = custom?.api
-      || (PROVIDER_CATALOG.has(provider) ? getBuiltinModels(provider).find(item => item.id === modelInfo.id)?.api : '')
-      || '';
+    const modelApi = resolveModelApi(provider, modelInfo.id);
     const modelReasoning = modelInfo.reasoning === true;
     const capabilities = resolveCapabilities(modelApi, modelReasoning, 'off', modelInfo);
     const effectiveFingerprint = computePolicyFingerprint({ id: activeId, name: presetName, slots: presetSlots }, capabilities);
@@ -2266,7 +2346,8 @@ export class PromptAgentService {
       const now = Date.now();
       const provider = normalizeProvider(meta?.provider || this.config.provider);
       const modelInfo = listModels(provider).find(item => item.id === (meta?.model || this.config.model)) || {};
-      const capabilities = resolveCapabilities(modelInfo.api || '', modelInfo.reasoning === true, 'off', modelInfo);
+      const modelApi = resolveModelApi(provider, modelInfo.id);
+      const capabilities = resolveCapabilities(modelApi, modelInfo.reasoning === true, 'off', modelInfo);
       const revision = creativeMode && preset
         ? {
             presetId: CREATIVE_BUILTIN_PRESET_ID, presetName: preset.name || '',
@@ -2380,7 +2461,7 @@ export class PromptAgentService {
     value.messages[index] = { ...original, content: nextContent, timestamp: Date.now() };
     value.meta = value.meta?.id ? { ...value.meta, updatedAt: Date.now() } : value.meta;
     await this.writeSession(sessionId, value);
-    await this.appendAuditLog(sessionId, { type: 'message_revised', messageId, content: nextContent });
+    await this.appendAuditLog(sessionId, { type: 'message_revised', messageId, content: { sha256: shorthandHash(nextContent, 16), length: nextContent.length } });
     return this.getSessionHistory(sessionId);
   }
 
@@ -3327,8 +3408,12 @@ export class PromptAgentService {
       if (creativePresetContentCharCount(source.slots) > MAX_CREATIVE_PRESET_CONTENT_CHARS) throw Object.assign(new Error(`单个预设全部槽位正文合计不能超过 ${MAX_CREATIVE_PRESET_CONTENT_CHARS} 字`), { status: 400 });
       const description = creativeDescriptionText(input.description);
       const now = Date.now();
+      const rawId = typeof input.id === 'string' ? input.id.trim().slice(0, 200) : '';
+      const id = rawId && !CREATIVE_PRESET_RESERVED_IDS.has(rawId) && !custom.presets.some(p => p.id === rawId)
+        ? rawId
+        : `preset-${randomUUID()}`;
       const preset = {
-        id: `preset-${randomUUID()}`, name, ...(description ? { description } : {}), isBuiltin: false,
+        id, name, ...(description ? { description } : {}), isBuiltin: false,
         createdAt: now, updatedAt: now,
         slots: (source.slots || []).map((slot, index) => ({ ...slot, id: `slot-${randomBytes(4).toString('hex')}-${index}` })),
         recentRevisions: [],
@@ -3343,8 +3428,12 @@ export class PromptAgentService {
     if (normalized.slots.length > MAX_CREATIVE_PRESET_SLOTS) throw Object.assign(new Error(`单个预设最多 ${MAX_CREATIVE_PRESET_SLOTS} 个槽位`), { status: 400 });
     const description = creativeDescriptionText(input.description);
     const now = Date.now();
+    const rawId = typeof input.id === 'string' ? input.id.trim().slice(0, 200) : '';
+    const id = rawId && !CREATIVE_PRESET_RESERVED_IDS.has(rawId) && !custom.presets.some(p => p.id === rawId)
+      ? rawId
+      : `preset-${randomUUID()}`;
     const preset = {
-      id: `preset-${randomUUID()}`, name, ...(description ? { description } : {}), isBuiltin: false,
+      id, name, ...(description ? { description } : {}), isBuiltin: false,
       createdAt: now, updatedAt: now,
       slots: normalizeCreativeSlots(input.slots, { needUniqueIds: true }),
       recentRevisions: [],
@@ -3437,8 +3526,8 @@ export class PromptAgentService {
     const sourcePresets = Array.isArray(input?.presets) ? input.presets : [];
     const custom = await this.loadCreativePresetCustom();
     const existingNames = new Set(custom.presets.map(preset => preset.name));
-    // builtin-default 为代码保留 id（永不落盘）：外部导入一律视为冲突并重生成 id。
-    const reservedIds = new Set([CREATIVE_BUILTIN_PRESET_ID, ...custom.presets.map(preset => preset.id)]);
+    // builtin-default 与路由关键字为代码保留 id（永不落盘/防路由遮蔽）：外部导入一律视为冲突并重生成 id。
+    const reservedIds = new Set([...CREATIVE_PRESET_RESERVED_IDS, ...custom.presets.map(preset => preset.id)]);
     const importedPresets = [];
     const skipped = [];
     for (const raw of sourcePresets) {
@@ -3449,7 +3538,8 @@ export class PromptAgentService {
       } catch { skipped.push(String(raw.name || '未命名')); continue; }
       let name = normalized.name;
       if (existingNames.has(name)) name = `${name}（导入）`;
-      const id = reservedIds.has(normalized.id) ? `preset-${randomUUID()}` : normalized.id;
+      const rawId = typeof normalized.id === 'string' ? normalized.id.trim().slice(0, 200) : '';
+      const id = !rawId || reservedIds.has(rawId) ? `preset-${randomUUID()}` : rawId;
       const now = Date.now();
       const preset = {
         id, name, ...(normalized.description ? { description: normalized.description } : {}),
@@ -3507,10 +3597,11 @@ export class PromptAgentService {
     }
     const provider = normalizeProvider(stored.meta?.provider || config.provider);
     const modelId = stored.meta?.model || config.model;
-    const modelInfo = listModels(provider).find(item => item.id === modelId) || { id: modelId, contextWindow: 0, maxTokens: 0, api: '', reasoning: false };
+    const modelInfo = listModels(provider).find(item => item.id === modelId) || { id: modelId, contextWindow: 0, maxTokens: 0, reasoning: false };
+    const modelApi = resolveModelApi(provider, modelId);
     const message = typeof input.message === 'string' ? String(input.message) : '';
     const draft = sanitizeDraft(input.draft);
-    const capabilities = resolveCapabilities(modelInfo.api, modelInfo.reasoning, this.normalizeThinkingLevel(stored.meta?.thinkingLevel, modelInfo), modelInfo);
+    const capabilities = resolveCapabilities(modelApi, modelInfo.reasoning, this.normalizeThinkingLevel(stored.meta?.thinkingLevel, modelInfo), modelInfo);
     const contextData = { clientSettings: typeof input.clientSettings === 'object' && input.clientSettings ? input.clientSettings : {} };
     const runtimeContext = buildAgentRuntimeContext(draft, contextData.clientSettings);
     const creativeMode = sessionCreativeMode;
@@ -3523,7 +3614,7 @@ export class PromptAgentService {
       runtimeContext,
       safetyFooter: PRESET_SAFETY_FOOTER,
       cleanMessages: [],
-      modelApi: modelInfo.api,
+      modelApi,
       modelReasoning: modelInfo.reasoning,
       thinkingLevel: this.normalizeThinkingLevel(stored.meta?.thinkingLevel, modelInfo),
       toolDescriptors,
@@ -3617,7 +3708,8 @@ export class PromptAgentService {
         sessionForLock.meta = { ...sessionForLock.meta, creativeMode, creativeModeLocked: true, updatedAt: Date.now() };
         await this.writeSession(sessionId, sessionForLock);
       }
-      const capabilities = resolveCapabilities(modelInfo.api, modelInfo.reasoning, thinkingLevel, modelInfo);
+      const modelApi = resolveModelApi(provider, modelId);
+      const capabilities = resolveCapabilities(modelApi, modelInfo.reasoning, thinkingLevel, modelInfo);
       audit('runtime_resolved', {
         provider,
         model: modelId,
@@ -3707,7 +3799,7 @@ export class PromptAgentService {
         runtimeContext,
         safetyFooter: PRESET_SAFETY_FOOTER,
         cleanMessages: loadedMessages,
-        modelApi: modelInfo.api,
+        modelApi,
         modelReasoning: modelInfo.reasoning,
         thinkingLevel,
         toolDescriptors: tools.map(tool => ({ name: tool.name, label: tool.label || tool.name, description: tool.description || '' })),
@@ -3740,7 +3832,7 @@ export class PromptAgentService {
             runtimeContext,
             safetyFooter: PRESET_SAFETY_FOOTER,
             cleanMessages: messages,
-            modelApi: modelInfo.api,
+            modelApi,
             modelReasoning: modelInfo.reasoning,
             thinkingLevel,
             toolDescriptors: tools.map(tool => ({ name: tool.name, label: tool.label || tool.name, description: tool.description || '' })),
