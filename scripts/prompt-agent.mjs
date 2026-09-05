@@ -1671,8 +1671,15 @@ export class PromptAgentService {
 
   listAvailableModels() {
     const current = this.publicConfig();
+    const providerLabel = provider => {
+      const normalized = normalizeProvider(provider);
+      const custom = CUSTOM_PROVIDERS.get(normalized);
+      if (custom) return custom.name || normalized;
+      return PROVIDER_CATALOG.get(normalized)?.name || normalized;
+    };
     return this.configuredProviderIds().flatMap(provider => listModels(provider).map(model => ({
       ...model,
+      providerName: providerLabel(provider),
       current: provider === current.provider && model.id === current.model,
       currentVision: provider === current.visionProvider && model.id === current.visionModel,
     })));

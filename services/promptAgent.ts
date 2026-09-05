@@ -72,6 +72,8 @@ export interface PromptAgentModel {
   id: string;
   name: string;
   provider: string;
+  /** 可读来源名（如 command-goat / bukun / deepseek），供列表展示；provider 仍为内部 id。 */
+  providerName?: string;
   reasoning: boolean;
   imageInput: boolean;
   contextWindow: number;
