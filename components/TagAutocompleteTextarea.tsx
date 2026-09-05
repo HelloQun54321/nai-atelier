@@ -498,8 +498,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 title="转为数值权重：1.1::tag::（右侧输入框可继续改数值）"
               >数值</button>
             </div>
-            {translationError && <span className="min-w-0 flex-1 truncate text-micro text-red-500" title={translationError}>{translationError}</span>}
-            <div className={`ml-auto flex items-stretch overflow-hidden rounded-md border transition-colors ${selectedTokens.length ? 'border-[var(--nai-accent)]' : 'border-gray-300 opacity-40 dark:border-gray-600'}`}>
+            <div className={`flex items-stretch overflow-hidden rounded-md border transition-colors ${selectedTokens.length ? 'border-[var(--nai-accent)]' : 'border-gray-300 opacity-40 dark:border-gray-600'}`}>
               <button
                 type="button"
                 onClick={event => applyWeight('down', undefined, event.shiftKey ? 0.01 : 0.1)}
@@ -532,12 +531,13 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               disabled={!selectedTokens.length}
               className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none disabled:opacity-40"
             >移除权重</button>
+            {translationError && <span className="min-w-0 flex-1 truncate text-micro text-red-500" title={translationError}>{translationError}</span>}
             {allowAiTranslation && !disabled && missingTags.length > 0 && (
               <button
                 type="button"
                 onClick={() => void translateMissing()}
                 disabled={translationLoading}
-                className="inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
+                className="ml-auto inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
                 title={`使用当前 Agent 模型翻译 ${missingTags.length} 个词库缺失项`}
               >
                 {translationLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5" />}
