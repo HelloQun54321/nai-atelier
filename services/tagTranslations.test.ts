@@ -52,4 +52,10 @@ describe('parsePromptTags', () => {
     expect(transformPromptWeight('[tag]', { id: '1', displayTag: 'tag', lookupTag: 'tag', groupKind: 'bracket', groupLevel: 1 }, 'up')).toBe('tag');
     expect(transformPromptWeight('tag', { id: '1', displayTag: 'tag', lookupTag: 'tag' }, 'up')).toBe('{tag}');
   });
+
+  it('数值权重支持自定义步进与直接赋值', () => {
+    const token = { id: '1', displayTag: 'tag', lookupTag: 'tag', groupKind: 'numeric' as const, groupWeight: '1.2' };
+    expect(transformPromptWeight('1.2::tag::', token, 'up', undefined, 0.01)).toBe('1.21::tag::');
+    expect(transformPromptWeight('1.2::tag::', token, 'numeric', 0.95)).toBe('0.95::tag::');
+  });
 });

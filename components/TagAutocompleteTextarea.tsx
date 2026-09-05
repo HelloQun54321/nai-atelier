@@ -144,6 +144,11 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   };
 
   const selectedTokens = promptTokens.filter(token => selectedTagIds.has(token.id));
+  const firstSelectedWeight = selectedTokens[0]?.groupWeight || '';
+  const [weightInput, setWeightInput] = useState('');
+  useEffect(() => {
+    setWeightInput(firstSelectedWeight);
+  }, [firstSelectedWeight]);
   useEffect(() => {
     const validIds = new Set(promptTokens.map(token => token.id));
     setSelectedTagIds(current => {
@@ -152,11 +157,17 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     });
   }, [promptTokens]);
 
-  const applyWeight = (mode: 'up' | 'down' | 'remove' | 'numeric') => {
+  const commitWeightInput = () => {
+    const next = Number(weightInput);
+    if (!weightInput.trim() || !Number.isFinite(next)) {
+      setWeightInput(firstSelectedWeight);
+      return;
+    }
+    applyWeight('numeric', next);
+  };
+
+  const applyWeight = (mode: 'up' | 'down' | 'remove' | 'numeric', numericWeight?: number, step = 0.1) => {
     if (!selectedTokens.length) return;
-    const numericWeight = mode === 'numeric'
-      ? Number(window.prompt('输入数值权重', selectedTokens[0].groupWeight || '1.2'))
-      : undefined;
     if (mode === 'numeric' && !Number.isFinite(numericWeight)) return;
     const groups = new Map<string, PromptTagToken[]>();
     selectedTokens.forEach(token => groups.set(token.groupId || token.id, [...(groups.get(token.groupId || token.id) || []), token]));
@@ -165,7 +176,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       const start = first.groupStart ?? first.start ?? 0;
       const end = first.groupEnd ?? first.end ?? start;
       const raw = value.slice(start, end);
-      return { start, end, value: transformPromptWeight(raw, first, mode, numericWeight) };
+      return { start, end, value: transformPromptWeight(raw, first, mode, numericWeight, step) };
     }).filter((item): item is { start: number; end: number; value: string } => Boolean(item)).sort((a, b) => b.start - a.start);
     let nextValue = value;
     replacements.forEach(item => { nextValue = nextValue.slice(0, item.start) + item.value + nextValue.slice(item.end); });
@@ -456,17 +467,46 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             })()}
           </div>
           <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
-            <button type="button" onClick={() => applyWeight('up')} disabled={!selectedTokens.length} className="rounded-md px-2 py-1 text-meta font-bold text-white hover:opacity-90 disabled:opacity-40" style={{ backgroundColor: 'var(--nai-accent)' }}>增强</button>
-            <button type="button" onClick={() => applyWeight('down')} disabled={!selectedTokens.length} className="rounded-md px-2 py-1 text-meta font-bold text-white hover:opacity-90 disabled:opacity-40" style={{ backgroundColor: 'var(--nai-accent)' }}>减弱</button>
-            <button type="button" onClick={() => applyWeight('numeric')} disabled={!selectedTokens.length} className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)] disabled:opacity-40">数值</button>
-            <button type="button" onClick={() => applyWeight('remove')} disabled={!selectedTokens.length} className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)] disabled:opacity-40">移除权重</button>
             {translationError && <span className="min-w-0 flex-1 truncate text-micro text-red-500" title={translationError}>{translationError}</span>}
+            <div className={`ml-auto flex items-stretch overflow-hidden rounded-md border transition-colors ${selectedTokens.length ? 'border-[var(--nai-accent)]' : 'border-gray-300 opacity-40 dark:border-gray-600'}`}>
+              <button
+                type="button"
+                onClick={event => applyWeight('down', undefined, event.shiftKey ? 0.01 : 0.1)}
+                disabled={!selectedTokens.length}
+                className="px-2 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none"
+                title="减弱权重 0.1（Shift+点击为 ±0.01）"
+              >−</button>
+              <input
+                value={weightInput}
+                onChange={event => setWeightInput(event.target.value.replace(/[^\d.]/g, ''))}
+                onBlur={commitWeightInput}
+                onKeyDown={event => { if (event.key === 'Enter') commitWeightInput(); }}
+                disabled={!selectedTokens.length}
+                inputMode="decimal"
+                placeholder="权重"
+                title="输入数值权重后回车，作用于选中的整组"
+                className="w-14 border-x border-gray-200 bg-transparent px-1 py-1 text-center font-mono text-meta text-gray-600 placeholder:text-gray-400 focus:outline-none dark:border-gray-700 dark:text-gray-300 dark:placeholder:text-gray-500"
+              />
+              <button
+                type="button"
+                onClick={event => applyWeight('up', undefined, event.shiftKey ? 0.01 : 0.1)}
+                disabled={!selectedTokens.length}
+                className="px-2 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none"
+                title="增强权重 0.1（Shift+点击为 ±0.01）"
+              >+</button>
+            </div>
+            <button
+              type="button"
+              onClick={() => applyWeight('remove')}
+              disabled={!selectedTokens.length}
+              className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none disabled:opacity-40"
+            >移除权重</button>
             {allowAiTranslation && !disabled && missingTags.length > 0 && (
               <button
                 type="button"
                 onClick={() => void translateMissing()}
                 disabled={translationLoading}
-                className="ml-auto inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
+                className="inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
                 title={`使用当前 Agent 模型翻译 ${missingTags.length} 个词库缺失项`}
               >
                 {translationLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5" />}

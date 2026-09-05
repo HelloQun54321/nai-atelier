@@ -137,6 +137,7 @@ export const transformPromptWeight = (
   token: PromptTagToken,
   action: PromptWeightAction,
   numericWeight?: number,
+  step = 0.1,
 ): string => {
   if (action === 'remove') {
     if (token.groupKind === 'numeric') return raw.replace(/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::/, '').replace(/::$/, '');
@@ -147,7 +148,7 @@ export const transformPromptWeight = (
 
   if (token.groupKind === 'numeric') {
     const current = Number(token.groupWeight || 1);
-    const next = action === 'numeric' ? numericWeight : current + (action === 'up' ? 0.1 : -0.1);
+    const next = action === 'numeric' ? numericWeight : current + (action === 'up' ? step : -step);
     if (typeof next !== 'number' || !Number.isFinite(next)) return raw;
     return raw.replace(/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::/, `${formatNumericWeight(next)}::`);
   }
