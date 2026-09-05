@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **ZCode (GLM-5.3)**：「添加权重」由灰色文字标签改为真实按钮，按输入框数值添加数值权重（fix: make add weight label clickable）。
 - **ZCode (GLM-5.3)**：「添加权重」标签段移至类型按钮组尾部（fix: reposition weight cluster label）。
 - **ZCode (GLM-5.3)**：权重类型按钮组前加入「添加权重」标签段，与步进调节组对称（fix: label weight type cluster）。
 - **ZCode (GLM-5.3)**：底栏权重类型、步进调节与移除权重左聚成组，翻译入口保持最右（fix: group weight controls together in footer）。

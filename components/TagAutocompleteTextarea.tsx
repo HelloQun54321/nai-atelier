@@ -189,7 +189,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     replaceSelectedGroups((raw, token) => transformPromptWeight(raw, token, mode, numericWeight, step));
   };
 
-  const applyWeightWrap = (kind: PromptWeightKind) => replaceSelectedGroups((raw, token) => wrapPromptTag(raw, token, kind));
+  const applyWeightWrap = (kind: PromptWeightKind, numericWeight?: number) => replaceSelectedGroups((raw, token) => wrapPromptTag(raw, token, kind, numericWeight));
 
   useEffect(() => () => {
     if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
@@ -497,7 +497,16 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 className="border-r border-gray-200 px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none dark:border-gray-700"
                 title="转为数值权重：1.1::tag::（右侧输入框可继续改数值）"
               >数值</button>
-              <span className="px-2 py-1 text-meta font-medium text-gray-400 dark:text-gray-500">添加权重</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const parsed = Number(weightInput);
+                  applyWeightWrap('numeric', weightInput.trim() && Number.isFinite(parsed) ? parsed : undefined);
+                }}
+                disabled={!selectedTokens.length}
+                className="border-l border-gray-200 px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none dark:border-gray-700"
+                title="按右侧输入框的数值添加数值权重（默认 1.1::tag::）"
+              >添加权重</button>
             </div>
             <div className={`flex items-stretch overflow-hidden rounded-md border transition-colors ${selectedTokens.length ? 'border-[var(--nai-accent)]' : 'border-gray-300 opacity-40 dark:border-gray-600'}`}>
               <button
