@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PromptAgentCreativeInspectResult, PromptAgentInjectionItem, promptAgentService } from './promptAgent';
+import { PromptAgentCreativeInspectResult, PromptAgentInjectionItem, formatModelOptionTitle, promptAgentService } from './promptAgent';
 
 /** 破限提示词与预设实验室服务客户端行为测试（fetch-stub）。 */
+
+it('同名模型展示时标注服务来源', () => {
+  const models = [
+    { id: 'deepseek-v4-flash', provider: 'deepseek', providerName: 'DeepSeek' },
+    { id: 'deepseek/deepseek-v4-flash', provider: 'custom-1', providerName: 'command-goat' },
+  ];
+  expect(formatModelOptionTitle(models[0], models)).toBe('deepseek-v4-flash (DeepSeek)');
+  expect(formatModelOptionTitle(models[1], models)).toBe('deepseek-v4-flash (command-goat)');
+});
 
 const jsonResponse = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 

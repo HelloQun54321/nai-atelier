@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-05
+- **Codex (GPT-5)**：修复 PromptAgent 自定义服务商重复渲染、同名模型混淆与模型标题来源显示，补充模型 ID 去重及回归测试（fix: deduplicate prompt agent providers and model options）。
 - **Gemini 3.8 Flash**：Agent 面板精简与去挤——移除全屏切换按钮与全屏状态，顶栏副行移除视觉搭配模型长文本展示，副行专注展示完整主模型名称并更新测试（refactor: remove agent fullscreen toggle and vision model subtitle）。
 
 - **Gemini 3.8 Flash**：Agent 面板顶栏收敛与按钮规格统一——移除顶栏副行外置的破限选择下拉框（保留在设置弹层中）以完整显示模型名称，未开启破限消除占位噪点；统一顶栏纯图标按钮为 h-9 w-9 与 h-5 w-5 图标，修复宽度参差与尺寸畸小问题，并补齐单元测试（fix: clean agent panel topbar and unify button dimensions）。

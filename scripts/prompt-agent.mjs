@@ -397,9 +397,13 @@ export const sanitizeCustomProvider = raw => {
   const supportedApis = ['openai-completions', 'openai-responses', 'anthropic-messages'];
   if (raw?.api && !supportedApis.includes(raw.api)) throw Object.assign(new Error('不支持这个接口协议'), { status: 400 });
   const api = raw?.api || 'openai-completions';
-  const models = (Array.isArray(raw?.models) ? raw.models : []).slice(0, 50).flatMap(item => {
+  const seenModelIds = new Set();
+  const models = (Array.isArray(raw?.models) ? raw.models : []).flatMap(item => {
     const id = text(item?.id).trim().slice(0, 160);
     if (!id) return [];
+    const key = id.toLowerCase();
+    if (seenModelIds.has(key)) return [];
+    seenModelIds.add(key);
     const contextWindow = Math.round(clamp(item?.contextWindow, 1_024, 10_000_000, 128_000));
     return [{
       id,
@@ -414,7 +418,7 @@ export const sanitizeCustomProvider = raw => {
         reasoning: ['metadata', 'pi_catalog', 'model_name', 'unknown', 'manual'].includes(item.capabilityDetection.reasoning) ? item.capabilityDetection.reasoning : 'manual',
       } } : {}),
     }];
-  });
+  }).slice(0, 50);
   if (!models.length) throw Object.assign(new Error('请至少添加一个模型 ID'), { status: 400 });
   const headers = {};
   for (const [rawName, rawValue] of Object.entries(raw?.headers && typeof raw.headers === 'object' ? raw.headers : {}).slice(0, 20)) {

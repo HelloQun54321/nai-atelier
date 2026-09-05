@@ -291,6 +291,17 @@ export const displayModelName = (modelId: string | undefined | null): string => 
   return slash > 0 && slash < modelId.length - 1 ? modelId.slice(slash + 1) : modelId;
 };
 
+export const formatModelOptionTitle = (
+  model: { id: string; provider: string; providerName?: string },
+  allModels: Array<{ id: string; provider: string; providerName?: string }> = [],
+): string => {
+  const base = displayModelName(model.id);
+  const duplicate = allModels.some(other => other !== model
+    && other.provider !== model.provider
+    && displayModelName(other.id).toLowerCase() === base.toLowerCase());
+  return duplicate ? `${base} (${model.providerName || model.provider})` : base;
+};
+
 export const promptAgentService = {
   getConfig: async (): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/config', { cache: 'no-store' });
