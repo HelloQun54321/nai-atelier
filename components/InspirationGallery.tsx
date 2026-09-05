@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, Check, CheckSquare, Clock, Filter, FolderPlus, Library, Pencil, Pin, Plus, RefreshCw, Sparkles, Star, Trash2, Upload, X } from 'lucide-react';
+import { Archive, Check, CheckSquare, Filter, FolderPlus, Library, Pencil, Pin, Plus, RefreshCw, Sparkles, Star, Trash2, Upload, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { api } from '../services/api';
 import { Inspiration, InspirationBoard, InspirationSourceType, NAIParams, PromptChain, User } from '../types';
@@ -94,6 +94,10 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     });
     return result;
   }, [items]);
+  const availableSources = useMemo(() => {
+    return (['history', 'aitag', 'danbooru', 'pixiv', 'upload', 'agent', 'other'] as InspirationSourceType[])
+      .filter(source => (sourceCounts[source] || 0) > 0);
+  }, [sourceCounts]);
   const boardNameById = useMemo(() => new Map(boards.map(board => [board.id, board.name])), [boards]);
 
   const filtered = useMemo(() => {
@@ -187,7 +191,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const activeFilterCount = Number(collection !== 'all') + Number(Boolean(boardId)) + Number(Boolean(tagFilter)) + Number(ratingFilter > 0) + Number(sort !== 'created');
   const resetFilters = () => { setBoardId(''); setTagFilter(''); setRatingFilter(0); setSort('created'); setCollection('all'); };
   const renderFilterControls = () => <div className="grid grid-cols-2 gap-3">
-    <label className="text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">分类<select value={collection} onChange={event => { setCollection(event.target.value as SmartCollection); setBoardId(''); }} className="mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"><option value="all">全部灵感</option><option value="unorganized">未整理</option><option value="pinned">已置顶</option><option value="recent">最近使用</option><option value="archived">已归档</option><option value="source:history">来源：生成历史</option><option value="source:aitag">来源：AITag</option><option value="source:danbooru">来源：Danbooru</option><option value="source:pixiv">来源：Pixiv</option><option value="source:upload">来源：手动上传</option><option value="source:agent">来源：项目 Agent</option><option value="source:other">来源：其他</option></select></label>
+    <label className="text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">分类<select value={collection} onChange={event => { setCollection(event.target.value as SmartCollection); setBoardId(''); }} className="mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"><option value="all">全部灵感</option><option value="unorganized">未整理</option>{counts.pinned > 0 && <option value="pinned">已置顶</option>}{counts.archived > 0 && <option value="archived">已归档</option>}{availableSources.map(source => <option key={source} value={`source:${source}`}>来源：{sourceLabel(source)}</option>)}</select></label>
     <label className="text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">灵感板<div className="mt-1.5 flex gap-2"><select value={boardId} onChange={event => { setBoardId(event.target.value); if (event.target.value) setCollection('all'); }} className="mobile-touch h-10 min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"><option value="">全部灵感板</option>{boards.map(board => <option key={board.id} value={board.id}>{board.name}</option>)}</select><button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length] })} className="mobile-touch flex h-10 w-10 flex-none items-center justify-center rounded-xl border border-gray-300 bg-white text-indigo-600 dark:border-gray-700 dark:bg-gray-950" aria-label="新建灵感板"><FolderPlus className="h-4 w-4" /></button></div></label>
     <label className="text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">标签<select value={tagFilter} onChange={event => setTagFilter(event.target.value)} className="mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"><option value="">全部标签</option>{allTags.map(([tag, count]) => <option key={tag} value={tag}>{tag} ({count})</option>)}</select></label>
     <label className="text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">最低评分<select value={ratingFilter} onChange={event => setRatingFilter(Number(event.target.value))} className="mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"><option value="0">全部评分</option><option value="1">1 星以上</option><option value="2">2 星以上</option><option value="3">3 星以上</option><option value="4">4 星以上</option><option value="5">5 星</option></select></label>
@@ -217,13 +221,16 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
     <div className="flex min-h-0 flex-1">
       <aside className="hidden w-56 flex-none overflow-y-auto border-r border-gray-200 bg-gray-50/70 p-3 dark:border-gray-800 dark:bg-gray-900/60 md:block">
-        <div className="mb-2 px-2 text-meta font-black uppercase tracking-widest text-gray-400">智能分类</div>
+        <div className="mb-2 px-2 text-meta font-black uppercase tracking-widest text-gray-400">视图</div>
         <div className="space-y-1">
-          <CollectionButton active={collection === 'all'} count={counts.all} icon={<Library />} label="全部灵感" onClick={() => { setCollection('all'); setBoardId(''); }} />
+          <CollectionButton active={collection === 'all' && !boardId} count={counts.all} icon={<Library />} label="全部灵感" onClick={() => { setCollection('all'); setBoardId(''); }} />
           <CollectionButton active={collection === 'unorganized'} count={counts.unorganized} icon={<Sparkles />} label="未整理" onClick={() => { setCollection('unorganized'); setBoardId(''); }} />
-          <CollectionButton active={collection === 'pinned'} count={counts.pinned} icon={<Pin />} label="已置顶" onClick={() => { setCollection('pinned'); setBoardId(''); }} />
-          <CollectionButton active={collection === 'recent'} count={counts.recent} icon={<Clock />} label="最近使用" onClick={() => { setCollection('recent'); setBoardId(''); }} />
-          <CollectionButton active={collection === 'archived'} count={counts.archived} icon={<Archive />} label="已归档" onClick={() => { setCollection('archived'); setBoardId(''); }} />
+          {(counts.pinned > 0 || collection === 'pinned') && (
+            <CollectionButton active={collection === 'pinned'} count={counts.pinned} icon={<Pin />} label="已置顶" onClick={() => { setCollection('pinned'); setBoardId(''); }} />
+          )}
+          {(counts.archived > 0 || collection === 'archived') && (
+            <CollectionButton active={collection === 'archived'} count={counts.archived} icon={<Archive />} label="已归档" onClick={() => { setCollection('archived'); setBoardId(''); }} />
+          )}
         </div>
 
         <div className="mb-2 mt-6 flex items-center justify-between px-2"><span className="text-meta font-black uppercase tracking-widest text-gray-400">灵感板</span><button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length] })} className="text-indigo-600" aria-label="新建灵感板"><FolderPlus className="h-4 w-4" /></button></div>
@@ -231,9 +238,6 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
           {boards.map(board => <div key={board.id} className={`group flex items-center rounded-xl border ${boardId === board.id ? 'border-gray-200 bg-white text-indigo-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300' : 'border-transparent hover:bg-white dark:hover:bg-gray-800'}`}><button type="button" onClick={() => { setBoardId(board.id); setCollection('all'); }} className="flex h-10 min-w-0 flex-1 items-center gap-2 px-3 text-left text-sm font-semibold"><span className="h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: board.color }} /><span className="truncate">{board.name}</span><span className="ml-auto text-micro text-gray-400">{items.filter(item => item.boardId === board.id && !item.archived).length}</span></button><button type="button" onClick={() => setBoardEditor({ id: board.id, name: board.name, color: board.color || '#6366f1' })} className="hidden h-8 w-8 items-center justify-center text-gray-400 group-hover:flex" aria-label="编辑灵感板"><Pencil className="h-3.5 w-3.5" /></button><button type="button" onClick={() => void deleteBoard(board)} className="hidden h-8 w-8 items-center justify-center text-gray-400 hover:text-red-500 group-hover:flex" aria-label="删除灵感板"><Trash2 className="h-3.5 w-3.5" /></button></div>)}
           {!boards.length && <button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[0] })} className="w-full rounded-xl border border-dashed border-gray-300 px-3 py-4 text-xs text-gray-400 dark:border-gray-700">创建第一个灵感板</button>}
         </div>
-
-        <div className="mb-2 mt-6 px-2 text-meta font-black uppercase tracking-widest text-gray-400">来源</div>
-        <div className="space-y-1">{(['history', 'aitag', 'danbooru', 'pixiv', 'upload', 'agent', 'other'] as InspirationSourceType[]).map(source => { const SourceIcon = sourceIcon(source); return <CollectionButton key={source} active={collection === `source:${source}`} count={sourceCounts[source] || 0} icon={<SourceIcon />} label={sourceLabel(source)} onClick={() => { setCollection(`source:${source}`); setBoardId(''); }} />; })}</div>
       </aside>
 
       <main ref={mainScrollRef} onScroll={onMainScrollRestore} className="min-w-0 flex-1 overflow-y-auto">
@@ -247,6 +251,42 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         </div>}
 
         <div className="flex items-center justify-between border-b border-gray-200 bg-white/60 px-3 py-3 dark:border-gray-800 dark:bg-gray-900/40 md:px-5"><div><h1 className="text-base font-black text-gray-950 dark:text-white">{activeTitle}</h1><p className="mt-0.5 text-xs text-gray-400">{filtered.length} 条灵感 · {sort === 'created' ? '最近收藏' : sort === 'used' ? '最近使用' : sort === 'popular' ? '使用最多' : '评分最高'}</p></div>{(search || activeFilterCount > 0) && <button type="button" onClick={() => { setSearch(''); resetFilters(); }} className="mobile-touch rounded-lg px-2 text-xs font-bold text-indigo-600 dark:text-indigo-400">清除条件</button>}</div>
+
+        {availableSources.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-gray-200/80 bg-white/40 px-3 py-2 dark:border-gray-800/60 dark:bg-gray-900/20 md:px-5">
+            <span className="mr-1 text-micro font-bold text-gray-400">来源</span>
+            {availableSources.map(source => {
+              const SourceIcon = sourceIcon(source);
+              const isSelected = collection === `source:${source}`;
+              const count = sourceCounts[source] || 0;
+              return (
+                <button
+                  key={source}
+                  type="button"
+                  onClick={() => {
+                    if (isSelected) {
+                      setCollection('all');
+                    } else {
+                      setCollection(`source:${source}`);
+                      setBoardId('');
+                    }
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+                    isSelected
+                      ? 'bg-indigo-50 text-indigo-600 font-semibold ring-1 ring-indigo-500/20 dark:bg-indigo-950/60 dark:text-indigo-300'
+                      : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200/80 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <SourceIcon className="h-3 w-3" />
+                  <span>{sourceLabel(source)}</span>
+                  <span className={`text-micro ${isSelected ? 'text-indigo-500 dark:text-indigo-400' : 'text-gray-400'}`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {filtered.length > 0 ? <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid p-3 md:p-5`} style={mobileGalleryStyle(imageDisplay)}>
           {filtered.map(item => {

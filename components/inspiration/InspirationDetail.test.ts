@@ -96,27 +96,24 @@ describe('InspirationDetail 全新重构界面走查', () => {
       })
     );
 
-    // 标题与画板在顶栏展示
-    expect(screen.getByRole('heading', { name: '海边少女' })).toBeTruthy();
+    // 标题可直接点击编辑（失焦自动保存），画板在顶栏快捷切换
+    expect(screen.getByDisplayValue('海边少女')).toBeTruthy();
     const boardSelect = screen.getByTitle('切换所属灵感板') as HTMLSelectElement;
     expect(boardSelect.value).toBe('');
 
-    // 顶栏轻量置顶与归档按钮
-    expect(screen.getByRole('button', { name: '置顶' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '归档' })).toBeTruthy();
-
-    // 独立复制按钮（提示词与负面提示词各自独立）
+    // 独立复制按钮
     const copyButtons = screen.getAllByRole('button', { name: '复制' });
-    expect(copyButtons.length).toBe(2);
+    expect(copyButtons.length).toBeGreaterThanOrEqual(1);
 
     // 标签胶囊化展示
     expect(screen.getByText('#夏日')).toBeTruthy();
     expect(screen.getByText('#少女')).toBeTruthy();
 
-    // 底部工具条包含高亮主按钮「完整导入」、次按钮「追加提示词」、更多复用
+    // 底部工具条包含高亮主按钮「完整导入」、次按钮「追加提示词」、更多复用与下载
     expect(screen.getByRole('button', { name: /完整导入/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /追加提示词/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /更多复用/ })).toBeTruthy();
+    expect(screen.getByRole('link', { name: '下载原图' })).toBeTruthy();
   });
 
   it('顶栏切换画板即时持久化到数据库', async () => {
@@ -142,32 +139,7 @@ describe('InspirationDetail 全新重构界面走查', () => {
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
   });
 
-  it('置顶与归档状态可一键切换并即时保存', async () => {
-    const onRefresh = vi.fn();
-    render(
-      React.createElement(InspirationDetail, {
-        item: mockItem,
-        items: [mockItem],
-        boards: mockBoards,
-        currentUser: mockUser,
-        chains: [],
-        notify: vi.fn(),
-        onClose: vi.fn(),
-        onRefresh,
-        onOpenItem: vi.fn(),
-      })
-    );
-
-    const pinBtn = screen.getByRole('button', { name: '置顶' });
-    fireEvent.click(pinBtn);
-    expect(db.updateInspiration).toHaveBeenCalledWith('insp-1', { isPinned: true });
-
-    const archiveBtn = screen.getByRole('button', { name: '归档' });
-    fireEvent.click(archiveBtn);
-    expect(db.updateInspiration).toHaveBeenCalledWith('insp-1', { archived: true });
-  });
-
-  it('点击编辑铅笔切换到编辑态，展示输入框并切换底部操作栏', () => {
+  it('在更多复用菜单中切换置顶与归档状态并即时保存', async () => {
     render(
       React.createElement(InspirationDetail, {
         item: mockItem,
@@ -182,16 +154,38 @@ describe('InspirationDetail 全新重构界面走查', () => {
       })
     );
 
-    const editBtn = screen.getByRole('button', { name: '编辑内容与备注' });
-    fireEvent.click(editBtn);
+    const moreBtn = screen.getByRole('button', { name: /更多复用/ });
+    fireEvent.click(moreBtn);
 
-    // 编辑态下出现标题输入框、提示词文本框、负面提示词文本框
-    expect(screen.getByPlaceholderText('输入灵感标题...')).toBeTruthy();
-    expect(screen.getByPlaceholderText('输入正向提示词...')).toBeTruthy();
-    expect(screen.getByPlaceholderText('输入负面提示词...')).toBeTruthy();
+    const pinBtn = screen.getByRole('button', { name: '设为置顶' });
+    fireEvent.click(pinBtn);
+    expect(db.updateInspiration).toHaveBeenCalledWith('insp-1', { isPinned: true });
 
-    // 底部切换为完成保存与取消
-    expect(screen.getByRole('button', { name: /完成保存/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
+    fireEvent.click(moreBtn);
+    const archiveBtn = screen.getByRole('button', { name: '归档灵感' });
+    fireEvent.click(archiveBtn);
+    expect(db.updateInspiration).toHaveBeenCalledWith('insp-1', { archived: true });
+  });
+
+  it('标题修改失焦后即时持久化保存', () => {
+    render(
+      React.createElement(InspirationDetail, {
+        item: mockItem,
+        items: [mockItem],
+        boards: mockBoards,
+        currentUser: mockUser,
+        chains: [],
+        notify: vi.fn(),
+        onClose: vi.fn(),
+        onRefresh: vi.fn(),
+        onOpenItem: vi.fn(),
+      })
+    );
+
+    const titleInput = screen.getByDisplayValue('海边少女');
+    fireEvent.change(titleInput, { target: { value: '日落海滩少女' } });
+    fireEvent.blur(titleInput);
+
+    expect(db.updateInspiration).toHaveBeenCalledWith('insp-1', { title: '日落海滩少女' });
   });
 });
