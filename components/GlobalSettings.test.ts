@@ -50,12 +50,16 @@ vi.mock('../services/naiKeyVault', () => ({
   },
 }));
 
-const SettingsHarness = () => {
+interface SettingsHarnessProps {
+  initialSection?: 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'maintenance';
+}
+
+const SettingsHarness: React.FC<SettingsHarnessProps> = ({ initialSection = 'appearance' }) => {
   const [appearancePreferences, setAppearancePreferences] = useState<AppearancePreferences>(DEFAULT_APPEARANCE_PREFERENCES);
   return React.createElement(ConfirmDialogProvider, null,
     React.createElement(GlobalSettings, {
       open: true,
-      initialSection: 'appearance',
+      initialSection,
       onClose: vi.fn(),
       notify: vi.fn(),
       isDark: false,
@@ -74,6 +78,7 @@ const SettingsHarness = () => {
 
 describe('GlobalSettings', () => {
   beforeEach(() => {
+    vi.stubGlobal('__APP_VERSION__', '1.0.0');
     vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
       matches: false,
       media: query,
@@ -92,7 +97,7 @@ describe('GlobalSettings', () => {
   });
 
   it('打开设置并切换实验室布局折叠块时不会因失效事件对象崩溃', async () => {
-    const { container } = render(React.createElement(SettingsHarness));
+    const { container } = render(React.createElement(SettingsHarness, { initialSection: 'generation' }));
 
     expect(await screen.findByText('实验室模块布局')).toBeTruthy();
     const details = container.querySelectorAll('details');
@@ -101,6 +106,34 @@ describe('GlobalSettings', () => {
     fireEvent.click(details[1].querySelector('summary')!);
     await waitFor(() => expect(details[1].open).toBe(true));
     expect(screen.getByText('实验室模块布局')).toBeTruthy();
+  });
+
+  it('支持 5 分类独立导航且各区专属内容正常展示与切换', async () => {
+    render(React.createElement(SettingsHarness));
+
+    // 验证侧边栏包含 5 大分类导航
+    expect(screen.getByRole('button', { name: /外观与画廊/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /生图偏好与实验室/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /NovelAI 与 Anlas/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /项目 Agent/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /数据与安全维护/ })).toBeTruthy();
+
+    // 初始外观区包含明暗模式与图片列表布局
+    expect(screen.getByText('明暗模式')).toBeTruthy();
+    expect(screen.getByText('图片列表布局')).toBeTruthy();
+
+    // 切换至「生图偏好与实验室」
+    fireEvent.click(screen.getByRole('button', { name: /生图偏好与实验室/ }));
+    expect(await screen.findByText('生成过程预览')).toBeTruthy();
+    expect(screen.getByText('强制清空随机种子（始终随机）')).toBeTruthy();
+    expect(screen.getByText('生成步数锁定在免费额度内')).toBeTruthy();
+    expect(screen.getByText('实验室模块布局')).toBeTruthy();
+
+    // 切换至「数据与安全维护」
+    fireEvent.click(screen.getByRole('button', { name: /数据与安全维护/ }));
+    expect(await screen.findByRole('button', { name: /^安全模式/ })).toBeTruthy();
+    expect(screen.getByText('启动时自动开启安全模式')).toBeTruthy();
+    expect(screen.getByText('重要数据备份')).toBeTruthy();
   });
 
   it('选中的主题卡片强调色与色标会随着外观偏好的强调色改变而同步联动', async () => {

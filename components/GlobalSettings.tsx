@@ -38,9 +38,9 @@ import {
   ThemeMode,
   validateAppearancePreset,
 } from '../services/appearancePreferences';
-import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Database, Edit2, ExternalLink, FileDown, FileUp, FolderInput, FolderOutput, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RefreshCw, RotateCcw, Server, Shield, SlidersHorizontal, Smartphone, Sun, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Database, Edit2, ExternalLink, FileDown, FileUp, FolderInput, FolderOutput, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RefreshCw, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
 
-type SettingsSection = 'appearance' | 'novelai' | 'agent' | 'maintenance';
+type SettingsSection = 'appearance' | 'generation' | 'novelai' | 'agent' | 'maintenance';
 type SettingsPage = 'home' | SettingsSection;
 
 interface LocalMaintenanceStatus {
@@ -57,10 +57,11 @@ interface LocalMaintenanceStatus {
 }
 
 const settingsSections: Array<{ id: SettingsSection; label: string; description: string; icon: React.ComponentType<{ className?: string }> }> = [
-  { id: 'appearance', label: '界面与内容显示', description: '主题、提示词编辑、安全模式与图片布局', icon: Palette },
+  { id: 'appearance', label: '外观与画廊', description: '主题预设、明暗模式与画廊布局', icon: Palette },
+  { id: 'generation', label: '生图偏好与实验室', description: '生成体验、计费保护与模块布局', icon: Sparkles },
   { id: 'novelai', label: 'NovelAI 与 Anlas', description: '连接、队列与本地预算', icon: KeyRound },
   { id: 'agent', label: '项目 Agent', description: '模型、权限与服务商', icon: Bot },
-  { id: 'maintenance', label: '数据与维护', description: '词库、缓存、备份与服务状态', icon: Database },
+  { id: 'maintenance', label: '数据与安全维护', description: '安全模式、备份、局域网与缓存', icon: ShieldCheck },
 ];
 
 interface GlobalSettingsProps {
@@ -647,8 +648,39 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           <div className={activeSection === 'home' ? 'hidden' : 'space-y-3'}>
           <section id={`settings-appearance`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'appearance' ? 'hidden' : ''}`}>
             {activeSection === 'appearance' && <div className="space-y-3">
-              {/* 设计主题与预设管理 */}
               <div>
+                <div className="mb-2 text-xs font-bold text-gray-700 dark:text-gray-200">明暗模式</div>
+                <div className="grid grid-cols-3 gap-2">
+                  {([{ value: 'system', label: '跟随系统', icon: Monitor }, { value: 'light', label: '浅色', icon: Sun }, { value: 'dark', label: '深色', icon: Moon }] as const).map(option => { const ModeIcon = option.icon; return <button key={option.value} type="button" onClick={() => setThemeMode(option.value)} className={`mobile-touch flex min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2 text-xs font-bold transition md:h-10 ${themeMode === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}><ModeIcon className="h-3.5 w-3.5 flex-none" /><span className="truncate">{option.label}</span></button>; })}
+                </div>
+              </div>
+
+              <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
+                <div className="mb-2 text-xs font-bold text-gray-700 dark:text-gray-200">图片列表布局</div>
+                <div className="grid grid-cols-3 gap-2">
+                  {([['masonry', '瀑布流'], ['portrait', '竖向卡片'], ['square', '方形']] as const).map(([layout, label]) => <button key={layout} type="button" onClick={() => { const next = { ...imageDisplay, layout: layout as MobileImageLayout }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch md:h-10 rounded-xl border px-2 text-xs font-bold ${imageDisplay.layout === layout ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}
+                </div>
+                <div className="mt-4 grid gap-x-6 gap-y-3 md:grid-cols-2">
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400">移动端列数</span>
+                    <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.columns === 'auto' ? '自适应' : `${imageDisplay.columns} 列`}</span>
+                  </div>
+                  <input type="range" min={0} max={3} step={1} value={imageDisplay.columns === 'auto' ? 0 : imageDisplay.columns} onChange={event => { const value = Number(event.target.value); const next = { ...imageDisplay, columns: (value === 0 ? 'auto' : value) as MobileImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className="mt-2 block w-full accent-indigo-500" aria-label="移动端列数" />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400">桌面端列数</span>
+                    <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.desktopColumns === 'auto' ? '自适应' : `${imageDisplay.desktopColumns} 列`}</span>
+                  </div>
+                  <input type="range" min={0} max={5} step={1} value={imageDisplay.desktopColumns === 'auto' ? 0 : imageDisplay.desktopColumns} onChange={event => { const value = Number(event.target.value); const next = { ...imageDisplay, desktopColumns: (value === 0 ? 'auto' : value) as DesktopImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className="mt-2 block w-full accent-indigo-500" aria-label="桌面端列数" />
+                </div>
+                </div>
+                <p className="mt-3 text-meta leading-5 text-gray-500 dark:text-gray-400">支持按屏幕宽度自适应或固定每行图片列数。原图、详情与下载始终使用原始画质。</p>
+              </div>
+
+              {/* 设计主题与预设管理 */}
+              <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
                 <input
                   type="file"
                   ref={importFileRef}
@@ -875,13 +907,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 </div>
               </div>
 
-              <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
-                <div className="mb-2 text-xs font-bold text-gray-700 dark:text-gray-200">明暗模式</div>
-                <div className="grid grid-cols-3 gap-2">
-                  {([{ value: 'system', label: '跟随系统', icon: Monitor }, { value: 'light', label: '浅色', icon: Sun }, { value: 'dark', label: '深色', icon: Moon }] as const).map(option => { const ModeIcon = option.icon; return <button key={option.value} type="button" onClick={() => setThemeMode(option.value)} className={`mobile-touch flex min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2 text-xs font-bold transition md:h-10 ${themeMode === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}><ModeIcon className="h-3.5 w-3.5 flex-none" /><span className="truncate">{option.label}</span></button>; })}
-                </div>
-              </div>
-
               <div className="appearance-control-panel rounded-2xl border border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35">
                 <div className="mb-3 flex items-center gap-2"><SlidersHorizontal className="h-4 w-4 text-indigo-500" /><div><h4 className="text-xs font-bold text-gray-800 dark:text-gray-100">个性化</h4><p className="text-micro text-gray-500 dark:text-gray-400">微调当前主题的样式细节。</p></div></div>
 
@@ -903,7 +928,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
                 <button type="button" onClick={resetThemeCustomization} className="mobile-touch mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"><RotateCcw className="h-3.5 w-3.5" />恢复 NAI Atelier 默认外观</button>
               </div>
-
+            </div>}
+          </section>
+          <section id={`settings-generation`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'generation' ? 'hidden' : ''}`}>
+            {activeSection === 'generation' && <div className="space-y-3">
               <button type="button" onClick={() => updateAppearance({ generationStreamPreview: !appearancePreferences.generationStreamPreview })} aria-pressed={appearancePreferences.generationStreamPreview} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                 <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">生成过程预览</b><span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">生图过程中逐步显示采样画面。</span></span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.generationStreamPreview ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.generationStreamPreview ? 'translate-x-5' : 'translate-x-0'}`} /></span>
@@ -932,6 +960,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.enforceFreeStepLimit ? 'translate-x-5' : 'translate-x-0'}`} />
                 </span>
               </button>
+
               <div className="rounded-2xl border border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35">
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
@@ -997,39 +1026,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     </details>;
                   })}
                 </div>
-              </div>
-              <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />安全模式</span><span>{safeMode ? '已开启' : '已关闭'}</span></button>
-              <p className="mt-2 text-meta leading-5 text-gray-500 dark:text-gray-400">开启后遮挡全站图片；点击图片可临时显示，离开后自动重新遮挡。</p>
-              <button type="button" onClick={() => setSafeModeHideTitles(enabled => !enabled)} aria-pressed={safeModeHideTitles} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
-                <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">同时隐藏作品名称</b><span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">开启后可单独点击名称显示；点击图片会连同对应名称一起显示。</span></span>
-                <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeHideTitles ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeHideTitles ? 'translate-x-5' : 'translate-x-0'}`} /></span>
-              </button>
-              <button type="button" onClick={() => setSafeModeStartup(enabled => !enabled)} aria-pressed={safeModeStartup} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
-                <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">启动时自动开启安全模式</b><span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">每次重新打开项目时默认开启；关闭后启动时保持关闭，当前会话仍可手动切换。</span></span>
-                <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeStartup ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeStartup ? 'translate-x-5' : 'translate-x-0'}`} /></span>
-              </button>
-              <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
-                <div className="mb-2 text-xs font-bold text-gray-500 dark:text-gray-400">图片列表布局</div>
-                <div className="grid grid-cols-3 gap-2">
-                  {([['masonry', '瀑布流'], ['portrait', '竖向卡片'], ['square', '方形']] as const).map(([layout, label]) => <button key={layout} type="button" onClick={() => { const next = { ...imageDisplay, layout: layout as MobileImageLayout }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch md:h-10 rounded-xl border px-2 text-xs font-bold ${imageDisplay.layout === layout ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}
-                </div>
-                <div className="mt-4 grid gap-x-6 gap-y-3 md:grid-cols-2">
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400">移动端列数</span>
-                    <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.columns === 'auto' ? '自适应' : `${imageDisplay.columns} 列`}</span>
-                  </div>
-                  <input type="range" min={0} max={3} step={1} value={imageDisplay.columns === 'auto' ? 0 : imageDisplay.columns} onChange={event => { const value = Number(event.target.value); const next = { ...imageDisplay, columns: (value === 0 ? 'auto' : value) as MobileImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className="mt-2 block w-full accent-indigo-500" aria-label="移动端列数" />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400">桌面端列数</span>
-                    <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.desktopColumns === 'auto' ? '自适应' : `${imageDisplay.desktopColumns} 列`}</span>
-                  </div>
-                  <input type="range" min={0} max={5} step={1} value={imageDisplay.desktopColumns === 'auto' ? 0 : imageDisplay.desktopColumns} onChange={event => { const value = Number(event.target.value); const next = { ...imageDisplay, desktopColumns: (value === 0 ? 'auto' : value) as DesktopImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className="mt-2 block w-full accent-indigo-500" aria-label="桌面端列数" />
-                </div>
-                </div>
-                <p className="mt-4 text-meta leading-5 text-gray-500 dark:text-gray-400">支持按屏幕宽度自适应或固定每行图片列数。原图、详情与下载始终使用原始画质。</p>
               </div>
             </div>}
           </section>
@@ -1201,12 +1197,26 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
           <section id="settings-maintenance" className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'maintenance' ? 'hidden' : ''}`}>
             {activeSection === 'maintenance' && <div className="space-y-5">
-              <div className="rounded-xl bg-gray-50/80 p-4 dark:bg-gray-800/50"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><h4 className="font-semibold text-gray-900 dark:text-white">Tag 补全词库</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">查看版本、数量并检查中英 Tag 数据更新。</p></div><div className="flex flex-none sm:justify-end"><TagDictionaryUpdater notify={notify} /></div></div></div>
+              {/* 内容安全模式 */}
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
+                <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />安全模式</span><span>{safeMode ? '已开启' : '已关闭'}</span></button>
+                <p className="mt-2 text-meta leading-5 text-gray-500 dark:text-gray-400">开启后遮挡全站图片；点击图片可临时显示，离开后自动重新遮挡。</p>
+                <button type="button" onClick={() => setSafeModeHideTitles(enabled => !enabled)} aria-pressed={safeModeHideTitles} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
+                  <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">同时隐藏作品名称</b><span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">开启后可单独点击名称显示；点击图片会连同对应名称一起显示。</span></span>
+                  <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeHideTitles ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeHideTitles ? 'translate-x-5' : 'translate-x-0'}`} /></span>
+                </button>
+                <button type="button" onClick={() => setSafeModeStartup(enabled => !enabled)} aria-pressed={safeModeStartup} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
+                  <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">启动时自动开启安全模式</b><span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">每次重新打开项目时默认开启；关闭后启动时保持关闭，当前会话仍可手动切换。</span></span>
+                  <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeStartup ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeStartup ? 'translate-x-5' : 'translate-x-0'}`} /></span>
+                </button>
+              </div>
 
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">手机图片缓存</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">仅保存列表缩略图；清除后可重新生成，不会影响原图、历史或电脑数据。</p></div><Smartphone className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 grid grid-cols-4 gap-2">{[0, 25, 50, 100].map(value => <button key={value} type="button" onClick={() => { setMobileCacheLimitMb(value); setMobileCacheStats(getMobileCacheStats()); }} className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${getMobileCacheLimitMb() === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'}`}>{value === 0 ? '关闭' : `${value} MB`}</button>)}</div><div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs dark:bg-gray-800/70"><span className="text-gray-500 dark:text-gray-400">已缓存 {mobileCacheStats.count} 张 · {(mobileCacheStats.bytes / 1024 / 1024).toFixed(1)} MB / {mobileCacheStats.limitMb} MB</span><button type="button" onClick={async () => { if (!await confirmAction({ title: '清空手机小图缓存？', message: '只会清除可重新生成的缩略图，不会影响原图、历史或任何本地数据。', confirmLabel: '清空缓存', tone: 'danger' })) return; await clearMobileThumbnailCache(); setMobileCacheStats(getMobileCacheStats()); notify('手机小图缓存已清空'); }} className="flex-shrink-0 font-medium text-red-500 hover:text-red-600">清空缓存</button></div></div>
+              {/* 本地数据备份与还原 */}
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
+                <DataBackupManager notify={notify} />
+              </div>
 
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">电脑缩略图缓存</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">本地小图缓存已建立自动空间管理；清除后可重新生成，不影响原图。</p></div><Database className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs text-gray-500 dark:bg-gray-800/70 dark:text-gray-400">{maintenanceStatus ? <>已缓存 {maintenanceStatus.thumbnailCache.count} 张 · {(maintenanceStatus.thumbnailCache.bytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.limitBytes / 1024 / 1024).toFixed(0)} MB<br />固定封面 {maintenanceStatus.thumbnailCache.pinnedCount} 张 · {(maintenanceStatus.thumbnailCache.pinnedBytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.pinnedLimitBytes / 1024 / 1024).toFixed(0)} MB</> : '等待读取本地缓存状态…'}</div></div>
-
+              {/* 局域网访问密码 */}
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -1237,12 +1247,19 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 </div>
               </div>
 
+              {/* 手机图片缓存 */}
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">手机图片缓存</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">仅保存列表缩略图；清除后可重新生成，不会影响原图、历史或电脑数据。</p></div><Smartphone className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 grid grid-cols-4 gap-2">{[0, 25, 50, 100].map(value => <button key={value} type="button" onClick={() => { setMobileCacheLimitMb(value); setMobileCacheStats(getMobileCacheStats()); }} className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${getMobileCacheLimitMb() === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'}`}>{value === 0 ? '关闭' : `${value} MB`}</button>)}</div><div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs dark:bg-gray-800/70"><span className="text-gray-500 dark:text-gray-400">已缓存 {mobileCacheStats.count} 张 · {(mobileCacheStats.bytes / 1024 / 1024).toFixed(1)} MB / {mobileCacheStats.limitMb} MB</span><button type="button" onClick={async () => { if (!await confirmAction({ title: '清空手机小图缓存？', message: '只会清除可重新生成的缩略图，不会影响原图、历史或任何本地数据。', confirmLabel: '清空缓存', tone: 'danger' })) return; await clearMobileThumbnailCache(); setMobileCacheStats(getMobileCacheStats()); notify('手机小图缓存已清空'); }} className="flex-shrink-0 font-medium text-red-500 hover:text-red-600">清空缓存</button></div></div>
+
+              {/* 电脑缩略图缓存 */}
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">电脑缩略图缓存</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">本地小图缓存已建立自动空间管理；清除后可重新生成，不影响原图。</p></div><Database className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs text-gray-500 dark:bg-gray-800/70 dark:text-gray-400">{maintenanceStatus ? <>已缓存 {maintenanceStatus.thumbnailCache.count} 张 · {(maintenanceStatus.thumbnailCache.bytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.limitBytes / 1024 / 1024).toFixed(0)} MB<br />固定封面 {maintenanceStatus.thumbnailCache.pinnedCount} 张 · {(maintenanceStatus.thumbnailCache.pinnedBytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.pinnedLimitBytes / 1024 / 1024).toFixed(0)} MB</> : '等待读取本地缓存状态…'}</div></div>
+
+              {/* Tag 补全词库 */}
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><h4 className="font-semibold text-gray-900 dark:text-white">Tag 补全词库</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">查看版本、数量并检查中英 Tag 数据更新。</p></div><div className="flex flex-none sm:justify-end"><TagDictionaryUpdater notify={notify} /></div></div></div>
+
+              {/* 本地服务状态 */}
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">本地服务状态</h4>…<p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">状态来自当前运行的媒体网关与核心页面服务；手机访问时也会经过同一套验证。</p></div><button type="button" onClick={() => void refreshMaintenanceStatus()} disabled={maintenanceStatusLoading} className="mobile-touch flex flex-none items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" title="刷新本地服务状态"><RefreshCw className={`h-3.5 w-3.5 ${maintenanceStatusLoading ? 'animate-spin' : ''}`} />刷新</button></div>{maintenanceStatusError ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2.5 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">{maintenanceStatusError}</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2"><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.gatewayReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>媒体网关：{maintenanceStatus?.gatewayReady ? '可用' : '正在检查'}</div><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.workerReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : maintenanceStatus ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>核心页面服务：{maintenanceStatus?.workerReady ? '可用' : maintenanceStatus ? '未就绪' : '正在检查'}</div></div>}</div>
 
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
-                <DataBackupManager notify={notify} />
-              </div>
-
+              {/* 关于 NAI Atelier */}
               <div className="flex items-center justify-between gap-4"><div><h4 className="font-semibold text-gray-900 dark:text-white">关于 NAI Atelier</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">个人维护版本 · v{__APP_VERSION__}</p></div><a href="https://github.com/HelloQun54321/nai-atelier" target="_blank" rel="noreferrer" className="mobile-touch flex flex-none items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-2 text-xs font-bold text-white transition hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"><ExternalLink className="h-3.5 w-3.5" />打开 GitHub</a></div>
             </div>}
           </section>

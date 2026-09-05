@@ -28,7 +28,7 @@ import { OpusUsageBar } from './OpusUsageBar';
 const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module => ({ default: module.GlobalSettings })));
 
 type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'inspiration' | 'history' | 'playground';
-type SettingsSection = 'home' | 'appearance' | 'novelai' | 'agent' | 'maintenance';
+type SettingsSection = 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'maintenance';
 
 interface LayoutProps {
   children: ReactNode;
@@ -133,7 +133,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   useEffect(() => {
     const openSettings = (event: Event) => {
       const section = (event as CustomEvent<{ section?: SettingsSection }>).detail?.section;
-      if (section && ['appearance', 'novelai', 'agent', 'maintenance'].includes(section)) setSettingsSection(section);
+      if (section && ['appearance', 'generation', 'novelai', 'agent', 'maintenance'].includes(section)) setSettingsSection(section);
       else setSettingsSection('home');
       setShowSettings(true);
     };
