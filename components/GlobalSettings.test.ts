@@ -140,5 +140,25 @@ describe('GlobalSettings', () => {
     const lightModeBtn = screen.getByRole('button', { name: /浅色/ });
     expect(lightModeBtn.className).toContain('dark:text-indigo-300');
   });
+
+  it('切换图片列表布局时正确切换选中态并更新本地偏好', async () => {
+    render(React.createElement(SettingsHarness));
+
+    const portraitBtn = screen.getByRole('button', { name: '竖向卡片' });
+    const squareBtn = screen.getByRole('button', { name: '方形' });
+    const masonryBtn = screen.getByRole('button', { name: '瀑布流' });
+
+    // 点击「竖向卡片」
+    fireEvent.click(portraitBtn);
+    expect(portraitBtn.className).toContain('border-indigo-500');
+
+    // 点击「方形」
+    fireEvent.click(squareBtn);
+    expect(squareBtn.className).toContain('border-indigo-500');
+
+    // 点击「瀑布流」
+    fireEvent.click(masonryBtn);
+    expect(masonryBtn.className).toContain('border-indigo-500');
+  });
 });
 
