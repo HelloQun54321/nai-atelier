@@ -5,6 +5,8 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-05
+- **Gemini 3.8 Flash**：Agent 面板顶栏收敛与按钮规格统一——移除顶栏副行外置的破限选择下拉框（保留在设置弹层中）以完整显示模型名称，未开启破限消除占位噪点；统一顶栏纯图标按钮为 h-9 w-9 与 h-5 w-5 图标，修复宽度参差与尺寸畸小问题，并补齐单元测试（fix: clean agent panel topbar and unify button dimensions）。
+
 - **Codex (GPT-5)**：Prompt Agent 移除 pi-ai 官方多厂商静态 provider 目录，收敛为 OpenAI-compatible 并内置 DeepSeek 三个模型（含 vision-exp），保留旧 deepseek 加密凭据兼容（fix: use openai-compatible deepseek provider）。
 - **DeepSeek V4 Flash (Oh My Pi)**：模型名显示剥掉「厂商/」前缀（displayModelName 纯函数，覆盖模型菜单/会话列表/设置页多处），来源由 providerName 独立标注，请求仍用完整 id（refactor: strip vendor prefix from displayed model names）。
 - **DeepSeek V4 Flash (Oh My Pi)**：Agent 模型列表与设置页来源标注显示可读中转站名（command-goat/bukun/rightapi/DeepSeek），替换 custom-UUID；API 加 providerName 字段、provider 内部 id 不变（fix: show readable provider names in model lists）。

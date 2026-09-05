@@ -3,6 +3,10 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-09-05
+### 修复:Agent 面板顶栏收敛与按钮尺寸一致性
+- 移除顶栏副行中外置的「破限预设」下拉选择控件（收归右侧模型与思考设置弹层），副行优先展示完整模型名称，消除 `deepseek...` 等被截断问题，未开启破限时不渲染多余占位噪点，开启破限时仅保留紧凑只读徽标。
+- 统一顶栏所有纯图标按钮（返回、会话列表、模型设置、全屏、更多菜单）为 `h-9 w-9`（36px × 36px）标准正方形规格与 `h-5 w-5` 图标大小，修复此前依赖 `px-2` 撑开导致的按钮宽度参差不齐（34px vs 36px）以及返回/列表按钮尺寸畸小问题；撤销修改按钮高度对齐 `h-9`，抽屉头部按钮同步规范化。
+
 ### 修复:Prompt Agent 收敛为 OpenAI-compatible 并内置 DeepSeek
 - 移除对 pi-ai 官方多厂商静态 provider 目录的依赖，Prompt Agent 默认使用 `https://api.deepseek.com` 的 OpenAI Completions 兼容接口。
 - 内置 DeepSeek V4 Flash、V4 Flash Vision Exp 与 V4 Pro 模型配置，保留现有 `deepseek` provider ID 和加密凭据，旧配置无需重新登录。

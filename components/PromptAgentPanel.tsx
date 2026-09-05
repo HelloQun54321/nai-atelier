@@ -8,7 +8,7 @@ import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
 import { getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { clearMobileThumbnailCache, getMobileCacheStats, setMobileCacheLimitMb } from '../services/mobileImageCache';
-import { ArrowDown, ArrowLeft, Bot, Check, ChevronDown, Clipboard, Copy, Download, Expand, ImagePlus, List, Maximize2, Minimize2, MoreHorizontal, Pencil, Plus, RotateCcw, Send, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, Bot, Check, ChevronDown, Copy, Download, Expand, ImagePlus, List, Maximize2, Minimize2, MoreHorizontal, Pencil, Plus, RotateCcw, Send, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
 
 interface PromptAgentPanelProps {
   open: boolean;
@@ -850,12 +850,12 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     <aside aria-label="Agent 会话历史" className={`${showSessions ? 'translate-x-0' : '-translate-x-full'} absolute inset-y-0 left-0 z-20 flex w-[min(82%,19rem)] flex-col border-r border-gray-200 bg-white pt-[env(safe-area-inset-top)] shadow-2xl transition-transform dark:border-gray-800 dark:bg-gray-900`}>
       <div className="flex h-14 items-center gap-2 border-b border-gray-100 px-3 dark:border-gray-800">
         <b className="min-w-0 flex-1 truncate text-sm dark:text-white">Agent 对话</b>
-        <button type="button" onClick={() => void createSession()} disabled={running || busySessionAction} className="mobile-touch flex items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-500/20 disabled:opacity-40" aria-label="新建对话" title="新建对话"><Plus className="h-4 w-4" /></button>
-        <button type="button" onClick={() => { setShowSessions(false); setSessionMenuId(''); }} className="mobile-touch flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="关闭会话列表" title="关闭"><X className="h-4 w-4" /></button>
+        <button type="button" onClick={() => void createSession()} disabled={running || busySessionAction} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-500/20 disabled:opacity-40" aria-label="新建对话" title="新建对话"><Plus className="h-5 w-5" /></button>
+        <button type="button" onClick={() => { setShowSessions(false); setSessionMenuId(''); }} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="关闭会话列表" title="关闭"><X className="h-5 w-5" /></button>
       </div>
       <div className="px-2 py-2"><input value={sessionSearch} onChange={event => setSessionSearch(event.target.value)} placeholder="搜索对话" className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-xs text-gray-800 outline-none placeholder:text-gray-400 focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-600" /></div>
       <div className="flex-1 space-y-1 overflow-y-auto px-2 pb-3">
-        {sessions.filter(session => session.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())).length === 0 ? (
+        {sessions.filter(session => (session.title || '').toLowerCase().includes(sessionSearch.trim().toLowerCase())).length === 0 ? (
           <div className="py-8 text-center text-xs text-gray-400">没有找到匹配的对话</div>
         ) : sessions.filter(session => session.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())).map(session => <div key={session.id} className={`group relative min-h-[4.75rem] rounded-xl border ${session.id === activeSessionId ? 'border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
           {editingSessionId === session.id ? <form onSubmit={event => { event.preventDefault(); void saveSessionTitle(session); }} className="flex min-h-[4.75rem] items-center px-2 pr-12"><input autoFocus value={editingTitle} onChange={event => setEditingTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setEditingSessionId(''); }} onBlur={() => void saveSessionTitle(session)} className="h-9 min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-2 text-xs text-gray-800 outline-none dark:bg-gray-950 dark:text-gray-100" /></form> : <button type="button" disabled={running && session.id !== activeSessionId} onClick={() => { if (!running) { setActiveSessionId(session.id); setShowSessions(false); setSessionMenuId(''); } }} className="block min-h-[4.75rem] w-full py-2 pl-3 pr-12 text-left">
@@ -877,8 +877,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       {/* 顶栏与状态栏合流为单行（节省约 36px 空间） */}
       <header className="border-b border-gray-200 bg-white pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900">
         <div className="flex h-12 items-center gap-1 px-2 md:px-3">
-          <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="返回"><ArrowLeft className="h-[18px] w-[18px]" /></button>
-          <button type="button" onClick={() => { setShowSessions(true); setShowModelMenu(false); setShowMoreMenu(false); }} className="mobile-touch flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="会话列表"><List className="h-5 w-5" /></button>
+          <button type="button" onClick={requestClose} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" aria-label="返回" title="返回"><ArrowLeft className="h-5 w-5" /></button>
+          <button type="button" onClick={() => { setShowSessions(true); setShowModelMenu(false); setShowMoreMenu(false); }} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" aria-label="会话列表" title="会话列表"><List className="h-5 w-5" /></button>
 
           {/* 标题与执行状态圆点合流 */}
           <div className="min-w-0 flex-1">
@@ -906,48 +906,24 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 </span>
               ) : (
                 <>
-                  <span className="truncate">{displayModelName(activeSession?.model) || '未选择模型'}</span>
-                  <span aria-hidden="true" className="text-gray-300 dark:text-gray-600">·</span>
-                  {activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount ? (
-                    <select
-                      aria-label="选择本会话破限预设"
-                      disabled={running}
-                      value={getSessionPresetValue(activeSession)}
-                      onChange={event => void selectSessionPreset(event.target.value)}
-                      className="h-5 max-w-[8.5rem] truncate rounded border border-violet-200 bg-violet-50/80 px-1 text-mini font-bold text-violet-700 outline-none hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-300"
-                      title="切换本会话破限预设（首条消息前可选）"
+                  <span className="truncate font-medium text-gray-600 dark:text-gray-300" title={activeSession?.model || ''}>
+                    {displayModelName(activeSession?.model) || '未选择模型'}
+                  </span>
+                  {activeSession?.creativeMode && (
+                    <span
+                      className="shrink-0 rounded bg-violet-100 px-1.5 py-0.5 text-mini font-bold text-violet-700 dark:bg-violet-950/60 dark:text-violet-300"
+                      title={formatPresetSessionLabel(activeSession) || (activeSession.presetName ? `破限预设：${activeSession.presetName}` : '破限模式已开启')}
                     >
-                      <option value="off">破限：关</option>
-                      <optgroup label="内置预设">
-                        {creativePresets.filter(p => p.isBuiltin).map(p => (
-                          <option key={p.id} value={p.id}>破限：{p.name}</option>
-                        ))}
-                      </optgroup>
-                      {creativePresets.some(p => !p.isBuiltin) && (
-                        <optgroup label="自定义预设">
-                          {creativePresets.filter(p => !p.isBuiltin).map(p => (
-                            <option key={p.id} value={p.id}>破限：{p.name}</option>
-                          ))}
-                        </optgroup>
-                      )}
-                    </select>
-                  ) : (() => {
-                    const presetLabel = activeSession ? formatPresetSessionLabel(activeSession) : null;
-                    return presetLabel ? (
-                      <span className="truncate rounded bg-violet-50 px-1 font-bold text-violet-600 dark:bg-violet-950/50 dark:text-violet-300" title={presetLabel}>
-                        {presetLabel}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">普通</span>
-                    );
-                  })()}
+                      破限
+                    </span>
+                  )}
                   {activeSession?.visionDedicated ? (
-                    <span className="hidden truncate sm:inline"> · 视觉 {activeSession.visionModel}</span>
+                    <span className="hidden shrink-0 truncate sm:inline"> · 视觉 {activeSession.visionModel}</span>
                   ) : supportsImages ? (
-                    <span className="hidden sm:inline"> · 识图</span>
+                    <span className="hidden shrink-0 sm:inline"> · 识图</span>
                   ) : null}
                   {activeSession?.thinkingLevel && activeSession.thinkingLevel !== 'off' && (
-                    <span className="hidden truncate md:inline"> · 思考:{thinkingLevelLabels[activeSession.thinkingLevel]}</span>
+                    <span className="hidden shrink-0 truncate md:inline"> · 思考:{thinkingLevelLabels[activeSession.thinkingLevel]}</span>
                   )}
                 </>
               )}
@@ -960,34 +936,34 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               type="button"
               onClick={props.onUndo}
               disabled={running}
-              className="mobile-touch inline-flex h-8 items-center gap-1 rounded-xl border border-amber-300/80 bg-amber-50 px-2 text-xs font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-40 sm:px-2.5 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/70"
+              className="mobile-touch inline-flex h-9 items-center gap-1 rounded-xl border border-amber-300/80 bg-amber-50 px-2.5 text-xs font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-40 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/70"
               title="撤销最近一次 Agent 对项目的修改"
               aria-label="撤销修改"
             >
-              <RotateCcw className="h-3.5 w-3.5" />
+              <RotateCcw className="h-4 w-4" />
               <span className="hidden sm:inline">撤销修改</span>
             </button>
           )}
 
           {/* 模型与思考设置菜单 */}
           <div ref={modelMenuRef} className="static flex items-center gap-1 md:relative">
-            <button type="button" onClick={() => setShowModelMenu(value => { const next = !value; if (next) setShowMoreMenu(false); return next; })} className={`mobile-touch flex h-9 items-center justify-center rounded-xl px-2 text-gray-500 dark:text-gray-400 ${showModelMenu ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`} aria-label="模型与思考设置" title="模型与思考设置"><SlidersHorizontal className="h-[18px] w-[18px]" /></button>
+            <button type="button" onClick={() => setShowModelMenu(value => { const next = !value; if (next) setShowMoreMenu(false); return next; })} className={`mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 dark:text-gray-400 ${showModelMenu ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`} aria-label="模型与思考设置" title="模型与思考设置"><SlidersHorizontal className="h-5 w-5" /></button>
             {showModelMenu && <div className="absolute inset-x-2 bottom-2 top-12 z-30 flex w-auto max-h-none flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 md:inset-x-auto md:bottom-auto md:right-0 md:top-11 md:max-h-[min(76vh,42rem)] md:w-[min(20rem,calc(100vw-1rem))]">
-              <div className="border-b border-gray-100 p-3 dark:border-gray-800"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-100">模型与思考</b><span className="mt-0.5 block truncate text-micro text-gray-400">{displayModelName(activeSession?.model) || '正在加载对话…'}</span></div><div className="flex items-center gap-1.5"><span className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-micro font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">最高：{thinkingLevelLabels[availableThinkingLevels.at(-1) || 'off']}</span><button type="button" onClick={() => setShowModelMenu(false)} className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200 md:hidden" aria-label="关闭模型菜单" title="关闭"><X className="h-4 w-4" /></button></div></div><label className="mt-3 flex items-center gap-2 text-meta text-gray-500"><span className="flex-1">思考等级</span><select aria-label="思考等级" disabled={!sessionReady || running || availableThinkingLevels.length <= 1} value={selectedThinkingLevel} onChange={event => void updateThinkingLevel(event.target.value as PromptAgentThinkingLevel)} className="h-9 min-w-24 rounded-lg border border-gray-200 bg-gray-50 px-2 text-xs font-bold text-gray-700 outline-none disabled:opacity-40 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">{availableThinkingLevels.map(level => <option key={level} value={level}>{thinkingLevelLabels[level]}</option>)}</select></label>{activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount && <div className="mt-3 border-t border-gray-100 pt-2.5 dark:border-gray-800"><div className="flex items-center justify-between gap-2"><span className="text-meta text-gray-600 dark:text-gray-300">破限预设</span><select aria-label="切换本对话破限模式" disabled={running} value={getSessionPresetValue(activeSession)} onChange={event => void selectSessionPreset(event.target.value)} className="h-8 max-w-[10rem] rounded-lg border border-gray-200 bg-gray-50 px-2 text-xs font-bold text-violet-700 outline-none dark:border-gray-700 dark:bg-gray-950 dark:text-violet-300"><option value="off">关闭破限</option><optgroup label="内置预设">{creativePresets.filter(p => p.isBuiltin).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>{creativePresets.some(p => !p.isBuiltin) && <optgroup label="自定义预设">{creativePresets.filter(p => !p.isBuiltin).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>}</select></div><span className="mt-1 block text-micro text-gray-400">仅对当前对话生效，首条消息后锁定</span></div>}{activeSession?.creativeModeLocked && <div className="mt-3 border-t border-gray-100 pt-2.5 text-micro text-gray-400 dark:border-gray-800">破限模式：<b className="text-gray-600 dark:text-gray-300">{activeSession.creativeMode ? (activeSession.presetName || '已开启') : '已关闭'}</b>（已随首条消息锁定）</div>}</div>
+              <div className="border-b border-gray-100 p-3 dark:border-gray-800"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-100">模型与思考</b><span className="mt-0.5 block truncate text-micro text-gray-400">{displayModelName(activeSession?.model) || '正在加载对话…'}</span></div><div className="flex items-center gap-1.5"><span className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-micro font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">最高：{thinkingLevelLabels[availableThinkingLevels.at(-1) || 'off']}</span><button type="button" onClick={() => setShowModelMenu(false)} className="mobile-touch flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200 md:hidden" aria-label="关闭模型菜单" title="关闭"><X className="h-4 w-4" /></button></div></div><label className="mt-3 flex items-center gap-2 text-meta text-gray-500"><span className="flex-1">思考等级</span><select aria-label="思考等级" disabled={!sessionReady || running || availableThinkingLevels.length <= 1} value={selectedThinkingLevel} onChange={event => void updateThinkingLevel(event.target.value as PromptAgentThinkingLevel)} className="h-9 min-w-24 rounded-lg border border-gray-200 bg-gray-50 px-2 text-xs font-bold text-gray-700 outline-none disabled:opacity-40 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">{availableThinkingLevels.map(level => <option key={level} value={level}>{thinkingLevelLabels[level]}</option>)}</select></label>{activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount && <div className="mt-3 border-t border-gray-100 pt-2.5 dark:border-gray-800"><div className="flex items-center justify-between gap-2"><span className="text-meta text-gray-600 dark:text-gray-300">破限预设</span><select aria-label="切换本对话破限模式" disabled={running} value={getSessionPresetValue(activeSession)} onChange={event => void selectSessionPreset(event.target.value)} className="h-8 max-w-[10rem] rounded-lg border border-gray-200 bg-gray-50 px-2 text-xs font-bold text-violet-700 outline-none dark:border-gray-700 dark:bg-gray-950 dark:text-violet-300"><option value="off">关闭破限</option><optgroup label="内置预设">{creativePresets.filter(p => p.isBuiltin).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>{creativePresets.some(p => !p.isBuiltin) && <optgroup label="自定义预设">{creativePresets.filter(p => !p.isBuiltin).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>}</select></div><span className="mt-1 block text-micro text-gray-400">仅对当前对话生效，首条消息后锁定</span></div>}{activeSession?.creativeModeLocked && <div className="mt-3 border-t border-gray-100 pt-2.5 text-micro text-gray-400 dark:border-gray-800">破限模式：<b className="text-gray-600 dark:text-gray-300">{activeSession.creativeMode ? (activeSession.presetName || '已开启') : '已关闭'}</b>（已随首条消息锁定）</div>}</div>
               <div className="overflow-y-auto p-2"><button type="button" onClick={() => { setShowModelMenu(false); window.dispatchEvent(new CustomEvent('nai-open-global-settings', { detail: { section: 'agent' } })); }} className="mb-2 flex w-full items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-left text-xs font-bold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-300 dark:hover:bg-indigo-950/50"><span>配置模型服务</span><span aria-hidden="true">→</span></button>{models.map(model => <button key={`${model.provider}/${model.id}`} type="button" disabled={!sessionReady || running} onClick={() => void updateSessionModel(model)} className={`block w-full rounded-xl px-3 py-2 text-left disabled:cursor-not-allowed disabled:opacity-40 ${model.provider === activeSession?.provider && model.id === activeSession?.model ? 'bg-indigo-50 dark:bg-indigo-950/40' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}><b className="block truncate text-xs text-gray-800 dark:text-white">{displayModelName(model.id)}</b><span className="block text-micro text-gray-400">{model.providerName || model.provider} · {model.reasoning ? `推理，最高 ${thinkingLevelLabels[model.thinkingLevels.at(-1) || 'off']}` : '普通'}{model.imageInput ? ' · 识图' : ''}</span></button>)}</div>
               {!fullscreen && <div className="hidden border-t border-gray-100 p-3 md:block dark:border-gray-800"><div className="mb-2 text-micro font-bold text-gray-400">面板宽度</div><div className="grid grid-cols-3 gap-1">{[{ label: '窄', width: 440 }, { label: '标准', width: 540 }, { label: '宽', width: 680 }].map(item => <button key={item.width} type="button" onClick={() => choosePanelWidth(item.width)} className={`h-8 rounded-lg text-meta font-bold ${Math.abs(panelWidth - item.width) < 30 ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{item.label}</button>)}</div></div>}
             </div>}
           </div>
 
           {/* 全屏切换 */}
-          <button type="button" onClick={() => setFullscreen(value => !value)} className="mobile-touch flex h-9 items-center justify-center rounded-xl px-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={fullscreen ? '退出全屏' : '全屏显示'} title={fullscreen ? '退出全屏' : '全屏显示'}>{fullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}</button>
+          <button type="button" onClick={() => setFullscreen(value => !value)} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" aria-label={fullscreen ? '退出全屏' : '全屏显示'} title={fullscreen ? '退出全屏' : '全屏显示'}>{fullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}</button>
 
           {/* 新增：“…” 更多菜单（收进：导出会话日志、清空当前对话） */}
           <div ref={moreMenuRef} className="relative flex items-center">
             <button
               type="button"
               onClick={() => setShowMoreMenu(value => { const next = !value; if (next) setShowModelMenu(false); return next; })}
-              className={`mobile-touch flex h-9 items-center justify-center rounded-xl px-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 ${showMoreMenu ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+              className={`mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 ${showMoreMenu ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
               aria-label="更多会话操作"
               title="更多会话操作"
             >
