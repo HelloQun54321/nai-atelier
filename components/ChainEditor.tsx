@@ -81,7 +81,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // Default Seed to undefined (random), UC Preset to 4 (None)
     const [params, setParams] = useState<NAIParams>(() => normalizeParams(chain.params));
     // Opus 限额透支后，受限额模型（V5）的小图不再免费，费用估算需同步。
-    const { info: novelaiSubscription, usage: novelaiUsage, refreshIfStale: refreshUsageIfStale } = useNovelaiUsage();
+    const { info: novelaiSubscription, usage: novelaiUsage, loading: novelaiSubscriptionLoading, refreshIfStale: refreshUsageIfStale } = useNovelaiUsage();
     // 本地 Anlas 预算（账号整体，手动校准）：用尽后扣费生成需要红色警告。
     const anlasBudget = useAnlasBudget();
     const opusUsageExhausted = novelaiUsage?.isNegative === true;
@@ -108,7 +108,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         : '';
     const activeModelInfo = getRuntimeNaiModelInfo(params.model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME);
     const estimatedAnlasCost = estimateV45GenerationCost(params, opusSubscriptionActive, opusUsageExhausted);
-    const generationCostLabel = formatGenerationCostLabel(estimatedAnlasCost, params.model);
+    const generationCostLabel = novelaiSubscriptionLoading && getRuntimeNaiModelInfo(params.model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).opusUsageLimit
+        ? '确认额度中…'
+        : formatGenerationCostLabel(estimatedAnlasCost, params.model);
 
     /**
      * 拼车共享账号：其他成员随时可能把 Opus 限额耗尽或透支。受限额模型

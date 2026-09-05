@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-05
+- **Codex (GPT-5)**：修复 AITag 导入风格串/实验室后费用状态异步加载期间误显示 Anlas 点数的问题（fix: avoid transient generation cost mislabel）。
 - **Codex (GPT-5)**：移除 Agent 输入框默认占位提示文字，保留加载、排队和编辑状态提示（fix: remove default agent input placeholder）。
 - **Codex (GPT-5)**：修复 PromptAgent 自定义服务商重复渲染、同名模型混淆与模型标题来源显示，补充模型 ID 去重及回归测试（fix: deduplicate prompt agent providers and model options）。
 - **Gemini 3.8 Flash**：Agent 面板精简与去挤——移除全屏切换按钮与全屏状态，顶栏副行移除视觉搭配模型长文本展示，副行专注展示完整主模型名称并更新测试（refactor: remove agent fullscreen toggle and vision model subtitle）。
