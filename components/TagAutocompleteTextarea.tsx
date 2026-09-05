@@ -148,6 +148,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const selectedTokens = promptTokens.filter(token => selectedTagIds.has(token.id));
   const firstSelectedWeight = selectedTokens[0]?.groupWeight || '';
   const [weightInput, setWeightInput] = useState('');
+  const [weightKind, setWeightKind] = useState<PromptWeightKind | null>(null);
   useEffect(() => {
     setWeightInput(firstSelectedWeight);
   }, [firstSelectedWeight]);
@@ -475,37 +476,38 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             })()}
           </div>
           <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
-            <div className={`flex items-stretch overflow-hidden rounded-md border transition-colors ${selectedTokens.length ? 'border-[var(--nai-accent)]' : 'border-gray-300 opacity-40 dark:border-gray-600'}`}>
+            <div className="flex items-stretch overflow-hidden rounded-md border border-gray-300 dark:border-gray-600">
               <button
                 type="button"
-                onClick={() => applyWeightWrap('brace')}
-                disabled={!selectedTokens.length}
-                className="px-2 py-1 font-mono text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none"
-                title="添加/转为花括号增强：{tag}（已是花括号则归位一层）"
+                onClick={() => setWeightKind('brace')}
+                aria-pressed={weightKind === 'brace'}
+                className={`px-2 py-1 font-mono text-meta font-bold transition-colors ${weightKind === 'brace' ? 'bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)] text-[var(--nai-accent)]' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
+                title="花括号增强类型：{tag}"
               >{'{ }'}</button>
               <button
                 type="button"
-                onClick={() => applyWeightWrap('bracket')}
-                disabled={!selectedTokens.length}
-                className="border-x border-gray-200 px-2 py-1 font-mono text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none dark:border-gray-700"
-                title="添加/转为方括号减弱：[tag]"
+                onClick={() => setWeightKind('bracket')}
+                aria-pressed={weightKind === 'bracket'}
+                className={`border-x border-gray-200 px-2 py-1 font-mono text-meta font-bold transition-colors dark:border-gray-700 ${weightKind === 'bracket' ? 'bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)] text-[var(--nai-accent)]' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
+                title="方括号减弱类型：[tag]"
               >{'[ ]'}</button>
               <button
                 type="button"
-                onClick={() => applyWeightWrap('numeric')}
-                disabled={!selectedTokens.length}
-                className="border-r border-gray-200 px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none dark:border-gray-700"
-                title="转为数值权重：1.1::tag::（右侧输入框可继续改数值）"
+                onClick={() => setWeightKind('numeric')}
+                aria-pressed={weightKind === 'numeric'}
+                className={`border-r border-gray-200 px-2 py-1 text-meta font-bold transition-colors dark:border-gray-700 ${weightKind === 'numeric' ? 'bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)] text-[var(--nai-accent)]' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
+                title="数值权重类型：1.1::tag::"
               >数值</button>
               <button
                 type="button"
                 onClick={() => {
+                  if (!weightKind) return;
                   const parsed = Number(weightInput);
-                  applyWeightWrap('numeric', weightInput.trim() && Number.isFinite(parsed) ? parsed : undefined);
+                  applyWeightWrap(weightKind, weightKind === 'numeric' && weightInput.trim() && Number.isFinite(parsed) ? parsed : undefined);
                 }}
-                disabled={!selectedTokens.length}
-                className="border-l border-gray-200 px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none dark:border-gray-700"
-                title="按右侧输入框的数值添加数值权重（默认 1.1::tag::）"
+                disabled={!weightKind || !selectedTokens.length}
+                className="px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none disabled:opacity-40"
+                title="把选中的 Tag 按当前选择的类型添加/转换权重"
               >添加权重</button>
             </div>
             <div className={`flex items-stretch overflow-hidden rounded-md border transition-colors ${selectedTokens.length ? 'border-[var(--nai-accent)]' : 'border-gray-300 opacity-40 dark:border-gray-600'}`}>
