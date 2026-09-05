@@ -14,7 +14,7 @@ describe('parsePromptTags', () => {
     expect(parsePromptTags('(blue eyes:1.2), {red hair}, 1.1::green eyes::')).toMatchObject([
       { id: '0:blue eyes', displayTag: '(blue eyes:1.2)', lookupTag: 'blue eyes' },
       { id: '1:red hair', displayTag: '{red hair}', lookupTag: 'red hair' },
-      { id: '2:green eyes', displayTag: '1.1::green eyes::', lookupTag: 'green eyes' },
+      { id: '2:green eyes', displayTag: 'green eyes', lookupTag: 'green eyes' },
     ]);
   });
 

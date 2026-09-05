@@ -5,6 +5,9 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-05
+- **Codex (GPT-5)**：修正权重 Tag 解析测试以匹配权重标识与 Tag 文本分离后的展示语义（fix: align weighted tag parser expectation）。
+
+## 2026-09-05
 - **Codex (GPT-5)**：将提示词翻译区升级为可多选 Tag 与权重操作区域，并按数值/增强/减弱权重类型区分颜色（feat: add selectable weighted tag controls）。
 
 ## 2026-09-05
