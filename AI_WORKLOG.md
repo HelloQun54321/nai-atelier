@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **ZCode (GLM-5.3)**：「添加权重」标签段移至类型按钮组尾部（fix: reposition weight cluster label）。
 - **ZCode (GLM-5.3)**：权重类型按钮组前加入「添加权重」标签段，与步进调节组对称（fix: label weight type cluster）。
 - **ZCode (GLM-5.3)**：底栏权重类型、步进调节与移除权重左聚成组，翻译入口保持最右（fix: group weight controls together in footer）。
 - **ZCode (GLM-5.3)**：底栏左侧新增按权重类型添加/转换的三分段按钮（{ } / [ ] / 数值），服务层新增 wrapPromptTag 支持类型设定与互相转换（feat: add weight type controls for selected tags）。
