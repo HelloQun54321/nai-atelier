@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-09-05
+- **Codex (GPT-5)**：修复 Tag 补全翻译遇到权重语法时把权重带入查询的问题，增加常见权重格式解析测试（fix: normalize weighted tags before translation lookup）。
+
 ## 2026-09-06
 - **Codex (GPT-5)**：修复追加反推 Tag 后引用预设会覆盖 Tag，以及实验室常驻时重复发送 Tag 无法被消费的问题（fix: preserve appended tags across preset imports and repeated lab sends）。
 - **Codex (GPT-5)**：修复反推 Tag/追加提示词导入实验室时清空已有主体提示词的问题，恢复提示词结构的可叠加性（fix: preserve subject prompt when appending tags）。

@@ -22,6 +22,8 @@ const unwrapToken = (raw: string) => {
   let value = raw.trim();
   value = value.replace(/^[{\[\s]+/, '').replace(/[}\]\s]+$/, '').trim();
   value = value.replace(/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::\s*/, '').replace(/\s*::$/, '').trim();
+  value = value.replace(/^\(([\s\S]*?)(?::\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+))\)$/, '$1').trim();
+  value = value.replace(/^\(([\s\S]*)\)$/, '$1').trim();
   const artistPrefix = /^artist\s*:\s*/i.test(value);
   if (artistPrefix) value = value.replace(/^artist\s*:\s*/i, '').trim();
   return { displayTag: raw.trim(), lookupTag: normalizeTagQuery(value) };
