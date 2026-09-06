@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.0.4-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.0.5-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -41,40 +41,40 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 创作工坊。它不�
 ## 🖼️ 界面预览
 
 > [!NOTE]
-> - **局部特性特写**：以下截图均为各功能模块的**局部工作台特写与局部预览**，并非全局完整界面（工坊实际包含全景画师库、角色库、生图历史瀑布流、全局提示词工作区与连接器面板等完整全景视图）。
+> - **代表性页面展示**：以下截图展示了工坊核心功能页面的**完整界面视图**；因篇幅有限，仅精选部分代表性模块进行展示，更多功能（全景画师库、角色库、生图历史瀑布流、灵感库、全局设置等）可直接在本地运行体验。
 > - **隐私保护模式**：为保护创作者隐私，所有界面预览均在开启全局安全模式（自动虚化图片与占位符保护）状态下截取；点击预览图可查看高清原图。
 
-### 🖥️ 桌面端：局部工作台预览
+### 🖥️ 桌面端：核心功能页面展示
 
 <div align="center">
-  <p><strong>🎨 风格串与创作预设资产库（局部预览）</strong></p>
+  <p><strong>🎨 风格串与创作预设资产库</strong></p>
   <a href="./docs/screenshots/desktop-presets-gallery.webp">
-    <img src="./docs/screenshots/desktop-presets-gallery.webp" width="860" alt="桌面端风格串与预设资产库（局部预览）" />
+    <img src="./docs/screenshots/desktop-presets-gallery.webp" width="860" alt="桌面端风格串与预设资产库" />
   </a>
   <p><em>自适应比例瀑布流、封面固定、模块化提示词管理</em></p>
 </div>
 
 <div align="center">
-  <p><strong>🧪 生图实验室与项目 Agent 联动工作台（局部预览）</strong></p>
+  <p><strong>🧪 生图实验室与项目 Agent 联动工作台</strong></p>
   <a href="./docs/screenshots/desktop-lab-agent.webp">
-    <img src="./docs/screenshots/desktop-lab-agent.webp" width="860" alt="生图实验室与项目 Agent 工作台（局部预览）" />
+    <img src="./docs/screenshots/desktop-lab-agent.webp" width="860" alt="生图实验室与项目 Agent 工作台" />
   </a>
   <p><em>调参控制台、官方免费尺寸适配、深度图像观察与 Agent 工具联动</em></p>
 </div>
 
 <div align="center">
-  <p><strong>🗃️ 外部作品检索与参数反查（AITag，局部预览）</strong></p>
+  <p><strong>🗃️ 外部作品检索与参数反查（AITag）</strong></p>
   <a href="./docs/screenshots/desktop-aitag-browser.webp">
-    <img src="./docs/screenshots/desktop-aitag-browser.webp" width="860" alt="外部作品检索与参数反查（局部预览）" />
+    <img src="./docs/screenshots/desktop-aitag-browser.webp" width="860" alt="外部作品检索与参数反查" />
   </a>
   <p><em>全量 NovelAI 作品检索、完整生成参数反推、一键导入工坊</em></p>
 </div>
 
-### 📱 手机端：家庭局域网移动端触控界面（局部预览）
+### 📱 手机端：家庭局域网移动端触控界面
 
 <div align="center">
   <a href="./docs/screenshots/mobile-touch-ui.webp">
-    <img src="./docs/screenshots/mobile-touch-ui.webp" width="340" alt="手机局域网独立触控界面（局部预览）" />
+    <img src="./docs/screenshots/mobile-touch-ui.webp" width="340" alt="手机局域网独立触控界面" />
   </a>
   <p><em>44px 触控热区、底部固定单手手势导航、全模式三段式 Tab 流程、电脑端系统 VPN 与数据直通</em></p>
 </div>
