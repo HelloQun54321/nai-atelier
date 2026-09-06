@@ -231,3 +231,76 @@ describe('findCompletionTarget', () => {
     });
   });
 });
+
+describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
+  beforeEach(() => {
+    resetTagDictionaryCache();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('manifest.json')) return responseFor(manifest);
+      if (url.includes('/shards/ma.json')) {
+        return responseFor([
+          ['masterpiece', '杰作', 0, 1000000, 1],
+        ]);
+      }
+      return responseFor([]);
+    }));
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('多选 Tag 点击数值类型添加权重时连结为单个数值组', async () => {
+    render(React.createElement(Harness, { initial: 'masterpiece, 1girl', showTranslations: true }));
+    const tagButtons = await screen.findAllByRole('button', { name: /masterpiece|1girl/ });
+    expect(tagButtons.length).toBeGreaterThanOrEqual(2);
+
+    // 点击多选两个 Tag
+    fireEvent.click(tagButtons[0]);
+    fireEvent.click(tagButtons[1]);
+
+    // 选中“数值”类型并点击“添加权重”
+    const numericTypeBtn = screen.getByRole('button', { name: '数值' });
+    fireEvent.click(numericTypeBtn);
+
+    const addWeightBtn = screen.getByRole('button', { name: '添加权重' });
+    fireEvent.click(addWeightBtn);
+
+    const textarea = screen.getByRole('combobox') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('1.1::masterpiece, 1girl::');
+  });
+
+  it('多选 Tag 在数值框回车确认时连结为带指定权重的单组', async () => {
+    render(React.createElement(Harness, { initial: 'masterpiece, 1girl', showTranslations: true }));
+    const tagButtons = await screen.findAllByRole('button', { name: /masterpiece|1girl/ });
+
+    fireEvent.click(tagButtons[0]);
+    fireEvent.click(tagButtons[1]);
+
+    const weightInput = screen.getByPlaceholderText('权重');
+    fireEvent.change(weightInput, { target: { value: '1.25' } });
+    fireEvent.keyDown(weightInput, { key: 'Enter', code: 'Enter' });
+
+    const textarea = screen.getByRole('combobox') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('1.25::masterpiece, 1girl::');
+  });
+
+  it('多选 Tag 点击花括号或方括号类型时各自独立包裹', async () => {
+    render(React.createElement(Harness, { initial: 'masterpiece, 1girl', showTranslations: true }));
+    const tagButtons = await screen.findAllByRole('button', { name: /masterpiece|1girl/ });
+
+    fireEvent.click(tagButtons[0]);
+    fireEvent.click(tagButtons[1]);
+
+    const braceTypeBtn = screen.getByRole('button', { name: '{ }' });
+    fireEvent.click(braceTypeBtn);
+
+    const addWeightBtn = screen.getByRole('button', { name: '添加权重' });
+    fireEvent.click(addWeightBtn);
+
+    const textarea = screen.getByRole('combobox') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('{masterpiece}, {1girl}');
+  });
+});

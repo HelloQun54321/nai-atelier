@@ -28,7 +28,10 @@ const listeners = new Set<TranslationListener>();
 const lookupRequests = new Map<string, Promise<void>>();
 
 const unwrapToken = (raw: string, start = 0, group?: Partial<PromptTagToken>) => {
+  const leading = raw.search(/\S/);
   let value = raw.trim();
+  const tokenStart = leading >= 0 ? start + leading : start;
+  const tokenEnd = leading >= 0 ? tokenStart + value.length : start + raw.length;
   value = value.replace(/^[{\[\s]+/, '').replace(/[}\]\s]+$/, '').trim();
   value = value.replace(/^\{+([\s\S]*?)\}+$/, '$1').replace(/^\[+([\s\S]*?)\]+$/, '$1').trim();
   value = value.replace(/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::\s*/, '').replace(/\s*::$/, '').trim();
@@ -37,7 +40,7 @@ const unwrapToken = (raw: string, start = 0, group?: Partial<PromptTagToken>) =>
   const artistPrefix = /^artist\s*:\s*/i.test(value);
   if (artistPrefix) value = value.replace(/^artist\s*:\s*/i, '').trim();
   const { id: _id, ...metadata } = group || {};
-  return { displayTag: value, lookupTag: normalizeTagQuery(value), start, end: start + raw.length, ...metadata };
+  return { displayTag: value, lookupTag: normalizeTagQuery(value), start: tokenStart, end: tokenEnd, ...metadata };
 };
 
 const parseSegment = (prompt: string, rawStart: number, rawEnd: number, group?: Partial<PromptTagToken>): Array<Omit<PromptTagToken, 'id'>> =>
@@ -131,20 +134,131 @@ export const parsePromptTags = (prompt: string): PromptTagToken[] => {
 export type PromptWeightAction = 'up' | 'down' | 'remove' | 'numeric';
 export type PromptWeightKind = 'brace' | 'bracket' | 'numeric';
 
-const formatNumericWeight = (value: number) => String(Number(Math.max(0.1, value).toFixed(2)));
+export const formatNumericWeight = (value: number) => String(Number(Math.max(0.1, value).toFixed(2)));
+
+export const cleanTagContent = (raw: string): string => {
+  let val = raw.trim();
+  val = val.replace(/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::\s*/, '').replace(/\s*::$/, '').trim();
+  val = val.replace(/^\{+/, '').replace(/\}+$/, '').trim();
+  val = val.replace(/^\[+/, '').replace(/\]+$/, '').trim();
+  val = val.replace(/^\(([\s\S]*?)(?::\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+))\)$/, '$1').trim();
+  return val.trim();
+};
 
 // 把选中组设定为目标权重类型：先剥离现有包装，再按类型重新包裹；普通 Tag 直接包装。
 export const wrapPromptTag = (raw: string, token: PromptTagToken, kind: PromptWeightKind, numericWeight = 1.1): string => {
-  const plain = token.groupKind === 'numeric'
-    ? raw.replace(/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::/, '').replace(/::$/, '')
-    : token.groupKind === 'brace'
-      ? raw.replace(/^\{+/, '').replace(/\}+$/, '')
-      : token.groupKind === 'bracket'
-        ? raw.replace(/^\[+/, '').replace(/\]+$/, '')
-        : raw;
+  const plain = cleanTagContent(raw);
   if (kind === 'numeric') return `${formatNumericWeight(numericWeight)}::${plain}::`;
   if (kind === 'bracket') return `[${plain}]`;
   return `{${plain}}`;
+};
+
+/**
+ * 包装选中的一个或多个 Tag 标记：
+ * - 数值权重：多选标签时将选中的多个标签连结在一起为一个整体数值组（例如 1.2::A, B, C::），而不是各加各的
+ * - 括号模式（brace/bracket）：“括号就是各打各的了”，为每个单元标签分别包裹 {A}, {B} 或 [A], [B]
+ */
+export const wrapPromptTagTokens = (
+  fullPrompt: string,
+  selectedTokens: PromptTagToken[],
+  kind: PromptWeightKind,
+  numericWeight = 1.1,
+): string => {
+  if (!selectedTokens.length) return fullPrompt;
+
+  const tokens = [...selectedTokens].sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
+
+  if (kind === 'numeric') {
+    const plainTags = tokens.map(token => {
+      const raw = fullPrompt.slice(token.start ?? 0, token.end ?? 0);
+      return cleanTagContent(raw);
+    }).filter(Boolean);
+    if (!plainTags.length) return fullPrompt;
+
+    const weightPrefix = formatNumericWeight(numericWeight);
+    const replacementText = `${weightPrefix}::${plainTags.join(', ')}::`;
+
+    // 收集所有选中 token 对应的完整外层区间（若属于某权重组则取 groupStart/groupEnd，否则取 start/end）
+    const spanMap = new Map<string, { start: number; end: number }>();
+    tokens.forEach(t => {
+      const key = t.groupId || `${t.start}:${t.end}`;
+      if (!spanMap.has(key)) {
+        spanMap.set(key, {
+          start: t.groupStart ?? t.start ?? 0,
+          end: t.groupEnd ?? t.end ?? (t.start ?? 0),
+        });
+      }
+    });
+    const spans = [...spanMap.values()].sort((a, b) => a.start - b.start);
+
+    // 检查各区间是否在原文中前后紧邻（中间仅由空白、逗号、分号或竖线等分隔符相连）
+    let allContiguous = true;
+    for (let i = 0; i < spans.length - 1; i++) {
+      const between = fullPrompt.slice(spans[i].end, spans[i + 1].start);
+      if (!/^[\s,，|\n]*$/.test(between)) {
+        allContiguous = false;
+        break;
+      }
+    }
+
+    if (allContiguous) {
+      const start = spans[0].start;
+      const end = spans[spans.length - 1].end;
+      return fullPrompt.slice(0, start) + replacementText + fullPrompt.slice(end);
+    }
+
+    // 若选中的标签中间夹杂未选中的散标签，将合并结果置于首项位置，并从后往前清理其余选中项及其相邻分隔符
+    let prompt = fullPrompt;
+    for (let i = spans.length - 1; i >= 1; i--) {
+      const span = spans[i];
+      const after = prompt.slice(span.end);
+      const before = prompt.slice(0, span.start);
+      const afterMatch = after.match(/^(\s*[,，|\n]\s*)/);
+      if (afterMatch) {
+        prompt = before + after.slice(afterMatch[0].length);
+      } else {
+        const beforeMatch = before.match(/(\s*[,，|\n]\s*)$/);
+        if (beforeMatch) {
+          prompt = before.slice(0, -beforeMatch[0].length) + after;
+        } else {
+          prompt = before + after;
+        }
+      }
+    }
+    const firstSpan = spans[0];
+    return prompt.slice(0, firstSpan.start) + replacementText + prompt.slice(firstSpan.end);
+  }
+
+  // 括号模式（brace 或 bracket）：“括号各打各的”
+  // 按区间从后往前进行替换
+  const spanMap = new Map<string, { start: number; end: number; tokens: PromptTagToken[] }>();
+  tokens.forEach(t => {
+    const key = t.groupId || `${t.start}:${t.end}`;
+    const entry = spanMap.get(key);
+    if (entry) {
+      entry.tokens.push(t);
+    } else {
+      spanMap.set(key, {
+        start: t.groupStart ?? t.start ?? 0,
+        end: t.groupEnd ?? t.end ?? (t.start ?? 0),
+        tokens: [t],
+      });
+    }
+  });
+  const spans = [...spanMap.values()].sort((a, b) => b.start - a.start);
+
+  let nextPrompt = fullPrompt;
+  for (const span of spans) {
+    const wrappedMembers = span.tokens.map(t => {
+      const raw = fullPrompt.slice(t.start ?? 0, t.end ?? 0);
+      const clean = cleanTagContent(raw);
+      return kind === 'bracket' ? `[${clean}]` : `{${clean}}`;
+    });
+    const replacement = wrappedMembers.join(', ');
+    nextPrompt = nextPrompt.slice(0, span.start) + replacement + nextPrompt.slice(span.end);
+  }
+
+  return nextPrompt;
 };
 
 export const transformPromptWeight = (

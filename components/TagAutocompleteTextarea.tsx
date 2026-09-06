@@ -11,7 +11,7 @@ import {
   subscribeTagTranslations,
   transformPromptWeight,
   translateMissingPromptTags,
-  wrapPromptTag,
+  wrapPromptTagTokens,
 } from '../services/tagTranslations';
 
 interface CompletionTarget {
@@ -162,11 +162,17 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
 
   const commitWeightInput = () => {
     const next = Number(weightInput);
-    if (!weightInput.trim() || !Number.isFinite(next)) {
+    if (!weightInput.trim() || !Number.isFinite(next) || !selectedTokens.length) {
       setWeightInput(firstSelectedWeight);
       return;
     }
-    applyWeight('numeric', next);
+    const uniqueGroupIds = new Set(selectedTokens.map(t => t.groupId).filter(Boolean));
+    const allNumeric = selectedTokens.length > 0 && selectedTokens.every(t => t.groupKind === 'numeric');
+    if (uniqueGroupIds.size === 1 && allNumeric) {
+      applyWeight('numeric', next);
+    } else {
+      applyWeightWrap('numeric', next);
+    }
   };
 
   const replaceSelectedGroups = (transform: (raw: string, token: PromptTagToken) => string) => {
@@ -190,7 +196,11 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     replaceSelectedGroups((raw, token) => transformPromptWeight(raw, token, mode, numericWeight, step));
   };
 
-  const applyWeightWrap = (kind: PromptWeightKind, numericWeight?: number) => replaceSelectedGroups((raw, token) => wrapPromptTag(raw, token, kind, numericWeight));
+  const applyWeightWrap = (kind: PromptWeightKind, numericWeight?: number) => {
+    if (!selectedTokens.length) return;
+    const nextValue = wrapPromptTagTokens(value, selectedTokens, kind, numericWeight);
+    if (nextValue !== value) onValueChange(nextValue);
+  };
 
   useEffect(() => () => {
     if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);

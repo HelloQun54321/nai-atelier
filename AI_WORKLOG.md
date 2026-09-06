@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **Antigravity**：多选 Tag 加数值权重时自动连结为单一复合数值组（例如 1.2::A, B, C::），括号模式保持独立包裹，并补齐端到端回归测试（fix: merge multi-selected tags into single numeric weight group）。
 - **Antigravity**：修复本地网关扩展安装路由中缺少 isAbsolute/normalize/existsSync 导入导致安装报错的问题，提取独立安装服务并补齐单元测试（fix: import missing path and fs utilities in st extension installer）。
 - **Antigravity**：将 SillyTavern 互通扩展的显示名称、设置面板、清单与文档中的旧名称更新为 NAI Atelier 连接器（fix: rename sillytavern extension to NAI Atelier connector）。
 - **Antigravity**：修复单元测试污染真实备份配置文件的问题，隔离测试沙箱并恢复备份路径为 D:\NaiPromptManager-Backups（fix: isolate test backup config and restore backup target path）。

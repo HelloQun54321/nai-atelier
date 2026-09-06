@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parsePromptTags, transformPromptWeight, wrapPromptTag } from './tagTranslations';
+import { parsePromptTags, transformPromptWeight, wrapPromptTag, wrapPromptTagTokens } from './tagTranslations';
 
 describe('parsePromptTags', () => {
   it('英文与中文逗号都作为 Tag 分隔符', () => {
@@ -69,5 +69,58 @@ describe('parsePromptTags', () => {
     expect(wrapPromptTag('1.2::tag::', numeric, 'brace')).toBe('{tag}');
     expect(wrapPromptTag('{{tag}}', { id: '1', displayTag: 'tag', lookupTag: 'tag', groupKind: 'brace', groupLevel: 2 }, 'brace')).toBe('{tag}');
     expect(wrapPromptTag('a, b', plain, 'brace')).toBe('{a, b}');
+  });
+
+  describe('wrapPromptTagTokens', () => {
+    it('多选散单元提示词加数值权重时连结为统一组', () => {
+      const prompt = 'friedrich der grosse (azur lane), mature female, maid bikini';
+      const tokens = parsePromptTags(prompt);
+      // 选中前两项
+      const selected = [tokens[0], tokens[1]];
+      const result = wrapPromptTagTokens(prompt, selected, 'numeric', 1.2);
+      expect(result).toBe('1.2::friedrich der grosse (azur lane), mature female::, maid bikini');
+    });
+
+    it('多选原本独立的数值权重标签加权时合并为统一组', () => {
+      const prompt = '1.1::friedrich der grosse (azur lane)::,1.1::mature female::,maid bikini,pink pubic tattoo';
+      const tokens = parsePromptTags(prompt);
+      // 选中前两项
+      const selected = [tokens[0], tokens[1]];
+      const result = wrapPromptTagTokens(prompt, selected, 'numeric', 1.1);
+      expect(result).toBe('1.1::friedrich der grosse (azur lane), mature female::,maid bikini,pink pubic tattoo');
+    });
+
+    it('多选三个及以上标签加数值权重连结为整体组', () => {
+      const prompt = 'A, B, C, D';
+      const tokens = parsePromptTags(prompt);
+      const selected = [tokens[0], tokens[1], tokens[2]];
+      const result = wrapPromptTagTokens(prompt, selected, 'numeric', 1.3);
+      expect(result).toBe('1.3::A, B, C::, D');
+    });
+
+    it('多选非紧邻的标签加数值权重合并至首项位置并清除分散项', () => {
+      const prompt = 'A, B, C, D';
+      const tokens = parsePromptTags(prompt);
+      // 选中 A 和 C（跳过 B）
+      const selected = [tokens[0], tokens[2]];
+      const result = wrapPromptTagTokens(prompt, selected, 'numeric', 1.2);
+      expect(result).toBe('1.2::A, C::, B, D');
+    });
+
+    it('括号模式各打各的，为每个单元分别包裹括号', () => {
+      const prompt = 'A, B, C';
+      const tokens = parsePromptTags(prompt);
+      const selected = [tokens[0], tokens[1]];
+      expect(wrapPromptTagTokens(prompt, selected, 'brace')).toBe('{A}, {B}, C');
+      expect(wrapPromptTagTokens(prompt, selected, 'bracket')).toBe('[A], [B], C');
+    });
+
+    it('原为复合数值组转换为括号模式时拆分为各自独立的括号', () => {
+      const prompt = '1.2::A, B::, C';
+      const tokens = parsePromptTags(prompt);
+      const selected = [tokens[0], tokens[1]];
+      expect(wrapPromptTagTokens(prompt, selected, 'brace')).toBe('{A}, {B}, C');
+      expect(wrapPromptTagTokens(prompt, selected, 'bracket')).toBe('[A], [B], C');
+    });
   });
 });
