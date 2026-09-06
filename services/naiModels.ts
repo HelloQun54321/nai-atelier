@@ -45,7 +45,7 @@ export const NAI_MODELS: NaiModelInfo[] = [
 
 export const DEFAULT_NAI_MODEL = 'nai-diffusion-4-5-full';
 
-/** 获取模型的官方推荐默认采样步数：V5 系列为 23 步，其他版本为 28 步。 */
+/** 获取模型的推荐默认采样步数：V5 系列为作者实测推荐的 23 步，其他版本跟随官方 28 步。 */
 export const getDefaultStepsForModel = (modelId?: string): number => {
   if (!modelId) return 28;
   return /^nai-diffusion-5(?:-|$)/i.test(modelId) ? 23 : 28;
@@ -53,7 +53,7 @@ export const getDefaultStepsForModel = (modelId?: string): number => {
 
 /**
  * 切换生成模型时按目标模型默认值的稳健步数规则：
- * - 当前步数是官方默认值之一（23/28）或未设置时，跟随新模型的官方默认
+ * - 当前步数是推荐默认值之一（23/28）或未设置时，跟随新模型的推荐默认
  *   （V5 系列 23 步、其他模型 28 步）——旧会话可能存有 V5 模型 + 28 步的
  *   过期组合（V5 发布前的默认步数），再次选择 V5 时也会被纠正为 23；
  * - 其余自定义步数（既非 23 也非 28）一律原样保留。

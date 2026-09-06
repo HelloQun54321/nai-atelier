@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.150.24-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.150.25-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -172,7 +172,7 @@ flowchart LR
 #### 1. 文生图（Text to Image）：多角色与参数调优
 - **全局与多角色独立图层**：顶层统领全局提示词与全局负面提示词；多角色模式下，各角色拥有独立正负面词、X/Y 相对坐标定位与画幅占比控制，支持从角色库直接导入。
 - **动态免费像素锁**：预设竖屏、横屏、方形及 64 像素步进微调；拖动单边可等比联动锁定，极限榨干 Opus 1,011,712 像素免费额度（如 `832 × 1216`、`1024 × 1024`），并在界面上实时计算总像素与点数预估。
-- **步数与采样锁定**：默认将 Steps 上限严格锁定在免费门槛内（**V5 系列官方推荐且默认 23 步，V4/V4.5 系列为 28 步**），杜绝因无意识堆叠步数触发 Anlas 额外计费。
+- **步数与采样锁定**：默认将 Steps 上限严格锁定在免费门槛内（**V5 系列作者实测推荐并默认 23 步，V4/V4.5 系列跟随官方锁定 28 步**），杜绝因无意识堆叠步数触发 Anlas 额外计费。
 - **透明通道生成**：一键开启透明背景生成，适配立绘、二创贴纸与表情包制作。
 - **无损 PNG 参数反解**：拖入任意由 NovelAI 生成的无损 PNG 原图或 JSON 元数据，毫秒级反解出完整 Prompt、Seed、采样器与 CFG 参数，直接一键回填到全局提示词与对应控制项。
 
