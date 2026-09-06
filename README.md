@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.150.22-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.150.23-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -93,39 +93,40 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 创作工坊。它不�
 ### 整体架构
 
 ```mermaid
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
 flowchart LR
-    subgraph S1["📚 资源与外部图库"]
+    subgraph S1["1. 素材与目录"]
         direction TB
-        A["画师 / 角色目录"]
+        A["画师 / 角色资料库"]
         B["Pixiv / Danbooru / AITag"]
     end
 
-    subgraph S2["🧪 创作工坊核心"]
+    subgraph S2["2. 预设与资产"]
         direction TB
-        C["风格串预设库"]
-        D["永久 Vibe 资料库"]
-        E["Precise Ref 角色参考"]
-        F["生图实验室 (主控台)"]
+        C["🎨 风格串预设库"]
+        D["🌌 永久 Vibe / 🧬 角色参考"]
     end
 
-    subgraph S3["🚀 官方生成与沉淀"]
+    subgraph S3["3. 调参工作台"]
+        F["🧪 生图实验室 (主控台)\n文生图 · 图生图 · 局部重绘 · 扩图"]
+    end
+
+    subgraph S4["4. 生成与沉淀"]
         direction TB
-        G["NovelAI V4.5 / V5 API"]
-        H["本地生成历史 (D1 + R2)"]
-        I["精选灵感知识库"]
+        G["☁️ NovelAI 官方 API"]
+        H["💾 本地生成历史 (D1 + R2)"]
+        I["💡 精选灵感知识库"]
+        G --> H
+        H --> I
     end
 
     A --> C
-    B --> C
-    B --> F
+    B --> D
     C --> F
     D --> F
-    E --> F
     F --> G
-    G --> H
-    H --> I
-    H -.->|复用| F
-    I -.->|复用| F
+    H -.->|底图/参数| F
+    I -.->|提取资产| S2
 ```
 
 ---
