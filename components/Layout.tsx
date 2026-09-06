@@ -1,17 +1,17 @@
 import React, { ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  Beaker,
   Brush,
   CheckCircle2,
   ChevronLeft,
+  ChevronRight,
   CircleUserRound,
   Clock3,
+  FlaskConical,
   FolderOpen,
   Gem,
   Lightbulb,
   Layers,
   Palette,
-  PanelLeft,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -60,7 +60,7 @@ const icons = {
   danbooru: DanbooruIcon,
   pixiv: PixivIcon,
   resources: FolderOpen,
-  lab: Beaker,
+  lab: FlaskConical,
   inspiration: Lightbulb,
   history: Clock3,
   safe: ShieldCheck,
@@ -307,15 +307,45 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       <CloudQueueStatus hidden={Boolean(hideNav)} />
 
       <aside style={{ width: sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth }} className={`app-sidebar relative hidden flex-shrink-0 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:flex ${isSidebarResizing ? '' : 'transition-[width] duration-200'}`}>
-        <div className={`flex h-14 flex-none items-center ${sidebarCollapsed ? 'justify-center gap-1 px-2' : 'gap-2.5 px-3'}`}>
-          <div className="flex h-7 w-7 flex-none items-center justify-center rounded-lg border border-[var(--nai-accent)]/20 bg-[var(--nai-accent)]/15 text-[var(--nai-accent)] shadow-xs transition-colors" data-safe-mode-ignore="true" aria-hidden="true">
-            <Palette className="h-4 w-4" strokeWidth={2.2} />
+        {sidebarCollapsed ? (
+          <div className="relative flex h-14 flex-none items-center justify-center px-2">
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(false)}
+              className="flex h-9 w-9 flex-none cursor-pointer items-center justify-center rounded-xl border border-[var(--nai-accent)]/20 bg-[var(--nai-accent)]/15 text-[var(--nai-accent)] shadow-xs outline-none transition hover:scale-105 hover:bg-[var(--nai-accent)]/25 focus-visible:ring-2 focus-visible:ring-indigo-500"
+              data-safe-mode-ignore="true"
+              aria-label="展开侧边栏"
+              title="NAI Atelier（点击展开侧边栏）"
+            >
+              <Palette className="h-5 w-5" strokeWidth={2.2} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(false)}
+              className="absolute -right-2.5 top-1/2 z-20 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 shadow-xs outline-none transition hover:border-gray-300 hover:bg-gray-50 hover:text-indigo-600 focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"
+              aria-label="展开侧边栏"
+              title="展开侧边栏"
+            >
+              <ChevronRight className="h-3 w-3" strokeWidth={2.2} />
+            </button>
           </div>
-          {!sidebarCollapsed && <span className="min-w-0 flex-1 truncate text-sm font-bold tracking-wide text-gray-800 dark:text-gray-200">NAI Atelier</span>}
-          <button type="button" onClick={() => setSidebarCollapsed(value => !value)} className="flex h-7 w-7 flex-none items-center justify-center rounded-lg text-gray-400 outline-none transition hover:bg-gray-100 hover:text-indigo-600 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 dark:hover:bg-gray-800" aria-label={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'} title={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}>
-            {sidebarCollapsed ? <PanelLeft className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </button>
-        </div>
+        ) : (
+          <div className="flex h-14 flex-none items-center gap-2.5 px-3">
+            <div className="flex h-8 w-8 flex-none items-center justify-center rounded-xl border border-[var(--nai-accent)]/20 bg-[var(--nai-accent)]/15 text-[var(--nai-accent)] shadow-xs transition-colors" data-safe-mode-ignore="true" aria-hidden="true">
+              <Palette className="h-4.5 w-4.5" strokeWidth={2.2} />
+            </div>
+            <span className="min-w-0 flex-1 truncate text-sm font-bold tracking-wide text-gray-800 dark:text-gray-200">NAI Atelier</span>
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(true)}
+              className="flex h-7 w-7 flex-none items-center justify-center rounded-lg text-gray-400 outline-none transition hover:bg-gray-100 hover:text-indigo-600 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 dark:hover:bg-gray-800"
+              aria-label="折叠侧边栏"
+              title="折叠侧边栏"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
         <nav className={`min-h-0 flex-1 overflow-y-auto py-2 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
           {desktopGroups.map((group, groupIndex) => <div key={group.label} className={groupIndex ? 'mt-2 border-t border-gray-100 pt-2 dark:border-gray-800' : ''}>
