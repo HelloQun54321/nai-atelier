@@ -158,3 +158,42 @@ test('Vibe identity is canonicalized from image bytes across exporter-specific i
   assert.equal(a, b);
   assert.notEqual(a, 'a'.repeat(64));
 });
+
+test('missing st-chatu8 preview path does not crash with ENOENT and preserves existing cover', async () => {
+  const chains = [{
+    id: 'chain-missing-file', name: '画风测试', type: 'style', description: '', tags: [],
+    previewImage: '/api/assets/covers/existing.png', basePrompt: 'prompt', negativePrompt: '',
+    modules: [], params: {}, variableValues: {}, createdAt: 1, updatedAt: 1,
+  }];
+  let updateBody = null;
+  const bridge = new StChatu8Bridge({
+    requestWorkerJson: async (path, options = {}) => {
+      if (path === '/api/chains' && !options.method) return structuredClone(chains);
+      if (path === '/api/chains/chain-missing-file' && options.method === 'PUT') {
+        updateBody = structuredClone(options.body);
+        Object.assign(chains[0], options.body);
+        return { success: true };
+      }
+      if (path === '/api/chains/chain-missing-file' && !options.method) return structuredClone(chains[0]);
+      throw new Error(`Unexpected request: ${options.method || 'GET'} ${path}`);
+    },
+    requestWorkerBuffer: async () => ({ status: 404, buffer: Buffer.alloc(0) }),
+  });
+  bridge.root = 'D:\\SillyTavern';
+  bridge.saveState = async () => {};
+
+  // Direct read of a non-existent file returns null without throwing ENOENT
+  const previewData = await bridge.readStPreviewData('/user/images/chatu8_config/non_existent_file_12345.png');
+  assert.equal(previewData, null);
+
+  // syncArtists with missing preview file does not throw and preserves existing cover
+  await bridge.syncArtists([{
+    externalId: 'st:missing-cover',
+    name: '画风测试',
+    fixedPrompt: 'prompt',
+    previewPath: '/user/images/chatu8_config/non_existent_file_12345.png',
+    updatedAt: 2,
+  }]);
+  assert.equal(chains[0].previewImage, '/api/assets/covers/existing.png');
+});
+

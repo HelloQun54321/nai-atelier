@@ -241,17 +241,21 @@ export class StChatu8Bridge {
   async readStPreviewData(publicPath) {
     const filePath = this.resolveStUserPath(publicPath);
     if (!filePath) return null;
-    const info = await stat(filePath);
-    if (info.size <= 0 || info.size > MAX_PREVIEW_IMAGE_BYTES) return null;
-    const bytes = await readFile(filePath);
-    const contentType = bytes[0] === 0x89 && bytes.subarray(1, 4).toString('ascii') === 'PNG'
-      ? 'image/png'
-      : bytes[0] === 0xff && bytes[1] === 0xd8
-        ? 'image/jpeg'
-        : bytes.subarray(8, 12).toString('ascii') === 'WEBP'
-          ? 'image/webp'
-          : '';
-    return contentType ? `data:${contentType};base64,${bytes.toString('base64')}` : null;
+    try {
+      const info = await stat(filePath);
+      if (info.size <= 0 || info.size > MAX_PREVIEW_IMAGE_BYTES) return null;
+      const bytes = await readFile(filePath);
+      const contentType = bytes[0] === 0x89 && bytes.subarray(1, 4).toString('ascii') === 'PNG'
+        ? 'image/png'
+        : bytes[0] === 0xff && bytes[1] === 0xd8
+          ? 'image/jpeg'
+          : bytes.subarray(8, 12).toString('ascii') === 'WEBP'
+            ? 'image/webp'
+            : '';
+      return contentType ? `data:${contentType};base64,${bytes.toString('base64')}` : null;
+    } catch {
+      return null;
+    }
   }
 
   resolveStUserPath(publicPath) {
@@ -348,12 +352,21 @@ export class StChatu8Bridge {
         // A missing st-chatu8 preview means "no preview supplied", not
         // "delete the NAI Atelier cover". Only replace a cover when the
         // authoritative side actually provides image data.
-        if (artist.previewPath) body.previewImage = await this.readStPreviewData(artist.previewPath);
-        await this.requestWorkerJson(`/api/chains/${encodeURIComponent(chain.id)}`, { method: 'PUT', body });
-        const refreshed = await this.requestWorkerJson(`/api/chains/${encodeURIComponent(chain.id)}`);
-        if (refreshed?.id) {
-          chain = refreshed;
-          byId.set(chain.id, chain);
+        let previewUpdated = false;
+        if (artist.previewPath) {
+          const preview = await this.readStPreviewData(artist.previewPath);
+          if (preview) {
+            body.previewImage = preview;
+            previewUpdated = true;
+          }
+        }
+        if (stHash !== npmHash || previewUpdated) {
+          await this.requestWorkerJson(`/api/chains/${encodeURIComponent(chain.id)}`, { method: 'PUT', body });
+          const refreshed = await this.requestWorkerJson(`/api/chains/${encodeURIComponent(chain.id)}`);
+          if (refreshed?.id) {
+            chain = refreshed;
+            byId.set(chain.id, chain);
+          }
         }
       }
       this.state.artistLinks[artist.externalId] = {

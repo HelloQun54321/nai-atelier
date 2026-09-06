@@ -2849,6 +2849,23 @@ const serveDistFile = async (req, res, url) => {
         if (url.pathname === '/api/integrations/st-chatu8/status' && req.method === 'GET') {
           return sendBridgeJson(req, res, 200, stChatu8Bridge.status());
         }
+        if (url.pathname === '/api/integrations/st-chatu8/extension/files' && req.method === 'GET') {
+          const extensionDir = join(process.cwd(), 'sillytavern-extension', 'npm-bridge');
+          const [manifest, index, style, readme] = await Promise.all([
+            readFile(join(extensionDir, 'manifest.json'), 'utf8'),
+            readFile(join(extensionDir, 'index.js'), 'utf8'),
+            readFile(join(extensionDir, 'style.css'), 'utf8'),
+            readFile(join(extensionDir, 'README.md'), 'utf8'),
+          ]);
+          return sendBridgeJson(req, res, 200, {
+            files: {
+              'manifest.json': manifest,
+              'index.js': index,
+              'style.css': style,
+              'README.md': readme,
+            },
+          });
+        }
         if (url.pathname === '/api/integrations/st-chatu8/sync' && req.method === 'POST') {
           const payload = JSON.parse((await readRequestBody(req, 64 * 1024 * 1024)).toString('utf8') || '{}');
           return sendBridgeJson(req, res, 200, await stChatu8Bridge.sync(payload));
