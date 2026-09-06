@@ -10,7 +10,8 @@ const IS_WINDOWS = platform() === 'win32';
 
 /** 默认备份路径 */
 export const DEFAULT_BACKUP_DIR = IS_WINDOWS ? 'D:\\NaiPromptManager-Backups' : resolve(process.cwd(), '..', 'NaiPromptManager-Backups');
-const BACKUP_CONFIG_FILE = join(process.cwd(), 'local-data', 'backup-config.json');
+export const DEFAULT_BACKUP_CONFIG_FILE = join(process.cwd(), 'local-data', 'backup-config.json');
+export const BACKUP_CONFIG_FILE = DEFAULT_BACKUP_CONFIG_FILE;
 
 /**
  * 格式化时间戳为 YYYYMMDD-HHmmss
@@ -59,10 +60,11 @@ export function parseBackupNameDate(name, fallbackDate = new Date()) {
 
 /**
  * 读取备份配置
+ * @param {string} [configFile]
  */
-export async function getBackupConfig() {
+export async function getBackupConfig(configFile = DEFAULT_BACKUP_CONFIG_FILE) {
   try {
-    const content = await readFile(BACKUP_CONFIG_FILE, 'utf8');
+    const content = await readFile(configFile, 'utf8');
     const parsed = JSON.parse(content);
     if (parsed && typeof parsed.targetDir === 'string' && parsed.targetDir.trim()) {
       return {
@@ -80,8 +82,9 @@ export async function getBackupConfig() {
 /**
  * 保存备份配置
  * @param {{ targetDir: string }} config
+ * @param {string} [configFile]
  */
-export async function saveBackupConfig(config) {
+export async function saveBackupConfig(config, configFile = DEFAULT_BACKUP_CONFIG_FILE) {
   const targetDir = String(config?.targetDir || '').trim();
   if (!targetDir) throw new Error('备份目标目录不能为空');
   if (!isAbsolute(targetDir)) throw new Error('备份目标目录必须为绝对路径');
@@ -92,8 +95,8 @@ export async function saveBackupConfig(config) {
     throw new Error('备份目标目录不能设置在 local-data 保护区内部');
   }
 
-  await mkdir(dirname(BACKUP_CONFIG_FILE), { recursive: true });
-  await writeFile(BACKUP_CONFIG_FILE, JSON.stringify({ targetDir: normalized }, null, 2), 'utf8');
+  await mkdir(dirname(configFile), { recursive: true });
+  await writeFile(configFile, JSON.stringify({ targetDir: normalized }, null, 2), 'utf8');
   return { targetDir: normalized };
 }
 
@@ -263,8 +266,14 @@ export async function openInExplorer(targetPath) {
  * 本地数据备份管理器单例
  */
 export class LocalBackupService {
-  constructor({ sourceDir = join(process.cwd(), 'local-data') } = {}) {
+  constructor({
+    sourceDir = join(process.cwd(), 'local-data'),
+    configFile = DEFAULT_BACKUP_CONFIG_FILE,
+    targetDir = null,
+  } = {}) {
     this.sourceDir = normalize(sourceDir);
+    this.configFile = configFile;
+    this.customTargetDir = targetDir ? normalize(targetDir) : null;
     this.status = {
       running: false,
       phase: 'idle', // 'idle' | 'scanning' | 'copying' | 'completed' | 'error'
@@ -285,11 +294,19 @@ export class LocalBackupService {
   }
 
   /**
+   * 解析目标备份目录
+   */
+  async getTargetDir() {
+    if (this.customTargetDir) return this.customTargetDir;
+    const config = await getBackupConfig(this.configFile);
+    return config.targetDir;
+  }
+
+  /**
    * 获取当前备份服务综合状态
    */
   async getStatus() {
-    const config = await getBackupConfig();
-    const targetDir = config.targetDir;
+    const targetDir = await this.getTargetDir();
     const targetDirExists = existsSync(targetDir);
 
     let backups = [];
@@ -336,8 +353,8 @@ export class LocalBackupService {
       throw error;
     }
 
-    const config = await getBackupConfig();
-    const destinationDir = normalize((targetDir || config.targetDir).trim());
+    const defaultTargetDir = await this.getTargetDir();
+    const destinationDir = normalize((targetDir || defaultTargetDir).trim());
     if (!isAbsolute(destinationDir)) {
       const error = new Error('备份目标目录必须为绝对路径');
       error.status = 400;
@@ -489,8 +506,7 @@ export class LocalBackupService {
       throw error;
     }
 
-    const config = await getBackupConfig();
-    const targetDir = resolve(config.targetDir);
+    const targetDir = resolve(await this.getTargetDir());
     const backupPath = resolve(targetDir, trimmedName);
 
     // 严格安全校验：必须是 targetDir 的直接子项，且严禁触碰 local-data 与项目根目录

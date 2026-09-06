@@ -11,6 +11,7 @@ import {
   listBackups,
   LocalBackupService,
   saveBackupConfig,
+  getBackupConfig,
 } from './local-backup.mjs';
 
 test('formatBackupTimestamp 格式化时间戳', () => {
@@ -153,10 +154,12 @@ test('LocalBackupService.deleteBackup 正常删除备份存档并进行边界防
     await mkdir(join(backup1, 'local-data'), { recursive: true });
     await writeFile(join(backup1, 'backup-metadata.json'), '{}');
 
-    // 写入临时配置指向 targetTemp
-    await saveBackupConfig({ targetDir: targetTemp });
+    // 写入临时配置指向 targetTemp，传入独立 configTemp 绝不触碰真实配置文件
+    await saveBackupConfig({ targetDir: targetTemp }, configTemp);
+    const loadedTempConfig = await getBackupConfig(configTemp);
+    assert.equal(loadedTempConfig.targetDir, targetTemp);
 
-    const service = new LocalBackupService();
+    const service = new LocalBackupService({ configFile: configTemp, targetDir: targetTemp });
 
     // 1. 非法名称防护
     await assert.rejects(async () => service.deleteBackup('../evil'), { status: 400 });
@@ -181,5 +184,8 @@ test('LocalBackupService.deleteBackup 正常删除备份存档并进行边界防
     service.status.running = false;
   } finally {
     await rm(targetTemp, { recursive: true, force: true });
+    // 确认生产备份配置文件绝对没有被单测篡改
+    const realConfig = await getBackupConfig();
+    assert.equal(realConfig.targetDir, 'D:\\NaiPromptManager-Backups');
   }
 });
