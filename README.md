@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.150.25-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.150.26-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -80,15 +80,15 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 创作工坊。它不�
 | 🌐 外部图库三件套 | **Pixiv**（原站全量作品、榜单、画师主页）、**Danbooru**（通用级素材与 Tag 参考）、**AITag**（AI 作品与生成参数），统一瀑布流浏览与一键导入 |
 | 🔐 Pixiv 网页登录 | 适配 Pixiv 官方 OAuth 流程（含新版 `pixiv://` 回调），登录后 refresh token 加密保存本机，浏览器与图库全链路可用 |
 | 🧰 图片反推 Tag | 本地 WD Tagger 模型识别，图库任意图片一键反推，结果可复制或直接送往实验室 |
-| 📚 Tag 与权重交互 | 31 万余条中英 Tag 本地分片、连续权重胶囊一体式调节、多选自动组合数值组、Agent 极速补译缺失项 |
+| 📚 Tag 与权重交互 | 32 万余条中英 Tag 本地分片、连续权重胶囊一体式调节、多选自动组合数值组、Agent 极速补译缺失项 |
 | 🎨 封面体系 | 画师/角色封面从 Danbooru 候选图选取、图钉固定保存；封面缩略图固定本地保留，不受缓存上限淘汰 |
 | ⚡ 图库加载优化 | 缩略图后台预热（滚动即缓存命中）、固定封面本地持久化、瀑布流真实比例显示、提前两屏预取 |
-| 🌌 Vibe Transfer | 付费编码一次、本地永久保存、1～4 个组合、官方文件导入导出 |
+| 🌌 Vibe Transfer | 付费编码一次、本地永久保存、最多同时启用 16 个、官方文件导入导出 |
 | 🧬 Precise Reference | 电脑保存参考原图、三种官方参考类型、最多 4 张并准确计算费用 |
 | 🚦 拼车公共队列 | 与 st-chatu8 按相同 Key 指纹协调生图顺序，减少共享账号并发错误 |
 | 🔗 st-chatu8 插件互通 | 专为酒馆知名插件 st-chatu8 定制连接器与双向桥接，打通画师预设、Vibe 与历史原图，智能检测目录一键安装 |
 | 🛡️ 安全模式 | 全局遮挡图片，作品名称可按设置选择是否同时隐藏，并可设置启动时默认开启；点击后临时显示 |
-| ✦ 项目 Agent | 用 DeepSeek、Gemini、Grok 等模型查看历史图片并操作资料库、设置、实验室与生图流程 |
+| ✦ 项目 Agent | 用内置 DeepSeek 或自定义兼容模型查看历史图片并操作资料库、设置、实验室与生图流程 |
 
 ### 整体架构
 
@@ -143,7 +143,7 @@ flowchart LR
 | 🎌 **Pixiv** | 原站全量作品：推荐、日/周/月榜、Tag 搜索、画师作品 | 实验室、灵感、反推 |
 | 💡 **灵感** | 保存值得复用的图片、提示词和参数 | 实验室 |
 | 🧪 **实验室** | 组合提示词、引用预设、生成与预览 | 历史、风格串、下载 |
-| ✦ **项目 Agent** | 用 DeepSeek、Gemini、Grok 等模型查看历史图片并操作资料库、设置、实验室与生图流程 | 整个项目 |
+| ✦ **项目 Agent** | 用内置 DeepSeek 或自定义兼容模型查看历史图片并操作资料库、设置、实验室与生图流程 | 整个项目 |
 | 🌌 **Vibe Transfer** | 永久保存 NovelAI 画风编码并组合强度 | 实验室、风格串、历史 |
 | 🧬 **角色参考** | 保存人物参考图并使用 NovelAI Precise Reference | 实验室、风格串、历史 |
 | 🚦 **拼车公共队列** | 与 st-chatu8 按相同 Key 指纹协调生图顺序，减少共享账号并发错误 | 全部生图入口、电脑与手机 |
@@ -225,7 +225,7 @@ flowchart LR
 桌面侧栏、移动端贴边可拖拽浮钮（或系统设置）及实验室右上角均可一键打开基于 [pi.dev](https://pi.dev/) 轻量核心的项目 Agent。它不是一个需要您手动复制 Prompt 的旁路聊天框，而是能直接读取电脑资料、观察历史原图并调用工坊工具的业务级 AI 助手。
 
 #### 智能模型与凭据管理
-- **主流模型即接即用**：直接对接主流 LLM 厂商（DeepSeek、Gemini、Grok、OpenAI、Claude 等）或任意兼容 API，配置直观，支持按模型名模糊搜索。
+- **兼容接口即接即用**：内置 DeepSeek 官方预置（官方接口的 OpenAI 兼容封装）；其余模型服务一律通过自定义兼容接口接入，支持 OpenAI Chat/Completions、OpenAI Responses 与 Anthropic Messages 协议，配置直观，支持按模型名模糊搜索。
 - **模态能力自适应探测**：点击「获取模型」自动探测接口返回的元数据，智能识别模型是否支持识图、长上下文与推理思考（Thinking）。
 - **本地高强度加密**：LLM API Key 采用 AES-256-GCM 加密保存在电脑本地（密钥文件 `local-data/prompt-agent.key`），局域网重置密码不影响，凭据绝不上云、绝不回传手机。
 - **安全请求头注入**：自定义兼容接口支持安全附加请求头（如 `HTTP-Referer`），敏感鉴权头严格走加密存储，杜绝明文混入。
@@ -258,7 +258,7 @@ flowchart LR
 - 每次产生新编码前都使用项目内确认面板明确显示 **2 Anlas**，不提供跳过提醒。
 - 同一原图、模型与提取量通过 SHA-256 去重；重复选择直接复用，快速重复点击也只会建立一个付费任务。
 - 同一个 Vibe 可追加其他提取量变体；不含原图的编码型 Vibe 仍可生成，但不能追加变体。
-- 一次可启用 1～4 个 Vibe，每个独立设置 Strength；总强度超过 1 时默认按比例归一化。
+- 一次最多可启用 16 个 Vibe，每个独立设置 Strength；总强度超过 1 时默认按比例归一化。
 - 支持命名组合、载入、覆盖、重命名、另存和删除组合；组合删除不会删除 Vibe 编码。
 - 支持导入与导出官方 `.naiv4vibe`，未知模型编码会保留，等待未来兼容。
 - “删除”采用归档：资料库暂时隐藏资产，但风格串和历史中的旧快照仍能继续复现。
@@ -297,7 +297,7 @@ flowchart LR
 
 ### Tag 自动补全、连续权重胶囊与操作台
 
-项目内置 31 万余条本地 Tag 数据（中英对照与画师/角色目录源自 [ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table) 的 tag.sqlite，NovelAI 专属 Tag 来自官方列表；详见[来源与许可](#-来源与许可)）：
+项目内置 32 万余条本地 Tag 数据（中英对照与画师/角色目录源自 [ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table) 的 tag.sqlite，NovelAI 专属 Tag 来自官方列表；详见[来源与许可](#-来源与许可)）：
 
 - **海量词库与即时补全**：Danbooru 中英对照 Tag、NovelAI 官方专属 Tag，支持中英双向前缀实时搜索、热度排序与中文字意插入；手机端采用双击确认，杜绝滑动手势误选。
 - **一体式连续权重胶囊（Capsule）**：同一对权重包裹的多个 Tag 自动合并为一个无缝连续胶囊，开口与闭合语法渲染于首尾两端，整组贯穿强调色与描边；散落的花括号与方括号不破坏词条美感。
@@ -326,11 +326,11 @@ npm run update:tags
 
 ### 画师库：自维护画师目录
 
-项目收录约 14.6 万画师条目，由本地数据库持续维护，不再依赖外部过期的静态图包：
+项目收录约 15.1 万画师条目，由本地数据库持续维护，不再依赖外部过期的静态图包：
 
 #### 目录能力
 
-- 约 14.6 万画师 Tag
+- 约 15.1 万画师 Tag
 - 中文名称与英文 Tag 搜索
 - Danbooru 关联作品数作为热度
 - 热度升序、热度降序、名称 A–Z 和 Z–A
@@ -446,7 +446,7 @@ Pixiv 页面连接 Pixiv 官方 App API，提供推荐、日榜、周榜、月�
 
 ### 扩展简介与一键安装
 
-- **NAI Atelier 连接器（NAI Atelier Connector）**：项目内置的酒馆专属第三方扩展（源码位于 `third-party/sillytavern-extension`，平滑兼容并自动清理旧版 `npm-bridge`）。
+- **NAI Atelier 连接器（NAI Atelier Connector）**：项目内置的酒馆专属第三方扩展（源码位于 `sillytavern-extension/npm-bridge`，平滑兼容并自动清理旧版 `npm-bridge`）。
 - **智能路径检测**：控制台与网关自动嗅探本机标准安装路径（`D:\SillyTavern`、`C:\SillyTavern`、上级工作区等），无需手工翻找扩展目录。
 - **一键安装与更新**：在前端设置中可一键将连接器安装/更新至 SillyTavern 扩展库；对于跨设备或容器环境，亦支持一键导出离线 ZIP 安装包。
 - **自动化双向桥接**：启动后由电脑图片网关提供受限桥接接口自动同步，也可在 SillyTavern 的扩展面板中随时点击“立即同步”。
@@ -624,7 +624,7 @@ flowchart TD
 
 ### 缩略图网关与高性能预热
 
-- **按需 WebP 转码**：列表根据当前屏幕列宽动态请求 320px 或 640px WebP 缩略图，自动校正 EXIF 旋转方向，秒开不卡顿。
+- **按需 WebP 转码**：列表按卡片渲染宽度在 160～960px 六档中动态请求合适的 WebP 缩略图，自动校正 EXIF 旋转方向，秒开不卡顿。
 - **无损 PNG 承诺**：所有生成原图与灵感原图原封不动保存在本地 R2，绝对不进行二次压缩或改写，保留完整的 NovelAI 生成元数据与透明度。
 - **智能淘汰与封面常驻**：电脑端缩略图缓存池默认上限 1 GB，超出后按 LRU（最近最少使用）自动释放；**所有由你指定的画师与角色封面均已打上永久图钉，绝不参与淘汰清理**。
 - **列表丝滑预热**：在浏览 Pixiv 或 Danbooru 时，网关在收到列表的第一时间就会以低并发在后台把下一批预览图预写到磁盘，滚动翻页时毫秒级瞬开；打开画师目录时亦会自动预取候选封面并固定落盘。
@@ -777,7 +777,7 @@ NAI Atelier/
 ### 第三方数据与资源
 
 - **Tag 中英词典、画师目录与角色目录**：[ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)
-  - 项目的 Tag 自动补全词库、约 14.6 万画师 Tag 目录、约 9.9 万官方角色 Tag 目录均由该项目的 `tag.sqlite` 数据库生成（`scripts/update-tag-dictionary.mjs` 下载并转换）。
+  - 项目的 Tag 自动补全词库、约 15.1 万画师 Tag 目录、约 10.2 万官方角色 Tag 目录均由该项目的 `tag.sqlite` 数据库生成（`scripts/update-tag-dictionary.mjs` 下载并转换）。
   - 该上游项目**未在仓库中声明开源许可**；本项目仅将数据用于个人本地使用，不随源码重新分发其数据库文件。
 - **NovelAI 特殊 Tag（风格年份等）**：来自 NovelAI 官方 Tag 列表 `data/novelai-v45-tags.json`（项目内文件）。
 - **互通与协议参考**：[st-chatu8](https://github.com/damoshen123/st-chatu8)（NovelAI 扩展，Precise Reference / Vibe 数据流与拼车队列指纹协议实现参考；仅协议层借鉴，不含其代码）
