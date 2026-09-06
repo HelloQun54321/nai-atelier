@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-07
+- **Gemini 3.8 Flash**：在项目根目录收纳自适应启动脚本 NaiPromptManager.bat，并在系统设置（系统维护）中提供一键发送/更新桌面启动器与专属调色盘图标快捷方式（NAI Atelier.lnk）的完整功能与网关接口（feat: add desktop launcher script and one-click send to desktop in settings）。
 - **ZCode (GLM-5.3)**：先只读审计 README 与实现的偏差，随后纠正五处过期表述——Agent 供应商收敛为内置 DeepSeek + 自定义兼容接口、Vibe 启用上限 16、连接器源码路径 `sillytavern-extension/npm-bridge`、Tag/画师/角色词库数量与缩略图转码档位（docs: sync README stale statements for agent providers, vibe slots, connector path and library counts）。
 - **Gemini 3.8 Flash**：纠正 README 与模型服务关于 V5 采样步数的推荐主体表述，明确 23 步为作者实测推荐而非官方推荐（docs: clarify V5 23-step default is author recommended rather than official）。
 - **Gemini 3.8 Flash**：全面校对并修复 README 中与当前真实实现脱节的过时表述，涵盖 V5 模型代际特性边界、全局提示词单框结构、画师库与资源库模块术语、移动端 Agent 浮钮入口及 AITag 自生长缓存哲学（docs: update obsolete statements in README for parity with implementation）。

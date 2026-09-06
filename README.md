@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.150.26-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.151.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -683,7 +683,8 @@ D:\NaiPromptManager\local-data
 
 ### Windows 桌面启动器
 
-双击桌面的 `NAI Atelier` 调色盘快捷方式即可。
+- **一键发送到桌面**：在应用内的「系统设置 → 系统维护」中，点击「发送启动器到桌面」即可自动在 Windows 桌面生成 `NaiPromptManager.bat` 脚本与带专属晴空蓝调色盘图标的 `NAI Atelier.lnk` 快捷方式。
+- **双击即启**：双击桌面的 `NAI Atelier` 调色盘快捷方式（或根目录的 `NaiPromptManager.bat`）即可进入创作工坊。
 
 启动器会：
 
@@ -693,7 +694,7 @@ D:\NaiPromptManager\local-data
 4. 自动打开 `http://localhost:3000`。
 5. 发现已有实例时只打开网页，不重复启动端口。
 
-底层 BAT 仍保留在桌面，但被设为隐藏；快捷方式负责提供统一图标和双击入口。
+底层 BAT 默认设为隐藏，快捷方式负责提供统一图标和双击入口（可在设置中按需切换隐藏与快捷方式生成偏好）。
 
 ### 命令行启动
 

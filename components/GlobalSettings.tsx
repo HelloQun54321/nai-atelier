@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useModalA11y } from './useModalA11y';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
 import { DataBackupManager } from './DataBackupManager';
+import { DesktopLauncherManager } from './DesktopLauncherManager';
 import { SillyTavernBridgeExport } from './SillyTavernBridgeExport';
 import {
   clearMobileThumbnailCache,
@@ -1245,6 +1246,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               {/* 本地数据备份与还原 */}
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
                 <DataBackupManager notify={notify} />
+              </div>
+
+              {/* Windows 桌面启动器 */}
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
+                <DesktopLauncherManager notify={notify} />
               </div>
 
               {/* SillyTavern 互通扩展 */}

@@ -17,6 +17,7 @@ import { MEDIA_REMOTE_HOSTS, LAN_ACCESS_COOKIE } from '../worker/sharedWhitelist
 import { PIXIV_IMAGE_HOST, PIXIV_REFERER, PixivGalleryService } from './pixiv-local.mjs';
 import { PixivWebLoginOrchestrator } from './pixiv-web-login.mjs';
 import { localBackupService, saveBackupConfig, openInExplorer } from './local-backup.mjs';
+import { getDesktopLauncherStatus, createDesktopLauncher, openDesktopFolder, generateLauncherBatContent } from './desktop-launcher.mjs';
 
 const CACHE_VERSION = 'v1';
 const HISTORY_THUMBNAIL_CACHE_VERSION = 'v2';
@@ -3197,6 +3198,52 @@ const serveDistFile = async (req, res, url) => {
       } catch (error) {
         return sendJson(res, Number(error.status) || 400, { error: error.message || '删除备份失败' });
       }
+    }
+    if (url.pathname === '/api/local-maintenance/desktop-launcher/status') {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      try {
+        const status = getDesktopLauncherStatus();
+        return sendJson(res, 200, status);
+      } catch (error) {
+        return sendJson(res, 500, { error: error.message || '无法读取桌面启动器状态' });
+      }
+    }
+    if (url.pathname === '/api/local-maintenance/desktop-launcher/create') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      try {
+        const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
+        const result = await createDesktopLauncher({
+          createShortcut: body.createShortcut !== false,
+          hideBat: Boolean(body.hideBat),
+        });
+        return sendJson(res, 200, result);
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 500, { error: error.message || '创建桌面启动器失败' });
+      }
+    }
+    if (url.pathname === '/api/local-maintenance/desktop-launcher/open-desktop') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      try {
+        const result = await openDesktopFolder();
+        return sendJson(res, 200, result);
+      } catch (error) {
+        return sendJson(res, 400, { error: error.message || '无法打开桌面目录' });
+      }
+    }
+    if (url.pathname === '/api/local-maintenance/desktop-launcher/download') {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      const content = Buffer.from(generateLauncherBatContent(), 'utf8');
+      res.writeHead(200, {
+        'Content-Type': 'application/x-bat',
+        'Content-Disposition': 'attachment; filename="NaiPromptManager.bat"',
+        'Content-Length': content.length,
+        'Cache-Control': 'no-store',
+      });
+      return res.end(content);
     }
     if (url.pathname === '/api/tag-dictionary') {
       if (req.method !== 'GET' && req.method !== 'POST') return sendJson(res, 405, { error: '仅支持 GET 或 POST 请求' });

@@ -3,6 +3,11 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-09-07
+### 功能:项目收录官方桌面启动器并在设置中提供一键发送至桌面
+- **根目录启动器纳入版本管理**：在项目根目录正式纳入官方 Windows 启动脚本 `NaiPromptManager.bat`，支持自适应解析项目绝对路径、Git 分支检查、已有服务实例探测复用与防冲保护。
+- **网关维护接口扩展**：在后端 `scripts/desktop-launcher.mjs` 中实现 Windows 桌面探测、动态脚本生成、快捷方式创建（使用 PowerShell COM 绑定专属晴空蓝调色盘图标 `public/nai-atelier.ico`）及打开桌面文件夹功能，并在 `scripts/media-gateway.mjs` 中注册 `/api/local-maintenance/desktop-launcher/*` 路由。
+- **系统设置新增桌面启动器管理**：在「系统设置 → 系统维护」中新增「Windows 桌面启动器」卡片，实时呈现桌面启动器与快捷方式状态，支持一键发送/更新至桌面、自定义是否隐藏底层 BAT、以及非 Windows 与移动端直接下载批处理脚本。
+
 ### 文档:纠正 README 中 Agent 供应商、Vibe 上限、连接器路径与词库数量的过期表述
 - **Agent 供应商**：按当前实现更正为「内置 DeepSeek 官方预置 + 自定义兼容接口接入」，移除已下线的 Gemini／Grok／OpenAI／Claude 直连厂商表述（核心能力总览、功能地图与项目 Agent 章节同步）。
 - **Vibe 上限**：一次可启用数量由 1～4 更正为 16，对齐 2026-08-25 实验室官方能力对齐改动。
