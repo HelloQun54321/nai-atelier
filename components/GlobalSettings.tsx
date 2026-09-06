@@ -150,7 +150,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [cloudQueue, setCloudQueue] = useState(getCachedCloudQueuePreferences);
   const [mobileCacheStats, setMobileCacheStats] = useState(getMobileCacheStats);
   const [imageDisplay, setImageDisplay] = useState(getMobileImageDisplayPreferences);
-  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
+  const [isLabMobile, setIsLabMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches);
   const [activeSection, setActiveSection] = useState<SettingsPage>('home');
   const [draggingLabModule, setDraggingLabModule] = useState<{ pageId: LabPageId; moduleId: LabPageModuleId } | null>(null);
   const [expandedLabPages, setExpandedLabPages] = useState<Record<LabPageId, boolean>>(() => Object.fromEntries(LAB_PAGE_IDS.map(pageId => [pageId, false])) as Record<LabPageId, boolean>);
@@ -184,7 +185,13 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     const query = window.matchMedia('(max-width: 767px)');
     const update = () => setIsMobile(query.matches);
     query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
+    const labQuery = window.matchMedia('(max-width: 1023px)');
+    const updateLab = () => setIsLabMobile(labQuery.matches);
+    labQuery.addEventListener('change', updateLab);
+    return () => {
+      query.removeEventListener('change', update);
+      labQuery.removeEventListener('change', updateLab);
+    };
   }, []);
 
   useEffect(() => {
@@ -926,7 +933,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <div>
                   <div className="mb-2 flex items-center justify-between"><span className="text-meta font-bold text-gray-600 dark:text-gray-300">强调色</span><span className="font-mono text-micro uppercase text-gray-400">{appearancePreferences.accentColor}</span></div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {ACCENT_PRESETS.map(preset => <button key={preset.color} type="button" onClick={() => updateAppearance({ accentColor: preset.color })} aria-label={`强调色：${preset.label}`} title={preset.label} className={`relative h-8 w-8 rounded-full border-2 transition hover:scale-105 ${appearancePreferences.accentColor === preset.color ? 'border-gray-900 ring-2 ring-gray-900/15 dark:border-white dark:ring-white/20' : 'border-white shadow-sm dark:border-gray-700'}`} style={{ backgroundColor: preset.color }}>{appearancePreferences.accentColor === preset.color && <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white drop-shadow" />}</button>)}
+                    {ACCENT_PRESETS.map(preset => <button key={preset.color} type="button" onClick={() => updateAppearance({ accentColor: preset.color })} aria-label={`强调色：${preset.label}`} title={preset.label} className={`mobile-size-locked relative h-8 w-8 rounded-full border-2 transition hover:scale-105 ${appearancePreferences.accentColor === preset.color ? 'border-gray-900 ring-2 ring-gray-900/15 dark:border-white dark:ring-white/20' : 'border-white shadow-sm dark:border-gray-700'}`} style={{ backgroundColor: preset.color }}>{appearancePreferences.accentColor === preset.color && <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white drop-shadow" />}</button>)}
                     <label className="relative flex h-8 min-w-24 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-gray-300 bg-white px-2 text-micro font-bold text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"><Palette className="h-3.5 w-3.5" />自定义<input type="color" value={appearancePreferences.accentColor} onChange={event => updateAppearance({ accentColor: event.target.value })} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label="自定义强调色" /></label>
                   </div>
                 </div>
@@ -974,21 +981,37 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 </span>
               </button>
 
-              <div className="rounded-2xl border border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35">
+              <div className={`rounded-2xl border transition-all ${isLabMobile ? 'border-gray-200 bg-gray-100/70 p-3 dark:border-gray-800 dark:bg-gray-900/40' : 'border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35'}`}>
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
-                    <h4 className="text-xs font-bold text-gray-800 dark:text-gray-100">实验室模块布局</h4>
-                    <p className="mt-0.5 text-micro leading-4 text-gray-500 dark:text-gray-400">自定义文生图、图生图、局部重绘与扩图的模块顺序与展开状态。</p>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-bold text-gray-800 dark:text-gray-100">实验室模块布局</h4>
+                      {isLabMobile && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-micro font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                          <Lock className="h-3 w-3" />移动端已锁定
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-micro leading-4 text-gray-500 dark:text-gray-400">
+                      {isLabMobile ? '移动端已采用三段式标签流，模块排版已锁定；如需自定义双栏布局请在电脑端操作。' : '自定义文生图、图生图、局部重绘与扩图的模块顺序与展开状态。'}
+                    </p>
                   </div>
                   <button
                     type="button"
+                    disabled={isLabMobile}
                     onClick={resetAllLabPageLayouts}
-                    className="mobile-touch flex flex-none items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-micro font-bold text-gray-500 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600"
+                    className="mobile-touch flex flex-none items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-micro font-bold text-gray-500 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600"
                   >
                     <RotateCcw className="h-3 w-3" />全部推荐
                   </button>
                 </div>
-                <div className="space-y-2">
+                {isLabMobile && (
+                  <div className="mb-3 flex items-center gap-2 rounded-xl border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-micro font-medium text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+                    <Smartphone className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                    <span>当前设备处于移动视图，实验室各模式已固定为「角色/画布/全局/参数」三段式流，不可在此更改顺序。</span>
+                  </div>
+                )}
+                <div className={`space-y-2 ${isLabMobile ? 'pointer-events-none select-none opacity-50' : ''}`}>
                   {LAB_PAGE_IDS.map(pageId => {
                     const pageMeta = LAB_PAGE_META[pageId];
                     const layout = getLabPageLayout(pageId);

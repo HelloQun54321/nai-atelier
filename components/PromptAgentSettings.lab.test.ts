@@ -480,4 +480,25 @@ describe('前端切片修复专项验证', () => {
       expect(filledSlot?.enabled).toBe(true);
     });
   });
+
+  it('预设导出与导入按钮具备 mobile-touch 与 justify-center 规范以保证移动端纯图标时居中', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/creative-presets')) return responseFor({ items: [builtinPreset], activeCreativePresetId: 'builtin-default', warnings: [] });
+      if (url.includes('/config')) return responseFor({ provider: '', model: '', imageInput: false, visionProvider: '', visionModel: '', visionAvailable: false, visionDedicated: false, visionMode: 'auto', configured: false, configuredProviders: [], policyVersion: '', policyFingerprint: '', creativeMode: false, runtimeStartedAt: 0 });
+      return responseFor({ items: [] });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    render(React.createElement(SettingsHarness));
+    fireEvent.click(await screen.findByRole('button', { name: /进入注入预设管理/ }));
+    await screen.findByRole('dialog', { name: /注入预设管理/ });
+
+    const exportBtn = screen.getByRole('button', { name: '导出全部预设' });
+    const importBtn = screen.getByRole('button', { name: '导入预设 JSON' });
+
+    expect(exportBtn.className).toContain('mobile-touch');
+    expect(exportBtn.className).toContain('justify-center');
+    expect(importBtn.className).toContain('mobile-touch');
+    expect(importBtn.className).toContain('justify-center');
+  });
 });

@@ -197,5 +197,33 @@ describe('GlobalSettings', () => {
     fireEvent.click(masonryBtn);
     expect(masonryBtn.className).toContain('border-indigo-500');
   });
+
+  it('个性化强调色按钮具有 mobile-size-locked 防止移动端被拉伸为椭圆/蛋形', async () => {
+    render(React.createElement(SettingsHarness));
+
+    const indigoBtn = screen.getByRole('button', { name: '强调色：靛蓝' });
+    expect(indigoBtn.className).toContain('mobile-size-locked');
+    expect(indigoBtn.className).toContain('rounded-full');
+  });
+
+  it('在移动视图下实验室模块布局显示已锁定且操作按钮处于禁用状态', async () => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query.includes('1023px') || query.includes('767px'),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })));
+
+    render(React.createElement(SettingsHarness, { initialSection: 'generation' }));
+
+    expect(await screen.findByText('移动端已锁定')).toBeTruthy();
+    expect(screen.getByText(/移动端已采用三段式标签流/)).toBeTruthy();
+    const resetBtn = screen.getByRole('button', { name: /全部推荐/ }) as HTMLButtonElement;
+    expect(resetBtn.disabled).toBe(true);
+  });
 });
 

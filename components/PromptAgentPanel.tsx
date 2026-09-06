@@ -927,11 +927,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               type="button"
               onClick={props.onUndo}
               disabled={running}
-              className="mobile-touch inline-flex h-9 items-center gap-1 rounded-xl border border-amber-300/80 bg-amber-50 px-2.5 text-xs font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-40 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/70"
+              className="mobile-touch inline-flex h-9 items-center justify-center gap-1 rounded-xl border border-amber-300/80 bg-amber-50 px-2.5 text-xs font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-40 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/70"
               title="撤销最近一次 Agent 对项目的修改"
               aria-label="撤销修改"
             >
-              <RotateCcw className="h-4 w-4" />
+              <RotateCcw className="h-4 w-4 shrink-0" />
               <span className="hidden sm:inline">撤销修改</span>
             </button>
           )}
