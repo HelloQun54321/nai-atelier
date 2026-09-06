@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-07
+- **Gemini 3.8 Flash**：全面校对并修复 README 中与当前真实实现脱节的过时表述，涵盖 V5 模型代际特性边界、全局提示词单框结构、画师库与资源库模块术语、移动端 Agent 浮钮入口及 AITag 自生长缓存哲学（docs: update obsolete statements in README for parity with implementation）。
 - **Gemini 3.8 Flash**：重构整体架构图为四阶流水线结构，启用 linear 直线渲染彻底消除交叉折线与空白塌陷（style: refactor architecture diagram to 4-stage straight pipeline）。
 - **Gemini 3.8 Flash**：在 README 中补全生图实验室四大生成模式（含 Focused Inpainting 与官方羽化算法）并深度纠正扩充 Tag 连续胶囊与高精权重系统（docs: detail four lab generation modes and inline tag weight system in README）。
 - **Gemini 3.8 Flash**：在 README 中明确数据互通机制与配套连接器是专为 SillyTavern 的 st-chatu8 插件定向定制开发（docs: specify that data bridge is custom-built for st-chatu8）。
