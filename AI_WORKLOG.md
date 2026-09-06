@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-07
+- **Antigravity**：在 README 中详尽阐述 Anlas（官方积分）与 Opus 电池限额全自动后台轮询机制，明确用户无需手动填写且各 Key 独立沙箱核算与透支防护（docs: explain automatic anlas and opus quota tracking per key in README）。
 - **Gemini 3.8 Flash**：更正 README 界面预览表述，准确定义为代表性页面的完整界面视图展示，剔除多余的「局部预览/特写」生硬字眼（docs: accurately describe screenshots as full views of representative pages）。
 - **Gemini 3.8 Flash**：彻底清除 README 本机绝对路径与单测用户名脱敏，清理无用外部脚本 cleanup-omp-browser.ps1 及 docs/ 下 5 篇早期 AI 任务指导文档（chore: purge personal machine paths and obsolete bugfix briefs）。
 - **Gemini 3.8 Flash**：清理 README 中遗留的私人测试统计数据（本机同步规模验证小节）与 11GB 本地磁盘大小标注，通用化示例 IP（docs: remove developer verification metrics and personal folder sizes from README）。
