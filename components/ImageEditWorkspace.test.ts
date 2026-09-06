@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createLabImageEditDraft } from '../services/labWorkspace';
 import { ImageEditControls } from './ImageEditControls';
+import { ImageEditPanel } from './ImageEditPanel';
 import { ImageEditPreview } from './ImageEditPreview';
 
 vi.mock('./ChainEditorParams', () => ({
@@ -531,6 +532,167 @@ describe('ImageEditPreview', () => {
 
     const buttonLoading = screen.getByRole('button', { name: /生成图生图结果/ }) as HTMLButtonElement;
     expect(buttonLoading.disabled).toBe(true);
+  });
+
+  describe('移动端实验室三段式 Tab 适配', () => {
+    it('ImageEditPanel 针对图生图、局部重绘和扩图正确渲染对应的三段式 Tab 标签', () => {
+      const draft = createLabImageEditDraft('image-to-image', 'test prompt', 'low quality', params);
+      const { rerender } = render(React.createElement(ImageEditPanel, {
+        baseImage: null,
+        previewImage: null,
+        operation: 'image-to-image',
+        draft,
+        layout: { order: ['prompt', 'baseImage', 'params', 'editSettings'], collapsed: {} } as any,
+        generationCostLabel: () => '14 点',
+        apiKey: 'test-key',
+        notify: vi.fn(),
+        onPromptChange: vi.fn(),
+        onNegativePromptChange: vi.fn(),
+        onPromptSource: vi.fn(),
+        onDraftChange: vi.fn(),
+        onBaseImageChange: vi.fn(),
+        onCanvasChange: vi.fn(),
+        onGenerate: vi.fn(),
+        onOpenLightbox: vi.fn(),
+        getDownloadFilename: () => 'test.png',
+        tagAssistEnabled: false,
+      }));
+
+      // 图生图：底图 / 提示 / 参数
+      expect(screen.getByRole('button', { name: '底图' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '提示' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '参数' })).toBeTruthy();
+
+      // 切换到局部重绘：画板 / 提示 / 参数
+      rerender(React.createElement(ImageEditPanel, {
+        baseImage: null,
+        previewImage: null,
+        operation: 'inpaint',
+        draft: createLabImageEditDraft('inpaint', 'test prompt', 'low quality', params),
+        layout: { order: ['prompt', 'baseImage', 'params', 'editSettings'], collapsed: {} } as any,
+        generationCostLabel: () => '14 点',
+        apiKey: 'test-key',
+        notify: vi.fn(),
+        onPromptChange: vi.fn(),
+        onNegativePromptChange: vi.fn(),
+        onPromptSource: vi.fn(),
+        onDraftChange: vi.fn(),
+        onBaseImageChange: vi.fn(),
+        onCanvasChange: vi.fn(),
+        onGenerate: vi.fn(),
+        onOpenLightbox: vi.fn(),
+        getDownloadFilename: () => 'test.png',
+        tagAssistEnabled: false,
+      }));
+      expect(screen.getByRole('button', { name: '画板' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '提示' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '参数' })).toBeTruthy();
+
+      // 切换到扩图：画布 / 提示 / 参数
+      rerender(React.createElement(ImageEditPanel, {
+        baseImage: null,
+        previewImage: null,
+        operation: 'outpaint',
+        draft: createLabImageEditDraft('outpaint', 'test prompt', 'low quality', params),
+        layout: { order: ['prompt', 'baseImage', 'params', 'editSettings'], collapsed: {} } as any,
+        generationCostLabel: () => '14 点',
+        apiKey: 'test-key',
+        notify: vi.fn(),
+        onPromptChange: vi.fn(),
+        onNegativePromptChange: vi.fn(),
+        onPromptSource: vi.fn(),
+        onDraftChange: vi.fn(),
+        onBaseImageChange: vi.fn(),
+        onCanvasChange: vi.fn(),
+        onGenerate: vi.fn(),
+        onOpenLightbox: vi.fn(),
+        getDownloadFilename: () => 'test.png',
+        tagAssistEnabled: false,
+      }));
+      expect(screen.getByRole('button', { name: '画布' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '提示' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '参数' })).toBeTruthy();
+    });
+
+    it('ImageEditControls 根据 mobileTab 属性精准应用响应式显示隐藏类名', () => {
+      const draft = createLabImageEditDraft('inpaint', 'test prompt', 'low quality', params);
+      const baseProps = {
+        operation: 'inpaint' as const,
+        draft,
+        fileInputRef: React.createRef<HTMLInputElement>(),
+        canvasProps: {
+          imageCanvasRef: React.createRef<HTMLCanvasElement>(),
+          maskCanvasRef: React.createRef<HTMLCanvasElement>(),
+          overlayCanvasRef: React.createRef<HTMLCanvasElement>(),
+          width: 832,
+          height: 1216,
+          focusedRect: null,
+          focused: false,
+          isLoading: false,
+          onPointerDown: vi.fn(),
+          onPointerMove: vi.fn(),
+          onPointerUp: vi.fn(),
+        },
+        selectableParams: draft.params,
+        strength: draft.strength,
+        noise: draft.noise,
+        brushSize: draft.brushSize,
+        focused: draft.focused,
+        minimumContextArea: draft.minimumContextArea,
+        tool: 'brush' as const,
+        apiKey: 'test-key',
+        notify: vi.fn(),
+        onPromptChange: vi.fn(),
+        onNegativePromptChange: vi.fn(),
+        onPromptSource: vi.fn(),
+        onDraftChange: vi.fn(),
+        onFileChange: vi.fn(),
+        onSelectImageSource: vi.fn(),
+        onStrengthChange: vi.fn(),
+        onNoiseChange: vi.fn(),
+        onBrushSizeChange: vi.fn(),
+        onFocusedChange: vi.fn(),
+        onMinimumContextAreaChange: vi.fn(),
+        onToolChange: vi.fn(),
+        onClearMask: vi.fn(),
+        onInvertMask: vi.fn(),
+        onUndo: vi.fn(),
+        onRedo: vi.fn(),
+        onExpansionChange: vi.fn(),
+        onApplyOutpaint: vi.fn(),
+        expansion: draft.expansion,
+        tagAssistEnabled: false,
+      };
+
+      // mobileTab = 'canvas' 时：baseImage 是 block，prompt 和 params 是 hidden lg:block
+      const { container, rerender } = render(React.createElement(ImageEditControls, { ...baseProps, mobileTab: 'canvas' }));
+      const baseImageSection = container.querySelector('[data-lab-module="baseImage"]');
+      const promptSection = container.querySelector('[data-lab-module="prompt"]');
+      const paramsSection = container.querySelector('[data-lab-module="params"]');
+      const editSettingsSection = container.querySelector('[data-lab-module="editSettings"]');
+
+      expect(baseImageSection?.className).toContain('block');
+      expect(baseImageSection?.className).not.toContain('hidden lg:block');
+      expect(promptSection?.className).toContain('hidden lg:block');
+      expect(paramsSection?.className).toContain('hidden lg:block');
+      expect(editSettingsSection?.className).toContain('hidden lg:block');
+
+      // mobileTab = 'prompt' 时：prompt 是 block，baseImage 和 params 是 hidden lg:block
+      rerender(React.createElement(ImageEditControls, { ...baseProps, mobileTab: 'prompt' }));
+      expect(baseImageSection?.className).toContain('hidden lg:block');
+      expect(promptSection?.className).toContain('block');
+      expect(promptSection?.className).not.toContain('hidden lg:block');
+      expect(paramsSection?.className).toContain('hidden lg:block');
+
+      // mobileTab = 'params' 时：params 与 editSettings 是 block，baseImage 和 prompt 是 hidden lg:block
+      rerender(React.createElement(ImageEditControls, { ...baseProps, mobileTab: 'params' }));
+      expect(baseImageSection?.className).toContain('hidden lg:block');
+      expect(promptSection?.className).toContain('hidden lg:block');
+      expect(paramsSection?.className).toContain('block');
+      expect(paramsSection?.className).not.toContain('hidden lg:block');
+      expect(editSettingsSection?.className).toContain('block');
+      expect(editSettingsSection?.className).not.toContain('hidden lg:block');
+    });
   });
 });
 

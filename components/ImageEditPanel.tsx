@@ -161,6 +161,10 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isBaseImageDragActive, setIsBaseImageDragActive] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'canvas' | 'prompt' | 'params'>('canvas');
+  useEffect(() => {
+    setMobileTab('canvas');
+  }, [operation]);
   const maskEditable = !safeMode && (operation === 'inpaint' || (operation === 'outpaint' && manualMaskEditing));
   // 隐藏画布挂载即存在；只有真正载入底图（width/height 有效）且未在加载时才允许生成，
   // 否则无底图时也会点亮生成按钮，点击后才报尺寸错误。
@@ -867,104 +871,126 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     }
   };
 
+  const mobileTabs = operation === 'image-to-image'
+    ? ([['canvas', '底图'], ['prompt', '提示'], ['params', '参数']] as const)
+    : operation === 'inpaint'
+    ? ([['canvas', '画板'], ['prompt', '提示'], ['params', '参数']] as const)
+    : ([['canvas', '画布'], ['prompt', '提示'], ['params', '参数']] as const);
+
   return (
-    <div
-      data-image-edit-drop-zone="true"
-      className="chain-editor-body relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-white dark:bg-gray-900 lg:flex-row lg:overflow-hidden"
-      onDragEnter={handleBaseImageDragEnter}
-      onDragOver={handleBaseImageDragOver}
-      onDragLeave={handleBaseImageDragLeave}
-      onDrop={handleBaseImageDrop}
-    >
-      {isBaseImageDragActive && <div className="pointer-events-none absolute inset-0 z-[90] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm"><div className="rounded-xl border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center text-sm font-bold text-indigo-700 shadow-2xl dark:bg-gray-900/95 dark:text-indigo-300">松手导入为当前编辑底图<br /><span className="mt-1 block text-xs font-normal text-gray-500 dark:text-gray-400">支持 PNG、JPEG、WebP；导入后自动检查并提示规范化尺寸</span></div></div>}
-      <ImageEditControls
-        operation={operation}
-        draft={draft}
-        layout={layout}
-        fileInputRef={fileInputRef}
-        forceEmptySeed={forceEmptySeed}
-        enforceFreeStepLimit={enforceFreeStepLimit}
-        baseImagePreview={baseImage}
-        canvasProps={{
-          imageCanvasRef,
-          maskCanvasRef,
-          overlayCanvasRef,
-          width: state.width,
-          height: state.height,
-          focusedRect: state.focusedRect,
-          focused,
-          isLoading,
-          isBusy: isLoading || isGenerating,
-          maskEditable,
-          onPointerDown: handlePointerDown,
-          onPointerMove: handlePointerMove,
-          onPointerUp: handlePointerUp,
-          onFocusedInteractionStart: handleFocusedInteractionStart,
-          onFocusedInteractionMove: handleFocusedInteractionMove,
-          onFocusedInteractionEnd: handleFocusedInteractionEnd,
-        }}
-        latestTextToImageItem={latestTextToImageItem}
-        selectableParams={draft.params}
-        strength={strength}
-        noise={noise}
-        brushSize={brushSize}
-        focused={focused}
-        minimumContextArea={minimumContextArea}
-        tool={tool}
-        manualMaskEditing={manualMaskEditing}
-        expansion={expansion}
-        isBusy={isLoading || isGenerating}
-        safeMode={safeMode}
-        tagAssistEnabled={tagAssistEnabled}
-        apiKey={apiKey}
-        notify={notify}
-        onPromptChange={onPromptChange}
-        onNegativePromptChange={onNegativePromptChange}
-        onPromptSource={onPromptSource}
-        onDraftChange={onDraftChange}
-        onFileChange={handleUpload}
-        onSelectImageSource={(item, source, importParams) => onBaseImageChange(item.imageUrl, source, source === 'inspiration' ? undefined : item.id, importParams ? {
-          prompt: item.prompt,
-          negativePrompt: item.negativePrompt,
-          params: item.params,
-        } : undefined)}
-        onStrengthChange={value => { setStrength(value); onDraftChange({ strength: value }); }}
-        onNoiseChange={value => { setNoise(value); onDraftChange({ noise: value }); }}
-        onBrushSizeChange={value => { setBrushSize(value); onDraftChange({ brushSize: value }); }}
-        onFocusedChange={value => { setFocused(value); focusedSelectionArmedRef.current = value; if (!value) { focusedRectRef.current = null; setState(previous => ({ ...previous, focusedRect: null })); } onDraftChange({ focused: value, ...(value ? {} : { focusedRect: undefined }) }); }}
-        onMinimumContextAreaChange={value => { setMinimumContextArea(value); onDraftChange({ minimumContextArea: value }); }}
-        onToolChange={setTool}
-        onManualMaskEditingChange={setManualMaskEditing}
-        onClearMask={clearMask}
-        onInvertMask={invertMask}
-        onUndo={undo}
-        onRedo={redo}
-        onExpansionChange={value => { setExpansion(value); onDraftChange({ expansion: value }); }}
-        onApplyOutpaint={() => { void applyOutpaint(); }}
-        onResetFocusedRect={resetFocusedRect}
-        normalization={normalization}
-        onNormalize={applyNormalization}
-      />
-      <ImageEditPreview
-        operation={operation}
-        image={previewImage}
-        error={error}
-        generationCostLabel={generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea })}
-        onGenerate={() => { void submit(); }}
-        isLoading={isLoading}
-        isGenerating={isGenerating}
-        canGenerate={canGenerate}
-        generationProgress={generationProgress}
-        onOpenLightbox={onOpenLightbox}
-        getDownloadFilename={getDownloadFilename}
-        canNavigateHistory={canNavigateHistory}
-        historyLabel={historyLabel}
-        onPreviousHistory={onPreviousHistory}
-        onNextHistory={onNextHistory}
-        canManageHistoryGroup={canManageHistoryGroup}
-        onRemoveCurrentHistory={onRemoveCurrentHistory}
-        onClearHistoryGroup={onClearHistoryGroup}
-      />
+    <div className="flex min-h-0 flex-1 flex-col">
+      <nav className="grid h-10 flex-none grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
+        {mobileTabs.map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setMobileTab(value)}
+            className={`relative min-w-0 text-sm font-bold ${mobileTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}
+          >
+            {label}
+            {mobileTab === value && <span className="absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-indigo-500" />}
+          </button>
+        ))}
+      </nav>
+      <div
+        data-image-edit-drop-zone="true"
+        className="chain-editor-body relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-white dark:bg-gray-900 lg:flex-row lg:overflow-hidden"
+        onDragEnter={handleBaseImageDragEnter}
+        onDragOver={handleBaseImageDragOver}
+        onDragLeave={handleBaseImageDragLeave}
+        onDrop={handleBaseImageDrop}
+      >
+        {isBaseImageDragActive && <div className="pointer-events-none absolute inset-0 z-[90] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm"><div className="rounded-xl border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center text-sm font-bold text-indigo-700 shadow-2xl dark:bg-gray-900/95 dark:text-indigo-300">松手导入为当前编辑底图<br /><span className="mt-1 block text-xs font-normal text-gray-500 dark:text-gray-400">支持 PNG、JPEG、WebP；导入后自动检查并提示规范化尺寸</span></div></div>}
+        <ImageEditControls
+          operation={operation}
+          draft={draft}
+          layout={layout}
+          mobileTab={mobileTab}
+          fileInputRef={fileInputRef}
+          forceEmptySeed={forceEmptySeed}
+          enforceFreeStepLimit={enforceFreeStepLimit}
+          baseImagePreview={baseImage}
+          canvasProps={{
+            imageCanvasRef,
+            maskCanvasRef,
+            overlayCanvasRef,
+            width: state.width,
+            height: state.height,
+            focusedRect: state.focusedRect,
+            focused,
+            isLoading,
+            isBusy: isLoading || isGenerating,
+            maskEditable,
+            onPointerDown: handlePointerDown,
+            onPointerMove: handlePointerMove,
+            onPointerUp: handlePointerUp,
+            onFocusedInteractionStart: handleFocusedInteractionStart,
+            onFocusedInteractionMove: handleFocusedInteractionMove,
+            onFocusedInteractionEnd: handleFocusedInteractionEnd,
+          }}
+          latestTextToImageItem={latestTextToImageItem}
+          selectableParams={draft.params}
+          strength={strength}
+          noise={noise}
+          brushSize={brushSize}
+          focused={focused}
+          minimumContextArea={minimumContextArea}
+          tool={tool}
+          manualMaskEditing={manualMaskEditing}
+          expansion={expansion}
+          isBusy={isLoading || isGenerating}
+          safeMode={safeMode}
+          tagAssistEnabled={tagAssistEnabled}
+          apiKey={apiKey}
+          notify={notify}
+          onPromptChange={onPromptChange}
+          onNegativePromptChange={onNegativePromptChange}
+          onPromptSource={onPromptSource}
+          onDraftChange={onDraftChange}
+          onFileChange={handleUpload}
+          onSelectImageSource={(item, source, importParams) => onBaseImageChange(item.imageUrl, source, source === 'inspiration' ? undefined : item.id, importParams ? {
+            prompt: item.prompt,
+            negativePrompt: item.negativePrompt,
+            params: item.params,
+          } : undefined)}
+          onStrengthChange={value => { setStrength(value); onDraftChange({ strength: value }); }}
+          onNoiseChange={value => { setNoise(value); onDraftChange({ noise: value }); }}
+          onBrushSizeChange={value => { setBrushSize(value); onDraftChange({ brushSize: value }); }}
+          onFocusedChange={value => { setFocused(value); focusedSelectionArmedRef.current = value; if (!value) { focusedRectRef.current = null; setState(previous => ({ ...previous, focusedRect: null })); } onDraftChange({ focused: value, ...(value ? {} : { focusedRect: undefined }) }); }}
+          onMinimumContextAreaChange={value => { setMinimumContextArea(value); onDraftChange({ minimumContextArea: value }); }}
+          onToolChange={setTool}
+          onManualMaskEditingChange={setManualMaskEditing}
+          onClearMask={clearMask}
+          onInvertMask={invertMask}
+          onUndo={undo}
+          onRedo={redo}
+          onExpansionChange={value => { setExpansion(value); onDraftChange({ expansion: value }); }}
+          onApplyOutpaint={() => { void applyOutpaint(); }}
+          onResetFocusedRect={resetFocusedRect}
+          normalization={normalization}
+          onNormalize={applyNormalization}
+        />
+        <ImageEditPreview
+          operation={operation}
+          image={previewImage}
+          error={error}
+          generationCostLabel={generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea })}
+          onGenerate={() => { void submit(); }}
+          isLoading={isLoading}
+          isGenerating={isGenerating}
+          canGenerate={canGenerate}
+          generationProgress={generationProgress}
+          onOpenLightbox={onOpenLightbox}
+          getDownloadFilename={getDownloadFilename}
+          canNavigateHistory={canNavigateHistory}
+          historyLabel={historyLabel}
+          onPreviousHistory={onPreviousHistory}
+          onNextHistory={onNextHistory}
+          canManageHistoryGroup={canManageHistoryGroup}
+          onRemoveCurrentHistory={onRemoveCurrentHistory}
+          onClearHistoryGroup={onClearHistoryGroup}
+        />
+      </div>
     </div>
   );
 };

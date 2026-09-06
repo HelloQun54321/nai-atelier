@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **Gemini 3.8 Flash**：为移动端实验室的图生图、局部重绘与扩图模式补齐三段式 Tab 导航并整合画板贴身工具栏（feat: add three-tab mobile navigation for image edit modes）。
 - **ZCode (GLM-5.3)**：应用户要求完成历史清洗：git filter-branch 将 prompt-agent.mjs 与 media-gateway.test.mjs 全历史中的未授权话术正文替换为占位符（其余内容逐字节不动），清理备份 refs 并强推 main 与 tag，全新克隆复核零残留、日期完整保留；原始历史以 bundle 归档于仓库外。测试补齐无正文回退分支守卫，有/无内容文件双模式 157/157 全绿（chore: document history redaction）。
 - **ZCode (GLM-5.3)**：应用户要求把未授权公开的内置破限预设正文外置到 local-data JSON（gitignore），代码改为运行时加载 + 中性回退，测试断言同步去字面量化（refactor: move builtin agent preset content into local-data）。
 - **ZCode (GLM-5.3)**：审计并补全 .gitignore（临时文件 .tmp*/ *.tmp / *.bak / *~，Windows 系统文件 Thumbs.db 等），为将来拆分公开仓库做准备（chore: harden gitignore for public split）。
