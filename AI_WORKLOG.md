@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-07
+- **Gemini 3.8 Flash**：清理 README 中遗留的私人测试统计数据（本机同步规模验证小节）与 11GB 本地磁盘大小标注，通用化示例 IP（docs: remove developer verification metrics and personal folder sizes from README）。
 - **Gemini 3.8 Flash**：纠正 Tag 词库非直接内置表述，明确为内置拉取工具按需下载，并在功能介绍、第三方资源与致谢名单中深度标明 ffdkj 作者来源与致谢（docs: clarify tag dictionary on-demand download and credit ffdkj）。
 - **Gemini 3.8 Flash**：优化 README 界面预览布局，取消桌面两图并列排版改为全宽垂直居中呈现，并明确标注为局部特写预览而非全局视图（docs: stack preview screenshots vertically and clarify local preview nature）。
 - **Gemini 3.8 Flash**：将项目版本号正式提升至 1.0.0 正式版，同步 package.json、package-lock.json 与 README 徽章（chore: bump version to 1.0.0 for official release）。

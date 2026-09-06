@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.0.2-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.0.3-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -479,7 +479,7 @@ NAI Atelier 独有的新风格串可以先同步到 st-chatu8；一旦进入 st-
 
 ### 图片与磁盘存储策略
 
-- **零重复占用**：st-chatu8 历史图片不会复制进 NAI Atelier，而是由桥接层记录原文件位置，避免额外占用磁盘空间（原库约 11 GB）。
+- **零重复占用**：st-chatu8 历史图片不会重复复制进 NAI Atelier，而是由桥接层记录原文件路径，避免额外占用磁盘空间。
 - **干净隔离历史**：NAI Atelier 历史页只展示 st-chatu8 的原图记录；st-chatu8 生成的本地缩略图不会作为独立历史混入。
 - **封面无缝复用**：风格串封面作为资料本身同步，两边均可正常显示；重复同步自动复用已有封面，不产生冗余文件。
 - **规范二进制去重**：Vibe 使用图片内容哈希去重，自动识别 st-chatu8 与官方兼容文件对同一图片采用不同 ID 的情况。
@@ -490,15 +490,6 @@ NAI Atelier 独有的新风格串可以先同步到 st-chatu8；一旦进入 st-
 - **多人拼车公共队列**使用与 st-chatu8 一致的 NovelAI Key SHA-256 指纹协议，双方客户端可进入同一条公共队列互操作。
 - **Vibe 内容去重**兼容 st-chatu8 对 Base64 文本哈希与官方兼容导出器字节哈希的差异，统一以图片字节哈希为规范键。
 - 上述参考与兼容均为协议层面的实现借鉴，不包含 st-chatu8 的代码或数据；具体同步接口由本项目的 `scripts/st-chatu8-bridge.mjs` 独立实现。
-
-### 本机同步规模验证
-
-截至 2026-07-29 的实际验证结果：
-
-- 134 个风格串，其中 13 个带配图。
-- 6 个永久 Vibe。
-- 6687 张 st-chatu8 生成原图已接入历史。
-- 重复同步后数量不增长，历史缩略图混入数为 0。
 
 ---
 
@@ -511,7 +502,7 @@ NAI Atelier 独有的新风格串可以先同步到 st-chatu8；一旦进入 st-
 在电脑启动项目后，终端窗口会直接打印出当前本机的局域网地址：
 
 ```text
-http://192.168.0.105:3000
+http://192.168.x.x:3000
 ```
 
 手机连接同一个家庭 Wi-Fi 后，在手机自带或常用浏览器直接打开该地址即可。
