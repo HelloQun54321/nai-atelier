@@ -122,7 +122,7 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
             <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 px-5 py-4">
               <div>
                 <h2 className="font-bold text-gray-900 dark:text-white">Tag 补全词库</h2>
-                <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Danbooru 中英双语词库</p>
+                <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">源自 ffdkj 开源中英对照库 · 本地按需下载生成</p>
               </div>
               <CloseButton onClick={() => { if (!isRunning) setIsOpen(false); }} className={isRunning ? 'pointer-events-none opacity-40' : ''} size="sm" />
             </div>

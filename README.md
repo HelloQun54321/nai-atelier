@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.0.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.0.2-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -92,7 +92,7 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 创作工坊。它不�
 | 🌐 外部图库三件套 | **Pixiv**（原站全量作品、榜单、画师主页）、**Danbooru**（通用级素材与 Tag 参考）、**AITag**（AI 作品与生成参数），统一瀑布流浏览与一键导入 |
 | 🔐 Pixiv 网页登录 | 适配 Pixiv 官方 OAuth 流程（含新版 `pixiv://` 回调），登录后 refresh token 加密保存本机，浏览器与图库全链路可用 |
 | 🧰 图片反推 Tag | 本地 WD Tagger 模型识别，图库任意图片一键反推，结果可复制或直接送往实验室 |
-| 📚 Tag 与权重交互 | 32 万余条中英 Tag 本地分片、连续权重胶囊一体式调节、多选自动组合数值组、Agent 极速补译缺失项 |
+| 📚 Tag 与权重交互 | 内置下载入口一键拉取生成 32 万余条中英 Tag 本地分片（源自 ffdkj 开源项目）、连续权重胶囊一体式调节、多选自动组合数值组、Agent 极速补译缺失项 |
 | 🎨 封面体系 | 画师/角色封面从 Danbooru 候选图选取、图钉固定保存；封面缩略图固定本地保留，不受缓存上限淘汰 |
 | ⚡ 图库加载优化 | 缩略图后台预热（滚动即缓存命中）、固定封面本地持久化、瀑布流真实比例显示、提前两屏预取 |
 | 🌌 Vibe Transfer | 付费编码一次、本地永久保存、最多同时启用 16 个、官方文件导入导出 |
@@ -309,7 +309,7 @@ flowchart LR
 
 ### Tag 自动补全、连续权重胶囊与操作台
 
-项目内置 32 万余条本地 Tag 数据（中英对照与画师/角色目录源自 [ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table) 的 tag.sqlite，NovelAI 专属 Tag 来自官方列表；详见[来源与许可](#-来源与许可)）：
+项目**内置了词库一键拉取与分片生成工具**，词库数据本身不随源码仓库分发（中英对照与画师/角色目录源自 [ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table) 开源维护的 `tag.sqlite`，NovelAI 专属 Tag 来自官方列表；详见[来源与许可](#-来源与许可)）。用户在系统设置中一键点击或执行命令即可下载并编译生成 32 万余条本地中英对照分片：
 
 - **海量词库与即时补全**：Danbooru 中英对照 Tag、NovelAI 官方专属 Tag，支持中英双向前缀实时搜索、热度排序与中文字意插入；手机端采用双击确认，杜绝滑动手势误选。
 - **一体式连续权重胶囊（Capsule）**：同一对权重包裹的多个 Tag 自动合并为一个无缝连续胶囊，开口与闭合语法渲染于首尾两端，整组贯穿强调色与描边；散落的花括号与方括号不破坏词条美感。
@@ -326,15 +326,17 @@ flowchart LR
 
 词库按前缀拆分成小型 JSON 分片，只加载当前搜索需要的部分。补全菜单支持鼠标滚轮、触摸滑动、键盘上下选择；手机端使用双击确认，避免滑动时误选。
 
-#### 更新方式
+#### 下载与更新方式
 
-可以在“全局设置 → Tag 补全词库”中检查更新，也可以运行：
+由于完整词库切片数据量较大，且上游保持日常更新，项目**不随源码仓库直接打包内置已编译的词库文件，而是在工坊设置与命令行中内置了完整的拉取编译入口，由用户按需下载**。首次使用或需要同步最新数据时：
 
-```bash
-npm run update:tags
-```
+1. **设置面板一键下载**：在「全局设置 → Tag 补全词库」点击「检查并更新」即可自动完成下载与分片生成；
+2. **终端命令行执行**：在项目根目录运行：
+   ```bash
+   npm run update:tags
+   ```
 
-更新流程会检查上游版本、下载数据库、生成中英分片并自动应用。GitHub Raw 不稳定时会重试并切换到 jsDelivr；更新失败不会覆盖当前可用词库。
+更新流程会自动从 [ffdkj 开源仓库](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table) 下载最新的 `tag.sqlite`，并与 NovelAI 官方专属 Tag 合并后编译为本地 JSON 分片。GitHub Raw 访问不稳定时会自动重试并无缝切换至 jsDelivr 备用 CDN；下载与切片在独立暂存目录进行，校验完整前绝不破坏现有本地词库。
 
 ### 画师库：自维护画师目录
 
@@ -794,8 +796,8 @@ NAI Atelier/
 ### 第三方数据与资源
 
 - **Tag 中英词典、画师目录与角色目录**：[ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)
-  - 项目的 Tag 自动补全词库、约 15.1 万画师 Tag 目录、约 10.2 万官方角色 Tag 目录均由该项目的 `tag.sqlite` 数据库生成（`scripts/update-tag-dictionary.mjs` 下载并转换）。
-  - 该上游项目**未在仓库中声明开源许可**；本项目仅将数据用于个人本地使用，不随源码重新分发其数据库文件。
+  - 项目的 Tag 自动补全词库、约 15.1 万画师 Tag 目录、约 10.2 万官方角色 Tag 目录均由该项目的 `tag.sqlite` 数据库生成（由内置工具 `scripts/update-tag-dictionary.mjs` 按需下载并转换）。
+  - 该上游项目**未在仓库中声明开源许可**；本项目仅提供一键拉取编译工具供用户在个人本地使用，不随源码仓库重新分发其数据库文件。
 - **NovelAI 特殊 Tag（风格年份等）**：来自 NovelAI 官方 Tag 列表 `data/novelai-v45-tags.json`（项目内文件）。
 - **互通与协议参考**：[st-chatu8](https://github.com/damoshen123/st-chatu8)（NovelAI 扩展，Precise Reference / Vibe 数据流与拼车队列指纹协议实现参考；仅协议层借鉴，不含其代码）
 - **互通平台**：[SillyTavern](https://github.com/SillyTavern/SillyTavern)（本项目的 st-chatu8 互通以其扩展平台为载体，扩展侧 `npm-bridge` 安装于 SillyTavern）
@@ -811,6 +813,7 @@ NAI Atelier/
 ### 致谢
 
 - 感谢原项目作者 [kirafishy](https://github.com/kirafishy) 提供的基础实现与灵感起点。
+- 感谢 [ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table) 作者 [@ffdkj](https://github.com/ffdkj) 持续维护每日更新的高质量 Danbooru 中英对照翻译数据库，为本工坊的 Tag 补全、画师库与角色库检索提供了坚实的数据基础。
 - 感谢 [st-chatu8](https://github.com/damoshen123/st-chatu8) 作者 [@damoshen123](https://github.com/damoshen123)：本项目基于 NovelAI Key SHA-256 指纹的多人拼车排队机制、Precise Reference 与 Vibe 数据互通协议，深受其优秀设计与开源实践的启发。
 
 ### 一点个人吐槽
