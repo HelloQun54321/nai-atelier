@@ -6,16 +6,16 @@ const svg = `
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
   <defs>
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4f46e5" />
-      <stop offset="50%" stop-color="#4338ca" />
-      <stop offset="100%" stop-color="#312e81" />
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="45%" stop-color="#0ea5e9" />
+      <stop offset="100%" stop-color="#0284c7" />
     </linearGradient>
     <linearGradient id="borderGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="rgba(255,255,255,0.4)" />
-      <stop offset="100%" stop-color="rgba(255,255,255,0.08)" />
+      <stop offset="0%" stop-color="rgba(255,255,255,0.5)" />
+      <stop offset="100%" stop-color="rgba(255,255,255,0.15)" />
     </linearGradient>
     <filter id="glyphShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="rgba(15,23,42,0.45)" />
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="rgba(3,105,161,0.45)" />
     </filter>
   </defs>
 

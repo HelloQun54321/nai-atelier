@@ -3,6 +3,10 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-09-06
+### 视觉:应用图标主色对齐默认主题晴空蓝强调色
+- 移除泛紫色渐变，全面改用 NAI Atelier 默认主题强调色晴空蓝（`#0ea5e9`），重新渲染生成 `app-icon.ico`、`app-icon.png` 与 `artist-palette-3d.ico`。
+- 重新刷新桌面快捷方式与 Windows Shell 图标缓存，使桌面图标色调与应用内强调色完美统一。
+
 ### 视觉:生成高分辨率多尺寸应用图标并更新桌面快捷方式与网页Favicon
 - 使用矢量 Palette 调色盘与品牌强调色微徽章渲染生成 256x256 高清与多尺寸嵌入格式应用图标（`app-icon.ico` 与 `app-icon.png`）。
 - 将 Windows 桌面快捷方式（`NAI Atelier.lnk`）图标与浏览器标签 Favicon 同步切换为全新工坊矢量图标，并向系统 Shell 发送图标刷新通知。
