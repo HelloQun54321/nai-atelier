@@ -54,6 +54,11 @@ export default {
           headers.set('Cache-Control', 'private, max-age=31536000, immutable');
           // 对象内容不可信时禁止浏览器嗅探 MIME，防止借资产存储 HTML/脚本形成同源 XSS
           headers.set('X-Content-Type-Options', 'nosniff');
+          const origin = request.headers.get('Origin');
+          if (path.startsWith('/api/assets/covers/') && origin && /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(origin)) {
+            headers.set('Access-Control-Allow-Origin', origin);
+            headers.set('Vary', 'Origin');
+          }
           return new Response(object.body, { headers });
         } catch (e) {
           console.error('asset proxy failed', e);
@@ -66,7 +71,20 @@ export default {
     }
 
     // 同源 SPA 不会发起预检；不返回任何 CORS 头，使跨源预检必然失败（防 drive-by 读写本机 API）。
+    // 但对画师封面资源允许回环源跨域访问，以便 SillyTavern 等本地客户端正常下载配图。
     if (method === 'OPTIONS') {
+      const origin = request.headers.get('Origin');
+      if (origin && path.startsWith('/api/assets/covers/') && /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(origin)) {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': origin,
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+            'Vary': 'Origin',
+          },
+        });
+      }
       return new Response(null, { status: 204 });
     }
 

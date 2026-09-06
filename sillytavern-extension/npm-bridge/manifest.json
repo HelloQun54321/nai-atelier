@@ -3,9 +3,9 @@
   "loading_order": 110,
   "requires": [],
   "optional": ["st-chatu8"],
-  "js": "index.js?v=1.5.0",
-  "css": "style.css?v=1.5.0",
+  "js": "index.js?v=1.5.1",
+  "css": "style.css?v=1.5.1",
   "author": "HelloQun54321",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "在 NaiPromptManager 与 st-chatu8 之间同步画师串、Vibe，并将 st-chatu8 原图接入生成历史。"
 }

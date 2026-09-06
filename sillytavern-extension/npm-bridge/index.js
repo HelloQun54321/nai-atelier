@@ -287,13 +287,23 @@ const uploadVibeText = async (name, text) => {
 
 const bytesToBase64 = bytes => {
   let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  for (let offset = 0; offset < bytes.length; offset += 0x4000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x4000));
   }
   return btoa(binary);
 };
 
-const uploadArtistPreview = async (name, imageUrl, oldPath = null) => {
+const resolvePresetName = (collection, requested, currentName = '', externalId = '', idMap = {}) => {
+  if (currentName && currentName === requested) return currentName;
+  if (!collection[requested]) return requested;
+  const mappedId = idMap[requested];
+  if (!mappedId || mappedId === externalId) return requested;
+  let index = 2;
+  while (collection[`${requested} (${index})`]) index++;
+  return `${requested} (${index})`;
+};
+
+const uploadArtistPreview = async (name, imageUrl, oldPath = null, externalId = '') => {
   const bridgeSettings = settings();
   const url = imageUrl.startsWith('http') ? imageUrl : `${bridgeSettings.baseUrl.replace(/\/$/, '')}${imageUrl}`;
   const imageResponse = await fetch(url, { cache: 'no-store' });
@@ -304,7 +314,8 @@ const uploadArtistPreview = async (name, imageUrl, oldPath = null) => {
   const contentHash = await hashBytes(bytes);
 
   // If previous file exists and content hash matches, avoid duplicate uploads
-  if (oldPath && bridgeSettings.artistPreviewHashes?.[name] === contentHash) {
+  const key = externalId || name;
+  if (oldPath && bridgeSettings.artistPreviewHashes?.[key] === contentHash) {
     return { path: oldPath, contentHash, unchanged: true };
   }
 
@@ -341,25 +352,37 @@ const applyArtists = async artists => {
   const st = chatu8();
   const bridgeSettings = settings();
   st.yushe ||= {};
+  st.configImageStorage ||= {};
   bridgeSettings.artistPreviewHashes ||= {};
+  bridgeSettings.artistPreviewUrls ||= {};
+
+  const artistsWithPreviews = artists.filter(a => a.previewImage);
+  let downloadedCount = 0;
+
   for (const artist of artists) {
     const currentName = Object.entries(bridgeSettings.artistIds).find(([, id]) => id === artist.externalId)?.[0] || '';
-    const name = uniqueName(st.yushe, artist.name, currentName);
-    let previewImageId = currentName ? st.yushe[currentName]?.previewImageId : null;
+    const name = resolvePresetName(st.yushe, artist.name, currentName, artist.externalId, bridgeSettings.artistIds);
+    let previewImageId = (currentName ? st.yushe[currentName]?.previewImageId : null) || st.yushe[name]?.previewImageId || null;
     const previousHash = bridgeSettings.artistPreviewHashes[artist.externalId] || '';
     const previousPath = previewImageId ? st.configImageStorage?.[previewImageId]?.path : null;
 
     if (artist.previewImage) {
-      const needsDownload = !previewImageId || !previousPath || !previousHash;
-      if (needsDownload || !artist.externalId.startsWith('st:')) {
+      const hasValidPreview = previewImageId && previousPath && previousHash;
+      const urlMatches = bridgeSettings.artistPreviewUrls?.[artist.externalId] === artist.previewImage;
+      const needsDownload = !hasValidPreview || !urlMatches;
+
+      if (needsDownload) {
         try {
-          const result = await uploadArtistPreview(name, artist.previewImage, previousPath);
-          if (!result.unchanged) {
+          const result = await uploadArtistPreview(name, artist.previewImage, previousPath, artist.externalId);
+          if (!result.unchanged || !previewImageId) {
             previewImageId = `cfgimg_npm_preview_${crypto.randomUUID()}`;
-            st.configImageStorage ||= {};
             st.configImageStorage[previewImageId] = { path: result.path, date: Date.now(), type: 'image' };
           }
           bridgeSettings.artistPreviewHashes[artist.externalId] = result.contentHash;
+          downloadedCount++;
+          if (artistsWithPreviews.length > 5 && (downloadedCount % 15 === 0 || downloadedCount === artistsWithPreviews.length)) {
+            setStatus(`正在同步画师串配图 (${downloadedCount}/${artistsWithPreviews.length})…`, 'working');
+          }
         } catch (error) {
           console.warn('[NPM Bridge] 无法更新画师配图:', name, error);
         }

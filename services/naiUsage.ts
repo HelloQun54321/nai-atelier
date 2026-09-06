@@ -70,6 +70,7 @@ export const USAGE_SNAPSHOT_TTL = 15 * 1000;
 
 /** 同一把 Key 的并发刷新共用一个请求，避免切换事件与多个组件重复打到订阅接口。 */
 const inFlightUsageRequests = new Map<string, Promise<NovelaiSubscriptionInfo>>();
+const usageSnapshotCache = new Map<string, { info: NovelaiSubscriptionInfo; fetchedAt: number }>();
 
 /**
  * 模块级共享订阅驱动：多个 keep-alive 页面各自 useNovelaiUsage 时只维护
@@ -150,13 +151,15 @@ const requestNovelaiSubscription = (apiKey: string): Promise<NovelaiSubscription
 
 /** 生图完成后（以及定期）刷新 NovelAI 订阅限额状态；返回本次拉到的最新快照。 */
 export const useNovelaiUsage = () => {
-  const [info, setInfo] = useState<NovelaiSubscriptionInfo | null>(null);
-  const [fetchedAt, setFetchedAt] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const initialKey = (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim();
+  const initialSnapshot = usageSnapshotCache.get(initialKey);
+  const [info, setInfo] = useState<NovelaiSubscriptionInfo | null>(initialSnapshot?.info || null);
+  const [fetchedAt, setFetchedAt] = useState(initialSnapshot?.fetchedAt || 0);
+  const [loading, setLoading] = useState(!initialSnapshot);
   const [error, setError] = useState<string | null>(null);
   const infoRef = useRef<NovelaiSubscriptionInfo | null>(null);
-  const fetchedAtRef = useRef(0);
-  const activeKeyRef = useRef('');
+  const fetchedAtRef = useRef(initialSnapshot?.fetchedAt || 0);
+  const activeKeyRef = useRef(initialSnapshot ? initialKey : '');
 
   const refresh = useCallback(async (): Promise<NovelaiSubscriptionInfo | null> => {
     // 与 GlobalSettings 相同的读取顺序，保证设置里改 Key 后下一次刷新即生效。
@@ -186,6 +189,7 @@ export const useNovelaiUsage = () => {
       if (activeKeyRef.current !== apiKey) return null;
       infoRef.current = next;
       fetchedAtRef.current = Date.now();
+      usageSnapshotCache.set(apiKey, { info: next, fetchedAt: fetchedAtRef.current });
       setInfo(next);
       setFetchedAt(fetchedAtRef.current);
       setError(null);
@@ -210,7 +214,7 @@ export const useNovelaiUsage = () => {
   }, [refresh]);
 
   useEffect(() => {
-    void refresh();
+    void refreshIfStale();
     // 订阅共享驱动：interval、visibilitychange 与全局事件只由驱动维护一份；
     // 驱动 tick 时唤醒各实例刷新（实例各自持有自己的 state/key refs）
     const subscriber: UsageSubscriber = { poll: () => void refresh() };
@@ -220,7 +224,7 @@ export const useNovelaiUsage = () => {
       usageSubscribers.delete(subscriber);
       if (usageSubscribers.size === 0) stopUsageDriver();
     };
-  }, [refresh]);
+  }, [refreshIfStale]);
 
   return { info, usage: info?.usage, loading, error, fetchedAt, refresh, refreshIfStale };
 };

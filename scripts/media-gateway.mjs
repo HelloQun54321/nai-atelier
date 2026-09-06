@@ -2562,7 +2562,7 @@ class ThumbnailCache {
   }
 }
 
-const proxyRequest = (req, res, workerPort) => {
+const proxyRequest = (req, res, workerPort, extraHeaders = {}) => {
   const headers = { ...req.headers };
   headers.host = getForwardHost(req);
   // The Worker uses this address for the LAN PIN rate limit.  Never retain a
@@ -2571,7 +2571,8 @@ const proxyRequest = (req, res, workerPort) => {
   headers['x-forwarded-for'] = normalizeIp(req.socket.remoteAddress);
   headers['x-nai-client-ip'] = normalizeIp(req.socket.remoteAddress);
   const upstream = httpRequest({ hostname: '127.0.0.1', port: workerPort, path: req.url, method: req.method, headers }, upstreamRes => {
-    res.writeHead(upstreamRes.statusCode || 502, upstreamRes.headers);
+    const responseHeaders = { ...upstreamRes.headers, ...extraHeaders };
+    res.writeHead(upstreamRes.statusCode || 502, responseHeaders);
     upstreamRes.pipe(res);
   });
   upstream.on('error', error => {
@@ -2814,6 +2815,18 @@ const serveDistFile = async (req, res, url) => {
     markUserTraffic();
     let url;
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
+    if (url.pathname.startsWith('/api/assets/covers/') && req.method === 'OPTIONS') {
+      const origin = isLoopbackOrigin(req.headers.origin) ? req.headers.origin : '';
+      if (!origin) return sendJson(res, 403, { error: 'Forbidden' });
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '600',
+        Vary: 'Origin',
+      });
+      return res.end();
+    }
     if (url.pathname.startsWith('/api/integrations/st-chatu8/')) {
       const isLocalRequest = isLoopbackIp(req.socket.remoteAddress);
       const isHistoryImage = /^\/api\/integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image$/i.test(url.pathname);
@@ -3297,7 +3310,12 @@ const serveDistFile = async (req, res, url) => {
     }
     // 静态前端资源由网关直接提供，/api 与 /__internal 继续转发给 workerd。
     if (!url.pathname.startsWith('/api/') && !url.pathname.startsWith('/__internal/') && await serveDistFile(req, res, url)) return;
-    if (url.pathname !== '/api/media') return proxyRequest(req, res, workerPort);
+    if (url.pathname !== '/api/media') {
+      const isCover = url.pathname.startsWith('/api/assets/covers/');
+      const origin = isCover && isLoopbackOrigin(req.headers.origin) ? req.headers.origin : '';
+      const extraHeaders = origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {};
+      return proxyRequest(req, res, workerPort, extraHeaders);
+    }
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
     if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
 
