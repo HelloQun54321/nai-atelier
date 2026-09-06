@@ -5,13 +5,13 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.150.20-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.150.21-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
   [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](./LICENSE)
 
-  [项目定位](#-项目定位) · [界面预览](#-界面预览) · [核心能力](#-核心能力总览) · [功能地图](#-功能地图) · [创作工作流](#-核心创作工作流) · [资源资料库](#-tag-与资源资料库) · [SillyTavern 互通](#-sillytavern-互通nai-atelier-连接器) · [手机访问](#-手机局域网访问) · [数据存储](#-本地数据与图片存储) · [数据备份](#-备份与数据持久化) · [更新日志](./CHANGELOG.md)
+  [项目定位](#-项目定位) · [界面预览](#-界面预览) · [核心能力](#-核心能力总览) · [功能地图](#-功能地图) · [创作工作流](#-核心创作工作流) · [资源资料库](#-tag-与资源资料库) · [st-chatu8 互通](#-sillytavern--st-chatu8-互通nai-atelier-连接器) · [手机访问](#-手机局域网访问) · [数据存储](#-本地数据与图片存储) · [数据备份](#-备份与数据持久化) · [更新日志](./CHANGELOG.md)
 
   > NAI Atelier 基于 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 二次开发并独立维护，面向本地单人使用；原项目见上方链接。
 </div>
@@ -86,7 +86,7 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 创作工坊。它不�
 | 🌌 Vibe Transfer | 付费编码一次、本地永久保存、1～4 个组合、官方文件导入导出 |
 | 🧬 Precise Reference | 电脑保存参考原图、三种官方参考类型、最多 4 张并准确计算费用 |
 | 🚦 拼车公共队列 | 与 st-chatu8 按相同 Key 指纹协调生图顺序，减少共享账号并发错误 |
-| 🔗 SillyTavern 互通 | 仓库收录「NAI Atelier 连接器」扩展，智能检测酒馆目录、一键安装/更新/导出，杜绝跨域阻断与死循环 |
+| 🔗 st-chatu8 插件互通 | 专为酒馆知名插件 st-chatu8 定制连接器与双向桥接，打通画师预设、Vibe 与历史原图，智能检测目录一键安装 |
 | 🛡️ 安全模式 | 全局遮挡图片，作品名称可按设置选择是否同时隐藏，并可设置启动时默认开启；点击后临时显示 |
 | ✦ 项目 Agent | 用 DeepSeek、Gemini、Grok 等模型查看历史图片并操作资料库、设置、实验室与生图流程 |
 
@@ -414,13 +414,13 @@ Pixiv 页面连接 Pixiv 官方 App API，提供推荐、日榜、周榜、月�
 
 ---
 
-## 🔗 SillyTavern 互通（NAI Atelier 连接器）
+## 🔗 SillyTavern / st-chatu8 互通（NAI Atelier 连接器）
 
-项目可以与本机（如 `D:\SillyTavern`）及局域网中的 [st-chatu8](https://github.com/damoshen123/st-chatu8) 无缝配套使用。
+本项目内置的连接器与双向桥接机制，**是专门针对 SillyTavern 生态中最流行的生图插件 [st-chatu8](https://github.com/damoshen123/st-chatu8) 定向定制开发**。它可以与本机（如 `D:\SillyTavern`）及局域网中的 SillyTavern 实例无缝配套，彻底打通酒馆 RP 角色扮演生图与本工坊深度打磨之间的资产壁垒。
 
 ### 扩展简介与一键安装
 
-- **NAI Atelier 连接器（NAI Atelier Connector）**：项目内置配套扩展（源码位于 `third-party/sillytavern-extension`，平滑兼容并自动清理旧版 `npm-bridge`）。
+- **NAI Atelier 连接器（NAI Atelier Connector）**：项目内置的酒馆专属第三方扩展（源码位于 `third-party/sillytavern-extension`，平滑兼容并自动清理旧版 `npm-bridge`）。
 - **智能路径检测**：控制台与网关自动嗅探本机标准安装路径（`D:\SillyTavern`、`C:\SillyTavern`、上级工作区等），无需手工翻找扩展目录。
 - **一键安装与更新**：在前端设置中可一键将连接器安装/更新至 SillyTavern 扩展库；对于跨设备或容器环境，亦支持一键导出离线 ZIP 安装包。
 - **自动化双向桥接**：启动后由电脑图片网关提供受限桥接接口自动同步，也可在 SillyTavern 的扩展面板中随时点击“立即同步”。
