@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-07
+- **Gemini 3.8 Flash**：解除公共排队服务与外部单一实例的硬编码绑定，默认值置空并增加地址配置守卫，由使用者自行填入兼容服务地址（refactor: require user-provided service url for cloud queue）。
 - **Gemini 3.8 Flash**：全面润色优化 README 中文文字表达，剔除机械八股与翻译腔，按创作者第一视角与心流重写核心工作流、多模型视觉协同、局域网代理机制与安全边界（style: polish README copy for human-centric tone and clarity）。
 - **Gemini 3.8 Flash**：重构优化 README 全篇排版布局：升级架构 Mermaid Subgraph 图、补齐顶栏导航锚点、理顺创作工作流与独立 SillyTavern 章节层级，归类 Agent 模块并修复重复项（style: optimize README layout, heading hierarchy, and architecture diagram）。
 - **Gemini 3.8 Flash**：合并 README 界面预览中重合的生图实验室与 Agent 截图，剔除冗余图并优化多端分节排版（style: merge lab and agent previews in README gallery）。

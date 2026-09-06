@@ -640,18 +640,26 @@ test('cloud queue accepts a custom service URL and keeps it for completion', asy
   assert.equal(calls.at(-1).url, 'https://custom-queue.example/v1/complete');
 });
 
-test('cloud queue service URL validation rejects credentials and query strings', () => {
+test('cloud queue service URL validation rejects credentials and query strings, allows empty when optional', () => {
   assert.equal(normalizeCloudQueueServiceUrl('https://queue.example/'), 'https://queue.example');
+  assert.equal(normalizeCloudQueueServiceUrl('', { allowEmpty: true }), '');
+  assert.throws(() => normalizeCloudQueueServiceUrl(''), /不能为空/);
   assert.throws(() => normalizeCloudQueueServiceUrl('https://user:pass@queue.example'), /无凭据/);
   assert.throws(() => normalizeCloudQueueServiceUrl('https://queue.example?token=secret'), /无凭据/);
 });
 
-test('legacy cloud queue preferences keep existing values and receive the current service URL', () => {
+test('cloud queue preferences default to empty service URL and disabled when serviceUrl is missing', () => {
   assert.deepEqual(normalizeCloudQueuePreferences({ enabled: true, greeting: '我的队列', showGreeting: false }), {
+    enabled: false,
+    greeting: '我的队列',
+    showGreeting: false,
+    serviceUrl: '',
+  });
+  assert.deepEqual(normalizeCloudQueuePreferences({ enabled: true, greeting: '我的队列', showGreeting: false, serviceUrl: 'https://custom-queue.example' }), {
     enabled: true,
     greeting: '我的队列',
     showGreeting: false,
-    serviceUrl: 'https://st-chatu-novelai-queue.hf.space',
+    serviceUrl: 'https://custom-queue.example',
   });
 });
 

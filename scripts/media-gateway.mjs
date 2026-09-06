@@ -43,7 +43,7 @@ const NAI_GENERATE_STREAM_URL = 'https://image.novelai.net/ai/generate-image-str
 const NAI_ENCODE_VIBE_URL = 'https://image.novelai.net/ai/encode-vibe';
 // api.novelai.net 的订阅接口会以 400 拒绝第三方工具并提示改用 image 域名（2026-08 实测）。
 const NAI_SUBSCRIPTION_URL = 'https://image.novelai.net/user/subscription';
-const CLOUD_QUEUE_URL = 'https://st-chatu-novelai-queue.hf.space';
+const CLOUD_QUEUE_URL = '';
 const CLOUD_QUEUE_POLL_INTERVAL = 1000;
 const CLOUD_QUEUE_MAX_FAILURES = 3;
 const CLOUD_QUEUE_STATUS_TTL = 5 * 60 * 1000;
@@ -96,9 +96,12 @@ const preciseReferenceImageCache = new Map();
 let preciseReferenceImageCacheSize = 0;
 const preciseReferenceImageJobs = new Map();
 
-export const normalizeCloudQueueServiceUrl = value => {
+export const normalizeCloudQueueServiceUrl = (value, options = {}) => {
   const raw = String(value || '').trim();
-  if (!raw) throw new Error('公共队列服务地址不能为空');
+  if (!raw) {
+    if (options.allowEmpty) return '';
+    throw new Error('公共队列服务地址不能为空');
+  }
   let url;
   try { url = new URL(raw); } catch { throw new Error('公共队列服务地址必须是完整的 HTTP(S) 地址'); }
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || !url.hostname) {
@@ -107,14 +110,17 @@ export const normalizeCloudQueueServiceUrl = value => {
   return url.href.replace(/\/+$/, '');
 };
 
-export const normalizeCloudQueuePreferences = value => ({
-  enabled: value?.enabled === true,
-  greeting: String(value?.greeting || '正在生成中～').trim().slice(0, 15),
-  showGreeting: value?.showGreeting !== false,
-  serviceUrl: (() => {
-    try { return normalizeCloudQueueServiceUrl(value?.serviceUrl || CLOUD_QUEUE_URL); } catch { return CLOUD_QUEUE_URL; }
-  })(),
-});
+export const normalizeCloudQueuePreferences = value => {
+  const serviceUrl = (() => {
+    try { return normalizeCloudQueueServiceUrl(value?.serviceUrl || '', { allowEmpty: true }); } catch { return ''; }
+  })();
+  return {
+    enabled: value?.enabled === true && Boolean(serviceUrl),
+    greeting: String(value?.greeting || '正在生成中～').trim().slice(0, 15),
+    showGreeting: value?.showGreeting !== false,
+    serviceUrl,
+  };
+};
 
 const isCloudQueuePreferenceObject = value => Boolean(value && typeof value === 'object' && !Array.isArray(value)
   && ('enabled' in value || 'greeting' in value || 'showGreeting' in value || 'serviceUrl' in value));
@@ -207,7 +213,7 @@ const readQueueJson = async response => {
 export class CloudQueueCoordinator {
   constructor(requestRemote, baseUrl = CLOUD_QUEUE_URL) {
     this.requestRemote = requestRemote;
-    this.baseUrl = normalizeCloudQueueServiceUrl(baseUrl);
+    this.baseUrl = baseUrl ? normalizeCloudQueueServiceUrl(baseUrl, { allowEmpty: true }) : '';
     this.clientId = randomUUID();
     this.tasks = new Map();
   }
@@ -227,6 +233,7 @@ export class CloudQueueCoordinator {
   }
 
   async post(path, body, serviceUrl = this.baseUrl) {
+    if (!serviceUrl) throw new Error('公共队列服务地址未配置');
     return readQueueJson(await this.requestRemote(`${serviceUrl}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1588,7 +1595,7 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
   const authorization = String(req.headers.authorization || '');
   if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
 
-  const queueEnabled = queuePreferences.enabled === true;
+  const queueEnabled = queuePreferences.enabled === true && Boolean(queuePreferences.serviceUrl);
   const keyHash = keyHashFromAuthorization(authorization);
   const requestedTaskId = String(req.headers['x-nai-queue-task-id'] || '');
   const queueTaskId = /^[a-zA-Z0-9-]{8,80}$/.test(requestedTaskId) ? requestedTaskId : randomUUID();
@@ -1780,7 +1787,7 @@ const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, clou
   const authorization = String(req.headers.authorization || '');
   if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
 
-  const queueEnabled = queuePreferences.enabled === true;
+  const queueEnabled = queuePreferences.enabled === true && Boolean(queuePreferences.serviceUrl);
   const keyHash = keyHashFromAuthorization(authorization);
   const requestedTaskId = String(req.headers['x-nai-queue-task-id'] || '');
   const queueTaskId = /^[a-zA-Z0-9-]{8,80}$/.test(requestedTaskId) ? requestedTaskId : randomUUID();
@@ -3067,10 +3074,12 @@ const serveDistFile = async (req, res, url) => {
               getQueuePreferences: () => ({ ...cloudQueueScope.preferences }),
               setQueuePreferences: async next => {
                 if (!cloudQueueScope.keyHash) throw new Error('请先配置 NovelAI API Key，再修改该密钥的公共队列设置');
+                const serviceUrl = normalizeCloudQueueServiceUrl(next.serviceUrl ?? cloudQueueScope.preferences.serviceUrl, { allowEmpty: true });
+                if (next.enabled === true && !serviceUrl) throw new Error('请先填写公共队列服务地址');
                 const preferences = normalizeCloudQueuePreferences({
                   ...cloudQueueScope.preferences,
                   ...next,
-                  serviceUrl: normalizeCloudQueueServiceUrl(next.serviceUrl ?? cloudQueueScope.preferences.serviceUrl),
+                  serviceUrl,
                 });
                 cloudQueueStore.accounts[cloudQueueScope.keyHash] = preferences;
                 cloudQueueScope.preferences = preferences;
@@ -3249,7 +3258,10 @@ const serveDistFile = async (req, res, url) => {
       if (!scope.keyHash) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
       try {
         const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
-        const serviceUrl = normalizeCloudQueueServiceUrl(body.serviceUrl ?? scope.preferences.serviceUrl);
+        const serviceUrl = normalizeCloudQueueServiceUrl(body.serviceUrl ?? scope.preferences.serviceUrl, { allowEmpty: true });
+        if (body.enabled === true && !serviceUrl) {
+          return sendJson(res, 400, { error: '请先填写公共队列服务地址' });
+        }
         const preferences = normalizeCloudQueuePreferences({ ...scope.preferences, ...body, serviceUrl });
         cloudQueueStore.accounts[scope.keyHash] = preferences;
         await saveCloudQueuePreferences(cloudQueueStore);

@@ -1,4 +1,4 @@
-export const CLOUD_QUEUE_SERVICE_URL = 'https://st-chatu-novelai-queue.hf.space';
+export const CLOUD_QUEUE_SERVICE_URL = '';
 
 export interface CloudQueuePreferences {
   enabled: boolean;
@@ -17,7 +17,7 @@ export interface CloudQueueStatus {
   cancelable?: boolean;
 }
 
-const defaults: CloudQueuePreferences = { enabled: false, greeting: '正在生成中～', showGreeting: true, serviceUrl: CLOUD_QUEUE_SERVICE_URL };
+const defaults: CloudQueuePreferences = { enabled: false, greeting: '正在生成中～', showGreeting: true, serviceUrl: '' };
 let cachedPreferences: CloudQueuePreferences = defaults;
 let cachedPreferencesKey = '';
 let currentQueueStatus: CloudQueueStatus | null = null;
@@ -25,12 +25,15 @@ let currentQueueStatusKey = '';
 let clearStatusTimer: number | null = null;
 const statusListeners = new Set<() => void>();
 
-const normalizePreferences = (value: Partial<CloudQueuePreferences> | null | undefined): CloudQueuePreferences => ({
-  enabled: value?.enabled === true,
-  greeting: String(value?.greeting || defaults.greeting).trim().slice(0, 15),
-  showGreeting: value?.showGreeting !== false,
-  serviceUrl: String(value?.serviceUrl || defaults.serviceUrl).trim() || defaults.serviceUrl,
-});
+const normalizePreferences = (value: Partial<CloudQueuePreferences> | null | undefined): CloudQueuePreferences => {
+  const serviceUrl = String(value?.serviceUrl || '').trim();
+  return {
+    enabled: value?.enabled === true && Boolean(serviceUrl),
+    greeting: String(value?.greeting || defaults.greeting).trim().slice(0, 15),
+    showGreeting: value?.showGreeting !== false,
+    serviceUrl,
+  };
+};
 
 const normalizeApiKey = (apiKey: string) => apiKey.trim();
 const getActiveApiKey = () => normalizeApiKey(sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');

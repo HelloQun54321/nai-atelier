@@ -35,6 +35,8 @@ dist-ssr
 *.pfx
 credentials.json
 secrets.json
+cloud-queue.json
+*.queue.json
 
 # TypeScript build cache
 *.tsbuildinfo

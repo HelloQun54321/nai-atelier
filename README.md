@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.150.17-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.150.18-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -266,7 +266,7 @@ flowchart LR
 全局设置的 NovelAI 连接区域可以启用与 st-chatu8 兼容的公共队列。使用相同 NovelAI Key、并接入同一公共服务的客户端会进入同一条生成队列；轮到当前任务后，电脑才通过自己的网络和 VPN 请求 NovelAI。
 
 - 队列服务只接收 Key 的 SHA-256 指纹、随机客户端标识、任务标识和可选个性语，不接收原始 Key、Prompt、参考图、Vibe 编码或生成结果。
-- 设置页可以修改公共队列服务地址，默认保留现有的 `https://st-chatu-novelai-queue.hf.space`；也可填写自行部署的兼容服务。
+- 项目不内置任何公共队列服务器地址；如需多人拼车排队，请在全局设置中填入你自建或车队共用的 st-chatu8 兼容队列服务地址。
 - 排队位置、当前使用者个性语和取消入口会显示在全局状态条；获得许可后自动开始生成。
 - 设置保存在电脑 `local-data`，因此电脑和通过局域网连接的手机统一生效。
 - 公共队列不可用时停止本次请求并明确报错，绝不静默绕过队列引发并发冲突。
