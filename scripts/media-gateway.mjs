@@ -2879,6 +2879,66 @@ const serveDistFile = async (req, res, url) => {
             },
           });
         }
+        if (url.pathname === '/api/integrations/st-chatu8/extension/install' && req.method === 'POST') {
+          const body = JSON.parse((await readRequestBody(req, 16 * 1024)).toString('utf8') || '{}');
+          let stRoot = String(body.sillyTavernRoot || '').trim() || stChatu8Bridge.root;
+          if (!stRoot) throw Object.assign(new Error('未指定 SillyTavern 安装路径，且未能自动检测到酒馆目录'), { status: 400 });
+          if (!isAbsolute(stRoot)) throw Object.assign(new Error('SillyTavern 安装路径必须为绝对路径'), { status: 400 });
+          stRoot = normalize(stRoot);
+          if (!existsSync(stRoot)) throw Object.assign(new Error(`指定的 SillyTavern 路径不存在：${stRoot}`), { status: 404 });
+
+          let targetDir = stRoot;
+          const normalized = targetDir.replaceAll('/', '\\');
+          if (normalized.endsWith('\\npm-bridge')) {
+            // 已是最终目录
+          } else if (normalized.endsWith('\\third-party')) {
+            targetDir = join(targetDir, 'npm-bridge');
+          } else if (normalized.endsWith('\\extensions')) {
+            targetDir = join(targetDir, 'third-party', 'npm-bridge');
+          } else if (normalized.endsWith('\\scripts')) {
+            targetDir = join(targetDir, 'extensions', 'third-party', 'npm-bridge');
+          } else if (normalized.endsWith('\\public')) {
+            targetDir = join(targetDir, 'scripts', 'extensions', 'third-party', 'npm-bridge');
+          } else {
+            targetDir = join(targetDir, 'public', 'scripts', 'extensions', 'third-party', 'npm-bridge');
+          }
+
+          const localDataDir = resolve(process.cwd(), 'local-data');
+          const projectDir = resolve(process.cwd());
+          if (targetDir === localDataDir || targetDir.startsWith(localDataDir + '\\') || targetDir.startsWith(localDataDir + '/') || targetDir === projectDir) {
+            throw Object.assign(new Error('安全保护：禁止向项目核心保护区安装扩展'), { status: 403 });
+          }
+
+          const extensionDir = join(process.cwd(), 'sillytavern-extension', 'npm-bridge');
+          let [manifest, index, style, readme] = await Promise.all([
+            readFile(join(extensionDir, 'manifest.json'), 'utf8'),
+            readFile(join(extensionDir, 'index.js'), 'utf8'),
+            readFile(join(extensionDir, 'style.css'), 'utf8'),
+            readFile(join(extensionDir, 'README.md'), 'utf8'),
+          ]);
+
+          const targetUrl = String(body.targetUrl || '').trim().replace(/\/$/, '');
+          if (targetUrl) {
+            index = index.replace(
+              /const DEFAULT_URL = 'http:\/\/localhost:3000';/,
+              `const DEFAULT_URL = '${targetUrl}';`
+            );
+          }
+
+          await mkdir(targetDir, { recursive: true });
+          await Promise.all([
+            writeFile(join(targetDir, 'manifest.json'), manifest, 'utf8'),
+            writeFile(join(targetDir, 'index.js'), index, 'utf8'),
+            writeFile(join(targetDir, 'style.css'), style, 'utf8'),
+            writeFile(join(targetDir, 'README.md'), readme, 'utf8'),
+          ]);
+
+          return sendBridgeJson(req, res, 200, {
+            success: true,
+            targetPath: targetDir,
+            files: ['manifest.json', 'index.js', 'style.css', 'README.md'],
+          });
+        }
         if (url.pathname === '/api/integrations/st-chatu8/sync' && req.method === 'POST') {
           const payload = JSON.parse((await readRequestBody(req, 64 * 1024 * 1024)).toString('utf8') || '{}');
           return sendBridgeJson(req, res, 200, await stChatu8Bridge.sync(payload));
@@ -3165,6 +3225,17 @@ const serveDistFile = async (req, res, url) => {
         return sendJson(res, 200, result);
       } catch (error) {
         return sendJson(res, 400, { error: error.message || '无法打开目录' });
+      }
+    }
+    if (url.pathname === '/api/local-maintenance/backup/delete') {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      try {
+        const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
+        const result = await localBackupService.deleteBackup(body.name);
+        return sendJson(res, 200, result);
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 400, { error: error.message || '删除备份失败' });
       }
     }
     if (url.pathname === '/api/tag-dictionary') {

@@ -8,6 +8,7 @@ import {
   openLocalBackupFolder,
   saveLocalBackupConfig,
   startLocalBackup,
+  deleteLocalBackup,
 } from '../services/localBackup';
 import {
   Archive,
@@ -24,6 +25,7 @@ import {
   Loader2,
   Play,
   RefreshCw,
+  Trash2,
   X,
   AlertCircle,
 } from 'lucide-react';
@@ -40,6 +42,8 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
   const [isEditingTargetDir, setIsEditingTargetDir] = useState(false);
   const [customTargetDir, setCustomTargetDir] = useState('');
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
+  const [deletingName, setDeletingName] = useState<string | null>(null);
+  const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null);
   const lastFinishedAtRef = useRef<string | null>(null);
 
   const fetchStatus = useCallback(async (isManual = false) => {
@@ -127,6 +131,20 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
     } catch (err) {
       const msg = err instanceof Error ? err.message : '无法打开目录';
       notify(msg, 'error');
+    }
+  };
+
+  const handleDeleteBackup = async (name: string) => {
+    setDeletingName(name);
+    try {
+      await deleteLocalBackup(name);
+      notify(`已删除备份存档：${name}`, 'success');
+      setConfirmDeleteName(null);
+      await fetchStatus(true);
+    } catch (err: any) {
+      notify(`删除备份失败：${err?.message || '未知错误'}`);
+    } finally {
+      setDeletingName(null);
     }
   };
 
@@ -419,15 +437,56 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                       </div>
 
                       <div className="flex flex-none items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => void handleOpenFolder(backup.path)}
-                          className="mobile-touch flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-meta font-medium text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"
-                          title="在文件资源管理器中打开此备份"
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                          定位
-                        </button>
+                        {confirmDeleteName === backup.name ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteBackup(backup.name)}
+                              disabled={deletingName === backup.name}
+                              className="mobile-touch flex items-center gap-1 rounded-lg bg-rose-600 px-2.5 py-1 text-meta font-bold text-white transition hover:bg-rose-500 disabled:opacity-50"
+                              title="确认永久删除此备份"
+                            >
+                              {deletingName === backup.name ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Check className="h-3 w-3" />
+                              )}
+                              确认删除
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteName(null)}
+                              disabled={deletingName === backup.name}
+                              className="mobile-touch flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-meta font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                              title="取消删除"
+                            >
+                              <X className="h-3 w-3" />
+                              取消
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => void handleOpenFolder(backup.path)}
+                              className="mobile-touch flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-meta font-medium text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"
+                              title="在文件资源管理器中打开此备份"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              定位
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteName(backup.name)}
+                              disabled={Boolean(deletingName) || isRunning}
+                              className="mobile-touch flex items-center gap-1 rounded-lg border border-transparent px-2.5 py-1 text-meta font-medium text-gray-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:hover:border-rose-900/50 dark:hover:bg-rose-950/30 dark:hover:text-rose-400 disabled:opacity-40"
+                              title={`删除此备份存档（释放 ${formatBytes(backup.totalBytes)}）`}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              删除
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   );

@@ -470,6 +470,56 @@ export class LocalBackupService {
       } catch {}
     }
   }
+
+  /**
+   * 删除指定的历史备份存档
+   * @param {string} name
+   */
+  async deleteBackup(name) {
+    if (this.status.running) {
+      const error = new Error('正在执行备份任务，无法删除历史存档');
+      error.status = 400;
+      throw error;
+    }
+
+    const trimmedName = String(name || '').trim();
+    if (!trimmedName || !/^[a-zA-Z0-9_\-. ]+$/.test(trimmedName) || trimmedName === '.' || trimmedName === '..') {
+      const error = new Error('无效的备份名称');
+      error.status = 400;
+      throw error;
+    }
+
+    const config = await getBackupConfig();
+    const targetDir = resolve(config.targetDir);
+    const backupPath = resolve(targetDir, trimmedName);
+
+    // 严格安全校验：必须是 targetDir 的直接子项，且严禁触碰 local-data 与项目根目录
+    if (dirname(backupPath) !== targetDir) {
+      const error = new Error('非法路径访问');
+      error.status = 403;
+      throw error;
+    }
+
+    const localDataDir = resolve(this.sourceDir);
+    const projectDir = resolve(process.cwd());
+    if (
+      backupPath === localDataDir || backupPath.startsWith(localDataDir + '\\') || backupPath.startsWith(localDataDir + '/') ||
+      backupPath === projectDir
+    ) {
+      const error = new Error('安全保护：禁止删除项目核心保护区文件');
+      error.status = 403;
+      throw error;
+    }
+
+    if (!existsSync(backupPath)) {
+      const error = new Error('备份存档不存在');
+      error.status = 404;
+      throw error;
+    }
+
+    await rm(backupPath, { recursive: true, force: true });
+    return { success: true, name: trimmedName };
+  }
 }
 
 export const localBackupService = new LocalBackupService();

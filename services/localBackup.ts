@@ -133,3 +133,19 @@ export async function openLocalBackupFolder(targetPath?: string): Promise<{ succ
   }
   return data;
 }
+
+/**
+ * 删除指定的历史备份存档
+ */
+export async function deleteLocalBackup(name: string): Promise<{ success: boolean; name: string }> {
+  const response = await fetch('/api/local-maintenance/backup/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data) {
+    throw new Error(data?.error || '删除历史备份失败');
+  }
+  return data;
+}

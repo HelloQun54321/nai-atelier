@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **Antigravity**：为 SillyTavern 互通增加酒馆路径智能补全与一键安装扩展功能，并在重要数据备份中补齐历史存档安全删除能力（feat: add one-click install for sillytavern extension and backup deletion）。
 - **Antigravity**：修复 SillyTavern 互通中封面跨域下载失败问题，放行回环源 CORS 头并优化扩展配图编码、下载缓存与同名解析（fix: allow loopback cors for covers and optimize st preview sync）。
 - **Antigravity**：修复 SillyTavern 互通中缺失配图导致的 ENOENT 异常并阻断配图时间戳死循环，仓库收录扩展源码并在设置中提供目录/ZIP一键导出（feat: export SillyTavern bridge extension and harden sync against missing previews and loops）。
 - **Gemini 3.8 Flash**：移除实验室图生图/重绘/扩图提示词下方的冗余来源操作按钮（refactor: remove redundant prompt source buttons from image edit controls）。

@@ -144,3 +144,42 @@ test('LocalBackupService 执行备份并生成完整副本与元数据', async (
     await rm(targetTemp, { recursive: true, force: true });
   }
 });
+
+test('LocalBackupService.deleteBackup 正常删除备份存档并进行边界防护', async () => {
+  const targetTemp = await mkdtemp(join(tmpdir(), 'nai-backup-delete-test-'));
+  const configTemp = join(targetTemp, 'backup-config.json');
+  try {
+    const backup1 = join(targetTemp, '20260901-114734');
+    await mkdir(join(backup1, 'local-data'), { recursive: true });
+    await writeFile(join(backup1, 'backup-metadata.json'), '{}');
+
+    // 写入临时配置指向 targetTemp
+    await saveBackupConfig({ targetDir: targetTemp });
+
+    const service = new LocalBackupService();
+
+    // 1. 非法名称防护
+    await assert.rejects(async () => service.deleteBackup('../evil'), { status: 400 });
+    await assert.rejects(async () => service.deleteBackup('..'), { status: 400 });
+    await assert.rejects(async () => service.deleteBackup(''), { status: 400 });
+
+    // 2. 不存在的存档
+    await assert.rejects(async () => service.deleteBackup('non-existent-backup'), { status: 404 });
+
+    // 3. 正常删除
+    const result = await service.deleteBackup('20260901-114734');
+    assert.equal(result.success, true);
+    assert.equal(result.name, '20260901-114734');
+
+    // 验证目录已被物理删除
+    const list = await listBackups(targetTemp);
+    assert.equal(list.length, 0);
+
+    // 4. 运行中禁止删除
+    service.status.running = true;
+    await assert.rejects(async () => service.deleteBackup('any-name'), { status: 400 });
+    service.status.running = false;
+  } finally {
+    await rm(targetTemp, { recursive: true, force: true });
+  }
+});
