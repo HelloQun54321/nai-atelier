@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-07
+- **Gemini 3.8 Flash**：优化 README 界面预览布局，取消桌面两图并列排版改为全宽垂直居中呈现，并明确标注为局部特写预览而非全局视图（docs: stack preview screenshots vertically and clarify local preview nature）。
 - **Gemini 3.8 Flash**：将项目版本号正式提升至 1.0.0 正式版，同步 package.json、package-lock.json 与 README 徽章（chore: bump version to 1.0.0 for official release）。
 - **Gemini 3.8 Flash**：完善并更新 README 中关于日常启动、桌面启动器多入口与 5 阶自检流水线的完整说明，并在目录树中登记根目录启动脚本（docs: update README with desktop launcher and daily startup guide）。
 - **Gemini 3.8 Flash**：在项目根目录收纳自适应启动脚本 NaiPromptManager.bat，并在系统设置（系统维护）中提供一键发送/更新桌面启动器与专属调色盘图标快捷方式（NAI Atelier.lnk）的完整功能与网关接口（feat: add desktop launcher script and one-click send to desktop in settings）。
