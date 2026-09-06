@@ -1,17 +1,17 @@
 <div align="center">
-  <img src="./public/artist-palette-3d.png" width="104" alt="NAI Atelier 调色盘图标" />
+  <img src="./public/app-icon.png" width="96" alt="NAI Atelier 工坊图标" />
 
   # NAI Atelier
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.150.13-6366f1?style=flat-square)](./CHANGELOG.md)
-  [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5-8b5cf6?style=flat-square)](https://novelai.net/)
+  [![Version](https://img.shields.io/badge/version-0.150.14-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
   [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](./LICENSE)
 
-  [项目定位](#-项目定位) · [核心能力](#-核心能力总览) · [功能地图](#-功能地图) · [SillyTavern 互通](#-sillytavern--st-chatu8-互通) · [手机局域网](#-手机局域网访问) · [手机 UI](#-手机-ui-设计) · [数据备份](#-备份与恢复) · [更新日志](./CHANGELOG.md)
+  [项目定位](#-项目定位) · [界面预览](#-界面预览) · [核心能力](#-核心能力总览) · [功能地图](#-功能地图) · [SillyTavern 互通](#-sillytavern--st-chatu8-互通) · [手机局域网](#-手机局域网访问) · [手机 UI](#-手机-ui-设计) · [数据备份](#-备份与恢复) · [更新日志](./CHANGELOG.md)
 
   > NAI Atelier 基于 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 二次开发并独立维护，面向本地单人使用；原项目见上方链接。
 </div>
@@ -38,23 +38,47 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 创作工坊。它不�
 
 ---
 
+## 🖼️ 界面预览
+
+> [!NOTE]
+> 为保护创作者隐私，所有界面预览均在开启全局安全模式（自动虚化图片与占位符保护）状态下截取。
+
+| 桌面端：生图实验室主控台（文生图模式） | 桌面端：项目 Agent 业务联动多会话工作台 |
+| :---: | :---: |
+| ![生图实验室控制台与画板](./docs/screenshots/desktop-lab-studio.webp) | ![项目 Agent 联动工作台](./docs/screenshots/desktop-lab-agent.webp) |
+| *官方免费比例尺寸适配、实时像素与费用估算、即时大图反馈* | *深度观察图像、调用工坊业务工具、实时调整提示词与参数* |
+
+| 桌面端：风格串与创作预设资产库 | 桌面端：外部图库作品检索与参数反查（AITag） |
+| :---: | :---: |
+| ![桌面端风格串与工坊主界面](./docs/screenshots/desktop-presets-gallery.webp) | ![外部作品检索与参数反查](./docs/screenshots/desktop-aitag-browser.webp) |
+| *双列/多列自适应比例瀑布流、封面固定、模块化提示词管理* | *全量 NovelAI 作品检索、完整生成参数反推、一键导入工坊* |
+
+<div align="center">
+  <h4>📱 手机端：家庭局域网独立移动端触控界面</h4>
+  <img src="./docs/screenshots/mobile-touch-ui.webp" width="380" alt="手机局域网独立触控界面" />
+  <p><em>44px 触控热区、底部固定单手手势导航、全模式三段式 Tab 流程、电脑端系统 VPN 与数据直通</em></p>
+</div>
+
+---
+
 ## ⚙️ 核心能力总览
 
 | 能力 | 说明 |
 | --- | --- |
 | 🔑 免账号启动 | 无账号体系，启动后直接使用，数据全部落在本机 `local-data` |
+| 🗄️ 多密钥保管箱 | 多把 NovelAI Key 本地命名保管、随时热切换、失效/格式感知，独立跟踪每个 Key 的 Anlas 预算 |
 | 🕘 生图历史 | 生成原图与完整参数保存在电脑本地 D1 + R2，浏览器清空后仍保留，按追加式瀑布流连续浏览 |
 | 📱 手机访问 | 家庭局域网、四位密码、30 天授权、独立手机 UI，图片经电脑缩略图网关 |
 | 🌐 外部图库三件套 | **Pixiv**（原站全量作品、榜单、画师主页）、**Danbooru**（通用级素材与 Tag 参考）、**AITag**（AI 作品与生成参数），统一瀑布流浏览与一键导入 |
 | 🔐 Pixiv 网页登录 | 适配 Pixiv 官方 OAuth 流程（含新版 `pixiv://` 回调），登录后 refresh token 加密保存本机，浏览器与图库全链路可用 |
 | 🧰 图片反推 Tag | 本地 WD Tagger 模型识别，图库任意图片一键反推，结果可复制或直接送往实验室 |
-| 📚 Tag 与资料库 | 31 万余条中英 Tag 本地分片、约 14.6 万画师 Tag、约 9.9 万官方角色 Tag，中文搜索与自维护目录 |
+| 📚 Tag 与权重交互 | 31 万余条中英 Tag 本地分片、连续权重胶囊一体式调节、多选自动组合数值组、Agent 极速补译缺失项 |
 | 🎨 封面体系 | 画师/角色封面从 Danbooru 候选图选取、图钉固定保存；封面缩略图固定本地保留，不受缓存上限淘汰 |
 | ⚡ 图库加载优化 | 缩略图后台预热（滚动即缓存命中）、固定封面本地持久化、瀑布流真实比例显示、提前两屏预取 |
 | 🌌 Vibe Transfer | 付费编码一次、本地永久保存、1～4 个组合、官方文件导入导出 |
 | 🧬 Precise Reference | 电脑保存参考原图、三种官方参考类型、最多 4 张并准确计算费用 |
 | 🚦 拼车公共队列 | 与 st-chatu8 按相同 Key 指纹协调生图顺序，减少共享账号并发错误 |
-| 🔗 SillyTavern 互通 | 与 st-chatu8 同步风格串、封面、Vibe 和组合，并接入其原图历史 |
+| 🔗 SillyTavern 互通 | 仓库收录「NAI Atelier 连接器」扩展，智能检测酒馆目录、一键安装/更新/导出，杜绝跨域阻断与死循环 |
 | 🛡️ 安全模式 | 全局遮挡图片，作品名称可按设置选择是否同时隐藏，并可设置启动时默认开启；点击后临时显示 |
 | ✦ 项目 Agent | 用 DeepSeek、Gemini、Grok 等模型查看历史图片并操作资料库、设置、实验室与生图流程 |
 
@@ -67,7 +91,7 @@ flowchart LR
     P["Precise Reference 资料库"] --> C
     A --> C["生图实验室"]
     B --> C
-    C --> D["NovelAI V4.5"]
+    C --> D["NovelAI V4.5 / V5"]
     D --> E["本地生成历史"]
     E --> F["灵感库"]
     E --> C
@@ -226,7 +250,12 @@ flowchart LR
 
 ### 🔗 SillyTavern / st-chatu8 互通
 
-项目可以与本机 `D:\SillyTavern` 中的 [st-chatu8](https://github.com/damoshen123/st-chatu8) 配套使用。SillyTavern 侧安装独立的 `npm-bridge` 扩展，NAI Atelier 侧由电脑图片网关提供受限桥接接口；两边启动后自动同步，也可在 SillyTavern 的扩展设置中点击“立即同步”。
+项目可以与本机（如 `D:\SillyTavern`）及局域网中的 [st-chatu8](https://github.com/damoshen123/st-chatu8) 无缝配套使用：
+
+- **NAI Atelier 连接器（NAI Atelier Connector）**：项目内置配套扩展（源码位于 `third-party/sillytavern-extension`，平滑兼容并自动清理旧版 `npm-bridge`）。
+- **智能路径检测**：控制台与网关自动嗅探本机标准安装路径（`D:\SillyTavern`、`C:\SillyTavern`、上级工作区等），无需手工翻找扩展目录。
+- **一键安装与更新**：在前端设置中可一键将连接器安装/更新至 SillyTavern 扩展库；对于跨设备或容器环境，亦支持一键导出离线 ZIP 安装包。
+- **自动化双向桥接**：启动后由电脑图片网关提供受限桥接接口自动同步，也可在 SillyTavern 的扩展面板中随时点击“立即同步”。
 
 #### 实现参考与兼容声明
 
@@ -296,16 +325,15 @@ NAI Atelier 独有的新风格串可以先同步到 st-chatu8；一旦进入 st-
 
 ## 📚 Tag 与资源资料库
 
-### Tag 自动补全与中文词库
+### Tag 自动补全、权重胶囊与中文词库
 
 项目内置 31 万余条本地 Tag 数据（中英对照与画师/角色目录源自 [ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table) 的 tag.sqlite，NovelAI 专属 Tag 来自官方列表；详见[来源与许可](#-来源与许可)）：
 
-- Danbooru 中英对照 Tag
-- NovelAI V4.5 专属 Tag
-- 英文前缀与中文前缀搜索
-- 英文原名、中文解释和热度信息
-- 选择中文候选后插入 NovelAI 可识别的英文 Tag
-- 保留 `{}`、`[]` 和数值权重语法
+- **海量词库与即时补全**：Danbooru 中英对照 Tag、NovelAI V4.5 专属 Tag，支持中英双向前缀实时搜索、热度提示与中文解释插入。
+- **一体式连续权重胶囊**：编辑器内 Tag 呈现为可视化胶囊，集成滑动与步进增减权重，直观指示强化 `{}`、弱化 `[]` 或精准数值权重。
+- **多选自动组合数值组**：支持批量选中多个 Tag 一键打包为带括号或统一系数的数值权重组，调节整体氛围更高效。
+- **底栏三选一类型转换**：支持在「正面提示词 / 负面提示词 / 前缀 (Prefix)」三态间一键快速转换词条归属。
+- **AI 智能缺失项补译**：遇到未收录的新生 Tag 或复杂短语时，可唤起后台/本地 LLM 极速补齐中文翻译，并自动持久化写入本地增量翻译缓存（`tag-translations.json`）。
 
 词库按前缀拆分成小型 JSON 分片，只加载当前搜索需要的部分。补全菜单支持鼠标滚轮、触摸滑动、键盘上下选择；手机端使用双击确认，避免滑动时误选。
 
@@ -520,7 +548,7 @@ flowchart LR
 | AITag | 只显示作品列表；点击后打开全屏详情，不保留空白双栏 |
 | 灵感 | 双列图片卡片，移动端筛选抽屉，全屏整理板、标签、备注、来源与复用动作 |
 | 历史 | 可调瀑布流/方形/竖向布局，分页位于列表底部 |
-| 实验室 | 按全局、角色、参数组织，生成按钮避开软键盘 |
+| 实验室 | 桌面与移动端统一三段式「文生图 / 图生图 / 局部重绘与扩图」模式切换；移动端按全局、角色、参数折叠组织，贴身画布触控工具栏，生成按钮避开软键盘 |
 | 设置 | 手机全屏页面，按外观、NovelAI、词库和缓存分组 |
 
 ### 手机图片显示偏好
@@ -558,7 +586,7 @@ flowchart TD
 
 | 路径 | 内容 | 可再生成 |
 | --- | --- | --- |
-| `v3/d1/miniflare-D1DatabaseObject/*.sqlite` | D1 数据库：风格串、角色、灵感、8,900+ 历史记录、设置、Vibe | 否，核心 |
+| `v3/d1/miniflare-D1DatabaseObject/*.sqlite` | D1 数据库：风格串、角色、灵感、8,900+ 历史记录、设置（含多密钥保管箱 `nai_key_vault`）、Vibe | 否，核心 |
 | `v3/r2/nai-assets/blobs/` | 全部原图：历史图片、封面、灵感图（数 GB） | 否，核心 |
 | `lan-access.json` | 局域网四位密码与签名密钥 | 否，删除后需重新授权所有设备 |
 | `pixiv-tokens.json` + `pixiv.key` | Pixiv OAuth 令牌（AES 加密） | 否，删除后需重新登录 |
@@ -593,12 +621,13 @@ flowchart TD
 - 手机端入口位于全局设置，桌面端保留侧栏快捷按钮。
 - 全局设置可单独控制“启动时自动开启安全模式”，默认开启；关闭后项目启动时保持关闭，当前会话仍可手动切换。
 
-### API Key
+### 多密钥保管箱与隐私安全
 
-- NovelAI API Key 在全局设置中填写。
-- 默认只保存到当前浏览器会话。
-- 勾选“在本机记住”后才写入 LocalStorage。
-- Key 仅随生成请求发送给本地网关并转发，不写入项目数据库或服务日志。
+- **本地 D1 集中保管**：NovelAI Key 统一存入电脑本地 D1 数据库（`settings` 表 `nai_key_vault`），不再依赖易丢失的浏览器单机 LocalStorage；电脑与局域网连接的手机无缝共享。
+- **多 Key 别名与独立管理**：支持录入多个 Key，可分别标注名称（如主账号、拼车号、备份号）；可在全局设置或生图实验室顶栏随时一键切换当前生效的活动 Key。
+- **安全脱敏与显隐控制**：界面中密钥默认以脱敏星号掩码展示（只显示首尾字符），支持一键显隐与快速复制，避免录屏或展示时泄露。
+- **独立额度与状态监测**：每个 Key 均独立查询与展示实时 Anlas 余额、Opus 免费档资格与账户订阅状态；排队调度时基于各 Key 的 SHA-256 指纹分别管理。
+- **零外部泄露**：Key 仅随本地生成请求通过后端/网关向 NovelAI 官方接口发送，无任何第三方云端遥测或明文日志输出。
 
 ### 项目内确认面板
 

@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-07
+- **Gemini 3.8 Flash**：更新 README 补齐界面预览画廊（WebP 压缩图），同步更新密钥保管箱、NAI Atelier 连接器、Tag 连续权重胶囊及移动端三段式 Tab 交互文档（docs: update README with screenshots showcase, key vault and connector guides）。
 - **Gemini 3.8 Flash**：修复密钥保管箱迁移接口的全量覆盖缺陷，改为查重合流并增加前端前置过滤守卫，补齐回归测试并从数据库底层碎片中找回恢复旧密钥（fix: merge legacy key vault instead of overwriting server entries）。
 
 ## 2026-09-06
