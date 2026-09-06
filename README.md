@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.150.14-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.150.15-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -43,19 +43,22 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 创作工坊。它不�
 > [!NOTE]
 > 为保护创作者隐私，所有界面预览均在开启全局安全模式（自动虚化图片与占位符保护）状态下截取。
 
-| 桌面端：生图实验室主控台（文生图模式） | 桌面端：项目 Agent 业务联动多会话工作台 |
-| :---: | :---: |
-| ![生图实验室控制台与画板](./docs/screenshots/desktop-lab-studio.webp) | ![项目 Agent 联动工作台](./docs/screenshots/desktop-lab-agent.webp) |
-| *官方免费比例尺寸适配、实时像素与费用估算、即时大图反馈* | *深度观察图像、调用工坊业务工具、实时调整提示词与参数* |
+### 🖥️ 桌面端：全功能创作工坊
 
-| 桌面端：风格串与创作预设资产库 | 桌面端：外部图库作品检索与参数反查（AITag） |
+| 风格串与创作预设资产库 | 生图实验室与项目 Agent 联动工作台 |
 | :---: | :---: |
-| ![桌面端风格串与工坊主界面](./docs/screenshots/desktop-presets-gallery.webp) | ![外部作品检索与参数反查](./docs/screenshots/desktop-aitag-browser.webp) |
-| *双列/多列自适应比例瀑布流、封面固定、模块化提示词管理* | *全量 NovelAI 作品检索、完整生成参数反推、一键导入工坊* |
+| ![桌面端风格串与工坊主界面](./docs/screenshots/desktop-presets-gallery.webp) | ![生图实验室与项目 Agent 工作台](./docs/screenshots/desktop-lab-agent.webp) |
+| *双列/多列自适应比例瀑布流、封面固定、模块化提示词管理* | *调参控制台、官方免费尺寸适配、深度图像观察与 Agent 工具联动* |
+
+| 外部图库作品检索与参数反查（AITag） |
+| :---: |
+| ![外部作品检索与参数反查](./docs/screenshots/desktop-aitag-browser.webp) |
+| *全量 NovelAI 作品检索、完整生成参数反推、一键导入工坊* |
+
+### 📱 手机端：家庭局域网移动端触控界面
 
 <div align="center">
-  <h4>📱 手机端：家庭局域网独立移动端触控界面</h4>
-  <img src="./docs/screenshots/mobile-touch-ui.webp" width="380" alt="手机局域网独立触控界面" />
+  <img src="./docs/screenshots/mobile-touch-ui.webp" width="360" alt="手机局域网独立触控界面" />
   <p><em>44px 触控热区、底部固定单手手势导航、全模式三段式 Tab 流程、电脑端系统 VPN 与数据直通</em></p>
 </div>
 
