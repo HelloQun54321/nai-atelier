@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.0.3-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.0.4-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -667,7 +667,7 @@ flowchart TD
 **备份本工坊有且仅需完整拷贝一个文件夹：**
 
 ```text
-D:\NaiPromptManager\local-data
+<项目根目录>/local-data/
 ```
 
 这里完整汇聚了你的 D1 关系数据库、R2 原图仓库、局域网密钥与个人 Agent 会话记录。只要它在，即使电脑重装、项目源码重新拉取，工坊的所有资产也能完好如初。

@@ -16,16 +16,16 @@ describe('DesktopLauncherManager', () => {
     const mockStatus: desktopLauncherService.DesktopLauncherStatus = {
       supported: true,
       platform: 'win32',
-      projectDir: 'D:\\NaiPromptManager',
-      desktopDir: 'C:\\Users\\21001\\Desktop',
+      projectDir: 'C:\\projects\\nai-atelier',
+      desktopDir: 'C:\\Users\\user\\Desktop',
       desktopExists: true,
-      batPath: 'C:\\Users\\21001\\Desktop\\NaiPromptManager.bat',
+      batPath: 'C:\\Users\\user\\Desktop\\NaiPromptManager.bat',
       batExists: true,
       batMtime: '2026-09-07T04:00:00.000Z',
-      shortcutPath: 'C:\\Users\\21001\\Desktop\\NAI Atelier.lnk',
+      shortcutPath: 'C:\\Users\\user\\Desktop\\NAI Atelier.lnk',
       shortcutExists: true,
       shortcutMtime: '2026-09-07T04:00:00.000Z',
-      iconPath: 'D:\\NaiPromptManager\\public\\nai-atelier.ico',
+      iconPath: 'C:\\projects\\nai-atelier\\public\\nai-atelier.ico',
       iconExists: true,
     };
 
@@ -43,7 +43,7 @@ describe('DesktopLauncherManager', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Windows 桌面启动器')).toBeTruthy();
-      expect(screen.getByText('C:\\Users\\21001\\Desktop')).toBeTruthy();
+      expect(screen.getByText('C:\\Users\\user\\Desktop')).toBeTruthy();
       expect(screen.getByText('更新桌面启动器')).toBeTruthy();
     });
 
