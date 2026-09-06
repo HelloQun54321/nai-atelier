@@ -19,15 +19,15 @@ interface SillyTavernBridgeExportProps {
 }
 
 const FALLBACK_MANIFEST = JSON.stringify({
-  display_name: 'NaiPromptManager 连接器',
+  display_name: 'NAI Atelier 连接器',
   loading_order: 110,
   requires: [],
   optional: ['st-chatu8'],
-  js: 'index.js?v=1.5.1',
-  css: 'style.css?v=1.5.1',
+  js: 'index.js?v=1.5.2',
+  css: 'style.css?v=1.5.2',
   author: 'HelloQun54321',
-  version: '1.5.1',
-  description: '在 NaiPromptManager 与 st-chatu8 之间同步画师串、Vibe，并将 st-chatu8 原图接入生成历史。',
+  version: '1.5.2',
+  description: '在 NAI Atelier 与 st-chatu8 之间同步画师串、Vibe，并将 st-chatu8 原图接入生成历史。',
 }, null, 2);
 
 export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = ({ notify }) => {
@@ -84,7 +84,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
     }
     return {
       'manifest.json': FALLBACK_MANIFEST,
-      'README.md': '# SillyTavern — NaiPromptManager 连接器扩展 (npm-bridge)\n\n请参考项目文档完成安装。',
+      'README.md': '# SillyTavern — NAI Atelier 连接器扩展 (npm-bridge)\n\n请参考项目文档完成安装。',
     };
   };
 

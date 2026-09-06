@@ -3,6 +3,9 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-09-06
+### 修复:SillyTavern 互通扩展统一命名为 NAI Atelier 连接器
+- 将 SillyTavern 扩展（npm-bridge）的显示名称、设置面板标题、描述及 README 中的历史旧名称全面更新为 `NAI Atelier 连接器`，版本递增至 v1.5.2 以强制刷新浏览器缓存。
+
 ### 修复:本地备份配置单测环境隔离并恢复备份路径
 - 修复备份删除自动化测试在运行时未隔离配置文件导致真实 `local-data/backup-config.json` 被测试临时目录覆盖的问题，立即恢复备份目标路径为 `D:\NaiPromptManager-Backups`。
 - 重构备份服务配置注入机制：`LocalBackupService`、`getBackupConfig` 与 `saveBackupConfig` 全面支持自定义配置文件与目标路径参数，测试完全在独立沙箱中运行并严格断言生产配置不受污染。

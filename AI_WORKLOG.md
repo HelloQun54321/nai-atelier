@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **Antigravity**：将 SillyTavern 互通扩展的显示名称、设置面板、清单与文档中的旧名称更新为 NAI Atelier 连接器（fix: rename sillytavern extension to NAI Atelier connector）。
 - **Antigravity**：修复单元测试污染真实备份配置文件的问题，隔离测试沙箱并恢复备份路径为 D:\NaiPromptManager-Backups（fix: isolate test backup config and restore backup target path）。
 - **Antigravity**：为 SillyTavern 互通增加酒馆路径智能补全与一键安装扩展功能，并在重要数据备份中补齐历史存档安全删除能力（feat: add one-click install for sillytavern extension and backup deletion）。
 - **Antigravity**：修复 SillyTavern 互通中封面跨域下载失败问题，放行回环源 CORS 头并优化扩展配图编码、下载缓存与同名解析（fix: allow loopback cors for covers and optimize st preview sync）。

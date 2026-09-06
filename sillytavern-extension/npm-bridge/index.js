@@ -115,7 +115,7 @@ const enhancePresetSelector = () => {
   trigger.type = 'button';
   trigger.className = 'npm-bridge-preview-trigger';
   trigger.innerHTML = `<i class="fa-solid fa-images"></i><span>有配图 ${previews.length}</span>`;
-  trigger.title = '查看由 st-chatu8 与 NaiPromptManager 共享的画师串配图';
+  trigger.title = '查看由 st-chatu8 与 NAI Atelier 共享的画师串配图';
   const picker = document.createElement('div');
   picker.className = 'npm-bridge-preview-picker';
   picker.hidden = true;
@@ -516,7 +516,7 @@ const renderSettings = () => {
   const panel = document.createElement('div');
   panel.className = 'npm-bridge-panel';
   panel.innerHTML = `
-    <h3><i class="fa-solid fa-link"></i> NaiPromptManager 连接器</h3>
+    <h3><i class="fa-solid fa-link"></i> NAI Atelier 连接器</h3>
     <div class="npm-bridge-row">
       <label class="npm-bridge-field-label">服务地址 (Base URL)</label>
       <input type="text" class="text_pole npm-bridge-base-url" placeholder="${DEFAULT_URL}" value="${escapeHtml(currentSettings.baseUrl || DEFAULT_URL)}">
