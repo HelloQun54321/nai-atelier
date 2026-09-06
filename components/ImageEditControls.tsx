@@ -43,7 +43,7 @@ interface ImageEditControlsProps {
   notify: (message: string, type?: 'success' | 'error') => void;
   onPromptChange: (value: string) => void;
   onNegativePromptChange: (value: string) => void;
-  onPromptSource: (source: LabImageEditDraft['promptSource']) => void;
+  onPromptSource?: (source: LabImageEditDraft['promptSource']) => void;
   onDraftChange: (patch: Partial<LabImageEditDraft> & { maskData?: string }) => void;
   onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   /** importParams：是否同时载入该图的提示词与参数（历史/灵感选择器开关；generated 恒为 false）。 */
@@ -74,7 +74,7 @@ const isModuleCollapsed = (layout: LabPageLayout, moduleId: keyof LabPageLayout[
 
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, isBusy = false, safeMode = false, tagAssistEnabled, forceEmptySeed = false, enforceFreeStepLimit = true, apiKey, baseImagePreview, notify,
-  onPromptChange, onNegativePromptChange, onPromptSource, onDraftChange, onFileChange, onSelectImageSource, onStrengthChange, onNoiseChange, onBrushSizeChange, onFocusedChange,
+  onPromptChange, onNegativePromptChange, onDraftChange, onFileChange, onSelectImageSource, onStrengthChange, onNoiseChange, onBrushSizeChange, onFocusedChange,
   onMinimumContextAreaChange, onToolChange, manualMaskEditing = false, onManualMaskEditingChange = () => undefined, onClearMask, onInvertMask, onUndo, onRedo, onExpansionChange, onApplyOutpaint, onResetFocusedRect = () => undefined, normalization = null, onNormalize = () => undefined,
   mobileTab = 'canvas',
 }) => {
@@ -164,12 +164,6 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                   : '输入图生图提示词'
               }
             />
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <button type="button" onClick={() => onPromptSource('history')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">底图原提示词</button>
-              <button type="button" onClick={() => onPromptSource('current')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">当前文生图提示词</button>
-              <button type="button" onClick={() => onPromptSource('style-only')} className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">仅保留风格串</button>
-              <button type="button" onClick={() => onPromptSource('custom')} className="rounded px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800">清空提示词</button>
-            </div>
           </div>
           <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">全局负面提示词<TagAutocompleteTextarea tagAssistEnabled={tagAssistEnabled} disabled={isBusy} value={draft.negativePrompt} onValueChange={onNegativePromptChange} className="mt-2 min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder="输入本次负面提示词" /></label>
         </section>

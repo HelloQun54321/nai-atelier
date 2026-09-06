@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **Gemini 3.8 Flash**：移除实验室图生图/重绘/扩图提示词下方的冗余来源操作按钮（refactor: remove redundant prompt source buttons from image edit controls）。
 - **Gemini 3.8 Flash**：修复移动端实验室布局设置锁定、强调色圆钮被撑扁为蛋形，以及导出导入等按钮隐藏文字后图标偏左不齐的问题（fix: lock lab module ordering on mobile, restore round accent buttons, and center icons）。
 - **Gemini 3.8 Flash**：为移动端实验室的图生图、局部重绘与扩图模式补齐三段式 Tab 导航并整合画板贴身工具栏（feat: add three-tab mobile navigation for image edit modes）。
 - **ZCode (GLM-5.3)**：应用户要求完成历史清洗：git filter-branch 将 prompt-agent.mjs 与 media-gateway.test.mjs 全历史中的未授权话术正文替换为占位符（其余内容逐字节不动），清理备份 refs 并强推 main 与 tag，全新克隆复核零残留、日期完整保留；原始历史以 bundle 归档于仓库外。测试补齐无正文回退分支守卫，有/无内容文件双模式 157/157 全绿（chore: document history redaction）。
