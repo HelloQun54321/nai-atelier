@@ -3,6 +3,9 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-09-06
+### 视觉:画师库图标切换为艺术毛笔（Brush）
+- 剔除类似油漆板刷的 `Paintbrush` 图标，改用修长精致的艺术画笔 `Brush`（原 Pixiv 所用画笔），更贴合画师艺术创作语义。
+
 ### 修复:彻底穿透 Windows 图标缓存并强制刷新桌面快捷方式
 - 针对 Windows Explorer 对固定文件路径图标缓存极强的持久锁定机制，引入独立图标源 `nai-atelier.ico`，使快捷方式路径脱离历史缓存键。
 - 重启 Windows Explorer Shell 进程并向系统发送 `SHCNE_ASSOCCHANGED` 与 `SHCNE_UPDATEITEM` 刷新通知，彻底解决桌面图标仍残留旧缓存紫色画面的问题。

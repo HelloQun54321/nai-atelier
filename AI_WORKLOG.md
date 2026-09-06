@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-06
+- **Antigravity**：画师库图标由类似油漆板刷的 Paintbrush 替换为原 Pixiv 的艺术画笔 Brush（style: switch artist library icon to artistic brush）。
 - **Antigravity**：切换桌面快捷方式至独立图标路径 public/nai-atelier.ico 并重启 Explorer 刷新系统缓存，彻底解决 Windows 图标缓存残留紫色问题（fix: force invalidate windows icon cache and isolate shortcut icon path）。
 - **Antigravity**：应用图标主色改为默认主题强调色晴空蓝（#0ea5e9），重新渲染图标并更新快捷方式（style: align app icon color with default theme accent color #0ea5e9）。
 - **Antigravity**：生成多尺寸高清应用图标，更新桌面快捷方式 NAI Atelier.lnk 图标与网页 Favicon 并刷新 Shell 缓存（style: generate modern app icon and update desktop shortcut and favicon）。

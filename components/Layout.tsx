@@ -1,6 +1,7 @@
 import React, { ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Beaker,
+  Brush,
   CheckCircle2,
   ChevronLeft,
   CircleUserRound,
@@ -9,7 +10,6 @@ import {
   Gem,
   Lightbulb,
   Layers,
-  Paintbrush,
   Palette,
   PanelLeft,
   Settings,
@@ -55,7 +55,7 @@ interface LayoutProps {
 const icons = {
   list: Layers,
   character: CircleUserRound,
-  artist: Paintbrush,
+  artist: Brush,
   tag: Tag,
   danbooru: DanbooruIcon,
   pixiv: PixivIcon,
