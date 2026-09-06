@@ -1,7 +1,6 @@
 import React, { ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Beaker,
-  Brush,
   CheckCircle2,
   ChevronLeft,
   CircleUserRound,
@@ -9,8 +8,8 @@ import {
   FolderOpen,
   Gem,
   Lightbulb,
-  Images,
   Layers,
+  Paintbrush,
   Palette,
   PanelLeft,
   Settings,
@@ -24,6 +23,7 @@ import { useAnlasBudget } from '../services/anlasBudget';
 import { AppearancePreferences, ThemeMode } from '../services/appearancePreferences';
 import { CloudQueueStatus } from './CloudQueueStatus';
 import { OpusUsageBar } from './OpusUsageBar';
+import { DanbooruIcon, PixivIcon } from './PlatformIcons';
 
 const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module => ({ default: module.GlobalSettings })));
 
@@ -55,10 +55,10 @@ interface LayoutProps {
 const icons = {
   list: Layers,
   character: CircleUserRound,
-  artist: Palette,
+  artist: Paintbrush,
   tag: Tag,
-  danbooru: Images,
-  pixiv: Brush,
+  danbooru: DanbooruIcon,
+  pixiv: PixivIcon,
   resources: FolderOpen,
   lab: Beaker,
   inspiration: Lightbulb,
@@ -307,8 +307,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       <CloudQueueStatus hidden={Boolean(hideNav)} />
 
       <aside style={{ width: sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth }} className={`app-sidebar relative hidden flex-shrink-0 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:flex ${isSidebarResizing ? '' : 'transition-[width] duration-200'}`}>
-        <div className={`flex h-14 flex-none items-center ${sidebarCollapsed ? 'justify-center gap-1 px-2' : 'gap-2 px-3'}`}>
-          <img src="/artist-palette-3d.png" alt="" className={`${sidebarCollapsed ? 'h-6 w-6' : 'h-7 w-7'} flex-none object-contain`} data-safe-mode-ignore="true" aria-hidden="true" />
+        <div className={`flex h-14 flex-none items-center ${sidebarCollapsed ? 'justify-center gap-1 px-2' : 'gap-2.5 px-3'}`}>
+          <div className="flex h-7 w-7 flex-none items-center justify-center rounded-lg border border-[var(--nai-accent)]/20 bg-[var(--nai-accent)]/15 text-[var(--nai-accent)] shadow-xs transition-colors" data-safe-mode-ignore="true" aria-hidden="true">
+            <Palette className="h-4 w-4" strokeWidth={2.2} />
+          </div>
           {!sidebarCollapsed && <span className="min-w-0 flex-1 truncate text-sm font-bold tracking-wide text-gray-800 dark:text-gray-200">NAI Atelier</span>}
           <button type="button" onClick={() => setSidebarCollapsed(value => !value)} className="flex h-7 w-7 flex-none items-center justify-center rounded-lg text-gray-400 outline-none transition hover:bg-gray-100 hover:text-indigo-600 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 dark:hover:bg-gray-800" aria-label={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'} title={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}>
             {sidebarCollapsed ? <PanelLeft className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
