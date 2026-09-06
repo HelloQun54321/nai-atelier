@@ -79,7 +79,8 @@ async function main() {
   fs.writeFileSync('public/app-icon.ico', icoBuffer);
   fs.writeFileSync('public/app-icon.png', pngBuffers[0].buffer);
   fs.writeFileSync('public/artist-palette-3d.ico', icoBuffer);
-  console.log('Successfully generated app-icon.ico, app-icon.png, and updated artist-palette-3d.ico');
+  fs.writeFileSync('public/nai-atelier.ico', icoBuffer);
+  console.log('Successfully generated app-icon.ico, app-icon.png, artist-palette-3d.ico, and nai-atelier.ico');
 }
 
 main().catch(error => {

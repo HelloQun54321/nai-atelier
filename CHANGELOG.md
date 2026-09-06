@@ -3,7 +3,10 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-09-06
-### 视觉:应用图标主色对齐默认主题晴空蓝强调色
+### 修复:彻底穿透 Windows 图标缓存并强制刷新桌面快捷方式
+- 针对 Windows Explorer 对固定文件路径图标缓存极强的持久锁定机制，引入独立图标源 `nai-atelier.ico`，使快捷方式路径脱离历史缓存键。
+- 重启 Windows Explorer Shell 进程并向系统发送 `SHCNE_ASSOCCHANGED` 与 `SHCNE_UPDATEITEM` 刷新通知，彻底解决桌面图标仍残留旧缓存紫色画面的问题。
+
 - 移除泛紫色渐变，全面改用 NAI Atelier 默认主题强调色晴空蓝（`#0ea5e9`），重新渲染生成 `app-icon.ico`、`app-icon.png` 与 `artist-palette-3d.ico`。
 - 重新刷新桌面快捷方式与 Windows Shell 图标缓存，使桌面图标色调与应用内强调色完美统一。
 
