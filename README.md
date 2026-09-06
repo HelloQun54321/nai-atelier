@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.150.18-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.150.19-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -765,7 +765,10 @@ NAI Atelier/
 - 预处理与推理实现参考：[pythongosssss/ComfyUI-WD14-Tagger](https://github.com/pythongosssss/ComfyUI-WD14-Tagger)（MIT）
 - 应用图标：Microsoft Fluent Emoji，详见 [第三方资源说明](./docs/THIRD_PARTY_ASSETS.md)
 
-感谢原项目作者提供的基础实现。
+### 致谢
+
+- 感谢原项目作者 [kirafishy](https://github.com/kirafishy) 提供的基础实现与灵感起点。
+- 感谢 [st-chatu8](https://github.com/damoshen123/st-chatu8) 作者 [@damoshen123](https://github.com/damoshen123)：本项目基于 NovelAI Key SHA-256 指纹的多人拼车排队机制、Precise Reference 与 Vibe 数据互通协议，深受其优秀设计与开源实践的启发。
 
 ---
 
