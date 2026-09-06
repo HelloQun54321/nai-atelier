@@ -825,7 +825,7 @@ const runtimePolicyInfo = creativeMode => {
   const systemPrompt = buildSystemPrompt();
   return {
     creativeMode: enabled,
-    fingerprint: shorthandHash(`${systemPrompt}\n${enabled ? creativePreamble : ''}`),
+    fingerprint: shorthandHash(`${enabled ? 'creative' : 'standard'}\n${systemPrompt}\n${enabled ? creativePreamble : ''}`),
     seedFingerprint: enabled ? shorthandHash(JSON.stringify(creativeSeedMessages)) : '',
   };
 };

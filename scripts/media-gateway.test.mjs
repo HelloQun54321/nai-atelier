@@ -1534,22 +1534,20 @@ test('creative lab: builtin-default singleton is read-only and maps existing con
   const targets = builtin.slots.map(slot => slot.target);
   // system_middle ← jailbreakBlock；context_head ← creativeSeedMessages 成对帧；
   // user_preamble ← creativePreamble；其余槽位为空。
-  assert.ok(targets.includes('system_middle'));
-  assert.ok(targets.includes('user_preamble'));
-  assert.ok(targets.includes('context_head'));
+  assert.equal(targets.includes('system_middle'), Boolean(agentPresetContent));
+  assert.equal(targets.includes('user_preamble'), Boolean(agentPresetContent));
+  assert.equal(targets.includes('context_head'), Boolean(agentPresetContent));
   assert.equal(targets.filter(target => target === 'context_head').length, agentPresetContent ? agentPresetContent.creativeSeedMessages.length : 0);
   const middle = builtin.slots.find(slot => slot.target === 'system_middle');
-  if (agentPresetContent) {
-    assert.equal(middle.content, agentPresetContent.jailbreakBlock);
-  } else {
-    assert.equal(middle.content, '');
-  }
+  assert.equal(middle?.content || '', agentPresetContent ? agentPresetContent.jailbreakBlock : '');
   // 单例不可变：改造副本不影响后续取值。
   const copy = getBuiltinDefaultPreset(true);
-  copy.slots[0].content = 'mutated';
   copy.name = 'mutated';
   assert.notEqual(getBuiltinDefaultPreset(true).name, 'mutated');
-  assert.notEqual(getBuiltinDefaultPreset(true).slots[0].content, 'mutated');
+  if (agentPresetContent) {
+    copy.slots[0].content = 'mutated';
+    assert.notEqual(getBuiltinDefaultPreset(true).slots[0].content, 'mutated');
+  }
   // creativeMode=false → 空策略 builtin。
   const empty = getBuiltinDefaultPreset(false);
   assert.equal(empty.slots.length, 0);
@@ -1642,15 +1640,18 @@ test('creative lab: assemblePromptContext deep-copies, prepends head seeds in pa
     thinkingLevel: 'off',
   });
   assert.equal(JSON.stringify(second.canonicalMessages), JSON.stringify(result.canonicalMessages));
-  // canonical 顺序：4 条 head seeds → 历史 → user_preamble 合并进最后 user。
+  // canonical 顺序：正文齐备时 4 条 head seeds → 历史 → user_preamble 合并进最后 user；
+  // 正文缺失时无 seeds 无合并，历史原样进入 canonical。
   const roles = result.canonicalMessages.map(message => message.role);
-  assert.deepEqual(roles.slice(0, 4), ['user', 'assistant', 'user', 'assistant']);
   const messageText = message => (typeof message.content === 'string' ? message.content : message.content.filter(part => part?.type === 'text').map(part => part.text).join(''));
-  assert.ok(messageText(result.canonicalMessages[4]).includes('第一问'));
-  const lastUser = result.canonicalMessages.at(-1);
-  assert.equal(lastUser.role, 'user');
-  if (agentPresetContent) assert.ok(messageText(lastUser).startsWith(agentPresetContent.creativePreamble));
-  assert.ok(messageText(lastUser).endsWith('最新请求'));
+  if (agentPresetContent) {
+    assert.deepEqual(roles.slice(0, 4), ['user', 'assistant', 'user', 'assistant']);
+    assert.ok(messageText(result.canonicalMessages[4]).includes('第一问'));
+    const lastUser = result.canonicalMessages.at(-1);
+    assert.equal(lastUser.role, 'user');
+    assert.ok(messageText(lastUser).startsWith(agentPresetContent.creativePreamble));
+  }
+  assert.ok(messageText(result.canonicalMessages.at(-1)).endsWith('最新请求'));
   // system 顺序：base 在前 → jailbreak 中段 → tech → research → runtime 注入由调用方给出 → safetyFooter 恒最后。
   const sys = result.systemPrompt;
   assert.ok(sys.startsWith(baseSystem.split('[规则来源层级]')[0].trim()));
@@ -1908,7 +1909,7 @@ test('creative lab: creativeMode=false session binds empty policy and legacy ses
     assert.equal(backfilled.presetId, 'builtin-default');
     assert.equal(backfilled.presetName, '内置默认');
     assert.ok(backfilled.presetRevisionHash);
-    assert.ok(backfilled.slots.length >= 1);
+    assert.ok(backfilled.slots.length >= (agentPresetContent ? 1 : 0));
     const rawAfter = await service.readSession(legacy.id);
     assert.equal(rawAfter.messages.length, 1); // messages 未被改动
     // 二次调用幂等且不再写盘。
