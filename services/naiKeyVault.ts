@@ -72,13 +72,19 @@ const broadcastActiveKey = (key: string) => {
 const isBrowser = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined' && typeof sessionStorage !== 'undefined';
 
 /**
- * 一次性迁移：localStorage 旧库有非空条目时整体推给服务端，成功后才删除本地副本。
- * 返回迁移后服务端 entries（供调用方直接使用）；无迁移需求或失败返回 null。
+ * 一次性迁移合流：localStorage 旧库有未合流条目时推给服务端合并，成功后才删除本地副本。
+ * 若本地所有 Key 已在服务端存在，则静默清理本地副本，免发无谓网络请求。
+ * 返回合流后服务端 entries（供调用方直接使用）；无迁移需求或失败返回 null。
  */
-const migrateLegacyVault = async (): Promise<NaiKeyEntry[] | null> => {
+const migrateLegacyVault = async (serverEntries: NaiKeyEntry[] = []): Promise<NaiKeyEntry[] | null> => {
   if (!isBrowser()) return null;
   const legacy = readLocalVault();
   if (!legacy.length) return null;
+  const serverKeys = new Set(serverEntries.map(e => e.key));
+  if (legacy.every(entry => serverKeys.has(entry.key))) {
+    localStorage.removeItem(VAULT_STORAGE_KEY);
+    return null;
+  }
   try {
     const res = await api.put('/nai-key-vault', { entries: legacy });
     localStorage.removeItem(VAULT_STORAGE_KEY);
@@ -93,7 +99,7 @@ const migrateLegacyVault = async (): Promise<NaiKeyEntry[] | null> => {
 export const naiKeyVault = {
   /**
    * 读取保管箱。主路径：先取服务端整箱；若浏览器里还残留旧 localStorage 库
-   * （升级前版本写入），则一次性整体迁移到服务端后删除本地副本。
+   * （升级前版本写入），则一次性整体合流到服务端后删除本地副本。
    * 服务端不可达时回退本地库，并把「当前单密钥」收编为默认条目（原同步语义）。
    */
   async list(): Promise<NaiKeyEntry[]> {
@@ -101,8 +107,8 @@ export const naiKeyVault = {
     try {
       const res = await api.get('/nai-key-vault');
       const entries = Array.isArray(res?.entries) ? res.entries as NaiKeyEntry[] : [];
-      // 浏览器里残留旧 localStorage 库时一次性迁移，成功后直接用迁移结果刷新整箱。
-      const migrated = await migrateLegacyVault();
+      // 浏览器里残留旧 localStorage 库时一次性迁移合流，成功后直接用合流结果刷新整箱。
+      const migrated = await migrateLegacyVault(entries);
       return migrated ?? entries;
     } catch {
       // 服务端不可达：整体回退本地保管箱逻辑。

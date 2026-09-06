@@ -90,7 +90,8 @@ export async function handleNaiKeyVaultRoute(ctx: RouteContext): Promise<Respons
     return json({ status: 'added', entry });
   }
 
-  // 整体替换：供「首次 list() 时 localStorage 旧库 → 服务端」一次性迁移写入。
+  // 增量迁移合流：供「首次 list() 时 localStorage 旧库 → 服务端」一次性合流。
+  // 必须以现有服务端库为权威基准，仅追加服务端尚不存在的全新 Key；绝不覆盖或删除已有条目。
   // 必须在本文件 :id 分支之前精确匹配（两者同为 PUT，靠是否带子路径区分）。
   if (path === '/api/nai-key-vault' && method === 'PUT') {
     const body = await readJsonBody(request);
@@ -110,8 +111,18 @@ export async function handleNaiKeyVaultRoute(ctx: RouteContext): Promise<Respons
         createdAt: typeof rec.createdAt === 'number' ? rec.createdAt : Date.now(),
       });
     }
-    await writeVault(db, cleaned);
-    return json({ entries: cleaned });
+    const existing = await readVault(db);
+    const existingKeys = new Set(existing.map(entry => entry.key));
+    const toAppend: NaiKeyEntry[] = [];
+    for (const entry of cleaned) {
+      if (!existingKeys.has(entry.key)) {
+        existingKeys.add(entry.key);
+        toAppend.push(entry);
+      }
+    }
+    const merged = [...existing, ...toAppend];
+    await writeVault(db, merged);
+    return json({ entries: merged });
   }
 
   // 以下为带 :id 子路径的改名 / 删除。

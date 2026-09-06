@@ -169,7 +169,33 @@ test('路由 DELETE 删除条目并返回剩余 entries', async () => {
   assert.equal(missing.status, 404);
 });
 
-test('路由 PUT 整体替换：迁移写入 + 非 pst- 条目中止', async () => {
+test('路由 PUT 增量迁移合流：保留服务端已有条目与命名，仅追加全新 Key', async () => {
+  const db = makeMemoryDb();
+  // 先在库内建立一条已有条目
+  const initial = await runRoute(db, 'POST', { name: '原主力密钥', key: 'pst-EXISTING' });
+  const initialEntry = (await initial.json()).entry;
+
+  // 客户端发起迁移：一条与服务端相同（但名字被降级为“默认密钥”），一条是全新 Key
+  const legacy = [
+    { id: 'legacy-dup', name: '默认密钥', key: 'pst-EXISTING', createdAt: 999 },
+    { id: 'legacy-new', name: '新号', key: 'pst-NEW', createdAt: 123 },
+  ];
+  const mergedRes = await runRoute(db, 'PUT', { entries: legacy });
+  assert.equal(mergedRes.status, 200);
+  const body = await mergedRes.json();
+
+  // 必须保持 2 条，且原本的 pst-EXISTING 名字与 ID 必须完好保留，绝不能被冲成“默认密钥”
+  assert.equal(body.entries.length, 2);
+  const existingInMerged = body.entries.find(e => e.key === 'pst-EXISTING');
+  assert.equal(existingInMerged.id, initialEntry.id);
+  assert.equal(existingInMerged.name, '原主力密钥');
+
+  const newInMerged = body.entries.find(e => e.key === 'pst-NEW');
+  assert.equal(newInMerged.key, 'pst-NEW');
+  assert.equal(newInMerged.name, '新号');
+});
+
+test('路由 PUT 增量迁移合流：空库合流 + 非 pst- 条目中止', async () => {
   const db = makeMemoryDb();
   const legacy = [
     { id: 'legacy-1', name: '旧密钥', key: 'pst-OLD', createdAt: 123 },
@@ -365,6 +391,43 @@ test('service：首次 list() 把 localStorage 旧库一次性迁移到服务端
     // 第二次 list：本地已空，不再触发迁移。
     await naiKeyVault.list();
     assert.equal(putCalls, 1, '迁移只应执行一次');
+  } finally {
+    g.resetBrowser();
+    delete globalThis.fetch;
+    delete globalThis.window;
+    delete globalThis.localStorage;
+    delete globalThis.sessionStorage;
+  }
+});
+
+test('service：当本地条目全都在服务端已有时，静默清理本地副本且不发 PUT 请求', async () => {
+  const g = installBrowserGlobals();
+  // 本地残留了一个在降级时临时生成的条目
+  const legacy = [{ id: 'temp-1', name: '默认密钥', key: 'pst-EXIST', createdAt: 999 }];
+  g.localStorage.setItem('nai_api_key_vault', JSON.stringify(legacy));
+  const { naiKeyVault } = await loadModule('services/naiKeyVault.ts');
+  try {
+    let putCalls = 0;
+    const serverEntries = [{ id: 'real-1', name: '正式主力', key: 'pst-EXIST', createdAt: 100 }];
+    globalThis.fetch = makeFetchStub([
+      {
+        method: 'GET', path: '/api/nai-key-vault',
+        handler: async () => new Response(JSON.stringify({ entries: serverEntries }), { status: 200 }),
+      },
+      {
+        method: 'PUT', path: '/api/nai-key-vault',
+        handler: async () => {
+          putCalls += 1;
+          return new Response(JSON.stringify({ entries: serverEntries }), { status: 200 });
+        },
+      },
+    ]);
+
+    const entries = await naiKeyVault.list();
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].name, '正式主力', '应返回服务端权威命名');
+    assert.equal(g.localStorage.getItem('nai_api_key_vault'), null, '本地冗余旧条目应被静默清理');
+    assert.equal(putCalls, 0, '所有 Key 均已存在时不得发起无谓 PUT 请求');
   } finally {
     g.resetBrowser();
     delete globalThis.fetch;

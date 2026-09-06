@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-09-07
+- **Gemini 3.8 Flash**：修复密钥保管箱迁移接口的全量覆盖缺陷，改为查重合流并增加前端前置过滤守卫，补齐回归测试并从数据库底层碎片中找回恢复旧密钥（fix: merge legacy key vault instead of overwriting server entries）。
+
 ## 2026-09-06
 - **Antigravity**：为 main 增加 isolate 并将侧栏与展开按钮分别提至 z-40/z-50，彻底解决右侧 WorkspaceToolbar 的 z-30 层级遮盖小箭头的问题并全量构建（fix: isolate workspace stacking context and elevate sidebar to z-40）。
 - **Antigravity**：侧栏补齐 z-20 并调整展开按钮层级与尺寸，解决主工作区背景遮挡导致小箭头显示不全的问题（fix: prevent main container from clipping sidebar expand chevron）。
