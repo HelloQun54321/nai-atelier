@@ -3,6 +3,11 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-09-07
+### 文档:完善 README 中日常启动与桌面启动器的完整说明
+- 顶部快速导航补充「日常启动」直接锚点，全局设置功能表补充桌面启动器管理。
+- 详尽展开 Windows 桌面启动器的三种入口方式（桌面专属图标、根目录即开即用、设置页一键发送/修复）与 5 阶智能自检机制（自适应目录、Git 分支防护、实例探针复用、增量构建判断、多服务编排）。
+- 目录结构树正式收录项目根目录官方启动脚本 `NaiPromptManager.bat`。
+
 ### 功能:项目收录官方桌面启动器并在设置中提供一键发送至桌面
 - **根目录启动器纳入版本管理**：在项目根目录正式纳入官方 Windows 启动脚本 `NaiPromptManager.bat`，支持自适应解析项目绝对路径、Git 分支检查、已有服务实例探测复用与防冲保护。
 - **网关维护接口扩展**：在后端 `scripts/desktop-launcher.mjs` 中实现 Windows 桌面探测、动态脚本生成、快捷方式创建（使用 PowerShell COM 绑定专属晴空蓝调色盘图标 `public/nai-atelier.ico`）及打开桌面文件夹功能，并在 `scripts/media-gateway.mjs` 中注册 `/api/local-maintenance/desktop-launcher/*` 路由。

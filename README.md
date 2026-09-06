@@ -5,13 +5,13 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.151.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.151.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
   [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](./LICENSE)
 
-  [项目定位](#-项目定位) · [界面预览](#-界面预览) · [核心能力](#-核心能力总览) · [功能地图](#-功能地图) · [创作工作流](#-核心创作工作流) · [资源资料库](#-tag-与资源资料库) · [st-chatu8 互通](#-sillytavern--st-chatu8-互通nai-atelier-连接器) · [手机访问](#-手机局域网访问) · [数据存储](#-本地数据与图片存储) · [数据备份](#-备份与数据持久化) · [更新日志](./CHANGELOG.md)
+  [项目定位](#-项目定位) · [界面预览](#-界面预览) · [核心能力](#-核心能力总览) · [功能地图](#-功能地图) · [创作工作流](#-核心创作工作流) · [资源资料库](#-tag-与资源资料库) · [st-chatu8 互通](#-sillytavern--st-chatu8-互通nai-atelier-连接器) · [手机访问](#-手机局域网访问) · [数据存储](#-本地数据与图片存储) · [日常启动](#-日常启动) · [数据备份](#-备份与数据持久化) · [更新日志](./CHANGELOG.md)
 
   > NAI Atelier 基于 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 二次开发并独立维护，面向本地单人使用；原项目见上方链接。
 </div>
@@ -148,7 +148,7 @@ flowchart LR
 | 🧬 **角色参考** | 保存人物参考图并使用 NovelAI Precise Reference | 实验室、风格串、历史 |
 | 🚦 **拼车公共队列** | 与 st-chatu8 按相同 Key 指纹协调生图顺序，减少共享账号并发错误 | 全部生图入口、电脑与手机 |
 | 🕘 **历史** | 管理电脑保存的生成原图和完整参数 | 实验室、灵感、下载 |
-| ⚙️ **全局设置** | 管理主题、安全模式、启动偏好、API Key、Tag 词库和手机缓存 | 全项目生效 |
+| ⚙️ **全局设置** | 管理主题、安全模式、多 Key 保管箱、桌面启动器、数据备份与手机缓存 | 全项目生效 |
 
 ---
 
@@ -683,18 +683,21 @@ D:\NaiPromptManager\local-data
 
 ### Windows 桌面启动器
 
-- **一键发送到桌面**：在应用内的「系统设置 → 系统维护」中，点击「发送启动器到桌面」即可自动在 Windows 桌面生成 `NaiPromptManager.bat` 脚本与带专属晴空蓝调色盘图标的 `NAI Atelier.lnk` 快捷方式。
-- **双击即启**：双击桌面的 `NAI Atelier` 调色盘快捷方式（或根目录的 `NaiPromptManager.bat`）即可进入创作工坊。
+- **一键发送到桌面**：在应用内的「系统设置 → 数据与维护」中，点击「发送启动器到桌面」即可自动在 Windows 桌面生成 `NaiPromptManager.bat` 脚本与带专属晴空蓝调色盘图标的 `NAI Atelier.lnk` 快捷方式。
+- **多端与灵活入口**：
+  - **桌面专属图标（推荐）**：双击桌面的 `NAI Atelier` 调色盘快捷方式即可直接唤起创作工坊；
+  - **根目录即开即用**：在项目根目录直接双击 `NaiPromptManager.bat`，脚本自适应定位当前目录并快速启动；
+  - **按需偏好设置**：在设置中支持自由控制是否隐藏底层 `.bat` 脚本（默认隐藏以保持桌面整洁，仅呈现应用图标），并支持随时一键打开桌面目录或直接下载导出启动脚本。
 
-启动器会：
+#### 启动器内置自检与守护机制
 
-1. 检查项目目录和 Git 分支。
-2. 判断是否需要重新构建。
-3. 启动 Worker、图片网关和 Tag 更新服务。
-4. 自动打开 `http://localhost:3000`。
-5. 发现已有实例时只打开网页，不重复启动端口。
+启动器运行时按序执行 5 阶智能自检，免去人工敲击命令与繁复排查：
 
-底层 BAT 默认设为隐藏，快捷方式负责提供统一图标和双击入口（可在设置中按需切换隐藏与快捷方式生成偏好）。
+1. **自适应目录解析**：无论从系统桌面唤起还是从任意目录移动，脚本均能自适应定位项目根目录。
+2. **Git 分支安全防护**：校验 Node.js 与 npm 环境，检测当前 Git 分支状态（若处于非 `main` 分支时弹出警告，防止在实验性分支中误启动）。
+3. **已有实例探针复用（防端口冲突）**：启动前自动探针检测 `http://localhost:3000/api/lan/status`，若工坊已在后台运行，直接唤起默认浏览器打开页面并秒级退出，杜绝端口冲突或多进程重复占用。
+4. **智能增量构建判断**：比对源码目录与 `dist/` 产物的最后修改时间戳，必要时自动执行增量编译，免去手动运行 `npm run build`。
+5. **多服务协同编排**：统一拉起 Cloudflare Worker 本地运行时、图片媒体网关与 Tag 词库更新服务，就绪后自动在默认浏览器中打开 `http://localhost:3000`。
 
 ### 命令行启动
 
@@ -750,6 +753,7 @@ NAI Atelier/
 ├─ public/tag-data/     本地中英 Tag 分片与索引
 ├─ local-data/          重要个人数据（Git 忽略）
 ├─ local-cache/         可再生成缩略图（Git 忽略）
+├─ NaiPromptManager.bat Windows 官方自适应启动批处理脚本
 ├─ CHANGELOG.md         按真实日期倒序记录的修改历史
 ├─ AGENTS.md            AI 协作强制规则（提交、版本、CHANGELOG、工作日志）
 ├─ AI_WORKLOG.md        AI 工作日志，按模型与日期登记每次修改
