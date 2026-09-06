@@ -3,6 +3,9 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-09-07
+### 文档:README 补充创作者对 NovelAI V5 限额政策手记
+- 在 README 文末补充创作者个人对 NovelAI V5 电池限额机制、社区反馈及沟通遭遇的真实记录与吐槽。
+
 ### 文档:README 补充致谢开源社区与项目作者贡献
 - 在「来源与许可」末尾建立专门的「致谢」章节，平权致谢原项目作者 [kirafishy](https://github.com/kirafishy) 提供的基础实现，以及 st-chatu8 原作者 [@damoshen123](https://github.com/damoshen123) 在排队机制、Key SHA-256 指纹协议与 Vibe/参考图数据互通方面的开源启发。
 

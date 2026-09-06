@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-07
+- **Gemini 3.8 Flash**：在 README 文末补充创作者个人对 NovelAI V5 电池限额机制与社群沟通遭遇的真实记录手记（docs: add author personal note on novelai v5 quota policy）。
 - **Gemini 3.8 Flash**：在 README 文末建立致谢小节，平权致谢原作者 kirafishy 与 st-chatu8 作者 @damoshen123 的开源贡献（docs: acknowledge st-chatu8 author for queue and vibe protocols）。
 - **Gemini 3.8 Flash**：解除公共排队服务与外部单一实例的硬编码绑定，默认值置空并增加地址配置守卫，由使用者自行填入兼容服务地址（refactor: require user-provided service url for cloud queue）。
 - **Gemini 3.8 Flash**：全面润色优化 README 中文文字表达，剔除机械八股与翻译腔，按创作者第一视角与心流重写核心工作流、多模型视觉协同、局域网代理机制与安全边界（style: polish README copy for human-centric tone and clarity）。

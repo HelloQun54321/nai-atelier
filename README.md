@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-0.150.19-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-0.150.20-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -769,6 +769,17 @@ NAI Atelier/
 
 - 感谢原项目作者 [kirafishy](https://github.com/kirafishy) 提供的基础实现与灵感起点。
 - 感谢 [st-chatu8](https://github.com/damoshen123/st-chatu8) 作者 [@damoshen123](https://github.com/damoshen123)：本项目基于 NovelAI Key SHA-256 指纹的多人拼车排队机制、Precise Reference 与 Vibe 数据互通协议，深受其优秀设计与开源实践的启发。
+
+### 一点个人吐槽
+
+novelai直到4.5系列的模型都还是opus档会员可以无限生小图（28步，1216*832这个像素尺寸内的）<br>
+但8月下旬更新的5系列模型却一改之前的政策，搞了个及其傻逼的电池机制，限额<br>
+novelai我给你老冯飞了<br>
+去你discord讨论就禁言，去你推特下面反映就拉黑<br>
+真是纯野狗公司吧<br>
+一个破小说模型训练大半年搞炸炉端出来一坨屎<br>
+生图模型也是一直装死不更新，一更新就加限额机制<br>
+你和你的孝子贤孙全家飞天
 
 ---
 
