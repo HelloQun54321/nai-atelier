@@ -3,6 +3,10 @@
 这里记录 NAI Atelier 独立维护版本的重要功能、修复和维护变更。同一天的记录按时间倒序排列，最新修改在最上方。
 
 ## 2026-09-06
+### 修复:SillyTavern 扩展安装接口缺失模块导入
+- 修复本地网关在执行扩展安装时因缺少 `node:path` 中的 `isAbsolute` 与 `normalize` 以及 `node:fs` 中的 `existsSync` 导入导致抛出 `isAbsolute is not defined` 阻断安装的问题。
+- 提取并规范化 `installSillyTavernBridgeExtension` 安装服务层，增强自身项目源码根目录防覆写保护，并补充全覆盖自动化单元测试。
+
 ### 修复:SillyTavern 互通扩展统一命名为 NAI Atelier 连接器
 - 将 SillyTavern 扩展（npm-bridge）的显示名称、设置面板标题、描述及 README 中的历史旧名称全面更新为 `NAI Atelier 连接器`，版本递增至 v1.5.2 以强制刷新浏览器缓存。
 

@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { canonicalVibeSourceHash, collectStHistoryCandidates, resolveStUserFile, StChatu8Bridge } from './st-chatu8-bridge.mjs';
+import {
+  canonicalVibeSourceHash,
+  collectStHistoryCandidates,
+  computeSillyTavernExtensionTargetDir,
+  installSillyTavernBridgeExtension,
+  resolveStUserFile,
+  StChatu8Bridge,
+} from './st-chatu8-bridge.mjs';
 
 const tempRoot = name => join(tmpdir(), `npm-st-bridge-${name}-${process.pid}-${Date.now()}`);
 
@@ -196,4 +203,54 @@ test('missing st-chatu8 preview path does not crash with ENOENT and preserves ex
   }]);
   assert.equal(chains[0].previewImage, '/api/assets/covers/existing.png');
 });
+
+test('computeSillyTavernExtensionTargetDir 智能补全不同层级的酒馆安装路径', () => {
+  const base = 'D:\\SillyTavern';
+  assert.equal(computeSillyTavernExtensionTargetDir(base), 'D:\\SillyTavern\\public\\scripts\\extensions\\third-party\\npm-bridge');
+  assert.equal(computeSillyTavernExtensionTargetDir('D:\\SillyTavern\\public'), 'D:\\SillyTavern\\public\\scripts\\extensions\\third-party\\npm-bridge');
+  assert.equal(computeSillyTavernExtensionTargetDir('D:\\SillyTavern\\public\\scripts'), 'D:\\SillyTavern\\public\\scripts\\extensions\\third-party\\npm-bridge');
+  assert.equal(computeSillyTavernExtensionTargetDir('D:\\SillyTavern\\public\\scripts\\extensions'), 'D:\\SillyTavern\\public\\scripts\\extensions\\third-party\\npm-bridge');
+  assert.equal(computeSillyTavernExtensionTargetDir('D:\\SillyTavern\\public\\scripts\\extensions\\third-party'), 'D:\\SillyTavern\\public\\scripts\\extensions\\third-party\\npm-bridge');
+  assert.equal(computeSillyTavernExtensionTargetDir('D:\\SillyTavern\\public\\scripts\\extensions\\third-party\\npm-bridge'), 'D:\\SillyTavern\\public\\scripts\\extensions\\third-party\\npm-bridge');
+});
+
+test('installSillyTavernBridgeExtension 正常安装扩展、注入服务地址并执行安全阻断', async () => {
+  const fakeStRoot = tempRoot('st-install-target');
+  try {
+    // 1. 未指定或相对路径防护
+    await assert.rejects(async () => installSillyTavernBridgeExtension({ sillyTavernRoot: '' }), { status: 400 });
+    await assert.rejects(async () => installSillyTavernBridgeExtension({ sillyTavernRoot: 'relative/path' }), { status: 400 });
+
+    // 2. 目标根目录不存在
+    await assert.rejects(async () => installSillyTavernBridgeExtension({ sillyTavernRoot: fakeStRoot }), { status: 404 });
+
+    // 3. 核心保护区阻断
+    await mkdir(fakeStRoot, { recursive: true });
+    await assert.rejects(
+      async () => installSillyTavernBridgeExtension({ sillyTavernRoot: process.cwd() }),
+      { status: 403 }
+    );
+
+    // 4. 正常安装并成功注入自定义服务地址
+    const customUrl = 'http://192.168.1.100:3000';
+    const result = await installSillyTavernBridgeExtension({
+      sillyTavernRoot: fakeStRoot,
+      targetUrl: customUrl,
+      projectRoot: process.cwd(),
+    });
+
+    assert.equal(result.success, true);
+    assert.deepEqual(result.files, ['manifest.json', 'index.js', 'style.css', 'README.md']);
+
+    // 验证文件存在且正确注入自定义服务地址
+    const installedManifest = JSON.parse(await readFile(join(result.targetPath, 'manifest.json'), 'utf8'));
+    assert.equal(installedManifest.display_name, 'NAI Atelier 连接器');
+
+    const installedIndex = await readFile(join(result.targetPath, 'index.js'), 'utf8');
+    assert.match(installedIndex, /const DEFAULT_URL = 'http:\/\/192\.168\.1\.100:3000';/);
+  } finally {
+    await rm(fakeStRoot, { recursive: true, force: true });
+  }
+});
+
 

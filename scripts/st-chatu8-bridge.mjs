@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdir, open, readFile, rename, stat, writeFile } from 'node:fs/promises';
-import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, extname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 
 const STATE_FILE = join(process.cwd(), 'local-data', 'st-chatu8-bridge.json');
 const MAX_VIBE_DOCUMENT_BYTES = 30 * 1024 * 1024;
@@ -55,6 +56,82 @@ export const collectStHistoryCandidates = (settings, resolvePath) => {
     }
   }
   return candidates;
+};
+
+export const computeSillyTavernExtensionTargetDir = stRoot => {
+  let targetDir = stRoot;
+  const normalized = targetDir.replaceAll('/', '\\');
+  if (normalized.endsWith('\\npm-bridge')) {
+    // 已是最终目录
+  } else if (normalized.endsWith('\\third-party')) {
+    targetDir = join(targetDir, 'npm-bridge');
+  } else if (normalized.endsWith('\\extensions')) {
+    targetDir = join(targetDir, 'third-party', 'npm-bridge');
+  } else if (normalized.endsWith('\\scripts')) {
+    targetDir = join(targetDir, 'extensions', 'third-party', 'npm-bridge');
+  } else if (normalized.endsWith('\\public')) {
+    targetDir = join(targetDir, 'scripts', 'extensions', 'third-party', 'npm-bridge');
+  } else {
+    targetDir = join(targetDir, 'public', 'scripts', 'extensions', 'third-party', 'npm-bridge');
+  }
+  return targetDir;
+};
+
+export const installSillyTavernBridgeExtension = async ({
+  sillyTavernRoot,
+  targetUrl = '',
+  projectRoot = process.cwd(),
+} = {}) => {
+  let stRoot = String(sillyTavernRoot || '').trim();
+  if (!stRoot) throw Object.assign(new Error('未指定 SillyTavern 安装路径，且未能自动检测到酒馆目录'), { status: 400 });
+  if (!isAbsolute(stRoot)) throw Object.assign(new Error('SillyTavern 安装路径必须为绝对路径'), { status: 400 });
+  stRoot = normalize(stRoot);
+  if (!existsSync(stRoot)) throw Object.assign(new Error(`指定的 SillyTavern 路径不存在：${stRoot}`), { status: 404 });
+
+  const targetDir = computeSillyTavernExtensionTargetDir(stRoot);
+
+  const localDataDir = resolve(projectRoot, 'local-data');
+  const resolvedProject = resolve(projectRoot);
+  if (
+    targetDir === resolvedProject ||
+    targetDir.startsWith(resolvedProject + '\\') ||
+    targetDir.startsWith(resolvedProject + '/') ||
+    targetDir === localDataDir ||
+    targetDir.startsWith(localDataDir + '\\') ||
+    targetDir.startsWith(localDataDir + '/')
+  ) {
+    throw Object.assign(new Error('安全保护：禁止向项目核心保护区安装扩展'), { status: 403 });
+  }
+
+  const extensionDir = join(projectRoot, 'sillytavern-extension', 'npm-bridge');
+  let [manifest, index, style, readme] = await Promise.all([
+    readFile(join(extensionDir, 'manifest.json'), 'utf8'),
+    readFile(join(extensionDir, 'index.js'), 'utf8'),
+    readFile(join(extensionDir, 'style.css'), 'utf8'),
+    readFile(join(extensionDir, 'README.md'), 'utf8'),
+  ]);
+
+  const cleanTargetUrl = String(targetUrl || '').trim().replace(/\/$/, '');
+  if (cleanTargetUrl) {
+    index = index.replace(
+      /const DEFAULT_URL = 'http:\/\/localhost:3000';/,
+      `const DEFAULT_URL = '${cleanTargetUrl}';`
+    );
+  }
+
+  await mkdir(targetDir, { recursive: true });
+  await Promise.all([
+    writeFile(join(targetDir, 'manifest.json'), manifest, 'utf8'),
+    writeFile(join(targetDir, 'index.js'), index, 'utf8'),
+    writeFile(join(targetDir, 'style.css'), style, 'utf8'),
+    writeFile(join(targetDir, 'README.md'), readme, 'utf8'),
+  ]);
+
+  return {
+    success: true,
+    targetPath: targetDir,
+    files: ['manifest.json', 'index.js', 'style.css', 'README.md'],
+  };
 };
 
 const findSillyTavernRoot = async projectRoot => {
