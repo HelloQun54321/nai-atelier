@@ -4,6 +4,9 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-09-22
+- **Codex（GPT-6）**：对照实现校准 README 的凭据、费用、模型与备份边界，补齐首次使用和独立目录恢复流程，合并重复介绍并校准相关入口及过度承诺（docs: clarify readme setup and data boundaries）。
+
 ## 2026-09-07
 - **Antigravity**：纠正 README 表述，明确 Opus 电池限额全自动通过 Key 轮询获取，而 Anlas 积分预算因官方 API 权限限制需由用户自主设定本地安全预算守卫，各 Key 独立隔离核算与透支防护（docs: clarify automatic opus quota vs user-set anlas budget per key in README）。
 - **Gemini 3.8 Flash**：更正 README 界面预览表述，准确定义为代表性页面的完整界面视图展示，剔除多余的「局部预览/特写」生硬字眼（docs: accurately describe screenshots as full views of representative pages）。
