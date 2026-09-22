@@ -5,6 +5,7 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-09-22
+- **Codex（GPT-6）**：重排 README 阅读结构，将桌面快捷方式与手机连接紧接首次安装，突出四个项目重点并折叠低频细节，同步校准导航（docs: streamline readme onboarding and navigation）。
 - **Codex（GPT-6）**：对照实现校准 README 的凭据、费用、模型与备份边界，补齐首次使用和独立目录恢复流程，合并重复介绍并校准相关入口及过度承诺（docs: clarify readme setup and data boundaries）。
 
 ## 2026-09-07
