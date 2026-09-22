@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.0.9-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.0.10-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -110,7 +110,7 @@ npm run dev:local
 ### 生成第一张图
 
 1. 打开「系统设置 → NovelAI 与 Anlas」，添加并启用自己的 Key，检查订阅与额度状态；按需要设置该 Key 的 **Anlas 本地预算**。
-2. 在设置中的「Tag 补全词库」点击「检查并更新」，或在另一个终端运行 `npm run update:tags`。词库不随源码提供；未下载时，Tag 补全和画师／角色目录不可用，仍可手动输入 Prompt。
+2. 项目在「Tag 补全词库」中提供 **ffdkj 中英 Tag 数据库的 GitHub 下载入口**：点击「检查并更新」，或运行 `npm run update:tags`，下载后生成本地词库。数据库及生成的词库不随源码内置；未下载时，Tag 补全和画师／角色目录不可用，仍可手动输入 Prompt。
 3. 进入「生图实验室 → 文生图」，输入 Prompt。可先使用默认 V4.5 Full、`832 × 1216`、28 步，暂不添加付费参考图。
 4. 检查生成按钮显示的费用与额度状态，再生成一张。结果出现后确认历史保存成功，可继续修改 Prompt，或将满意配置保存为风格串。
 5. 在「系统设置 → 数据与维护」配置备份位置；接下来可按紧邻的说明创建桌面快捷方式或连接手机。
@@ -482,7 +482,7 @@ flowchart LR
 
 ### Tag 自动补全、连续权重胶囊与操作台
 
-项目**内置了词库一键拉取与分片生成工具**，词库数据本身不随源码仓库分发（中英对照与画师/角色目录源自 [ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table) 开源维护的 `tag.sqlite`，NovelAI 专属 Tag 来自官方列表；详见[来源与许可](#-来源与许可)）。用户在系统设置中一键点击或执行命令即可下载并编译生成 32 万余条本地中英对照分片：
+项目内提供 **[ffdkj 中英 Tag 数据库的 GitHub 下载入口](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)**，**不直接内置该数据库或预生成的词库**。用户在设置中点击下载，或执行更新命令后，工具才会获取上游 `tag.sqlite`，合并 NovelAI 专属 Tag，生成本地补全分片及画师／角色目录。词库规模约 32 万余条，随上游更新变化；来源说明见[来源与许可](#-来源与许可)。下载生成后支持：
 
 - **海量词库与即时补全**：Danbooru 中英对照 Tag、NovelAI 官方专属 Tag，支持中英双向前缀实时搜索、热度排序与中文字意插入；手机端采用双击确认，减少滑动手势误选。
 - **一体式连续权重胶囊（Capsule）**：同一对权重包裹的多个 Tag 自动合并为一个无缝连续胶囊，开口与闭合语法渲染于首尾两端，整组贯穿强调色与描边；散落的花括号与方括号不破坏词条美感。
@@ -501,7 +501,7 @@ flowchart LR
 
 #### 下载与更新方式
 
-由于完整词库切片数据量较大，且上游保持日常更新，项目**不随源码仓库直接打包内置已编译的词库文件，而是在工坊设置与命令行中内置了完整的拉取编译入口，由用户按需下载**。首次使用或需要同步最新数据时：
+项目提供的是 **GitHub 下载与本地生成工具**，ffdkj 数据库和生成的词库文件均不随源码分发。首次使用或需要同步最新数据时：
 
 1. **设置面板一键下载**：在「全局设置 → Tag 补全词库」点击「检查并更新」即可自动完成下载与分片生成；
 2. **终端命令行执行**：在项目根目录运行：
@@ -513,7 +513,7 @@ flowchart LR
 
 ### 画师库：自维护画师目录
 
-项目收录约 15.1 万画师条目，由本地数据库持续维护，不再依赖外部过期的静态图包：
+通过项目内的 GitHub 下载入口获取 ffdkj 数据库后，可生成约 15.1 万画师条目的本地目录；这些目录数据不随源码预装，个人收藏与封面在使用中持续积累：
 
 #### 目录能力
 
@@ -539,7 +539,7 @@ flowchart LR
 
 角色库包含两类内容：
 
-1. **官方角色 Tag**：NovelAI / Danbooru 已收录的标准角色名。
+1. **官方角色 Tag**：NovelAI / Danbooru 已收录的标准角色名；目录由按需下载的 ffdkj 数据库生成，不随源码预装。
 2. **自定义还原角色**：没有官方 Tag 时，手工组合外貌、服装和特征 Prompt。
 
 #### 搜索能力
@@ -869,7 +869,7 @@ NAI Atelier/
 ### 第三方数据与资源
 
 - **Tag 中英词典、画师目录与角色目录**：[ffdkj-Danbooru_Tag-Chinese-English-Translation-Table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)
-  - 项目的 Tag 自动补全词库、约 15.1 万画师 Tag 目录、约 10.2 万官方角色 Tag 目录均由该项目的 `tag.sqlite` 数据库生成（由内置工具 `scripts/update-tag-dictionary.mjs` 按需下载并转换）。
+  - 本项目在设置中提供该数据库的 **GitHub 下载入口**，由 `scripts/update-tag-dictionary.mjs` 按需下载并转换 `tag.sqlite`，生成 Tag 补全词库、约 15.1 万画师 Tag 目录和约 10.2 万官方角色 Tag 目录；数据库及生成的词库均不直接内置。
   - 该上游项目**未在仓库中声明开源许可**；本项目仅提供一键拉取编译工具供用户在个人本地使用，不随源码仓库重新分发其数据库文件。
 - **NovelAI 特殊 Tag（风格年份等）**：来自 NovelAI 官方 Tag 列表 `data/novelai-v45-tags.json`（项目内文件）。
 - **互通与协议参考**：[st-chatu8](https://github.com/damoshen123/st-chatu8)（NovelAI 扩展，Precise Reference / Vibe 数据流与拼车队列指纹协议实现参考；仅协议层借鉴，不含其代码）
