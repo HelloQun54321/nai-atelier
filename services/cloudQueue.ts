@@ -26,6 +26,10 @@ let currentQueueStatusKey = '';
 let clearStatusTimer: number | null = null;
 const statusListeners = new Set<() => void>();
 
+export const isCloudQueueTaskActive = (status: CloudQueueStatus | null) => Boolean(
+  status && !['completed', 'cancelled', 'error'].includes(status.phase),
+);
+
 const normalizePreferences = (value: Partial<CloudQueuePreferences> | null | undefined): CloudQueuePreferences => {
   const serviceUrl = String(value?.serviceUrl || '').trim();
   return {
@@ -87,7 +91,9 @@ export const emitCloudQueueStatus = (status: CloudQueueStatus | null, sourceApiK
   const normalizedSourceApiKey = normalizeApiKey(sourceApiKey);
   // 旧 Key 的请求结束时不得把终态重新显示到新 Key 的界面。
   if (status && normalizedSourceApiKey !== getActiveApiKey()) return;
-  if (status && clearStatusTimer !== null) {
+  // 同一 Key 已开始新任务时，旧生成请求的收尾不能覆盖新任务。
+  if (status && currentQueueStatus && status.taskId !== currentQueueStatus.taskId && !isCloudQueueTaskActive(status)) return;
+  if (clearStatusTimer !== null) {
     window.clearTimeout(clearStatusTimer);
     clearStatusTimer = null;
   }
@@ -98,6 +104,10 @@ export const emitCloudQueueStatus = (status: CloudQueueStatus | null, sourceApiK
   currentQueueStatusKey = status ? normalizedSourceApiKey : '';
   statusListeners.forEach(listener => listener());
   window.dispatchEvent(new CustomEvent('nai-cloud-queue-status', { detail: currentQueueStatus }));
+  // 终态自行收尾，轮询与生成请求走同一规则；正常完成仅短暂保留内部任务标识。
+  if (currentQueueStatus && !isCloudQueueTaskActive(currentQueueStatus)) {
+    scheduleCloudQueueStatusClear(currentQueueStatus.taskId, currentQueueStatus.phase === 'error' || currentQueueStatus.cleanupError ? 8000 : 1500, normalizedSourceApiKey);
+  }
 };
 
 export const reportCloudQueueCleanupError = (taskId: string, sourceApiKey: string) => {
@@ -107,6 +117,7 @@ export const reportCloudQueueCleanupError = (taskId: string, sourceApiKey: strin
 
 export const scheduleCloudQueueStatusClear = (taskId: string, delay: number, sourceApiKey = getActiveApiKey()) => {
   const normalizedSourceApiKey = normalizeApiKey(sourceApiKey);
+  if (currentQueueStatus?.taskId !== taskId || currentQueueStatusKey !== normalizedSourceApiKey) return;
   if (clearStatusTimer !== null) window.clearTimeout(clearStatusTimer);
   clearStatusTimer = window.setTimeout(() => {
     clearStatusTimer = null;
@@ -132,16 +143,23 @@ export const cancelCloudQueueTask = async (taskId: string) => {
 
 export const watchCloudQueueTask = async (taskId: string, isFinished: () => boolean, sourceApiKey = getActiveApiKey()) => {
   const normalizedSourceApiKey = normalizeApiKey(sourceApiKey);
-  while (!isFinished() && getActiveApiKey() === normalizedSourceApiKey) {
+  const canUpdate = () => !isFinished() && getActiveApiKey() === normalizedSourceApiKey
+    && currentQueueStatus?.taskId === taskId && currentQueueStatusKey === normalizedSourceApiKey
+    && isCloudQueueTaskActive(currentQueueStatus);
+  while (canUpdate()) {
     try {
       const response = await fetch(`/api/generation-queue/status?taskId=${encodeURIComponent(taskId)}&_t=${Date.now()}`, { cache: 'no-store', headers: getActiveKeyHeaders(normalizedSourceApiKey) });
       if (response.ok) {
         const status = await response.json() as CloudQueueStatus;
+        // 请求结束、切 Key 或新任务开始后，迟到的轮询不得恢复旧提示或取消收尾计时。
+        if (!canUpdate() || status.taskId !== taskId) return;
+        // 网关已完成不代表浏览器已收完图片；以生成请求结束为准，保留接收期间的清理警告。
+        if (status.phase === 'completed') return;
         emitCloudQueueStatus(status, normalizedSourceApiKey);
         if (['completed', 'cancelled', 'error'].includes(status.phase)) return;
       }
     } catch {
-      // The generation request carries the authoritative error; status polling is best effort.
+      // 生成请求负责报告最终错误，状态轮询仅作辅助。
     }
     await new Promise(resolve => setTimeout(resolve, 750));
   }

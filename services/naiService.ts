@@ -5,7 +5,7 @@ import { api, isQueueCancelledError } from './api';
 import { getRuntimeNaiModelInfo } from './naiModels';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 import { hashNaiApiKey } from './anlasBudget';
-import { emitCloudQueueStatus, getCachedCloudQueuePreferences, getCloudQueuePreferences, scheduleCloudQueueStatusClear, watchCloudQueueTask } from './cloudQueue';
+import { emitCloudQueueStatus, getCachedCloudQueuePreferences, getCloudQueuePreferences, watchCloudQueueTask } from './cloudQueue';
 import { buildNaiGenerationPayload } from './naiPayload';
 import { buildNaiImageEditPayload } from './naiPayload';
 import { getNaiRuntimeConfig } from './naiRuntime';
@@ -77,7 +77,7 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   const queueApiKey = apiKey.trim();
   let requestFinished = false;
   if (queue.enabled) emitCloudQueueStatus({ taskId: queueTaskId, phase: 'preparing', cancelable: true }, queueApiKey);
-  const statusWatcher = queue.enabled ? watchCloudQueueTask(queueTaskId, () => requestFinished, queueApiKey) : Promise.resolve();
+  if (queue.enabled) void watchCloudQueueTask(queueTaskId, () => requestFinished, queueApiKey);
   let blob: Blob;
   let terminalPhase: 'completed' | 'cancelled' | 'error' = 'completed';
   let terminalError: string | undefined;
@@ -107,7 +107,7 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
     if (terminalPhase === 'completed' && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
     }
-    await statusWatcher;
+    // 状态轮询仅作辅助，成图交付不等待仍在途的轮询；迟到响应由 watcher 拦截。
     if (queue.enabled) {
       emitCloudQueueStatus({
         taskId: queueTaskId,
@@ -115,7 +115,6 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
         error: terminalError,
         cancelable: false,
       }, queueApiKey);
-      scheduleCloudQueueStatusClear(queueTaskId, terminalPhase === 'error' ? 8000 : 5000, queueApiKey);
     }
   }
 
@@ -199,7 +198,7 @@ export const generateImageEdit = async (
   let terminalPhase: 'completed' | 'cancelled' | 'error' = 'completed';
   let terminalError: string | undefined;
   if (queue.enabled) emitCloudQueueStatus({ taskId: queueTaskId, phase: 'preparing', cancelable: true }, queueApiKey);
-  const statusWatcher = queue.enabled ? watchCloudQueueTask(queueTaskId, () => requestFinished, queueApiKey) : Promise.resolve();
+  if (queue.enabled) void watchCloudQueueTask(queueTaskId, () => requestFinished, queueApiKey);
   try {
     const budgetKeyHash = await hashNaiApiKey(apiKey);
     const binaryResult = await api.postBinaryDetailed('/generate', payload, {
@@ -233,10 +232,9 @@ export const generateImageEdit = async (
   } finally {
     requestFinished = true;
     if (terminalPhase === 'completed' && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
-    await statusWatcher;
+    // 状态轮询仅作辅助，成图交付不等待仍在途的轮询；迟到响应由 watcher 拦截。
     if (queue.enabled) {
       emitCloudQueueStatus({ taskId: queueTaskId, phase: terminalPhase, error: terminalError, cancelable: false }, queueApiKey);
-      scheduleCloudQueueStatusClear(queueTaskId, terminalPhase === 'error' ? 8000 : 5000, queueApiKey);
     }
   }
 };
@@ -267,7 +265,7 @@ export const generateImageStream = async (
   let finalImage = '';
   let finalSeed = fallbackSeed;
   if (queue.enabled) emitCloudQueueStatus({ taskId, phase: 'preparing', cancelable: true }, queueApiKey);
-  const statusWatcher = queue.enabled ? watchCloudQueueTask(taskId, () => requestFinished, queueApiKey) : Promise.resolve();
+  if (queue.enabled) void watchCloudQueueTask(taskId, () => requestFinished, queueApiKey);
   try {
     const budgetKeyHash = await hashNaiApiKey(apiKey);
     let sseEstimatedCost: number | undefined;
@@ -308,10 +306,9 @@ export const generateImageStream = async (
     if (terminalPhase === 'completed' && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
     }
-    await statusWatcher;
+    // 状态轮询仅作辅助，成图交付不等待仍在途的轮询；迟到响应由 watcher 拦截。
     if (queue.enabled) {
       emitCloudQueueStatus({ taskId, phase: terminalPhase, error: terminalError, cancelable: false }, queueApiKey);
-      scheduleCloudQueueStatusClear(taskId, terminalPhase === 'error' ? 8000 : 5000, queueApiKey);
     }
   }
 };
@@ -366,7 +363,7 @@ export const generateImageEditStream = async (
   let finalImage = '';
   let finalSeed = fallbackSeed;
   if (queue.enabled) emitCloudQueueStatus({ taskId, phase: 'preparing', cancelable: true }, queueApiKey);
-  const statusWatcher = queue.enabled ? watchCloudQueueTask(taskId, () => requestFinished, queueApiKey) : Promise.resolve();
+  if (queue.enabled) void watchCloudQueueTask(taskId, () => requestFinished, queueApiKey);
   try {
     const budgetKeyHash = await hashNaiApiKey(apiKey);
     let sseEstimatedCost: number | undefined;
@@ -415,10 +412,9 @@ export const generateImageEditStream = async (
     if (terminalPhase === 'completed' && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
     }
-    await statusWatcher;
+    // 状态轮询仅作辅助，成图交付不等待仍在途的轮询；迟到响应由 watcher 拦截。
     if (queue.enabled) {
       emitCloudQueueStatus({ taskId, phase: terminalPhase, error: terminalError, cancelable: false }, queueApiKey);
-      scheduleCloudQueueStatusClear(taskId, terminalPhase === 'error' ? 8000 : 5000, queueApiKey);
     }
   }
 };

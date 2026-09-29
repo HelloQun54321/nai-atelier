@@ -1,5 +1,5 @@
 import React, { useState, useSyncExternalStore } from 'react';
-import { cancelCloudQueueTask, CloudQueueStatus as QueueStatus, getCurrentCloudQueueStatus, subscribeCloudQueueStatus } from '../services/cloudQueue';
+import { cancelCloudQueueTask, CloudQueueStatus as QueueStatus, getCurrentCloudQueueStatus, isCloudQueueTaskActive, subscribeCloudQueueStatus } from '../services/cloudQueue';
 
 const statusLabel = (status: QueueStatus) => {
   if (status.phase === 'preparing' || status.phase === 'joining') return '正在加入公共队列…';
@@ -31,7 +31,7 @@ export const useCloudQueueStatus = () => useSyncExternalStore(
 
 const QueueStatusBody: React.FC<{ status: QueueStatus; compact?: boolean }> = ({ status, compact = false }) => {
   const [cancelling, setCancelling] = useState(false);
-  const active = !['completed', 'cancelled', 'error'].includes(status.phase);
+  const active = isCloudQueueTaskActive(status);
   return <div className={`relative z-[1] flex w-full items-center justify-center ${compact ? 'min-h-8' : 'min-h-7'}`}>
       <div className={`flex w-full min-w-0 justify-center ${status.cancelable ? 'px-12' : 'px-2'}`}>
         <div className="flex min-w-0 max-w-full items-center justify-center gap-2">
@@ -50,12 +50,12 @@ const QueueStatusBody: React.FC<{ status: QueueStatus; compact?: boolean }> = ({
 
 export const InlineCloudQueueStatus: React.FC<{ compact?: boolean; className?: string }> = ({ compact = false, className = '' }) => {
   const status = useCloudQueueStatus();
-  if (!status) return null;
+  if (!status || (status.phase === 'completed' && !status.cleanupError)) return null;
   return <div role="status" className={`queue-status-surface relative ${statusTone(status)} ${compact ? 'min-h-12 rounded-full px-4 py-2' : 'min-h-12 rounded-lg px-4 py-3'} text-white shadow-lg ${className}`}><QueueStatusBody status={status} compact={compact} /></div>;
 };
 
 export const CloudQueueStatus: React.FC<{ hidden?: boolean }> = ({ hidden = false }) => {
   const status = useCloudQueueStatus();
-  if (!status || hidden) return null;
+  if (!status || hidden || (status.phase === 'completed' && !status.cleanupError)) return null;
   return <div role="status" className={`queue-status-surface ${statusTone(status)} fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-1/2 z-[1180] w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 rounded-2xl px-4 py-3 text-white shadow-xl md:bottom-5 md:left-auto md:right-5 md:w-80 md:translate-x-0`}><QueueStatusBody status={status} /></div>;
 };
