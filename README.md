@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.0.10-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.0.11-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -474,6 +474,7 @@ flowchart LR
 - 排队位置、当前使用者个性语和取消入口会显示在全局状态条；获得许可后自动开始生成。
 - 设置保存在电脑 `local-data`，因此电脑和通过局域网连接的手机统一生效。
 - 公共队列不可用时停止本次请求并明确报错，绝不静默绕过队列引发并发冲突。
+- 排队等待与实际生成各自最多 5 分钟；等待超时或浏览器连接断开时尝试退出队列。队列请求失败不自动重试；退出或释放失败会提示检查队列状态，已经成功生成的图片仍正常交付。
 - 注意：排队机制只对接入了公共队列的客户端生效；如果在官网或未经排队的第三方工具直接并发调用该 Key，仍可能引发并发冲突。
 
 ---

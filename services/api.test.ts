@@ -101,7 +101,7 @@ describe('api.postSse', () => {
         controller.close();
       },
     });
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, body: stream } as Response);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, body: stream, headers: new Headers() } as Response);
     vi.stubGlobal('fetch', fetchMock);
 
     const received: string[] = [];
@@ -126,7 +126,7 @@ describe('api.postSse', () => {
         controller.close();
       },
     });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, body: stream } as Response));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, body: stream, headers: new Headers() } as Response));
 
     const result = await api.postSse('/generate-stream', {}, { Authorization: 'Bearer x' }, () => {});
     expect(result.estimatedCost).toBeUndefined();

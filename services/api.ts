@@ -1,3 +1,5 @@
+import { reportCloudQueueCleanupError } from './cloudQueue';
+
 // Base API URL
 const API_BASE = '/api';
 
@@ -140,6 +142,12 @@ const requestPersonalUsageRefresh = (budgetKeyHash = '') => {
   }));
 };
 
+const notifyQueueCleanupFailed = (res: Response, headers?: Record<string, string>) => {
+  if (res.headers.get('x-nai-queue-cleanup-failed') === '1') {
+    reportCloudQueueCleanupError(res.headers.get('x-nai-queue-task-id') || '', (headers?.Authorization || '').replace(/^Bearer /, ''));
+  }
+};
+
 export const api = {
   get: async (endpoint: string, options: { cache?: RequestCache } = {}) => {
     const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -194,6 +202,7 @@ export const api = {
       body: JSON.stringify(data),
     });
     notifyLanAccessRequired(res);
+    notifyQueueCleanupFailed(res, headers);
     if (!res.ok) throw await parseErrorResponse(res);
     const remaining = res.headers.get('x-nai-anlas-remaining');
     if (remaining !== null) emitBudgetChanged(Number(remaining), options.budgetKeyHash);
@@ -219,6 +228,7 @@ export const api = {
       body: JSON.stringify(data),
     });
     notifyLanAccessRequired(res);
+    notifyQueueCleanupFailed(res, headers);
     if (!res.ok) throw await parseErrorResponse(res);
     if (!res.body) throw new Error('流式生成没有返回响应体');
     const reader = res.body.getReader();
@@ -237,6 +247,9 @@ export const api = {
       }
       if (event.event === 'nai_usage_error') {
         requestPersonalUsageRefresh(options.budgetKeyHash);
+      }
+      if (event.event === 'nai_queue_cleanup_error') {
+        reportCloudQueueCleanupError(res.headers.get('x-nai-queue-task-id') || '', (headers.Authorization || '').replace(/^Bearer /, ''));
       }
       onEvent(event);
     });

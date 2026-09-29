@@ -14,6 +14,7 @@ export interface CloudQueueStatus {
   queueSize?: number | null;
   greeting?: string | null;
   error?: string;
+  cleanupError?: string;
   cancelable?: boolean;
 }
 
@@ -90,10 +91,18 @@ export const emitCloudQueueStatus = (status: CloudQueueStatus | null, sourceApiK
     window.clearTimeout(clearStatusTimer);
     clearStatusTimer = null;
   }
-  currentQueueStatus = status;
+  // 生成结果与清理警告独立；前端补写终态时不能覆盖同一任务的释放失败反馈。
+  currentQueueStatus = status && currentQueueStatus?.taskId === status.taskId && currentQueueStatusKey === normalizedSourceApiKey
+    ? { ...status, cleanupError: status.cleanupError || currentQueueStatus.cleanupError }
+    : status;
   currentQueueStatusKey = status ? normalizedSourceApiKey : '';
   statusListeners.forEach(listener => listener());
-  window.dispatchEvent(new CustomEvent('nai-cloud-queue-status', { detail: status }));
+  window.dispatchEvent(new CustomEvent('nai-cloud-queue-status', { detail: currentQueueStatus }));
+};
+
+export const reportCloudQueueCleanupError = (taskId: string, sourceApiKey: string) => {
+  if (currentQueueStatus?.taskId !== taskId || currentQueueStatusKey !== normalizeApiKey(sourceApiKey)) return;
+  emitCloudQueueStatus({ ...currentQueueStatus, cleanupError: '公共队列退出或释放失败，请检查队列状态' }, sourceApiKey);
 };
 
 export const scheduleCloudQueueStatusClear = (taskId: string, delay: number, sourceApiKey = getActiveApiKey()) => {

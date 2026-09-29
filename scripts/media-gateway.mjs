@@ -46,7 +46,7 @@ const NAI_ENCODE_VIBE_URL = 'https://image.novelai.net/ai/encode-vibe';
 const NAI_SUBSCRIPTION_URL = 'https://image.novelai.net/user/subscription';
 const CLOUD_QUEUE_URL = '';
 const CLOUD_QUEUE_POLL_INTERVAL = 1000;
-const CLOUD_QUEUE_MAX_FAILURES = 3;
+const CLOUD_QUEUE_WAIT_TIMEOUT = 300_000;
 const CLOUD_QUEUE_STATUS_TTL = 5 * 60 * 1000;
 // 与 worker 共享的基础白名单（单一来源 worker/sharedWhitelist.mjs）；
 // 网关额外允许 i.pximg.net，见 getValidatedSource 内注释。
@@ -212,11 +212,13 @@ const readQueueJson = async response => {
 };
 
 export class CloudQueueCoordinator {
-  constructor(requestRemote, baseUrl = CLOUD_QUEUE_URL) {
+  constructor(requestRemote, baseUrl = CLOUD_QUEUE_URL, { waitTimeoutMs = CLOUD_QUEUE_WAIT_TIMEOUT, pollIntervalMs = CLOUD_QUEUE_POLL_INTERVAL } = {}) {
     this.requestRemote = requestRemote;
     this.baseUrl = baseUrl ? normalizeCloudQueueServiceUrl(baseUrl, { allowEmpty: true }) : '';
     this.clientId = randomUUID();
     this.tasks = new Map();
+    this.waitTimeoutMs = waitTimeoutMs;
+    this.pollIntervalMs = pollIntervalMs;
   }
 
   update(taskId, patch) {
@@ -233,13 +235,13 @@ export class CloudQueueCoordinator {
     return this.tasks.get(taskId) || null;
   }
 
-  async post(path, body, serviceUrl = this.baseUrl) {
+  async post(path, body, serviceUrl = this.baseUrl, signal) {
     if (!serviceUrl) throw new Error('公共队列服务地址未配置');
     return readQueueJson(await this.requestRemote(`${serviceUrl}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.any([AbortSignal.timeout(15_000), ...(signal ? [signal] : [])]),
     }));
   }
 
@@ -248,30 +250,32 @@ export class CloudQueueCoordinator {
     const keyHash = createHash('sha256').update(apiKey).digest('hex');
     const userId = this.clientId;
     const common = { key_hash: keyHash, user_id: userId, task_id: taskId };
+    const timeoutSignal = AbortSignal.timeout(this.waitTimeoutMs);
+    const queueSignal = AbortSignal.any([timeoutSignal, ...(signal ? [signal] : [])]);
+    let joinAttempted = false;
+    let lockToken = null;
     this.update(taskId, { phase: 'joining', position: null, queueSize: null, greeting: null, cancelable: true });
-    const joined = await this.post('/join-queue', { ...common, greeting: String(greeting).trim().slice(0, 15) || null }, queueUrl);
-    if (signal?.aborted) {
-      await this.post('/leave-queue', { ...common, lock_token: joined.lock_token || null }, queueUrl).catch(() => {});
-      throw signal.reason || new DOMException('Aborted', 'AbortError');
-    }
-    this.update(taskId, {
-      phase: joined.position === 0 && joined.lock_token ? 'ready' : 'waiting',
-      position: Number(joined.position) || 0,
-      queueSize: Number(joined.queue_size) || 1,
-      cancelable: true,
-    });
-    if (joined.position === 0 && joined.lock_token) return { ...common, lockToken: joined.lock_token, serviceUrl: queueUrl };
-
-    let failures = 0;
     try {
+      queueSignal.throwIfAborted();
+      joinAttempted = true;
+      const joined = await this.post('/join-queue', { ...common, greeting: String(greeting).trim().slice(0, 15) || null }, queueUrl, queueSignal);
+      lockToken = joined.lock_token || null;
+      queueSignal.throwIfAborted();
+      this.update(taskId, {
+        phase: joined.position === 0 && lockToken ? 'ready' : 'waiting',
+        position: Number(joined.position) || 0,
+        queueSize: Number(joined.queue_size) || 1,
+        cancelable: true,
+      });
+      if (joined.position === 0 && lockToken) return { ...common, lockToken, serviceUrl: queueUrl };
       while (true) {
-        await delay(CLOUD_QUEUE_POLL_INTERVAL, signal);
-        try {
+        await delay(this.pollIntervalMs, queueSignal);
         const query = new URLSearchParams(common).toString();
         const status = await readQueueJson(await this.requestRemote(`${queueUrl}/my-turn?${query}`, {
-          signal: AbortSignal.timeout(15_000),
+          signal: AbortSignal.any([queueSignal, AbortSignal.timeout(15_000)]),
         }));
-        failures = 0;
+        lockToken = status.lock_token || null;
+        queueSignal.throwIfAborted();
         if (status.is_my_turn && status.lock_token) {
           this.update(taskId, { phase: 'ready', position: 0, queueSize: Number(status.queue_size) || 1, cancelable: true });
           return { ...common, lockToken: status.lock_token, serviceUrl: queueUrl };
@@ -283,26 +287,34 @@ export class CloudQueueCoordinator {
           greeting: showGreeting ? String(status.current_greeting || '').slice(0, 15) : null,
           cancelable: true,
         });
-        } catch (error) {
-          failures++;
-          if (failures >= CLOUD_QUEUE_MAX_FAILURES) throw error;
-        }
       }
     } catch (error) {
-      await this.post('/leave-queue', { ...common, lock_token: null }, queueUrl).catch(() => {});
+      // 入队响应丢失也可能已经占位；只尝试清理一次，不能自动重试。
+      if (joinAttempted) await this.release({ ...common, lockToken, serviceUrl: queueUrl }, true);
+      if (queueSignal.reason === timeoutSignal.reason && timeoutSignal.aborted) {
+        throw Object.assign(new Error('公共队列等待超时，请稍后重试'), { status: 504, code: 'CLOUD_QUEUE_TIMEOUT' });
+      }
       throw error;
     }
   }
 
   async release(lock, leave = false) {
-    if (!lock) return;
+    if (!lock) return null;
     const path = leave ? '/leave-queue' : '/complete';
-    await this.post(path, {
-      key_hash: lock.key_hash,
-      user_id: lock.user_id,
-      task_id: lock.task_id,
-      lock_token: lock.lockToken || null,
-    }, lock.serviceUrl || this.baseUrl).catch(() => {});
+    try {
+      await this.post(path, {
+        key_hash: lock.key_hash,
+        user_id: lock.user_id,
+        task_id: lock.task_id,
+        lock_token: lock.lockToken || null,
+      }, lock.serviceUrl || this.baseUrl);
+      return null;
+    } catch (error) {
+      const cleanupError = '公共队列退出或释放失败，请检查队列状态';
+      this.update(lock.task_id, { cleanupError });
+      console.warn(`[公共队列] ${lock.task_id} 清理失败（未重试）：${error.message}`);
+      return cleanupError;
+    }
   }
 }
 
@@ -1590,7 +1602,9 @@ const recoverPendingVibeEncodings = async workerPort => {
   }
 };
 
-const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote) => {
+export const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote, {
+  generationTimeoutMs = 300_000, settleGeneration = settleSuccessfulNovelAiGeneration,
+} = {}) => {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
   const authorization = String(req.headers.authorization || '');
@@ -1603,15 +1617,26 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
   const queueGreeting = String(queuePreferences.greeting || '').slice(0, 15);
   const showQueueGreeting = queuePreferences.showGreeting !== false;
   const requestController = new AbortController();
-  const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(300_000)]);
   let queueLock = null;
   let requestAborted = false;
+  let responseCompleted = false;
   const abortRequest = () => {
+    if (responseCompleted || res.writableEnded) return;
     requestAborted = true;
     requestController.abort(new DOMException('用户已取消排队', 'AbortError'));
   };
   req.once('aborted', abortRequest);
+  res.once('close', abortRequest);
   if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'preparing', cancelable: true, controller: requestController, keyHash });
+  const releaseQueue = async () => {
+    const lock = queueLock;
+    queueLock = null;
+    return cloudQueue.release(lock, requestController.signal.aborted);
+  };
+  const queueHeaders = () => queueEnabled ? {
+    'X-Nai-Queue-Task-Id': queueTaskId,
+    ...(cloudQueue.get(queueTaskId)?.cleanupError ? { 'X-Nai-Queue-Cleanup-Failed': '1' } : {}),
+  } : {};
 
   try {
     const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
@@ -1731,6 +1756,8 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
       cloudQueue.update(queueTaskId, { phase: 'generating', position: 0, cancelable: false, controller: requestController });
       await delay(1000, requestController.signal);
     }
+    // 排队耗时不占用上游生成时限；持锁直到响应体完整接收。
+    const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
     const response = resolvedVibeEncodings
       ? await generateWithVibeCacheRetry(
         payload,
@@ -1740,35 +1767,45 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
         (nextPayload, nextAuthorization) => fetchNovelAiGeneration(nextPayload, nextAuthorization, generationSignal, requestRemote),
       )
       : await fetchNovelAiGeneration(payload, authorization, generationSignal, requestRemote);
+    const responseBody = Buffer.from(await response.arrayBuffer());
     const { estimatedCost, anlasBudget } = response.ok
-      ? await settleSuccessfulNovelAiGeneration({ payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote })
+      ? await settleGeneration({ payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote })
       : { estimatedCost: 0, anlasBudget: null };
+    await releaseQueue();
     const headers = {
       'Content-Type': response.headers.get('content-type') || 'application/octet-stream',
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
       ...(anlasBudget ? { 'X-Nai-Anlas-Remaining': String(anlasBudget.remaining), 'X-Nai-Anlas-Estimated-Spent': String(estimatedCost) } : {}),
+      ...queueHeaders(),
     };
     const contentLength = response.headers.get('content-length');
     const contentDisposition = response.headers.get('content-disposition');
     if (contentLength) headers['Content-Length'] = contentLength;
     if (contentDisposition) headers['Content-Disposition'] = contentDisposition;
-    if (queueEnabled) headers['X-Nai-Queue-Task-Id'] = queueTaskId;
-    if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'completed', cancelable: false, controller: null });
+    if (queueEnabled) cloudQueue.update(queueTaskId, {
+      phase: response.ok ? 'completed' : 'error',
+      error: response.ok ? undefined : `NovelAI 请求失败 (${response.status})`,
+      cancelable: false, controller: null,
+    });
+    if (res.destroyed) return;
     res.writeHead(response.status, headers);
-    if (!response.body) return res.end();
-    Readable.fromWeb(response.body).on('error', error => res.destroy(error)).pipe(res);
+    responseCompleted = true;
+    return res.end(responseBody);
   } catch (error) {
+    await releaseQueue();
     if (queueEnabled) cloudQueue.update(queueTaskId, {
       phase: requestAborted || error?.name === 'AbortError' ? 'cancelled' : 'error',
       error: requestAborted ? '已取消排队' : (error.message || '队列服务不可用'),
       cancelable: false,
       controller: null,
     });
+    if (res.destroyed) return;
     if (res.headersSent) return res.destroy(error);
+    for (const [name, value] of Object.entries(queueHeaders())) res.setHeader(name, value);
     if (error?.code === 'CLOUD_QUEUE_UNAVAILABLE') return sendJson(res, 503, { error: `公共队列服务不可用：${error.message}`, code: error.code });
     if (requestAborted || error?.name === 'AbortError') return sendJson(res, 499, { error: '已取消排队', code: 'QUEUE_CANCELLED' });
-    if (Number(error.status)) return sendJson(res, Number(error.status), { error: error.message });
+    if (Number(error.status)) return sendJson(res, Number(error.status), { error: error.message, code: error.code });
     const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
     return sendJson(res, timedOut ? 504 : 502, {
       error: timedOut
@@ -1777,12 +1814,15 @@ const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue
       code: timedOut ? 'NAI_PROXY_TIMEOUT' : 'NAI_PROXY_UNREACHABLE',
     });
   } finally {
+    await releaseQueue();
     req.off('aborted', abortRequest);
-    if (queueLock) await cloudQueue.release(queueLock, requestAborted);
+    res.off('close', abortRequest);
   }
 };
 
-const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote) => {
+export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote, {
+  generationTimeoutMs = 300_000, settleGeneration = settleSuccessfulNovelAiGeneration,
+} = {}) => {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
   const authorization = String(req.headers.authorization || '');
@@ -1793,18 +1833,30 @@ const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, clou
   const requestedTaskId = String(req.headers['x-nai-queue-task-id'] || '');
   const queueTaskId = /^[a-zA-Z0-9-]{8,80}$/.test(requestedTaskId) ? requestedTaskId : randomUUID();
   const requestController = new AbortController();
-  const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(300_000)]);
   let queueLock = null;
   let requestAborted = false;
   let responseCompleted = false;
   const abortRequest = () => {
-    if (responseCompleted) return;
+    if (responseCompleted || res.writableEnded) return;
     requestAborted = true;
     requestController.abort(new DOMException('用户已取消排队', 'AbortError'));
   };
   req.once('aborted', abortRequest);
   res.once('close', abortRequest);
   if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'preparing', cancelable: true, controller: requestController, keyHash });
+  const releaseQueue = async () => {
+    const lock = queueLock;
+    queueLock = null;
+    await cloudQueue.release(lock, requestController.signal.aborted);
+    const cleanupError = cloudQueue.get(queueTaskId)?.cleanupError;
+    if (cleanupError && !res.destroyed) {
+      if (res.headersSent) res.write(`\nevent: nai_queue_cleanup_error\ndata: ${JSON.stringify({ message: cleanupError })}\n\n`);
+      else {
+        res.setHeader('X-Nai-Queue-Task-Id', queueTaskId);
+        res.setHeader('X-Nai-Queue-Cleanup-Failed', '1');
+      }
+    }
+  };
 
   try {
     const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
@@ -1843,6 +1895,7 @@ const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, clou
       await delay(1000, requestController.signal);
     }
 
+    const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
     const upstream = await fetchNovelAiGenerationStream(payload, authorization, generationSignal, requestRemote);
     if (!upstream.ok) {
       const upstreamError = new Error(await upstream.text() || `NovelAI HTTP ${upstream.status}`);
@@ -1878,12 +1931,13 @@ const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, clou
       const message = upstreamErrorSeen ? 'NovelAI 流式生成失败' : '流式响应结束但没有最终图片';
       if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'error', error: message, cancelable: false, controller: null });
       res.write(`\nevent: error\ndata: ${JSON.stringify({ message })}\n\n`);
+      await releaseQueue();
       responseCompleted = true;
       return res.end();
     }
 
     try {
-      const { estimatedCost, anlasBudget } = await settleSuccessfulNovelAiGeneration({
+      const { estimatedCost, anlasBudget } = await settleGeneration({
         payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote,
       });
       res.write(`\nevent: nai_usage\ndata: ${JSON.stringify({
@@ -1896,10 +1950,12 @@ const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, clou
       // 图片已经由 NovelAI 成功生成，结算异常单独上报，绝不能触发前端再次生图。
       res.write(`\nevent: nai_usage_error\ndata: ${JSON.stringify({ message: accountingError?.message || '本地用量结算失败' })}\n\n`);
     }
+    await releaseQueue();
     if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'completed', cancelable: false, controller: null });
     responseCompleted = true;
     return res.end();
   } catch (error) {
+    await releaseQueue();
     const cancelled = requestAborted || error?.name === 'AbortError';
     const message = cancelled ? '已取消排队' : (error?.message || '流式生成失败');
     if (queueEnabled) cloudQueue.update(queueTaskId, { phase: cancelled ? 'cancelled' : 'error', error: message, cancelable: false, controller: null });
@@ -1913,11 +1969,11 @@ const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, clou
     }
     if (error?.code === 'CLOUD_QUEUE_UNAVAILABLE') return sendJson(res, 503, { error: `公共队列服务不可用：${error.message}`, code: error.code });
     if (cancelled) return sendJson(res, 499, { error: message, code: 'QUEUE_CANCELLED' });
-    return sendJson(res, Number(error.status) || 502, { error: message });
+    return sendJson(res, Number(error.status) || (error?.name === 'TimeoutError' ? 504 : 502), { error: message, code: error.code });
   } finally {
+    if (queueLock) await releaseQueue();
     req.off('aborted', abortRequest);
     res.off('close', abortRequest);
-    if (queueLock) await cloudQueue.release(queueLock, requestAborted);
   }
 };
 
