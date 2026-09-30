@@ -35,7 +35,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
     } finally { busyRef.current = false; setBusy(''); }
   };
   const buttonClass = variant === 'overlay'
-    ? 'rounded-lg bg-black/70 px-3 py-2 text-xs font-bold text-white hover:bg-black/85'
+    ? 'rounded bg-black/70 px-3 py-1.5 text-xs font-medium leading-4 text-white hover:bg-black/85'
     : 'rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800';
   const actions = [
     { action: 'copy' as const, label: '复制', title: '复制图片', Icon: Copy },
@@ -45,9 +45,9 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
     {actions.map(({ action, label, title, Icon }) => <button
       key={action} type="button" title={title} aria-label={label}
       disabled={Boolean(busy)} onClick={() => void perform(action)}
-      className={`mobile-touch inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap transition disabled:cursor-wait disabled:opacity-50 ${buttonClass} ${variant === 'compact' ? '!h-10 !w-10 !px-0' : ''}`}
+      className={`${variant === 'overlay' ? '' : 'mobile-touch min-h-10'} inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap transition disabled:cursor-wait disabled:opacity-50 ${buttonClass} ${variant === 'compact' ? '!h-10 !w-10 !px-0' : ''}`}
     >
-      {busy === action ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
+      {busy === action ? <LoaderCircle className={`${variant === 'overlay' ? 'h-3.5 w-3.5' : 'h-4 w-4'} animate-spin`} /> : <Icon className={variant === 'overlay' ? 'h-3.5 w-3.5' : 'h-4 w-4'} />}
       {variant !== 'compact' && <span>{label}</span>}
     </button>)}
     {error && <span role="alert" className={`basis-full text-xs ${variant === 'overlay' ? 'max-w-64 rounded-lg bg-black/80 p-2 text-red-300' : 'text-red-600 dark:text-red-400'}`}>{error}</span>}

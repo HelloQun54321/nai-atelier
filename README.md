@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.3.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.3.2-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -396,6 +396,8 @@ flowchart LR
 ### 图片分享与生成信息保护
 
 实验室四模式的预览／大图、历史详情和灵感详情统一提供「复制」与「下载」，可直接粘贴到支持图片的聊天窗口，无需先下载。复制图片需要浏览器允许剪贴板访问，推荐在电脑的 `localhost` 页面使用；手机经普通局域网 HTTP 访问时可能不可用，可下载后发送。
+
+实验室小图和全屏大图采用相同的紧凑按钮布局：左上删除／清除当前风格串历史组归属，右上复制／下载及可用的设为封面，右下手动上传封面。全屏左上另有返回箭头；删除／清除只移出当前图片组，历史原图仍保留。编辑模式隐藏封面功能，无对应历史项时不显示删除／清除。
 
 在「全局设置 → 隐私与分享」开启「分享图片时移除生成信息」（默认关闭、当前浏览器记忆），下载与复制会另外生成清洗副本：移除普通 PNG 生成元数据及 NovelAI 透明通道中的隐藏参数，保留色彩配置与透明背景。分享下载使用 `-分享版.png` 文件名；JPEG／WebP 分享时转为 PNG。无隐藏信息的 PNG 保留原始像素，有隐藏载荷时 RGB 保持不变，透明度最多调整一个 8 位刻度。
 

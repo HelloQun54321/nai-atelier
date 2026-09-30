@@ -29,22 +29,30 @@ const renderPreview = (onGenerate: () => void, isGenerating = false) => render(R
 }));
 
 describe('四模式的分享入口', () => {
-  it('分享与封面按钮纵排等宽，封面文字居中，点击不误开大图', () => {
+  it('分享与删除使用紧凑尺寸，左右分组一致，点击不误开大图', () => {
     const onCover = vi.fn();
     const onOpen = vi.fn();
     render(React.createElement(ChainEditorPreview, {
       isGenerating: false, handleGenerate: vi.fn(), errorMsg: null, generatedImage: '/image.png',
       previewImage: undefined, setLightboxImg: onOpen, isOwner: true, isUploading: false,
-      handleSavePreview: onCover, handleUploadCover: vi.fn(), getDownloadFilename: () => 'NAI.png', generationCostLabel: '免费',
+      handleSavePreview: onCover, handleUploadCover: vi.fn(), getDownloadFilename: () => 'NAI.png', generationCostLabel: '免费', canManageHistoryGroup: true,
     }));
     const cover = screen.getByRole('button', { name: '设为封面' });
     expect(cover.classList.contains('justify-center')).toBe(true);
-    expect(cover.classList.contains('min-h-10')).toBe(true);
+    expect(cover.classList.contains('py-1.5')).toBe(true);
+    expect(cover.classList.contains('min-h-10')).toBe(false);
     expect(cover.parentElement?.classList.contains('flex-col')).toBe(true);
-    expect(cover.parentElement?.classList.contains('w-28')).toBe(true);
+    expect(cover.parentElement?.classList.contains('right-4')).toBe(true);
+    expect(cover.parentElement?.classList.contains('w-28')).toBe(false);
+    const remove = screen.getByRole('button', { name: '删除' });
+    expect(remove.parentElement?.classList.contains('left-4')).toBe(true);
+    expect(remove.classList.contains('py-1.5')).toBe(true);
+    expect(remove.classList.contains('text-xs')).toBe(cover.classList.contains('text-xs'));
     const download = screen.getByRole('button', { name: '下载' });
     expect(download.classList.contains('justify-center')).toBe(true);
-    expect(download.classList.contains('min-h-10')).toBe(true);
+    expect(download.classList.contains('py-1.5')).toBe(true);
+    expect(download.classList.contains('min-h-10')).toBe(false);
+    expect(download.classList.contains('mobile-touch')).toBe(false);
     expect(download.parentElement?.classList.contains('items-stretch')).toBe(true);
     expect(download.parentElement?.classList.contains('items-center')).toBe(false);
     fireEvent.click(cover);

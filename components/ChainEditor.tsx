@@ -12,7 +12,7 @@ import { api } from '../services/api';
 import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData, extractRawMetadataFromJsonText } from '../services/metadataService';
 import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
-import { ImageShareActions } from './ImageShareActions';
+import { ImagePreviewActions } from './ImagePreviewActions';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ImageEditPanel, ImageEditRequest } from './ImageEditPanel';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
@@ -544,6 +544,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
 
         const handleKeyDown = (event: KeyboardEvent) => {
+            if (document.querySelector('[role="alertdialog"]')) return;
             if (event.key === 'Escape') {
                 event.preventDefault();
                 closeLightboxRef.current();
@@ -1831,7 +1832,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const handleSavePreview = async () => {
-        if (!generatedImage || !isOwner || chain.id === 'playground') return;
+        const coverImage = displayedPreviewImage;
+        if (!coverImage || !isOwner || chain.id === 'playground') return;
         if (await confirmAction({
             title: '将当前图片设为封面并保存？',
             message: '当前生成图片将成为该串的新封面，并自动保存当前所有提示词与参数改动；原有上传封面将被替换。',
@@ -1840,7 +1842,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         })) {
             setIsUploading(true);
             try {
-                const res = await fetch(generatedImage);
+                const res = await fetch(coverImage);
                 const blob = await res.blob();
                 const file = new File([blob], getDownloadFilename(), { type: 'image/png' });
                 const uploadRes = await api.uploadFile(file, 'covers');
@@ -2303,12 +2305,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             {lightboxImg && (
                 <ImagePreviewPortal>
                 <div role="dialog" aria-modal="true" aria-label="图片预览" className="fixed inset-0 z-[1500] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setLightboxImg(null)}>
-                    <div className="absolute top-4 left-4 right-16 z-10 flex flex-wrap items-center gap-2" onClick={e => e.stopPropagation()}>
-                        <ImageShareActions imageUrl={lightboxImg} filename={getDownloadFilename()} notify={notify} variant="overlay" />
-                        {isOwner && lightboxImg === generatedImage && chain.id !== 'playground' && (
-                            <button type="button" onClick={handleSavePreview} disabled={isUploading} className="mobile-touch inline-flex min-h-10 items-center justify-center rounded-lg bg-indigo-600/90 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50">{isUploading ? '上传中...' : '设为封面'}</button>
-                        )}
-                    </div>
+                    <ImagePreviewActions
+                        imageUrl={lightboxImg}
+                        filename={getDownloadFilename()}
+                        notify={notify}
+                        canManageHistoryGroup={Boolean(lightboxItem)}
+                        onRemoveCurrentHistory={() => { void handleRemoveCurrentHistory(lightboxItem); }}
+                        onClearHistoryGroup={handleClearHistoryGroup}
+                        onSetCover={!activeEditOperation && isOwner && chain.id !== 'playground' && lightboxImg === displayedPreviewImage ? handleSavePreview : undefined}
+                        onUploadCover={!activeEditOperation && isOwner && chain.id !== 'playground' ? handleUploadCover : undefined}
+                        isUploading={isUploading}
+                        onBack={() => setLightboxImg(null)}
+                        backButtonRef={lightboxCloseBtnRef}
+                    />
                     {previewHistory.length > 1 && (
                         <button
                             className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"
@@ -2345,9 +2354,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             {previewIndex + 1} / {previewHistory.length} · {new Date(lightboxItem.createdAt).toLocaleString('zh-CN')}
                         </div>
                     )}
-                    <button ref={lightboxCloseBtnRef} className="mobile-touch absolute top-4 right-4 z-20 flex h-10 w-10 items-center justify-center rounded-lg text-white hover:bg-white/10 hover:text-gray-300" onClick={() => setLightboxImg(null)} aria-label="关闭大图">
-                        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                    </button>
+
                 </div>
                 </ImagePreviewPortal>
             )}
