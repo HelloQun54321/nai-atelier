@@ -59,6 +59,13 @@ describe('风格串收集工具栏', () => {
     expect(fetchMock.mock.calls[1][0]).toBe('/api/style-collector/retry');
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ id: 'failed-task' });
   });
+  it('显示与悬浮窗同步的一行处理原因，保留完整悬停文本', async () => {
+    state = { ...initial, detail: '失败：域名解析失败，请检查网络或代理' };
+    render(React.createElement(StyleCollectorControl, { onSaved: vi.fn(), notify: vi.fn() }));
+    fireEvent.click(await screen.findByLabelText('收集状态与手动重试'));
+    const detail = screen.getByText(state.detail!);
+    expect(detail.title).toBe(state.detail); expect(detail.className).toContain('truncate');
+  });
   it('Windows 不可用时不显示会失效的开关；启动失败提示原因', async () => {
     state = { ...initial, available: false };
     const view = render(React.createElement(StyleCollectorControl, { onSaved: vi.fn(), notify: vi.fn() }));

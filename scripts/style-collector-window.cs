@@ -28,7 +28,8 @@ public sealed class AtelierCollectorWindow : Form {
     readonly JavaScriptSerializer json = new JavaScriptSerializer();
     readonly ConcurrentQueue<string> input = new ConcurrentQueue<string>();
     readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
-    readonly Label title = new Label(), phase = new Label(), counts = new Label();
+    readonly Label title = new Label(), phase = new Label(), counts = new Label(), detail = new Label();
+    readonly ToolTip detailTip = new ToolTip();
     readonly Button pause = new Button(), collapse = new Button(), finish = new Button();
     readonly bool test;
     volatile bool eof;
@@ -44,15 +45,17 @@ public sealed class AtelierCollectorWindow : Form {
         test = selfTest; Text = "Atelier 风格串收集"; FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false; TopMost = true; StartPosition = FormStartPosition.Manual;
         BackColor = Color.FromArgb(27, 31, 39); ForeColor = Color.FromArgb(226, 230, 236);
-        Font = new Font("Microsoft YaHei UI", 9); ClientSize = new Size(356, 98);
+        Font = new Font("Microsoft YaHei UI", 9); ClientSize = new Size(356, 122);
         title.SetBounds(12, 10, 183, 24); phase.SetBounds(12, 37, 332, 22); counts.SetBounds(12, 65, 332, 22);
+        detail.SetBounds(12, 91, 332, 22); detail.AutoEllipsis = true;
         title.Text = "● 正在启动收集"; phase.Text = "等待本机服务确认";
         Configure(pause, "暂停", 200, 49); Configure(collapse, "−", 255, 38); Configure(finish, "×", 300, 38);
-        Controls.AddRange(new Control[]{ title, phase, counts, pause, collapse, finish });
+        Controls.AddRange(new Control[]{ title, phase, counts, detail, pause, collapse, finish });
         pause.Click += delegate { receiving = false; Emit(new { type = paused ? "resume" : "pause", session = session }); pause.Enabled = false; };
         collapse.Click += delegate { collapsed = !collapsed; LayoutWindow(); SavePosition(); };
         finish.Click += delegate { Close(); };
         MouseDown += Drag; title.MouseDown += Drag; phase.MouseDown += Drag; counts.MouseDown += Drag;
+        detail.MouseDown += Drag;
         LocationChanged += delegate { if (!applyingPosition && session != "") { positionDirty = true; positionChanged = DateTime.UtcNow; } };
         FormClosed += delegate { if (positionDirty) SavePosition(); if (registered) RemoveClipboardFormatListener(Handle); receiving = false; Emit(new { type = "stop", session = session }); };
         Shown += delegate { Emit(new { type = "ready" }); };
@@ -72,7 +75,7 @@ public sealed class AtelierCollectorWindow : Form {
     void Emit(object value) { Console.WriteLine(json.Serialize(value)); Console.Out.Flush(); }
     void Drag(object sender, MouseEventArgs e) { if (e.Button != MouseButtons.Left) return; ReleaseCapture(); SendMessage(Handle, 0xA1, new IntPtr(2), IntPtr.Zero); SavePosition(); }
     void LayoutWindow() {
-        ClientSize = new Size(356, collapsed ? 43 : 98); phase.Visible = counts.Visible = !collapsed;
+        ClientSize = new Size(356, collapsed ? 43 : 122); phase.Visible = counts.Visible = detail.Visible = !collapsed;
         title.Text = "● " + (paused ? "已暂停" : "风格串收集中") + (collapsed ? " · " + saved.ToString() : "");
         collapse.Text = collapsed ? "+" : "−"; ClampPosition();
     }
@@ -146,7 +149,11 @@ public sealed class AtelierCollectorWindow : Form {
                         saved = Convert.ToInt32(state["saved"]); paused = Convert.ToBoolean(state["paused"]);
                         phase.Text = Str(state, "stage") + " · 待处理 " + Str(state, "pending");
                         counts.Text = "已保存 " + saved.ToString() + " · 跳过 " + Str(state, "skipped") + " · 失败 " + Str(state, "failed");
+                        detail.Text = Str(state, "error") != "" ? Str(state, "error") : Str(state, "detail");
+                        detail.ForeColor = detail.Text.StartsWith("失败：") || Str(state, "error") != "" ? Color.FromArgb(244, 164, 164) : ForeColor;
+                        detailTip.SetToolTip(detail, detail.Text);
                         LayoutWindow();
+                        if (test) ReportWindow();
                     }
                 } else if (test && cmd == "inject") { sequence++; Candidate(Str(d, "text")); }
                 else if (test && cmd == "collapse") { collapse.PerformClick(); ReportWindow(); }
@@ -159,7 +166,7 @@ public sealed class AtelierCollectorWindow : Form {
         Rectangle area = Screen.FromRectangle(Bounds).WorkingArea;
         Emit(new { type = "window", session = session, noActivate = (GetWindowLong(Handle, -20) & 0x08000000) != 0,
             topMost = (GetWindowLong(Handle, -20) & 8) != 0, foreground = GetForegroundWindow() == Handle,
-            visiblePosition = area.Contains(Bounds), collapsed = collapsed, height = Height });
+            visiblePosition = area.Contains(Bounds), collapsed = collapsed, height = Height, detail = detail.Text, detailVisible = detail.Visible, detailEllipsis = detail.AutoEllipsis });
     }
     [STAThread] public static void Run(bool test) { Application.EnableVisualStyles(); Application.Run(new AtelierCollectorWindow(test)); }
 }

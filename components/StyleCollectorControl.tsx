@@ -4,7 +4,7 @@ import { ToolbarButton } from './DesignSystem';
 
 export interface CollectorState {
   available: boolean; enabled: boolean; paused: boolean; session: string; stage: string;
-  pending: number; saved: number; skipped: number; failed: number; error: string;
+  pending: number; saved: number; skipped: number; failed: number; error: string; detail?: string;
   failures: { id: string; name: string; error: string }[];
 }
 
@@ -57,6 +57,7 @@ export function StyleCollectorControl({ onSaved, notify }: { onSaved: () => void
       <div role="dialog" aria-label="风格串收集状态" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-gray-200 bg-white p-3 text-xs text-gray-600 shadow-xl dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
         <div className="flex items-center justify-between gap-2"><span>{state.stage} · 待处理 {state.pending}</span>{state.enabled && <button disabled={busy} onClick={() => void act(state.paused ? 'resume' : 'pause')} className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-800">{state.paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}{state.paused ? '继续' : '暂停'}</button>}</div>
         <p className="mt-2">已保存 {state.saved} · 跳过 {state.skipped} · 失败 {state.failed}</p>
+        {state.detail && <p className="mt-2 truncate" title={state.detail}>{state.detail}</p>}
         {state.error && <p className="mt-2 text-amber-600 dark:text-amber-400">{state.error}</p>}
         {state.failures.length > 0 && <div className="mt-3 max-h-48 space-y-2 overflow-y-auto">{state.failures.map(item => <div key={item.id} className="flex items-start justify-between gap-2 border-t border-gray-100 pt-2 dark:border-gray-800"><div className="min-w-0"><p className="truncate">{item.name || '图片链接'}</p><p className="mt-1 text-red-500">{item.error}</p></div><button disabled={busy || !state.enabled} onClick={() => void act('retry', item.id)} title="手动重试" className="rounded-md p-1.5 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800"><RotateCcw className="h-4 w-4" /></button></div>)}</div>}
       </div>

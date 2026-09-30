@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { extractPngMetadata, hasCollectibleNaiMetadata } from '../services/pngMetadata.mjs';
-import { downloadCollectorImage, imageLink } from './collector-download.mjs';
+import { collectorErrorReason, downloadCollectorImage, imageLink } from './collector-download.mjs';
 
 export function collectorLocalRequest(req) {
   try {
@@ -69,7 +69,7 @@ export class StyleCollector extends EventEmitter {
   constructor({ worker, download = downloadCollectorImage, listener = windowsCollector, platform = process.platform, proxyUrl = '', modelMappings = () => ({}) }) {
     super(); Object.assign(this, { worker, download, listener, platform, proxyUrl, modelMappings });
     this.run = null; this.control = Promise.resolve(); this.disposed = false;
-    this.stopped = { enabled: false, paused: false, stage: '已关闭', pending: 0, saved: 0, skipped: 0, failed: 0, failures: [], error: '', session: '' };
+    this.stopped = { enabled: false, paused: false, stage: '已关闭', pending: 0, saved: 0, skipped: 0, failed: 0, failures: [], error: '', detail: '', session: '' };
   }
   state() {
     const state = this.run?.state || this.stopped;
@@ -105,7 +105,7 @@ export class StyleCollector extends EventEmitter {
     if (this.disposed) throw new Error('本机服务已退出');
     if (this.run) return this.state();
     if (this.platform !== 'win32') throw new Error('收集模式仅支持 Windows 电脑本机');
-    const run = { state: { ...this.stopped, enabled: false, paused: false, saved: 0, skipped: 0, failed: 0, failures: [], error: '', stage: '正在启动', session: randomUUID() }, queue: [], seen: new Set(), abort: new AbortController(), busy: false, native: null };
+    const run = { state: { ...this.stopped, enabled: false, paused: false, saved: 0, skipped: 0, failed: 0, failures: [], error: '', detail: '', stage: '正在启动', session: randomUUID() }, queue: [], seen: new Set(), abort: new AbortController(), busy: false, native: null };
     this.run = run; this.publish(run);
     try {
       const position = await this.worker('position');
@@ -134,7 +134,7 @@ export class StyleCollector extends EventEmitter {
   accept(run, text, retry = false) {
     if (this.run !== run || !run.state.enabled || run.abort.signal.aborted || (run.state.paused && !retry)) return;
     const url = imageLink(text); if (!url) return;
-    if (run.seen.has(url)) { run.state.skipped++; this.publish(run); return; }
+    if (run.seen.has(url)) { run.state.skipped++; run.state.detail = '跳过：本次已经接收过这个链接'; this.publish(run); return; }
     run.seen.add(url);
     if (run.queue.length >= 200) { run.state.failed++; run.state.error = '待处理链接过多，请暂停后等待队列完成'; this.publish(run); return; }
     let name = ''; try { name = decodeURIComponent(new URL(url).pathname.split('/').pop() || ''); } catch { /* 无文件名。 */ }
@@ -146,21 +146,24 @@ export class StyleCollector extends EventEmitter {
     while (run.queue.length && !run.abort.signal.aborted) {
       const item = run.queue.shift();
       try {
-        run.state.stage = '正在下载图片'; this.publish(run);
+        run.state.stage = '正在下载图片'; run.state.detail = `处理：${item.name || '图片链接'}`; this.publish(run);
         const { bytes, finalUrl } = await this.download(item.url, { signal: run.abort.signal, proxyUrl: this.proxyUrl });
         run.abort.signal.throwIfAborted(); run.state.stage = '正在解析图片'; this.publish(run);
-        let raw;
-        try { raw = await extractPngMetadata(bytes, { validatePixels: true, collectibleOnly: true }); } catch { raw = null; }
+        let raw, skipReason = '未找到有效 NovelAI 生成信息';
+        if (!Buffer.from(bytes.subarray(0, 8)).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) skipReason = '内容不是支持收集的 PNG 原图';
+        try { raw = await extractPngMetadata(bytes, { validatePixels: true, collectibleOnly: true }); } catch (error) { raw = null; skipReason = collectorErrorReason(error); }
         run.abort.signal.throwIfAborted();
-        if (!raw || !hasCollectibleNaiMetadata(raw)) { run.state.skipped++; }
+        if (!raw || !hasCollectibleNaiMetadata(raw)) { run.state.skipped++; run.state.detail = `跳过：${skipReason}`; }
         else {
           run.state.stage = '正在保存风格串'; this.publish(run);
           const result = await this.worker('import', { session: run.state.session, image: Buffer.from(bytes).toString('base64'), rawMetadata: raw, sourceUrl: item.url, finalUrl, name: item.name, metadataModelMappings: this.modelMappings() });
-          if (result.outcome === 'saved') run.state.saved++; else run.state.skipped++;
+          if (result.outcome === 'saved') { run.state.saved++; run.state.detail = `已保存：${item.name || '图片风格串'}`; }
+          else { run.state.skipped++; run.state.detail = '跳过：这张原图已经收集'; }
         }
       } catch (error) {
         if (!run.abort.signal.aborted) {
-          run.state.failed++; run.state.failures.unshift({ ...item, error: error.message });
+          const reason = collectorErrorReason(error);
+          run.state.failed++; run.state.detail = `失败：${reason}`; run.state.failures.unshift({ ...item, error: reason });
           run.state.failures = run.state.failures.slice(0, 20);
         }
       }

@@ -21,7 +21,12 @@ test('Windows native window protocol, pause baselines, screen clamp, topmost and
   await until(() => events.some(e => e.id === 'before'));
   send('start', { position: { x: 999999, y: -999999, collapsed: false } });
   await until(() => events.some(e => e.type === 'window'));
-  assert.deepEqual(events.find(e => e.type === 'window'), { type: 'window', session: 'synthetic-session', noActivate: true, topMost: true, foreground: false, visiblePosition: true, collapsed: false, height: 98 });
+  assert.deepEqual(events.find(e => e.type === 'window'), { type: 'window', session: 'synthetic-session', noActivate: true, topMost: true, foreground: false, visiblePosition: true, collapsed: false, height: 122, detail: '', detailVisible: true, detailEllipsis: true });
+  const detail = '失败：图片访问被拒绝 (403)，链接可能过期，请重新复制';
+  send('state', { state: { saved: 0, paused: false, stage: '等待复制图片链接', pending: 0, skipped: 0, failed: 1, detail }, id: 'detail' });
+  await until(() => events.some(e => e.id === 'detail'));
+  assert.equal(events.filter(e => e.type === 'window').at(-1).detail, detail);
+  assert.equal(events.filter(e => e.type === 'window').at(-1).foreground, false);
   send('inject', { text: 'ordinary copied text' });
   send('inject', { text: 'https://example.com/first.png?signature=keep' });
   send('pause', { id: 'paused' }); await until(() => events.some(e => e.id === 'paused'));
@@ -31,6 +36,7 @@ test('Windows native window protocol, pause baselines, screen clamp, topmost and
   await until(() => events.some(e => e.id === 'collapsed'));
   assert.deepEqual(events.filter(e => e.type === 'link').map(e => e.url), ['https://example.com/first.png?signature=keep', 'https://example.com/new.png']);
   assert.equal(events.filter(e => e.type === 'window').at(-1).height, 43);
+  assert.equal(events.filter(e => e.type === 'window').at(-1).detailVisible, false);
   assert.equal(events.filter(e => e.type === 'window').at(-1).foreground, false);
   send('stop'); await until(() => child.exitCode !== null);
   assert.equal(child.exitCode, 0); assert.ok(events.some(e => e.type === 'stop'));
