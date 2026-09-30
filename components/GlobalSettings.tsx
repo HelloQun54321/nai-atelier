@@ -20,7 +20,7 @@ import { isNovelaiSubscriptionActive, isActiveOpusSubscription, useNovelaiUsage 
 import { getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 import { naiKeyVault, NaiKeyEntry } from '../services/naiKeyVault';
 import { setLowConsumption, useLowConsumption } from '../services/lowConsumption';
-import { LOW_CONSUMPTION_RESERVE } from '../worker/lowConsumptionPolicy.mjs';
+import { isLowConsumptionModeAllowed } from '../worker/lowConsumptionPolicy.mjs';
 import { PromptAgentSettings } from './PromptAgentSettings';
 import {
   AppearancePreferences,
@@ -409,6 +409,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   };
 
   const getLabPageLayout = (pageId: LabPageId): LabPageLayout => appearancePreferences.labPageLayouts[pageId] || DEFAULT_LAB_PAGE_LAYOUTS[pageId];
+  const visibleLabPages = LAB_PAGE_IDS.filter(pageId => !lowConsumption.enabled || isLowConsumptionModeAllowed(pageId));
+  const visibleLabModules = (layout: LabPageLayout) => layout.order.filter(moduleId => !lowConsumption.enabled || moduleId !== 'characterReference');
 
   const updateLabPageLayout = (pageId: LabPageId, update: (layout: LabPageLayout) => LabPageLayout) => {
     updateAppearance({
@@ -422,7 +424,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const moveLabModule = (pageId: LabPageId, moduleId: LabPageModuleId, offset: -1 | 1) => {
     const layout = getLabPageLayout(pageId);
     const currentIndex = layout.order.indexOf(moduleId);
-    const targetIndex = currentIndex + offset;
+    const visibleOrder = visibleLabModules(layout);
+    const targetModule = visibleOrder[visibleOrder.indexOf(moduleId) + offset];
+    const targetIndex = layout.order.indexOf(targetModule);
     if (currentIndex < 0 || targetIndex < 0 || targetIndex >= layout.order.length) return;
     const next = [...layout.order];
     [next[currentIndex], next[targetIndex]] = [next[targetIndex], next[currentIndex]];
@@ -452,12 +456,20 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     }));
   };
 
-  const resetLabPageLayout = (pageId: LabPageId) => updateLabPageLayout(pageId, () => ({
-    order: [...DEFAULT_LAB_PAGE_LAYOUTS[pageId].order],
-    collapsed: { ...DEFAULT_LAB_PAGE_LAYOUTS[pageId].collapsed },
-  }));
+  const recommendedLabLayout = (pageId: LabPageId): LabPageLayout => {
+    const defaults = DEFAULT_LAB_PAGE_LAYOUTS[pageId];
+    if (!lowConsumption.enabled) return { order: [...defaults.order], collapsed: { ...defaults.collapsed } };
+    const current = getLabPageLayout(pageId);
+    const recommended = visibleLabModules(defaults);
+    let index = 0;
+    return { order: current.order.map(moduleId => moduleId === 'characterReference' ? moduleId : recommended[index++]),
+      collapsed: { ...defaults.collapsed, characterReference: current.collapsed.characterReference } };
+  };
+  const resetLabPageLayout = (pageId: LabPageId) => updateLabPageLayout(pageId, () => recommendedLabLayout(pageId));
 
-  const resetAllLabPageLayouts = () => updateAppearance({ labPageLayouts: cloneDefaultLabPageLayouts() });
+  const resetAllLabPageLayouts = () => updateAppearance({ labPageLayouts: lowConsumption.enabled
+    ? { ...appearancePreferences.labPageLayouts, ...Object.fromEntries(visibleLabPages.map(pageId => [pageId, recommendedLabLayout(pageId)])) }
+    : cloneDefaultLabPageLayouts() });
 
   const resetThemeCustomization = () => {
     setAppearancePreferences({
@@ -983,7 +995,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 </span>
               </button>
 
-              <button type="button" onClick={() => updateAppearance({ enforceFreeStepLimit: !appearancePreferences.enforceFreeStepLimit })} aria-pressed={appearancePreferences.enforceFreeStepLimit} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+              {!lowConsumption.enabled && <button type="button" onClick={() => updateAppearance({ enforceFreeStepLimit: !appearancePreferences.enforceFreeStepLimit })} aria-pressed={appearancePreferences.enforceFreeStepLimit} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                 <span className="min-w-0">
                   <b className="block text-xs text-gray-800 dark:text-gray-100">生成步数锁定在免费额度内</b>
                   <span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">
@@ -993,7 +1005,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.enforceFreeStepLimit ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
                   <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.enforceFreeStepLimit ? 'translate-x-5' : 'translate-x-0'}`} />
                 </span>
-              </button>
+              </button>}
 
               <div className={`rounded-2xl border transition-all ${isLabMobile ? 'border-gray-200 bg-gray-100/70 p-3 dark:border-gray-800 dark:bg-gray-900/40' : 'border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35'}`}>
                 <div className="mb-3 flex items-start justify-between gap-3">
@@ -1007,7 +1019,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       )}
                     </div>
                     <p className="mt-0.5 text-micro leading-4 text-gray-500 dark:text-gray-400">
-                      {isLabMobile ? '移动端已采用三段式标签流，模块排版已锁定；如需自定义双栏布局请在电脑端操作。' : '自定义文生图、图生图、局部重绘与扩图的模块顺序与展开状态。'}
+                      {isLabMobile ? '移动端已采用三段式标签流，模块排版已锁定；如需自定义双栏布局请在电脑端操作。' : lowConsumption.enabled ? '自定义文生图与局部重绘的模块顺序与展开状态。' : '自定义文生图、图生图、局部重绘与扩图的模块顺序与展开状态。'}
                     </p>
                   </div>
                   <button
@@ -1026,9 +1038,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   </div>
                 )}
                 <div className={`space-y-2 ${isLabMobile ? 'pointer-events-none select-none opacity-50' : ''}`}>
-                  {LAB_PAGE_IDS.map(pageId => {
+                  {visibleLabPages.map(pageId => {
                     const pageMeta = LAB_PAGE_META[pageId];
                     const layout = getLabPageLayout(pageId);
+                    const visibleOrder = visibleLabModules(layout);
                     const defaultLayout = DEFAULT_LAB_PAGE_LAYOUTS[pageId];
                     const isCustom = JSON.stringify(layout) !== JSON.stringify(defaultLayout);
                     return <details key={pageId} open={expandedLabPages[pageId]} onToggle={event => {
@@ -1037,13 +1050,13 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       setExpandedLabPages(current => current[pageId] === expanded ? current : { ...current, [pageId]: expanded });
                     }} className="group rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
                       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 [&::-webkit-details-marker]:hidden">
-                        <span className="min-w-0"><span className="flex items-center gap-2 text-xs font-bold text-gray-700 dark:text-gray-200"><span>{pageMeta.label}</span>{isCustom && <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-mini font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">已自定义</span>}</span><span className="mt-0.5 block truncate text-micro text-gray-400">{pageMeta.description} · {layout.order.length} 个模块</span></span>
+                        <span className="min-w-0"><span className="flex items-center gap-2 text-xs font-bold text-gray-700 dark:text-gray-200"><span>{pageMeta.label}</span>{isCustom && <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-mini font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">已自定义</span>}</span><span className="mt-0.5 block truncate text-micro text-gray-400">{pageMeta.description} · {visibleOrder.length} 个模块</span></span>
                         <ChevronRight className="h-4 w-4 flex-none text-gray-400 transition-transform group-open:rotate-90" />
                       </summary>
                       <div className="border-t border-gray-100 p-2.5 dark:border-gray-800">
                         <div className="mb-2 flex items-center justify-between gap-2"><span className="text-micro text-gray-400">支持拖动排序，也可用箭头微调</span><button type="button" onClick={() => resetLabPageLayout(pageId)} className="mobile-touch flex items-center gap-1 rounded-lg px-2 py-1 text-micro font-bold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><RotateCcw className="h-3 w-3" />推荐顺序</button></div>
                         <div className="space-y-2">
-                          {layout.order.map((moduleId, index) => {
+                          {visibleOrder.map((moduleId, index) => {
                             const meta = LAB_MODULE_META[moduleId];
                             const collapsed = Boolean(layout.collapsed[moduleId]);
                             const dragging = draggingLabModule?.pageId === pageId && draggingLabModule.moduleId === moduleId;
@@ -1068,7 +1081,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                             >
                               <GripVertical className="h-4 w-4 flex-none cursor-grab text-gray-300 active:cursor-grabbing dark:text-gray-600" aria-hidden="true" />
                               <div className="min-w-0 flex-1"><div className="truncate text-xs font-bold text-gray-700 dark:text-gray-200">{index + 1}. {meta.label}</div><div className="truncate text-micro text-gray-400" title={meta.description}>{meta.description}</div></div>
-                              <div className="flex flex-none items-center gap-1"><button type="button" onClick={() => moveLabModule(pageId, moduleId, -1)} disabled={index === 0} aria-label={`上移${meta.label}`} title="上移" className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowUp className="h-3.5 w-3.5" /></button><button type="button" onClick={() => moveLabModule(pageId, moduleId, 1)} disabled={index === layout.order.length - 1} aria-label={`下移${meta.label}`} title="下移" className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowDown className="h-3.5 w-3.5" /></button><button type="button" onClick={() => toggleLabModuleCollapsed(pageId, moduleId)} aria-pressed={collapsed} className={`ml-1 rounded-full border px-2 py-1 text-micro font-bold transition ${collapsed ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>{collapsed ? '默认收起' : '默认展开'}</button></div>
+                              <div className="flex flex-none items-center gap-1"><button type="button" onClick={() => moveLabModule(pageId, moduleId, -1)} disabled={index === 0} aria-label={`上移${meta.label}`} title="上移" className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowUp className="h-3.5 w-3.5" /></button><button type="button" onClick={() => moveLabModule(pageId, moduleId, 1)} disabled={index === visibleOrder.length - 1} aria-label={`下移${meta.label}`} title="下移" className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowDown className="h-3.5 w-3.5" /></button><button type="button" onClick={() => toggleLabModuleCollapsed(pageId, moduleId)} aria-pressed={collapsed} className={`ml-1 rounded-full border px-2 py-1 text-micro font-bold transition ${collapsed ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>{collapsed ? '默认收起' : '默认展开'}</button></div>
                             </div>;
                           })}
                         </div>
@@ -1189,7 +1202,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             </div>
             <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
               <label className="mb-3 flex min-h-11 items-start justify-between gap-3">
-                <span><span className="block font-semibold text-gray-900 dark:text-white">低消耗模式</span><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">V5 最高 23 步，V4／V4.5 最高 28 步；文生图与 Focused 局部重绘仅走零点数路径，图生图每次最多 10 点，扩图最多 20 点。暂停角色参考，最多使用 4 个已编码 Vibe，保留 {LOW_CONSUMPTION_RESERVE} 点预算。配置按当前 Key 保存。</span></span>
+                <span><span className="block font-semibold text-gray-900 dark:text-white">低消耗模式</span><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">仅保留零点数文生图与 Focused 局部重绘，隐藏图生图、扩图、角色参考和付费尺寸放大。V5 最高 23 步，V4／V4.5 最高 28 步，最多使用 4 个已编码 Vibe；手动新编码仍需费用确认。关闭后恢复完整功能，配置按当前 Key 保存。</span></span>
                 <input type="checkbox" aria-label="低消耗模式" checked={lowConsumption.enabled} disabled={savingLowConsumption || !apiKey.trim()} onChange={async event => {
                   const enabled = event.currentTarget.checked;
                   setSavingLowConsumption(true);
@@ -1198,7 +1211,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   finally { setSavingLowConsumption(false); }
                 }} className="mt-1 h-5 w-5 shrink-0 rounded border-gray-300 text-indigo-600 disabled:opacity-50" />
               </label>
-              {lowConsumption.enabled && <p className="mb-3 text-xs text-indigo-600 dark:text-indigo-300">低消耗可用 {Math.max(0, anlasBudget.remaining - LOW_CONSUMPTION_RESERVE)} 点；月预算 1666 点时，日常可用 1500 点。不会自动重置预算或重试生成。</p>}
+              {lowConsumption.enabled && <p className="mb-3 text-xs text-indigo-600 dark:text-indigo-300">生成仅走零点数路径，V5 仍消耗共享 Opus 额度。点数可用于积累永久 Vibe；不会自动重置预算或重试生成。</p>}
               <div><h4 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">当前密钥剩余 <b className="text-indigo-600 dark:text-indigo-300">{anlasBudget.remaining}</b> 点，电脑与手机共用。</p></div>
               <div className="mt-3 flex gap-2">
                 <input type="number" min="0" step="1" value={anlasInput} onChange={event => setAnlasInput(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-lg font-black tabular-nums outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900" aria-label="可支配 Anlas 点数" />

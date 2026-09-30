@@ -67,7 +67,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
         const builtin = BUILTIN_ASPECT_RATIOS.find(item => item.id === value);
         if (builtin) {
             const maxInfo = getMaxDimensionsForRatio(builtin);
-            const clampedScale = Math.min(maxInfo.maxScale, Math.max(1.0, scaleMultiplier));
+            const clampedScale = lowConsumption.enabled ? 1 : Math.min(maxInfo.maxScale, Math.max(1.0, scaleMultiplier));
             setScaleMultiplier(clampedScale);
             const nextDims = calculateDimensionsForRatio(builtin, clampedScale);
             setParams({ ...params, width: nextDims.width, height: nextDims.height });
@@ -113,7 +113,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
 
     return (
         <div className="space-y-4">
-            {lowConsumption.enabled && <p role="status" className="text-xs leading-5 text-indigo-600 dark:text-indigo-300">低消耗 · 本次 {effectiveParams.steps} 步{mode === 'text-to-image' ? ` · ${effectiveParams.width} × ${effectiveParams.height}` : ''} · 角色参考暂停 · Vibe 最多 4 个。关闭后恢复原配置。</p>}
+            {lowConsumption.enabled && <p role="status" className="text-xs leading-5 text-indigo-600 dark:text-indigo-300">低消耗 · 本次 {effectiveParams.steps} 步{mode === 'text-to-image' ? ` · ${effectiveParams.width} × ${effectiveParams.height} · Vibe 最多 4 个` : ' · 仅 Focused 局部重绘'}。关闭后恢复完整功能。</p>}
             {presetSource && (
                 <div className="mb-3 flex min-w-0 items-center gap-2">
                     <span className="max-w-48 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-micro font-medium normal-case tracking-normal text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-64" title={`来自：${presetSource.name}${presetSource.modified ? ' · 已修改' : ''}`}>来自：{presetSource.name}{presetSource.modified ? ' · 已修改' : ''}</span>
@@ -214,7 +214,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
             </div>
 
             {/* Resolution control panel: Aspect ratio scale slider */}
-            {!hideResolution && (
+            {!hideResolution && !lowConsumption.enabled && (
                 <div className="mb-4 rounded-2xl border border-gray-200 bg-white/70 p-3.5 dark:border-gray-800 dark:bg-gray-900/60 sm:p-4">
                     <div className="space-y-3">
                         <div className="flex items-center justify-between gap-2">

@@ -53,6 +53,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
   const [editingGroupId, setEditingGroupId] = useState('');
   const [editingGroupName, setEditingGroupName] = useState('');
   const vibes = params.vibes || emptyVibes();
+  const maxSlots = lowConsumption.enabled ? 4 : VIBE_MAX_SLOTS;
   const normalized = useMemo(
     () => normalizeVibeSelections(vibes.slots, vibes.normalizeStrengths),
     [vibes.normalizeStrengths, vibes.slots],
@@ -203,8 +204,8 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
       updateVibes({ ...vibes, slots: vibes.slots.filter(slot => slot.vibeId !== asset.id), enabled: vibes.slots.length > 1 });
       return;
     }
-    if (vibes.slots.length >= VIBE_MAX_SLOTS) {
-      notify(`一次最多启用 ${VIBE_MAX_SLOTS} 个 Vibe`, 'error');
+    if (vibes.slots.length >= maxSlots) {
+      notify(`一次最多启用 ${maxSlots} 个 Vibe`, 'error');
       return;
     }
     const usableEncodings = asset.encodings.filter(item => item.model === 'nai-diffusion-4-5-full');
@@ -282,6 +283,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
   };
 
   const loadGroup = (group: VibeGroup) => {
+    if (lowConsumption.enabled && group.slots.length > maxSlots) { notify(`低消耗模式最多使用 ${maxSlots} 个 Vibe，请先调整组合`, 'error'); return; }
     updateVibes({ enabled: group.slots.length > 0, sourceGroupId: group.id, sourceGroupName: group.name, normalizeStrengths: group.normalizeStrengths, slots: group.slots.map(slot => ({ ...slot })) });
     notify(`已载入组合“${group.name}”`);
   };
@@ -320,7 +322,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
         {lowConsumption.enabled && <p className="mb-2 text-xs leading-5 text-indigo-600 dark:text-indigo-300">低消耗模式最多使用 4 个已编码 Vibe；新编码仍需点数确认，超过数量时请调整选择。</p>}
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-800 dark:text-gray-100">Vibe Transfer</span>{vibes.enabled && vibes.slots.length > 0 && <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-micro font-bold text-white">{vibes.slots.length} / {VIBE_MAX_SLOTS}</span>}</div>
+            <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-800 dark:text-gray-100">Vibe Transfer</span>{vibes.enabled && vibes.slots.length > 0 && <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-micro font-bold text-white">{vibes.slots.length} / {maxSlots}</span>}</div>
             {vibes.enabled && vibes.slots.length ? <><p className="mt-1 truncate text-xs text-gray-700 dark:text-gray-300">{vibes.slots.map(slot => slot.vibeName || '未知 Vibe').join(' · ')}</p><p className="mt-0.5 text-meta text-gray-500">有效总强度 {total.toFixed(2)}{vibes.sourceGroupName ? ` · ${vibes.sourceGroupName}` : ''}</p></> : <p className="mt-1 text-xs text-gray-500">未启用 · 永久编码后可免费重复用于生图</p>}
           </div>
           <button type="button" onClick={() => setOpen(true)} className="mobile-touch flex-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-300">管理</button>
@@ -348,7 +350,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {!detail && <span className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-300">已选 {vibes.slots.length}/{VIBE_MAX_SLOTS}</span>}
+              {!detail && <span className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-300">已选 {vibes.slots.length}/{maxSlots}</span>}
               <CloseButton onClick={closeLayer} size="sm" />
             </div>
           </header>
@@ -380,7 +382,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
               </section>
               <aside className="workspace-manager-selection mobile-safe-bottom overflow-y-auto border-t border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 md:border-l md:border-t-0 flex flex-col justify-between">
                 <div>
-                  <div className="flex items-center justify-between"><h3 className="font-bold text-gray-900 dark:text-white">当前组合</h3><span className="text-xs font-bold text-violet-600 dark:text-violet-400">{vibes.slots.length}/{VIBE_MAX_SLOTS}</span></div>
+                  <div className="flex items-center justify-between"><h3 className="font-bold text-gray-900 dark:text-white">当前组合</h3><span className="text-xs font-bold text-violet-600 dark:text-violet-400">{vibes.slots.length}/{maxSlots}</span></div>
                   <div className="mt-3 space-y-3">{vibes.slots.map((slot, index) => { const asset = assets.find(item => item.id === slot.vibeId); const usableEncodings = asset?.encodings.filter(item => item.model === 'nai-diffusion-4-5-full') || []; return <div key={`${slot.vibeId}-${index}`} draggable onDragStart={() => setDragIndex(index)} onDragOver={event => event.preventDefault()} onDrop={() => { if (dragIndex !== null) moveSlot(dragIndex, index); setDragIndex(null); }} className={`rounded-xl border border-gray-200 p-3 dark:border-gray-800 ${dragIndex === index ? 'opacity-50' : ''}`}><div className="flex items-center gap-1"><span className="flex h-6 w-6 flex-none cursor-grab items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-300" title="拖动排序">{index + 1}</span><p className="min-w-0 flex-1 truncate text-sm font-bold">{slot.vibeName || asset?.name || '资产缺失'}</p><button type="button" disabled={index === 0} onClick={() => moveSlot(index, index - 1)} className="mobile-touch h-9 w-9 text-sm text-gray-400 disabled:opacity-20" aria-label="上移">↑</button><button type="button" disabled={index === vibes.slots.length - 1} onClick={() => moveSlot(index, index + 1)} className="mobile-touch h-9 w-9 text-sm text-gray-400 disabled:opacity-20" aria-label="下移">↓</button><button type="button" onClick={() => removeSlot(index)} className="mobile-touch h-9 w-9 text-lg text-gray-400 hover:text-red-500" aria-label="移除">×</button></div><select value={slot.encodingId} onChange={event => { const encoding = usableEncodings.find(item => item.id === event.target.value); if (encoding) updateSlot(index, { encodingId: encoding.id, informationExtracted: encoding.informationExtracted }); }} className="mt-2 w-full rounded-lg border border-gray-200 bg-transparent px-2 py-2 text-xs dark:border-gray-800">{usableEncodings.length ? usableEncodings.map(encoding => <option key={encoding.id} value={encoding.id}>提取量 {encoding.informationExtracted.toFixed(2)}</option>) : <option>编码缺失或资产已归档</option>}</select><div className="mt-2 flex items-center gap-2"><span className="text-meta text-gray-500">强度</span><input type="range" min="0" max="1" step="0.01" value={slot.strength} onChange={event => updateSlot(index, { strength: Number(event.target.value) })} className="min-w-0 flex-1 accent-violet-600" /><input type="number" min="0" max="1" step="0.01" value={Number(slot.strength.toFixed(2))} onChange={event => updateSlot(index, { strength: Math.max(0, Math.min(1, parseFloat(event.target.value) || 0)) })} className="w-16 rounded-md border border-gray-200 bg-transparent px-1 py-1 text-right text-xs font-mono dark:border-gray-800" /></div>{vibes.normalizeStrengths && Math.abs(slot.strength - (normalized[index]?.effectiveStrength ?? slot.strength)) > 0.0001 && <p className="mt-1 text-right text-micro text-violet-600">有效强度 {normalized[index].effectiveStrength?.toFixed(2)}</p>}</div>; })}{!vibes.slots.length && <p className="rounded-xl bg-gray-50 px-3 py-8 text-center text-xs text-gray-500 dark:bg-gray-950">从左侧选择 1～16 个 Vibe</p>}</div>
                   <label className="mt-4 flex min-h-11 items-center justify-between gap-3 rounded-xl bg-gray-50 px-3 text-sm dark:bg-gray-950"><span><b>超限自动归一化</b><small className="block text-micro text-gray-500">总强度超过 1 时按比例缩放</small></span><input type="checkbox" checked={vibes.normalizeStrengths} onChange={event => updateVibes({ ...vibes, normalizeStrengths: event.target.checked })} className="h-5 w-5 accent-violet-600" /></label>
                   <div className="mt-4 flex gap-2"><input value={groupName} onChange={event => setGroupName(event.target.value)} placeholder="组合名称" className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-800" /><button type="button" disabled={!groupName.trim() || !vibes.slots.length} onClick={() => void saveGroup()} className="mobile-touch rounded-xl bg-gray-900 px-3 text-xs font-bold text-white disabled:opacity-40 dark:bg-gray-100 dark:text-gray-900">保存</button></div>

@@ -389,7 +389,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
             <input disabled={isBusy} type="range" min="0" max="1" step="0.01" aria-label="Noise" value={noise} onChange={event => onNoiseChange(Number(event.target.value))} className="w-full cursor-pointer accent-indigo-500 disabled:cursor-not-allowed disabled:opacity-50" />
           </div>
           {(operation === 'inpaint' || (operation === 'outpaint' && manualMaskEditing)) && <>
-            {operation === 'inpaint' && <label className="flex items-center justify-between gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300"><span>Focused Inpainting</span><input disabled={isBusy || safeMode} type="checkbox" checked={focused} onChange={event => onFocusedChange(event.target.checked)} className="h-4 w-4 accent-amber-500" /></label>}
+            {operation === 'inpaint' && (lowConsumption.enabled ? <p className="text-xs text-indigo-600 dark:text-indigo-300">低消耗仅使用 Focused 局部重绘，请先框选区域，再绘制蒙版。</p> : <label className="flex items-center justify-between gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300"><span>Focused Inpainting</span><input disabled={isBusy || safeMode} type="checkbox" checked={focused} onChange={event => onFocusedChange(event.target.checked)} className="h-4 w-4 accent-amber-500" /></label>)}
             {focused && <div className="space-y-2">
               <div>
                 <div className="mb-1 flex items-center justify-between">
@@ -416,8 +416,8 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
         </section>
       </LabModuleSection>
 
-      {supportsCharacterReference && <LabModuleSection moduleId="characterReference" label="角色参考" order={getModuleOrder(layout, 'characterReference')} defaultCollapsed={isModuleCollapsed(layout, 'characterReference')} className={mobileTab === 'prompt' ? 'block' : 'hidden lg:block'}>
-        {lowConsumption.enabled ? <p className="text-xs text-gray-500 dark:text-gray-400">低消耗模式已暂停角色参考，关闭后恢复原选择。</p> : <CharacterReferenceManager params={selectableParams} setParams={params => onDraftChange({ params })} markChange={() => undefined} notify={notify} operation={operation} />}
+      {supportsCharacterReference && !lowConsumption.enabled && <LabModuleSection moduleId="characterReference" label="角色参考" order={getModuleOrder(layout, 'characterReference')} defaultCollapsed={isModuleCollapsed(layout, 'characterReference')} className={mobileTab === 'prompt' ? 'block' : 'hidden lg:block'}>
+        <CharacterReferenceManager params={selectableParams} setParams={params => onDraftChange({ params })} markChange={() => undefined} notify={notify} operation={operation} />
       </LabModuleSection>}
 
       {supportsVibe && <LabModuleSection moduleId="vibe" label="Vibe Transfer" order={getModuleOrder(layout, 'vibe')} defaultCollapsed={isModuleCollapsed(layout, 'vibe')} className={mobileTab === 'prompt' ? 'block' : 'hidden lg:block'}>

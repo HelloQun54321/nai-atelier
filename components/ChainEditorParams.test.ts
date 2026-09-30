@@ -63,7 +63,7 @@ const renderParams = (props: Record<string, unknown> = {}) => render(React.creat
 afterEach(() => { cleanup(); lowMode.enabled = false; });
 
 describe('ChainEditorParams', () => {
-  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 低消耗压住已解除的步数上限，关闭恢复原参数', mode => {
+  it.each(['text-to-image', 'inpaint'] as const)('%s 低消耗压住已解除的步数上限，关闭恢复原参数', mode => {
     lowMode.enabled = true;
     const setParams = vi.fn();
     const original = { ...params, model: 'nai-diffusion-5-full', steps: 40 };
@@ -81,6 +81,19 @@ describe('ChainEditorParams', () => {
     const { container } = renderParams({ params: { ...params, steps: 40, width: 1536, height: 1536 } });
     expect(container.querySelector<HTMLInputElement>('input[max="28"]')?.value).toBe('28');
     expect(screen.getByText(/低消耗 · 本次/).textContent).toContain('1024 × 1024');
+  });
+  it('低消耗隐藏尺寸放大，画幅切换不继承隐藏的高倍缩放，关闭恢复放大工具', () => {
+    lowMode.enabled = true;
+    const setParams = vi.fn();
+    const original = { ...params, width: 1536, height: 1536 };
+    const { rerender } = renderParams({ params: original, setParams });
+    expect(screen.queryByRole('slider', { name: '尺寸缩放滑块' })).toBeNull();
+    expect(screen.queryByRole('spinbutton', { name: '尺寸清晰度倍率数值' })).toBeNull();
+    fireEvent.change(screen.getByRole('combobox', { name: '图片画幅比例' }), { target: { value: '2:3' } });
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ width: 832, height: 1216 }));
+    lowMode.enabled = false;
+    rerender(React.createElement(ChainEditorParams, { params: original, setParams, canEdit: true, markChange: vi.fn() }));
+    expect(screen.getByRole('slider', { name: '尺寸缩放滑块' })).toBeTruthy();
   });
   it('未保存模型的旧数据按界面默认 V4.5 读取完整预设', () => {
     renderParams({ params: { ...params, model: undefined } });

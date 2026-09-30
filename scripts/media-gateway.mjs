@@ -14,7 +14,7 @@ import { PromptAgentService } from './prompt-agent.mjs';
 import { StChatu8Bridge, installSillyTavernBridgeExtension } from './st-chatu8-bridge.mjs';
 import { ImageTaggerService } from './image-tagger.mjs';
 import { MEDIA_REMOTE_HOSTS, LAN_ACCESS_COOKIE } from '../worker/sharedWhitelist.mjs';
-import { lowConsumptionRuntimeHealthy, lowConsumptionViolation } from '../worker/lowConsumptionPolicy.mjs';
+import { lowConsumptionOperationViolation, lowConsumptionRuntimeHealthy, lowConsumptionViolation } from '../worker/lowConsumptionPolicy.mjs';
 import { PIXIV_IMAGE_HOST, PIXIV_REFERER, PixivGalleryService } from './pixiv-local.mjs';
 import { PixivWebLoginOrchestrator } from './pixiv-web-login.mjs';
 import { localBackupService, saveBackupConfig, openInExplorer } from './local-backup.mjs';
@@ -983,7 +983,7 @@ const acquireLowConsumptionGeneration = keyHash => {
 
 // ZIP／SSE 共用生成前校验；拒绝时不进入公共队列，不调用生图，也不沿用旧免费快照。
 export const enforceLowConsumptionRequest = async ({ payload, authorization, keyHash, req, workerPort, requestRemote,
-  signal, loadPreferences = readLowConsumption, readBudget = (request, port, hash) => requestWorkerJson(`/api/anlas-budget?keyHash=${hash}`, request, port),
+  signal, loadPreferences = readLowConsumption,
   runtime = getNaiRuntime(), forceEnabled = false, onEnabled = () => {} }) => {
   const preferences = await loadPreferences(req, workerPort);
   if (typeof preferences?.enabled !== 'boolean') throw Object.assign(new Error('无法确认低消耗设置，请刷新后再生成'), { status: 503 });
@@ -991,6 +991,8 @@ export const enforceLowConsumptionRequest = async ({ payload, authorization, key
   onEnabled();
   const parameters = payload?.parameters || {};
   const operation = parameters._local_edit_operation || (payload.action === 'img2img' ? 'image-to-image' : payload.action === 'infill' ? 'inpaint' : 'text-to-image');
+  const operationViolation = lowConsumptionOperationViolation(operation);
+  if (operationViolation) throw Object.assign(new Error(operationViolation), { status: 400, code: 'LOW_CONSUMPTION_LIMIT' });
   let subscription = null;
   try {
     const response = await fetchNovelAiSubscription(authorization, AbortSignal.any([signal || new AbortController().signal, AbortSignal.timeout(10_000)]), requestRemote);
@@ -1003,7 +1005,6 @@ export const enforceLowConsumptionRequest = async ({ payload, authorization, key
   if (subscriptionKnown) setOpusUsageSnapshot(keyHash, usageExhausted, opusSubscriber);
   const estimatedCost = estimateNovelAiGenerationCost(payload, usageExhausted, opusSubscriber);
   if (subscriptionKnown && !opusSubscriber && operation === 'text-to-image') throw Object.assign(new Error('低消耗模式：文生图零点数路径需要有效的 Opus 订阅'), { status: 400, code: 'LOW_CONSUMPTION_LIMIT' });
-  const budget = estimatedCost > 0 ? await readBudget(req, workerPort, keyHash) : { remaining: 0 };
   const referenceCount = parameters._local_character_references?.enabled ? parameters._local_character_references.slots?.length || 0
     : parameters.director_reference_images?.length || parameters.director_reference_images_cached?.length || 0;
   const vibeCount = parameters._local_vibes?.enabled ? parameters._local_vibes.slots?.length || 0
@@ -1011,7 +1012,7 @@ export const enforceLowConsumptionRequest = async ({ payload, authorization, key
   const violation = lowConsumptionViolation({ operation, model: payload.model, steps: Number(parameters.steps),
     freeMaxSteps: runtime.freeMaxSteps, width: Number(parameters.width), height: Number(parameters.height), freeMaxArea: runtime.freeMaxArea,
     referenceCount, vibeCount, focused: parameters._local_focused_inpainting === true, estimatedCost,
-    remaining: Number(budget?.remaining), runtimeHealthy: lowConsumptionRuntimeHealthy(runtime), subscriptionKnown, usageLimited, usageExhausted });
+    runtimeHealthy: lowConsumptionRuntimeHealthy(runtime), subscriptionKnown, usageLimited, usageExhausted });
   if (violation || Number(parameters.n_samples || 1) !== 1) throw Object.assign(new Error(violation || '低消耗模式：每次只生成一张图片'), { status: 400, code: 'LOW_CONSUMPTION_LIMIT' });
   return true;
 };

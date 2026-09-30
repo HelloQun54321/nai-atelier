@@ -1,9 +1,9 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import type { NAIParams, ImageEditOperation } from '../types';
+import type { NAIParams, ImageEditOperation, GenerationMode } from '../types';
 import type { NaiRuntimeConfig } from './naiRuntime';
 import type { NovelaiSubscriptionInfo } from './naiUsage';
 import { getRuntimeNaiModelInfo } from './naiModels';
-import { fitLowConsumptionDimensions, lowConsumptionRuntimeHealthy, lowConsumptionStepLimit, lowConsumptionViolation } from '../worker/lowConsumptionPolicy.mjs';
+import { fitLowConsumptionDimensions, isLowConsumptionModeAllowed, lowConsumptionOperationViolation, lowConsumptionRuntimeHealthy, lowConsumptionStepLimit, lowConsumptionViolation } from '../worker/lowConsumptionPolicy.mjs';
 
 export interface LowConsumptionPreferences { enabled: boolean }
 const disabled: LowConsumptionPreferences = { enabled: false };
@@ -79,8 +79,13 @@ export const useLowConsumption = () => {
 };
 
 // 只计算实际生成参数，保留原草稿和资产配置；Strength、模型和 Seed 不由该策略改变。
+export const resolveLowConsumptionMode = (mode: GenerationMode, enabled: boolean): GenerationMode =>
+  !enabled || isLowConsumptionModeAllowed(mode) ? mode : 'text-to-image';
+
 export const applyLowConsumptionParams = (params: NAIParams, enabled: boolean, runtime: NaiRuntimeConfig, operation: 'text-to-image' | ImageEditOperation = 'text-to-image'): NAIParams => {
   if (!enabled) return params;
+  const violation = lowConsumptionOperationViolation(operation);
+  if (violation) throw new Error(violation);
   return {
     ...params,
     steps: Math.min(params.steps, lowConsumptionStepLimit(params.model, runtime.freeMaxSteps)),
@@ -90,14 +95,14 @@ export const applyLowConsumptionParams = (params: NAIParams, enabled: boolean, r
 };
 
 export const assertLowConsumptionEstimate = (params: NAIParams, operation: 'text-to-image' | ImageEditOperation,
-  runtime: NaiRuntimeConfig, subscription: NovelaiSubscriptionInfo | null, estimatedCost: number, remaining: number, focused = false) => {
+  runtime: NaiRuntimeConfig, subscription: NovelaiSubscriptionInfo | null, estimatedCost: number, focused = false) => {
   const usageLimited = getRuntimeNaiModelInfo(params.model, runtime).opusUsageLimit;
   if (operation === 'text-to-image' && subscription?.active === true && subscription.tier < 3) throw new Error('低消耗模式：文生图零点数路径需要有效的 Opus 订阅');
   const violation = lowConsumptionViolation({ operation, model: params.model, steps: params.steps,
     freeMaxSteps: runtime.freeMaxSteps, width: params.width, height: params.height, freeMaxArea: runtime.freeMaxArea,
     referenceCount: params.characterReferences?.enabled ? params.characterReferences.slots.length : 0,
-    vibeCount: operation === 'text-to-image' || operation === 'image-to-image' ? params.vibes?.enabled ? params.vibes.slots.length : 0 : 0,
-    focused, estimatedCost, remaining, runtimeHealthy: lowConsumptionRuntimeHealthy(runtime),
+    vibeCount: operation === 'text-to-image' ? params.vibes?.enabled ? params.vibes.slots.length : 0 : 0,
+    focused, estimatedCost, runtimeHealthy: lowConsumptionRuntimeHealthy(runtime),
     subscriptionKnown: subscription?.active === true && (!usageLimited || Number.isFinite(subscription?.usage?.percent)),
     usageLimited, usageExhausted: subscription?.usage?.isNegative === true || (subscription?.usage?.percent !== undefined && subscription.usage.percent <= 0) });
   if (violation) throw new Error(violation);

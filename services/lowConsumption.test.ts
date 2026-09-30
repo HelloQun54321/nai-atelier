@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyLowConsumptionParams, assertLowConsumptionEstimate, getCachedLowConsumption, getLowConsumption, setLowConsumption } from './lowConsumption';
+import { applyLowConsumptionParams, assertLowConsumptionEstimate, getCachedLowConsumption, getLowConsumption, resolveLowConsumptionMode, setLowConsumption } from './lowConsumption';
 import { DEFAULT_NAI_RUNTIME } from './naiRuntime';
 import type { NAIParams } from '../types';
 
@@ -31,10 +31,17 @@ describe('低消耗实际参数与原配置隔离', () => {
     expect(applyLowConsumptionParams({ ...params, model }, true, runtime).steps).toBe(28);
     expect(applyLowConsumptionParams({ ...params, model, steps: 17 }, true, runtime).steps).toBe(17);
   });
-  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 保留底图／扩展画布几何与种子', operation => {
+  it.each(['inpaint'] as const)('%s 保留底图几何与种子', operation => {
     const actual = applyLowConsumptionParams(params, true, runtime, operation);
     expect([actual.width, actual.height, actual.seed]).toEqual([1536, 1536, 123]);
     expect(actual.steps).toBe(23);
+  });
+  it.each(['image-to-image', 'outpaint'] as const)('%s 开启时关闭，停用开关后完整恢复原参数和当前模式', operation => {
+    expect(() => applyLowConsumptionParams(params, true, runtime, operation)).toThrow('已关闭图生图和扩图');
+    expect(applyLowConsumptionParams(params, false, runtime, operation)).toBe(params);
+    expect(resolveLowConsumptionMode(operation, true)).toBe('text-to-image');
+    expect(resolveLowConsumptionMode(operation, false)).toBe(operation);
+    expect(resolveLowConsumptionMode('inpaint', true)).toBe('inpaint');
   });
   it('关闭开关原样返回配置，官方免费门槛降低时同时遵守', () => {
     expect(applyLowConsumptionParams(params, false, runtime)).toBe(params);
@@ -42,14 +49,14 @@ describe('低消耗实际参数与原配置隔离', () => {
   });
   it('V5 额度为零或未知时拒绝，V4.5 不受 V5 额度耗尽影响', () => {
     const actual = applyLowConsumptionParams(params, true, runtime);
-    expect(() => assertLowConsumptionEstimate(actual, 'text-to-image', runtime, { ...subscription, usage: { ...subscription.usage, percent: 0 } }, 0, 1666)).toThrow('额度已用尽');
-    expect(() => assertLowConsumptionEstimate(actual, 'text-to-image', runtime, { active: true, tier: 3 }, 0, 1666)).toThrow('无法确认');
-    expect(() => assertLowConsumptionEstimate({ ...actual, model: 'nai-diffusion-4-5-full' }, 'text-to-image', runtime, { ...subscription, usage: { ...subscription.usage, percent: 0 } }, 0, 0)).not.toThrow();
+    expect(() => assertLowConsumptionEstimate(actual, 'text-to-image', runtime, { ...subscription, usage: { ...subscription.usage, percent: 0 } }, 0)).toThrow('额度已用尽');
+    expect(() => assertLowConsumptionEstimate(actual, 'text-to-image', runtime, { active: true, tier: 3 }, 0)).toThrow('无法确认');
+    expect(() => assertLowConsumptionEstimate({ ...actual, model: 'nai-diffusion-4-5-full' }, 'text-to-image', runtime, { ...subscription, usage: { ...subscription.usage, percent: 0 } }, 0)).not.toThrow();
   });
   it('官方规则快照超过 48 小时，或免费路径并非 Opus 时拒绝', () => {
     const actual = applyLowConsumptionParams(params, true, runtime);
-    expect(() => assertLowConsumptionEstimate(actual, 'text-to-image', { ...runtime, syncedAt: Date.now() - 49 * 3600000 }, subscription, 0, 1666)).toThrow('无法确认');
-    expect(() => assertLowConsumptionEstimate(actual, 'text-to-image', runtime, { active: true, tier: 2 }, 0, 1666)).toThrow('Opus');
+    expect(() => assertLowConsumptionEstimate(actual, 'text-to-image', { ...runtime, syncedAt: Date.now() - 49 * 3600000 }, subscription, 0)).toThrow('无法确认');
+    expect(() => assertLowConsumptionEstimate(actual, 'text-to-image', runtime, { active: true, tier: 2 }, 0)).toThrow('Opus');
   });
 });
 

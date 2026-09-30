@@ -1069,7 +1069,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         }
         const perTaskCost = estimateV45GenerationCost(estimateParams, true, await usageForCostEstimate(novelaiUsage, refreshUsageIfStale, estimateParams.model));
         if (lowEnabled) {
-            try { assertLowConsumptionEstimate(estimateParams, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, perTaskCost, anlasBudget.remaining); }
+            try { assertLowConsumptionEstimate(estimateParams, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, perTaskCost); }
             catch (error) { notify(error instanceof Error ? error.message : '低消耗检查失败', 'error'); return; }
         }
         const totalCost = perTaskCost * taskCount;

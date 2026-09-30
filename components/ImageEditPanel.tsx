@@ -5,6 +5,7 @@ import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageE
 import { extractMetadata, parseNovelAIMetadata } from '../services/metadataService';
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPreview } from './ImageEditPreview';
+import { useLowConsumption } from '../services/lowConsumption';
 
 export interface ImageEditRequest {
   operation: ImageEditOperation;
@@ -151,7 +152,10 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [strength, setStrength] = useState(draft.strength);
   const [noise, setNoise] = useState(draft.noise);
   const [brushSize, setBrushSize] = useState(draft.brushSize);
-  const [focused, setFocused] = useState(draft.focused);
+  const [storedFocused, setFocused] = useState(draft.focused);
+  const lowConsumption = useLowConsumption();
+  // 强制本次 Focused，保留原草稿中的普通／Focused 选择，关闭低消耗后恢复。
+  const focused = operation === 'inpaint' && lowConsumption.enabled ? true : storedFocused;
   const [minimumContextArea, setMinimumContextArea] = useState(normalizeMinimumContextArea(draft.minimumContextArea));
   const [tool, setTool] = useState<'brush' | 'eraser'>('brush');
   const [manualMaskEditing, setManualMaskEditing] = useState(false);
@@ -168,7 +172,8 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const maskEditable = !safeMode && (operation === 'inpaint' || (operation === 'outpaint' && manualMaskEditing));
   // 隐藏画布挂载即存在；只有真正载入底图（width/height 有效）且未在加载时才允许生成，
   // 否则无底图时也会点亮生成按钮，点击后才报尺寸错误。
-  const canGenerate = !isLoading && !isGenerating && state.width > 0 && state.height > 0 && Boolean(imageCanvasRef.current) && (operation === 'image-to-image' || Boolean(maskCanvasRef.current));
+  const canGenerate = !isLoading && !isGenerating && state.width > 0 && state.height > 0 && Boolean(imageCanvasRef.current) && (operation === 'image-to-image' || Boolean(maskCanvasRef.current))
+    && (!lowConsumption.enabled || operation === 'inpaint');
 
   // 每次渲染同步移动端悬浮生成栏入口，保证 ChainEditor 拿到的费用标签与预览卡一致；
   // 通过回调上报而非可变 ref，父组件才能在自己渲染时拿到最新状态。
@@ -821,6 +826,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
 
   const submit = async () => {
     if (inFlightRef.current || isGenerating) return;
+    if (lowConsumption.enabled && operation !== 'inpaint') return;
     const imageCanvas = imageCanvasRef.current;
     const maskCanvas = maskCanvasRef.current;
     // 图生图不渲染蒙版画布（maskCanvas 为 null），仅要求底图画布存在

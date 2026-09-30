@@ -687,7 +687,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     // 受限额模型（V5）在免费档生成前强制刷新真实 Opus 额度，与 ChainEditor 同源。
     const cost = estimateV45GenerationCost(params, true, await usageForCostEstimate(novelaiUsage, refreshUsageIfStale, params.model));
     if (lowEnabled) {
-      try { assertLowConsumptionEstimate(params, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, cost, anlasBudget.remaining); }
+      try { assertLowConsumptionEstimate(params, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, cost); }
       catch (error) { notify(error instanceof Error ? error.message : '低消耗检查失败', 'error'); return; }
     }
     const costLabel = formatGenerationCostLabel(cost, params.model);

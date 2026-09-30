@@ -86,8 +86,7 @@ describe('成图交付与辅助排队轮询', () => {
 
 describe('四模式普通／流式请求共用低消耗实际参数', () => {
   it.each([
-    ['text-to-image', false], ['text-to-image', true], ['image-to-image', false], ['image-to-image', true],
-    ['inpaint', false], ['inpaint', true], ['outpaint', false], ['outpaint', true],
+    ['text-to-image', false], ['text-to-image', true], ['inpaint', false], ['inpaint', true],
   ] as const)('%s（stream=%s）限制步数且不破坏草稿与编辑强度，返回历史实际参数', async (operation, stream) => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(url.includes('/low-consumption') ? { enabled: true } : { enabled: false }))));
     for (const [model, steps] of [['nai-diffusion-5-full', 23], ['nai-diffusion-4-5-full', 28]] as const) {
@@ -109,11 +108,25 @@ describe('四模式普通／流式请求共用低消耗实际参数', () => {
       if (operation === 'text-to-image') expect(sent.parameters.width * sent.parameters.height).toBeLessThanOrEqual(1048576);
       else {
         expect([sent.parameters.width, sent.parameters.height]).toEqual([832, 1216]);
-        expect(operation === 'image-to-image' ? sent.parameters.strength : sent.parameters.inpaintImg2ImgStrength).toBe(0.35);
+        expect(sent.parameters.inpaintImg2ImgStrength).toBe(0.35);
       }
       expect(original.steps).toBe(40);
       expect(original.width).toBe(1536);
       expect(original.characterReferences?.enabled).toBe(true);
+    }
+  });
+  it.each(['image-to-image', 'outpaint'] as const)('%s 开关开启时拒绝普通／流式请求，关闭后不再有原 10／20 点或步数限制', async operation => {
+    let enabled = true;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(url.includes('/low-consumption') ? { enabled } : { enabled: false }))));
+    const original = { ...params, steps: 40 };
+    const edit = { operation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 1, noise: 0.1 };
+    for (const generate of [generateImageEdit, generateImageEditStream]) await expect(generate('test-key', '1girl', '', original, edit)).rejects.toThrow('已关闭图生图和扩图');
+    expect(api.postBinaryDetailed).not.toHaveBeenCalled();
+    expect(api.postSse).not.toHaveBeenCalled();
+    enabled = false;
+    for (const generate of [generateImageEdit, generateImageEditStream]) {
+      const result = await generate('test-key', '1girl', '', original, edit);
+      expect(result.params.steps).toBe(40);
     }
   });
 });

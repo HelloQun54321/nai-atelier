@@ -6,6 +6,8 @@ import { createLabImageEditDraft } from '../services/labWorkspace';
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPanel } from './ImageEditPanel';
 import { ImageEditPreview } from './ImageEditPreview';
+const lowMode = vi.hoisted(() => ({ enabled: false, focused: false }));
+vi.mock('../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: lowMode.enabled }) }));
 
 vi.mock('./ChainEditorParams', () => ({
   ChainEditorParams: () => React.createElement('div', { 'data-testid': 'common-params' }, '公共参数'),
@@ -20,7 +22,7 @@ vi.mock('./CharacterReferenceManager', () => ({
 }));
 
 vi.mock('./ImageEditCanvas', () => ({
-  ImageEditCanvas: () => React.createElement('div', { 'data-testid': 'edit-canvas' }, '画布'),
+  ImageEditCanvas: ({ focused }: { focused: boolean }) => { lowMode.focused = focused; return React.createElement('div', { 'data-testid': 'edit-canvas' }, '画布'); },
 }));
 
 vi.mock('./CloudQueueStatus', () => ({
@@ -130,9 +132,38 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
   })), onManualMaskEditingChange, onPromptChange, onSelectImageSource };
 };
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); lowMode.enabled = false; });
 
 describe('ImageEditControls', () => {
+  it('低消耗隐藏角色参考模块和普通重绘切换，保留蒙版与免费编辑参数', () => {
+    lowMode.enabled = true;
+    renderControls('inpaint');
+    expect(screen.queryByTestId('character-reference-manager')).toBeNull();
+    expect(screen.queryByText('角色参考')).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.getByText(/低消耗仅使用 Focused 局部重绘/)).toBeTruthy();
+    expect(screen.getByRole('slider', { name: 'Strength' })).toBeTruthy();
+    expect(screen.getByTestId('edit-canvas')).toBeTruthy();
+  });
+  it('低消耗临时启用 Focused 不写回草稿，关闭后恢复普通重绘', () => {
+    const draft = createLabImageEditDraft('inpaint', 'test prompt', '', params, { focused: false });
+    const onDraftChange = vi.fn();
+    const props = { baseImage: null, previewImage: null, operation: 'inpaint' as const, draft,
+      layout: { order: ['prompt', 'baseImage', 'params', 'editSettings', 'characterReference'] as const, collapsed: {} },
+      generationCostLabel: vi.fn(() => '零点数'), apiKey: 'test-key', notify: vi.fn(), onPromptChange: vi.fn(),
+      onNegativePromptChange: vi.fn(), onPromptSource: vi.fn(), onDraftChange, onBaseImageChange: vi.fn(),
+      onCanvasChange: vi.fn(), onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', tagAssistEnabled: false };
+    lowMode.enabled = true;
+    const { rerender } = render(React.createElement(ImageEditPanel, { ...props, layout: { ...props.layout, order: [...props.layout.order] } }));
+    expect(lowMode.focused).toBe(true);
+    expect(onDraftChange).not.toHaveBeenCalled();
+    expect(draft.focused).toBe(false);
+    lowMode.enabled = false;
+    rerender(React.createElement(ImageEditPanel, { ...props, layout: { ...props.layout, order: [...props.layout.order] } }));
+    expect(lowMode.focused).toBe(false);
+    expect(screen.getByText('Focused Inpainting')).toBeTruthy();
+    expect(screen.getByTestId('character-reference-manager')).toBeTruthy();
+  });
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('在 %s 的正负面提示词中启用 Tag 辅助', operation => {
     const { onPromptChange } = renderControls(operation, false, false, true);
 
@@ -695,5 +726,4 @@ describe('ImageEditPreview', () => {
     });
   });
 });
-
 

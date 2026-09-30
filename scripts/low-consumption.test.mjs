@@ -10,20 +10,22 @@ const subscription = { active: true, tier: 3, usage: { percent: 30, isNegative: 
 const json = value => new Response(JSON.stringify(value));
 const base = { operation: 'text-to-image', model: 'nai-diffusion-5-full', steps: 23, freeMaxSteps: 28,
   width: 832, height: 1216, freeMaxArea: 1048576, referenceCount: 0, vibeCount: 0, focused: false,
-  estimatedCost: 0, remaining: 1666, runtimeHealthy: true, subscriptionKnown: true, usageLimited: true, usageExhausted: false };
+  estimatedCost: 0, runtimeHealthy: true, subscriptionKnown: true, usageLimited: true, usageExhausted: false };
 const payload = (parameters = {}, extra = {}) => ({ action: 'generate', model: 'nai-diffusion-5-full',
   parameters: { steps: 23, width: 832, height: 1216, n_samples: 1, ...parameters }, ...extra });
 const check = (body = payload(), options = {}) => enforceLowConsumptionRequest({ payload: body, authorization: 'Bearer fake-key', keyHash: 'fake-hash', req: {}, workerPort: 0,
-  runtime, loadPreferences: async () => ({ enabled: true }), readBudget: async () => ({ remaining: 1666 }), requestRemote: async () => json(subscription), ...options });
+  runtime, loadPreferences: async () => ({ enabled: true }), requestRemote: async () => json(subscription), ...options });
 
-test('四模式费用及 166 点边界：等于上限允许，超出拒绝，免费不扣保留金', () => {
-  for (const [operation, limit] of [['text-to-image', 0], ['inpaint', 0], ['image-to-image', 10], ['outpaint', 20]]) {
-    const values = { ...base, operation, focused: operation === 'inpaint', estimatedCost: limit, remaining: 166 + limit };
+test('只允许文生图／Focused 零点数请求，图生图与扩图无论费用均关闭', () => {
+  for (const operation of ['text-to-image', 'inpaint']) {
+    const values = { ...base, operation, focused: operation === 'inpaint', estimatedCost: 0 };
     assert.equal(lowConsumptionViolation(values), null);
-    assert.match(lowConsumptionViolation({ ...values, estimatedCost: limit + 1 }), /上限/);
-    if (limit) assert.match(lowConsumptionViolation({ ...values, remaining: 165 + limit }), /166/);
+    assert.match(lowConsumptionViolation({ ...values, estimatedCost: 1 }), /只允许零点数/);
   }
-  assert.equal(lowConsumptionViolation({ ...base, remaining: 0 }), null);
+  for (const operation of ['image-to-image', 'outpaint']) {
+    assert.match(lowConsumptionViolation({ ...base, operation, estimatedCost: 0 }), /已关闭/);
+    assert.match(lowConsumptionViolation({ ...base, operation, estimatedCost: 50 }), /已关闭/);
+  }
 });
 test('未知规则、费用、额度，付费参考、5 个 Vibe 和非 Focused 重绘不能放行', () => {
   for (const extra of [{ runtimeHealthy: false }, { subscriptionKnown: false }, { estimatedCost: NaN }, { usageExhausted: true },
@@ -39,19 +41,18 @@ test('网关从真实请求形态核算，而非信任客户端免费标签或�
   await assert.rejects(check(payload({ steps: 28 })), /23 步/);
   await assert.rejects(check(payload({ reference_image_multiple_cached: Array(5).fill('cached') })), /4 个/);
   await assert.rejects(check(payload({ _local_character_references: { enabled: true, slots: [{}] } })), /参考已暂停/);
-  await assert.rejects(check(payload({ n_samples: 2 })), /上限|一张/);
+  await assert.rejects(check(payload({ n_samples: 2 })), /零点数|一张/);
   await assert.rejects(check(payload(), { requestRemote: async () => json({ active: true, tier: 2 }) }), /订阅|无法确认/);
   await assert.rejects(check(payload(), { requestRemote: async () => json({ active: true, tier: 3 }) }), /无法确认/);
   await assert.rejects(check(payload(), { requestRemote: async () => { throw new Error('offline'); } }), /无法确认/);
   await assert.rejects(check(payload(), { requestRemote: async () => json({ ...subscription, usage: { percent: 0, isNegative: false } }) }), /额度已用尽/);
 });
-test('图生图按实际 Strength 收费，扩图按完整画布收费，预算未知拒绝', async () => {
-  const img = payload({ image: 'image', strength: 0.1, _local_edit_operation: 'image-to-image' }, { action: 'img2img' });
-  assert.equal(await check(img), true);
-  await assert.rejects(check(img, { readBudget: async () => ({ remaining: 167 }) }), /166/);
-  await assert.rejects(check(img, { readBudget: async () => ({ remaining: undefined }) }), /166/);
-  await assert.rejects(check(payload({ image: 'image', strength: 1 }, { action: 'img2img' })), /10 点上限/);
-  await assert.rejects(check(payload({ image: 'image', mask: 'mask', width: 2048, height: 2048, _local_edit_operation: 'outpaint' }, { action: 'infill' })), /20 点上限/);
+test('隐藏模式在订阅／生图请求前就拒绝，关闭开关则完整放行普通编辑', async () => {
+  for (const body of [payload({ image: 'image', strength: 1 }, { action: 'img2img' }),
+    payload({ image: 'image', mask: 'mask', width: 2048, height: 2048, steps: 40, _local_edit_operation: 'outpaint' }, { action: 'infill' })]) {
+    await assert.rejects(check(body, { requestRemote: () => assert.fail('不能请求订阅或生图') }), /已关闭图生图和扩图/);
+    assert.equal(await check(body, { loadPreferences: async () => ({ enabled: false }), requestRemote: () => assert.fail('普通模式不使用低消耗检查') }), false);
+  }
   const focused = payload({ image: 'image', mask: 'mask', _local_edit_operation: 'inpaint', _local_focused_inpainting: true }, { action: 'infill' });
   assert.equal(await check(focused), true);
   await assert.rejects(check({ ...focused, parameters: { ...focused.parameters, _local_focused_inpainting: false } }), /Focused/);
@@ -102,7 +103,7 @@ for (const handler of [handleGenerateRequest, handleGenerateStreamRequest]) {
     await handler(request(`concurrent-${label}`), next, '', 0, idleQueue(), { enabled: false }, success, { ...options, settleGeneration });
     assert.equal(next.statusCode, 200);
   });
-  test(`${label}：排队后费用变化，释放许可且不生成`, async () => {
+  test(`${label}：排队后零点数条件变化，释放许可且不生成`, async () => {
     let checks = 0, released = 0;
     const q = new CloudQueueCoordinator(async url => {
       if (url.endsWith('/join-queue')) return json({ position: 0, lock_token: 'permit' });
@@ -113,7 +114,7 @@ for (const handler of [handleGenerateRequest, handleGenerateStreamRequest]) {
     await handler(request(`queued-${label}`), res, '', 0, q, { enabled: true, serviceUrl: 'https://queue.invalid' }, () => assert.fail('排队后不能放行'), {
       settleGeneration, checkLowConsumption: async ({ onEnabled, forceEnabled }) => {
         onEnabled();
-        if (++checks === 2) { assert.equal(forceEnabled, true); throw Object.assign(new Error('预算不足'), { status: 400 }); }
+        if (++checks === 2) { assert.equal(forceEnabled, true); throw Object.assign(new Error('额度不足'), { status: 400 }); }
         return true;
       },
     });

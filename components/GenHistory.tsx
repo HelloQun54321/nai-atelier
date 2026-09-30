@@ -18,6 +18,7 @@ import { CloseButton, EmptyState, FavoriteButton, IconButton, PageSpinner, Toolb
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
+import { useLowConsumption } from '../services/lowConsumption';
 
 interface GenHistoryProps {
     currentUser: User;
@@ -164,6 +165,7 @@ const HistoryCard = React.memo(function HistoryCard({
 });
 
 export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, notify, onNavigateToPlayground, onRefreshInspiration }) => {
+    const lowConsumption = useLowConsumption();
     const confirmAction = useConfirmDialog();
     const imageDisplay = useMobileImageDisplayPreferences();
     const masonryColumns = useMasonryColumnCount(imageDisplay);
@@ -839,9 +841,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             params: item.params,
             baseImageUrl: item.imageUrl,
             parentHistoryId: item.id,
-            imageEditOperation: item.edit?.operation || 'image-to-image',
-            editMetadata: item.edit,
-            reuseEditMask,
+            imageEditOperation: lowConsumption.enabled ? 'inpaint' : item.edit?.operation || 'image-to-image',
+            editMetadata: !lowConsumption.enabled || item.edit?.operation === 'inpaint' ? item.edit : undefined,
+            reuseEditMask: reuseEditMask && (!lowConsumption.enabled || item.edit?.operation === 'inpaint'),
         }));
         setLightbox(null);
         onNavigateToPlayground?.();
@@ -1195,9 +1197,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                 </ToolbarButton>
                                 <ToolbarButton className="w-full" onClick={() => handleOpenImageEditor(lightbox)}>
                                     <Pencil />
-                                    编辑这张图片（清空旧蒙版）
+                                    {lowConsumption.enabled ? '局部重绘这张图片（清空旧蒙版）' : '编辑这张图片（清空旧蒙版）'}
                                 </ToolbarButton>
-                                {lightbox.edit?.maskAvailable && <ToolbarButton className="w-full" onClick={() => handleOpenImageEditor(lightbox, true)}>
+                                {lightbox.edit?.maskAvailable && (!lowConsumption.enabled || lightbox.edit.operation === 'inpaint') && <ToolbarButton className="w-full" onClick={() => handleOpenImageEditor(lightbox, true)}>
                                     <Pencil />
                                     编辑并复用原蒙版
                                 </ToolbarButton>}

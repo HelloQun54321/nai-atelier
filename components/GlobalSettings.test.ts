@@ -100,7 +100,7 @@ describe('GlobalSettings', () => {
     cleanup();
     vi.unstubAllGlobals();
   });
-  it('低消耗开关按当前 Key 保存，显示 1500 可用／166 保留和四模式费用规则', async () => {
+  it('低消耗开关按当前 Key 保存，明确两模式和隐藏付费功能，保留 Vibe 编码确认', async () => {
     sessionStorage.setItem('nai_api_key', 'settings-test-key');
     render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
     const toggle = await screen.findByRole('checkbox', { name: '低消耗模式' });
@@ -108,14 +108,30 @@ describe('GlobalSettings', () => {
     fireEvent.click(toggle);
     await waitFor(() => expect(lowMode.save).toHaveBeenCalledWith(true, 'settings-test-key'));
     await waitFor(() => expect((toggle as HTMLInputElement).checked).toBe(true));
-    expect(screen.getByText(/低消耗可用 1500 点/).textContent).toContain('不会自动重置预算或重试生成');
+    expect(screen.getByText(/生成仅走零点数路径/).textContent).toContain('不会自动重置预算或重试生成');
     expect(screen.getByText(/V5 最高 23 步/).textContent).toContain('V4／V4.5 最高 28 步');
-    expect(screen.getByText(/V5 最高 23 步/).textContent).toContain('图生图每次最多 10 点，扩图最多 20 点');
+    expect(screen.getByText(/V5 最高 23 步/).textContent).toContain('隐藏图生图、扩图、角色参考和付费尺寸放大');
+    expect(screen.getByText(/V5 最高 23 步/).textContent).toContain('手动新编码仍需费用确认');
+    expect(screen.queryByText(/低消耗可用 1500 点/)).toBeNull();
   });
   it('尚未配置 Key 时开关禁用', async () => {
     render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
     expect((await screen.findByRole('checkbox', { name: '低消耗模式' }) as HTMLInputElement).disabled).toBe(true);
     expect(lowMode.save).not.toHaveBeenCalled();
+  });
+  it('低消耗设置只展示两模式布局，隐藏角色参考和解除步数限制，关闭恢复全部控件', async () => {
+    lowMode.enabled = true;
+    const { container, rerender } = render(React.createElement(SettingsHarness, { initialSection: 'generation' }));
+    expect(container.querySelectorAll('details')).toHaveLength(2);
+    expect(screen.queryByText('生成步数锁定在免费额度内')).toBeNull();
+    expect(screen.queryByText('角色参考图与相关参数')).toBeNull();
+    expect(screen.queryByText('图生图')).toBeNull();
+    expect(screen.queryByText('扩图')).toBeNull();
+    lowMode.enabled = false;
+    rerender(React.createElement(SettingsHarness, { initialSection: 'generation' }));
+    expect(container.querySelectorAll('details')).toHaveLength(4);
+    expect(screen.getByText('生成步数锁定在免费额度内')).toBeTruthy();
+    expect(screen.getAllByText('角色参考图与相关参数').length).toBeGreaterThan(0);
   });
 
   it('打开设置并切换实验室布局折叠块时不会因失效事件对象崩溃，且默认全部收起', async () => {

@@ -5,7 +5,8 @@ import { compilePrompt, mergePromptFields } from '../services/promptUtils';
 import { generateImage, generateImageEdit, generateImageEditStream, generateImageStream } from '../services/naiService';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 import { isCloudQueueTaskActive } from '../services/cloudQueue';
-import { applyLowConsumptionParams, assertLowConsumptionEstimate, getLowConsumption, useLowConsumption } from '../services/lowConsumption';
+import { applyLowConsumptionParams, assertLowConsumptionEstimate, getLowConsumption, resolveLowConsumptionMode, useLowConsumption } from '../services/lowConsumption';
+import { isLowConsumptionModeAllowed } from '../worker/lowConsumptionPolicy.mjs';
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
 import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData, extractRawMetadataFromJsonText } from '../services/metadataService';
@@ -277,7 +278,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const sourceChainId = chain.id === 'playground' ? 'playground' : chain.id;
-    const activeGenerationMode = chain.id === 'playground' ? workspaceSession.activeMode : 'text-to-image';
+    const activeGenerationMode = chain.id === 'playground' ? resolveLowConsumptionMode(workspaceSession.activeMode, lowConsumption.enabled) : 'text-to-image';
     const canSaveActiveModeToLibrary = canSaveLabModeToLibrary(activeGenerationMode);
     const activeEditOperation = activeGenerationMode === 'text-to-image' ? null : activeGenerationMode;
     const activeEditDraft = activeEditOperation ? workspaceSession.edits[activeEditOperation] : null;
@@ -714,6 +715,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const createEditDraftFromSource = async (operation: ImageEditOperation, sourceImage: string | undefined, source: 'generated' | 'history' | 'upload' | 'inspiration', parentHistoryId?: string, sourcePrompt = finalPrompt, sourceNegativePrompt = negativePrompt, sourceParams = params, editMetadata?: ImageEditMetadata, reuseEditMask = false) => {
+        // 历史／灵感的通用编辑入口在低消耗下进入局部重绘，不覆盖隐藏模式的草稿或蒙版。
+        let lowEnabled: boolean;
+        try { lowEnabled = (await getLowConsumption(apiKey)).enabled; }
+        catch (error) { notify(error instanceof Error ? error.message : '读取低消耗设置失败', 'error'); return; }
+        if (lowEnabled && !isLowConsumptionModeAllowed(operation)) {
+            operation = 'inpaint';
+            editMetadata = undefined;
+            reuseEditMask = false;
+        }
         const draft = createLabImageEditDraft(operation, sourcePrompt, sourceNegativePrompt, sourceParams, {
             baseImageSource: source,
             parentHistoryId,
@@ -757,6 +767,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const selectGenerationMode = async (mode: GenerationMode) => {
         // 生成进行中不允许切换模式：视觉层（模式导航禁用）+ 逻辑层（此处拦截）双保险
         if (isGenerating) return;
+        if (lowConsumption.enabled && !isLowConsumptionModeAllowed(mode)) return;
         if (activeEditOperation) await flushMaskSave(activeEditOperation).catch(error => console.warn('切换编辑模式前保存蒙版失败:', error));
         // 切模式前先清空蒙版态：否则 Panel 会以「新 operation + 上一模式的 maskData」渲染，
         // loadBaseImage 的默认恢复参数把旧模式蒙版画进新模式画布并随请求发出。
@@ -1581,7 +1592,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         catch (error) { notify(error instanceof Error ? error.message : '读取低消耗设置失败', 'error'); return false; }
         const cost = estimateV45GenerationCost(requestParams, opusSubscriptionActive, await usageForCostEstimate(requestParams.model));
         if (lowEnabled) {
-            try { assertLowConsumptionEstimate(requestParams, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, cost, anlasBudget.remaining); }
+            try { assertLowConsumptionEstimate(requestParams, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, cost); }
             catch (error) { notify(error instanceof Error ? error.message : '低消耗检查失败', 'error'); return false; }
         }
         // 同步失效时按“免费”估算原本会静默直发，这里必须先警示确认。
@@ -1660,7 +1671,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             minimumContextArea: request.minimumContextArea,
         });
         if (lowEnabled) {
-            try { assertLowConsumptionEstimate(editParamsSource, request.operation, naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, editCost, anlasBudget.remaining, Boolean(request.focused && request.focusedRect)); }
+            try { assertLowConsumptionEstimate(editParamsSource, request.operation, naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, editCost, Boolean(request.focused && request.focusedRect)); }
             catch (error) { notify(error instanceof Error ? error.message : '低消耗检查失败', 'error'); return; }
         }
         if (editCost > 0 && anlasBudget.remaining <= 0) {
@@ -1830,7 +1841,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const costParams = applyLowConsumptionParams(draft.params, lowEnabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME);
         const cost = estimateV45GenerationCost(costParams, opusSubscriptionActive, await usageForCostEstimate(costParams.model));
         if (lowEnabled) {
-            try { assertLowConsumptionEstimate(costParams, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, cost, anlasBudget.remaining); }
+            try { assertLowConsumptionEstimate(costParams, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, cost); }
             catch (error) { notify(error instanceof Error ? error.message : '低消耗检查失败', 'error'); return false; }
         }
         const draftGenerationCostLabel = formatGenerationCostLabel(cost, draft.params.model);
@@ -2078,19 +2089,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         />
 
 
-                        {activeModelInfo.supportsCharacterReferences && <LabModuleSection
+                        {activeModelInfo.supportsCharacterReferences && !lowConsumption.enabled && <LabModuleSection
                             moduleId="characterReference"
                             label="角色参考"
                             order={activeLabLayout.order.indexOf('characterReference')}
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.characterReference)}
                             className={mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'}
                         >
-                            {lowConsumption.enabled ? <p className="text-xs text-gray-500 dark:text-gray-400">低消耗模式已暂停角色参考，关闭后恢复原选择。</p> : <CharacterReferenceManager
+                            <CharacterReferenceManager
                                 params={params}
                                 setParams={setParams}
                                 markChange={markChange}
                                 notify={notify}
-                            />}
+                            />
                         </LabModuleSection>}
 
                         {activeModelInfo.supportsVibes && <LabModuleSection
