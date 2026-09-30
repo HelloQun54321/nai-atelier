@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ClipboardList, Pause, Play, RotateCcw } from 'lucide-react';
 import { ToolbarButton } from './DesignSystem';
+export { collectorIsLocal } from '../services/collectorAppearance';
+import { collectorIsLocal } from '../services/collectorAppearance';
 
 export interface CollectorState {
   available: boolean; enabled: boolean; paused: boolean; session: string; stage: string;
   pending: number; saved: number; skipped: number; failed: number; error: string; detail?: string;
   failures: { id: string; name: string; error: string }[];
 }
-
-export const collectorIsLocal = (hostname: string) => ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname);
 
 export function StyleCollectorControl({ onSaved, notify }: { onSaved: () => void; notify: (message: string, type?: 'success' | 'error') => void }) {
   const [state, setState] = useState<CollectorState | null>(null);

@@ -9,16 +9,18 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 // 状态点仅在真实处理阶段轻微呼吸；等待与暂停时不运行动画计时器。
 public sealed class CollectorStatusDot : Control {
     [DllImport("user32.dll")] static extern bool SystemParametersInfo(uint action, uint parameter, ref int value, uint flags);
     readonly System.Windows.Forms.Timer animation = new System.Windows.Forms.Timer();
     readonly bool animationsAllowed;
+    public bool MotionAllowed = true;
     bool breathing;
     public bool Processing { get; private set; }
     public bool Breathing { get { return breathing; } }
-    public void SetProcessing(bool value) { Processing = value; bool next = value && animationsAllowed; if (breathing == next) return; breathing = next; if (next) animation.Start(); else animation.Stop(); Invalidate(); }
+    public void SetProcessing(bool value) { Processing = value; bool next = value && animationsAllowed && MotionAllowed; if (breathing == next) return; breathing = next; if (next) animation.Start(); else animation.Stop(); Invalidate(); }
     public CollectorStatusDot() {
         SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
         BackColor = Color.Transparent; animation.Interval = 120; animation.Tick += delegate { Invalidate(); };
@@ -35,7 +37,7 @@ public sealed class CollectorStatusDot : Control {
 // 四列固定起点，标签弱化、数字突出；长计数省略，避免挤到相邻指标。
 public sealed class CollectorMetrics : Control {
     public int Pending, Saved, Skipped, Failed;
-    public readonly Color Muted = Color.FromArgb(151, 160, 174), Success = Color.FromArgb(152, 196, 172), Failure = Color.FromArgb(222, 153, 157);
+    public Color Muted = Color.FromArgb(151, 160, 174), Success = Color.FromArgb(152, 196, 172), Failure = Color.FromArgb(222, 153, 157);
     readonly Font numberFont = new Font("Microsoft YaHei UI", 9, FontStyle.Bold);
     public CollectorMetrics() { SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true); BackColor = Color.Transparent; }
     protected override void OnPaint(PaintEventArgs e) {
@@ -83,6 +85,10 @@ public sealed class AtelierCollectorWindow : Form {
     volatile bool eof;
     bool receiving, registered, collapsed, applyingPosition, paused, latestFailed, nativeCorners;
     string latestFailure = "";
+    string themeMode = "system", motion = "full";
+    bool dark = true, fallbackDark = true;
+    bool? testSystemDark;
+    Color accent = Color.FromArgb(14, 165, 233), borderColor = Color.FromArgb(56, 63, 75), pausedColor = Color.FromArgb(199, 179, 133);
     bool positionDirty;
     DateTime positionChanged;
     uint sequence;
@@ -90,7 +96,7 @@ public sealed class AtelierCollectorWindow : Form {
     string session = "";
     int saved;
     DateTime pulse = DateTime.MinValue;
-    public AtelierCollectorWindow(bool selfTest) {
+    public AtelierCollectorWindow(bool selfTest, string initialAppearance) {
         test = selfTest; Text = "Atelier 风格串收集"; FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false; TopMost = true; StartPosition = FormStartPosition.Manual;
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
@@ -109,6 +115,7 @@ public sealed class AtelierCollectorWindow : Form {
         detailTip.SetToolTip(pause, "暂停接收新复制，已入队图片继续处理"); detailTip.SetToolTip(collapse, "折叠状态窗"); detailTip.SetToolTip(finish, "结束收集");
         detailTip.ShowAlways = true; detailTip.InitialDelay = 350; detailTip.ReshowDelay = 100; detailTip.AutoPopDelay = 10000;
         Controls.AddRange(new Control[]{ statusDot, title, phase, metrics, detail, failureHint, pause, collapse, finish });
+        ApplyAppearance(String.IsNullOrEmpty(initialAppearance) ? null : json.Deserialize<Dictionary<string, object>>(initialAppearance));
         pause.Click += delegate { receiving = false; Emit(new { type = paused ? "resume" : "pause", session = session }); pause.Enabled = false; };
         collapse.Click += delegate { collapsed = !collapsed; LayoutWindow(); SavePosition(); };
         finish.Click += delegate { Close(); };
@@ -143,7 +150,7 @@ public sealed class AtelierCollectorWindow : Form {
     protected override void OnPaint(PaintEventArgs e) {
         base.OnPaint(e); e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         using (var border = Rounded(new RectangleF(0.5f, 0.5f, Width - 1, Height - 1), 12))
-        using (var pen = new Pen(Color.FromArgb(56, 63, 75))) e.Graphics.DrawPath(pen, border);
+        using (var pen = new Pen(borderColor)) e.Graphics.DrawPath(pen, border);
         if (!collapsed) using (var footer = Rounded(new RectangleF(16, 90, 324, 24), 6))
             using (var brush = new SolidBrush(detail.BackColor)) e.Graphics.FillPath(brush, footer);
     }
@@ -154,12 +161,49 @@ public sealed class AtelierCollectorWindow : Form {
         using (var path = Rounded(new RectangleF(0, 0, width, 28), 6)) b.Region = new Region(path);
     }
     void Emit(object value) { Console.WriteLine(json.Serialize(value)); Console.Out.Flush(); }
+    static Color Mix(Color color, Color background, double weight) { return Color.FromArgb((int)(color.R * weight + background.R * (1 - weight)), (int)(color.G * weight + background.G * (1 - weight)), (int)(color.B * weight + background.B * (1 - weight))); }
+    bool ResolveDark() {
+        if (themeMode != "system") return themeMode == "dark";
+        if (test && testSystemDark.HasValue) return testSystemDark.Value;
+        try { using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")) { var light = key == null ? null : key.GetValue("AppsUseLightTheme"); if (light != null) return Convert.ToInt32(light) == 0; } } catch { }
+        return fallbackDark;
+    }
+    void ApplyAppearance(Dictionary<string, object> value) {
+        if (value != null) {
+            string mode = Str(value, "themeMode"), color = Str(value, "accentColor"), nextMotion = Str(value, "motion");
+            if (mode == "light" || mode == "dark" || mode == "system") themeMode = mode;
+            if (Regex.IsMatch(color, @"^#[0-9a-fA-F]{6}$")) accent = ColorTranslator.FromHtml(color);
+            if (nextMotion == "full" || nextMotion == "reduced" || nextMotion == "off") motion = nextMotion;
+            if (value.ContainsKey("isDark")) fallbackDark = Convert.ToBoolean(value["isDark"]);
+        }
+        dark = value != null && themeMode == "system" && value.ContainsKey("isDark") ? fallbackDark : ResolveDark();
+        BackColor = dark ? Color.FromArgb(23, 27, 36) : Color.White;
+        ForeColor = dark ? Color.FromArgb(240, 242, 248) : Color.FromArgb(23, 30, 45);
+        borderColor = dark ? Color.FromArgb(47, 54, 71) : Color.FromArgb(221, 226, 236);
+        metrics.Muted = dark ? Color.FromArgb(147, 157, 181) : Color.FromArgb(111, 122, 144);
+        metrics.Success = dark ? Color.FromArgb(152, 196, 172) : Color.FromArgb(44, 121, 86);
+        metrics.Failure = dark ? Color.FromArgb(222, 153, 157) : Color.FromArgb(175, 65, 77);
+        pausedColor = dark ? Color.FromArgb(199, 179, 133) : Color.FromArgb(145, 111, 50);
+        title.ForeColor = metrics.ForeColor = ForeColor; phase.ForeColor = metrics.Muted;
+        detail.BackColor = dark ? Color.FromArgb(27, 32, 44) : Color.FromArgb(247, 248, 252);
+        detail.ForeColor = latestFailed ? metrics.Failure : detail.Text.StartsWith("已保存：") ? metrics.Success : metrics.Muted;
+        failureHint.ForeColor = metrics.Failure;
+        foreach (var button in new Button[]{ pause, collapse, finish }) {
+            button.BackColor = BackColor; button.ForeColor = metrics.Muted;
+            button.FlatAppearance.MouseOverBackColor = Mix(accent, BackColor, dark ? 0.17 : 0.09);
+            button.FlatAppearance.MouseDownBackColor = Mix(accent, BackColor, dark ? 0.25 : 0.16);
+        }
+        finish.FlatAppearance.MouseOverBackColor = Mix(metrics.Failure, BackColor, 0.15); finish.FlatAppearance.MouseDownBackColor = Mix(metrics.Failure, BackColor, 0.24);
+        statusDot.ForeColor = paused ? pausedColor : accent;
+        statusDot.MotionAllowed = motion == "full"; statusDot.SetProcessing(statusDot.Processing);
+        metrics.Invalidate(); Invalidate(true);
+    }
     void Drag(object sender, MouseEventArgs e) { if (e.Button != MouseButtons.Left) return; ReleaseCapture(); SendMessage(Handle, 0xA1, new IntPtr(2), IntPtr.Zero); SavePosition(); }
     void LayoutWindow() {
         ClientSize = new Size(356, collapsed ? 43 : 122); phase.Visible = metrics.Visible = detail.Visible = !collapsed;
         title.Text = (paused ? "已暂停" : "收集中") + (collapsed ? " · 已保存 " + saved.ToString() : "");
         detailTip.SetToolTip(title, title.Text); failureHint.Visible = collapsed && latestFailed; detailTip.SetToolTip(failureHint, latestFailure);
-        statusDot.ForeColor = paused ? Color.FromArgb(199, 179, 133) : metrics.Success;
+        statusDot.ForeColor = paused ? pausedColor : accent;
         statusDot.SetProcessing(!paused && (phase.Text == "正在下载图片" || phase.Text == "正在解析图片" || phase.Text == "正在保存风格串"));
         collapse.Text = collapsed ? "+" : "−"; detailTip.SetToolTip(collapse, collapsed ? "展开状态窗" : "折叠状态窗"); UpdateCorners(); ClampPosition(); Invalidate();
     }
@@ -196,6 +240,7 @@ public sealed class AtelierCollectorWindow : Form {
         if (m.Msg == 0x21) { m.Result = new IntPtr(3); return; } // MA_NOACTIVATE，点击不夺走原应用焦点。
         if (m.Msg == 0x031D && receiving) { uint now = GetClipboardSequenceNumber(); if (now != sequence) { readAttempts = 0; ReadClipboard(); } }
         if (m.Msg == 0x007E) ClampPosition(); // 显示器配置改变。
+        if ((m.Msg == 0x001A || m.Msg == 0x031A) && themeMode == "system") ApplyAppearance(null); // 网页关闭后仍跟随 Windows 明暗通知。
         base.WndProc(ref m);
     }
     static string Str(Dictionary<string, object> d, string key) { return d.ContainsKey(key) ? Convert.ToString(d[key]) : ""; }
@@ -239,6 +284,7 @@ public sealed class AtelierCollectorWindow : Form {
                         latestFailed = detail.Text.StartsWith("失败：") || Str(state, "error") != ""; latestFailure = latestFailed ? detail.Text : "";
                         detail.ForeColor = latestFailed ? metrics.Failure : detail.Text.StartsWith("已保存：") ? metrics.Success : metrics.Muted;
                         detailTip.SetToolTip(detail, detail.Text);
+                        if (state.ContainsKey("appearance")) ApplyAppearance(state["appearance"] as Dictionary<string, object>);
                         LayoutWindow();
                         if (test) ReportWindow();
                     }
@@ -247,6 +293,7 @@ public sealed class AtelierCollectorWindow : Form {
                 else if (test && cmd == "snapshot") {
                     using (var bitmap = new Bitmap(Width, Height)) { DrawToBitmap(bitmap, new Rectangle(0, 0, Width, Height)); bitmap.Save(Str(d, "path"), System.Drawing.Imaging.ImageFormat.Png); }
                 }
+                else if (test && cmd == "system-theme") { testSystemDark = Convert.ToBoolean(d["dark"]); SendMessage(Handle, 0x001A, IntPtr.Zero, IntPtr.Zero); ReportWindow(); }
                 if (d.ContainsKey("id")) Emit(new { type = "ack", session = session, id = Str(d, "id") });
             } catch (Exception e) { Emit(new { type = "error", session = session, error = e.Message }); receiving = false; Close(); return; }
         }
@@ -258,7 +305,9 @@ public sealed class AtelierCollectorWindow : Form {
             topMost = (GetWindowLong(Handle, -20) & 8) != 0, foreground = GetForegroundWindow() == Handle,
             visiblePosition = area.Contains(Bounds), collapsed = collapsed, height = Height, detail = detail.Text, detailVisible = detail.Visible, detailEllipsis = detail.AutoEllipsis,
             title = title.Text, breathing = statusDot.Breathing, processing = statusDot.Processing, tooltipWhileInactive = detailTip.ShowAlways, failureHint = failureHint.Visible, failureTooltip = detailTip.GetToolTip(failureHint), rounded = nativeCorners || Region != null,
-            counters = new { pending = metrics.Pending, saved = metrics.Saved, skipped = metrics.Skipped, failed = metrics.Failed } });
+            counters = new { pending = metrics.Pending, saved = metrics.Saved, skipped = metrics.Skipped, failed = metrics.Failed },
+            appearance = new { themeMode = themeMode, dark = dark, accent = Hex(accent), background = Hex(BackColor), foreground = Hex(ForeColor), muted = Hex(metrics.Muted), failure = Hex(metrics.Failure), motion = motion } });
     }
-    [STAThread] public static void Run(bool test) { Application.EnableVisualStyles(); Application.Run(new AtelierCollectorWindow(test)); }
+    static string Hex(Color color) { return "#" + color.R.ToString("X2") + color.G.ToString("X2") + color.B.ToString("X2"); }
+    [STAThread] public static void Run(bool test, string appearance) { Application.EnableVisualStyles(); Application.Run(new AtelierCollectorWindow(test, appearance)); }
 }

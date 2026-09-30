@@ -191,3 +191,16 @@ test('native startup failures restore off; native disappearance stops monitoring
   const h = harness(); await h.manager.command('start'); h.event({ type: 'lost', error: 'window died' });
   await until(() => h.manager.run === null); assert.equal(h.manager.state().enabled, false);
 });
+test('appearance is remembered before startup and updates one active listener without resetting jobs', async () => {
+  const updates = []; let initial;
+  const h = harness({ listener: async ({ appearance }) => { initial = appearance; return { command: async () => {}, close: () => {}, update: state => updates.push(state) }; } });
+  const light = { themeMode: 'light', isDark: false, accentColor: '#8B5CF6', motion: 'off' };
+  await h.manager.command('appearance', light); assert.equal(h.manager.state().enabled, false);
+  await h.manager.command('start'); assert.deepEqual(initial, { ...light, accentColor: '#8b5cf6' });
+  const before = h.manager.state();
+  await h.manager.command('appearance', { themeMode: 'dark', isDark: true, accentColor: '#0ea5e9', motion: 'full' });
+  assert.equal(h.manager.state().session, before.session); assert.equal(h.manager.state().saved, before.saved); assert.equal(updates.at(-1).appearance.themeMode, 'dark');
+  await assert.rejects(h.manager.command('appearance', { ...light, accentColor: 'red' }), /外观设置无效/);
+  assert.equal(h.manager.state().appearance.themeMode, 'dark');
+  await h.manager.command('stop'); await h.manager.command('start'); assert.equal(initial.themeMode, 'dark'); await h.manager.command('stop');
+});

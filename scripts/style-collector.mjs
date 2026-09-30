@@ -18,8 +18,8 @@ export function collectorLocalRequest(req) {
 }
 
 /** 协议只接收已经过 Windows 本机过滤的候选链接，不建立剪贴板历史。 */
-export async function windowsCollector({ session, position, onEvent, selfTest = false }) {
-  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', fileURLToPath(new URL('./style-collector-window.ps1', import.meta.url)), ...(selfTest ? ['-SelfTest'] : [])], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+export async function windowsCollector({ session, position, onEvent, selfTest = false, appearance }) {
+  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', fileURLToPath(new URL('./style-collector-window.ps1', import.meta.url)), ...(selfTest ? ['-SelfTest'] : []), ...(appearance ? ['-AppearanceJson', JSON.stringify(appearance)] : [])], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
   const lines = createInterface({ input: child.stdout });
   let alive = true, lastPulse = Date.now(), errorText = '';
   const pending = new Map();
@@ -69,11 +69,12 @@ export class StyleCollector extends EventEmitter {
   constructor({ worker, download = downloadCollectorImage, listener = windowsCollector, platform = process.platform, proxyUrl = '', modelMappings = () => ({}) }) {
     super(); Object.assign(this, { worker, download, listener, platform, proxyUrl, modelMappings });
     this.run = null; this.control = Promise.resolve(); this.disposed = false;
+    this.appearance = { themeMode: 'system', isDark: true, accentColor: '#0ea5e9', motion: 'full' };
     this.stopped = { enabled: false, paused: false, stage: '已关闭', pending: 0, saved: 0, skipped: 0, failed: 0, failures: [], error: '', detail: '', session: '' };
   }
   state() {
     const state = this.run?.state || this.stopped;
-    return { ...state, available: this.platform === 'win32', failures: state.failures.map(({ id, name, error }) => ({ id, name, error })) };
+    return { ...state, appearance: { ...this.appearance }, available: this.platform === 'win32', failures: state.failures.map(({ id, name, error }) => ({ id, name, error })) };
   }
   publish(run) {
     if (this.run !== run) return;
@@ -82,6 +83,12 @@ export class StyleCollector extends EventEmitter {
   }
   command(action, id) {
     const operation = this.control.then(async () => {
+      if (action === 'appearance') {
+        if (!id || !['light', 'dark', 'system'].includes(id.themeMode) || typeof id.isDark !== 'boolean' || !/^#[a-f0-9]{6}$/i.test(id.accentColor || '') || !['full', 'reduced', 'off'].includes(id.motion)) throw new Error('外观设置无效');
+        this.appearance = { themeMode: id.themeMode, isDark: id.isDark, accentColor: id.accentColor.toLowerCase(), motion: id.motion };
+        if (this.run) this.publish(this.run); else this.emit('state', this.state());
+        return this.state();
+      }
       if (action === 'start') return this.start();
       if (action === 'stop') return this.stop();
       const run = this.run;
@@ -110,7 +117,7 @@ export class StyleCollector extends EventEmitter {
     try {
       const position = await this.worker('position');
       await this.worker('session', { session: run.state.session });
-      run.native = await this.listener({ session: run.state.session, position, onEvent: event => {
+      run.native = await this.listener({ session: run.state.session, position, appearance: { ...this.appearance }, onEvent: event => {
         if (this.run !== run || run.abort.signal.aborted) return;
         if (event.type === 'listening') { run.state.enabled = true; this.publish(run); }
         if (event.type === 'link') this.accept(run, event.url);

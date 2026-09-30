@@ -5,6 +5,7 @@ import { ChainList } from './components/ChainList';
 import { useConfirmDialog } from './components/ConfirmDialog';
 import { ImageActivityProvider } from './components/SmartImage';
 import { db } from './services/dbService';
+import { useCollectorAppearance } from './services/collectorAppearance';
 import { deleteLabWorkspaceSession, getLabWorkspaceSessionKey, markEditorSessionDiscarded } from './services/labWorkspace';
 import {
   applyAppearancePreferences,
@@ -71,6 +72,7 @@ const App = () => {
   const setThemeMode = (mode: ThemeMode) => setAppearancePreferences(current => ({ ...current, themeMode: mode }));
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const isDark = themeMode === 'dark' || (themeMode === 'system' && systemDark);
+  useCollectorAppearance(appearancePreferences, isDark);
   const [safeModeStartup, setSafeModeStartup] = useState(() => localStorage.getItem('nai_safe_mode_startup') !== 'false');
   // 启动偏好唯一决定启动时的安全模式状态：开关开启则每次启动必定进入安全模式，关闭则必定关闭。
   // 会话中的手动开关只影响当前会话；nai_safe_mode 键继续作为当前状态镜像供 Agent 读取，不参与启动判定。
