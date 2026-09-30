@@ -1,18 +1,25 @@
 import React, { useState, useSyncExternalStore } from 'react';
 import { cancelCloudQueueTask, CloudQueueStatus as QueueStatus, getCurrentCloudQueueStatus, isCloudQueueTaskActive, subscribeCloudQueueStatus } from '../services/cloudQueue';
+import { normalizeCloudQueueCount } from '../worker/cloudQueueNumbers.mjs';
 
 const statusLabel = (status: QueueStatus) => {
   if (status.phase === 'preparing' || status.phase === 'joining') return '正在加入公共队列…';
   if (status.phase === 'waiting') {
-    const ahead = Math.max(0, Number(status.position) || 0);
-    const queueSize = Math.max(0, Number(status.queueSize) || 0);
-    return `排队中 · 前方 ${ahead} 个任务${queueSize ? ` · 队列共 ${queueSize} 个任务` : ''}`;
+    const ahead = normalizeCloudQueueCount(status.position);
+    return ahead === null ? '排队中 · 前方任务数未知' : `排队中 · 前方 ${ahead} 个任务`;
   }
   if (status.phase === 'ready') return '轮到你了 · 即将开始';
   if (status.phase === 'generating') return '已获得队列许可 · 正在生成';
   if (status.phase === 'cancelled') return '已取消排队';
   if (status.phase === 'error') return status.error || '公共队列连接失败';
   return '生成完成';
+};
+
+const queueCountLabel = (status: QueueStatus) => {
+  if (!['waiting', 'ready', 'generating'].includes(status.phase)) return null;
+  const count = normalizeCloudQueueCount(status.queueSize);
+  const prefix = status.phase === 'waiting' ? '队列共' : '最近队列数：';
+  return count === null ? '队列数量未知' : `${prefix} ${count} 个任务`;
 };
 
 const statusTone = (status: QueueStatus) => {
@@ -38,6 +45,7 @@ const QueueStatusBody: React.FC<{ status: QueueStatus; compact?: boolean }> = ({
           {active && <span aria-hidden="true" className="queue-status-spinner h-4 w-4 shrink-0 rounded-full border-2 border-white/90 border-t-transparent" />}
           <div className="min-w-0 text-center">
             <p className="truncate text-sm font-bold leading-5">{statusLabel(status)}</p>
+            {queueCountLabel(status) && <p className="mt-0.5 text-xs leading-4 text-white/90">{queueCountLabel(status)}</p>}
             {status.cleanupError && <p className="mt-0.5 text-xs leading-4 text-white/90">{status.cleanupError}</p>}
             {status.greeting && <p className="mt-0.5 truncate text-center text-xs leading-4 text-white/75">当前使用者：{status.greeting}</p>}
           </div>

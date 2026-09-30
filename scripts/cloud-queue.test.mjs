@@ -4,6 +4,7 @@ import { createServer, request } from 'node:http';
 import { Readable, Writable } from 'node:stream';
 import { once } from 'node:events';
 import { CloudQueueCoordinator, handleGenerateRequest, handleGenerateStreamRequest } from './media-gateway.mjs';
+import { normalizeCloudQueueCount } from '../worker/cloudQueueNumbers.mjs';
 
 // 只使用模拟外部请求和注入的结算函数，不启动真实网关、不读取或改写私人数据。
 const preferences = { enabled: true, serviceUrl: 'https://queue.example', greeting: '', showGreeting: true };
@@ -40,6 +41,49 @@ const waitUntil = async predicate => {
   for (let i = 0; i < 400; i++) { if (predicate()) return; await sleep(5); }
   assert.fail('模拟任务未达到预期状态');
 };
+
+test('队列数量：保留 0，缺失和非法值保持未知', () => {
+  for (const value of [0, '0', ' 0 ']) assert.equal(normalizeCloudQueueCount(value), 0);
+  for (const value of [3, '3']) assert.equal(normalizeCloudQueueCount(value), 3);
+  for (const value of [undefined, null, '', ' ', false, true, -1, 1.5, 'NaN', Infinity, {}, [], Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(normalizeCloudQueueCount(value), null);
+  }
+});
+
+for (const [label, value, expected] of [['零', 0, 0], ['字符串零', '0', 0], ['缺失', undefined, null], ['非法', -1, null], ['正数', 3, 3]]) {
+  test(`入队立即获得许可：${label}队列数量原样归一化，不增加自己`, async () => {
+    const q = setup(async () => json({ position: 0, queue_size: value, lock_token: 'permit' }));
+    await q.join({ apiKey: 'test-key', taskId: 'count' });
+    assert.equal(q.get('count').queueSize, expected);
+    assert.equal(q.get('count').position, 0);
+  });
+}
+
+test('等待与获得许可的轮询：未知位置不冒充 0，新的 0 不继承旧数量', async () => {
+  let polls = 0;
+  const q = setup(async url => {
+    if (url.endsWith('/join-queue')) return json({ position: 2, queue_size: 3 });
+    polls++;
+    if (polls === 1) {
+      assert.equal(q.get('count').queueSize, 3);
+      return json({ position: null, queue_size: 0 });
+    }
+    assert.equal(q.get('count').queueSize, 0);
+    assert.equal(q.get('count').position, null);
+    return json({ is_my_turn: true, lock_token: 'permit', queue_size: 0 });
+  });
+  await q.join({ apiKey: 'test-key', taskId: 'count' });
+  assert.equal(q.get('count').phase, 'ready');
+  assert.equal(q.get('count').queueSize, 0);
+});
+
+test('轮询缺失数量：不沿用先前的总数', async () => {
+  const q = setup(async url => url.endsWith('/join-queue')
+    ? json({ position: 1, queue_size: 2 })
+    : json({ is_my_turn: true, lock_token: 'permit' }));
+  await q.join({ apiKey: 'test-key', taskId: 'count' });
+  assert.equal(q.get('count').queueSize, null);
+});
 
 for (const handler of handlers) {
   const label = handler === handleGenerateRequest ? 'normal' : 'stream';

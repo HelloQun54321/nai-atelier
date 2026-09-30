@@ -15,6 +15,7 @@ import { StChatu8Bridge, installSillyTavernBridgeExtension } from './st-chatu8-b
 import { ImageTaggerService } from './image-tagger.mjs';
 import { MEDIA_REMOTE_HOSTS, LAN_ACCESS_COOKIE } from '../worker/sharedWhitelist.mjs';
 import { lowConsumptionOperationViolation, lowConsumptionRuntimeHealthy, lowConsumptionViolation } from '../worker/lowConsumptionPolicy.mjs';
+import { normalizeCloudQueueCount } from '../worker/cloudQueueNumbers.mjs';
 import { PIXIV_IMAGE_HOST, PIXIV_REFERER, PixivGalleryService } from './pixiv-local.mjs';
 import { PixivWebLoginOrchestrator } from './pixiv-web-login.mjs';
 import { localBackupService, saveBackupConfig, openInExplorer } from './local-backup.mjs';
@@ -264,8 +265,8 @@ export class CloudQueueCoordinator {
       queueSignal.throwIfAborted();
       this.update(taskId, {
         phase: joined.position === 0 && lockToken ? 'ready' : 'waiting',
-        position: Number(joined.position) || 0,
-        queueSize: Number(joined.queue_size) || 1,
+        position: normalizeCloudQueueCount(joined.position),
+        queueSize: normalizeCloudQueueCount(joined.queue_size),
         cancelable: true,
       });
       if (joined.position === 0 && lockToken) return { ...common, lockToken, serviceUrl: queueUrl };
@@ -278,13 +279,13 @@ export class CloudQueueCoordinator {
         lockToken = status.lock_token || null;
         queueSignal.throwIfAborted();
         if (status.is_my_turn && status.lock_token) {
-          this.update(taskId, { phase: 'ready', position: 0, queueSize: Number(status.queue_size) || 1, cancelable: true });
+          this.update(taskId, { phase: 'ready', position: 0, queueSize: normalizeCloudQueueCount(status.queue_size), cancelable: true });
           return { ...common, lockToken: status.lock_token, serviceUrl: queueUrl };
         }
         this.update(taskId, {
           phase: 'waiting',
-          position: Number(status.position) || 0,
-          queueSize: Number(status.queue_size) || 1,
+          position: normalizeCloudQueueCount(status.position),
+          queueSize: normalizeCloudQueueCount(status.queue_size),
           greeting: showGreeting ? String(status.current_greeting || '').slice(0, 15) : null,
           cancelable: true,
         });

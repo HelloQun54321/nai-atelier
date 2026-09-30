@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.1.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.1.2-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -472,6 +472,7 @@ flowchart LR
 - 队列服务只接收 Key 的 SHA-256 指纹、随机客户端标识、任务标识和可选个性语，不接收原始 Key、Prompt、参考图、Vibe 编码或生成结果。
 - 项目不内置任何公共队列服务器地址；如需多人拼车排队，请在全局设置中填入你自建或车队共用的 st-chatu8 兼容队列服务地址。
 - 排队位置、当前使用者个性语和取消入口会显示在全局状态条；获得许可后自动开始生成。
+- 排队时分别显示前方任务数与服务器返回的队列总数，0 也会显示；缺失或非法数量显示未知，不自行加减当前任务。数量统计的是任务，是否包含正在生成的任务由队列服务的计数规则决定。获得许可后显示最近一次队列数；现有协议尚未确认生成前的只读数量查询接口。
 - 正常生成结束后排队提示立即退场并恢复生成按钮；错误或退出／释放警告单独短暂显示，不占据下一次生成入口。辅助状态轮询不会延迟成图交付。
 - 设置保存在电脑 `local-data`，因此电脑和通过局域网连接的手机统一生效。
 - 公共队列不可用时停止本次请求并明确报错，绝不静默绕过队列引发并发冲突。
