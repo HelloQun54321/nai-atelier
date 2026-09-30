@@ -5,7 +5,7 @@ import { isStChatu8ExportableChain } from '../worker/stChatu8Policy.mjs';
 
 const path = '/st-chatu8/export-selection';
 const readIds = (value: { chainIds?: unknown }): Set<string> => {
-  if (!Array.isArray(value?.chainIds) || value.chainIds.some(id => typeof id !== 'string')) throw new Error('酒馆同步范围响应无效');
+  if (!Array.isArray(value?.chainIds) || value.chainIds.some(id => typeof id !== 'string')) throw new Error('智慧姬同步范围响应无效');
   return new Set(value.chainIds);
 };
 
@@ -33,7 +33,7 @@ export function useStChatu8Selection(enabled: boolean, chains: PromptChain[], no
     } catch (error) {
       if (ticket !== revision.current) return;
       if (edit) setSelecting(false);
-      notifyRef.current(error instanceof Error ? error.message : '读取酒馆同步范围失败', 'error');
+      notifyRef.current(error instanceof Error ? error.message : '读取智慧姬同步范围失败', 'error');
     } finally { if (ticket === revision.current) setBusy(false); }
   }, []);
 
@@ -69,9 +69,9 @@ export function useStChatu8Selection(enabled: boolean, chains: PromptChain[], no
       const ids = readIds(await api.post(path, { chainIds: [...selected] }));
       if (ticket !== revision.current) return;
       setSaved(ids); setDraft(ids); setSelecting(false);
-      notifyRef.current(`已保存 ${ids.size} 条同步范围，返回酒馆同步即可生效`, 'success');
+      notifyRef.current(`已保存 ${ids.size} 条同步范围，连接器下次同步即可生效`, 'success');
     } catch (error) {
-      if (ticket === revision.current) notifyRef.current(error instanceof Error ? error.message : '保存酒馆同步范围失败', 'error');
+      if (ticket === revision.current) notifyRef.current(error instanceof Error ? error.message : '保存智慧姬同步范围失败', 'error');
     } finally { if (ticket === revision.current) setBusy(false); }
   };
   return { selecting, busy, selected, savedCount, begin, cancel, toggle, setFiltered, save };

@@ -2998,6 +2998,23 @@ const serveDistFile = async (req, res, url) => {
       });
       return res.end();
     }
+    if (url.pathname === '/api/st-chatu8/preferences') {
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      if (!['GET', 'POST'].includes(req.method)) return sendJson(res, 405, { error: 'Method not allowed' });
+      try {
+        const preferences = req.method === 'POST'
+          ? await stChatu8Bridge.setPreferences(async () => {
+            const body = JSON.parse((await readRequestBody(req, 16 * 1024)).toString('utf8') || '{}');
+            return requestWorkerJson('/api/st-chatu8/preferences', req, workerPort, { method: 'POST', body });
+          })
+          : await stChatu8Bridge.refreshPreferences(() => requestWorkerJson('/api/st-chatu8/preferences', req, workerPort));
+        sendJson(res, 200, preferences);
+        if (req.method === 'POST' && preferences.enabled) stChatu8Bridge.startHistorySync();
+        return;
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 400, { error: error.message || '智慧姬同步设置失败' });
+      }
+    }
     if (url.pathname.startsWith('/api/integrations/st-chatu8/')) {
       const isLocalRequest = isLoopbackIp(req.socket.remoteAddress);
       const isHistoryImage = /^\/api\/integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image$/i.test(url.pathname);
@@ -3031,6 +3048,7 @@ const serveDistFile = async (req, res, url) => {
       if (!isLocalRequest) return sendJson(res, 403, { error: 'st-chatu8 桥接只允许本机 SillyTavern 使用' });
       try {
         if (url.pathname === '/api/integrations/st-chatu8/status' && req.method === 'GET') {
+          await stChatu8Bridge.refreshPreferences();
           return sendBridgeJson(req, res, 200, stChatu8Bridge.status());
         }
         if (url.pathname === '/api/integrations/st-chatu8/extension/files' && req.method === 'GET') {

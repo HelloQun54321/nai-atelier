@@ -1298,7 +1298,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <DesktopLauncherManager notify={notify} />
               </div>
 
-              {/* SillyTavern 互通扩展 */}
+              {/* 智慧姬同步 */}
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
                 <SillyTavernBridgeExport notify={notify} />
               </div>

@@ -9,8 +9,25 @@ import { json, error, parseStoredJson, type RouteContext } from './types';
 import { localHistoryEnabled, ensureLocalHistorySchema } from './historyRoutes';
 import { isStChatu8ExportableChain } from '../stChatu8Policy.mjs';
 
+const preferenceKey = 'st_chatu8_preferences_v1';
+const isEnabled = async (db: RouteContext['db']) => {
+  const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(preferenceKey).first<{ value: string }>();
+  return parseStoredJson(row?.value, {})?.enabled === true;
+};
+
 export async function handleStBridgeRoute(ctx: RouteContext): Promise<Response | null> {
   const { request, env, db, path, method, currentUser } = ctx;
+
+  if (path === '/api/st-chatu8/preferences') {
+    if (currentUser.role === 'guest') return error('Forbidden', 403);
+    if (method === 'GET') return json({ enabled: await isEnabled(db) });
+    if (method !== 'POST') return error('Method not allowed', 405);
+    const body = await request.json().catch(() => null) as { enabled?: unknown } | null;
+    if (typeof body?.enabled !== 'boolean') return error('智慧姬同步开关无效', 400);
+    await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .bind(preferenceKey, JSON.stringify({ enabled: body.enabled })).run();
+    return json({ enabled: body.enabled });
+  }
 
   // 使用既有设置表保存发送范围；初次为空，不沿用过去的全量关联。
   if (path === '/api/st-chatu8/export-selection') {
@@ -24,6 +41,7 @@ export async function handleStBridgeRoute(ctx: RouteContext): Promise<Response |
       return json({ chainIds: Array.isArray(value) ? [...new Set(value.filter(id => typeof id === 'string' && available.has(id)))] : [] });
     }
     if (method !== 'POST') return error('Method not allowed', 405);
+    if (!await isEnabled(db)) return error('请先在设置中开启智慧姬同步', 409);
     const body = await request.json() as { chainIds?: unknown };
     if (!Array.isArray(body?.chainIds) || body.chainIds.some(id => typeof id !== 'string' || !id || id.length > 200)) return error('同步范围无效', 400);
     const chainIds = [...new Set(body.chainIds.filter(id => available.has(id)))];
@@ -33,6 +51,8 @@ export async function handleStBridgeRoute(ctx: RouteContext): Promise<Response |
   }
 
   if (path === '/api/integrations/st-chatu8/history/known' && method === 'POST') {
+    if (currentUser.role === 'guest') return error('Forbidden', 403);
+    if (!await isEnabled(db)) return error('智慧姬同步已关闭', 409);
     if (!localHistoryEnabled(env)) return error('Local history is disabled', 404);
     await ensureLocalHistorySchema(db);
     const body = await request.json() as any;
@@ -48,6 +68,8 @@ export async function handleStBridgeRoute(ctx: RouteContext): Promise<Response |
   }
 
   if (path === '/api/integrations/st-chatu8/history/import' && method === 'POST') {
+    if (currentUser.role === 'guest') return error('Forbidden', 403);
+    if (!await isEnabled(db)) return error('智慧姬同步已关闭', 409);
     if (!localHistoryEnabled(env)) return error('Local history is disabled', 404);
     await ensureLocalHistorySchema(db);
     const body = await request.json() as any;

@@ -16,10 +16,10 @@ const chains = [
 beforeEach(() => { get.mockReset(); post.mockReset(); get.mockResolvedValue({ chainIds: ['a'] }); });
 afterEach(cleanup);
 
-describe('酒馆发送范围草稿与持久化', () => {
-  it('仅允许 V4.5 Full / Curated 与既有默认条目；V5、V4、未知模型不可勾选', () => {
-    for (const model of ['nai-diffusion-4-5-full', 'nai-diffusion-4-5-curated', 'nai-diffusion-4-5-full-inpainting', '']) expect(isStChatu8ExportableChain({ type: 'style', params: { model } })).toBe(true);
-    for (const model of ['nai-diffusion-5-full', 'nai-diffusion-5-curated', 'nai-diffusion-4-full', 'nai-diffusion-6-full', 'nai-diffusion-4-50-full']) expect(isStChatu8ExportableChain({ type: 'style', params: { model } })).toBe(false);
+describe('智慧姬发送范围草稿与持久化', () => {
+  it('允许 V4.5 / V5 Full / Curated 与旧默认条目；V4、未知模型不可勾选', () => {
+    for (const model of ['nai-diffusion-4-5-full', 'nai-diffusion-4-5-curated', 'nai-diffusion-4-5-full-inpainting', 'nai-diffusion-5-full', 'nai-diffusion-5-curated', 'nai-diffusion-5-full-inpainting', '']) expect(isStChatu8ExportableChain({ type: 'style', params: { model } })).toBe(true);
+    for (const model of ['nai-diffusion-4-full', 'nai-diffusion-6-full', 'nai-diffusion-4-50-full']) expect(isStChatu8ExportableChain({ type: 'style', params: { model } })).toBe(false);
   });
   it('角色页或游客不读取；每次进入选择重新读取最新范围', async () => {
     const view = renderHook(() => useStChatu8Selection(false, chains, vi.fn()));
@@ -37,7 +37,7 @@ describe('酒馆发送范围草稿与持久化', () => {
     act(() => result.current.begin()); await waitFor(() => expect(result.current.selected.has('a')).toBe(true));
     act(() => result.current.setFiltered(['b', 'legacy', 'character', 'v5', 'v4'], true));
     act(() => result.current.setFiltered(['b'], false));
-    expect([...result.current.selected]).toEqual(['a', 'legacy']);
+    expect([...result.current.selected]).toEqual(['a', 'legacy', 'v5']);
     act(() => result.current.cancel());
     expect(post).not.toHaveBeenCalled(); expect(result.current.selecting).toBe(false); expect(result.current.savedCount).toBe(1);
   });
@@ -79,11 +79,11 @@ describe('酒馆发送范围草稿与持久化', () => {
     await act(async () => { finish({ chainIds: ['legacy'] }); });
     expect([...result.current.selected]).toEqual(['b']);
   });
-  it('已选风格串改成 V5 后从待发送范围排除，不改动原条目的模型', async () => {
+  it('已选风格串改成 V4 后从待发送范围排除，不改动原条目的模型', async () => {
     const { result, rerender } = renderHook(({ items }) => useStChatu8Selection(true, items, vi.fn()), { initialProps: { items: chains } });
     await waitFor(() => expect(result.current.savedCount).toBe(1));
     act(() => result.current.begin()); await waitFor(() => expect(result.current.busy).toBe(false));
-    rerender({ items: chains.map(chain => chain.id === 'a' ? { ...chain, params: { ...chain.params, model: 'nai-diffusion-5-full' } } : chain) });
+    rerender({ items: chains.map(chain => chain.id === 'a' ? { ...chain, params: { ...chain.params, model: 'nai-diffusion-4-full' } } : chain) });
     expect(result.current.savedCount).toBe(0); expect(result.current.selected.size).toBe(0);
     post.mockResolvedValueOnce({ chainIds: [] }); await act(async () => { await result.current.save(); });
     expect(post).toHaveBeenLastCalledWith('/st-chatu8/export-selection', { chainIds: [] });

@@ -21,10 +21,12 @@ const artistFixture = (initial = [], selected = []) => {
   const chains = structuredClone(initial);
   const calls = [];
   const selection = { chainIds: selected };
+  const preferences = { enabled: true };
   let nextId = 0;
   const bridge = new StChatu8Bridge({
     requestWorkerJson: async (path, options = {}) => {
       calls.push({ path, ...structuredClone(options) });
+      if (path === '/api/st-chatu8/preferences') return structuredClone(preferences);
       if (path === '/api/st-chatu8/export-selection') return structuredClone(selection);
       if (path === '/api/chains' && !options.method) return structuredClone(chains);
       if (path === '/api/chains' && options.method === 'POST') {
@@ -46,9 +48,10 @@ const artistFixture = (initial = [], selected = []) => {
     },
     requestWorkerBuffer: async () => ({ status: 404, buffer: Buffer.alloc(0) }),
   });
+  bridge.applyPreferences({ enabled: true });
   bridge.saveState = async () => {};
   const local = (id, name = id, model = 'nai-diffusion-4-5-full') => ({ id, name, type: 'style', basePrompt: `artist:${id}`, negativePrompt: '', modules: [], params: { model }, previewImage: '', createdAt: 1, updatedAt: 1 });
-  return { bridge, chains, calls, selection, local };
+  return { bridge, chains, calls, selection, preferences, local };
 };
 
 test('outbound defaults to empty despite legacy full-library links; inbound still imports all', async () => {
@@ -61,13 +64,13 @@ test('outbound defaults to empty despite legacy full-library links; inbound stil
   assert.equal(f.calls.some(call => call.method === 'DELETE'), false);
 });
 
-test('only selected V4.5 styles export, including Curated; V5 and other types cannot bypass server checks', async () => {
+test('selected V4.5 and V5 styles export, including Curated; V4 and other types remain excluded', async () => {
   const f = artistFixture();
   f.chains.push(f.local('chosen'), f.local('curated', 'Curated', 'nai-diffusion-4-5-curated'), f.local('hidden'), f.local('v5', 'V5', 'nai-diffusion-5-full'), f.local('v4', 'V4', 'nai-diffusion-4-full'), { ...f.local('character'), type: 'character' });
   const result = await f.bridge.syncArtists([], ['chosen', 'curated', 'v5', 'v4', 'character', 'deleted']);
-  assert.deepEqual(result.map(item => item.externalId), ['npm:chosen', 'npm:curated']);
+  assert.deepEqual(result.map(item => item.externalId), ['npm:chosen', 'npm:curated', 'npm:v5']);
   assert.equal(f.bridge.state.artistLinks['npm:hidden'], undefined);
-  assert.equal(f.bridge.state.artistLinks['npm:v5'], undefined);
+  assert.equal(f.bridge.state.artistLinks['npm:v5'].chainId, 'v5');
   assert.equal(f.chains.find(item => item.id === 'v5').params.model, 'nai-diffusion-5-full');
   assert.deepEqual(await f.bridge.syncArtists([], []), []);
 });
@@ -132,6 +135,57 @@ test('renames retain stable identity and st-chatu8 authority; concurrent pages d
   assert.equal(next.artistSync.updated, 1); assert.deepEqual(next.artists, []);
 });
 
+test('disabled bridge ignores stale connector payloads and skips history and Vibe file reads', async () => {
+  const f = artistFixture(); f.preferences.enabled = false;
+  f.chains.push(f.local('existing')); f.selection.chainIds = ['existing'];
+  f.bridge.state.artistLinks['npm:existing'] = { chainId: 'existing' };
+  const previous = structuredClone(f.bridge.state); let fileReads = 0;
+  f.bridge.readStSettings = async () => { fileReads++; return {}; };
+  f.bridge.requestWorkerBuffer = async () => { fileReads++; return {}; };
+  const result = await f.bridge.sync({ artists: [{ externalId: 'st:unwanted', name: '不要导入', fixedPrompt: 'prompt' }] });
+  assert.equal(result.enabled, false); assert.deepEqual(result.artists, []);
+  await f.bridge.syncHistory(); await assert.rejects(f.bridge.readVibeFile('any'), { code: 'SYNC_DISABLED' });
+  assert.equal(fileReads, 0); assert.deepEqual(f.bridge.state, previous);
+  assert.equal(f.calls.every(call => call.path === '/api/st-chatu8/preferences'), true);
+  f.preferences.enabled = true;
+  assert.equal((await f.bridge.sync()).enabled, true);
+  assert.deepEqual(f.selection.chainIds, ['existing']); assert.equal(f.chains.length, 1);
+});
+
+test('closing during a read stops subsequent mutations, and reopening cannot revive the old task', async () => {
+  const f = artistFixture(); let release; let started;
+  const ready = new Promise(resolve => { started = resolve; });
+  const request = f.bridge.requestWorkerJson;
+  f.bridge.requestWorkerJson = async (path, options) => {
+    if (path === '/api/chains' && !options?.method) {
+      started(); return new Promise(resolve => { release = resolve; });
+    }
+    return request(path, options);
+  };
+  const pending = f.bridge.sync({ artists: [{ externalId: 'st:late', name: '迟到资料', fixedPrompt: 'style' }] });
+  await ready;
+  const queued = f.bridge.sync({ artists: [{ externalId: 'st:queued', name: '旧排队资料', fixedPrompt: 'style' }] });
+  await f.bridge.setPreferences(async () => ({ enabled: false }));
+  await f.bridge.setPreferences(async () => ({ enabled: true }));
+  release([]);
+  assert.equal((await pending).enabled, false);
+  assert.equal((await queued).enabled, false);
+  assert.equal(f.chains.length, 0); assert.equal(f.calls.some(call => call.method), false);
+});
+
+test('late preference reads cannot reopen a closed bridge; unknown settings fail closed', async () => {
+  const f = artistFixture(); let finish;
+  const oldRead = f.bridge.refreshPreferences(() => new Promise(resolve => { finish = resolve; }));
+  await f.bridge.setPreferences(async () => ({ enabled: false }));
+  finish({ enabled: true }); await oldRead;
+  assert.equal(f.bridge.status().enabled, false);
+  f.bridge.applyPreferences({ enabled: true });
+  await assert.rejects(f.bridge.refreshPreferences(async () => { throw Object.assign(new Error('Forbidden'), { status: 403 }); }), /Forbidden/);
+  assert.equal(f.bridge.status().enabled, true, '被拒绝的游客读取不能关闭正在运行的同步');
+  await assert.rejects(f.bridge.refreshPreferences(async () => ({})), /设置响应无效/);
+  assert.equal(f.bridge.status().enabled, false);
+});
+
 const extensionFixture = async () => {
   const st = { yushe: {}, configImageStorage: {} };
   const extensionSettings = { 'st-chatu8': st };
@@ -165,10 +219,36 @@ test('new native preset IDs are stable across pages while existing IDs remain co
 
 test('disabling auto sync suppresses focus and startup triggers but allows explicit sync', async () => {
   const f = await extensionFixture(); let requests = 0;
-  f.setFetch(async () => { requests++; return new Response(JSON.stringify({ artists: [], vibes: [], groups: [], status: {} }), { headers: { 'Content-Type': 'application/json' } }); });
+  f.setFetch(async (url) => { if (url.endsWith('/sync')) requests++; return new Response(JSON.stringify({ enabled: true, artists: [], vibes: [], groups: [], status: {} }), { headers: { 'Content-Type': 'application/json' } }); });
   f.extension.settings().autoSync = false; await f.start(); f.focus(); f.startup();
   assert.equal(requests, 0);
   await f.extension.syncNow(); assert.equal(requests, 1);
+});
+
+test('extension checks the Atelier switch before collecting presets or Vibe files', async () => {
+  const f = await extensionFixture(); const calls = [];
+  f.st.yushe['未同步预设'] = { fixedPrompt: 'keep', pluginOption: 'preserve' };
+  const original = f.st.yushe['未同步预设'];
+  f.setFetch(async url => {
+    calls.push(url); return new Response(JSON.stringify({ enabled: false }), { headers: { 'Content-Type': 'application/json' } });
+  });
+  await f.extension.syncNow();
+  assert.equal(calls.length, 1); assert.equal(calls[0].endsWith('/status'), true);
+  assert.equal(f.st.yushe['未同步预设'], original);
+  assert.deepEqual(Object.keys(f.extension.settings().artistIds), []);
+  assert.equal(f.extension.settings().lastSyncAt, 0);
+});
+
+test('extension does not apply or acknowledge a response after the bridge is switched off', async () => {
+  const f = await extensionFixture(); const calls = [];
+  f.setFetch(async url => {
+    calls.push(url);
+    const body = url.endsWith('/status') ? { enabled: true } : { enabled: false, artists: [{ externalId: 'npm:late', name: '迟到预设', fixedPrompt: 'late' }] };
+    return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
+  });
+  await f.extension.syncNow();
+  assert.equal(calls.length, 2); assert.deepEqual(Object.keys(f.st.yushe), []);
+  assert.equal(f.extension.settings().lastSyncAt, 0);
 });
 
 test('extension leaves identical presets untouched and retains extra st-chatu8 fields', async () => {
@@ -216,6 +296,7 @@ test('unchanged Vibe groups skip worker writes while real strength changes updat
     if (path === '/api/vibe-groups/group' && options.method === 'PUT') { writes++; Object.assign(groups[0], options.body); return { success: true }; }
     throw new Error('Unexpected synthetic group request');
   }, requestWorkerBuffer: async () => ({ status: 404, buffer: Buffer.alloc(0) }) });
+  bridge.applyPreferences({ enabled: true });
   bridge.saveState = async () => {};
   const group = { externalId: 'st-group:one', name: '组合', normalizeStrengths: true, vibes: [{ sourceHash, strength: 0.6 }] };
   await bridge.syncVibes([], [group], [sourceHash]); assert.equal(writes, 1);
@@ -267,6 +348,7 @@ test('known external history rows are not imported again', async () => {
   const bridge = new StChatu8Bridge({
     projectRoot: root,
     requestWorkerJson: async (path, options) => {
+      if (path === '/api/st-chatu8/preferences') return { enabled: true };
       if (path.endsWith('/known')) {
         knownChecks++;
         return { externalIds: options.body.externalIds };
@@ -277,6 +359,7 @@ test('known external history rows are not imported again', async () => {
     requestWorkerBuffer: async () => ({ status: 404, buffer: Buffer.alloc(0) }),
   });
   bridge.root = root;
+  bridge.applyPreferences({ enabled: true });
   bridge.saveState = async () => {};
   await bridge.syncHistory();
   assert.equal(imports, 0);
@@ -310,6 +393,7 @@ test('st-chatu8 remains authoritative for linked artists without creating duplic
     },
     requestWorkerBuffer: async () => ({ status: 404, buffer: Buffer.alloc(0) }),
   });
+  bridge.applyPreferences({ enabled: true });
   bridge.saveState = async () => {};
   await bridge.syncArtists([{ externalId: 'st:one', name: '画风 A', fixedPrompt: 'first', updatedAt: 1 }]);
   assert.equal(chains[0].params?.width, 832);
@@ -344,6 +428,7 @@ test('artist preview is retained and an unchanged preview is not uploaded on eve
     requestWorkerBuffer: async () => ({ status: 404, buffer: Buffer.alloc(0) }),
   });
   bridge.readStPreviewData = async () => 'data:image/png;base64,aW1hZ2U=';
+  bridge.applyPreferences({ enabled: true });
   bridge.saveState = async () => {};
   const artist = { externalId: 'st:cover', name: '带封面的画风', fixedPrompt: 'style', previewPath: '/user/images/cover.png', updatedAt: 1 };
   await bridge.syncArtists([artist]);
@@ -373,6 +458,7 @@ test('an st-chatu8 preset without a preview never clears an existing project cov
     },
     requestWorkerBuffer: async () => ({ status: 404, buffer: Buffer.alloc(0) }),
   });
+  bridge.applyPreferences({ enabled: true });
   bridge.saveState = async () => {};
   await bridge.syncArtists([{ externalId: 'st:no-cover', name: '本地画风', fixedPrompt: 'new', previewPath: '', updatedAt: 2 }]);
   assert.equal(chains[0].previewImage, '/api/assets/covers/original.png');
@@ -408,6 +494,7 @@ test('missing st-chatu8 preview path does not crash with ENOENT and preserves ex
     requestWorkerBuffer: async () => ({ status: 404, buffer: Buffer.alloc(0) }),
   });
   bridge.root = 'D:\\SillyTavern';
+  bridge.applyPreferences({ enabled: true });
   bridge.saveState = async () => {};
 
   // Direct read of a non-existent file returns null without throwing ENOENT
@@ -465,7 +552,7 @@ test('installSillyTavernBridgeExtension 正常安装扩展、注入服务地址�
 
     // 验证文件存在且正确注入自定义服务地址
     const installedManifest = JSON.parse(await readFile(join(result.targetPath, 'manifest.json'), 'utf8'));
-    assert.equal(installedManifest.display_name, 'NAI Atelier 连接器');
+    assert.equal(installedManifest.display_name, '智慧姬同步');
     const projectVersion = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
     assert.equal(installedManifest.version, projectVersion);
     assert.equal(installedManifest.js, `index.js?v=${projectVersion}`);

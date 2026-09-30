@@ -492,12 +492,21 @@ async function syncNow({ quiet = false } = {}) {
     return;
   }
   syncing = true;
-  if (!quiet) setStatus('正在同步画师串、Vibe 与历史索引…', 'working');
+  if (!quiet) setStatus('智慧姬同步：正在检查开关…', 'working');
   try {
     const bridgeSettings = settings();
+    const baseUrl = bridgeSettings.baseUrl.replace(/\/$/, '');
+    const statusResponse = await fetch(`${baseUrl}/api/integrations/st-chatu8/status`, { cache: 'no-store' });
+    const status = await statusResponse.json().catch(() => ({}));
+    if (!statusResponse.ok) throw new Error(status.error || `连接器返回 ${statusResponse.status}`);
+    if (status.enabled !== true) {
+      setStatus('智慧姬同步已关闭，请在 Atelier 设置中开启。', 'idle');
+      return;
+    }
+    if (!quiet) setStatus('正在同步风格串、Vibe 与历史索引…', 'working');
     const artists = await collectArtists(bridgeSettings);
     const vibeData = await readStoredVibes(bridgeSettings);
-    const response = await fetch(`${bridgeSettings.baseUrl.replace(/\/$/, '')}/api/integrations/st-chatu8/sync`, {
+    const response = await fetch(`${baseUrl}/api/integrations/st-chatu8/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -509,6 +518,10 @@ async function syncNow({ quiet = false } = {}) {
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || `连接器返回 ${response.status}`);
+    if (result.enabled !== true) {
+      setStatus('智慧姬同步已关闭，本次同步已停止。', 'idle');
+      return;
+    }
     const appliedArtists = await applyArtists(result.artists || []);
     await cleanupBridgeVibeDuplicates(vibeData.bridgeDuplicates || []);
     for (const document of vibeData.documents) {
@@ -542,7 +555,7 @@ const renderSettings = () => {
   const panel = document.createElement('div');
   panel.className = 'npm-bridge-panel';
   panel.innerHTML = `
-    <h3><i class="fa-solid fa-link"></i> NAI Atelier 连接器</h3>
+    <h3><i class="fa-solid fa-link"></i> 智慧姬同步</h3>
     <div class="npm-bridge-row">
       <label class="npm-bridge-field-label">服务地址 (Base URL)</label>
       <input type="text" class="text_pole npm-bridge-base-url" placeholder="${DEFAULT_URL}" value="${escapeHtml(currentSettings.baseUrl || DEFAULT_URL)}">
@@ -551,7 +564,7 @@ const renderSettings = () => {
       <button type="button" class="menu_button npm-bridge-sync"><i class="fa-solid fa-rotate"></i> 立即同步</button>
       <label class="checkbox_label"><input type="checkbox" class="npm-bridge-auto"> 自动同步</label>
     </div>
-    <div class="npm-bridge-status">等待首次同步。</div>
+    <div class="npm-bridge-status">请先在 Atelier 设置中开启「智慧姬同步」。</div>
   `;
   container.appendChild(panel);
 

@@ -277,6 +277,10 @@ export class StChatu8Bridge {
     this.writeQueue = Promise.resolve();
     this.historySyncPromise = null;
     this.syncQueue = Promise.resolve();
+    this.enabled = false;
+    this.generation = 0;
+    this.preferenceRevision = 0;
+    this.preferenceQueue = Promise.resolve();
   }
 
   async init() {
@@ -284,15 +288,59 @@ export class StChatu8Bridge {
     try { this.state = { ...defaultState(), ...JSON.parse(await readFile(STATE_FILE, 'utf8')) }; } catch { /* First run. */ }
   }
 
+  applyPreferences(preferences) {
+    if (typeof preferences?.enabled !== 'boolean') throw new Error('智慧姬同步设置响应无效');
+    this.preferenceRevision++;
+    if (this.enabled !== preferences.enabled) this.generation++;
+    this.enabled = preferences.enabled;
+    return { enabled: this.enabled };
+  }
+
+  async refreshPreferences(request = () => this.requestWorkerJson('/api/st-chatu8/preferences')) {
+    const ticket = ++this.preferenceRevision;
+    try {
+      const preferences = await request();
+      if (ticket === this.preferenceRevision) this.applyPreferences(preferences);
+      return { enabled: this.enabled };
+    } catch (error) {
+      if (ticket === this.preferenceRevision && ![401, 403].includes(error.status)) this.applyPreferences({ enabled: false });
+      throw error;
+    }
+  }
+
+  setPreferences(request) {
+    // 先完成持久化，再让运行中的任务感知关闭；多个页面的设置写入串行。
+    const pending = this.preferenceQueue.catch(() => {}).then(async () => {
+      this.preferenceRevision++;
+      return this.applyPreferences(await request());
+    });
+    this.preferenceQueue = pending;
+    return pending;
+  }
+
+  assertEnabled(generation = this.generation) {
+    if (!this.enabled || generation !== this.generation) {
+      throw Object.assign(new Error('智慧姬同步已关闭，请在 Atelier 设置中开启'), { status: 409, code: 'SYNC_DISABLED' });
+    }
+  }
+
+  async requestSyncJson(generation, path, options) {
+    this.assertEnabled(generation);
+    const result = await this.requestWorkerJson(path, options);
+    this.assertEnabled(generation);
+    return result;
+  }
+
   startHistorySync() {
     if (!this.root || this.historySyncPromise) return;
     this.historySyncPromise = this.syncHistory().catch(error => {
-      console.error('[st-chatu8 bridge] 历史同步失败:', error.message);
+      if (error.code !== 'SYNC_DISABLED') console.error('[st-chatu8 bridge] 历史同步失败:', error.message);
     }).finally(() => { this.historySyncPromise = null; });
   }
 
   status() {
     return {
+      enabled: this.enabled,
       connected: Boolean(this.root),
       sillyTavernRoot: this.root,
       linkedArtists: Object.keys(this.state.artistLinks || {}).length,
@@ -347,7 +395,10 @@ export class StChatu8Bridge {
   }
 
   async syncHistory() {
+    if (!(await this.refreshPreferences()).enabled) return;
+    const generation = this.generation;
     const settings = await this.readStSettings();
+    this.assertEnabled(generation);
     const candidates = collectStHistoryCandidates(settings, publicPath => this.resolveStUserPath(publicPath));
     const unchecked = [];
     const known = new Set();
@@ -359,11 +410,12 @@ export class StChatu8Bridge {
     }
     for (let offset = 0; offset < unchecked.length; offset += 80) {
       const batch = unchecked.slice(offset, offset + 80).map(item => item.externalId);
-      const result = await this.requestWorkerJson('/api/integrations/st-chatu8/history/known', { method: 'POST', body: { externalIds: batch } });
+      const result = await this.requestSyncJson(generation, '/api/integrations/st-chatu8/history/known', { method: 'POST', body: { externalIds: batch } });
       for (const id of result.externalIds || []) known.add(id);
     }
     const pending = [];
     for (const { image, filePath, externalId } of unchecked) {
+        this.assertEnabled(generation);
         if (known.has(externalId)) {
           this.state.history[externalId].importedAt ||= Date.now();
           continue;
@@ -378,15 +430,16 @@ export class StChatu8Bridge {
             ...metadata,
           });
         } catch { /* A half-written or deleted image is retried next scan. */ }
-        if (pending.length >= HISTORY_BATCH_SIZE) await this.importHistoryBatch(pending.splice(0));
+        if (pending.length >= HISTORY_BATCH_SIZE) await this.importHistoryBatch(pending.splice(0), generation);
     }
-    if (pending.length) await this.importHistoryBatch(pending);
+    if (pending.length) await this.importHistoryBatch(pending, generation);
+    this.assertEnabled(generation);
     this.state.lastHistorySyncAt = Date.now();
     await this.saveState();
   }
 
-  async importHistoryBatch(items) {
-    const result = await this.requestWorkerJson('/api/integrations/st-chatu8/history/import', { method: 'POST', body: { items } });
+  async importHistoryBatch(items, generation = this.generation) {
+    const result = await this.requestSyncJson(generation, '/api/integrations/st-chatu8/history/import', { method: 'POST', body: { items } });
     const now = Date.now();
     for (const item of items) this.state.history[item.externalId].importedAt = now;
     await this.saveState();
@@ -402,8 +455,8 @@ export class StChatu8Bridge {
     return { buffer, contentType: extension === '.jpg' || extension === '.jpeg' ? 'image/jpeg' : extension === '.webp' ? 'image/webp' : 'image/png' };
   }
 
-  async syncArtists(incoming = [], selectedChainIds = []) {
-    let chains = await this.requestWorkerJson('/api/chains');
+  async syncArtists(incoming = [], selectedChainIds = [], generation = this.generation) {
+    let chains = await this.requestSyncJson(generation, '/api/chains');
     chains = Array.isArray(chains) ? chains : [];
     const byId = new Map(chains.map(chain => [chain.id, chain]));
     const byName = new Map();
@@ -416,6 +469,7 @@ export class StChatu8Bridge {
     const incomingById = new Map();
     const counts = { received: 0, created: 0, updated: 0, unchanged: 0, selected: 0, exported: 0 };
     for (const raw of incoming) {
+      this.assertEnabled(generation);
       if (!raw || typeof raw !== 'object') continue;
       const artist = {
         externalId: String(raw.externalId || '').slice(0, 160), name: String(raw.name || '').trim().slice(0, 100),
@@ -434,7 +488,7 @@ export class StChatu8Bridge {
       if (!chain) chain = byName.get(artist.name)?.find(item => !linkedIds.has(item.id));
       if (!chain) {
         const body = artistToChainBody(artist);
-        const created = await this.requestWorkerJson('/api/chains', { method: 'POST', body });
+        const created = await this.requestSyncJson(generation, '/api/chains', { method: 'POST', body });
         if (created?.id) {
           chain = { ...body, id: created.id, previewImage: '', createdAt: Date.now(), updatedAt: Date.now() };
           chains.push(chain);
@@ -469,8 +523,8 @@ export class StChatu8Bridge {
           }
         }
         if (stHash !== npmHash || previewUpdated) {
-          await this.requestWorkerJson(`/api/chains/${encodeURIComponent(chain.id)}`, { method: 'PUT', body });
-          const refreshed = await this.requestWorkerJson(`/api/chains/${encodeURIComponent(chain.id)}`);
+          await this.requestSyncJson(generation, `/api/chains/${encodeURIComponent(chain.id)}`, { method: 'PUT', body });
+          const refreshed = await this.requestSyncJson(generation, `/api/chains/${encodeURIComponent(chain.id)}`);
           if (refreshed?.id) {
             chain = refreshed;
             byId.set(chain.id, chain);
@@ -491,7 +545,7 @@ export class StChatu8Bridge {
       };
       linkedIds.add(chain.id);
     }
-    chains = await this.requestWorkerJson('/api/chains');
+    chains = await this.requestSyncJson(generation, '/api/chains');
     const selected = new Set(selectedChainIds);
     const linksByChain = new Map(Object.entries(this.state.artistLinks).map(pair => [pair[1].chainId, pair]));
     const artists = chains.filter(chain => isStChatu8ExportableChain(chain) && selected.has(chain.id)).map(chain => {
@@ -518,11 +572,12 @@ export class StChatu8Bridge {
     }).filter(Boolean);
     counts.exported = artists.length;
     this.lastArtistSync = counts;
+    this.assertEnabled(generation);
     await this.saveState();
     return artists;
   }
 
-  async syncVibes(documents = [], incomingGroups = [], presentSourceHashes = []) {
+  async syncVibes(documents = [], incomingGroups = [], presentSourceHashes = [], generation = this.generation) {
     const incomingSourceHashes = new Set(presentSourceHashes
       .map(value => String(value || '').toLowerCase())
       .filter(value => /^[a-f0-9]{64}$/.test(value)));
@@ -533,21 +588,21 @@ export class StChatu8Bridge {
       const sourceHash = canonicalVibeSourceHash(document);
       if (!sourceHash) continue;
       incomingSourceHashes.add(sourceHash);
-      const result = await this.requestWorkerJson('/api/vibes/import', { method: 'POST', body: { document } });
+      const result = await this.requestSyncJson(generation, '/api/vibes/import', { method: 'POST', body: { document } });
       const requestedName = String(document.name || '').trim();
       const vibeId = result?.item?.id || null;
       if (vibeId) this.state.vibeLinks[sourceHash] = { vibeId, lastSeenAt: Date.now() };
       const requestedStrength = clamp(document.importInfo?.strength, 0, 1, 0.6);
       if (vibeId && requestedName && (result?.item?.name !== requestedName || Number(result?.item?.defaultStrength) !== requestedStrength)) {
-        await this.requestWorkerJson(`/api/vibes/${encodeURIComponent(vibeId)}`, {
+        await this.requestSyncJson(generation, `/api/vibes/${encodeURIComponent(vibeId)}`, {
           method: 'PUT', body: { name: requestedName, defaultStrength: requestedStrength },
         });
       }
     }
-    const vibeResult = await this.requestWorkerJson('/api/vibes');
+    const vibeResult = await this.requestSyncJson(generation, '/api/vibes');
     const vibes = Array.isArray(vibeResult?.items) ? vibeResult.items : [];
     const bySourceHash = new Map(vibes.map(vibe => [vibe.sourceHash, vibe]));
-    let groupsResult = await this.requestWorkerJson('/api/vibe-groups');
+    let groupsResult = await this.requestSyncJson(generation, '/api/vibe-groups');
     let groups = Array.isArray(groupsResult?.items) ? groupsResult.items : [];
     const incomingGroupIds = new Set();
     for (const group of incomingGroups.slice(0, 200)) {
@@ -568,12 +623,12 @@ export class StChatu8Bridge {
       const body = { name, slots, normalizeStrengths: group.normalizeStrengths !== false };
       if (existing) {
         if (vibeGroupSignature(existing) !== vibeGroupSignature(body)) {
-          await this.requestWorkerJson(`/api/vibe-groups/${encodeURIComponent(existing.id)}`, { method: 'PUT', body });
+          await this.requestSyncJson(generation, `/api/vibe-groups/${encodeURIComponent(existing.id)}`, { method: 'PUT', body });
           Object.assign(existing, body);
         }
         linkedId = existing.id;
       } else {
-        const created = await this.requestWorkerJson('/api/vibe-groups', { method: 'POST', body });
+        const created = await this.requestSyncJson(generation, '/api/vibe-groups', { method: 'POST', body });
         linkedId = created?.item?.id;
         if (linkedId) groups.push({ ...body, id: linkedId });
       }
@@ -582,9 +637,10 @@ export class StChatu8Bridge {
         incomingGroupIds.add(linkedId);
       }
     }
-    groupsResult = await this.requestWorkerJson('/api/vibe-groups');
+    groupsResult = await this.requestSyncJson(generation, '/api/vibe-groups');
     groups = Array.isArray(groupsResult?.items) ? groupsResult.items : [];
     const byId = new Map(vibes.map(vibe => [vibe.id, vibe]));
+    this.assertEnabled(generation);
     await this.saveState();
     return {
       vibes: vibes.filter(vibe => !this.state.vibeLinks[vibe.sourceHash] || incomingSourceHashes.has(vibe.sourceHash)).map(vibe => ({
@@ -602,29 +658,46 @@ export class StChatu8Bridge {
 
   sync(payload = {}) {
     // 多个酒馆页面共用关联记录；串行处理，避免首次入库时并发创建重复条目。
-    const pending = this.syncQueue.catch(() => {}).then(() => this.performSync(payload));
+    const queuedGeneration = this.enabled ? this.generation : null;
+    const pending = this.syncQueue.catch(() => {}).then(() => this.performSync(payload, queuedGeneration));
     this.syncQueue = pending;
     return pending;
   }
 
-  async performSync(payload) {
-    const selection = await this.requestWorkerJson('/api/st-chatu8/export-selection');
-    const selectedChainIds = Array.isArray(selection?.chainIds) ? selection.chainIds : [];
-    const artists = await this.syncArtists(Array.isArray(payload.artists) ? payload.artists : [], selectedChainIds);
-    const vibeData = await this.syncVibes(
-      Array.isArray(payload.vibeDocuments) ? payload.vibeDocuments : [],
-      Array.isArray(payload.vibeGroups) ? payload.vibeGroups : [],
-      Array.isArray(payload.vibeSourceHashes) ? payload.vibeSourceHashes : [],
-    );
-    this.state.lastSyncAt = Date.now();
-    await this.saveState();
-    this.startHistorySync();
-    return { artists, artistSync: this.lastArtistSync, ...vibeData, status: this.status() };
+  async performSync(payload, queuedGeneration = null) {
+    const disabled = () => ({ enabled: false, artists: [], vibes: [], groups: [], status: this.status() });
+    if (!(await this.refreshPreferences()).enabled) return disabled();
+    if (queuedGeneration !== null && queuedGeneration !== this.generation) return disabled();
+    const generation = this.generation;
+    try {
+      const selection = await this.requestSyncJson(generation, '/api/st-chatu8/export-selection');
+      const selectedChainIds = Array.isArray(selection?.chainIds) ? selection.chainIds : [];
+      const artists = await this.syncArtists(Array.isArray(payload.artists) ? payload.artists : [], selectedChainIds, generation);
+      const vibeData = await this.syncVibes(
+        Array.isArray(payload.vibeDocuments) ? payload.vibeDocuments : [],
+        Array.isArray(payload.vibeGroups) ? payload.vibeGroups : [],
+        Array.isArray(payload.vibeSourceHashes) ? payload.vibeSourceHashes : [],
+        generation,
+      );
+      this.assertEnabled(generation);
+      this.state.lastSyncAt = Date.now();
+      await this.saveState();
+      this.startHistorySync();
+      this.assertEnabled(generation);
+      return { enabled: true, artists, artistSync: this.lastArtistSync, ...vibeData, status: this.status() };
+    } catch (error) {
+      if (error.code === 'SYNC_DISABLED') return disabled();
+      throw error;
+    }
   }
 
   async readVibeFile(vibeId) {
+    await this.refreshPreferences();
+    const generation = this.generation;
+    this.assertEnabled(generation);
     const result = await this.requestWorkerBuffer(`/api/vibes/${encodeURIComponent(vibeId)}/file`);
     if (result.status >= 400) throw Object.assign(new Error('Vibe 文件不存在'), { status: result.status });
+    this.assertEnabled(generation);
     return { buffer: result.buffer, contentType: 'application/json; charset=utf-8' };
   }
 }

@@ -9,10 +9,10 @@ import {
   Info,
   Link2,
   Loader2,
-  Puzzle,
   Sparkles,
 } from 'lucide-react';
 import { openLocalBackupFolder } from '../services/localBackup';
+import { refreshStChatu8Preferences, setStChatu8Enabled, useStChatu8Preferences } from '../services/stChatu8Preferences';
 
 interface SillyTavernBridgeExportProps {
   notify: (message: string) => void;
@@ -20,7 +20,7 @@ interface SillyTavernBridgeExportProps {
 
 const BRIDGE_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
 const FALLBACK_MANIFEST = JSON.stringify({
-  display_name: 'NAI Atelier 连接器',
+  display_name: '智慧姬同步',
   loading_order: 110,
   requires: [],
   optional: ['st-chatu8'],
@@ -28,10 +28,11 @@ const FALLBACK_MANIFEST = JSON.stringify({
   css: `style.css?v=${BRIDGE_VERSION}`,
   author: 'HelloQun54321',
   version: BRIDGE_VERSION,
-  description: '将选定的 V4.5 风格串发送到 st-chatu8，全量接收酒馆风格串，互通 Vibe 与原图历史索引。',
+  description: '在 Atelier 开启智慧姬同步后发送选定的 V4.5 / V5 风格串，全量接收 st-chatu8 风格串，互通 Vibe 与原图历史索引。',
 }, null, 2);
 
 export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = ({ notify }) => {
+  const preferences = useStChatu8Preferences();
   const [serverUrl, setServerUrl] = useState(() => {
     if (typeof window !== 'undefined' && window.location?.origin) {
       return window.location.origin;
@@ -47,16 +48,24 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
 
   // 自动尝试从本地桥接探测已有的 SillyTavern 根目录
   useEffect(() => {
+    if (!preferences.enabled) return;
+    let active = true;
     fetch('/api/integrations/st-chatu8/status')
       .then(res => res.json())
       .then(data => {
-        if (data?.sillyTavernRoot && typeof data.sillyTavernRoot === 'string') {
+        if (active && data?.sillyTavernRoot && typeof data.sillyTavernRoot === 'string') {
           setDetectedRoot(data.sillyTavernRoot);
           setStRoot(prev => prev || data.sillyTavernRoot);
         }
       })
       .catch(() => {});
-  }, []);
+    return () => { active = false; };
+  }, [preferences.enabled]);
+
+  const handleToggle = async (enabled: boolean) => {
+    try { await setStChatu8Enabled(enabled); }
+    catch (error) { notify(error instanceof Error ? error.message : '保存智慧姬同步设置失败'); }
+  };
 
   const computeTargetDir = (root: string) => {
     const trimmed = root.trim();
@@ -85,7 +94,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
     }
     return {
       'manifest.json': FALLBACK_MANIFEST,
-      'README.md': '# SillyTavern — NAI Atelier 连接器扩展 (npm-bridge)\n\n请参考项目文档完成安装。',
+      'README.md': '# 智慧姬同步扩展 (npm-bridge)\n\n请参考项目文档完成安装。',
     };
   };
 
@@ -161,7 +170,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      notify('SillyTavern 连接器扩展包已下载 (npm-bridge.zip)');
+      notify('智慧姬同步扩展包已下载 (npm-bridge.zip)');
     } catch (err: any) {
       notify(`下载失败：${err?.message || '未知错误'}`);
     } finally {
@@ -226,129 +235,133 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
 
   return (
     <div className="space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h4 className="font-semibold text-gray-900 dark:text-white">SillyTavern 互通扩展 (npm-bridge)</h4>
-          <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
-            只发送你在风格串页面勾选的 V4.5 风格串；酒馆风格串全部接收，Vibe 与原图历史索引继续互通。
-          </p>
-        </div>
-        <Puzzle className="h-4 w-4 flex-none text-indigo-500" />
-      </div>
+      <label className="flex cursor-pointer items-start justify-between gap-4">
+        <span className="min-w-0">
+          <span className="block font-semibold text-gray-900 dark:text-white">智慧姬同步</span>
+          <span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">
+            开启后在风格串页面选择要发送的 V4.5 / V5 风格串；接收 st-chatu8 全部风格串，并互通 Vibe 与原图历史索引。关闭后停止同步，保留已选范围和已有资料。
+          </span>
+        </span>
+        <input type="checkbox" aria-label="智慧姬同步" checked={preferences.enabled} disabled={!preferences.ready || preferences.busy || installing || exporting}
+          onChange={event => { void handleToggle(event.target.checked); }} className="mt-1 h-5 w-5 shrink-0 accent-indigo-600 disabled:opacity-40" />
+      </label>
+      {preferences.error && <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400"><span>{preferences.error}</span><button type="button" onClick={() => { void refreshStChatu8Preferences(); }} disabled={preferences.busy} className="shrink-0 underline">重新读取</button></div>}
 
-      <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 text-xs dark:border-gray-700/60 dark:bg-gray-800/50">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {/* 酒馆根目录 */}
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <label className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
-                <Folder className="h-3.5 w-3.5 text-gray-400" />
-                <span>SillyTavern 安装路径：</span>
-              </label>
-              {detectedRoot && stRoot === detectedRoot && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-micro font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                  <CheckCircle2 className="h-3 w-3" />
-                  已自动检测
+      {preferences.enabled && <>
+        <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 text-xs dark:border-gray-700/60 dark:bg-gray-800/50">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {/* 酒馆根目录 */}
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <label className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+                  <Folder className="h-3.5 w-3.5 text-gray-400" />
+                  <span>SillyTavern 安装路径：</span>
+                </label>
+                {detectedRoot && stRoot === detectedRoot && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-micro font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                    <CheckCircle2 className="h-3 w-3" />
+                    已自动检测
+                  </span>
+                )}
+              </div>
+              <input
+                type="text"
+                value={stRoot}
+                onChange={e => setStRoot(e.target.value)}
+                placeholder="例如：D:\SillyTavern"
+                className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 font-mono text-xs outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                title="SillyTavern 本地安装根目录"
+              />
+            </div>
+
+            {/* 服务连接地址 */}
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <label className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+                  <Link2 className="h-3.5 w-3.5 text-gray-400" />
+                  <span>服务连接地址：</span>
+                </label>
+                <span className="text-micro text-gray-400 dark:text-gray-500">
+                  写入扩展作为默认值
                 </span>
-              )}
+              </div>
+              <input
+                type="text"
+                value={serverUrl}
+                onChange={e => setServerUrl(e.target.value)}
+                placeholder="http://localhost:3000"
+                className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 font-mono text-xs outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                title="SillyTavern 连接器向本项目通信所使用的 HTTP 地址"
+              />
             </div>
-            <input
-              type="text"
-              value={stRoot}
-              onChange={e => setStRoot(e.target.value)}
-              placeholder="例如：D:\SillyTavern"
-              className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 font-mono text-xs outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-              title="SillyTavern 本地安装根目录"
-            />
           </div>
 
-          {/* 服务连接地址 */}
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <label className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
-                <Link2 className="h-3.5 w-3.5 text-gray-400" />
-                <span>服务连接地址：</span>
-              </label>
-              <span className="text-micro text-gray-400 dark:text-gray-500">
-                写入扩展作为默认值
-              </span>
+          {/* 自动补全路径预览 */}
+          <div className="mt-3 flex items-start gap-1.5 border-t border-gray-200/70 pt-2.5 text-[11px] text-gray-500 dark:border-gray-700/70 dark:text-gray-400">
+            <Info className="mt-0.5 h-3.5 w-3.5 flex-none text-indigo-500" />
+            <div className="min-w-0 flex-1">
+              <span>安装目标路径（自动补全）：</span>
+              <code className="mt-0.5 block truncate rounded bg-gray-200/70 px-1.5 py-0.5 font-mono text-[11px] text-gray-800 dark:bg-gray-700 dark:text-gray-200" title={currentTargetPath}>
+                {currentTargetPath}
+              </code>
             </div>
-            <input
-              type="text"
-              value={serverUrl}
-              onChange={e => setServerUrl(e.target.value)}
-              placeholder="http://localhost:3000"
-              className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 font-mono text-xs outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-              title="SillyTavern 连接器向本项目通信所使用的 HTTP 地址"
-            />
           </div>
         </div>
 
-        {/* 自动补全路径预览 */}
-        <div className="mt-3 flex items-start gap-1.5 border-t border-gray-200/70 pt-2.5 text-[11px] text-gray-500 dark:border-gray-700/70 dark:text-gray-400">
-          <Info className="mt-0.5 h-3.5 w-3.5 flex-none text-indigo-500" />
-          <div className="min-w-0 flex-1">
-            <span>安装目标路径（自动补全）：</span>
-            <code className="mt-0.5 block truncate rounded bg-gray-200/70 px-1.5 py-0.5 font-mono text-[11px] text-gray-800 dark:bg-gray-700 dark:text-gray-200" title={currentTargetPath}>
-              {currentTargetPath}
-            </code>
-          </div>
-        </div>
-      </div>
-
-      {/* 操作按钮区 */}
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => void handleInstallExtension()}
-          disabled={installing}
-          className="mobile-touch flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-50"
-          title="将扩展直接安装/更新写入到指定的 SillyTavern 插件目录"
-        >
-          {installing ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Sparkles className="h-3.5 w-3.5" />
-          )}
-          {installing ? '正在安装…' : (detectedRoot ? '一键安装 / 更新扩展' : '安装扩展到酒馆')}
-        </button>
-
-        {(installedPath || detectedRoot) && (
+        {/* 操作按钮区 */}
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => void handleOpenFolder()}
-            className="mobile-touch flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-            title="在系统文件管理器中打开安装目录"
+            onClick={() => void handleInstallExtension()}
+            disabled={installing}
+            className="mobile-touch flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-50"
+            title="将扩展直接安装/更新写入到指定的 SillyTavern 插件目录"
           >
-            <ExternalLink className="h-3.5 w-3.5" />
-            定位扩展目录
+            {installing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" />
+            )}
+            {installing ? '正在安装…' : (detectedRoot ? '一键安装 / 更新扩展' : '安装扩展到酒馆')}
           </button>
-        )}
 
-        {supportsDirectoryPicker && (
+          {(installedPath || detectedRoot) && (
+            <button
+              type="button"
+              onClick={() => void handleOpenFolder()}
+              className="mobile-touch flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+              title="在系统文件管理器中打开安装目录"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              定位扩展目录
+            </button>
+          )}
+
+          {supportsDirectoryPicker && (
+            <button
+              type="button"
+              onClick={() => void handleExportToDirectory()}
+              disabled={exporting}
+              className="mobile-touch flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
+              title="手动选择本地目录导出（选中酒馆根目录亦可自动补全）"
+            >
+              <FolderOutput className="h-3.5 w-3.5" />
+              {exporting ? '导出中…' : '选择目录导出'}
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={() => void handleExportToDirectory()}
+            onClick={() => void handleDownloadZip()}
             disabled={exporting}
             className="mobile-touch flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
-            title="手动选择本地目录导出（选中酒馆根目录亦可自动补全）"
+            title="将完整的扩展文件打包下载为 ZIP 压缩包"
           >
-            <FolderOutput className="h-3.5 w-3.5" />
-            {exporting ? '导出中…' : '选择目录导出'}
+            <Download className="h-3.5 w-3.5" />
+            {exporting ? '打包中…' : '下载 ZIP 扩展包'}
           </button>
-        )}
-
-        <button
-          type="button"
-          onClick={() => void handleDownloadZip()}
-          disabled={exporting}
-          className="mobile-touch flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
-          title="将完整的扩展文件打包下载为 ZIP 压缩包"
-        >
-          <Download className="h-3.5 w-3.5" />
-          {exporting ? '打包中…' : '下载 ZIP 扩展包'}
-        </button>
-      </div>
+        </div>
+      </>}
     </div>
   );
 };
