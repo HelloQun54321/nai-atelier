@@ -1,5 +1,5 @@
 import { extension_settings } from '../../../extensions.js';
-import { eventSource, event_types, getRequestHeaders, saveSettingsDebounced } from '../../../../script.js';
+import { eventSource, event_types, getRequestHeaders, saveSettings, saveSettingsDebounced } from '../../../../script.js';
 
 const EXTENSION_NAME = 'nai-prompt-manager-bridge';
 const CHATU8_NAME = 'st-chatu8';
@@ -15,6 +15,7 @@ let lastStSignature = '';
 const defaults = () => ({
   baseUrl: DEFAULT_URL,
   autoSync: true,
+  panelExpanded: false,
   artistIds: {},
   artistHashes: {},
   artistUpdatedAt: {},
@@ -27,7 +28,9 @@ const defaults = () => ({
 });
 
 const settings = () => {
-  extension_settings[EXTENSION_NAME] = { ...defaults(), ...(extension_settings[EXTENSION_NAME] || {}) };
+  const current = extension_settings[EXTENSION_NAME];
+  if (!current || typeof current !== 'object' || Array.isArray(current)) extension_settings[EXTENSION_NAME] = defaults();
+  else for (const [key, value] of Object.entries(defaults())) if (current[key] === undefined) current[key] = value;
   return extension_settings[EXTENSION_NAME];
 };
 
@@ -84,9 +87,12 @@ const textToBase64 = text => {
 
 const setStatus = (message, state = '') => {
   const node = document.querySelector('.npm-bridge-status');
-  if (!node) return;
-  node.textContent = message;
-  node.dataset.state = state;
+  if (node) { node.textContent = message; node.title = message; node.dataset.state = state; }
+  const badge = document.querySelector('.npm-bridge-summary-status');
+  if (badge) {
+    badge.textContent = state === 'working' ? '同步中' : state === 'success' ? '已核对' : state === 'error' ? '需处理' : state === 'pending' ? '待确认' : '待连接';
+    badge.title = message; badge.dataset.state = state;
+  }
 };
 
 const collectArtistPreviews = () => {
@@ -157,9 +163,9 @@ const uniqueName = (collection, requested, currentName = '') => {
   return `${requested} (${index})`;
 };
 
-const artistSnapshot = (name, preset, bridgeSettings) => {
+const artistSnapshot = (name, preset, bridgeSettings, source = chatu8()) => {
   const externalId = bridgeSettings.artistIds[name];
-  const previewPath = String(chatu8()?.configImageStorage?.[preset?.previewImageId]?.path || '');
+  const previewPath = String(source?.configImageStorage?.[preset?.previewImageId]?.path || '');
   return {
     externalId, name,
     fixedPrompt: String(preset?.fixedPrompt || ''),
@@ -170,14 +176,14 @@ const artistSnapshot = (name, preset, bridgeSettings) => {
   };
 };
 
-const collectArtists = async bridgeSettings => {
-  const source = chatu8()?.yushe || {};
+const collectArtists = async (bridgeSettings, sourceSettings = chatu8()) => {
+  const source = sourceSettings?.yushe || {};
   const artists = [];
   for (const [name, preset] of Object.entries(source)) {
     let externalId = bridgeSettings.artistIds[name];
     // 首次读取用名称生成稳定 ID，多个酒馆页面或回执尚未落盘时也能识别为同一条。
     if (!externalId) externalId = bridgeSettings.artistIds[name] = `st:${await hashText(name)}`;
-    const item = artistSnapshot(name, preset, bridgeSettings);
+    const item = artistSnapshot(name, preset, bridgeSettings, sourceSettings);
     const hash = await hashText(JSON.stringify(item));
     if (bridgeSettings.artistHashes[externalId] !== hash) {
       bridgeSettings.artistHashes[externalId] = hash;
@@ -186,6 +192,25 @@ const collectArtists = async bridgeSettings => {
     artists.push({ ...item, updatedAt: bridgeSettings.artistUpdatedAt[externalId] || Date.now() });
   }
   return artists;
+};
+
+const artistListSignature = artists => JSON.stringify(artists.map(({ updatedAt: _updatedAt, ...artist }) => artist).sort((a, b) => a.externalId.localeCompare(b.externalId)));
+
+// saveSettings 会吞掉保存错误，必须回读酒馆服务确认落盘；不把当前页面内存当接收成功。
+const readPersistedArtistSnapshot = async artists => {
+  const incomplete = reason => ({ artists, artistSnapshot: { version: 2, complete: false, count: artists.length }, reason });
+  try {
+    const response = await fetch('/api/settings/get', { method: 'POST', headers: getRequestHeaders(), body: '{}' });
+    if (!response.ok) return incomplete(`酒馆设置核对失败 (${response.status})`);
+    const payload = await response.json();
+    const document = typeof payload.settings === 'string' ? JSON.parse(payload.settings) : payload.settings;
+    const source = document?.extension_settings?.[CHATU8_NAME];
+    if (!source?.yushe || typeof source.yushe !== 'object' || Array.isArray(source.yushe) || Object.values(source.yushe).some(preset => !preset || typeof preset !== 'object' || Array.isArray(preset))) return incomplete('酒馆风格串列表未就绪');
+    const persistedSettings = { ...defaults(), ...(document.extension_settings[EXTENSION_NAME] || {}) };
+    const persisted = await collectArtists(persistedSettings, source);
+    if (artistListSignature(persisted) !== artistListSignature(artists)) return incomplete('酒馆设置尚未保存，请手动同步重试');
+    return { artists: persisted, artistSnapshot: { version: 2, complete: true, count: persisted.length } };
+  } catch { return incomplete('酒馆设置核对失败，请手动同步重试'); }
 };
 
 const readStoredVibes = async bridgeSettings => {
@@ -355,7 +380,7 @@ const uploadArtistPreview = async (name, imageUrl, oldPath = null, externalId = 
   return { path: newPath, contentHash, unchanged: false };
 };
 
-const applyArtists = async artists => {
+const applyArtists = async (artists, receipts = []) => {
   const st = chatu8();
   const bridgeSettings = settings();
   st.yushe ||= {};
@@ -370,6 +395,7 @@ const applyArtists = async artists => {
   const namesById = new Map(Object.entries(bridgeSettings.artistIds).map(([name, id]) => [id, name]));
 
   for (const artist of artists) {
+    let failure = '';
     const currentName = namesById.get(artist.externalId) || '';
     const name = resolvePresetName(st.yushe, artist.name, currentName, artist.externalId, bridgeSettings.artistIds);
     let previewImageId = (currentName ? st.yushe[currentName]?.previewImageId : null) || st.yushe[name]?.previewImageId || null;
@@ -398,6 +424,7 @@ const applyArtists = async artists => {
           }
         } catch (error) {
           console.warn('[NPM Bridge] 无法更新画师配图:', name, error);
+          failure = error.message || '封面保存失败';
         }
       }
     }
@@ -426,6 +453,7 @@ const applyArtists = async artists => {
     namesById.set(artist.externalId, name);
     bridgeSettings.artistHashes[artist.externalId] = await hashText(JSON.stringify(artistSnapshot(name, st.yushe[name], bridgeSettings)));
     bridgeSettings.artistUpdatedAt[artist.externalId] = Number(artist.updatedAt || Date.now());
+    if (artist.receipt) receipts.push({ externalId: artist.externalId, ...artist.receipt, success: !failure, reason: failure });
   }
   return appliedCount;
 };
@@ -492,6 +520,8 @@ async function syncNow({ quiet = false } = {}) {
     return;
   }
   syncing = true;
+  const button = document.querySelector('.npm-bridge-sync');
+  if (button) button.disabled = true;
   if (!quiet) setStatus('智慧姬同步：正在检查开关…', 'working');
   try {
     const bridgeSettings = settings();
@@ -505,12 +535,16 @@ async function syncNow({ quiet = false } = {}) {
     }
     if (!quiet) setStatus('正在同步风格串、Vibe 与历史索引…', 'working');
     const artists = await collectArtists(bridgeSettings);
+    await saveSettings();
+    const snapshot = await readPersistedArtistSnapshot(artists);
     const vibeData = await readStoredVibes(bridgeSettings);
     const response = await fetch(`${baseUrl}/api/integrations/st-chatu8/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        artists,
+        artists: snapshot.artists,
+        artistSnapshot: { ...snapshot.artistSnapshot, cursor: status.snapshotCursor },
+        manual: !quiet,
         vibeDocuments: vibeData.documents,
         vibeSourceHashes: Array.from(vibeData.all.keys()),
         vibeGroups: collectGroups(vibeData.all, bridgeSettings),
@@ -522,7 +556,22 @@ async function syncNow({ quiet = false } = {}) {
       setStatus('智慧姬同步已关闭，本次同步已停止。', 'idle');
       return;
     }
-    const appliedArtists = await applyArtists(result.artists || []);
+    const receipts = [];
+    const appliedArtists = await applyArtists(result.artists || [], receipts);
+    let confirmed = 0;
+    let pending = 0;
+    if (result.protocolVersion === 2 && receipts.length) {
+      await saveSettings();
+      const received = await readPersistedArtistSnapshot(await collectArtists(settings()));
+      for (const receipt of receipts) if (!received.artistSnapshot.complete) { receipt.success = false; receipt.reason ||= received.reason; }
+      const acknowledgement = await fetch(`${baseUrl}/api/integrations/st-chatu8/artist-receipts`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...received, receipts }),
+      });
+      const acknowledged = await acknowledgement.json().catch(() => ({}));
+      if (!acknowledgement.ok) throw new Error(acknowledged.error || '接收回执提交失败，已保存内容会在下次同步核对');
+      confirmed = Number(acknowledged.confirmed) || 0;
+      pending = receipts.length - confirmed;
+    }
     await cleanupBridgeVibeDuplicates(vibeData.bridgeDuplicates || []);
     for (const document of vibeData.documents) {
       const sourceHash = await canonicalVibeHash(document);
@@ -536,14 +585,15 @@ async function syncNow({ quiet = false } = {}) {
     const historyCount = Number(result.status?.linkedHistory || 0);
     const counts = result.artistSync;
     setStatus(counts
-      ? `风格串：导入新增 ${counts.created} / 更新 ${counts.updated} / 未变 ${counts.unchanged}；发送更新 ${appliedArtists}（已选 ${counts.selected}）。Vibe ${vibeData.all.size} 个，历史 ${historyCount} 张。`
-      : `同步完成：更新 ${appliedArtists} 个风格串，${vibeData.all.size} 个 Vibe；历史 ${historyCount} 张。`, 'success');
+      ? `导入 ${counts.created} · 更新 ${counts.updated} · 接收确认 ${confirmed}${pending ? ` · 待确认 ${pending}（${receipts.find(receipt => !receipt.success)?.reason || '请手动同步重试'}）` : ''}${result.artistSnapshotComplete === true ? '' : ' · 列表未完整核对'} · Vibe ${vibeData.all.size} · 历史 ${historyCount}`
+      : `同步完成：更新 ${appliedArtists} 个风格串，${vibeData.all.size} 个 Vibe；历史 ${historyCount} 张。`, pending || result.artistSnapshotComplete !== true ? 'pending' : 'success');
     enhancePresetSelector();
   } catch (error) {
     console.error('[NPM Bridge] 同步失败:', error);
     setStatus(`同步失败：${error.message}`, 'error');
   } finally {
     syncing = false;
+    if (button) button.disabled = false;
   }
 }
 
@@ -552,21 +602,34 @@ const renderSettings = () => {
   const container = document.querySelector('#extensions_settings2') || document.querySelector('#extensions_settings');
   if (!container) return;
   const currentSettings = settings();
-  const panel = document.createElement('div');
+  const panel = document.createElement('details');
   panel.className = 'npm-bridge-panel';
+  panel.open = currentSettings.panelExpanded === true;
   panel.innerHTML = `
-    <h3><i class="fa-solid fa-link"></i> 智慧姬同步</h3>
+    <summary class="npm-bridge-summary">
+      <span class="npm-bridge-title"><i class="fa-solid fa-link" aria-hidden="true"></i> 智慧姬同步</span>
+      <span class="npm-bridge-summary-status" aria-live="polite">待连接</span>
+      <i class="fa-solid fa-chevron-down npm-bridge-chevron" aria-hidden="true"></i>
+    </summary>
+    <div class="npm-bridge-content">
+    <p class="npm-bridge-hint">Atelier 挑选 → 待同步 → 接收确认。对方移除后可手动重新加入。</p>
     <div class="npm-bridge-row">
-      <label class="npm-bridge-field-label">服务地址 (Base URL)</label>
-      <input type="text" class="text_pole npm-bridge-base-url" placeholder="${DEFAULT_URL}" value="${escapeHtml(currentSettings.baseUrl || DEFAULT_URL)}">
+      <label for="npm-bridge-base-url" class="npm-bridge-field-label">服务地址 (Base URL)</label>
+      <input id="npm-bridge-base-url" type="url" class="text_pole npm-bridge-base-url" placeholder="${DEFAULT_URL}" value="${escapeHtml(currentSettings.baseUrl || DEFAULT_URL)}">
     </div>
     <div class="npm-bridge-actions">
       <button type="button" class="menu_button npm-bridge-sync"><i class="fa-solid fa-rotate"></i> 立即同步</button>
       <label class="checkbox_label"><input type="checkbox" class="npm-bridge-auto"> 自动同步</label>
     </div>
-    <div class="npm-bridge-status">请先在 Atelier 设置中开启「智慧姬同步」。</div>
+    <div class="npm-bridge-status" role="status">请先在 Atelier 设置中开启「智慧姬同步」。</div>
+    </div>
   `;
   container.appendChild(panel);
+  panel.addEventListener('toggle', () => {
+    if (settings().panelExpanded === panel.open) return;
+    settings().panelExpanded = panel.open;
+    saveSettingsDebounced();
+  });
 
   const baseUrlInput = panel.querySelector('.npm-bridge-base-url');
   baseUrlInput.addEventListener('change', () => {

@@ -15,9 +15,10 @@ import { useRestoreListAnchor } from './useRestoreListAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { FolderBatchImportModal } from './chain/FolderBatchImportModal';
 import { StyleCollectorControl } from './StyleCollectorControl';
-import { useStChatu8Selection } from '../services/stChatu8Sync';
+import { useStChatu8Selection, wisdomEntryLabel } from '../services/stChatu8Sync';
 import { useStChatu8Preferences } from '../services/stChatu8Preferences';
 import { isStChatu8ExportableChain } from '../worker/stChatu8Policy.mjs';
+import { WisdomSyncToolbar } from './WisdomSyncToolbar';
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -253,6 +254,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       .filter(c => !favOnly || favorites.has(c.id))
       .filter(c => !untestedOnly || isUntestedChain(c))
       .filter(c => !selectedModel || (c.params?.model?.trim() || DEFAULT_NAI_MODEL) === selectedModel)
+      .filter(c => syncSelection.accepts(c.id))
       .filter(c => {
         // If no tags are selected, show all
         if (selectedTags.size === 0) return true;
@@ -278,9 +280,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             return ub - ua;
         }
       });
-  }, [chains, type, searchTerm, favOnly, untestedOnly, favorites, selectedModel, selectedTags, sortOption]);
+  }, [chains, type, searchTerm, favOnly, untestedOnly, favorites, selectedModel, selectedTags, sortOption, syncSelection.open, syncSelection.view, syncSelection.recordFilter, syncSelection.entries]);
 
-  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, untestedOnly, selectedModel, selectedTags, sortOption]);
+  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, untestedOnly, selectedModel, selectedTags, sortOption, syncSelection.view, syncSelection.recordFilter, syncSelection.open]);
   useEffect(() => {
     if (!returnTargetId) return;
     const targetIndex = filteredChains.findIndex(chain => chain.id === returnTargetId);
@@ -309,9 +311,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const estimateChainCardHeight = useCallback(
     (chain: PromptChain, columnWidth: number) => {
       const ratio = previewRatios[chain.id] || 4 / 3;
-      return Math.max(1, columnWidth) / Math.max(0.1, ratio) + 50;
+      return Math.max(1, columnWidth) / Math.max(0.1, ratio) + 50 + (syncSelection.open && syncSelection.entries.has(chain.id) ? 78 : 0);
     },
-    [previewRatios],
+    [previewRatios, syncSelection.open, syncSelection.entries],
   );
 
   const renderChainCard = (chain: PromptChain) => (
@@ -319,13 +321,13 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       role={syncSelection.selecting ? 'checkbox' : undefined}
       aria-label={syncSelection.selecting ? `智慧姬同步：${chain.name}` : undefined}
       aria-checked={syncSelection.selecting ? syncSelection.selected.has(chain.id) : undefined}
-      aria-disabled={syncSelection.selecting ? syncSelection.busy || !isStChatu8ExportableChain(chain) : undefined}
+      aria-disabled={syncSelection.selecting ? syncSelection.busy || !syncSelection.available.has(chain.id) : undefined}
       tabIndex={syncSelection.selecting ? 0 : undefined}
       onKeyDown={event => { if (syncSelection.selecting && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); syncSelection.toggle(chain.id); } }}
       onClick={() => syncSelection.selecting ? syncSelection.toggle(chain.id) : onSelect(chain.id)}
       className={`mobile-gallery-item group bg-white dark:bg-gray-850 border border-gray-200 dark:border-gray-800/80 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${syncSelection.selecting && syncSelection.selected.has(chain.id) ? '!border-indigo-500 ring-2 ring-indigo-500/20' : ''} ${syncSelection.selecting && !isStChatu8ExportableChain(chain) ? '!cursor-default opacity-60' : ''}`}>
       {/* Copy Button Overlay - Trigger Modal */}
-      {!syncSelection.selecting && <div className="absolute right-2 top-2 z-10 hidden items-center gap-1 opacity-0 transition-opacity md:group-hover:flex md:group-hover:opacity-100">
+      {!syncSelection.open && <div className="absolute right-2 top-2 z-10 hidden items-center gap-1 opacity-0 transition-opacity md:group-hover:flex md:group-hover:opacity-100">
           {!isGuest && <button
             type="button"
             onClick={async event => {
@@ -343,9 +345,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
               <Copy className="h-4 w-4" />
           </button>
       </div>}
-      {syncSelection.selecting && (isStChatu8ExportableChain(chain)
-        ? <span aria-hidden="true" className={`absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-lg border shadow-sm ${syncSelection.selected.has(chain.id) ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-gray-400 bg-white/90 text-transparent dark:border-gray-500 dark:bg-gray-900/90'}`}><Check className="h-4 w-4" /></span>
-        : <span className="absolute right-2 top-2 z-10 rounded-lg bg-white/90 px-2 py-1 text-xs text-gray-500 shadow-sm dark:bg-gray-900/90 dark:text-gray-400">仅 V4.5 / V5</span>)}
+      {syncSelection.selecting && syncSelection.available.has(chain.id) && <span aria-hidden="true" className={`absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-lg border shadow-sm ${syncSelection.selected.has(chain.id) ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-gray-400 bg-white/90 text-transparent dark:border-gray-500 dark:bg-gray-900/90'}`}><Check className="h-4 w-4" /></span>}
+      {syncSelection.selecting && !isStChatu8ExportableChain(chain) && <span className="absolute right-2 top-2 z-10 rounded-lg bg-white/90 px-2 py-1 text-xs text-gray-500 shadow-sm dark:bg-gray-900/90 dark:text-gray-400">仅 V4.5 / V5</span>}
 
       {/* Preview Image */}
       <div
@@ -397,6 +398,20 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           />}
         </div>
       </div>
+      {syncSelection.open && syncSelection.entries.has(chain.id) && <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800" onClick={event => event.stopPropagation()}>
+        <div className="flex items-center justify-between gap-2">
+          <span className={`truncate text-xs font-medium ${syncSelection.entries.get(chain.id)?.status === 'synced' ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'}`}>{wisdomEntryLabel(syncSelection.entries.get(chain.id)!)}</span>
+          {syncSelection.view !== 'pick' && <div className="flex flex-none gap-2">
+            {syncSelection.entries.get(chain.id)?.status === 'pending' ? <>
+              {syncSelection.entries.get(chain.id)?.error && isStChatu8ExportableChain(chain) && <button type="button" disabled={syncSelection.busy} onClick={() => void syncSelection.actOnEntries('requeue', [chain.id])} className="min-h-8 text-xs text-indigo-600 disabled:opacity-40 dark:text-indigo-300" aria-label={`重试：${chain.name}`}>重试</button>}
+              <button type="button" disabled={syncSelection.busy} onClick={() => void syncSelection.actOnEntries('remove', [chain.id])} className="min-h-8 text-xs text-gray-500 hover:text-gray-900 disabled:opacity-40 dark:text-gray-400 dark:hover:text-white" aria-label={`移出待同步：${chain.name}`}>移出</button>
+            </> : <button type="button" disabled={syncSelection.busy || !isStChatu8ExportableChain(chain)} onClick={() => void syncSelection.actOnEntries('requeue', [chain.id])} className="min-h-8 text-xs text-indigo-600 disabled:opacity-40 dark:text-indigo-300" aria-label={`重新加入待同步：${chain.name}`}>重新加入</button>}
+          </div>}
+        </div>
+        {syncSelection.entries.get(chain.id)?.error && <p className="truncate text-xs text-red-500" title={syncSelection.entries.get(chain.id)?.error}>{syncSelection.entries.get(chain.id)?.error}</p>}
+        {!isStChatu8ExportableChain(chain) && <p className="text-xs text-gray-400">当前模型不可同步</p>}
+        {syncSelection.view === 'records' && <p className="truncate text-micro text-gray-400">最近核对 {new Date(syncSelection.entries.get(chain.id)!.lastVerifiedAt).toLocaleString('zh-CN')}</p>}
+      </div>}
     </div>
   );
 
@@ -407,7 +422,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
       <div className="mx-auto flex min-h-0 w-full max-w-[1920px] flex-1 flex-col">
         <WorkspaceToolbar>
-          <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={`搜索${title}`} containerClassName="min-w-[12rem] flex-1 md:max-w-none!" />
+          <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={`搜索${title}`} containerClassName="min-w-0 flex-1 md:min-w-[12rem] md:max-w-none!" />
           {!isGuest && type === 'style' && <StyleCollectorControl onSaved={onRefresh} notify={notify} />}
           <div className="hidden min-w-0 flex-none items-center gap-2 md:flex">
             {allTags.length > 0 && <div className="relative flex-none">
@@ -427,7 +442,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             <IconButton label="仅看待实测" onClick={() => setUntestedOnly(value => !value)} className={untestedOnly ? '!border-amber-300 !bg-amber-50 !text-amber-600 dark:!bg-amber-950/40 dark:!text-amber-400' : ''}><EyeOff className={`h-4 w-4 ${untestedOnly ? 'stroke-[2.5]' : ''}`} /></IconButton>
             <IconButton label="仅显示收藏" tone={favOnly ? 'favorite' : 'neutral'} onClick={() => setFavOnly(value => !value)}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} /></IconButton>
             {!isGuest && type === 'style' && <ToolbarButton onClick={() => setIsFolderImportOpen(true)} title="从本地文件夹批量读取 NovelAI 原图为风格串"><FolderUp className="h-4 w-4" />批量导入</ToolbarButton>}
-            {canSync && <ToolbarButton onClick={syncSelection.begin} disabled={syncSelection.busy || syncSelection.selecting} title="选择允许发送到 st-chatu8 的风格串"><Link2 className="h-4 w-4" />智慧姬同步{syncSelection.savedCount > 0 ? ` ${syncSelection.savedCount}` : ''}</ToolbarButton>}
+            {canSync && <ToolbarButton onClick={syncSelection.open ? syncSelection.cancel : syncSelection.begin} disabled={syncSelection.busy && !syncSelection.open} title="挑选风格串、待同步与同步记录" aria-expanded={syncSelection.open}><Link2 className="h-4 w-4" />智慧姬同步{syncSelection.savedCount > 0 ? ` ${syncSelection.savedCount}` : ''}</ToolbarButton>}
             <IconButton label="刷新列表" onClick={onRefresh} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
             <ImageTaggerAction notify={notify} />
             {!isGuest && <ToolbarButton tone="primary" onClick={() => setIsModalOpen(true)}><Plus className="h-4 w-4" />{createLabel}</ToolbarButton>}
@@ -440,15 +455,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           </div>
         </WorkspaceToolbar>
 
-        {syncSelection.selecting && <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-b border-indigo-100 bg-indigo-50/60 px-3 py-2 dark:border-indigo-900/50 dark:bg-indigo-950/20 md:px-5">
-          <p className="text-xs text-gray-600 dark:text-gray-300">{syncSelection.busy ? '正在读取或保存…' : `已选 ${syncSelection.selected.size} 条`}<span className="ml-2 text-gray-400">仅发送勾选的 V4.5 / V5；酒馆仍全部导入</span></p>
-          <div className="flex flex-wrap items-center gap-2">
-            <ToolbarButton disabled={syncSelection.busy || filteredChains.length === 0} onClick={() => syncSelection.setFiltered(filteredChains.map(chain => chain.id), true)} className="!h-9 !text-xs">全选筛选结果</ToolbarButton>
-            <ToolbarButton disabled={syncSelection.busy || filteredChains.length === 0} onClick={() => syncSelection.setFiltered(filteredChains.map(chain => chain.id), false)} className="!h-9 !text-xs">取消筛选结果</ToolbarButton>
-            <ToolbarButton disabled={syncSelection.busy} onClick={syncSelection.cancel} className="!h-9 !text-xs">取消</ToolbarButton>
-            <ToolbarButton tone="primary" disabled={syncSelection.busy} onClick={() => void syncSelection.save()} className="!h-9 !text-xs">保存同步范围</ToolbarButton>
-          </div>
-        </div>}
+        {canSync && syncSelection.open && <WisdomSyncToolbar sync={syncSelection} filteredIds={filteredChains.map(chain => chain.id)} />}
 
         <MobileBottomSheet open={showMobileFilters} title="筛选与排序" onClose={() => setShowMobileFilters(false)}>
           <div className="space-y-5">
@@ -459,7 +466,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             </div>
             <label className="block text-sm font-bold dark:text-white">模型版本<select value={selectedModel} onChange={event => setSelectedModel(event.target.value)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="">全部模型</option>{modelFilterOptions.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}</select></label>
             {allTags.length > 0 && <div><div className="mb-2 text-sm font-bold dark:text-white">Tag</div><div className="flex flex-wrap gap-2">{allTags.map(tag => <button key={tag} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`mobile-touch rounded-full px-3 text-xs ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}>{tag}</button>)}</div></div>}
-            {canSync && <button type="button" disabled={syncSelection.busy || syncSelection.selecting} onClick={() => { syncSelection.begin(); setShowMobileFilters(false); }} className="mobile-touch flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 text-sm dark:border-gray-600 disabled:opacity-40"><Link2 className="h-4 w-4" />智慧姬同步范围（{syncSelection.savedCount}）</button>}
+            {canSync && <button type="button" disabled={syncSelection.busy && !syncSelection.open} onClick={() => { if (!syncSelection.open) syncSelection.begin(); setShowMobileFilters(false); }} className="mobile-touch flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 text-sm dark:border-gray-600 disabled:opacity-40"><Link2 className="h-4 w-4" />智慧姬同步（待同步 {syncSelection.savedCount}）</button>}
             <button onClick={() => { void onRefresh(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl border border-gray-300 dark:border-gray-600">刷新列表</button>
           </div>
         </MobileBottomSheet>
@@ -467,8 +474,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         <div ref={chainScrollRef} onScroll={onScrollRestore} className="min-h-0 flex-1 overflow-y-auto p-3 md:p-5">
           {filteredChains.length === 0 ? (
             <div className="text-center py-20 bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700">
-              <p className="text-gray-500 text-lg mb-4">暂无数据</p>
-              {!isGuest && <button onClick={() => setIsModalOpen(true)} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-medium">{createLabel}</button>}
+              <p className="text-gray-500 text-sm mb-4">{syncSelection.open ? syncSelection.view === 'pending' ? '没有符合筛选条件的待同步风格串，可在「挑选风格串」中加入。' : syncSelection.view === 'records' ? '没有符合筛选条件的同步记录，接收确认后会显示在这里。' : '没有符合筛选条件的风格串。' : '暂无数据'}</p>
+              {!isGuest && !syncSelection.open && <button onClick={() => setIsModalOpen(true)} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-medium">{createLabel}</button>}
             </div>
           ) : (
             /* Grid Layout */

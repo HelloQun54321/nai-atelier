@@ -8,6 +8,7 @@
 import { json, error, parseStoredJson, type RouteContext } from './types';
 import { localHistoryEnabled, ensureLocalHistorySchema } from './historyRoutes';
 import { isStChatu8ExportableChain } from '../stChatu8Policy.mjs';
+import { applyStSyncUpdates, enqueueStSync, readStSyncChains, readStSyncWorkspace, removeStSyncPending, updateStSyncWorkspace, type StSyncUpdate } from '../stChatu8Workspace';
 
 const preferenceKey = 'st_chatu8_preferences_v1';
 const isEnabled = async (db: RouteContext['db']) => {
@@ -29,25 +30,31 @@ export async function handleStBridgeRoute(ctx: RouteContext): Promise<Response |
     return json({ enabled: body.enabled });
   }
 
-  // 使用既有设置表保存发送范围；初次为空，不沿用过去的全量关联。
-  if (path === '/api/st-chatu8/export-selection') {
+  // 队列与接收记录共用既有设置表，无 schema 迁移；旧范围可继续读取。
+  if (path === '/api/st-chatu8/export-selection' || path === '/api/st-chatu8/workspace' || path === '/api/integrations/st-chatu8/artist-records') {
     if (currentUser.role === 'guest') return error('Forbidden', 403);
-    const key = 'st_chatu8_export_selection_v1';
-    const rows = await db.prepare("SELECT id, params FROM chains WHERE type = 'style' OR type IS NULL OR type = ''").all<{ id: string; params: string }>();
-    const available = new Set(rows.results.filter(row => isStChatu8ExportableChain({ params: parseStoredJson(row.params, {}) })).map(row => row.id));
-    if (method === 'GET') {
-      const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
-      const value = parseStoredJson(row?.value, []);
-      return json({ chainIds: Array.isArray(value) ? [...new Set(value.filter(id => typeof id === 'string' && available.has(id)))] : [] });
-    }
+    const legacy = path.endsWith('/export-selection');
+    const internal = path.endsWith('/artist-records');
+    if (method === 'GET' && !internal) { const result = await readStSyncWorkspace(db); return json(legacy ? { chainIds: result.chainIds } : result); }
     if (method !== 'POST') return error('Method not allowed', 405);
     if (!await isEnabled(db)) return error('请先在设置中开启智慧姬同步', 409);
-    const body = await request.json() as { chainIds?: unknown };
+    const body = await request.json().catch(() => null) as { chainIds?: unknown; action?: string; updates?: StSyncUpdate[]; verifiedAt?: number } | null;
+    if (internal) {
+      if (!Array.isArray(body?.updates) || body.updates.some(item => !item || typeof item.chainId !== 'string' || typeof item.requestId !== 'string' || (item.status !== undefined && !['synced', 'removed'].includes(item.status)) || (item.error !== undefined && typeof item.error !== 'string') || (item.onlyPending !== undefined && typeof item.onlyPending !== 'boolean')) || !Number.isFinite(body.verifiedAt) || Number(body.verifiedAt) < 0) return error('同步回执无效', 400);
+      const result = await updateStSyncWorkspace(db, value => applyStSyncUpdates(value, body.updates!, Number(body.verifiedAt)));
+      return json(result);
+    }
     if (!Array.isArray(body?.chainIds) || body.chainIds.some(id => typeof id !== 'string' || !id || id.length > 200)) return error('同步范围无效', 400);
-    const chainIds = [...new Set(body.chainIds.filter(id => available.has(id)))];
-    await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
-      .bind(key, JSON.stringify(chainIds)).run();
-    return json({ chainIds });
+    if (!legacy && !['enqueue', 'requeue', 'remove'].includes(body.action || '')) return error('同步操作无效', 400);
+    const rows = await readStSyncChains(db, body.chainIds as string[]);
+    const available = new Set(rows.filter(row => isStChatu8ExportableChain({ params: parseStoredJson(row.params, {}) })).map(row => row.id));
+    const chainIds = [...new Set((body.chainIds as string[]).filter(id => body.action === 'remove' || available.has(id)))];
+    const result = await updateStSyncWorkspace(db, value => {
+      if (legacy) removeStSyncPending(value, value.entries.filter(entry => entry.status === 'pending' && !chainIds.includes(entry.chainId)).map(entry => entry.chainId));
+      if (body.action === 'remove') removeStSyncPending(value, chainIds);
+      else enqueueStSync(value, chainIds, body.action === 'requeue');
+    });
+    return json(legacy ? { chainIds: result.chainIds } : result);
   }
 
   if (path === '/api/integrations/st-chatu8/history/known' && method === 'POST') {

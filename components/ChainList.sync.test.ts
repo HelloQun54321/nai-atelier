@@ -28,7 +28,8 @@ const chains = [chain('a', '风格 A'), chain('b', '风格 B'), chain('v5', '风
 const props = () => ({ chains, type: 'style' as const, onCreate: vi.fn(), onSelect: vi.fn(), onDelete: vi.fn(), onRefresh: vi.fn(), isLoading: false, notify: vi.fn() });
 beforeEach(() => {
   preferences.enabled = true;
-  get.mockReset(); post.mockReset(); get.mockResolvedValue({ chainIds: [] }); post.mockImplementation(async (_path, body) => body);
+  get.mockReset(); post.mockReset(); get.mockResolvedValue({ entries: [], lastSnapshotAt: 0 });
+  post.mockImplementation(async (_path, body) => ({ entries: body.chainIds.map((chainId: string) => ({ chainId, requestId: chainId, status: 'pending', requestedAt: 1, confirmedAt: 0, lastVerifiedAt: 0 })), lastSnapshotAt: 0 }));
   vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
   window.history.replaceState(null, '');
 });
@@ -47,25 +48,28 @@ describe('风格串列表的酒馆筛选交互', () => {
     const v4 = screen.getByRole('checkbox', { name: '智慧姬同步：风格 V4' });
     expect(v4.getAttribute('aria-disabled')).toBe('true'); fireEvent.click(v4); expect(v4.getAttribute('aria-checked')).toBe('false');
     const search = screen.getByPlaceholderText('搜索我的风格串'); fireEvent.change(search, { target: { value: '风格 B' } });
+    expect(search.parentElement?.classList.contains('min-w-0')).toBe(true);
+    expect(search.parentElement?.classList.contains('min-w-[12rem]')).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
     fireEvent.change(search, { target: { value: '' } });
     expect(screen.getByRole('checkbox', { name: '智慧姬同步：风格 A' }).getAttribute('aria-checked')).toBe('true');
     expect(screen.getByRole('checkbox', { name: '智慧姬同步：风格 B' }).getAttribute('aria-checked')).toBe('true');
-    fireEvent.click(screen.getByRole('button', { name: '保存同步范围' }));
-    await waitFor(() => expect(post).toHaveBeenCalledWith('/st-chatu8/export-selection', { chainIds: ['a', 'v5', 'b'] }));
+    fireEvent.click(screen.getByRole('button', { name: '加入待同步' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/st-chatu8/workspace', { action: 'enqueue', chainIds: ['a', 'v5', 'b'] }));
     expect(p.onSelect).not.toHaveBeenCalled(); expect(p.onDelete).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole('checkbox', { name: '智慧姬同步：风格 A' })).toBeNull());
+    expect(screen.getByRole('tab', { name: '待同步 3' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: '返回资料库' }));
     fireEvent.click(screen.getByText('风格 A')); expect(p.onSelect).toHaveBeenCalledWith('a');
   });
   it('移动端在筛选面板提供同一选择入口；取消恢复列表且不保存', async () => {
     render(React.createElement(ChainList, props()));
     await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: '筛选与排序' }));
-    const entry = await screen.findByRole('button', { name: '智慧姬同步范围（0）' });
+    const entry = await screen.findByRole('button', { name: '智慧姬同步（待同步 0）' });
     await waitFor(() => expect(entry.hasAttribute('disabled')).toBe(false)); fireEvent.click(entry);
     await screen.findByRole('checkbox', { name: '智慧姬同步：风格 A' });
-    await waitFor(() => expect(screen.getByRole('button', { name: '取消' }).hasAttribute('disabled')).toBe(false));
-    fireEvent.click(screen.getByRole('button', { name: '取消' })); expect(post).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '返回资料库' })); expect(post).not.toHaveBeenCalled();
     expect(screen.queryByRole('checkbox', { name: '智慧姬同步：风格 A' })).toBeNull();
   });
   it('角色与游客页面不提供发送范围或读取请求', async () => {
@@ -74,14 +78,37 @@ describe('风格串列表的酒馆筛选交互', () => {
     render(React.createElement(ChainList, { ...props(), isGuest: true }));
     expect(screen.queryByRole('button', { name: '智慧姬同步' })).toBeNull(); expect(get).not.toHaveBeenCalled();
   });
+  it('待同步与接收记录分开，移出只改队列，对方移除条目可显式重新加入', async () => {
+    const entry = (chainId: string, status: string) => ({ chainId, requestId: chainId, status, requestedAt: 1, confirmedAt: 2, lastVerifiedAt: 2 });
+    const current = { entries: [entry('a', 'pending'), entry('b', 'synced'), entry('v5', 'removed')], lastSnapshotAt: 2 };
+    get.mockResolvedValue(current);
+    const p = props(); render(React.createElement(ChainList, p));
+    const trigger = await screen.findByRole('button', { name: '智慧姬同步 1' });
+    await waitFor(() => expect(trigger.hasAttribute('disabled')).toBe(false)); fireEvent.click(trigger);
+    await waitFor(() => expect(screen.getByRole('tab', { name: '待同步 1' }).getAttribute('aria-selected')).toBe('true'));
+    expect(screen.getByText('风格 A')).toBeTruthy(); expect(screen.queryByText('风格 B')).toBeNull();
+    post.mockResolvedValueOnce({ entries: current.entries.slice(1), lastSnapshotAt: 2 });
+    fireEvent.click(screen.getByRole('button', { name: '移出待同步：风格 A' }));
+    await waitFor(() => expect(post).toHaveBeenLastCalledWith('/st-chatu8/workspace', { action: 'remove', chainIds: ['a'] }));
+    expect(p.onDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('tab', { name: '同步记录 2' }));
+    expect(screen.queryByText('风格 A')).toBeNull(); expect(screen.getByText('风格 B')).toBeTruthy(); expect(screen.getByText('智慧姬中已移除', { selector: 'span' })).toBeTruthy();
+    fireEvent.change(screen.getByRole('combobox', { name: '记录状态' }), { target: { value: 'removed' } });
+    expect(screen.queryByText('风格 B')).toBeNull(); expect(screen.getByText('风格 V5')).toBeTruthy();
+    post.mockResolvedValueOnce({ entries: [entry('b', 'synced'), entry('v5', 'pending')], lastSnapshotAt: 2 });
+    await waitFor(() => expect(screen.getByRole('button', { name: '重新加入待同步：风格 V5' }).hasAttribute('disabled')).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: '重新加入待同步：风格 V5' }));
+    await waitFor(() => expect(post).toHaveBeenLastCalledWith('/st-chatu8/workspace', { action: 'requeue', chainIds: ['v5'] }));
+    expect(screen.getByRole('tab', { name: '待同步 1' }).getAttribute('aria-selected')).toBe('true');
+  });
   it('关闭时桌面与手机隐藏入口；开启后显示，编辑中关闭立即退出且不提交草稿', async () => {
     preferences.enabled = false;
     const p = props(); const view = render(React.createElement(ChainList, p));
     expect(screen.queryByRole('button', { name: '智慧姬同步' })).toBeNull(); expect(get).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '筛选与排序' }));
-    expect(screen.queryByRole('button', { name: '智慧姬同步范围（0）' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '智慧姬同步（待同步 0）' })).toBeNull();
     preferences.enabled = true; view.rerender(React.createElement(ChainList, p));
-    expect(await screen.findByRole('button', { name: '智慧姬同步范围（0）' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: '智慧姬同步（待同步 0）' })).toBeTruthy();
     const trigger = screen.getByRole('button', { name: '智慧姬同步' });
     await waitFor(() => expect(trigger.hasAttribute('disabled')).toBe(false)); fireEvent.click(trigger);
     await screen.findByRole('checkbox', { name: '智慧姬同步：风格 A' });

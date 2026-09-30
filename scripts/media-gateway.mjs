@@ -3082,6 +3082,10 @@ const serveDistFile = async (req, res, url) => {
           const payload = JSON.parse((await readRequestBody(req, 64 * 1024 * 1024)).toString('utf8') || '{}');
           return sendBridgeJson(req, res, 200, await stChatu8Bridge.sync(payload));
         }
+        if (url.pathname === '/api/integrations/st-chatu8/artist-receipts' && req.method === 'POST') {
+          const payload = JSON.parse((await readRequestBody(req, 64 * 1024 * 1024)).toString('utf8') || '{}');
+          return sendBridgeJson(req, res, 200, await stChatu8Bridge.acknowledgeArtists(payload));
+        }
         const vibeFileMatch = url.pathname.match(/^\/api\/integrations\/st-chatu8\/vibes\/([^/]+)\/file$/);
         if (vibeFileMatch && req.method === 'GET') {
           const file = await stChatu8Bridge.readVibeFile(decodeURIComponent(vibeFileMatch[1]));

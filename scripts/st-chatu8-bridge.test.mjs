@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { webcrypto } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
+import { JSDOM } from 'jsdom';
 import {
   canonicalVibeSourceHash,
   collectStHistoryCandidates,
@@ -20,14 +21,17 @@ const tempRoot = name => join(tmpdir(), `npm-st-bridge-${name}-${process.pid}-${
 const artistFixture = (initial = [], selected = []) => {
   const chains = structuredClone(initial);
   const calls = [];
-  const selection = { chainIds: selected };
+  const selection = { chainIds: selected, entries: [], lastSnapshotAt: 0 };
   const preferences = { enabled: true };
   let nextId = 0;
   const bridge = new StChatu8Bridge({
     requestWorkerJson: async (path, options = {}) => {
       calls.push({ path, ...structuredClone(options) });
       if (path === '/api/st-chatu8/preferences') return structuredClone(preferences);
-      if (path === '/api/st-chatu8/export-selection') return structuredClone(selection);
+      if (path === '/api/st-chatu8/workspace') {
+        for (const chainId of selection.chainIds) if (!selection.entries.some(entry => entry.chainId === chainId)) selection.entries.push({ chainId, requestId: `request:${chainId}`, status: 'pending' });
+        return structuredClone(selection);
+      }
       if (path === '/api/chains' && !options.method) return structuredClone(chains);
       if (path === '/api/chains' && options.method === 'POST') {
         const item = { ...options.body, id: `imported-${++nextId}`, previewImage: '', createdAt: 1, updatedAt: 1 };
@@ -129,7 +133,6 @@ test('renames retain stable identity and st-chatu8 authority; concurrent pages d
   const payload = { artists: [{ externalId: 'st:one', name: '原名称', fixedPrompt: 'original' }] };
   await Promise.all([f.bridge.sync(payload), f.bridge.sync(payload)]);
   assert.equal(f.chains.length, 1);
-  f.selection.chainIds = [f.chains[0].id];
   const next = await f.bridge.sync({ artists: [{ externalId: 'st:one', name: '新名称', fixedPrompt: 'changed' }] });
   assert.equal(f.chains.length, 1); assert.equal(f.chains[0].name, '新名称'); assert.equal(f.chains[0].basePrompt, 'changed');
   assert.equal(next.artistSync.updated, 1); assert.deepEqual(next.artists, []);
@@ -186,7 +189,7 @@ test('late preference reads cannot reopen a closed bridge; unknown settings fail
   assert.equal(f.bridge.status().enabled, false);
 });
 
-const extensionFixture = async () => {
+const extensionFixture = async (dom = null) => {
   const st = { yushe: {}, configImageStorage: {} };
   const extensionSettings = { 'st-chatu8': st };
   const source = (await readFile(new URL('../sillytavern-extension/npm-bridge/index.js', import.meta.url), 'utf8')).replace(/^import .*;\r?\n/gm, '');
@@ -194,17 +197,21 @@ const extensionFixture = async () => {
   let initialize;
   const timeouts = [];
   const events = new Map();
-  const extension = runInNewContext(`${source}\n;({ applyArtists, collectArtists, applyGroups, settings, syncNow });`, {
+  let persisted = structuredClone(extensionSettings);
+  let saveEnabled = true;
+  const extension = runInNewContext(`${source}\n;({ applyArtists, collectArtists, applyGroups, settings, syncNow, renderSettings, setStatus, readPersistedArtistSnapshot });`, {
     extension_settings: extensionSettings, crypto: webcrypto, TextEncoder, atob, btoa,
-    document: { querySelector: () => null, body: {} }, jQuery: callback => { initialize = callback; }, console: { warn() {}, error() {} },
+    document: dom?.window.document || { querySelector: () => null, body: {} }, jQuery: callback => { initialize = callback; }, console: { warn() {}, error() {} },
     window: { addEventListener: (name, callback) => events.set(name, callback) },
     eventSource: { on() {} }, event_types: { SETTINGS_UPDATED: 'updated' },
     setInterval: () => 1, clearInterval() {}, clearTimeout() {}, setTimeout: (callback, ms) => { timeouts.push({ callback, ms }); return 1; },
     MutationObserver: class { observe() {} disconnect() {} },
-    getRequestHeaders: () => ({}), saveSettingsDebounced() {},
-    fetch: (...args) => fetchImpl(...args),
+    getRequestHeaders: () => ({}), saveSettings() { if (saveEnabled) persisted = structuredClone(extensionSettings); }, saveSettingsDebounced() {},
+    fetch: (...args) => args[0] === '/api/settings/get'
+      ? Promise.resolve(new Response(JSON.stringify({ settings: JSON.stringify({ extension_settings: persisted }) }), { headers: { 'Content-Type': 'application/json' } }))
+      : fetchImpl(...args),
   });
-  return { extension, st, setFetch(next) { fetchImpl = next; }, start: () => initialize(), focus: () => events.get('focus')(), startup: () => timeouts.find(timer => timer.ms === 2500).callback() };
+  return { extension, st, setSaveEnabled(value) { saveEnabled = value; }, setFetch(next) { fetchImpl = next; }, start: () => initialize(), focus: () => events.get('focus')(), startup: () => timeouts.find(timer => timer.ms === 2500).callback() };
 };
 
 test('new native preset IDs are stable across pages while existing IDs remain compatible', async () => {
@@ -247,7 +254,7 @@ test('extension does not apply or acknowledge a response after the bridge is swi
     return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
   });
   await f.extension.syncNow();
-  assert.equal(calls.length, 2); assert.deepEqual(Object.keys(f.st.yushe), []);
+  assert.equal(calls.filter(url => url.endsWith('/sync')).length, 1); assert.equal(calls.some(url => url.endsWith('/artist-receipts')), false); assert.deepEqual(Object.keys(f.st.yushe), []);
   assert.equal(f.extension.settings().lastSyncAt, 0);
 });
 
@@ -282,6 +289,57 @@ test('extension acknowledges only successful cover uploads and does not re-downl
   await f.extension.applyArtists([artist]); assert.equal(calls.length, reads); assert.equal(f.st.yushe['封面'], original);
   f.st.configImageStorage[original.previewImageId].path = '/user/new-native-cover.png';
   assert.equal((await f.extension.collectArtists(f.extension.settings()))[0].previewSourceImage, '');
+});
+
+test('settings drawer truly collapses, remembers its choice and stays folded while status updates', async () => {
+  const dom = new JSDOM('<div id="extensions_settings2"></div>');
+  const f = await extensionFixture(dom); f.extension.renderSettings();
+  const panel = dom.window.document.querySelector('.npm-bridge-panel');
+  assert.equal(panel.tagName, 'DETAILS'); assert.equal(panel.open, false);
+  assert.equal(panel.querySelector('summary').textContent.includes('智慧姬同步'), true);
+  panel.open = true; panel.dispatchEvent(new dom.window.Event('toggle'));
+  assert.equal(f.extension.settings().panelExpanded, true);
+  panel.open = false; panel.dispatchEvent(new dom.window.Event('toggle'));
+  f.extension.setStatus('封面保存失败，请重试', 'pending');
+  assert.equal(panel.open, false); assert.equal(f.extension.settings().panelExpanded, false);
+  assert.equal(panel.querySelector('.npm-bridge-summary-status').textContent, '待确认');
+  assert.equal(panel.querySelector('.npm-bridge-status').title, '封面保存失败，请重试');
+  panel.remove(); f.extension.settings().panelExpanded = true; f.extension.renderSettings();
+  assert.equal(dom.window.document.querySelector('.npm-bridge-panel').open, true);
+  dom.window.close();
+});
+
+test('connector posts a per-item receipt only after persisted text and cover can be verified', async () => {
+  const f = await extensionFixture(); const bodies = [];
+  const artist = { externalId: 'npm:one', name: '风格', fixedPrompt: 'original', fixedPromptEnd: '', negativePrompt: '', previewImage: '', receipt: { requestId: 'request', token: 'token' }, updatedAt: 1 };
+  f.setFetch(async (url, options) => {
+    if (url.endsWith('/status')) return Response.json({ enabled: true, snapshotCursor: 'cursor' });
+    const body = JSON.parse(options.body); bodies.push({ url, body });
+    return Response.json(url.endsWith('/artist-receipts') ? { confirmed: 1 } : { enabled: true, protocolVersion: 2, artists: [artist], vibes: [], groups: [], status: {} });
+  });
+  await f.extension.syncNow();
+  const sync = bodies.find(item => item.url.endsWith('/sync')).body;
+  assert.equal(sync.artistSnapshot.complete, true); assert.equal(sync.artistSnapshot.cursor, 'cursor'); assert.equal(sync.manual, true);
+  const ack = bodies.find(item => item.url.endsWith('/artist-receipts')).body;
+  assert.equal(ack.artistSnapshot.complete, true); assert.equal(ack.receipts[0].success, true); assert.equal(ack.artists[0].fixedPrompt, 'original');
+  assert.equal(f.extension.settings().lastSyncAt > 0, true);
+  const settings = f.extension.settings(); assert.equal(f.extension.settings(), settings, '嵌套操作共用同一设置对象，完成时间也能持久化');
+});
+
+test('settings save failure or cover failure emits a failed receipt instead of a success', async () => {
+  for (const failCover of [false, true]) {
+    const f = await extensionFixture(); let ack;
+    f.setSaveEnabled(failCover);
+    f.setFetch(async (url, options) => {
+      if (url.endsWith('/status')) return Response.json({ enabled: true });
+      if (url.endsWith('/artist-receipts')) { ack = JSON.parse(options.body); return Response.json({ confirmed: 0 }); }
+      if (url.endsWith('/sync')) return Response.json({ enabled: true, protocolVersion: 2, artists: [{ externalId: 'npm:one', name: '风格', fixedPrompt: 'original', fixedPromptEnd: '', negativePrompt: '', previewImage: failCover ? '/api/assets/cover.png' : '', receipt: { requestId: 'request', token: 'token' } }], vibes: [], groups: [], status: {} });
+      throw new Error('封面下载失败 (503)');
+    });
+    await f.extension.syncNow();
+    assert.equal(ack.receipts[0].success, false);
+    assert.match(ack.receipts[0].reason, failCover ? /封面下载失败/ : /尚未保存/);
+  }
 });
 
 test('unchanged Vibe groups skip worker writes while real strength changes update the same group', async () => {
