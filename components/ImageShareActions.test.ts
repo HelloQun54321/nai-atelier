@@ -13,21 +13,21 @@ beforeEach(() => { localStorage.clear(); vi.mocked(copySharedImage).mockReset().
 afterEach(() => { cleanup(); });
 
 describe('共用图片分享操作', () => {
-  it.each(['overlay', 'toolbar', 'compact'] as const)('%s 入口随设置同步更新，普通下载清洗、原图显式绕过', async variant => {
+  it.each(['overlay', 'toolbar', 'compact'] as const)('%s 始终仅两个按钮，复制和下载都跟随设置', async variant => {
     const parentClick = vi.fn();
     const notify = vi.fn();
     render(React.createElement('div', { onClick: parentClick }, React.createElement(ImageShareActions, { imageUrl: '/original-image', filename: 'NAI.png', variant, notify })));
-    expect(screen.getByRole('button', { name: '下载原图' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '下载分享版' })).toBeNull();
-    act(() => setCleanSharedImages(true));
-    fireEvent.click(screen.getByRole('button', { name: '复制图片' }));
-    await waitFor(() => expect(copySharedImage).toHaveBeenCalledWith('/original-image', true));
-    await waitFor(() => expect(notify).toHaveBeenCalledWith('已复制分享版图片', 'success'));
-    fireEvent.click(screen.getByRole('button', { name: '下载分享版' }));
-    await waitFor(() => expect(downloadSharedImage).toHaveBeenCalledWith('/original-image', 'NAI.png', true));
-    await waitFor(() => expect((screen.getByRole('button', { name: '下载原图（含生成信息）' }) as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(screen.getByRole('button', { name: '下载原图（含生成信息）' }));
-    await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/original-image', 'NAI.png', false));
+    for (const clean of [false, true, false]) {
+      act(() => setCleanSharedImages(clean));
+      expect(screen.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['复制', '下载']);
+      fireEvent.click(screen.getByRole('button', { name: '复制' }));
+      await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/original-image', clean));
+      await waitFor(() => expect(notify).toHaveBeenCalledWith('已复制图片', 'success'));
+      await waitFor(() => expect((screen.getByRole('button', { name: '下载' }) as HTMLButtonElement).disabled).toBe(false));
+      fireEvent.click(screen.getByRole('button', { name: '下载' }));
+      await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/original-image', 'NAI.png', clean));
+      await waitFor(() => expect((screen.getByRole('button', { name: '复制' }) as HTMLButtonElement).disabled).toBe(false));
+    }
     expect(parentClick).not.toHaveBeenCalled();
   });
 
@@ -35,20 +35,20 @@ describe('共用图片分享操作', () => {
     setCleanSharedImages(true);
     vi.mocked(downloadSharedImage).mockRejectedValue(new Error('清洗失败'));
     render(React.createElement(ImageShareActions, { imageUrl: '/original-image', filename: 'NAI.png' }));
-    fireEvent.click(screen.getByRole('button', { name: '下载分享版' }));
+    fireEvent.click(screen.getByRole('button', { name: '下载' }));
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', '清洗失败');
     expect(downloadSharedImage).toHaveBeenCalledTimes(1);
     expect(downloadSharedImage).toHaveBeenCalledWith('/original-image', 'NAI.png', true);
-    expect((screen.getByRole('button', { name: '复制图片' }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole('button', { name: '复制' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('处理期间不重复发起复制或下载', async () => {
     let resolveCopy!: () => void;
     vi.mocked(copySharedImage).mockImplementation(() => new Promise(resolve => { resolveCopy = resolve; }));
     render(React.createElement(ImageShareActions, { imageUrl: '/original-image', filename: 'NAI.png' }));
-    const copy = screen.getByRole('button', { name: '复制图片' });
+    const copy = screen.getByRole('button', { name: '复制' });
     fireEvent.click(copy); fireEvent.click(copy);
-    fireEvent.click(screen.getByRole('button', { name: '下载原图' }));
+    fireEvent.click(screen.getByRole('button', { name: '下载' }));
     expect(copySharedImage).toHaveBeenCalledTimes(1);
     expect(downloadSharedImage).not.toHaveBeenCalled();
     await act(async () => resolveCopy());

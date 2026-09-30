@@ -25,6 +25,7 @@ import { CloseButton } from '../DesignSystem';
 import { OriginalImage, SmartImage } from '../SmartImage';
 import { ParamsViewer } from '../ParamsViewer';
 import { ImageShareActions } from '../ImageShareActions';
+import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { ImageTaggerPanel } from '../ImageTaggerPanel';
 import { canEditItem, DEFAULT_PARAMS, fetchImageFile, formatDate, sourceIcon, splitTags } from './InspirationShared';
@@ -229,6 +230,7 @@ export const InspirationDetail: React.FC<Props> = ({
   const SourceIcon = sourceIcon(draft.sourceType);
 
   return (
+    <ImagePreviewPortal>
     <div className="ui-backdrop-enter fixed inset-0 z-[1500] flex items-center justify-center bg-black/80 p-0 backdrop-blur-sm md:p-6" onClick={closeLayer}>
       <div data-safe-mode-work="true" className="ui-modal-enter flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-950 md:h-[92vh] md:rounded-2xl md:border md:border-gray-800 lg:flex-row" onClick={event => event.stopPropagation()}>
         {/* 左侧大图展示舞台 */}
@@ -689,5 +691,6 @@ export const InspirationDetail: React.FC<Props> = ({
         />
       )}
     </div>
+    </ImagePreviewPortal>
   );
 };

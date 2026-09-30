@@ -1279,7 +1279,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           <section id="settings-privacy" className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'privacy' ? 'hidden' : ''}`}>
             <h3 className="mb-4 text-base font-bold text-gray-900 dark:text-white">隐私与分享</h3>
             <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-              <span className="min-w-0"><b className="block text-sm text-gray-900 dark:text-white">分享图片时移除生成信息</b><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">下载或复制图片时，另生成移除提示词、风格串及生成参数的分享副本。原图和历史参数完整保留，仍可单独下载原图。</span></span>
+              <span className="min-w-0"><b className="block text-sm text-gray-900 dark:text-white">分享图片时移除生成信息</b><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">下载或复制图片时，另生成移除提示词、风格串及生成参数的分享副本。原图和历史参数完整保留。开启时复制、下载清洗副本；关闭时保留图片信息。</span></span>
               <input type="checkbox" aria-label="分享图片时移除生成信息" checked={cleanSharedImages} onChange={event => {
                 try { setCleanSharedImages(event.target.checked); }
                 catch { notify('设置保存失败，请检查浏览器存储权限', 'error'); }

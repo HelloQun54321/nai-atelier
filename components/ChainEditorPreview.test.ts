@@ -29,7 +29,29 @@ const renderPreview = (onGenerate: () => void, isGenerating = false) => render(R
 }));
 
 describe('四模式的分享入口', () => {
-  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 预览跟随开关，同时保留显式原图入口', operation => {
+  it('分享与封面按钮纵排等宽，封面文字居中，点击不误开大图', () => {
+    const onCover = vi.fn();
+    const onOpen = vi.fn();
+    render(React.createElement(ChainEditorPreview, {
+      isGenerating: false, handleGenerate: vi.fn(), errorMsg: null, generatedImage: '/image.png',
+      previewImage: undefined, setLightboxImg: onOpen, isOwner: true, isUploading: false,
+      handleSavePreview: onCover, handleUploadCover: vi.fn(), getDownloadFilename: () => 'NAI.png', generationCostLabel: '免费',
+    }));
+    const cover = screen.getByRole('button', { name: '设为封面' });
+    expect(cover.classList.contains('justify-center')).toBe(true);
+    expect(cover.classList.contains('min-h-10')).toBe(true);
+    expect(cover.parentElement?.classList.contains('flex-col')).toBe(true);
+    expect(cover.parentElement?.classList.contains('w-28')).toBe(true);
+    const download = screen.getByRole('button', { name: '下载' });
+    expect(download.classList.contains('justify-center')).toBe(true);
+    expect(download.classList.contains('min-h-10')).toBe(true);
+    expect(download.parentElement?.classList.contains('items-stretch')).toBe(true);
+    expect(download.parentElement?.classList.contains('items-center')).toBe(false);
+    fireEvent.click(cover);
+    expect(onCover).toHaveBeenCalledOnce();
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 预览随设置清洗，始终只有复制和下载', operation => {
     setCleanSharedImages(true);
     const image = '/api/local-history/share-test/image';
     if (operation === 'text-to-image') {
@@ -44,12 +66,12 @@ describe('四模式的分享入口', () => {
         onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'NAI.png',
       }));
     }
-    expect(screen.getByRole('button', { name: '复制图片' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '下载分享版' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '下载原图（含生成信息）' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '复制' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下载' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /原图|分享版/ })).toBeNull();
     act(() => setCleanSharedImages(false));
-    expect(screen.queryByRole('button', { name: '下载分享版' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '下载原图（含生成信息）' })).toBeNull();
+    expect(screen.getByRole('button', { name: '复制' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /原图|分享版/ })).toBeNull();
     expect(screen.getByRole('button', { name: '下载' })).toBeTruthy();
   });
 });

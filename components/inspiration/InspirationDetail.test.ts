@@ -115,19 +115,20 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(screen.getByRole('button', { name: /反推 Tag/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /导入实验室/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /提取资产/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '下载原图' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '复制图片' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下载' })).toBeTruthy();
+    expect(screen.getByTitle('复制图片')).toBeTruthy();
   });
 
-  it('开启清洗后显示分享下载与独立原图入口，窄屏操作条允许换行', () => {
+  it('开启清洗后保持两个分享按钮，窄屏操作条允许换行', () => {
     setCleanSharedImages(true);
     render(React.createElement(InspirationDetail, {
       item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser,
       notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn(),
     }));
-    expect(screen.getByRole('button', { name: '下载分享版' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '下载原图（含生成信息）' })).toBeTruthy();
-    const footer = screen.getByRole('button', { name: '复制图片' }).closest('footer');
+    expect(screen.getByRole('button', { name: '下载' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /原图|分享版/ })).toBeNull();
+    expect(screen.getByTitle('复制图片').closest('.ui-backdrop-enter')?.parentElement).toBe(document.body);
+    const footer = screen.getByTitle('复制图片').closest('footer');
     expect(footer?.firstElementChild?.classList.contains('flex-wrap')).toBe(true);
   });
 

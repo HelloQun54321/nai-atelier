@@ -20,6 +20,7 @@ import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache'
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useLowConsumption } from '../services/lowConsumption';
 import { ImageShareActions } from './ImageShareActions';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
 
 interface GenHistoryProps {
     currentUser: User;
@@ -1163,6 +1164,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
             {/* Lightbox */}
             {lightbox && (
+                <ImagePreviewPortal>
                 <div className="fixed inset-0 z-[1500] bg-black/90 backdrop-blur-sm flex items-center justify-center p-0 md:p-8" onClick={closeLightbox}>
                     <div className="bg-white dark:bg-gray-900 w-full max-w-6xl h-[100dvh] md:h-[90vh] rounded-none md:rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row" onClick={e => e.stopPropagation()}>
                         {/* Image Area */}
@@ -1226,6 +1228,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                         </div>
                     </div>
                 </div>
+                </ImagePreviewPortal>
             )}
 
 

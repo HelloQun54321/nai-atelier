@@ -13,6 +13,7 @@ import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImpor
 import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
 import { ImageShareActions } from './ImageShareActions';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ImageEditPanel, ImageEditRequest } from './ImageEditPanel';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { dataUrlToBlob } from '../services/imageEdit';
@@ -2300,11 +2301,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
             {/* Lightbox Modal */}
             {lightboxImg && (
+                <ImagePreviewPortal>
                 <div role="dialog" aria-modal="true" aria-label="图片预览" className="fixed inset-0 z-[1500] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setLightboxImg(null)}>
-                    <div className="absolute top-4 left-4 z-10 flex max-w-[calc(100%-5rem)] flex-wrap items-center gap-2" onClick={e => e.stopPropagation()}>
-                        <ImageShareActions imageUrl={lightboxImg} filename={getDownloadFilename()} notify={notify} variant="overlay" downloadLabel="下载" />
+                    <div className="absolute top-4 left-4 right-16 z-10 flex flex-wrap items-center gap-2" onClick={e => e.stopPropagation()}>
+                        <ImageShareActions imageUrl={lightboxImg} filename={getDownloadFilename()} notify={notify} variant="overlay" />
                         {isOwner && lightboxImg === generatedImage && chain.id !== 'playground' && (
-                            <button type="button" onClick={handleSavePreview} disabled={isUploading} className="mobile-touch rounded-lg bg-indigo-600/90 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50">{isUploading ? '上传中...' : '设为封面'}</button>
+                            <button type="button" onClick={handleSavePreview} disabled={isUploading} className="mobile-touch inline-flex min-h-10 items-center justify-center rounded-lg bg-indigo-600/90 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50">{isUploading ? '上传中...' : '设为封面'}</button>
                         )}
                     </div>
                     {previewHistory.length > 1 && (
@@ -2343,10 +2345,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             {previewIndex + 1} / {previewHistory.length} · {new Date(lightboxItem.createdAt).toLocaleString('zh-CN')}
                         </div>
                     )}
-                    <button ref={lightboxCloseBtnRef} className="absolute top-4 right-4 text-white hover:text-gray-300" onClick={() => setLightboxImg(null)} aria-label="关闭大图">
+                    <button ref={lightboxCloseBtnRef} className="mobile-touch absolute top-4 right-4 z-20 flex h-10 w-10 items-center justify-center rounded-lg text-white hover:bg-white/10 hover:text-gray-300" onClick={() => setLightboxImg(null)} aria-label="关闭大图">
                         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                 </div>
+                </ImagePreviewPortal>
             )}
 
             <ChainEditorPresetModal

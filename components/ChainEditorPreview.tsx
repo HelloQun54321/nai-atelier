@@ -148,9 +148,9 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                                     {historyLabel}
                                 </div>
                             )}
-                            <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                <ImageShareActions imageUrl={generatedImage} filename={getDownloadFilename()} notify={notify} variant="overlay" downloadLabel="下载" className="flex-col items-stretch" />
-                                {isOwner && !hideCoverActions && <button onClick={(e) => { e.stopPropagation(); handleSavePreview(); }} disabled={isUploading} className="bg-indigo-600/90 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1">{isUploading ? '上传中...' : '设为封面'}</button>}
+                            <div className="absolute top-4 right-4 z-30 flex w-28 flex-col gap-2 md:w-32 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                                <ImageShareActions imageUrl={generatedImage} filename={getDownloadFilename()} notify={notify} variant="overlay" className="flex-col items-stretch" />
+                                {isOwner && !hideCoverActions && <button onClick={(e) => { e.stopPropagation(); handleSavePreview(); }} disabled={isUploading} className="mobile-touch inline-flex min-h-10 items-center justify-center rounded-lg bg-indigo-600/90 px-3 py-2 text-xs font-bold text-white">{isUploading ? '上传中...' : '设为封面'}</button>}
                             </div>
                         </>
                     ) : (
@@ -160,8 +160,8 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                     <span className="bg-black/50 text-white px-3 py-1 rounded text-xs">当前封面</span>
                                 </div>
-                                <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                    <ImageShareActions imageUrl={previewImage} filename={getDownloadFilename()} notify={notify} variant="overlay" downloadLabel="下载封面" className="flex-col items-stretch" />
+                                <div className="absolute top-4 right-4 z-30 flex w-28 flex-col gap-2 md:w-32 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                                    <ImageShareActions imageUrl={previewImage} filename={getDownloadFilename()} notify={notify} variant="overlay" className="flex-col items-stretch" />
                                 </div>
                             </>
                         ) : <div className="rounded-lg border border-dashed border-gray-300 px-4 py-3 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">{emptyLabel}</div>
