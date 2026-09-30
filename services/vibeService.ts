@@ -1,6 +1,7 @@
 import { VibeAsset, VibeGroup, VibeSelection } from '../types';
 import { api, parseErrorResponse } from './api';
-import { ANLAS_BUDGET_CHANGED_EVENT } from './anlasBudget';
+import { ANLAS_BUDGET_CHANGED_EVENT, hashNaiApiKey } from './anlasBudget';
+import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 
 const fileToText = (file: File) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader();
@@ -52,10 +53,18 @@ export const vibeService = {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({ informationExtracted }),
     });
-    if (!response.ok) return await responseError(response) as never;
+    if (!response.ok) throw await responseError(response);
     const result = await response.json();
     if (result.anlasBudget) {
-      window.dispatchEvent(new CustomEvent(ANLAS_BUDGET_CHANGED_EVENT, { detail: result.anlasBudget }));
+      // 预算响应不携带 Key 标识，按发起编码的 Key 补齐，迟到事件由预算订阅过滤。
+      const keyHash = await hashNaiApiKey(apiKey.trim());
+      window.dispatchEvent(new CustomEvent(ANLAS_BUDGET_CHANGED_EVENT, { detail: { ...result.anlasBudget, keyHash } }));
+    }
+    // 新编码成功后立即查询官方余额，不等待查询返回再交付资产；重复复用没有新消费。
+    // 期间切 Key 时不因旧账号编码完成而刷新当前另一个账号。
+    if (result.duplicate !== true && typeof window !== 'undefined') {
+      const activeKey = (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim();
+      if (activeKey === apiKey.trim()) window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
     }
     return result;
   },
