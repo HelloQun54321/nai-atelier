@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.3.4-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.4.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -342,6 +342,18 @@ flowchart LR
 - **多角色独立管理**：每个角色拥有专属正负面提示词，支持 AI 构图或精准坐标定位。
 - **全套参数同捆**：画面尺寸、Steps、CFG、CFG Rescale、Variety+、采样器与 Seed 一并封存。
 - **资产视觉归档**：支持自定义封面、标题、说明备注与分类标签，在卡片画廊中一目了然。
+
+#### 风格串收集模式（Windows 本机）
+
+在电脑的风格串工具栏开启「收集模式」，等待置顶状态窗显示收集中后，在 Discord 等应用复制**单个完整图片直链**。项目自动下载、检查普通 PNG／NovelAI Alpha 隐藏生成信息，保存完整提示词、结构化角色、负面词、参数、原图封面与来源，统一添加「收集中」标签，之后再整理名称和内容。无需 NovelAI Key，不调用生图、Vibe 编码或 LLM，不消耗 Anlas。
+
+- 只接收开启后的新复制；普通文字、消息链接、频道链接、网页地址、直接复制图片及混合／多链接内容不收集，不建立剪贴板历史。
+- 置顶窗显示阶段、待处理数量及已保存／跳过／失败计数，可拖动、折叠、暂停／继续或结束，不抢走其他应用焦点。位置记在本机设置中，恢复时限制在可见屏幕内。
+- 暂停停止接收新复制，队列继续完成；恢复不补收暂停期间的内容。结束／关闭状态窗取消剩余任务，已保存条目保留；网页切后台、切页或关闭后继续收集，本机服务退出／重启及状态窗意外退出后关闭。
+- 同一会话相同链接跳过；不同签名链接指向同一文件时按 SHA-256 去重，重启后仍有效，对应风格串删除后可重新收集。失败不自动重试，工具栏旁的状态面板提供手动重试。
+- 下载先放内存，无生成信息、损坏、重复或取消的副本随任务释放，只有通过检查的图片进入封面存储；不触碰既有原图和用户下载目录。下载限时 30 秒，沿用现有封面 **12 MiB** 上限（比 32 MiB 兜底更严格），最多 4000 万像素；逐跳验证公网地址，并固定连接到通过校验的 IP。
+
+收集开关只在 Windows 本机页面可用，手机不能远程启动电脑监听。需要系统自带的 Windows PowerShell、WinForms 和桌面会话；无法启动时恢复关闭并显示原因。第一版支持带 NovelAI 生成信息的 PNG，其他格式的候选链接下载后如无可识别信息会跳过。
 
 ### 🧪 生图实验室：组合与验证中心
 

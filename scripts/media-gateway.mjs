@@ -20,6 +20,7 @@ import { PIXIV_IMAGE_HOST, PIXIV_REFERER, PixivGalleryService } from './pixiv-lo
 import { PixivWebLoginOrchestrator } from './pixiv-web-login.mjs';
 import { localBackupService, saveBackupConfig, openInExplorer } from './local-backup.mjs';
 import { getDesktopLauncherStatus, createDesktopLauncher, openDesktopFolder, generateLauncherBatContent } from './desktop-launcher.mjs';
+import { StyleCollector, collectorLocalRequest } from './style-collector.mjs';
 
 const CACHE_VERSION = 'v1';
 const HISTORY_THUMBNAIL_CACHE_VERSION = 'v2';
@@ -2806,6 +2807,21 @@ const serveDistFile = async (req, res, url) => {
 };
   const proxyAgent = outboundProxyUrl ? new ProxyAgent(outboundProxyUrl) : null;
   const remoteFetch = (url, options = {}) => undiciFetch(url, { ...options, ...(proxyAgent ? { dispatcher: proxyAgent } : {}) });
+  let collectorReset = Promise.resolve();
+  const styleCollector = new StyleCollector({
+    worker: async (action, body) => {
+      if (action === 'position' && body === undefined) await collectorReset;
+      return requestWorkerJson(`/api/internal/style-collector/${action}`, internalWorkerRequest, workerPort, {
+        method: body === undefined ? 'GET' : 'POST', body, headers: { 'x-nai-collector-control': 'true' },
+      });
+    },
+    proxyUrl: outboundProxyUrl,
+    modelMappings: () => getNaiRuntime().metadataModelMappings || {},
+  });
+  const collectorSubscribers = new Set();
+  // 服务重启默认关闭，并使上一进程尚未完成的提交失效。
+  collectorReset = styleCollector.worker('session', { session: '' }).catch(() => {});
+  await collectorReset;
   const cloudQueue = new CloudQueueCoordinator(remoteFetch);
   const imageTagger = new ImageTaggerService(remoteFetch);
   const cloudQueueStore = await loadCloudQueuePreferences();
@@ -2944,6 +2960,31 @@ const serveDistFile = async (req, res, url) => {
     markUserTraffic();
     let url;
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
+    if (url.pathname.startsWith('/api/internal/style-collector/')) return sendJson(res, 403, { error: 'Forbidden' });
+    if (url.pathname.startsWith('/api/style-collector/')) {
+      if (!collectorLocalRequest(req)) return sendJson(res, 403, { error: '收集模式只允许电脑本机页面控制' });
+      res.setHeader('Cache-Control', 'no-store');
+      if (req.method === 'GET' && url.pathname === '/api/style-collector/state') return sendJson(res, 200, styleCollector.state());
+      if (req.method === 'GET' && url.pathname === '/api/style-collector/events') {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+        const update = state => {
+          if (res.destroyed || res.writableEnded) return;
+          if (res.writableLength > 128 * 1024) return res.destroy();
+          res.write(`data: ${JSON.stringify(state)}\n\n`);
+        };
+        collectorSubscribers.add(res); styleCollector.on('state', update); update(styleCollector.state());
+        const heartbeat = setInterval(() => { if (!res.destroyed && !res.writableEnded) res.write(': heartbeat\n\n'); }, 15_000); heartbeat.unref();
+        res.on('error', () => res.destroy());
+        res.on('close', () => { collectorSubscribers.delete(res); clearInterval(heartbeat); styleCollector.off('state', update); });
+        return;
+      }
+      if (req.method !== 'POST' || req.headers['x-nai-local-control'] !== 'true') return sendJson(res, 403, { error: 'Forbidden' });
+      try {
+        const body = await readJsonBody(req, 4096);
+        const state = await styleCollector.command(url.pathname.split('/').pop(), body.id);
+        return sendJson(res, 200, state);
+      } catch (error) { return sendJson(res, 400, { error: error.message || '收集操作失败' }); }
+    }
     if (url.pathname.startsWith('/api/assets/covers/') && req.method === 'OPTIONS') {
       const origin = isLoopbackOrigin(req.headers.origin) ? req.headers.origin : '';
       if (!origin) return sendJson(res, 403, { error: 'Forbidden' });
@@ -3592,9 +3633,16 @@ const serveDistFile = async (req, res, url) => {
     }
   });
   server.on('close', () => {
+    styleCollector.shutdown();
     proxyAgent?.close().catch(() => {});
     void webLoginOrchestrator.shutdown?.();
   });
+  // close 可能等待 SSE 连接，先同步结束监听再进入 HTTP 关闭流程。
+  const closeServer = server.close.bind(server);
+  server.close = (...args) => { styleCollector.shutdown(); for (const subscriber of collectorSubscribers) subscriber.end(); return closeServer(...args); };
+  const exitCollector = () => styleCollector.shutdown();
+  process.once('exit', exitCollector);
+  server.once('close', () => process.off('exit', exitCollector));
 
   server.on('upgrade', (req, socket, head) => {
     const upstream = connectSocket(workerPort, '127.0.0.1', () => {

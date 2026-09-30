@@ -14,6 +14,7 @@ import { useNaiRuntime } from '../services/naiRuntime';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { FolderBatchImportModal } from './chain/FolderBatchImportModal';
+import { StyleCollectorControl } from './StyleCollectorControl';
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -390,6 +391,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       <div className="mx-auto flex min-h-0 w-full max-w-[1920px] flex-1 flex-col">
         <WorkspaceToolbar>
           <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={`搜索${title}`} containerClassName="min-w-[12rem] flex-1 md:max-w-none!" />
+          {!isGuest && type === 'style' && <StyleCollectorControl onSaved={onRefresh} notify={notify} />}
           <div className="hidden min-w-0 flex-none items-center gap-2 md:flex">
             {allTags.length > 0 && <div className="relative flex-none">
               <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} className={selectedTags.size > 0 ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!bg-indigo-950/40' : ''} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" />标签{selectedTags.size > 0 ? ` ${selectedTags.size}` : ''}</ToolbarButton>

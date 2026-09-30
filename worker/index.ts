@@ -9,6 +9,7 @@ import { handleHistoryRoute, handleAgentRoute } from './routes/historyRoutes';
 import { handleStBridgeRoute } from './routes/stBridgeRoutes';
 import { handleVibeRoute } from './routes/vibeRoutes';
 import { handleNaiKeyVaultRoute } from './routes/naiKeyVaultRoutes';
+import { handleStyleCollectorRoute } from './routes/styleCollectorRoutes';
 import {
   handleLanRoute, handleSettingsRoute, handleMediaRequest,
   isLoopbackHostname, hasValidLanAccess, lanAccessRequired,
@@ -184,6 +185,8 @@ export default {
         ctx,
       };
 
+      const collectorResult = await handleStyleCollectorRoute(routeContext);
+      if (collectorResult) return collectorResult;
       const settingsResult = await handleSettingsRoute(routeContext);
       if (settingsResult) return settingsResult;
 
