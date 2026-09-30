@@ -14,6 +14,7 @@ import { LabModuleSection } from './LabModuleSection';
 import { OutpaintCanvasStage } from './OutpaintCanvasStage';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { VibeManager } from './VibeManager';
+import { useLowConsumption } from '../services/lowConsumption';
 
 interface ImageEditControlsProps {
   operation: ImageEditOperation;
@@ -84,6 +85,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
 
   const runtime = useNaiRuntime();
   const modelInfo = getRuntimeNaiModelInfo(selectableParams.model, runtime);
+  const lowConsumption = useLowConsumption();
   const supportsVibe = operation === 'image-to-image' && modelInfo.supportsVibes;
   const supportsCharacterReference = operation === 'image-to-image'
     ? modelInfo.supportsCharacterReferences
@@ -415,7 +417,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
       </LabModuleSection>
 
       {supportsCharacterReference && <LabModuleSection moduleId="characterReference" label="角色参考" order={getModuleOrder(layout, 'characterReference')} defaultCollapsed={isModuleCollapsed(layout, 'characterReference')} className={mobileTab === 'prompt' ? 'block' : 'hidden lg:block'}>
-        <CharacterReferenceManager params={selectableParams} setParams={params => onDraftChange({ params })} markChange={() => undefined} notify={notify} operation={operation} />
+        {lowConsumption.enabled ? <p className="text-xs text-gray-500 dark:text-gray-400">低消耗模式已暂停角色参考，关闭后恢复原选择。</p> : <CharacterReferenceManager params={selectableParams} setParams={params => onDraftChange({ params })} markChange={() => undefined} notify={notify} operation={operation} />}
       </LabModuleSection>}
 
       {supportsVibe && <LabModuleSection moduleId="vibe" label="Vibe Transfer" order={getModuleOrder(layout, 'vibe')} defaultCollapsed={isModuleCollapsed(layout, 'vibe')} className={mobileTab === 'prompt' ? 'block' : 'hidden lg:block'}>

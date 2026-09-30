@@ -14,6 +14,7 @@ import { PromptAgentService } from './prompt-agent.mjs';
 import { StChatu8Bridge, installSillyTavernBridgeExtension } from './st-chatu8-bridge.mjs';
 import { ImageTaggerService } from './image-tagger.mjs';
 import { MEDIA_REMOTE_HOSTS, LAN_ACCESS_COOKIE } from '../worker/sharedWhitelist.mjs';
+import { lowConsumptionRuntimeHealthy, lowConsumptionViolation } from '../worker/lowConsumptionPolicy.mjs';
 import { PIXIV_IMAGE_HOST, PIXIV_REFERER, PixivGalleryService } from './pixiv-local.mjs';
 import { PixivWebLoginOrchestrator } from './pixiv-web-login.mjs';
 import { localBackupService, saveBackupConfig, openInExplorer } from './local-backup.mjs';
@@ -537,7 +538,7 @@ const readJsonBody = async (req, limit) => {
   }
 };
 
-const requestWorkerJson = (path, req, workerPort, { method = 'GET', body } = {}) => new Promise((resolve, reject) => {
+const requestWorkerJson = (path, req, workerPort, { method = 'GET', body, headers = {} } = {}) => new Promise((resolve, reject) => {
   const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
   const upstream = httpRequest({
     hostname: '127.0.0.1', port: workerPort, path, method,
@@ -546,6 +547,7 @@ const requestWorkerJson = (path, req, workerPort, { method = 'GET', body } = {})
       host: getForwardHost(req), 'user-agent': req.headers['user-agent'] || 'NAI-Atelier-MediaGateway',
       'x-forwarded-for': normalizeIp(req.socket.remoteAddress),
       'x-nai-client-ip': normalizeIp(req.socket.remoteAddress),
+      ...headers,
       ...(payload ? { 'content-length': payload.length } : {}),
     },
   }, async upstreamRes => {
@@ -970,6 +972,49 @@ const setOpusUsageSnapshot = (keyHash, isNegative, opusSubscriber = false) => {
 };
 
 const getOpusUsageSnapshot = keyHash => lastKnownOpusUsage.get(keyHash) || { exhausted: false, opusSubscriber: false, updatedAt: 0 };
+
+const readLowConsumption = (req, workerPort) => requestWorkerJson('/api/low-consumption', req, workerPort, { headers: { authorization: req.headers.authorization || '' } });
+const lowConsumptionActiveKeys = new Set();
+const acquireLowConsumptionGeneration = keyHash => {
+  if (lowConsumptionActiveKeys.has(keyHash)) throw Object.assign(new Error('低消耗模式：当前 Key 仍有生成任务，请等待结束后再生成'), { status: 409, code: 'LOW_CONSUMPTION_BUSY' });
+  lowConsumptionActiveKeys.add(keyHash);
+  return () => lowConsumptionActiveKeys.delete(keyHash);
+};
+
+// ZIP／SSE 共用生成前校验；拒绝时不进入公共队列，不调用生图，也不沿用旧免费快照。
+export const enforceLowConsumptionRequest = async ({ payload, authorization, keyHash, req, workerPort, requestRemote,
+  signal, loadPreferences = readLowConsumption, readBudget = (request, port, hash) => requestWorkerJson(`/api/anlas-budget?keyHash=${hash}`, request, port),
+  runtime = getNaiRuntime(), forceEnabled = false, onEnabled = () => {} }) => {
+  const preferences = await loadPreferences(req, workerPort);
+  if (typeof preferences?.enabled !== 'boolean') throw Object.assign(new Error('无法确认低消耗设置，请刷新后再生成'), { status: 503 });
+  if (!preferences.enabled && !forceEnabled) return false;
+  onEnabled();
+  const parameters = payload?.parameters || {};
+  const operation = parameters._local_edit_operation || (payload.action === 'img2img' ? 'image-to-image' : payload.action === 'infill' ? 'inpaint' : 'text-to-image');
+  let subscription = null;
+  try {
+    const response = await fetchNovelAiSubscription(authorization, AbortSignal.any([signal || new AbortController().signal, AbortSignal.timeout(10_000)]), requestRemote);
+    if (response.ok) subscription = sanitizeNovelAiSubscription(await response.json());
+  } catch { /* 费用未知时由统一策略拒绝。 */ }
+  const usageLimited = isNaiUsageLimitedModel(payload.model, runtime);
+  const subscriptionKnown = subscription?.active === true && (!usageLimited || subscription?.usage !== undefined);
+  const usageExhausted = subscription?.usage?.isNegative === true || (subscription?.usage?.percent !== undefined && subscription.usage.percent <= 0);
+  const opusSubscriber = subscription?.active === true && Number(subscription.tier) >= 3;
+  if (subscriptionKnown) setOpusUsageSnapshot(keyHash, usageExhausted, opusSubscriber);
+  const estimatedCost = estimateNovelAiGenerationCost(payload, usageExhausted, opusSubscriber);
+  if (subscriptionKnown && !opusSubscriber && operation === 'text-to-image') throw Object.assign(new Error('低消耗模式：文生图零点数路径需要有效的 Opus 订阅'), { status: 400, code: 'LOW_CONSUMPTION_LIMIT' });
+  const budget = estimatedCost > 0 ? await readBudget(req, workerPort, keyHash) : { remaining: 0 };
+  const referenceCount = parameters._local_character_references?.enabled ? parameters._local_character_references.slots?.length || 0
+    : parameters.director_reference_images?.length || parameters.director_reference_images_cached?.length || 0;
+  const vibeCount = parameters._local_vibes?.enabled ? parameters._local_vibes.slots?.length || 0
+    : parameters.reference_image_multiple?.length || parameters.reference_image_multiple_cached?.length || 0;
+  const violation = lowConsumptionViolation({ operation, model: payload.model, steps: Number(parameters.steps),
+    freeMaxSteps: runtime.freeMaxSteps, width: Number(parameters.width), height: Number(parameters.height), freeMaxArea: runtime.freeMaxArea,
+    referenceCount, vibeCount, focused: parameters._local_focused_inpainting === true, estimatedCost,
+    remaining: Number(budget?.remaining), runtimeHealthy: lowConsumptionRuntimeHealthy(runtime), subscriptionKnown, usageLimited, usageExhausted });
+  if (violation || Number(parameters.n_samples || 1) !== 1) throw Object.assign(new Error(violation || '低消耗模式：每次只生成一张图片'), { status: 400, code: 'LOW_CONSUMPTION_LIMIT' });
+  return true;
+};
 
 /** 成功生成统一走这里结算，保证 ZIP 与 SSE 使用同一 Key 隔离和个人用量口径。 */
 const settleSuccessfulNovelAiGeneration = async ({ payload, authorization, keyHash, req, workerPort, requestRemote }) => {
@@ -1603,7 +1648,7 @@ const recoverPendingVibeEncodings = async workerPort => {
 };
 
 export const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote, {
-  generationTimeoutMs = 300_000, settleGeneration = settleSuccessfulNovelAiGeneration,
+  generationTimeoutMs = 300_000, settleGeneration = settleSuccessfulNovelAiGeneration, checkLowConsumption = enforceLowConsumptionRequest,
 } = {}) => {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
@@ -1618,6 +1663,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
   const showQueueGreeting = queuePreferences.showGreeting !== false;
   const requestController = new AbortController();
   let queueLock = null;
+  let releaseLowConsumption = null;
   let requestAborted = false;
   let responseCompleted = false;
   const abortRequest = () => {
@@ -1642,6 +1688,9 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
     let payload;
     try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
+    if (await checkLowConsumption({ payload, authorization, keyHash, req, workerPort, requestRemote, signal: requestController.signal,
+      onEnabled: () => { if (!releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash); },
+    }) && !releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash);
     const localVibes = payload?.parameters?._local_vibes;
     const localCharacterReferences = payload?.parameters?._local_character_references;
     const runtime = getNaiRuntime();
@@ -1756,6 +1805,10 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
       cloudQueue.update(queueTaskId, { phase: 'generating', position: 0, cancelable: false, controller: requestController });
       await delay(1000, requestController.signal);
     }
+    // 资产准备／排队期间额度或设置可能变化，调用生图前再检查，失败由 finally 释放许可。
+    if (await checkLowConsumption({ payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote, signal: requestController.signal, forceEnabled: Boolean(releaseLowConsumption),
+      onEnabled: () => { if (!releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash); },
+    }) && !releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash);
     // 排队耗时不占用上游生成时限；持锁直到响应体完整接收。
     const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
     const response = resolvedVibeEncodings
@@ -1815,13 +1868,14 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     });
   } finally {
     await releaseQueue();
+    releaseLowConsumption?.();
     req.off('aborted', abortRequest);
     res.off('close', abortRequest);
   }
 };
 
 export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote, {
-  generationTimeoutMs = 300_000, settleGeneration = settleSuccessfulNovelAiGeneration,
+  generationTimeoutMs = 300_000, settleGeneration = settleSuccessfulNovelAiGeneration, checkLowConsumption = enforceLowConsumptionRequest,
 } = {}) => {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
@@ -1834,6 +1888,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
   const queueTaskId = /^[a-zA-Z0-9-]{8,80}$/.test(requestedTaskId) ? requestedTaskId : randomUUID();
   const requestController = new AbortController();
   let queueLock = null;
+  let releaseLowConsumption = null;
   let requestAborted = false;
   let responseCompleted = false;
   const abortRequest = () => {
@@ -1862,6 +1917,9 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
     let payload;
     try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
+    if (await checkLowConsumption({ payload, authorization, keyHash, req, workerPort, requestRemote, signal: requestController.signal,
+      onEnabled: () => { if (!releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash); },
+    }) && !releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash);
     const runtime = getNaiRuntime();
     if (!runtime.streamedModels.includes(payload?.model)) {
       return sendJson(res, 400, { error: '当前模型不支持生成过程预览，请关闭该设置后重试' });
@@ -1894,6 +1952,9 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
       cloudQueue.update(queueTaskId, { phase: 'generating', position: 0, cancelable: false, controller: requestController });
       await delay(1000, requestController.signal);
     }
+    if (await checkLowConsumption({ payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote, signal: requestController.signal, forceEnabled: Boolean(releaseLowConsumption),
+      onEnabled: () => { if (!releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash); },
+    }) && !releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash);
 
     const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
     const upstream = await fetchNovelAiGenerationStream(payload, authorization, generationSignal, requestRemote);
@@ -1972,6 +2033,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     return sendJson(res, Number(error.status) || (error?.name === 'TimeoutError' ? 504 : 502), { error: message, code: error.code });
   } finally {
     if (queueLock) await releaseQueue();
+    releaseLowConsumption?.();
     req.off('aborted', abortRequest);
     res.off('close', abortRequest);
   }

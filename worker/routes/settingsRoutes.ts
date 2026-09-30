@@ -363,9 +363,39 @@ export async function fetchAndUploadImage(
     }
 }
 
+const lowConsumptionSettingKey = async (authorization: string) => {
+  const apiKey = authorization.replace(/^Bearer\s+/i, '').trim();
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(apiKey));
+  return `low_consumption_v1:${Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('')}`;
+};
+
+const lowConsumptionRequiresGateway = async (db: D1Database, authorization: string) => {
+  const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(await lowConsumptionSettingKey(authorization)).first<{ value: string }>();
+  return row?.value === 'true';
+};
+
 // All settings-domain routes that run AFTER currentUser is resolved.
 export async function handleSettingsRoute(ctx: RouteContext): Promise<Response | null> {
   const { request, env, url, path, method, db, currentUser, initDB } = ctx;
+
+  // 复用现有 settings 表按 Key 保存开关，不迁移预算或历史数据。
+  if (path === '/api/low-consumption') {
+    const apiKey = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '').trim();
+    if (!/^Bearer\s+\S+/i.test(request.headers.get('Authorization') || '') || !apiKey) return error('请先配置 NovelAI Key', 401);
+    const settingKey = await lowConsumptionSettingKey(request.headers.get('Authorization') || '');
+    if (method === 'GET') {
+      const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(settingKey).first<{ value: string }>();
+      return json({ enabled: row?.value === 'true' });
+    }
+    if (method === 'PUT') {
+      const body = await request.json().catch(() => null) as { enabled?: unknown } | null;
+      if (typeof body?.enabled !== 'boolean') return error('低消耗开关必须为布尔值', 400);
+      await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+        .bind(settingKey, String(body.enabled)).run();
+      return json({ enabled: body.enabled });
+    }
+    return error('Method not allowed', 405);
+  }
 
   // --- Local Anlas budget tracker + per-account personal usage ---
   if (path === '/api/anlas-budget') {
@@ -520,6 +550,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     if (!clientAuth) {
       return error('Missing API Key', 401);
     }
+    if (await lowConsumptionRequiresGateway(db, clientAuth)) return error('低消耗模式需要完整本地服务，请使用 npm run dev:local 启动', 503);
     const naiRes = await fetch("https://image.novelai.net/ai/generate-image", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": clientAuth }, body: JSON.stringify(body) });
     if (!naiRes.ok) {
       const errText = await naiRes.text();
@@ -533,6 +564,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     const body = await request.json();
     const clientAuth = request.headers.get('Authorization');
     if (!clientAuth) return error('Missing API Key', 401);
+    if (await lowConsumptionRequiresGateway(db, clientAuth)) return error('低消耗模式需要完整本地服务，请使用 npm run dev:local 启动', 503);
     const naiRes = await fetch('https://image.novelai.net/ai/generate-image-stream', {
       method: 'POST',
       headers: {

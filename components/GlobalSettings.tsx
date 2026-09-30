@@ -19,6 +19,8 @@ import { getNaiRuntimeConfig } from '../services/naiRuntime';
 import { isNovelaiSubscriptionActive, isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 import { naiKeyVault, NaiKeyEntry } from '../services/naiKeyVault';
+import { setLowConsumption, useLowConsumption } from '../services/lowConsumption';
+import { LOW_CONSUMPTION_RESERVE } from '../worker/lowConsumptionPolicy.mjs';
 import { PromptAgentSettings } from './PromptAgentSettings';
 import {
   AppearancePreferences,
@@ -158,6 +160,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [draggingLabModule, setDraggingLabModule] = useState<{ pageId: LabPageId; moduleId: LabPageModuleId } | null>(null);
   const [expandedLabPages, setExpandedLabPages] = useState<Record<LabPageId, boolean>>(() => Object.fromEntries(LAB_PAGE_IDS.map(pageId => [pageId, false])) as Record<LabPageId, boolean>);
   const anlasBudget = useAnlasBudget();
+  const lowConsumption = useLowConsumption();
+  const [savingLowConsumption, setSavingLowConsumption] = useState(false);
   // 当前使用密钥的订阅健康状态：每分钟轮询 + 切 Key 自动刷新，零额外探测请求。
   // 保管箱据此只对「当前使用」的 key 标失效，非当前 key 不做探测。
   const { info: currentSubscription, error: subscriptionError, loading: subscriptionLoading, refresh: refreshSubscription } = useNovelaiUsage();
@@ -1184,6 +1188,17 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </div>
             </div>
             <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
+              <label className="mb-3 flex min-h-11 items-start justify-between gap-3">
+                <span><span className="block font-semibold text-gray-900 dark:text-white">低消耗模式</span><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">V5 最高 23 步，V4／V4.5 最高 28 步；文生图与 Focused 局部重绘仅走零点数路径，图生图每次最多 10 点，扩图最多 20 点。暂停角色参考，最多使用 4 个已编码 Vibe，保留 {LOW_CONSUMPTION_RESERVE} 点预算。配置按当前 Key 保存。</span></span>
+                <input type="checkbox" aria-label="低消耗模式" checked={lowConsumption.enabled} disabled={savingLowConsumption || !apiKey.trim()} onChange={async event => {
+                  const enabled = event.currentTarget.checked;
+                  setSavingLowConsumption(true);
+                  try { await setLowConsumption(enabled, apiKey); notify(enabled ? '低消耗模式已开启' : '低消耗模式已关闭'); }
+                  catch (error) { notify(error instanceof Error ? error.message : '保存低消耗设置失败', 'error'); }
+                  finally { setSavingLowConsumption(false); }
+                }} className="mt-1 h-5 w-5 shrink-0 rounded border-gray-300 text-indigo-600 disabled:opacity-50" />
+              </label>
+              {lowConsumption.enabled && <p className="mb-3 text-xs text-indigo-600 dark:text-indigo-300">低消耗可用 {Math.max(0, anlasBudget.remaining - LOW_CONSUMPTION_RESERVE)} 点；月预算 1666 点时，日常可用 1500 点。不会自动重置预算或重试生成。</p>}
               <div><h4 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">当前密钥剩余 <b className="text-indigo-600 dark:text-indigo-300">{anlasBudget.remaining}</b> 点，电脑与手机共用。</p></div>
               <div className="mt-3 flex gap-2">
                 <input type="number" min="0" step="1" value={anlasInput} onChange={event => setAnlasInput(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-lg font-black tabular-nums outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900" aria-label="可支配 Anlas 点数" />

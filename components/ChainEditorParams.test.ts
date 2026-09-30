@@ -3,9 +3,13 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChainEditorParams } from './ChainEditorParams';
+const lowMode = vi.hoisted(() => ({ enabled: false }));
+vi.mock('../services/lowConsumption', async importOriginal => ({
+  ...await importOriginal<typeof import('../services/lowConsumption')>(), useLowConsumption: () => lowMode,
+}));
 
 vi.mock('../services/naiRuntime', () => ({
-  useNaiRuntime: () => ({}),
+  useNaiRuntime: () => ({ freeMaxArea: 1048576, freeMaxSteps: 28 }),
   getNaiRuntimeModelCapability: (_runtime: unknown, model: string) => ({
     qualityPresets: model.startsWith('nai-diffusion-5-')
       ? [{ id: 'standard', name: 'standard' }, { id: 'light', name: 'light' }]
@@ -56,9 +60,28 @@ const renderParams = (props: Record<string, unknown> = {}) => render(React.creat
   ...props,
 }));
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); lowMode.enabled = false; });
 
 describe('ChainEditorParams', () => {
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 低消耗压住已解除的步数上限，关闭恢复原参数', mode => {
+    lowMode.enabled = true;
+    const setParams = vi.fn();
+    const original = { ...params, model: 'nai-diffusion-5-full', steps: 40 };
+    const { container, rerender } = renderParams({ params: original, mode, enforceFreeStepLimit: false, setParams });
+    expect(container.querySelector<HTMLInputElement>('input[max="23"]')?.value).toBe('23');
+    expect(screen.queryByText('已解除上限')).toBeNull();
+    expect(screen.getByText(/低消耗 · 本次/).textContent).toContain('本次 23 步');
+    expect(setParams).not.toHaveBeenCalled();
+    lowMode.enabled = false;
+    rerender(React.createElement(ChainEditorParams, { params: original, mode, enforceFreeStepLimit: false, canEdit: true, setParams, markChange: vi.fn() }));
+    expect(container.querySelector<HTMLInputElement>('input[max="50"]')?.value).toBe('40');
+  });
+  it('低消耗 V4.5 显示 28 步，尺寸说明与实际免费面积一致', () => {
+    lowMode.enabled = true;
+    const { container } = renderParams({ params: { ...params, steps: 40, width: 1536, height: 1536 } });
+    expect(container.querySelector<HTMLInputElement>('input[max="28"]')?.value).toBe('28');
+    expect(screen.getByText(/低消耗 · 本次/).textContent).toContain('1024 × 1024');
+  });
   it('未保存模型的旧数据按界面默认 V4.5 读取完整预设', () => {
     renderParams({ params: { ...params, model: undefined } });
     expect(screen.getByRole('combobox', { name: '质量预设' }).querySelectorAll('option')).toHaveLength(2);

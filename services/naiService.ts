@@ -10,6 +10,7 @@ import { buildNaiGenerationPayload } from './naiPayload';
 import { buildNaiImageEditPayload } from './naiPayload';
 import { getNaiRuntimeConfig } from './naiRuntime';
 import { composeImageEditResult, prepareImageEdit } from './imageEdit';
+import { applyLowConsumptionParams, getLowConsumption } from './lowConsumption';
 
 export interface NaiStreamPreview {
   image: string;
@@ -57,6 +58,7 @@ const blobFromDataUri = (uri: string): Blob => {
 
 export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams) => {
   const runtime = await getNaiRuntimeConfig();
+  params = applyLowConsumptionParams(params, (await getLowConsumption(apiKey)).enabled, runtime);
   const payload = buildNaiGenerationPayload(prompt, negative, params, { runtime });
   const seed = typeof payload.parameters.seed === 'number' ? payload.parameters.seed : undefined;
   validateGenerationCapabilities(params, runtime);
@@ -156,7 +158,7 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
     // But typically NAI returns a JSON alongside the image in the zip.
   }
 
-  return { image: URL.createObjectURL(fileData), blob: fileData, seed: actualSeed };
+  return { image: URL.createObjectURL(fileData), blob: fileData, seed: actualSeed, params };
 };
 
 export const generateImageEdit = async (
@@ -176,6 +178,7 @@ export const generateImageEdit = async (
   },
 ) => {
   const runtime = await getNaiRuntimeConfig();
+  params = applyLowConsumptionParams(params, (await getLowConsumption(apiKey)).enabled, runtime, edit.operation);
   const prepared = await prepareImageEdit(edit);
   const requestParams: NAIParams = { ...params, width: prepared.requestWidth, height: prepared.requestHeight };
   const payload = buildNaiImageEditPayload(prompt, negative, requestParams, {
@@ -224,7 +227,7 @@ export const generateImageEdit = async (
       } catch { /* 固定响应中可能不带 JSON 元数据。 */ }
     }
     const composed = await composeImageEditResult(fileData, prepared);
-    return { image: URL.createObjectURL(composed), blob: composed, seed: actualSeed, estimatedCost: binaryResult.estimatedCost, requestWidth: prepared.requestWidth, requestHeight: prepared.requestHeight, focusedGeometry: prepared.focusedGeometry };
+    return { image: URL.createObjectURL(composed), blob: composed, seed: actualSeed, params: requestParams, estimatedCost: binaryResult.estimatedCost, requestWidth: prepared.requestWidth, requestHeight: prepared.requestHeight, focusedGeometry: prepared.focusedGeometry };
   } catch (error) {
     terminalPhase = isQueueCancelledError(error) ? 'cancelled' : 'error';
     terminalError = error instanceof Error ? error.message : '图片编辑失败';
@@ -249,6 +252,7 @@ export const generateImageStream = async (
   runtimeStreamSupported = false,
 ) => {
   const runtime = await getNaiRuntimeConfig();
+  params = applyLowConsumptionParams(params, (await getLowConsumption(apiKey)).enabled, runtime);
   const modelInfo = validateGenerationCapabilities(params, runtime);
   if (!modelInfo.supportsStreamedResponses && !runtimeStreamSupported) throw new Error(`NovelAI ${modelInfo.label} 暂不支持生成过程预览`);
   const payload = buildNaiGenerationPayload(prompt, negative, params, { stream: true, runtimeStreamSupported, runtime });
@@ -295,7 +299,7 @@ export const generateImageStream = async (
     if (!finalImage) throw new Error('流式生成没有返回最终图片');
     terminalPhase = 'completed';
     const blob = blobFromDataUri(finalImage);
-    return { image: URL.createObjectURL(blob), blob, seed: finalSeed, estimatedCost: sseEstimatedCost };
+    return { image: URL.createObjectURL(blob), blob, seed: finalSeed, params, estimatedCost: sseEstimatedCost };
   } catch (error) {
     terminalPhase = isQueueCancelledError(error) ? 'cancelled' : 'error';
     terminalError = error instanceof Error ? error.message : '流式生成失败';
@@ -333,6 +337,7 @@ export const generateImageEditStream = async (
   runtimeStreamSupported = false,
 ) => {
   const runtime = await getNaiRuntimeConfig();
+  params = applyLowConsumptionParams(params, (await getLowConsumption(apiKey)).enabled, runtime, edit.operation);
   const prepared = await prepareImageEdit(edit);
   const requestParams: NAIParams = { ...params, width: prepared.requestWidth, height: prepared.requestHeight };
   const modelInfo = validateGenerationCapabilities(requestParams, runtime, edit.operation);
@@ -397,6 +402,7 @@ export const generateImageEditStream = async (
       image: URL.createObjectURL(composed),
       blob: composed,
       seed: finalSeed,
+      params: requestParams,
       estimatedCost: sseEstimatedCost,
       requestWidth: prepared.requestWidth,
       requestHeight: prepared.requestHeight,

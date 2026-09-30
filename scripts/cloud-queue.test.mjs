@@ -30,7 +30,7 @@ class TestResponse extends Writable {
   body() { return Buffer.concat(this.chunks).toString(); }
 }
 const setup = (remote, options = {}) => new CloudQueueCoordinator(remote, preferences.serviceUrl, { pollIntervalMs: 5, waitTimeoutMs: 2000, ...options });
-const generationOptions = { settleGeneration: async () => ({ estimatedCost: 0, anlasBudget: null }) };
+const generationOptions = { settleGeneration: async () => ({ estimatedCost: 0, anlasBudget: null }), checkLowConsumption: async () => {} };
 const finalFrame = 'event: final\ndata: {"image":"test"}\n\n';
 const run = (handler, q, remote, taskId, res = new TestResponse(), options = {}, action = 'generate') => ({
   res,

@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_APPEARANCE_PREFERENCES, AppearancePreferences } from '../services/appearancePreferences';
 import { ConfirmDialogProvider } from './ConfirmDialog';
 import { GlobalSettings } from './GlobalSettings';
+const lowMode = vi.hoisted(() => ({ enabled: false, save: vi.fn() }));
+vi.mock('../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: lowMode.enabled }), setLowConsumption: lowMode.save }));
 
 vi.mock('../services/mobileImageCache', () => ({
   clearMobileThumbnailCache: vi.fn(),
@@ -78,6 +80,9 @@ const SettingsHarness: React.FC<SettingsHarnessProps> = ({ initialSection = 'app
 
 describe('GlobalSettings', () => {
   beforeEach(() => {
+    lowMode.enabled = false;
+    lowMode.save.mockReset().mockImplementation(async (enabled: boolean) => { lowMode.enabled = enabled; return { enabled }; });
+    sessionStorage.clear(); localStorage.clear();
     vi.stubGlobal('__APP_VERSION__', '1.0.0');
     vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
       matches: false,
@@ -94,6 +99,23 @@ describe('GlobalSettings', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+  it('低消耗开关按当前 Key 保存，显示 1500 可用／166 保留和四模式费用规则', async () => {
+    sessionStorage.setItem('nai_api_key', 'settings-test-key');
+    render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+    const toggle = await screen.findByRole('checkbox', { name: '低消耗模式' });
+    expect((toggle as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(toggle);
+    await waitFor(() => expect(lowMode.save).toHaveBeenCalledWith(true, 'settings-test-key'));
+    await waitFor(() => expect((toggle as HTMLInputElement).checked).toBe(true));
+    expect(screen.getByText(/低消耗可用 1500 点/).textContent).toContain('不会自动重置预算或重试生成');
+    expect(screen.getByText(/V5 最高 23 步/).textContent).toContain('V4／V4.5 最高 28 步');
+    expect(screen.getByText(/V5 最高 23 步/).textContent).toContain('图生图每次最多 10 点，扩图最多 20 点');
+  });
+  it('尚未配置 Key 时开关禁用', async () => {
+    render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+    expect((await screen.findByRole('checkbox', { name: '低消耗模式' }) as HTMLInputElement).disabled).toBe(true);
+    expect(lowMode.save).not.toHaveBeenCalled();
   });
 
   it('打开设置并切换实验室布局折叠块时不会因失效事件对象崩溃，且默认全部收起', async () => {
@@ -226,4 +248,3 @@ describe('GlobalSettings', () => {
     expect(resetBtn.disabled).toBe(true);
   });
 });
-

@@ -3,6 +3,7 @@ import { ImageEditOperation, NAIParams, VibeAsset, VibeGroup, VibeSelection } fr
 import { vibeService } from '../services/vibeService';
 import { VIBE_MAX_SLOTS, normalizeVibeSelections } from '../services/vibeUtils';
 import { useAnlasBudget } from '../services/anlasBudget';
+import { useLowConsumption } from '../services/lowConsumption';
 import { isNovelaiSubscriptionInactive, useNovelaiUsage } from '../services/naiUsage';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
@@ -27,6 +28,7 @@ const emptyVibes = (): NonNullable<NAIParams['vibes']> => ({
 });
 
 export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, markChange, apiKey, notify, operation }) => {
+  const lowConsumption = useLowConsumption();
   const confirmAction = useConfirmDialog();
   const runtime = useNaiRuntime();
   const anlasBudget = useAnlasBudget();
@@ -315,6 +317,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
   return (
     <>
       <div>
+        {lowConsumption.enabled && <p className="mb-2 text-xs leading-5 text-indigo-600 dark:text-indigo-300">低消耗模式最多使用 4 个已编码 Vibe；新编码仍需点数确认，超过数量时请调整选择。</p>}
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-800 dark:text-gray-100">Vibe Transfer</span>{vibes.enabled && vibes.slots.length > 0 && <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-micro font-bold text-white">{vibes.slots.length} / {VIBE_MAX_SLOTS}</span>}</div>

@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Artist, NAIParams } from '../types';
 import { generateImage } from '../services/naiService'; // Import generation service
+import { applyLowConsumptionParams, assertLowConsumptionEstimate, getLowConsumption } from '../services/lowConsumption';
 import { api } from '../services/api'; // Import api for updating
 import { db } from '../services/dbService'; // Import DB to fetch config
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
@@ -12,7 +13,7 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { useConfirmDialog } from './ConfirmDialog';
 import { isNovelaiSubscriptionInactive, useNovelaiUsage } from '../services/naiUsage';
 import { applyEstimatorRuntime, estimateV45GenerationCost, usageForCostEstimate, useAnlasBudget } from '../services/anlasBudget';
-import { getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
+import { DEFAULT_NAI_RUNTIME, getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import { createUuid } from '../services/id';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
@@ -1052,10 +1053,13 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         // 与队列处理器 processNext 完全一致的请求参数（无 model → 默认 V4.5 Full），
         // 入队前按任务数统一估算并确认费用，避免批量生成逐张静默扣费。
         const taskCount = slots.length;
-        const estimateParams: NAIParams = {
+        let estimateParams: NAIParams = {
             width: 832, height: 1216, steps: config.steps, scale: config.scale, sampler: 'k_euler_ancestral',
             seed: config.seed, qualityToggle: true, ucPreset: 0
         };
+        let lowEnabled: boolean;
+        try { lowEnabled = (await getLowConsumption(apiKey)).enabled; estimateParams = applyLowConsumptionParams(estimateParams, lowEnabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME); }
+        catch (error) { notify(error instanceof Error ? error.message : '读取低消耗设置失败', 'error'); return; }
         // 受限额模型（V5）在免费档生成前强制刷新真实 Opus 额度，与 ChainEditor 同源。
         // 当前 Key 已失效（官方 active=false）：任务入队也必被拒绝，先拦截避免整批白等。
         const freshSubscription = await refreshUsageIfStale();
@@ -1064,6 +1068,10 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
             return;
         }
         const perTaskCost = estimateV45GenerationCost(estimateParams, true, await usageForCostEstimate(novelaiUsage, refreshUsageIfStale, estimateParams.model));
+        if (lowEnabled) {
+            try { assertLowConsumptionEstimate(estimateParams, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, perTaskCost, anlasBudget.remaining); }
+            catch (error) { notify(error instanceof Error ? error.message : '低消耗检查失败', 'error'); return; }
+        }
         const totalCost = perTaskCost * taskCount;
 
         if (totalCost > 0 && anlasBudget.remaining <= 0) {
