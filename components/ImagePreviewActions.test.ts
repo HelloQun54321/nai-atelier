@@ -27,6 +27,7 @@ describe('小图和全屏大图的共用操作', () => {
     const right = coverButton.parentElement!;
     expect(left.classList.contains('top-4')).toBe(true);
     expect(left.classList.contains('left-4')).toBe(true);
+    expect(left.classList.contains(fullscreen ? 'gap-6' : 'gap-2')).toBe(true);
     expect(right.classList.contains('top-4')).toBe(true);
     expect(right.classList.contains('right-4')).toBe(true);
     expect(right.classList.contains('w-28')).toBe(false);
@@ -49,6 +50,9 @@ describe('小图和全屏大图的共用操作', () => {
     if (fullscreen) {
       expect(backButtonRef.current).toBe(screen.getByRole('button', { name: '返回小图' }));
       expect(backButtonRef.current?.querySelector('svg.lucide-arrow-left')).toBeTruthy();
+      expect(backButtonRef.current?.classList.contains('h-12')).toBe(true);
+      expect(backButtonRef.current?.classList.contains('w-12')).toBe(true);
+      expect(backButtonRef.current?.querySelector('svg')?.classList.contains('h-7')).toBe(true);
       fireEvent.click(backButtonRef.current!);
       expect(back).toHaveBeenCalledOnce();
     } else expect(screen.queryByRole('button', { name: '返回小图' })).toBeNull();
