@@ -20,6 +20,7 @@ const defaults = () => ({
   artistUpdatedAt: {},
   artistPreviewUrls: {},
   artistPreviewHashes: {},
+  artistPreviewPaths: {},
   vibeUploadedHashes: {},
   vibeDownloadedVersions: {},
   lastSyncAt: 0,
@@ -156,21 +157,27 @@ const uniqueName = (collection, requested, currentName = '') => {
   return `${requested} (${index})`;
 };
 
+const artistSnapshot = (name, preset, bridgeSettings) => {
+  const externalId = bridgeSettings.artistIds[name];
+  const previewPath = String(chatu8()?.configImageStorage?.[preset?.previewImageId]?.path || '');
+  return {
+    externalId, name,
+    fixedPrompt: String(preset?.fixedPrompt || ''),
+    fixedPromptEnd: String(preset?.fixedPrompt_end || ''),
+    negativePrompt: String(preset?.negativePrompt || ''),
+    previewPath,
+    previewSourceImage: previewPath && bridgeSettings.artistPreviewPaths[externalId] === previewPath ? bridgeSettings.artistPreviewUrls[externalId] || '' : '',
+  };
+};
+
 const collectArtists = async bridgeSettings => {
   const source = chatu8()?.yushe || {};
   const artists = [];
   for (const [name, preset] of Object.entries(source)) {
     let externalId = bridgeSettings.artistIds[name];
-    if (!externalId) externalId = bridgeSettings.artistIds[name] = `st:${crypto.randomUUID()}`;
-    const rawPreviewPath = String(bridgeSettings?.configImageStorage?.[preset?.previewImageId]?.path || chatu8()?.configImageStorage?.[preset?.previewImageId]?.path || '');
-    const item = {
-      externalId,
-      name,
-      fixedPrompt: String(preset?.fixedPrompt || ''),
-      fixedPromptEnd: String(preset?.fixedPrompt_end || ''),
-      negativePrompt: String(preset?.negativePrompt || ''),
-      previewPath: rawPreviewPath,
-    };
+    // 首次读取用名称生成稳定 ID，多个酒馆页面或回执尚未落盘时也能识别为同一条。
+    if (!externalId) externalId = bridgeSettings.artistIds[name] = `st:${await hashText(name)}`;
+    const item = artistSnapshot(name, preset, bridgeSettings);
     const hash = await hashText(JSON.stringify(item));
     if (bridgeSettings.artistHashes[externalId] !== hash) {
       bridgeSettings.artistHashes[externalId] = hash;
@@ -355,12 +362,15 @@ const applyArtists = async artists => {
   st.configImageStorage ||= {};
   bridgeSettings.artistPreviewHashes ||= {};
   bridgeSettings.artistPreviewUrls ||= {};
+  bridgeSettings.artistPreviewPaths ||= {};
 
   const artistsWithPreviews = artists.filter(a => a.previewImage);
   let downloadedCount = 0;
+  let appliedCount = 0;
+  const namesById = new Map(Object.entries(bridgeSettings.artistIds).map(([name, id]) => [id, name]));
 
   for (const artist of artists) {
-    const currentName = Object.entries(bridgeSettings.artistIds).find(([, id]) => id === artist.externalId)?.[0] || '';
+    const currentName = namesById.get(artist.externalId) || '';
     const name = resolvePresetName(st.yushe, artist.name, currentName, artist.externalId, bridgeSettings.artistIds);
     let previewImageId = (currentName ? st.yushe[currentName]?.previewImageId : null) || st.yushe[name]?.previewImageId || null;
     const previousHash = bridgeSettings.artistPreviewHashes[artist.externalId] || '';
@@ -369,7 +379,8 @@ const applyArtists = async artists => {
     if (artist.previewImage) {
       const hasValidPreview = previewImageId && previousPath && previousHash;
       const urlMatches = bridgeSettings.artistPreviewUrls?.[artist.externalId] === artist.previewImage;
-      const needsDownload = !hasValidPreview || !urlMatches;
+      const pathMatches = bridgeSettings.artistPreviewPaths[artist.externalId] === previousPath;
+      const needsDownload = !hasValidPreview || !urlMatches || !pathMatches;
 
       if (needsDownload) {
         try {
@@ -379,6 +390,8 @@ const applyArtists = async artists => {
             st.configImageStorage[previewImageId] = { path: result.path, date: Date.now(), type: 'image' };
           }
           bridgeSettings.artistPreviewHashes[artist.externalId] = result.contentHash;
+          bridgeSettings.artistPreviewUrls[artist.externalId] = artist.previewImage;
+          bridgeSettings.artistPreviewPaths[artist.externalId] = result.path;
           downloadedCount++;
           if (artistsWithPreviews.length > 5 && (downloadedCount % 15 === 0 || downloadedCount === artistsWithPreviews.length)) {
             setStatus(`正在同步画师串配图 (${downloadedCount}/${artistsWithPreviews.length})…`, 'working');
@@ -389,24 +402,32 @@ const applyArtists = async artists => {
       }
     }
 
-    st.yushe[name] = {
-      fixedPrompt: artist.fixedPrompt || '',
-      fixedPrompt_end: artist.fixedPromptEnd || '',
-      negativePrompt: artist.negativePrompt || '',
-      ...(previewImageId ? { previewImageId } : {}),
-    };
+    const previous = st.yushe[name];
+    const unchanged = currentName === name && previous
+      && String(previous.fixedPrompt || '') === String(artist.fixedPrompt || '')
+      && String(previous.fixedPrompt_end || '') === String(artist.fixedPromptEnd || '')
+      && String(previous.negativePrompt || '') === String(artist.negativePrompt || '')
+      && (previous.previewImageId || null) === previewImageId;
+    if (!unchanged) {
+      st.yushe[name] = {
+        ...previous,
+        fixedPrompt: artist.fixedPrompt || '',
+        fixedPrompt_end: artist.fixedPromptEnd || '',
+        negativePrompt: artist.negativePrompt || '',
+        ...(previewImageId ? { previewImageId } : {}),
+      };
+      appliedCount++;
+    }
     if (currentName && currentName !== name) {
       delete st.yushe[currentName];
       delete bridgeSettings.artistIds[currentName];
     }
     bridgeSettings.artistIds[name] = artist.externalId;
-    bridgeSettings.artistHashes[artist.externalId] = await hashText(JSON.stringify({
-      externalId: artist.externalId, name, fixedPrompt: artist.fixedPrompt || '',
-      fixedPromptEnd: artist.fixedPromptEnd || '', negativePrompt: artist.negativePrompt || '',
-    }));
+    namesById.set(artist.externalId, name);
+    bridgeSettings.artistHashes[artist.externalId] = await hashText(JSON.stringify(artistSnapshot(name, st.yushe[name], bridgeSettings)));
     bridgeSettings.artistUpdatedAt[artist.externalId] = Number(artist.updatedAt || Date.now());
-    bridgeSettings.artistPreviewUrls[artist.externalId] = artist.previewImage || '';
   }
+  return appliedCount;
 };
 
 const applyVibes = async (items, localVibes) => {
@@ -452,7 +473,10 @@ const applyGroups = (groups, localVibes) => {
     })).filter(reference => reference.vibeDataId).slice(0, 4);
     if (!vibes.length) continue;
     const name = uniqueName(st.vibeGroups, group.name, group.name);
+    const previous = st.vibeGroups[name];
+    if (previous && JSON.stringify(previous.vibes || []) === JSON.stringify(vibes)) continue;
     st.vibeGroups[name] = {
+      ...previous,
       vibes,
       createdAt: st.vibeGroups[name]?.createdAt || Date.now(),
       updatedAt: Number(group.updatedAt || Date.now()),
@@ -485,7 +509,7 @@ async function syncNow({ quiet = false } = {}) {
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || `连接器返回 ${response.status}`);
-    await applyArtists(result.artists || []);
+    const appliedArtists = await applyArtists(result.artists || []);
     await cleanupBridgeVibeDuplicates(vibeData.bridgeDuplicates || []);
     for (const document of vibeData.documents) {
       const sourceHash = await canonicalVibeHash(document);
@@ -497,8 +521,10 @@ async function syncNow({ quiet = false } = {}) {
     lastStSignature = stSyncSignature();
     saveSettingsDebounced();
     const historyCount = Number(result.status?.linkedHistory || 0);
-    const previewCount = collectArtistPreviews().length;
-    setStatus(`同步完成：${result.artists?.length || 0} 个画师串（${previewCount} 个带配图）、${vibeData.all.size} 个 Vibe；历史已索引 ${historyCount} 张原图。`, 'success');
+    const counts = result.artistSync;
+    setStatus(counts
+      ? `风格串：导入新增 ${counts.created} / 更新 ${counts.updated} / 未变 ${counts.unchanged}；发送更新 ${appliedArtists}（已选 ${counts.selected}）。Vibe ${vibeData.all.size} 个，历史 ${historyCount} 张。`
+      : `同步完成：更新 ${appliedArtists} 个风格串，${vibeData.all.size} 个 Vibe；历史 ${historyCount} 张。`, 'success');
     enhancePresetSelector();
   } catch (error) {
     console.error('[NPM Bridge] 同步失败:', error);
@@ -583,6 +609,6 @@ jQuery(async () => {
   scheduleAutoSync();
   watchPresetSelector();
   eventSource.on(event_types.SETTINGS_UPDATED, scheduleChangedSettingsSync);
-  window.addEventListener('focus', () => syncNow({ quiet: true }));
-  setTimeout(() => syncNow(), 2500);
+  window.addEventListener('focus', () => { if (settings().autoSync !== false) syncNow({ quiet: true }); });
+  setTimeout(() => { if (settings().autoSync !== false) syncNow(); }, 2500);
 });

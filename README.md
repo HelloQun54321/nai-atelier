@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.4.3-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.5.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -669,13 +669,17 @@ Pixiv 页面连接 Pixiv 官方 App API，提供推荐、日榜、周榜、月�
 
 | 数据 | 方向 | 规则 |
 | :--- | :--- | :--- |
-| 风格串 Prompt | 双向 | 同名或已关联资料冲突时以 st-chatu8 为准 |
-| 风格串配图 | 双向 | 保留原封面；只有图片真正变化时才重新上传 |
+| 风格串 Prompt | 工坊精选发送／酒馆全部接收 | 仅发送勾选的 V4.5 Full／Curated；V5、V4 与其他模型不发送；同名或已关联冲突仍以 st-chatu8 为准 |
+| 风格串配图 | 跟随风格串范围 | 保留原封面；成功回执及内容哈希避免重复下载、上传或来回导入 |
 | 永久 Vibe | 双向 | 按原图二进制 SHA-256 去重，避免不同导出器 ID 造成重复 |
 | Vibe 组合 | 双向 | 使用 st-chatu8 的组合结构作为权威来源 |
 | 生图历史 | st-chatu8 → 本项目 | 只索引原图，不导入 `thumbnail_path` 缩略图 |
 
-NAI Atelier 独有的新风格串可以先同步到 st-chatu8；一旦进入 st-chatu8，后续修改和冲突判断都以 st-chatu8 数据为准。这样在 SillyTavern 聊天生图和本项目实验室之间切换时，不需要手工复制风格串或 Vibe。
+在「风格串」页面先用搜索、标签、收藏等筛选，然后点击工具栏的 **「酒馆同步」**，勾选希望发送的 V4.5 风格串，点击 **「保存同步范围」**。手机入口位于「筛选与排序」面板。勾选跨筛选保留，「全选／取消筛选结果」操作全部筛选结果；取消退出不写入。首次范围为空，保存在既有本机设置表中，重启保留，多个 Atelier 页面共用同一份范围。
+
+返回 SillyTavern 后由连接器自动同步，或点击「立即同步」。酒馆全部风格串仍进入工坊，超过 1000 条也不会截断；工坊只返回所选且有变化的条目。V4.5 限制由前端、设置接口和网关共同校验，条目改成 V5 后立即不再发送；旧条目未记录模型时沿用项目原有的 V4.5 默认语义。重命名按已有 ID 关联，不重新创建；同名或已关联资料的冲突规则仍以 st-chatu8 为准。
+
+**取消勾选只停止后续发送，已经在酒馆里的条目保留。** 过去全量同步留下的资料需要在酒馆侧手动整理，本功能不批量删除。无变化的风格串、封面及 Vibe 组合跳过写入；未成功保存的封面不记成功回执，下次同步仍可补齐。Vibe 互通与历史原图索引范围保持原有规则。本次更新后需重启本机服务，并在「全局设置 → 数据与维护」更新连接器、刷新酒馆网页，以启用新的封面回执和同步统计。
 
 ### 图片与磁盘存储策略
 

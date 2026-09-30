@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, open, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
+import { isStChatu8ExportableChain } from '../worker/stChatu8Policy.mjs';
 
 const STATE_FILE = join(process.cwd(), 'local-data', 'st-chatu8-bridge.json');
 const MAX_VIBE_DOCUMENT_BYTES = 30 * 1024 * 1024;
@@ -233,6 +234,11 @@ const artistHash = artist => sha256(JSON.stringify({
   negativePrompt: String(artist.negativePrompt || ''),
 }));
 
+const vibeGroupSignature = group => JSON.stringify({
+  name: group.name, normalizeStrengths: group.normalizeStrengths !== false,
+  slots: (group.slots || []).map(slot => [slot.vibeId, slot.vibeName || '', slot.encodingId, Number(slot.informationExtracted), Number(slot.strength)]),
+});
+
 const DEFAULT_CHAIN_PARAMS = {
   width: 832,
   height: 1216,
@@ -270,6 +276,7 @@ export class StChatu8Bridge {
     this.state = defaultState();
     this.writeQueue = Promise.resolve();
     this.historySyncPromise = null;
+    this.syncQueue = Promise.resolve();
   }
 
   async init() {
@@ -395,28 +402,47 @@ export class StChatu8Bridge {
     return { buffer, contentType: extension === '.jpg' || extension === '.jpeg' ? 'image/jpeg' : extension === '.webp' ? 'image/webp' : 'image/png' };
   }
 
-  async syncArtists(incoming = []) {
+  async syncArtists(incoming = [], selectedChainIds = []) {
     let chains = await this.requestWorkerJson('/api/chains');
     chains = Array.isArray(chains) ? chains : [];
     const byId = new Map(chains.map(chain => [chain.id, chain]));
+    const byName = new Map();
+    for (const chain of chains.filter(item => !item.type || item.type === 'style')) {
+      const named = byName.get(chain.name) || [];
+      named.push(chain);
+      byName.set(chain.name, named);
+    }
     const linkedIds = new Set(Object.values(this.state.artistLinks || {}).map(link => link.chainId));
-    const incomingIds = new Set();
-    for (const raw of incoming.slice(0, 1000)) {
+    const incomingById = new Map();
+    const counts = { received: 0, created: 0, updated: 0, unchanged: 0, selected: 0, exported: 0 };
+    for (const raw of incoming) {
+      if (!raw || typeof raw !== 'object') continue;
       const artist = {
         externalId: String(raw.externalId || '').slice(0, 160), name: String(raw.name || '').trim().slice(0, 100),
         fixedPrompt: String(raw.fixedPrompt || ''), fixedPromptEnd: String(raw.fixedPromptEnd || ''),
         negativePrompt: String(raw.negativePrompt || ''), previewPath: String(raw.previewPath || ''),
+        previewSourceImage: String(raw.previewSourceImage || ''),
         updatedAt: Number(raw.updatedAt || 0),
       };
       if (!artist.externalId || !artist.name) continue;
-      incomingIds.add(artist.externalId);
+      incomingById.set(artist.externalId, artist);
+      counts.received++;
       let link = this.state.artistLinks[artist.externalId];
       let chain = link ? byId.get(link.chainId) : null;
-      if (!chain) chain = chains.find(item => item.type === 'style' && item.name === artist.name && !linkedIds.has(item.id));
+      let wasCreated = false;
+      if (chain?.type && chain.type !== 'style') chain = null;
+      if (!chain) chain = byName.get(artist.name)?.find(item => !linkedIds.has(item.id));
       if (!chain) {
-        const created = await this.requestWorkerJson('/api/chains', { method: 'POST', body: artistToChainBody(artist) });
-        chains = await this.requestWorkerJson('/api/chains');
-        chain = chains.find(item => item.id === created.id);
+        const body = artistToChainBody(artist);
+        const created = await this.requestWorkerJson('/api/chains', { method: 'POST', body });
+        if (created?.id) {
+          chain = { ...body, id: created.id, previewImage: '', createdAt: Date.now(), updatedAt: Date.now() };
+          chains.push(chain);
+          byId.set(chain.id, chain);
+          byName.set(chain.name, [...(byName.get(chain.name) || []), chain]);
+          counts.created++;
+          wasCreated = true;
+        }
       }
       if (!chain) continue;
       const stHash = artistHash(artist);
@@ -424,17 +450,22 @@ export class StChatu8Bridge {
       const npmHash = artistHash(chainToArtist(chain, artist.externalId));
       const previewChanged = artist.previewPath !== String(link.lastStPreviewPath || '')
         || String(chain.previewImage || '') !== String(link.lastNpmPreviewImage || '');
+      const acknowledgedPreview = artist.previewPath && artist.previewSourceImage && artist.previewSourceImage === chain.previewImage;
+      let previewConfirmed = !artist.previewPath || Boolean(acknowledgedPreview) || (!previewChanged && Boolean(chain.previewImage));
+      let previewUpdated = false;
+      let changed = false;
       if (stHash !== npmHash || previewChanged) {
         const body = artistToChainBody(artist, chain);
         // A missing st-chatu8 preview means "no preview supplied", not
         // "delete the NAI Atelier cover". Only replace a cover when the
         // authoritative side actually provides image data.
-        let previewUpdated = false;
-        if (artist.previewPath) {
+        // 酒馆确认此封面来自当前 Atelier URL 时，保留原封面，防止两端反复搬运同一图片。
+        if (artist.previewPath && !acknowledgedPreview) {
           const preview = await this.readStPreviewData(artist.previewPath);
           if (preview) {
             body.previewImage = preview;
             previewUpdated = true;
+            previewConfirmed = true;
           }
         }
         if (stHash !== npmHash || previewUpdated) {
@@ -444,31 +475,49 @@ export class StChatu8Bridge {
             chain = refreshed;
             byId.set(chain.id, chain);
           }
+          if (!wasCreated) counts.updated++;
+          changed = true;
         }
       }
+      if (!changed && !wasCreated) counts.unchanged++;
       this.state.artistLinks[artist.externalId] = {
+        ...link,
         chainId: chain.id,
         lastStHash: stHash,
         lastNpmHash: stHash,
-        lastStPreviewPath: artist.previewPath,
-        lastNpmPreviewImage: String(chain.previewImage || ''),
+        lastStPreviewPath: previewConfirmed ? artist.previewPath : String(link.lastStPreviewPath || ''),
+        lastNpmPreviewImage: previewConfirmed ? String(chain.previewImage || '') : String(link.lastNpmPreviewImage || ''),
+        ...(previewUpdated ? { importedPreviewImage: String(chain.previewImage || ''), importedPreviewPath: artist.previewPath } : {}),
       };
       linkedIds.add(chain.id);
     }
     chains = await this.requestWorkerJson('/api/chains');
-    const artists = chains.filter(chain => chain.type === 'style').map(chain => {
-      let pair = Object.entries(this.state.artistLinks).find(([, link]) => link.chainId === chain.id);
+    const selected = new Set(selectedChainIds);
+    const linksByChain = new Map(Object.entries(this.state.artistLinks).map(pair => [pair[1].chainId, pair]));
+    const artists = chains.filter(chain => isStChatu8ExportableChain(chain) && selected.has(chain.id)).map(chain => {
+      counts.selected++;
+      let pair = linksByChain.get(chain.id);
       if (!pair) {
         const externalId = `npm:${chain.id}`;
         this.state.artistLinks[externalId] = { chainId: chain.id, lastStHash: '', lastNpmHash: '' };
         pair = [externalId, this.state.artistLinks[externalId]];
       }
-      if (pair[0].startsWith('st:') && !incomingIds.has(pair[0])) return null;
+      if (pair[0].startsWith('st:') && !incomingById.has(pair[0])) return null;
       const artist = chainToArtist(chain, pair[0]);
+      const current = incomingById.get(pair[0]);
+      const previewMatches = !artist.previewImage || (current?.previewPath && (
+        current.previewSourceImage === artist.previewImage
+        || (pair[1].importedPreviewImage === artist.previewImage && pair[1].importedPreviewPath === current.previewPath)
+        // 旧连接器没有封面回执；已关联且已确认的酒馆封面也不重复发送。
+        || (!current.previewSourceImage && pair[1].lastStPreviewPath === current.previewPath && pair[1].lastNpmPreviewImage === artist.previewImage)
+      ));
+      if (current && artistHash(current) === artistHash(artist) && previewMatches) return null;
       pair[1].lastNpmHash = artistHash(artist);
       pair[1].lastNpmPreviewImage = String(chain.previewImage || '');
       return artist;
     }).filter(Boolean);
+    counts.exported = artists.length;
+    this.lastArtistSync = counts;
     await this.saveState();
     return artists;
   }
@@ -516,12 +565,17 @@ export class StChatu8Bridge {
       if (!slots.length) continue;
       let linkedId = this.state.groupLinks[externalGroupId];
       let existing = groups.find(item => item.id === linkedId) || groups.find(item => item.name === name);
+      const body = { name, slots, normalizeStrengths: group.normalizeStrengths !== false };
       if (existing) {
-        await this.requestWorkerJson(`/api/vibe-groups/${encodeURIComponent(existing.id)}`, { method: 'PUT', body: { name, slots, normalizeStrengths: group.normalizeStrengths !== false } });
+        if (vibeGroupSignature(existing) !== vibeGroupSignature(body)) {
+          await this.requestWorkerJson(`/api/vibe-groups/${encodeURIComponent(existing.id)}`, { method: 'PUT', body });
+          Object.assign(existing, body);
+        }
         linkedId = existing.id;
       } else {
-        const created = await this.requestWorkerJson('/api/vibe-groups', { method: 'POST', body: { name, slots, normalizeStrengths: group.normalizeStrengths !== false } });
+        const created = await this.requestWorkerJson('/api/vibe-groups', { method: 'POST', body });
         linkedId = created?.item?.id;
+        if (linkedId) groups.push({ ...body, id: linkedId });
       }
       if (linkedId) {
         this.state.groupLinks[externalGroupId] = linkedId;
@@ -546,8 +600,17 @@ export class StChatu8Bridge {
     };
   }
 
-  async sync(payload = {}) {
-    const artists = await this.syncArtists(Array.isArray(payload.artists) ? payload.artists : []);
+  sync(payload = {}) {
+    // 多个酒馆页面共用关联记录；串行处理，避免首次入库时并发创建重复条目。
+    const pending = this.syncQueue.catch(() => {}).then(() => this.performSync(payload));
+    this.syncQueue = pending;
+    return pending;
+  }
+
+  async performSync(payload) {
+    const selection = await this.requestWorkerJson('/api/st-chatu8/export-selection');
+    const selectedChainIds = Array.isArray(selection?.chainIds) ? selection.chainIds : [];
+    const artists = await this.syncArtists(Array.isArray(payload.artists) ? payload.artists : [], selectedChainIds);
     const vibeData = await this.syncVibes(
       Array.isArray(payload.vibeDocuments) ? payload.vibeDocuments : [],
       Array.isArray(payload.vibeGroups) ? payload.vibeGroups : [],
@@ -556,7 +619,7 @@ export class StChatu8Bridge {
     this.state.lastSyncAt = Date.now();
     await this.saveState();
     this.startHistorySync();
-    return { artists, ...vibeData, status: this.status() };
+    return { artists, artistSync: this.lastArtistSync, ...vibeData, status: this.status() };
   }
 
   async readVibeFile(vibeId) {

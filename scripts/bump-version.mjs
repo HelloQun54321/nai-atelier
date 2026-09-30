@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 一键版本递增：node scripts/bump-version.mjs <major|minor|patch|set:X.Y.Z>
 // 版本号唯一来源是 package.json；本脚本同步更新 package.json、package-lock.json
-// 与 README 版本徽章。设置页等运行时展示通过 vite define 注入的 __APP_VERSION__
+// 与 README 版本徽章、酒馆连接器的版本及缓存参数。设置页等运行时展示通过 vite define 注入的 __APP_VERSION__
 // 读取，不需要（也不允许）手动同步。规则见 AGENTS.md。
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkgPath = path.join(root, 'package.json');
 const lockPath = path.join(root, 'package-lock.json');
 const readmePath = path.join(root, 'README.md');
+const bridgeManifestPath = path.join(root, 'sillytavern-extension', 'npm-bridge', 'manifest.json');
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
 const arg = process.argv[2] ?? 'patch';
@@ -54,6 +55,7 @@ if (!badgePattern.test(readme)) {
   console.error('README.md 中未找到 version-x.y.z 形式的徽章，请检查版本徽章行');
   process.exit(1);
 }
+const bridgeManifest = JSON.parse(readFileSync(bridgeManifestPath, 'utf8'));
 
 pkg.version = next;
 writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
@@ -64,5 +66,9 @@ if (lock.packages?.['']) lock.packages[''].version = next;
 writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
 
 writeFileSync(readmePath, readme.replace(badgePattern, `version-${next}-`));
+bridgeManifest.version = next;
+bridgeManifest.js = `index.js?v=${next}`;
+bridgeManifest.css = `style.css?v=${next}`;
+writeFileSync(bridgeManifestPath, JSON.stringify(bridgeManifest, null, 2) + '\n');
 
 console.log(`${current} -> ${next} (${arg.startsWith('set:') ? 'set' : arg})`);

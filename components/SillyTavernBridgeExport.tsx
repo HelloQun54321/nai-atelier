@@ -18,16 +18,17 @@ interface SillyTavernBridgeExportProps {
   notify: (message: string) => void;
 }
 
+const BRIDGE_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
 const FALLBACK_MANIFEST = JSON.stringify({
   display_name: 'NAI Atelier 连接器',
   loading_order: 110,
   requires: [],
   optional: ['st-chatu8'],
-  js: 'index.js?v=1.5.2',
-  css: 'style.css?v=1.5.2',
+  js: `index.js?v=${BRIDGE_VERSION}`,
+  css: `style.css?v=${BRIDGE_VERSION}`,
   author: 'HelloQun54321',
-  version: '1.5.2',
-  description: '在 NAI Atelier 与 st-chatu8 之间同步画师串、Vibe，并将 st-chatu8 原图接入生成历史。',
+  version: BRIDGE_VERSION,
+  description: '将选定的 V4.5 风格串发送到 st-chatu8，全量接收酒馆风格串，互通 Vibe 与原图历史索引。',
 }, null, 2);
 
 export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = ({ notify }) => {
@@ -229,7 +230,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
         <div>
           <h4 className="font-semibold text-gray-900 dark:text-white">SillyTavern 互通扩展 (npm-bridge)</h4>
           <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
-            在 SillyTavern 与 NAI Atelier 之间双向同步画师串、Vibe 组合与生图历史原图。
+            只发送你在风格串页面勾选的 V4.5 风格串；酒馆风格串全部接收，Vibe 与原图历史索引继续互通。
           </p>
         </div>
         <Puzzle className="h-4 w-4 flex-none text-indigo-500" />

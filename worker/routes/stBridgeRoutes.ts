@@ -5,11 +5,32 @@
 //   /api/integrations/st-chatu8/history/<external_id>/image
 // URLs for imported rows. Those are intentionally NOT registered here; the
 // local media gateway (scripts/media-gateway.mjs) serves them.
-import { json, error, type RouteContext } from './types';
+import { json, error, parseStoredJson, type RouteContext } from './types';
 import { localHistoryEnabled, ensureLocalHistorySchema } from './historyRoutes';
+import { isStChatu8ExportableChain } from '../stChatu8Policy.mjs';
 
 export async function handleStBridgeRoute(ctx: RouteContext): Promise<Response | null> {
   const { request, env, db, path, method, currentUser } = ctx;
+
+  // 使用既有设置表保存发送范围；初次为空，不沿用过去的全量关联。
+  if (path === '/api/st-chatu8/export-selection') {
+    if (currentUser.role === 'guest') return error('Forbidden', 403);
+    const key = 'st_chatu8_export_selection_v1';
+    const rows = await db.prepare("SELECT id, params FROM chains WHERE type = 'style' OR type IS NULL OR type = ''").all<{ id: string; params: string }>();
+    const available = new Set(rows.results.filter(row => isStChatu8ExportableChain({ params: parseStoredJson(row.params, {}) })).map(row => row.id));
+    if (method === 'GET') {
+      const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+      const value = parseStoredJson(row?.value, []);
+      return json({ chainIds: Array.isArray(value) ? [...new Set(value.filter(id => typeof id === 'string' && available.has(id)))] : [] });
+    }
+    if (method !== 'POST') return error('Method not allowed', 405);
+    const body = await request.json() as { chainIds?: unknown };
+    if (!Array.isArray(body?.chainIds) || body.chainIds.some(id => typeof id !== 'string' || !id || id.length > 200)) return error('同步范围无效', 400);
+    const chainIds = [...new Set(body.chainIds.filter(id => available.has(id)))];
+    await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .bind(key, JSON.stringify(chainIds)).run();
+    return json({ chainIds });
+  }
 
   if (path === '/api/integrations/st-chatu8/history/known' && method === 'POST') {
     if (!localHistoryEnabled(env)) return error('Local history is disabled', 404);
