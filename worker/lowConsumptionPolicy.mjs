@@ -27,7 +27,8 @@ export const lowConsumptionViolation = options => {
     subscriptionKnown, usageLimited, usageExhausted } = options;
   const operationViolation = lowConsumptionOperationViolation(operation);
   if (operationViolation) return operationViolation;
-  if (!runtimeHealthy || !subscriptionKnown) return '低消耗模式：无法确认官方计费规则或当前订阅额度，请刷新后再生成';
+  if (!runtimeHealthy) return '低消耗模式：无法确认官方计费规则，请检查常量同步状态后再生成';
+  if (!subscriptionKnown) return '低消耗模式：无法确认当前订阅或额度，请刷新 Opus 状态后再生成';
   if (!Number.isFinite(steps) || steps < 1 || steps > lowConsumptionStepLimit(model, freeMaxSteps)) return `低消耗模式：当前模型最多 ${lowConsumptionStepLimit(model, freeMaxSteps)} 步`;
   if (referenceCount > 0) return '低消耗模式：角色／精确参考已暂停，请关闭该参考或低消耗模式';
   if (vibeCount > 4) return '低消耗模式：最多使用 4 个已编码 Vibe，请调整选择';

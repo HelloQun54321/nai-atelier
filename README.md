@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.1.2-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.1.3-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -697,6 +697,7 @@ NAI Atelier 独有的新风格串可以先同步到 st-chatu8；一旦进入 st-
   - **后台静默轮询**：工坊后台每 60 秒自动向官方端点同步一次数据，全自动解析当前账号的 Opus 会员有效状态以及电池限额百分比（满额 100%，官方活动期还可能突破如 196%）。
   - **动态换算剩余可搓张数**：工坊结合从官方 Web 应用热同步提取的换算系数（默认约 17.3 张/1%），在限额环下方直观显示预估可生成的免费张数（如 `剩余 28% ≈ 484 张`），创作者无需心算百分比。
   - **后台休眠与智能唤醒**：当切换其他标签页或浏览器最小化（`document.hidden`）时，轮询自动挂起以节约系统资源；切回工坊时补发一次静默刷新。发起生图时检查额度快照，超过 15 秒则刷新，点击圆环亦可随时即时刷新。
+  - **展示与校验一致**：新页面／组件共用当前 Key 的有效额度缓存，生成前不会因内部快照未初始化而误报未知；切换 Key 后先读取对应订阅。低消耗分别提示计费规则同步异常和订阅／额度读取异常。
 - **Anlas（官方代币/积分）：用户自主设定本地预算**：
   - **预算不等于余额**：项目当前通过持久 API Key 查询订阅与 Opus 状态，**不自动读取或同步官方 Anlas 余额**。请在 NovelAI 官网核对实际余额，再按需给工坊分配本地预算；官网或其他工具的消费不会自动从这里扣减。
   - **本地安全预算守卫机制**：创作者在「系统设置 → NovelAI 与 Anlas → Anlas 点数预算」中填入自己的实际点数或期望分配给工坊的安全预算（默认 1666 点，可随时修改或一键恢复）。电脑与手机局域网共享该预算。

@@ -54,6 +54,37 @@ describe('useNovelaiUsage', () => {
     vi.unstubAllGlobals();
   });
 
+  it('新实例从同 Key 缓存显示额度时，生成前校验也能取得该快照', async () => {
+    sessionStorage.setItem('nai_api_key', 'cached-usage-test-key');
+    const subscription = { tier: 3, active: true, usage: { percent: 64, isNegative: false, timeUntilNextPercent: 1500 } };
+    const fetchMock = vi.fn().mockResolvedValue(responseFor(subscription));
+    vi.stubGlobal('fetch', fetchMock);
+    const first = renderHook(() => useNovelaiUsage());
+    await waitFor(() => expect(first.result.current.usage?.percent).toBe(64));
+    const second = renderHook(() => useNovelaiUsage());
+    try {
+      expect(second.result.current.info).toEqual(subscription);
+      expect(await second.result.current.refreshIfStale()).toEqual(subscription);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally { first.unmount(); second.unmount(); }
+  });
+
+  it('切 Key 的事件尚未到达时，生成前校验不能复用另一 Key 的有效快照', async () => {
+    sessionStorage.setItem('nai_api_key', 'before-event-test-key-a');
+    const subscriptionA = { tier: 3, active: true, usage: { percent: 64, isNegative: false, timeUntilNextPercent: 1500 } };
+    const subscriptionB = { tier: 3, active: true, usage: { percent: 20, isNegative: false, timeUntilNextPercent: 1500 } };
+    const fetchMock = vi.fn().mockResolvedValueOnce(responseFor(subscriptionA)).mockResolvedValueOnce(responseFor(subscriptionB));
+    vi.stubGlobal('fetch', fetchMock);
+    const hook = renderHook(() => useNovelaiUsage());
+    await waitFor(() => expect(hook.result.current.info).toEqual(subscriptionA));
+    try {
+      sessionStorage.setItem('nai_api_key', 'before-event-test-key-b');
+      await act(async () => { expect(await hook.result.current.refreshIfStale()).toEqual(subscriptionB); });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(hook.result.current.info).toEqual(subscriptionB);
+    } finally { hook.unmount(); }
+  });
+
   it('同一把 Key 的多个用量组件只共用一个订阅请求', async () => {
     const apiKey = 'pst-deduplicated-key';
     sessionStorage.setItem('nai_api_key', apiKey);

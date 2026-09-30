@@ -157,7 +157,8 @@ export const useNovelaiUsage = () => {
   const [fetchedAt, setFetchedAt] = useState(initialSnapshot?.fetchedAt || 0);
   const [loading, setLoading] = useState(!initialSnapshot);
   const [error, setError] = useState<string | null>(null);
-  const infoRef = useRef<NovelaiSubscriptionInfo | null>(null);
+  // 展示与生成前校验必须从同一份缓存初始化，否则有效期内会显示额度却返回 null。
+  const infoRef = useRef<NovelaiSubscriptionInfo | null>(initialSnapshot?.info || null);
   const fetchedAtRef = useRef(initialSnapshot?.fetchedAt || 0);
   const activeKeyRef = useRef(initialSnapshot ? initialKey : '');
 
@@ -209,7 +210,8 @@ export const useNovelaiUsage = () => {
 
   /** 快照仍在有效期内时直接复用，避免生成前无谓等待。 */
   const refreshIfStale = useCallback(async (): Promise<NovelaiSubscriptionInfo | null> => {
-    if (Date.now() - fetchedAtRef.current < USAGE_SNAPSHOT_TTL) return infoRef.current;
+    const apiKey = (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim();
+    if (apiKey === activeKeyRef.current && infoRef.current && Date.now() - fetchedAtRef.current < USAGE_SNAPSHOT_TTL) return infoRef.current;
     return refresh();
   }, [refresh]);
 

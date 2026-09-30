@@ -58,6 +58,11 @@ describe('低消耗实际参数与原配置隔离', () => {
     expect(() => assertLowConsumptionEstimate(actual, 'text-to-image', { ...runtime, syncedAt: Date.now() - 49 * 3600000 }, subscription, 0)).toThrow('无法确认');
     expect(() => assertLowConsumptionEstimate(actual, 'text-to-image', runtime, { active: true, tier: 2 }, 0)).toThrow('Opus');
   });
+  it('分别说明计费规则异常与订阅未知，不再合并成同一提示', () => {
+    const actual = applyLowConsumptionParams(params, true, runtime);
+    expect(() => assertLowConsumptionEstimate(actual, 'text-to-image', { ...runtime, health: { ok: false } }, subscription, 0)).toThrow('无法确认官方计费规则');
+    expect(() => assertLowConsumptionEstimate(actual, 'text-to-image', runtime, null, 0)).toThrow('无法确认当前订阅或额度');
+  });
 });
 
 describe('按 Key 读取和持久化，迟到响应隔离', () => {
