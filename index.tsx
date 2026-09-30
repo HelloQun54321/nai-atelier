@@ -4,12 +4,14 @@ import App from './App';
 import { ConfirmDialogProvider } from './components/ConfirmDialog';
 import { LanAccessGate } from './components/LanAccessGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { restoreRememberedNaiKey } from './services/naiKeyStorage';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
+restoreRememberedNaiKey();
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>

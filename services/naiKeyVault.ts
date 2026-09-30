@@ -1,5 +1,6 @@
 import { api, ApiError } from './api';
 import { createUuid } from './id';
+import { readActiveNaiKey, setActiveNaiKey, getRememberNaiKey } from './naiKeyStorage';
 
 /**
  * NovelAI 多密钥保管箱。
@@ -7,7 +8,7 @@ import { createUuid } from './id';
  * 保管箱本体（密钥清单与命名备注）已从浏览器 localStorage 全量迁入 local-data
  * （Worker 端 D1 settings 表 key='nai_key_vault'），这里只是访问它的异步客户端；
  * 「当前使用的密钥」仍写入既有的 nai_api_key 槽位（sessionStorage / localStorage，
- * 由「记住」开关决定持久性），因此所有既有消费方（生图、限额查询、网关代理）
+ * 默认记住，显式关闭后仅用于当前会话），因此所有既有消费方（生图、限额查询、网关代理）
  * 无需改动。
  *
  * 兜底语义：Worker 不可达时（例如纯 dev 前端模式）本模块回退到原 localStorage
@@ -38,7 +39,7 @@ const warnFallback = () => {
   console.warn('密钥保管箱服务端不可达，已回退到浏览器本地存储（数据仅保存在此浏览器中）');
 };
 
-const readActiveKey = () => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '';
+const readActiveKey = readActiveNaiKey;
 
 /** 兼容旧数据：损坏的本地库回退空数组。 */
 const readLocalVault = (): NaiKeyEntry[] => {
@@ -62,10 +63,6 @@ const readLocalVault = (): NaiKeyEntry[] => {
 const writeLocalVault = (entries: NaiKeyEntry[]) => {
   if (entries.length) localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(entries));
   else localStorage.removeItem(VAULT_STORAGE_KEY);
-};
-
-const broadcastActiveKey = (key: string) => {
-  window.dispatchEvent(new CustomEvent<string>('nai-api-key-changed', { detail: key }));
 };
 
 /** 浏览器侧可用性判断：服务端可达与否以实际请求为准，这里只做最粗的环境区分。 */
@@ -188,18 +185,13 @@ export const naiKeyVault = {
     }
   },
 
-  /** 把某把密钥设为当前使用（沿用「记住」开关的持久化语义）。 */
-  activate(entry: NaiKeyEntry, remember: boolean) {
-    sessionStorage.setItem('nai_api_key', entry.key);
-    if (remember) localStorage.setItem('nai_api_key', entry.key);
-    else localStorage.removeItem('nai_api_key');
-    broadcastActiveKey(entry.key);
+  /** 当前选择默认记住；显式关闭后仅用于当前会话。 */
+  activate(entry: NaiKeyEntry, remember = getRememberNaiKey()) {
+    setActiveNaiKey(entry.key, remember);
   },
 
   /** 清空当前密钥（删除激活条目时使用）。 */
   clearActive() {
-    sessionStorage.removeItem('nai_api_key');
-    localStorage.removeItem('nai_api_key');
-    broadcastActiveKey('');
+    setActiveNaiKey('');
   },
 };

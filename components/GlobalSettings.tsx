@@ -21,6 +21,7 @@ import { isNovelaiSubscriptionActive, isActiveOpusSubscription, useNovelaiUsage 
 import { AnlasBalanceBar } from './AnlasBalanceBar';
 import { getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 import { naiKeyVault, NaiKeyEntry } from '../services/naiKeyVault';
+import { readActiveNaiKey, getRememberNaiKey, setRememberNaiKey, NAI_KEY_REMEMBER_CHANGED } from '../services/naiKeyStorage';
 import { setLowConsumption, useLowConsumption } from '../services/lowConsumption';
 import { isLowConsumptionModeAllowed } from '../worker/lowConsumptionPolicy.mjs';
 import { PromptAgentSettings } from './PromptAgentSettings';
@@ -142,7 +143,7 @@ const ACCENT_PRESETS = [
   { color: '#d97706', label: '琥珀' },
 ] as const;
 
-const readApiKey = () => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '';
+const readApiKey = readActiveNaiKey;
 
 const maskNaiKeyForDisplay = (key: string) => {
   const trimmed = key.trim();
@@ -154,7 +155,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const confirmAction = useConfirmDialog();
   const cleanSharedImages = useCleanSharedImages();
   const [apiKey, setApiKey] = useState(readApiKey);
-  const [rememberApiKey, setRememberApiKey] = useState(() => localStorage.getItem('nai_api_key') !== null);
+  const [rememberApiKey, setRememberApiKey] = useState(() => getRememberNaiKey());
   const [cloudQueue, setCloudQueue] = useState(getCachedCloudQueuePreferences);
   const [mobileCacheStats, setMobileCacheStats] = useState(getMobileCacheStats);
   const [imageDisplay, setImageDisplay] = useState(getMobileImageDisplayPreferences);
@@ -209,7 +210,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     if (!open) return;
     setActiveSection(initialSection === 'home' ? (isMobile ? 'home' : 'appearance') : initialSection);
     setApiKey(readApiKey());
-    setRememberApiKey(localStorage.getItem('nai_api_key') !== null);
+    setRememberApiKey(getRememberNaiKey());
     void getNaiRuntimeConfig().then(config => setNaiRuntimeCoefficient(config.imagesPerPercent || 17.3));
     void getCloudQueuePreferences().then(setCloudQueue).catch(() => notify('读取公共队列设置失败', 'error'));
   }, [open, initialSection, isMobile]);
@@ -289,24 +290,22 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     void refreshMaintenanceStatus();
   }, [open, activeSection, refreshMaintenanceStatus]);
 
-  const broadcastApiKey = (value: string) => {
-    window.dispatchEvent(new CustomEvent<string>('nai-api-key-changed', { detail: value }));
-  };
-
-  const updateApiKey = (value: string) => {
-    setApiKey(value);
-    if (value) sessionStorage.setItem('nai_api_key', value);
-    else sessionStorage.removeItem('nai_api_key');
-    if (rememberApiKey && value) localStorage.setItem('nai_api_key', value);
-    else localStorage.removeItem('nai_api_key');
-    broadcastApiKey(value);
-  };
-
   const updateRememberApiKey = (remember: boolean) => {
+    setRememberNaiKey(remember);
     setRememberApiKey(remember);
-    if (remember && apiKey) localStorage.setItem('nai_api_key', apiKey);
-    else localStorage.removeItem('nai_api_key');
   };
+
+  useEffect(() => {
+    const syncKey = () => { setApiKey(readApiKey()); setRememberApiKey(getRememberNaiKey()); };
+    window.addEventListener('nai-api-key-changed', syncKey);
+    window.addEventListener(NAI_KEY_REMEMBER_CHANGED, syncKey);
+    window.addEventListener('storage', syncKey);
+    return () => {
+      window.removeEventListener('nai-api-key-changed', syncKey);
+      window.removeEventListener(NAI_KEY_REMEMBER_CHANGED, syncKey);
+      window.removeEventListener('storage', syncKey);
+    };
+  }, []);
 
   // ---- 多密钥保管箱 ----
   const [keyVault, setKeyVault] = useState<NaiKeyEntry[]>([]);
@@ -1190,7 +1189,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               <input type="checkbox" checked={rememberApiKey} onChange={event => updateRememberApiKey(event.target.checked)} className="rounded border-gray-300 text-indigo-600" />
               在本机记住当前使用的 API Key
             </label>
-            <p className="mt-2 text-xs leading-relaxed text-amber-600 dark:text-amber-400">保管箱与备注由本地服务保存在 local-data 数据目录；「当前使用的密钥」按上方开关保留在本机浏览器。密钥以明文存储于本机，局域网访问受访问密码保护。</p>
+            <p className="mt-2 text-xs leading-relaxed text-amber-600 dark:text-amber-400">保管箱与备注由本地服务保存在 local-data 数据目录；默认记住当前使用的密钥，下次进入同一浏览器地址时自动恢复；关闭上方开关后仅在当前标签页使用。密钥以明文存储于本机，局域网访问受访问密码保护。</p>
             <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
               <label className="flex min-h-11 items-center justify-between gap-3">
                 <span><b className="block text-sm text-gray-800 dark:text-gray-100">多人拼车公共队列</b><span className="mt-0.5 block text-meta leading-5 text-gray-500 dark:text-gray-400">兼容 st-chatu8；设置按当前 NovelAI Key 独立保存，切换 Key 后不会串用；相同 Key 的接入者依次生图。</span></span>

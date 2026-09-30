@@ -28,6 +28,7 @@ import { importDanbooruCoverAsDataUrl } from '../services/danbooruCoverImport';
 import { TagCoverActions } from './TagCoverActions';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
+import { readActiveNaiKey, getRememberNaiKey, setActiveNaiKey, setRememberNaiKey, NAI_KEY_REMEMBER_CHANGED } from '../services/naiKeyStorage';
 
 interface CartItem {
     name: string;
@@ -398,18 +399,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         });
 
         // API Key 安全存储策略：
-        // 1. 优先从 sessionStorage 读取（会话级，关闭标签页即清除）
-        // 2. 其次从 localStorage 读取（持久化，用户明确选择"记住"）
-        // 注意：前端无法真正保护存储的密钥，"记住"功能意味着用户接受风险
-        const sessionKey = sessionStorage.getItem('nai_api_key');
-        if (sessionKey) {
-            setApiKey(sessionKey);
-        } else {
-            const savedKey = localStorage.getItem('nai_api_key');
-            if (savedKey) {
-                setApiKey(savedKey);
-            }
-        }
+        setApiKey(readActiveNaiKey());
     }, []);
 
     const loadNextCatalogPage = useCallback(async () => {
@@ -508,49 +498,32 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         return () => observer.disconnect();
     }, [gachaArtists, hasMoreCatalog, loadNextCatalogPage, searchTerm]);
 
-    // API Key 存储状态：是否记住（持久化到 localStorage）
-    const [rememberApiKey, setRememberApiKey] = useState(() => {
-        return localStorage.getItem('nai_api_key') !== null;
-    });
+    // 与设置、保管箱共用默认记住策略，显式关闭后只保留当前会话。
+    const [rememberApiKey, setRememberApiKey] = useState(getRememberNaiKey);
 
     const handleApiKeyChange = (val: string) => {
-        setApiKey(val);
-        // 始终存入 sessionStorage（会话级）
-        sessionStorage.setItem('nai_api_key', val);
-        // 仅在用户选择"记住"时持久化到 localStorage
-        if (rememberApiKey) {
-            localStorage.setItem('nai_api_key', val);
-        } else {
-            localStorage.removeItem('nai_api_key');
-        }
-        window.dispatchEvent(new CustomEvent<string>('nai-api-key-changed', { detail: val }));
+        setActiveNaiKey(val, rememberApiKey);
+        setApiKey(readActiveNaiKey());
     };
 
     useEffect(() => {
-        const syncApiKey = (event: Event) => {
-            const nextValue = event instanceof CustomEvent
-                ? String(event.detail || '')
-                : (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
-            setApiKey(nextValue);
-            setRememberApiKey(localStorage.getItem('nai_api_key') !== null);
+        const syncApiKey = () => {
+            setApiKey(readActiveNaiKey());
+            setRememberApiKey(getRememberNaiKey());
         };
         window.addEventListener('nai-api-key-changed', syncApiKey);
+        window.addEventListener(NAI_KEY_REMEMBER_CHANGED, syncApiKey);
         window.addEventListener('storage', syncApiKey);
         return () => {
             window.removeEventListener('nai-api-key-changed', syncApiKey);
+            window.removeEventListener(NAI_KEY_REMEMBER_CHANGED, syncApiKey);
             window.removeEventListener('storage', syncApiKey);
         };
     }, []);
 
     const handleRememberKeyChange = (remember: boolean) => {
+        setRememberNaiKey(remember);
         setRememberApiKey(remember);
-        if (remember && apiKey) {
-            // 用户选择记住，持久化当前 Key（用户需自行承担风险）
-            localStorage.setItem('nai_api_key', apiKey);
-        } else {
-            // 用户取消记住，清除 localStorage
-            localStorage.removeItem('nai_api_key');
-        }
     };
 
     const handleRefresh = async () => {

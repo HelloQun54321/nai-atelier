@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.3.3-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.3.4-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -693,7 +693,7 @@ NAI Atelier 独有的新风格串可以先同步到 st-chatu8；一旦进入 st-
 
 #### 🗄️ 多密钥本地安全保管
 
-- **本地集中落库**：NovelAI Key 清单保存在电脑 D1 的 `nai_key_vault` 设置中，当前以 JSON 明文存储，**没有应用层加密**；界面掩码不等于存储加密。当前活动 Key 也会按「记住」设置保存在浏览器会话或本地存储中。应保护电脑账户、已授权设备和备份副本。
+- **本地集中落库**：NovelAI Key 清单保存在电脑 D1 的 `nai_key_vault` 设置中，当前以 JSON 明文存储，**没有应用层加密**；界面掩码不等于存储加密。默认记住最后使用的 Key，重新进入同一浏览器与访问地址时自动恢复；「记住」偏好独立保存，明确关闭后仅在当前标签页使用。升级时已有会话 Key 自动按默认策略保留；若旧会话已关闭、当前选择已丢失，需要重新选一次。该选择不会自动同步到其他浏览器或访问地址。应保护电脑账户、已授权设备和备份副本。
 - **多账号别名管理**：支持录入多组 Key 并添加备注（如「Opus 个人主号」、「小队拼车号」、「备份试用号」）；在生图实验室顶栏可随时一键切换当前活动的扣费账号。
 - **脱敏显示与防录屏泄露**：界面上密钥默认以掩码脱敏遮盖（仅展示首尾关键字符），需要查看时一键显隐或复制，显隐或复制后仍需注意录屏与剪贴板内容。
 - **请求边界**：电脑网关向 NovelAI 官方端点发送 Key，用于生图、编码与订阅查询；公共队列仅接收 Key 指纹。Agent 和 Pixiv 凭据使用各自的加密存储，不能与 NovelAI 保管箱的存储方式混为一谈。

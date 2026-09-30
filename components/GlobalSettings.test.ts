@@ -6,6 +6,7 @@ import { DEFAULT_APPEARANCE_PREFERENCES, AppearancePreferences } from '../servic
 import { ConfirmDialogProvider } from './ConfirmDialog';
 import { GlobalSettings } from './GlobalSettings';
 import { getCleanSharedImages, IMAGE_SHARING_STORAGE_KEY } from '../services/imageSharing';
+import { readActiveNaiKey, REMEMBER_NAI_KEY_STORAGE_KEY, setActiveNaiKey } from '../services/naiKeyStorage';
 const lowMode = vi.hoisted(() => ({ enabled: false, save: vi.fn() }));
 const subscriptionFixture = vi.hoisted(() => ({ expired: false, balance: undefined as { fixedTrainingStepsLeft: number; purchasedTrainingSteps: number } | undefined, refresh: vi.fn(async () => null) }));
 vi.mock('../services/naiUsage', async importOriginal => ({
@@ -108,6 +109,22 @@ describe('GlobalSettings', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+  it('Key 默认记住，取消后重开仍为关闭，重新开启保存当前 Key', async () => {
+    const view = render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+    const toggle = screen.getByRole('checkbox', { name: '在本机记住当前使用的 API Key' }) as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+    fireEvent.click(toggle);
+    expect(localStorage.getItem(REMEMBER_NAI_KEY_STORAGE_KEY)).toBe('false');
+    view.unmount();
+    setActiveNaiKey('mock-settings-key');
+    expect(localStorage.getItem('nai_api_key')).toBeNull();
+    render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+    const reopened = screen.getByRole('checkbox', { name: '在本机记住当前使用的 API Key' }) as HTMLInputElement;
+    expect(reopened.checked).toBe(false);
+    fireEvent.click(reopened);
+    expect(localStorage.getItem('nai_api_key')).toBe('mock-settings-key');
+    expect(readActiveNaiKey()).toBe('mock-settings-key');
   });
   it.each([false, true])('隐私开关默认关闭，保存并重开后保持，手机视图=%s', async mobile => {
     vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
