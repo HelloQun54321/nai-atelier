@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import { createHash } from 'node:crypto';
 import { Readable, Writable } from 'node:stream';
 import { DEFAULT_NAI_RUNTIME, enforceLowConsumptionRequest, handleGenerateRequest, handleGenerateStreamRequest, CloudQueueCoordinator } from './media-gateway.mjs';
 import { lowConsumptionViolation } from '../worker/lowConsumptionPolicy.mjs';
@@ -47,6 +50,12 @@ test('网关从真实请求形态核算，而非信任客户端免费标签或�
   await assert.rejects(check(payload(), { requestRemote: async () => { throw new Error('offline'); } }), /无法确认/);
   await assert.rejects(check(payload(), { requestRemote: async () => json({ ...subscription, usage: { percent: 0, isNegative: false } }) }), /额度已用尽/);
 });
+
+test('订阅过期且有 Paid Anlas：低消耗明确拒绝付费，普通模式检查放行', async () => {
+  const options = { requestRemote: async () => json({ active: false, tier: 0, trainingStepsLeft: { fixedTrainingStepsLeft: 0, purchasedTrainingSteps: 420 }, usage: { percent: 100 } }) };
+  await assert.rejects(check(payload(), options), /订阅已过期.*关闭低消耗/);
+  assert.equal(await check(payload(), { ...options, loadPreferences: async () => ({ enabled: false }) }), false);
+});
 test('隐藏模式在订阅／生图请求前就拒绝，关闭开关则完整放行普通编辑', async () => {
   for (const body of [payload({ image: 'image', strength: 1 }, { action: 'img2img' }),
     payload({ image: 'image', mask: 'mask', width: 2048, height: 2048, steps: 40, _local_edit_operation: 'outpaint' }, { action: 'infill' })]) {
@@ -65,8 +74,8 @@ class Output extends Writable {
   _write(chunk, _encoding, callback) { this.chunks.push(Buffer.from(chunk)); callback(); }
   body() { return Buffer.concat(this.chunks).toString(); }
 }
-const request = (key = 'handler-key') => {
-  const req = Readable.from([Buffer.from(JSON.stringify(payload()))]);
+const request = (key = 'handler-key', body = payload()) => {
+  const req = Readable.from([Buffer.from(JSON.stringify(body))]);
   req.method = 'POST'; req.headers = { authorization: `Bearer ${key}` };
   req.socket = { remoteAddress: '127.0.0.1' }; req.setTimeout = () => {};
   return req;
@@ -76,6 +85,38 @@ for (const handler of [handleGenerateRequest, handleGenerateStreamRequest]) {
   const label = handler === handleGenerateRequest ? 'ZIP' : 'SSE';
   const success = () => new Response(handler === handleGenerateRequest ? 'zip' : 'event: final\ndata: {"image":"fake"}\n\n');
   const settleGeneration = async () => ({ estimatedCost: 0, anlasBudget: null });
+  for (const model of ['nai-diffusion-5-full', 'nai-diffusion-4-5-full', 'nai-diffusion-4-full']) {
+    test(`${label} ${model}：普通模式允许过期订阅请求，成功按当前 Key 记付费点数，不记 Opus 用量`, async () => {
+      const spends = [], calls = [];
+      const worker = createServer(async (req, res) => {
+        assert.equal(req.url, '/api/anlas-budget');
+        assert.equal(req.method, 'POST');
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        spends.push(JSON.parse(Buffer.concat(chunks).toString()));
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ remaining: 1646 }));
+      });
+      worker.listen(0, '127.0.0.1');
+      await once(worker, 'listening');
+      try {
+        const key = `expired-paid-${label}-${model}`;
+        const res = new Output();
+        await handler(request(key, payload({ steps: 28 }, { model })), res, '', worker.address().port, idleQueue(), { enabled: false }, async url => {
+          calls.push(url);
+          if (url.endsWith('/user/subscription')) return json({ active: false, tier: 3, usage: { percent: 100, isNegative: false }, trainingStepsLeft: { fixedTrainingStepsLeft: 0, purchasedTrainingSteps: 420 } });
+          assert.match(url, /\/ai\/generate-image(?:-stream)?$/);
+          return success();
+        }, { checkLowConsumption: async () => false });
+        assert.equal(res.statusCode, 200);
+        assert.equal(calls.filter(url => url.endsWith('/user/subscription')).length, 1);
+        assert.equal(calls.filter(url => url.includes('/ai/generate-image')).length, 1);
+        assert.deepEqual(spends, [{ amount: 20, reason: 'generation', keyHash: createHash('sha256').update(key).digest('hex'), anlasDelta: 20, opusImagesDelta: 0 }]);
+        if (handler === handleGenerateRequest) assert.equal(res.headers['X-Nai-Anlas-Estimated-Spent'], '20');
+        else assert.match(res.body(), /"estimatedSpent":20/);
+      } finally { await new Promise(resolve => worker.close(resolve)); }
+    });
+  }
   test(`${label}：校验失败不入队、不生图、不重试，错误后能再次生成`, async () => {
     const res = new Output();
     await handler(request(`failure-${label}`), res, '', 0, idleQueue(), { enabled: true, serviceUrl: 'https://queue.invalid' }, () => assert.fail('不能生图'), {

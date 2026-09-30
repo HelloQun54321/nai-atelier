@@ -1102,14 +1102,14 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               {keyVault.map(entry => {
                 const active = entry.key === apiKey;
                 // 只对「当前使用」的 key 显示订阅健康（复用轮询结果，不额外探测）；
-                // 加载中/请求失败时不妄断失效，避免误标。
+                // 加载中/请求失败时不妄断订阅过期，避免误标。
                 const activeKeySubscription = active
                   ? { info: currentSubscription, error: subscriptionError, loading: subscriptionLoading, refresh: refreshSubscription }
                   : null;
-                const keyInvalid = Boolean(activeKeySubscription)
+                const keyExpired = Boolean(activeKeySubscription)
                   && !activeKeySubscription!.loading
                   && !activeKeySubscription!.error
-                  && isNovelaiSubscriptionActive(activeKeySubscription!.info) === false;
+                  && activeKeySubscription!.info?.active === false;
                 const keyNonOpus = Boolean(activeKeySubscription)
                   && !activeKeySubscription!.loading
                   && !activeKeySubscription!.error
@@ -1136,7 +1136,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                         <div className="flex items-center gap-2">
                           <span className="truncate text-sm font-bold text-gray-800 dark:text-gray-100" title={entry.name}>{entry.name}</span>
                           {!entry.key.startsWith('pst-') && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title="NovelAI 官方密钥以 pst- 开头，这可能是误存的其他服务密钥（例如被浏览器自动填入）">格式可疑</span>}
-                          {keyInvalid && <span className="flex-none rounded-full bg-red-100 px-1.5 py-0.5 text-micro font-bold text-red-700 dark:bg-red-950/50 dark:text-red-300" title="NovelAI 返回该密钥订阅已失效；生成请求会被拒绝，请切换其他密钥">已失效</span>}
+                          {keyExpired && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title="订阅已过期，免费权益不可用；保留的 Paid Anlas 可用于普通模式付费生成，权限以官方响应为准">订阅过期</span>}
                           {keyNonOpus && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title="当前订阅不是 Opus 档，无免费生成额度，按 Anlas 扣费生成">非 Opus</span>}
                         </div>
                         <p className="mt-0.5 truncate font-mono text-meta text-gray-500 dark:text-gray-400">{maskNaiKeyForDisplay(entry.key)}</p>

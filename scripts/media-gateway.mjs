@@ -758,7 +758,7 @@ export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = fals
   const isUsageLimitedModel = isNaiUsageLimitedModel(payload?.model, runtime);
   const freeSamples = focusedEdit
     ? 1
-    : isPlainGeneration && !(opusUsageExhausted && isUsageLimitedModel) && area <= freeMaxArea && steps <= freeMaxSteps ? 1 : 0;
+    : opusSubscriber && isPlainGeneration && !(opusUsageExhausted && isUsageLimitedModel) && area <= freeMaxArea && steps <= freeMaxSteps ? 1 : 0;
   const base = baseCost * Math.max(0, samples - freeSamples);
   return base + Math.max(0, vibeCount - 4) * 2 * samples + preciseReferences * 5 * samples;
 };
@@ -766,7 +766,7 @@ export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = fals
 /**
  * 成功生成后的个人用量增量（按密钥账号累计，供设置页展示）：
  * - anlasDelta：本次实际扣减的 Anlas（估算口径与本地预算一致）；
- * - opusImagesDelta：计入 Opus 免费额度的张数——仅“受限模型（V5 系）+ 免费档
+ * - opusImagesDelta：计入 Opus 免费额度的张数——仅“活跃 Opus + 受限模型（V5 系）+ 免费档
  *   （单张、无底图、面积/步数达标）+ 未透支”的生成才消耗共享额度。
  */
 export const computeGenerationPersonalUsage = (payload, estimatedCost, usageExhausted, runtime = getNaiRuntime(), generationSucceeded = true, opusSubscriber = false) => {
@@ -784,7 +784,7 @@ export const computeGenerationPersonalUsage = (payload, estimatedCost, usageExha
     && parameters._local_edit_operation === 'inpaint'
     && opusSubscriber === true
     && samples === 1;
-  const opusImagesDelta = !usageExhausted && (
+  const opusImagesDelta = opusSubscriber === true && !usageExhausted && (
     (isUsageLimitedModel && isPlainGeneration && area <= runtime.freeMaxArea && steps <= runtime.freeMaxSteps)
     || isFocusedEdit
   ) ? samples : 0;
@@ -936,9 +936,8 @@ export const fetchNovelAiSubscription = (authorization, signal = AbortSignal.tim
 /**
  * 只保留前端需要的订阅字段，剥离 paymentProcessorData 等敏感/冗余数据，
  * usage 三个字段与 NovelAI Web 应用的 Opus 限额映射一一对应。
- * 源头净化：非活跃或非 Opus（tier<3）的订阅不派发 usage——失效 key 官方仍会
- * 返回 usage 数字（如 tier:0/active:false/percent:79），透传会让前端把它当真实
- * 剩余额度展示/参与费用估算。前端只认 usage 是否存在 + active 字段。
+ * 过期或非 Opus 订阅不派发 usage；过期后官方仍可能返回数字，但不能作为免费权益。
+ * Paid Anlas 余额独立保留，订阅过期不等于密钥失效。
  */
 export const sanitizeNovelAiSubscription = payload => {
   const usage = payload?.usage;
@@ -947,9 +946,13 @@ export const sanitizeNovelAiSubscription = payload => {
   const active = payload?.active === true;
   const tier = Number(payload?.tier) || 0;
   const isActiveOpus = active && tier >= 3;
+  const balance = payload?.trainingStepsLeft;
+  const balanceKnown = balance && Number.isFinite(balance.fixedTrainingStepsLeft) && balance.fixedTrainingStepsLeft >= 0
+    && Number.isFinite(balance.purchasedTrainingSteps) && balance.purchasedTrainingSteps >= 0;
   return {
     tier,
     active,
+    ...(balanceKnown ? { trainingStepsLeft: { fixedTrainingStepsLeft: balance.fixedTrainingStepsLeft, purchasedTrainingSteps: balance.purchasedTrainingSteps } } : {}),
     usage: isActiveOpus && usage && Number.isFinite(percent) ? {
       percent,
       isNegative: usage.isNegative === true,
@@ -1000,6 +1003,7 @@ export const enforceLowConsumptionRequest = async ({ payload, authorization, key
     if (response.ok) subscription = sanitizeNovelAiSubscription(await response.json());
   } catch { /* 费用未知时由统一策略拒绝。 */ }
   const usageLimited = isNaiUsageLimitedModel(payload.model, runtime);
+  if (subscription?.active === false) throw Object.assign(new Error('低消耗模式：订阅已过期，无法使用 Opus 免费权益；请关闭低消耗模式后确认使用 Paid Anlas'), { status: 400, code: 'LOW_CONSUMPTION_LIMIT' });
   const subscriptionKnown = subscription?.active === true && (!usageLimited || subscription?.usage !== undefined);
   const usageExhausted = subscription?.usage?.isNegative === true || (subscription?.usage?.percent !== undefined && subscription.usage.percent <= 0);
   const opusSubscriber = subscription?.active === true && Number(subscription.tier) >= 3;
@@ -1021,12 +1025,8 @@ export const enforceLowConsumptionRequest = async ({ payload, authorization, key
 /** 成功生成统一走这里结算，保证 ZIP 与 SSE 使用同一 Key 隔离和个人用量口径。 */
 const settleSuccessfulNovelAiGeneration = async ({ payload, authorization, keyHash, req, workerPort, requestRemote }) => {
   const runtime = getNaiRuntime();
-  const isUsageLimitedModel = isNaiUsageLimitedModel(payload?.model, runtime);
-  const isFocusedImageEdit = payload?.parameters?._local_focused_inpainting === true
-    && payload?.action === 'infill'
-    && payload?.parameters?._local_edit_operation === 'inpaint';
   const opusSnapshot = getOpusUsageSnapshot(keyHash);
-  if ((isUsageLimitedModel || isFocusedImageEdit) && Date.now() - opusSnapshot.updatedAt > OPUS_USAGE_STALE_MS) {
+  if (Date.now() - opusSnapshot.updatedAt > OPUS_USAGE_STALE_MS) {
     try {
       const subscription = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(10_000), requestRemote);
       if (subscription.ok) {

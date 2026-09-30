@@ -2,7 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_NAI_RUNTIME } from '../services/naiRuntime';
+import { DEFAULT_NAI_RUNTIME, refreshNaiRuntimeConfig } from '../services/naiRuntime';
 import { OpusUsageBar } from './OpusUsageBar';
 
 const responseFor = (payload: unknown) => ({
@@ -70,45 +70,77 @@ describe('OpusUsageBar', () => {
     expect(container.querySelectorAll('circle')[1]?.getAttribute('stroke-dashoffset')).toBe('0');
   });
 
-  it('订阅已失效（active=false）时显示红色 × 与切换提示，而非额度数字', async () => {
+  it('订阅过期时显示付费状态，不显示残留 Opus 额度', async () => {
     sessionStorage.setItem('nai_api_key', 'pst-opus-expired-key');
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.startsWith('/api/novelai-runtime')) {
         return responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true, extracted: [], missed: [] } });
       }
-      // 过期 key：官方仍返回 tier:0/active:false/usage 79%，但界面必须识破为失效。
-      return responseFor({ tier: 0, active: false, usage: { percent: 79, isNegative: false, timeUntilNextPercent: 7888 } });
+      // 过期后官方仍可能返回 usage，不能把它作为免费权益。
+      return responseFor({ tier: 0, active: false, trainingStepsLeft: { fixedTrainingStepsLeft: 0, purchasedTrainingSteps: 420 }, usage: { percent: 79, isNegative: false, timeUntilNextPercent: 7888 } });
     }));
 
     render(React.createElement(OpusUsageBar, { collapsed: false }));
     await waitFor(() => {
-      expect(screen.getByRole('status', { name: /当前密钥已失效/ })).toBeTruthy();
+      expect(screen.getByRole('status', { name: /订阅已过期/ })).toBeTruthy();
     });
-    // 中央是 × 而非 79%
-    expect(screen.getByText('×')).toBeTruthy();
+    // 过期后不显示残留免费额度
+    expect(screen.queryByText('×')).toBeNull();
     expect(screen.queryByText('79%')).toBeNull();
-    // 副文案提示切换而非张数
-    expect(screen.getByText('当前密钥已失效，点击切换')).toBeTruthy();
-    expect(screen.getByText('×').parentElement?.className).toContain('text-red-500');
+    expect(screen.getByText('Paid Anlas：420 点')).toBeTruthy();
+    // 显示 Paid Anlas，不把订阅过期说成 Key 失效
+    expect(screen.getByText('订阅已过期')).toBeTruthy();
+    expect(screen.getByRole('status').className).toContain('text-amber-600');
   });
 
-  it('失效 key 即使官方不带 usage 也显示红叉而非整行消失', async () => {
+  it('订阅过期且没有余额时明确余额未知', async () => {
     sessionStorage.setItem('nai_api_key', 'pst-opus-expired-nousage-key'); // secret-scan: allow 测试用假密钥，非真实凭据
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.startsWith('/api/novelai-runtime')) {
         return responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true, extracted: [], missed: [] } });
       }
-      // 网关源头净化后：失效 key 不带 usage，只带 active:false。
+      // 网关保留订阅过期状态，但余额未知不伪造为 0。
       return responseFor({ tier: 0, active: false });
     }));
 
     render(React.createElement(OpusUsageBar, { collapsed: false }));
     await waitFor(() => {
-      expect(screen.getByRole('status', { name: /当前密钥已失效/ })).toBeTruthy();
+      expect(screen.getByRole('status', { name: /订阅已过期/ })).toBeTruthy();
     });
-    expect(screen.getByText('×')).toBeTruthy();
-    expect(screen.getByText('当前密钥已失效，点击切换')).toBeTruthy();
+    expect(screen.queryByText('×')).toBeNull();
+    expect(screen.getByText('订阅已过期')).toBeTruthy();
+    expect(screen.getByText('Paid Anlas 余额未知')).toBeTruthy();
+  });
+
+  it('Paid Anlas 为零也显示，折叠状态保留余额提示且点击仍可刷新', async () => {
+    sessionStorage.setItem('nai_api_key', 'expired-zero-balance-test-key');
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
+      ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } })
+      : responseFor({ tier: 0, active: false, trainingStepsLeft: { fixedTrainingStepsLeft: 0, purchasedTrainingSteps: 0 } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const view = render(React.createElement(OpusUsageBar, { collapsed: false }));
+    expect(await screen.findByText('Paid Anlas：0 点')).toBeTruthy();
+    expect(screen.queryByText('Paid Anlas 余额未知')).toBeNull();
+    view.rerender(React.createElement(OpusUsageBar, { collapsed: true }));
+    const button = screen.getByRole('status', { name: /Paid Anlas：0 点/ });
+    expect(button.title).toContain('关闭低消耗模式');
+    const attempts = fetchMock.mock.calls.length;
+    fireEvent.click(button);
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(attempts));
+  });
+
+  it('过期订阅展示余额时也保留官方计费规则同步异常警告', async () => {
+    sessionStorage.setItem('nai_api_key', 'expired-sync-warning-test-key');
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
+      ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: false, reason: 'extract-failed', missed: ['freeMaxSteps'] } })
+      : responseFor({ tier: 0, active: false, trainingStepsLeft: { fixedTrainingStepsLeft: 0, purchasedTrainingSteps: 420 } })));
+    await refreshNaiRuntimeConfig();
+    render(React.createElement(OpusUsageBar, { collapsed: false }));
+    expect(await screen.findByText('Paid Anlas：420 点')).toBeTruthy();
+    expect(await screen.findByText('计费规则同步异常')).toBeTruthy();
+    expect(screen.getByRole('status').className).toContain('text-red-500');
+    expect(screen.getByRole('status').title).toContain('官方计费规则同步异常');
   });
 });

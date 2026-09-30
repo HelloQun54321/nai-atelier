@@ -11,7 +11,7 @@ import { ArtistLibraryCart } from './ArtistLibraryCart';
 import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryEntriesAt, getArtistDictionaryPage, searchArtistDictionary } from '../services/tagDictionary';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { useConfirmDialog } from './ConfirmDialog';
-import { isNovelaiSubscriptionInactive, useNovelaiUsage } from '../services/naiUsage';
+import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { applyEstimatorRuntime, estimateV45GenerationCost, usageForCostEstimate, useAnlasBudget } from '../services/anlasBudget';
 import { DEFAULT_NAI_RUNTIME, getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import { createUuid } from '../services/id';
@@ -1061,13 +1061,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         try { lowEnabled = (await getLowConsumption(apiKey)).enabled; estimateParams = applyLowConsumptionParams(estimateParams, lowEnabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME); }
         catch (error) { notify(error instanceof Error ? error.message : '读取低消耗设置失败', 'error'); return; }
         // 受限额模型（V5）在免费档生成前强制刷新真实 Opus 额度，与 ChainEditor 同源。
-        // 当前 Key 已失效（官方 active=false）：任务入队也必被拒绝，先拦截避免整批白等。
         const freshSubscription = await refreshUsageIfStale();
-        if (isNovelaiSubscriptionInactive(freshSubscription)) {
-            notify('当前密钥已失效，请到 全局设置 → 密钥 切换到有效密钥后重试', 'error');
-            return;
-        }
-        const perTaskCost = estimateV45GenerationCost(estimateParams, true, await usageForCostEstimate(novelaiUsage, refreshUsageIfStale, estimateParams.model));
+        const perTaskCost = estimateV45GenerationCost(estimateParams, isActiveOpusSubscription(freshSubscription), await usageForCostEstimate(novelaiUsage, refreshUsageIfStale, estimateParams.model));
         if (lowEnabled) {
             try { assertLowConsumptionEstimate(estimateParams, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, perTaskCost); }
             catch (error) { notify(error instanceof Error ? error.message : '低消耗检查失败', 'error'); return; }

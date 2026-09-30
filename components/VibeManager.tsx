@@ -4,7 +4,7 @@ import { vibeService } from '../services/vibeService';
 import { VIBE_MAX_SLOTS, normalizeVibeSelections } from '../services/vibeUtils';
 import { useAnlasBudget } from '../services/anlasBudget';
 import { useLowConsumption } from '../services/lowConsumption';
-import { isNovelaiSubscriptionInactive, useNovelaiUsage } from '../services/naiUsage';
+import { useNovelaiUsage } from '../services/naiUsage';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -174,12 +174,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
       notify('请先在全局设置中填写 NovelAI API Key', 'error');
       return null;
     }
-    // 当前 Key 已失效（官方 active=false）：Vibe 编码请求必被拒绝，先拦截避免白等扣费确认。
-    const freshSubscription = await refreshUsageIfStale();
-    if (isNovelaiSubscriptionInactive(freshSubscription)) {
-      notify('当前密钥已失效，请到 全局设置 → 密钥 切换到有效密钥后重试', 'error');
-      return null;
-    }
+    await refreshUsageIfStale();
     const accepted = await confirmAction({
       title: '生成永久 Vibe',
       message: `模型：NovelAI V4.5 Full\n信息提取量：${fixed.toFixed(2)}\n本次消耗：2 Anlas\n本地预算：${anlasBudget.remaining} → ${Math.max(0, anlasBudget.remaining - 2)}\n\n编码完成后可以无限重复使用，日常生图不会再次产生 Vibe 编码费用。`,

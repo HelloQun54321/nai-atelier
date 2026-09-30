@@ -6,6 +6,11 @@ import { DEFAULT_APPEARANCE_PREFERENCES, AppearancePreferences } from '../servic
 import { ConfirmDialogProvider } from './ConfirmDialog';
 import { GlobalSettings } from './GlobalSettings';
 const lowMode = vi.hoisted(() => ({ enabled: false, save: vi.fn() }));
+const subscriptionFixture = vi.hoisted(() => ({ expired: false }));
+vi.mock('../services/naiUsage', async importOriginal => ({
+  ...await importOriginal<typeof import('../services/naiUsage')>(),
+  useNovelaiUsage: () => ({ info: subscriptionFixture.expired ? { active: false, tier: 3 } : null, usage: undefined, loading: false, error: null, refresh: vi.fn() }),
+}));
 vi.mock('../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: lowMode.enabled }), setLowConsumption: lowMode.save }));
 
 vi.mock('../services/mobileImageCache', () => ({
@@ -43,7 +48,7 @@ vi.mock('../services/cloudQueue', () => {
 
 vi.mock('../services/naiKeyVault', () => ({
   naiKeyVault: {
-    list: () => Promise.resolve([]),
+    list: () => Promise.resolve(subscriptionFixture.expired ? [{ id: 'expired', name: '测试过期订阅', key: 'pst-settings-expired', createdAt: 0 }] : []),
     activate: vi.fn(),
     add: vi.fn(),
     remove: vi.fn(() => Promise.resolve([])),
@@ -80,6 +85,7 @@ const SettingsHarness: React.FC<SettingsHarnessProps> = ({ initialSection = 'app
 
 describe('GlobalSettings', () => {
   beforeEach(() => {
+    subscriptionFixture.expired = false;
     lowMode.enabled = false;
     lowMode.save.mockReset().mockImplementation(async (enabled: boolean) => { lowMode.enabled = enabled; return { enabled }; });
     sessionStorage.clear(); localStorage.clear();
@@ -99,6 +105,16 @@ describe('GlobalSettings', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+  it('当前 Key 订阅过期时显示琥珀色订阅状态，提示 Paid Anlas，不误标为密钥失效', async () => {
+    subscriptionFixture.expired = true;
+    sessionStorage.setItem('nai_api_key', 'pst-settings-expired');
+    render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+    const badge = await screen.findByText('订阅过期');
+    expect(badge.className).toContain('text-amber-700');
+    expect(badge.title).toContain('Paid Anlas');
+    expect(screen.queryByText('已失效')).toBeNull();
+    expect(screen.queryByText('非 Opus')).toBeNull();
   });
   it('低消耗开关按当前 Key 保存，明确两模式和隐藏付费功能，保留 Vibe 编码确认', async () => {
     sessionStorage.setItem('nai_api_key', 'settings-test-key');

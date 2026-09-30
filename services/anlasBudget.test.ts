@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { ANLAS_BUDGET_CHANGED_EVENT, estimateImageEditCost, estimateV45GenerationCost, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, isOpusUsageLimitedModel, usageForCostEstimate, useAnlasBudget } from './anlasBudget';
+import { isActiveOpusSubscription } from './naiUsage';
 
 const responseFor = (payload: unknown) => ({
   ok: true,
@@ -70,6 +71,19 @@ describe('useAnlasBudget', () => {
 });
 
 describe('formatGenerationCostLabel', () => {
+  it('过期订阅即使保留 Opus 档位也按付费估算，文生图与 Focused 均不显示免费', () => {
+    const expired = { active: false, tier: 3 };
+    const opus = isActiveOpusSubscription(expired);
+    for (const model of ['nai-diffusion-5-full', 'nai-diffusion-4-5-full', 'nai-diffusion-4-full']) {
+      const params = { model, width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' };
+      const cost = estimateV45GenerationCost(params, opus, false);
+      expect(cost).toBe(20);
+      expect(formatGenerationCostLabel(cost, model)).toBe('20 点');
+      const editCost = estimateImageEditCost(params, 'inpaint', 1, true, opus ? expired.tier : 0, false);
+      expect(editCost).toBe(20);
+      expect(formatImageEditCostLabel(editCost, 'inpaint', true, opus ? expired.tier : 0)).toBe('20 点');
+    }
+  });
   it('V5 免费档提示会消耗 Opus 额度而不是免费', () => {
     expect(formatGenerationCostLabel(0, 'nai-diffusion-5-full')).toBe('消耗额度');
     expect(formatGenerationCostLabel(0, 'nai-diffusion-5-curated')).toBe('消耗额度');

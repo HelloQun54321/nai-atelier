@@ -22,12 +22,12 @@ const errorResponse = (message: string) => ({
 }) as Response;
 
 describe('订阅健康判定', () => {
-  it('active=true 视为可生图，active=false 显式标记失效，null/未知不误报', () => {
+  it('active 仅表示订阅状态，过期不表示 Key 失效，null 保持未知', () => {
     expect(isNovelaiSubscriptionActive({ active: true })).toBe(true);
     expect(isNovelaiSubscriptionActive({ active: false })).toBe(false);
     expect(isNovelaiSubscriptionActive(null)).toBe(false);
     expect(isNovelaiSubscriptionInactive({ active: false })).toBe(true);
-    // null / undefined / 缺 active 是「未知」，不是「已失效」——加载中不得误拦。
+    // null / undefined / 缺 active 是「未知」，不是「订阅过期」——加载中不得误判。
     expect(isNovelaiSubscriptionInactive(null)).toBe(false);
     expect(isNovelaiSubscriptionInactive(undefined)).toBe(false);
     expect(isNovelaiSubscriptionInactive({})).toBe(false);
@@ -36,7 +36,7 @@ describe('订阅健康判定', () => {
   it('活跃 Opus 判定要求 tier>=3 且 active=true', () => {
     expect(isActiveOpusSubscription({ active: true, tier: 3 })).toBe(true);
     expect(isActiveOpusSubscription({ active: true, tier: 4 })).toBe(true);
-    // 已失效的 Opus key 不再算活跃 Opus
+    // 过期的 Opus 订阅不再享受免费权益
     expect(isActiveOpusSubscription({ active: false, tier: 3 })).toBe(false);
     // 低档位 active 不是 Opus
     expect(isActiveOpusSubscription({ active: true, tier: 2 })).toBe(false);

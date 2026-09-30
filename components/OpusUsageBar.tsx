@@ -10,17 +10,26 @@ const OPUS_RING_CIRCUMFERENCE = 2 * Math.PI * 16;
 
 /**
  * NovelAI Opus 免费生成限额（V5 起生效），展示在侧栏 Anlas 预算下方。
- * 非 Opus 订阅或未配置 API Key 时不渲染，与官方“仅 Opus 显示用量条”一致。
+ * 活跃非 Opus 订阅不显示用量条；过期订阅改为展示 Paid Anlas 状态。
  */
 export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
   const { info, usage, loading, error, refresh } = useNovelaiUsage();
   const runtime = useNaiRuntime();
-  // Key 已失效（官方 active=false）：额度数字属于废账号，展示没有意义，
-  // 直接红色 × 提示切换，避免「看着有额度、生成必失败」的误导。
-  // 该判定必须先于下方无 usage 的隐藏分支：失效 key 即使不带 usage 也必须显形。
-  const keyInvalid = isNovelaiSubscriptionInactive(info);
-  // 请求明确成功、key 有效但没有 usage 时才表示非 Opus；加载/失败/失效都保留状态行。
-  if (!usage && !keyInvalid && !loading && !error) return null;
+  // 订阅过期不等于 Key 失效；隐藏残留的免费额度，明确 Paid Anlas 付费路径。
+  const expired = isNovelaiSubscriptionInactive(info);
+  if (expired) {
+    const paid = info?.trainingStepsLeft?.purchasedTrainingSteps;
+    const balanceLabel = paid === undefined ? 'Paid Anlas 余额未知' : `Paid Anlas：${paid.toLocaleString()} 点`;
+    const runtimeWarning = isNaiRuntimeSyncUnhealthy(runtime) ? describeNaiRuntimeSyncProblem(runtime) : '';
+    return <button type="button" role="status" aria-label={`订阅已过期 · ${balanceLabel}`} aria-busy={loading}
+      onClick={() => void refresh()} title={`订阅已过期，Opus 免费权益不可用。${balanceLabel}。关闭低消耗模式后可确认付费生成，权限与扣费以官方响应为准；余额不会覆盖本地预算。${error ? `状态刷新失败：${error}` : ''}${runtimeWarning ? `官方计费规则同步异常：${runtimeWarning}` : ''}`}
+      className={`flex min-h-14 w-full cursor-pointer select-none items-center border-b border-gray-200 text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:border-gray-800 dark:hover:bg-gray-800 ${error || runtimeWarning ? 'text-red-500 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'} ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center text-mini font-bold">付费</span>
+      {!collapsed && <span className="min-w-0 flex-1"><span className="block text-xs font-medium">订阅已过期</span><span className="mt-0.5 block text-micro">{error ? '状态刷新失败，点击重试' : balanceLabel}</span>{runtimeWarning && <span className="mt-0.5 block text-micro">计费规则同步异常</span>}</span>}
+    </button>;
+  }
+  // 请求明确成功但没有 usage 时不展示 Opus 条；加载/失败保留状态行。
+  if (!usage && !loading && !error) return null;
   const percent = usage ? usageRemainingPercent(usage) : 0;
   // 活动加成可能让真实额度超过 100%；圆环保持满圈，数字和张数保留真实值。
   const ringPercent = Math.min(100, percent);
@@ -33,17 +42,14 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
   const syncPending = health?.reason === 'pending';
   const runtimeSyncBroken = isNaiRuntimeSyncUnhealthy(runtime);
   const syncBroken = Boolean(error) || runtimeSyncBroken;
-  const ringClass = keyInvalid || syncBroken
+  const ringClass = syncBroken
     ? 'text-red-500 dark:text-red-400'
     : negative
       ? 'text-red-500 dark:text-red-400'
       : low
         ? 'text-amber-500 dark:text-amber-400'
         : 'text-emerald-500 dark:text-emerald-400';
-  const keyInvalidSummary = '当前密钥已失效（订阅已过期），免费生成与额度估算不可用，请到 设置 → 密钥 切换';
-  const syncSummary = keyInvalid
-    ? keyInvalidSummary
-    : error
+  const syncSummary = error
     ? `Opus 限额同步失败：${error}`
     : syncPending
     ? '官方常量同步进行中，稍后自动重试'
@@ -52,9 +58,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
     : health?.missed?.length
       ? `常量同步部分失效：未命中 ${health.missed.join('、')}（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString() : ''} 同步）`
       : `常量同步正常（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString() : '等待首次同步'}）`;
-  const title = `${keyInvalid
-    ? '当前密钥已失效，点击切换'
-    : !usage
+  const title = `${!usage
     ? error ? 'Opus 限额同步失败，点击立即重试' : '正在同步 Opus 限额'
     : negative
     ? 'Opus 限额已用尽：所有生图将消耗 Anlas，额度恢复后自动回到免费生成'
@@ -66,7 +70,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
       onClick={() => void refresh()}
       title={collapsed ? title : `${title}（点击立即刷新）`}
       aria-busy={loading}
-      aria-label={`Opus 生成限额 ${keyInvalid ? '当前密钥已失效' : syncBroken ? '同步失败' : !usage ? '正在同步' : negative ? '已用尽' : `${percent}%`}`}
+      aria-label={`Opus 生成限额 ${syncBroken ? '同步失败' : !usage ? '正在同步' : negative ? '已用尽' : `${percent}%`}`}
       className={`group relative flex min-h-14 w-full cursor-pointer select-none items-center border-b border-gray-200 text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:border-gray-800 dark:hover:bg-gray-800 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}
     >
       <span className={`relative flex h-9 w-9 flex-none items-center justify-center rounded-full ${ringClass}`}>
@@ -99,14 +103,14 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
             />
           </svg>
         )}
-        <span className={`relative font-bold tabular-nums ${keyInvalid || syncBroken ? 'text-lg leading-none' : percent > 99 ? 'text-mini' : 'text-micro'}`}>
-          {keyInvalid || syncBroken ? '×' : usage ? `${percent}%` : ''}
+        <span className={`relative font-bold tabular-nums ${syncBroken ? 'text-lg leading-none' : percent > 99 ? 'text-mini' : 'text-micro'}`}>
+          {syncBroken ? '×' : usage ? `${percent}%` : ''}
         </span>
       </span>
       {!collapsed && <span className="min-w-0 flex-1">
         <span className="block text-xs font-medium text-gray-600 dark:text-gray-300">Opus 限额</span>
-        <span className={`mt-0.5 block text-micro font-normal tabular-nums ${keyInvalid || error ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
-          {keyInvalid ? '当前密钥已失效，点击切换' : error ? '同步失败，点击重试' : usage ? `≈${images} 张` : '正在同步…'}
+        <span className={`mt-0.5 block text-micro font-normal tabular-nums ${error ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
+          {error ? '同步失败，点击重试' : usage ? `≈${images} 张` : '正在同步…'}
         </span>
       </span>}
     </button>

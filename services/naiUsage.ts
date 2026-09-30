@@ -22,17 +22,19 @@ export interface NovelaiSubscriptionInfo {
   active: boolean;
   /** 仅 Opus 订阅会返回 usage。 */
   usage?: NovelaiUsageState;
+  /** 官方 Anlas 余额快照，只作状态展示，不覆盖本地预算。 */
+  trainingStepsLeft?: { fixedTrainingStepsLeft: number; purchasedTrainingSteps: number };
 }
 
 /**
- * 订阅是否处于可生图状态。NovelAI 对所有不活跃的持久令牌一律返回 401，
- * 因此 active=false 是「该 Key 已失效、生成必然失败」的硬信号，而非额度问题。
+ * 订阅是否活跃。active=false 只表示订阅过期，不表示 Key 撤销；
+ * Paid Anlas 可以保留，普通模式允许用户确认付费请求，由官方验证实际权限。
  * 参数接受缺省 active 的对象：运行时 API 可能不完整，未知状态不得误判。
  */
 export const isNovelaiSubscriptionActive = (info: { active?: boolean } | null | undefined): boolean =>
   info?.active === true;
 
-/** 显式收到官方 active=false（区别于 null/加载中：未知状态不得误报为已失效）。 */
+/** 显式收到订阅未激活（区别于 null/加载中），不能据此判定 Key 失效。 */
 export const isNovelaiSubscriptionInactive = (info: { active?: boolean } | null | undefined): boolean =>
   info?.active === false;
 

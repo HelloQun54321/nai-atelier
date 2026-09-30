@@ -63,6 +63,10 @@ describe('低消耗实际参数与原配置隔离', () => {
     expect(() => assertLowConsumptionEstimate(actual, 'text-to-image', { ...runtime, health: { ok: false } }, subscription, 0)).toThrow('无法确认官方计费规则');
     expect(() => assertLowConsumptionEstimate(actual, 'text-to-image', runtime, null, 0)).toThrow('无法确认当前订阅或额度');
   });
+  it('订阅过期时明确关闭低消耗才能付费，不使用残留的 Opus 数字', () => {
+    const actual = applyLowConsumptionParams(params, true, runtime);
+    expect(() => assertLowConsumptionEstimate(actual, 'text-to-image', runtime, { ...subscription, active: false }, 12)).toThrow('请关闭低消耗模式后确认使用 Paid Anlas');
+  });
 });
 
 describe('按 Key 读取和持久化，迟到响应隔离', () => {

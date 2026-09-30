@@ -97,6 +97,7 @@ export const applyLowConsumptionParams = (params: NAIParams, enabled: boolean, r
 export const assertLowConsumptionEstimate = (params: NAIParams, operation: 'text-to-image' | ImageEditOperation,
   runtime: NaiRuntimeConfig, subscription: NovelaiSubscriptionInfo | null, estimatedCost: number, focused = false) => {
   const usageLimited = getRuntimeNaiModelInfo(params.model, runtime).opusUsageLimit;
+  if (subscription?.active === false) throw new Error('低消耗模式：订阅已过期，无法使用 Opus 免费权益；请关闭低消耗模式后确认使用 Paid Anlas');
   if (operation === 'text-to-image' && subscription?.active === true && subscription.tier < 3) throw new Error('低消耗模式：文生图零点数路径需要有效的 Opus 订阅');
   const violation = lowConsumptionViolation({ operation, model: params.model, steps: params.steps,
     freeMaxSteps: runtime.freeMaxSteps, width: params.width, height: params.height, freeMaxArea: runtime.freeMaxArea,

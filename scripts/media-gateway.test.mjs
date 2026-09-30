@@ -746,26 +746,45 @@ test('Vibe strengths are only scaled when their sum exceeds one', () => {
 
 test('NovelAI V4.5 costs follow Opus free limits and current web formula', () => {
   const payload = { action: 'generate', parameters: { width: 832, height: 1216, steps: 23, n_samples: 1 } };
-  assert.equal(estimateNovelAiGenerationCost(payload), 0);
-  assert.equal(estimateNovelAiGenerationCost({ ...payload, parameters: { ...payload.parameters, steps: 29 } }), 20);
+  assert.equal(estimateNovelAiGenerationCost(payload, false, true), 0);
+  assert.equal(estimateNovelAiGenerationCost({ ...payload, parameters: { ...payload.parameters, steps: 29 } }, false, true), 20);
   assert.equal(estimateNovelAiGenerationCost({ ...payload, parameters: {
     ...payload.parameters,
     reference_image_multiple_cached: Array.from({ length: 5 }, (_, index) => ({ cache_secret_key: String(index) })),
-  } }), 2);
+  } }, false, true), 2);
   assert.equal(estimateNovelAiGenerationCost({ ...payload, parameters: {
     ...payload.parameters,
     director_reference_images_cached: [{ cache_secret_key: 'character' }],
-  } }), 5);
+  } }, false, true), 5);
+});
+
+test('过期订阅保留 Paid Anlas，隐藏残留免费额度并只透传余额字段', () => {
+  const balance = { fixedTrainingStepsLeft: 0, purchasedTrainingSteps: 420, privateField: 'omit' };
+  const info = sanitizeNovelAiSubscription({ active: false, tier: 0, usage: { percent: 100 }, trainingStepsLeft: balance, paymentProcessorData: { secret: 'omit' } });
+  assert.equal(info.active, false);
+  assert.equal(info.usage, undefined);
+  assert.deepEqual(info.trainingStepsLeft, { fixedTrainingStepsLeft: 0, purchasedTrainingSteps: 420 });
+  assert.equal('paymentProcessorData' in info, false);
+  assert.equal(sanitizeNovelAiSubscription({ active: false }).trainingStepsLeft, undefined);
+  assert.equal(sanitizeNovelAiSubscription({ trainingStepsLeft: { fixedTrainingStepsLeft: null, purchasedTrainingSteps: -1 } }).trainingStepsLeft, undefined);
+});
+
+test('没有活跃 Opus 时各代模型的普通文生图必须计费，不能按免费档结算', () => {
+  for (const model of ['nai-diffusion-5-full', 'nai-diffusion-4-5-full', 'nai-diffusion-4-full']) {
+    const payload = { action: 'generate', model, parameters: { width: 832, height: 1216, steps: 23 } };
+    assert.ok(estimateNovelAiGenerationCost(payload, false, false) > 0);
+    assert.equal(estimateNovelAiGenerationCost(payload, false, true), 0);
+  }
 });
 
 test('Opus usage overdraw charges V5 free-tier generations but leaves V4.5 free', () => {
   const payload = { action: 'generate', model: 'nai-diffusion-5-full', parameters: { width: 832, height: 1216, steps: 23, n_samples: 1 } };
-  assert.equal(estimateNovelAiGenerationCost(payload), 0);
-  const charged = estimateNovelAiGenerationCost(payload, true);
+  assert.equal(estimateNovelAiGenerationCost(payload, false, true), 0);
+  const charged = estimateNovelAiGenerationCost(payload, true, true);
   assert.ok(charged > 0);
   // V4.5 及以下不受 Opus 限额影响，透支后依旧免费。
-  assert.equal(estimateNovelAiGenerationCost({ ...payload, model: 'nai-diffusion-4-5-full' }, true), 0);
-  assert.equal(estimateNovelAiGenerationCost({ ...payload, model: undefined }, true), 0);
+  assert.equal(estimateNovelAiGenerationCost({ ...payload, model: 'nai-diffusion-4-5-full' }, true, true), 0);
+  assert.equal(estimateNovelAiGenerationCost({ ...payload, model: undefined }, true, true), 0);
 });
 
 test('NovelAI 订阅代理转发鉴权并剥离敏感字段', async () => {
@@ -796,8 +815,8 @@ test('NovelAI 订阅代理转发鉴权并剥离敏感字段', async () => {
   assert.equal(sanitized.paymentProcessorData, undefined);
   // 非 Opus 订阅没有 usage 字段，前端据此隐藏限额组件。
   assert.equal(sanitizeNovelAiSubscription({ tier: 2, active: true }).usage, undefined);
-  // 源头净化：失效 key 官方仍返回 usage（tier:0/active:false/percent:79），
-  // 必须剥除，避免前端把废账号额度当真实剩余展示或参与费用估算。
+  // 源头净化：过期订阅官方仍返回 usage（tier:0/active:false/percent:79），
+  // 必须剥除，避免把残留数字当作可用免费权益。
   const expired = sanitizeNovelAiSubscription({ tier: 0, active: false, usage: { percent: 79, isNegative: false, timeUntilNextPercent: 7888 } });
   assert.equal(expired.active, false);
   assert.equal(expired.usage, undefined);
@@ -905,12 +924,12 @@ test('成本估算跟随同步的运行时常量', () => {
   try {
     // 官方把免费步数上限降到 20：23 步在免费档之外，开始计费。
     applyNaiRuntimeOverride({ freeMaxSteps: 20 });
-    assert.ok(estimateNovelAiGenerationCost(payload) > 0);
+    assert.ok(estimateNovelAiGenerationCost(payload, false, true) > 0);
     // 官方把受限模型清单换成下一代：旧模型恢复免费，新模型透支时计费。
     applyNaiRuntimeOverride({ freeMaxSteps: 28, usageLimitedModels: ['nai-diffusion-6-full'] });
-    assert.equal(estimateNovelAiGenerationCost(payload, true), 0);
-    assert.ok(estimateNovelAiGenerationCost({ ...payload, model: 'nai-diffusion-6-full' }, true) > 0);
-    assert.equal(estimateNovelAiGenerationCost({ ...payload, model: 'nai-diffusion-6-full' }, false), 0);
+    assert.equal(estimateNovelAiGenerationCost(payload, true, true), 0);
+    assert.ok(estimateNovelAiGenerationCost({ ...payload, model: 'nai-diffusion-6-full' }, true, true) > 0);
+    assert.equal(estimateNovelAiGenerationCost({ ...payload, model: 'nai-diffusion-6-full' }, false, true), 0);
   } finally {
     applyNaiRuntimeOverride({
       freeMaxSteps: DEFAULT_NAI_RUNTIME.freeMaxSteps,
@@ -1354,29 +1373,31 @@ test('预热器 pinned 任务不截断来源 URL', async () => {
 test('个人用量统计：只有成功的受限模型免费档生成计入 Opus 张数，并使用预算接口字段', () => {
   const base = { action: 'generate', parameters: { width: 832, height: 1216, steps: 23, n_samples: 1 } };
   // V5 免费档：计入 Opus 张数，Anlas 为 0。
-  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full' }, 0, false), { anlasDelta: 0, opusImagesDelta: 1 });
+  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full' }, 0, false, DEFAULT_NAI_RUNTIME, true, true), { anlasDelta: 0, opusImagesDelta: 1 });
+  // 订阅过期／非 Opus 即使参数符合免费档，也只记录付费 Anlas，不算免费额度。
+  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full' }, 20, false, DEFAULT_NAI_RUNTIME, true, false), { anlasDelta: 20, opusImagesDelta: 0 });
   // V4.5 不受限额：不算 Opus 张数。
-  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-4-5-full' }, 0, false), { anlasDelta: 0, opusImagesDelta: 0 });
+  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-4-5-full' }, 0, false, DEFAULT_NAI_RUNTIME, true, true), { anlasDelta: 0, opusImagesDelta: 0 });
   // V5 但额度透支（本次按 Anlas 计费）：不消耗免费额度，不计张数。
-  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full' }, 20, true), { anlasDelta: 20, opusImagesDelta: 0 });
+  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full' }, 20, true, DEFAULT_NAI_RUNTIME, true, true), { anlasDelta: 20, opusImagesDelta: 0 });
   // 免费档条件之外（步数超限）：按 Anlas 计费，不计张数。
   assert.deepEqual(
-    computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full', parameters: { ...base.parameters, steps: 29 } }, 20, false),
+    computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full', parameters: { ...base.parameters, steps: 29 } }, 20, false, DEFAULT_NAI_RUNTIME, true, true),
     { anlasDelta: 20, opusImagesDelta: 0 },
   );
   // 带 Vibe 的免费档 V5 生成仍计入张数，附加费进 Anlas。
   assert.deepEqual(
-    computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full', parameters: { ...base.parameters, reference_image_multiple_cached: [{}, {}, {}, {}, {}] } }, 2, false),
+    computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full', parameters: { ...base.parameters, reference_image_multiple_cached: [{}, {}, {}, {}, {}] } }, 2, false, DEFAULT_NAI_RUNTIME, true, true),
     { anlasDelta: 2, opusImagesDelta: 1 },
   );
   // 未知模型标识按受限清单判断（不在清单则不计）。
-  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-6-full' }, 0, false), { anlasDelta: 0, opusImagesDelta: 0 });
+  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-6-full' }, 0, false, DEFAULT_NAI_RUNTIME, true, true), { anlasDelta: 0, opusImagesDelta: 0 });
   // 生成请求失败时不产生任何个人用量，即使请求参数本身符合免费档。
-  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full' }, 0, false, DEFAULT_NAI_RUNTIME, false), { anlasDelta: 0, opusImagesDelta: 0 });
+  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-5-full' }, 0, false, DEFAULT_NAI_RUNTIME, false, true), { anlasDelta: 0, opusImagesDelta: 0 });
   // 未来模型是否受限由官方运行时清单决定，不依赖 V5 字符串前缀。
   const futureRuntime = { ...DEFAULT_NAI_RUNTIME, usageLimitedModels: ['nai-diffusion-6-full'] };
   assert.equal(isNaiUsageLimitedModel('nai-diffusion-6-full', futureRuntime), true);
-  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-6-full' }, 0, false, futureRuntime), { anlasDelta: 0, opusImagesDelta: 1 });
+  assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-6-full' }, 0, false, futureRuntime, true, true), { anlasDelta: 0, opusImagesDelta: 1 });
 });
 
 test('图像编辑费用：普通编辑不套用 V5 普通生图免费档，Focused Inpainting 只对 Opus 免费', () => {

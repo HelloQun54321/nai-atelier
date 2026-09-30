@@ -6,7 +6,7 @@ import { api } from '../services/api';
 import { db } from '../services/dbService';
 import { compilePrompt } from '../services/promptUtils';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
-import { isNovelaiSubscriptionInactive, useNovelaiUsage } from '../services/naiUsage';
+import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { applyEstimatorRuntime, estimateV45GenerationCost, formatGenerationCostLabel, usageForCostEstimate, useAnlasBudget } from '../services/anlasBudget';
 import { DEFAULT_NAI_RUNTIME, getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import {
@@ -678,14 +678,9 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     let lowEnabled: boolean;
     try { lowEnabled = (await getLowConsumption(apiKey)).enabled; params = applyLowConsumptionParams(params, lowEnabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME); }
     catch (error) { notify(error instanceof Error ? error.message : '读取低消耗设置失败', 'error'); return; }
-    // 当前 Key 已失效（官方 active=false）：生成请求必被拒绝，直接拦截避免白等。
     const freshSubscription = await refreshUsageIfStale();
-    if (isNovelaiSubscriptionInactive(freshSubscription)) {
-      notify('当前密钥已失效，请到 全局设置 → 密钥 切换到有效密钥后重试', 'error');
-      return;
-    }
     // 受限额模型（V5）在免费档生成前强制刷新真实 Opus 额度，与 ChainEditor 同源。
-    const cost = estimateV45GenerationCost(params, true, await usageForCostEstimate(novelaiUsage, refreshUsageIfStale, params.model));
+    const cost = estimateV45GenerationCost(params, isActiveOpusSubscription(freshSubscription), await usageForCostEstimate(novelaiUsage, refreshUsageIfStale, params.model));
     if (lowEnabled) {
       try { assertLowConsumptionEstimate(params, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, cost); }
       catch (error) { notify(error instanceof Error ? error.message : '低消耗检查失败', 'error'); return; }
