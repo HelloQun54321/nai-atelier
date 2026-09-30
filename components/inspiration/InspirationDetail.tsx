@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ChevronDown,
   Copy,
-  Download,
   ExternalLink,
   FlaskConical,
   ImagePlus,
@@ -25,6 +24,7 @@ import { inspirationSimilarity, normalizeInspirationTags, sourceLabel } from '..
 import { CloseButton } from '../DesignSystem';
 import { OriginalImage, SmartImage } from '../SmartImage';
 import { ParamsViewer } from '../ParamsViewer';
+import { ImageShareActions } from '../ImageShareActions';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { ImageTaggerPanel } from '../ImageTaggerPanel';
 import { canEditItem, DEFAULT_PARAMS, fetchImageFile, formatDate, sourceIcon, splitTags } from './InspirationShared';
@@ -531,9 +531,9 @@ export const InspirationDetail: React.FC<Props> = ({
             )}
           </div>
 
-          {/* 底部单行操作条：反推 Tag + 导入实验室（带底图模式） + 提取资产 + 原图下载 */}
+          {/* 底部操作条：窄屏换行，分享操作保持可靠触控宽度。 */}
           <footer className="flex-none border-t border-gray-200 p-3.5 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/60 backdrop-blur-sm">
-            <div className="flex items-center gap-2 sm:gap-2.5">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
               {/* 反推 Tag（置于导入实验室左侧） */}
               <div className="flex-none">
                 <button
@@ -550,7 +550,7 @@ export const InspirationDetail: React.FC<Props> = ({
               </div>
 
               {/* 导入实验室（带底图模式分流，自适应撑开，居于视觉核心） */}
-              <div className="relative flex-1 min-w-0 flex h-10 rounded-xl bg-indigo-600 shadow-sm shadow-indigo-600/20 hover:bg-indigo-500 transition-colors">
+              <div className="relative flex-1 min-w-[9rem] flex h-10 rounded-xl bg-indigo-600 shadow-sm shadow-indigo-600/20 hover:bg-indigo-500 transition-colors">
                 <button
                   type="button"
                   disabled={Boolean(busy)}
@@ -666,17 +666,9 @@ export const InspirationDetail: React.FC<Props> = ({
                 )}
               </div>
 
-              {/* 原图下载 */}
+              {/* 分享副本与显式原图下载 */}
               <div className="flex flex-none items-center">
-                <a
-                  href={draft.imageUrl}
-                  download={`${draft.title || 'inspiration'}.png`}
-                  title="下载原图"
-                  aria-label="下载原图"
-                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 text-gray-500 transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-800 dark:text-gray-400 dark:hover:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-white"
-                >
-                  <Download className="h-4 w-4" />
-                </a>
+                <ImageShareActions imageUrl={draft.imageUrl} filename={`${draft.title || 'inspiration'}.png`} notify={notify} variant="compact" />
               </div>
             </div>
           </footer>

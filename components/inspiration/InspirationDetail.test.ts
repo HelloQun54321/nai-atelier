@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setCleanSharedImages } from '../../services/imageSharing';
 import { InspirationDetail } from './InspirationDetail';
 import { Inspiration, InspirationBoard, User } from '../../types';
 import { db } from '../../services/dbService';
@@ -47,6 +48,7 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
   });
 }
 
+beforeEach(() => { localStorage.clear(); });
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -113,7 +115,20 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(screen.getByRole('button', { name: /反推 Tag/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /导入实验室/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /提取资产/ })).toBeTruthy();
-    expect(screen.getByRole('link', { name: '下载原图' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下载原图' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '复制图片' })).toBeTruthy();
+  });
+
+  it('开启清洗后显示分享下载与独立原图入口，窄屏操作条允许换行', () => {
+    setCleanSharedImages(true);
+    render(React.createElement(InspirationDetail, {
+      item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser,
+      notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn(),
+    }));
+    expect(screen.getByRole('button', { name: '下载分享版' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下载原图（含生成信息）' })).toBeTruthy();
+    const footer = screen.getByRole('button', { name: '复制图片' }).closest('footer');
+    expect(footer?.firstElementChild?.classList.contains('flex-wrap')).toBe(true);
   });
 
   it('底部点击反推 Tag 按钮弹出 WD Tagger 反推面板', () => {

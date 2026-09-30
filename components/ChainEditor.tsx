@@ -12,6 +12,7 @@ import { api } from '../services/api';
 import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData, extractRawMetadataFromJsonText } from '../services/metadataService';
 import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
+import { ImageShareActions } from './ImageShareActions';
 import { ImageEditPanel, ImageEditRequest } from './ImageEditPanel';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { dataUrlToBlob } from '../services/imageEdit';
@@ -795,26 +796,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const pad = (n: number) => String(n).padStart(2, '0');
         const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
         return `NAI-${timestamp}.png`;
-    };
-
-    // 窄屏没有预览卡（<lg 隐藏），大图灯箱是移动端唯一的下载/设封面入口
-    const handleLightboxDownload = async () => {
-        if (!lightboxImg) return;
-        try {
-            const response = await fetch(lightboxImg);
-            if (!response.ok) throw new Error(`下载失败: ${response.status}`);
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = getDownloadFilename();
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            URL.revokeObjectURL(url);
-        } catch (error) {
-            notify('下载失败: ' + (error instanceof Error ? error.message : String(error)), 'error');
-        }
     };
 
     // Helper to mark changes only if owner
@@ -2320,8 +2301,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             {/* Lightbox Modal */}
             {lightboxImg && (
                 <div role="dialog" aria-modal="true" aria-label="图片预览" className="fixed inset-0 z-[1500] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setLightboxImg(null)}>
-                    <div className="absolute top-4 left-4 z-10 flex gap-2" onClick={e => e.stopPropagation()}>
-                        <button type="button" onClick={handleLightboxDownload} className="mobile-touch rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-white backdrop-blur transition-colors hover:bg-white/20">下载</button>
+                    <div className="absolute top-4 left-4 z-10 flex max-w-[calc(100%-5rem)] flex-wrap items-center gap-2" onClick={e => e.stopPropagation()}>
+                        <ImageShareActions imageUrl={lightboxImg} filename={getDownloadFilename()} notify={notify} variant="overlay" downloadLabel="下载" />
                         {isOwner && lightboxImg === generatedImage && chain.id !== 'playground' && (
                             <button type="button" onClick={handleSavePreview} disabled={isUploading} className="mobile-touch rounded-lg bg-indigo-600/90 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50">{isUploading ? '上传中...' : '设为封面'}</button>
                         )}

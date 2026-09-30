@@ -1,9 +1,10 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useRef } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
 import { OriginalImage } from './SmartImage';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 import { isCloudQueueTaskActive } from '../services/cloudQueue';
+import { ImageShareActions } from './ImageShareActions';
 
 interface ChainEditorPreviewProps {
     isGenerating: boolean;
@@ -70,36 +71,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     notify,
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const [isDownloading, setIsDownloading] = useState(false);
     const queueStatus = useCloudQueueStatus();
-
-    // 跨域图片下载：先 fetch 转 blob，再创建本地 URL 下载
-    const handleDownload = async (imageUrl: string, filename: string) => {
-        if (isDownloading) return;
-        setIsDownloading(true);
-        try {
-            const response = await fetch(imageUrl);
-            if (!response.ok) {
-                throw new Error(`下载失败: ${response.status}`);
-            }
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            // 延迟释放 URL，给浏览器足够时间处理下载请求
-            // 某些浏览器（如移动端 Alook）处理 click 事件较慢，立即释放会导致下载失败
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
-        } catch (error) {
-            console.error('下载失败:', error);
-            notify?.('下载失败: ' + (error instanceof Error ? error.message : String(error)), 'error');
-        } finally {
-            setIsDownloading(false);
-        }
-    };
 
     return (
         <div className="chain-editor-preview w-full lg:w-1/2 flex flex-col bg-gray-100 dark:bg-black/20 order-1 lg:order-2 border-b lg:border-b-0 border-gray-200 dark:border-gray-800 lg:shrink-0">
@@ -177,7 +149,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                                 </div>
                             )}
                             <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                <button onClick={(e) => { e.stopPropagation(); handleDownload(generatedImage, getDownloadFilename()); }} disabled={isDownloading} className="bg-black/70 text-white px-3 py-1.5 rounded text-xs disabled:opacity-50 disabled:cursor-not-allowed">{isDownloading ? '下载中...' : '下载'}</button>
+                                <ImageShareActions imageUrl={generatedImage} filename={getDownloadFilename()} notify={notify} variant="overlay" downloadLabel="下载" className="flex-col items-stretch" />
                                 {isOwner && !hideCoverActions && <button onClick={(e) => { e.stopPropagation(); handleSavePreview(); }} disabled={isUploading} className="bg-indigo-600/90 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1">{isUploading ? '上传中...' : '设为封面'}</button>}
                             </div>
                         </>
@@ -189,7 +161,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                                     <span className="bg-black/50 text-white px-3 py-1 rounded text-xs">当前封面</span>
                                 </div>
                                 <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                    <button onClick={(e) => { e.stopPropagation(); handleDownload(previewImage, getDownloadFilename()); }} disabled={isDownloading} className="bg-black/70 text-white px-3 py-1.5 rounded text-xs text-center cursor-pointer pointer-events-auto disabled:opacity-50 disabled:cursor-not-allowed">{isDownloading ? '下载中...' : '下载封面'}</button>
+                                    <ImageShareActions imageUrl={previewImage} filename={getDownloadFilename()} notify={notify} variant="overlay" downloadLabel="下载封面" className="flex-col items-stretch" />
                                 </div>
                             </>
                         ) : <div className="rounded-lg border border-dashed border-gray-300 px-4 py-3 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">{emptyLabel}</div>

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useModalA11y } from './useModalA11y';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
+import { setCleanSharedImages, useCleanSharedImages } from '../services/imageSharing';
 import { DataBackupManager } from './DataBackupManager';
 import { DesktopLauncherManager } from './DesktopLauncherManager';
 import { SillyTavernBridgeExport } from './SillyTavernBridgeExport';
@@ -45,7 +46,7 @@ import {
 } from '../services/appearancePreferences';
 import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Database, Edit2, ExternalLink, FileDown, FileUp, FolderInput, FolderOutput, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RefreshCw, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
 
-type SettingsSection = 'appearance' | 'generation' | 'novelai' | 'agent' | 'maintenance';
+type SettingsSection = 'appearance' | 'generation' | 'novelai' | 'agent' | 'privacy' | 'maintenance';
 type SettingsPage = 'home' | SettingsSection;
 
 interface LocalMaintenanceStatus {
@@ -66,6 +67,7 @@ const settingsSections: Array<{ id: SettingsSection; label: string; description:
   { id: 'generation', label: '生图偏好与实验室', description: '生成体验、计费保护与模块布局', icon: Sparkles },
   { id: 'novelai', label: 'NovelAI 与 Anlas', description: '连接、队列与本地预算', icon: KeyRound },
   { id: 'agent', label: '项目 Agent', description: '模型、权限与服务商', icon: Bot },
+  { id: 'privacy', label: '隐私与分享', description: '分享图片的生成信息清洗', icon: ShieldCheck },
   { id: 'maintenance', label: '数据与维护', description: '备份、局域网访问、缓存与服务状态', icon: Database },
 ];
 
@@ -150,6 +152,7 @@ const maskNaiKeyForDisplay = (key: string) => {
 
 export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, initialSection = 'home', notify, isDark, themeMode, setThemeMode, appearancePreferences, setAppearancePreferences, safeMode, safeModeStartup, safeModeHideTitles, setSafeModeStartup, setSafeModeHideTitles, toggleSafeMode }) => {
   const confirmAction = useConfirmDialog();
+  const cleanSharedImages = useCleanSharedImages();
   const [apiKey, setApiKey] = useState(readApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(() => localStorage.getItem('nai_api_key') !== null);
   const [cloudQueue, setCloudQueue] = useState(getCachedCloudQueuePreferences);
@@ -1271,6 +1274,17 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
           <section id={`settings-agent`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'agent' ? 'hidden' : ''}`}>
             {activeSection === 'agent' && <PromptAgentSettings notify={notify} />}
+          </section>
+
+          <section id="settings-privacy" className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'privacy' ? 'hidden' : ''}`}>
+            <h3 className="mb-4 text-base font-bold text-gray-900 dark:text-white">隐私与分享</h3>
+            <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+              <span className="min-w-0"><b className="block text-sm text-gray-900 dark:text-white">分享图片时移除生成信息</b><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">下载或复制图片时，另生成移除提示词、风格串及生成参数的分享副本。原图和历史参数完整保留，仍可单独下载原图。</span></span>
+              <input type="checkbox" aria-label="分享图片时移除生成信息" checked={cleanSharedImages} onChange={event => {
+                try { setCleanSharedImages(event.target.checked); }
+                catch { notify('设置保存失败，请检查浏览器存储权限', 'error'); }
+              }} className="mt-1 h-5 w-5 shrink-0 accent-indigo-600" />
+            </label>
           </section>
 
           <section id="settings-maintenance" className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'maintenance' ? 'hidden' : ''}`}>

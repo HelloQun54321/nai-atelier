@@ -13,12 +13,13 @@ import { ImageActivityContext, OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Download, Heart, Layers, ListChecks, LoaderCircle, Pencil, RefreshCw, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
-import { CloseButton, EmptyState, FavoriteButton, IconButton, PageSpinner, ToolbarButton, ToolbarLink, WorkspaceToolbar } from './DesignSystem';
+import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, Layers, ListChecks, LoaderCircle, Pencil, RefreshCw, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { CloseButton, EmptyState, FavoriteButton, IconButton, PageSpinner, ToolbarButton, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useLowConsumption } from '../services/lowConsumption';
+import { ImageShareActions } from './ImageShareActions';
 
 interface GenHistoryProps {
     currentUser: User;
@@ -1219,10 +1220,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                         </ToolbarButton>
                                     </div>
                                 </div>
-                                <ToolbarLink href={lightbox.imageUrl} download={getDownloadFilename()} className="w-full">
-                                    <Download />
-                                    下载原图
-                                </ToolbarLink>
+                                <ImageShareActions imageUrl={lightbox.imageUrl} filename={getDownloadFilename()} notify={notify} />
                                 <ToolbarButton tone="danger" className="mobile-touch w-full md:hidden" onClick={event => void handleDelete(lightbox.id, event)}>删除这张历史图片</ToolbarButton>
                             </div>
                         </div>

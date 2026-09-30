@@ -6,6 +6,7 @@ import { ChainEditorPreview } from './ChainEditorPreview';
 import { ImageEditPreview } from './ImageEditPreview';
 import { CloudQueueStatus } from './CloudQueueStatus';
 import { emitCloudQueueStatus, reportCloudQueueCleanupError } from '../services/cloudQueue';
+import { setCleanSharedImages } from '../services/imageSharing';
 
 vi.mock('./SmartImage', () => ({
   OriginalImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => React.createElement('img', props),
@@ -26,6 +27,32 @@ const renderPreview = (onGenerate: () => void, isGenerating = false) => render(R
   setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(),
   handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png', generationCostLabel: '免费',
 }));
+
+describe('四模式的分享入口', () => {
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 预览跟随开关，同时保留显式原图入口', operation => {
+    setCleanSharedImages(true);
+    const image = '/api/local-history/share-test/image';
+    if (operation === 'text-to-image') {
+      render(React.createElement(ChainEditorPreview, {
+        isGenerating: false, handleGenerate: vi.fn(), errorMsg: null, generatedImage: image,
+        previewImage: undefined, setLightboxImg: vi.fn(), isOwner: false, isUploading: false,
+        handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'NAI.png', generationCostLabel: '免费',
+      }));
+    } else {
+      render(React.createElement(ImageEditPreview, {
+        operation, image, error: null, generationCostLabel: '免费',
+        onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'NAI.png',
+      }));
+    }
+    expect(screen.getByRole('button', { name: '复制图片' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下载分享版' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下载原图（含生成信息）' })).toBeTruthy();
+    act(() => setCleanSharedImages(false));
+    expect(screen.queryByRole('button', { name: '下载分享版' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '下载原图（含生成信息）' })).toBeNull();
+    expect(screen.getByRole('button', { name: '下载' })).toBeTruthy();
+  });
+});
 
 describe('生成后的操作恢复', () => {
   it('文生图完成的同一轮渲染即可再次点击，切到其他页面也不出现完成残留', () => {

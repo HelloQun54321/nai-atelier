@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_APPEARANCE_PREFERENCES, AppearancePreferences } from '../services/appearancePreferences';
 import { ConfirmDialogProvider } from './ConfirmDialog';
 import { GlobalSettings } from './GlobalSettings';
+import { getCleanSharedImages, IMAGE_SHARING_STORAGE_KEY } from '../services/imageSharing';
 const lowMode = vi.hoisted(() => ({ enabled: false, save: vi.fn() }));
 const subscriptionFixture = vi.hoisted(() => ({ expired: false, balance: undefined as { fixedTrainingStepsLeft: number; purchasedTrainingSteps: number } | undefined, refresh: vi.fn(async () => null) }));
 vi.mock('../services/naiUsage', async importOriginal => ({
@@ -58,7 +59,7 @@ vi.mock('../services/naiKeyVault', () => ({
 }));
 
 interface SettingsHarnessProps {
-  initialSection?: 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'maintenance';
+  initialSection?: 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'privacy' | 'maintenance';
 }
 
 const SettingsHarness: React.FC<SettingsHarnessProps> = ({ initialSection = 'appearance' }) => {
@@ -107,6 +108,23 @@ describe('GlobalSettings', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+  it.each([false, true])('隐私开关默认关闭，保存并重开后保持，手机视图=%s', async mobile => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: mobile && (query.includes('1023px') || query.includes('767px')),
+      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })));
+    const view = render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));
+    const toggle = await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    fireEvent.click(toggle);
+    expect(toggle.checked).toBe(true);
+    expect(getCleanSharedImages()).toBe(true);
+    expect(localStorage.getItem(IMAGE_SHARING_STORAGE_KEY)).toBe('true');
+    view.unmount();
+    render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));
+    expect((await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByText(/原图和历史参数完整保留/)).toBeTruthy();
   });
   it('当前 Key 订阅过期时显示琥珀色订阅状态，提示 Paid Anlas，不误标为密钥失效', async () => {
     subscriptionFixture.expired = true;
@@ -178,14 +196,15 @@ describe('GlobalSettings', () => {
     expect(screen.getByText('实验室模块布局')).toBeTruthy();
   });
 
-  it('支持 5 分类独立导航且各区专属内容正常展示与切换', async () => {
+  it('支持 6 分类独立导航且各区专属内容正常展示与切换', async () => {
     render(React.createElement(SettingsHarness));
 
-    // 验证侧边栏包含 5 大分类导航
+    // 验证侧边栏包含全部分类导航
     expect(screen.getByRole('button', { name: /外观与画廊/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /生图偏好与实验室/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /NovelAI 与 Anlas/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /项目 Agent/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /隐私与分享/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /数据与维护/ })).toBeTruthy();
 
     // 初始外观区包含明暗模式、安全模式（防社死）与图片列表布局
@@ -200,6 +219,9 @@ describe('GlobalSettings', () => {
     expect(screen.getByText('强制清空随机种子（始终随机）')).toBeTruthy();
     expect(screen.getByText('生成步数锁定在免费额度内')).toBeTruthy();
     expect(screen.getByText('实验室模块布局')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /隐私与分享/ }));
+    expect((await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement).checked).toBe(false);
 
     // 切换至「数据与维护」
     fireEvent.click(screen.getByRole('button', { name: /数据与维护/ }));
