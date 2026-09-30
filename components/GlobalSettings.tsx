@@ -17,6 +17,7 @@ import { DesktopImageColumns, getMobileImageDisplayPreferences, MobileImageColum
 import { anlasBudgetService, DEFAULT_ANLAS_BUDGET, getActiveKeyHash, useAnlasBudget } from '../services/anlasBudget';
 import { getNaiRuntimeConfig } from '../services/naiRuntime';
 import { isNovelaiSubscriptionActive, isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
+import { AnlasBalanceBar } from './AnlasBalanceBar';
 import { getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 import { naiKeyVault, NaiKeyEntry } from '../services/naiKeyVault';
 import { setLowConsumption, useLowConsumption } from '../services/lowConsumption';
@@ -164,7 +165,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [savingLowConsumption, setSavingLowConsumption] = useState(false);
   // 当前使用密钥的订阅健康状态：每分钟轮询 + 切 Key 自动刷新，零额外探测请求。
   // 保管箱据此只对「当前使用」的 key 标失效，非当前 key 不做探测。
-  const { info: currentSubscription, error: subscriptionError, loading: subscriptionLoading, refresh: refreshSubscription } = useNovelaiUsage();
+  const novelaiSubscription = useNovelaiUsage();
+  const { info: currentSubscription, error: subscriptionError, loading: subscriptionLoading, refresh: refreshSubscription } = novelaiSubscription;
   // 个人 Opus 免费图折算百分比用的换算系数（网关自动同步，17.3 张 ≈ 1%）。
   const [naiRuntimeCoefficient, setNaiRuntimeCoefficient] = useState(17.3);
   const [anlasInput, setAnlasInput] = useState(String(DEFAULT_ANLAS_BUDGET));
@@ -1212,7 +1214,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 }} className="mt-1 h-5 w-5 shrink-0 rounded border-gray-300 text-indigo-600 disabled:opacity-50" />
               </label>
               {lowConsumption.enabled && <p className="mb-3 text-xs text-indigo-600 dark:text-indigo-300">生成仅走零点数路径，V5 仍消耗共享 Opus 额度。点数可用于积累永久 Vibe；不会自动重置预算或重试生成。</p>}
-              <div><h4 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">当前密钥剩余 <b className="text-indigo-600 dark:text-indigo-300">{anlasBudget.remaining}</b> 点，电脑与手机共用。</p></div>
+              <div><h4 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">个人预算 / 账号余额，电脑与手机共用；官方余额不会覆盖本地预算。</p></div>
+              <AnlasBalanceBar budget={anlasBudget} subscription={novelaiSubscription} className="mt-3 rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/70" />
+              {subscriptionError && <p className="mt-1 text-meta text-amber-600 dark:text-amber-400">账号余额刷新失败{currentSubscription?.trainingStepsLeft ? '，显示上次同步值' : '，余额未知'}；点击余额行重试。</p>}
               <div className="mt-3 flex gap-2">
                 <input type="number" min="0" step="1" value={anlasInput} onChange={event => setAnlasInput(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-lg font-black tabular-nums outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900" aria-label="可支配 Anlas 点数" />
                 <button type="button" onClick={async () => { const next = await anlasBudgetService.set(Number(anlasInput)); setAnlasInput(String(next.remaining)); notify('Anlas 预算已更新'); }} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white">保存</button>

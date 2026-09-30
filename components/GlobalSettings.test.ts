@@ -6,10 +6,10 @@ import { DEFAULT_APPEARANCE_PREFERENCES, AppearancePreferences } from '../servic
 import { ConfirmDialogProvider } from './ConfirmDialog';
 import { GlobalSettings } from './GlobalSettings';
 const lowMode = vi.hoisted(() => ({ enabled: false, save: vi.fn() }));
-const subscriptionFixture = vi.hoisted(() => ({ expired: false }));
+const subscriptionFixture = vi.hoisted(() => ({ expired: false, balance: undefined as { fixedTrainingStepsLeft: number; purchasedTrainingSteps: number } | undefined, refresh: vi.fn(async () => null) }));
 vi.mock('../services/naiUsage', async importOriginal => ({
   ...await importOriginal<typeof import('../services/naiUsage')>(),
-  useNovelaiUsage: () => ({ info: subscriptionFixture.expired ? { active: false, tier: 3 } : null, usage: undefined, loading: false, error: null, refresh: vi.fn() }),
+  useNovelaiUsage: () => ({ info: subscriptionFixture.expired || subscriptionFixture.balance ? { active: !subscriptionFixture.expired, tier: 3, trainingStepsLeft: subscriptionFixture.balance } : null, usage: undefined, loading: false, error: null, fetchedAt: 0, refresh: subscriptionFixture.refresh }),
 }));
 vi.mock('../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: lowMode.enabled }), setLowConsumption: lowMode.save }));
 
@@ -86,6 +86,8 @@ const SettingsHarness: React.FC<SettingsHarnessProps> = ({ initialSection = 'app
 describe('GlobalSettings', () => {
   beforeEach(() => {
     subscriptionFixture.expired = false;
+    subscriptionFixture.balance = undefined;
+    subscriptionFixture.refresh.mockClear();
     lowMode.enabled = false;
     lowMode.save.mockReset().mockImplementation(async (enabled: boolean) => { lowMode.enabled = enabled; return { enabled }; });
     sessionStorage.clear(); localStorage.clear();
@@ -115,6 +117,17 @@ describe('GlobalSettings', () => {
     expect(badge.title).toContain('Paid Anlas');
     expect(screen.queryByText('已失效')).toBeNull();
     expect(screen.queryByText('非 Opus')).toBeNull();
+  });
+  it('设置页共用个人预算／官方总余额显示，可点按刷新且不改写预算输入', async () => {
+    subscriptionFixture.balance = { fixedTrainingStepsLeft: 100, purchasedTrainingSteps: 200 };
+    sessionStorage.setItem('nai_api_key', 'settings-balance-test-key');
+    render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+    const balanceRow = await screen.findByRole('button', { name: /个人剩余预算 1,666 点.*账号剩余点数 300 点/ });
+    expect(balanceRow.title).toContain('订阅赠送：100 点；Paid Anlas：200 点');
+    expect(screen.getByText('个人预算 / 账号余额，电脑与手机共用；官方余额不会覆盖本地预算。')).toBeTruthy();
+    fireEvent.click(balanceRow);
+    expect(subscriptionFixture.refresh).toHaveBeenCalledTimes(1);
+    expect((screen.getByRole('spinbutton', { name: '可支配 Anlas 点数' }) as HTMLInputElement).value).toBe('1666');
   });
   it('低消耗开关按当前 Key 保存，明确两模式和隐藏付费功能，保留 Vibe 编码确认', async () => {
     sessionStorage.setItem('nai_api_key', 'settings-test-key');

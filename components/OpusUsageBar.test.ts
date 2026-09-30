@@ -88,7 +88,8 @@ describe('OpusUsageBar', () => {
     // 过期后不显示残留免费额度
     expect(screen.queryByText('×')).toBeNull();
     expect(screen.queryByText('79%')).toBeNull();
-    expect(screen.getByText('Paid Anlas：420 点')).toBeTruthy();
+    expect(screen.getByRole('status').title).toContain('Paid Anlas：420 点');
+    expect(screen.getByText('免费权益不可用')).toBeTruthy();
     // 显示 Paid Anlas，不把订阅过期说成 Key 失效
     expect(screen.getByText('订阅已过期')).toBeTruthy();
     expect(screen.getByRole('status').className).toContain('text-amber-600');
@@ -111,7 +112,7 @@ describe('OpusUsageBar', () => {
     });
     expect(screen.queryByText('×')).toBeNull();
     expect(screen.getByText('订阅已过期')).toBeTruthy();
-    expect(screen.getByText('Paid Anlas 余额未知')).toBeTruthy();
+    expect(screen.getByRole('status').title).toContain('Paid Anlas 余额未知');
   });
 
   it('Paid Anlas 为零也显示，折叠状态保留余额提示且点击仍可刷新', async () => {
@@ -121,7 +122,7 @@ describe('OpusUsageBar', () => {
       : responseFor({ tier: 0, active: false, trainingStepsLeft: { fixedTrainingStepsLeft: 0, purchasedTrainingSteps: 0 } }));
     vi.stubGlobal('fetch', fetchMock);
     const view = render(React.createElement(OpusUsageBar, { collapsed: false }));
-    expect(await screen.findByText('Paid Anlas：0 点')).toBeTruthy();
+    expect((await screen.findByRole('status', { name: /Paid Anlas：0 点/ })).title).toContain('Paid Anlas：0 点');
     expect(screen.queryByText('Paid Anlas 余额未知')).toBeNull();
     view.rerender(React.createElement(OpusUsageBar, { collapsed: true }));
     const button = screen.getByRole('status', { name: /Paid Anlas：0 点/ });
@@ -138,7 +139,7 @@ describe('OpusUsageBar', () => {
       : responseFor({ tier: 0, active: false, trainingStepsLeft: { fixedTrainingStepsLeft: 0, purchasedTrainingSteps: 420 } })));
     await refreshNaiRuntimeConfig();
     render(React.createElement(OpusUsageBar, { collapsed: false }));
-    expect(await screen.findByText('Paid Anlas：420 点')).toBeTruthy();
+    expect((await screen.findByRole('status', { name: /Paid Anlas：420 点/ })).title).toContain('Paid Anlas：420 点');
     expect(await screen.findByText('计费规则同步异常')).toBeTruthy();
     expect(screen.getByRole('status').className).toContain('text-red-500');
     expect(screen.getByRole('status').title).toContain('官方计费规则同步异常');

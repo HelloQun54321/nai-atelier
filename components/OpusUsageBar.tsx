@@ -25,7 +25,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
       onClick={() => void refresh()} title={`订阅已过期，Opus 免费权益不可用。${balanceLabel}。关闭低消耗模式后可确认付费生成，权限与扣费以官方响应为准；余额不会覆盖本地预算。${error ? `状态刷新失败：${error}` : ''}${runtimeWarning ? `官方计费规则同步异常：${runtimeWarning}` : ''}`}
       className={`flex min-h-14 w-full cursor-pointer select-none items-center border-b border-gray-200 text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:border-gray-800 dark:hover:bg-gray-800 ${error || runtimeWarning ? 'text-red-500 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'} ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}>
       <span className="flex h-9 w-9 shrink-0 items-center justify-center text-mini font-bold">付费</span>
-      {!collapsed && <span className="min-w-0 flex-1"><span className="block text-xs font-medium">订阅已过期</span><span className="mt-0.5 block text-micro">{error ? '状态刷新失败，点击重试' : balanceLabel}</span>{runtimeWarning && <span className="mt-0.5 block text-micro">计费规则同步异常</span>}</span>}
+      {!collapsed && <span className="min-w-0 flex-1"><span className="block text-xs font-medium">订阅已过期</span><span className="mt-0.5 block text-micro">{error ? '状态刷新失败，点击重试' : '免费权益不可用'}</span>{runtimeWarning && <span className="mt-0.5 block text-micro">计费规则同步异常</span>}</span>}
     </button>;
   }
   // 请求明确成功但没有 usage 时不展示 Opus 条；加载/失败保留状态行。
