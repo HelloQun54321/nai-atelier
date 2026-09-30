@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.7.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.7.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -678,6 +678,8 @@ Pixiv 页面连接 Pixiv 官方 App API，提供推荐、日榜、周榜、月�
 先在 **「全局设置 → 数据与维护」开启「智慧姬同步」**。开关默认关闭，状态保存在既有本机设置表中，重启后恢复；关闭时隐藏电脑与手机风格串入口，并停止风格串、Vibe 和历史索引同步，保留已选范围及已有资料。多个页面即时通知或回到前台时重读同一设置；后台同步请求也校验开关，旧连接器不能绕过。
 
 在「风格串」点击工具栏的 **「智慧姬同步」**（手机入口位于「筛选与排序」），通过三个视图整理发送过程：
+
+同步工具栏按「返回／视图／核对 → 当前视图的筛选与操作」连续排布，桌面一行优先，窄屏才换行；已选数量、全选／取消和加入按钮彼此相邻，记录状态筛选紧跟视图，手机保留足够的触控区域。
 
 - **挑选风格串**：搜索、标签、收藏等筛选继续可用，勾选新条目后点击「加入待同步」。勾选跨筛选与视图保留，返回资料库会丢弃未提交草稿；已在队列或记录中的条目显示状态，不通过普通挑选重复加入。
 - **待同步**：集中显示待接收的条目。可单条或全部移出，仅撤销发送任务、保留原风格串。正文或封面未保存成功时保留任务并显示一行原因；可点击「重试」，或在智慧姬连接器点击「立即同步」。已记录失败的任务不会由自动同步反复重试。
