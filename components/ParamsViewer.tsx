@@ -246,10 +246,10 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                             >
                                 <div className="flex items-center justify-between mb-1.5">
                                     <span className="text-micro font-bold text-indigo-500 dark:text-indigo-400 uppercase">
-                                        角色 {idx + 1}
+                                        角色 {idx + 1}{char.enabled === false ? ' · 已停用' : ''}
                                     </span>
                                     <span className="text-micro text-gray-400 font-mono">
-                                        ({char.x.toFixed(2)}, {char.y.toFixed(2)})
+                                        {params.useCoords ? `(${Number.isFinite(char.x) ? char.x.toFixed(2) : '0.50'}, ${Number.isFinite(char.y) ? char.y.toFixed(2) : '0.50'})` : 'AI 自动构图'}
                                     </span>
                                 </div>
                                 <p className="text-xs text-gray-700 dark:text-gray-300 font-mono break-words leading-relaxed">

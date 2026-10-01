@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createLabWorkspaceSession, getLabModeLabel, getLabWorkspaceAssetId, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, saveLabWorkspaceSession } from './labWorkspace';
+import { createLabWorkspaceSession, getLabModeLabel, getLabWorkspaceAssetId, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, normalizeParams, saveLabWorkspaceSession } from './labWorkspace';
 
 const params = {
   model: 'nai-diffusion-4-5-full',
@@ -13,6 +13,25 @@ const params = {
 
 describe('lab workspace session', () => {
   beforeEach(() => sessionStorage.clear());
+
+  it('四模式默认自动构图，旧角色启用语义兼容，停用／排序／自由坐标随草稿恢复', () => {
+    const characters = [
+      { id: 'b', prompt: 'second', negativePrompt: 'negative b', x: 0.223, y: 0.887, enabled: false },
+      { id: 'a', prompt: 'first', negativePrompt: 'negative a', x: 0.5, y: 0.5 },
+    ];
+    const automatic = createLabWorkspaceSession('', '', '', { ...params, characters }, {});
+    expect(automatic.textToImage.params.useCoords).toBe(false);
+    for (const draft of Object.values(automatic.edits)) expect(draft.params.useCoords).toBe(false);
+    const session = createLabWorkspaceSession('', '', '', { ...params, characters, useCoords: true }, {});
+    saveLabWorkspaceSession('roles', session);
+    const restored = loadLabWorkspaceSession('roles', automatic);
+    for (const draft of [restored.textToImage, ...Object.values(restored.edits)]) {
+      expect(draft.params.characters).toEqual(characters);
+      expect(draft.params.useCoords).toBe(true);
+    }
+    expect(restored.edits.outpaint.params.characters).not.toBe(restored.textToImage.params.characters);
+    expect(normalizeParams({ ...params, characters: [{ ...characters[0], x: NaN, y: Infinity }] }).characters?.[0]).toMatchObject({ x: 0.5, y: 0.5 });
+  });
 
   it('keeps four independent mode drafts and restores the active mode', () => {
     const fallback = createLabWorkspaceSession('style prompt', 'red bottle', 'bad hands', params, { module: true });

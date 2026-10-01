@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.12.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.13.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -339,7 +339,7 @@ flowchart LR
 它不是单纯的画师名字堆砌，而是一套支持模块化拆装的完整配方：
 
 - **提示词与模块解耦**：全局提示词、可单独开关的提示词模块与全局负面词清晰分层，避免反复拼接。
-- **多角色独立管理**：每个角色拥有专属正负面提示词，支持 AI 构图或精准坐标定位。
+- **多角色独立管理**：每个角色拥有专属正负面提示词，可上下排序、临时停用再恢复，默认 AI 自动构图。「角色定位」展开按画布比例展示的位置区；文生图按输出尺寸，编辑模式显示底图，选择编号后点击／拖动或用方向键微调即可转为手动定位。V4／V4.5 吸附到 5×5 格点（0.1／0.3／0.5／0.7／0.9），V5 支持自由定位；坐标输入失焦或回车时应用，空值恢复中心、越界归一化。四种模式共用这些规则，空正向词与停用角色不发送，角色正负词始终配对。顺序与停用状态保存在预设／草稿，生成历史仅记录实际角色；Focused 历史保留整图坐标，扩图结果记录扩展后的定位。角色库送往实验室默认 AI 构图，已有明确手动配置继续保留。
 - **全套参数同捆**：画面尺寸、Steps、CFG、CFG Rescale、Variety+、采样器与 Seed 一并封存。
 - **资产视觉归档**：支持自定义封面、标题、说明备注与分类标签，在卡片画廊中一目了然。
 

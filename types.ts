@@ -21,6 +21,7 @@ export interface PromptModule {
 
 export interface CharacterParams {
   id: string;
+  enabled?: boolean; // 临时停用不删除内容；旧资料未记录时默认启用
   prompt: string;
   negativePrompt?: string; // New: Per-character negative prompt
   x: number; // 0.0 to 1.0

@@ -846,11 +846,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         markChange();
     };
 
-    const updateCharacter = (idx: number, updates: Partial<CharacterParams>) => {
-        if (!canEdit || !params.characters) return;
+    const updateCharacter = (idx: number, updates: Partial<CharacterParams>, useCoords?: boolean) => {
+        if (!canEdit || !params.characters?.[idx]) return;
         const newChars = [...params.characters];
         newChars[idx] = { ...newChars[idx], ...updates };
-        setParams({ ...params, characters: newChars });
+        setParams({ ...params, characters: newChars, ...(useCoords !== undefined ? { useCoords } : {}) });
         markCharacterSourceModified(newChars[idx].id);
         markChange();
     };
@@ -2064,6 +2064,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             params={params}
                             setParams={setParams}
                             characters={params.characters || []}
+                            freeformPosition={activeModelInfo.freeformCharacterPosition}
                             canEdit={canEdit}
                             tagAssistEnabled={tagAssistEnabled}
                             characterPresetSources={characterPresetSources}

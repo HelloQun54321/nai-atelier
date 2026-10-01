@@ -8,6 +8,26 @@ const baseParams = {
 };
 
 describe('NovelAI generation payload', () => {
+  it.each(['nai-diffusion-4-full', 'nai-diffusion-4-5-full', 'nai-diffusion-5-full'])('%s 普通与流式请求一起过滤角色并按模型定位', model => {
+    const params = { ...baseParams, model, characters: [
+      { id: 'b', prompt: 'second first', negativePrompt: 'negative b', x: 0.222, y: 0.887 },
+      { id: 'paused', prompt: 'paused', negativePrompt: 'excluded negative', x: 0.5, y: 0.5, enabled: false },
+      { id: 'empty', prompt: '   ', negativePrompt: 'excluded empty', x: 0.5, y: 0.5 },
+      { id: 'a', prompt: 'first last', negativePrompt: 'negative a', x: NaN, y: 4 },
+    ] };
+    const centers = model.startsWith('nai-diffusion-5-') ? [[{ x: 0.222, y: 0.887 }], [{ x: 0.5, y: 1 }]] : [[{ x: 0.3, y: 0.9 }], [{ x: 0.5, y: 0.9 }]];
+    for (const stream of [false, true]) {
+      const payload = buildNaiGenerationPayload('2girls, landscape', '', params, { stream });
+      const positive = payload.parameters.v4_prompt as { caption: { char_captions: unknown[] }; use_coords: boolean; use_order: boolean };
+      const negative = payload.parameters.v4_negative_prompt as { caption: { char_captions: unknown[] } };
+      expect(positive.caption.char_captions).toEqual([{ char_caption: 'second first', centers: centers[0] }, { char_caption: 'first last', centers: centers[1] }]);
+      expect(negative.caption.char_captions).toEqual([{ char_caption: 'negative b', centers: centers[0] }, { char_caption: 'negative a', centers: centers[1] }]);
+      expect(positive.use_coords).toBe(false);
+      expect(positive.use_order).toBe(true);
+    }
+    expect(params.characters).toHaveLength(4);
+    expect(params.characters[0].x).toBe(0.222);
+  });
   it('adds V5 alpha fields and transparent tags without changing the source prompt', () => {
     const prompt = '1girl, solo';
     const payload = buildNaiGenerationPayload(prompt, '', { ...baseParams, transparent: true });

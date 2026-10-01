@@ -2,6 +2,7 @@ import { ImageEditOperation, NAIParams } from '../types';
 import { DEFAULT_NAI_MODEL, getRuntimeNaiModelInfo } from './naiModels';
 import { buildImageEditParameters, resolveImageEditModel, validateImageEditSampler } from './imageEdit';
 import { DEFAULT_NAI_RUNTIME, getNaiRuntimeModelCapability, NaiRuntimeConfig } from './naiRuntime';
+import { withGenerationCharacters } from './characterPrompts';
 
 export interface NaiPayloadOptions {
   stream?: boolean;
@@ -99,8 +100,7 @@ export const buildNaiGenerationPayload = (
   let finalNegative = negative;
   if (presetState.ucPreset?.prefix) finalNegative = appendPromptPart(finalNegative, presetState.ucPreset.prefix, 'prefix');
 
-  const characters = params.characters ?? [];
-  const hasCharacters = characters.length > 0;
+  const characters = withGenerationCharacters(params, modelInfo.freeformCharacterPosition).characters || [];
   const charCaptions = characters.map(character => ({
     char_caption: character.prompt,
     centers: [{ x: character.x, y: character.y }],
@@ -133,7 +133,7 @@ export const buildNaiGenerationPayload = (
     negative_prompt: finalNegative,
     v4_prompt: {
       caption: { base_caption: finalPrompt, char_captions: charCaptions },
-      use_coords: params.useCoords ?? hasCharacters,
+      use_coords: params.useCoords === true,
       use_order: true,
     },
     v4_negative_prompt: {

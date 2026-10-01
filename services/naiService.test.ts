@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ImageEditOperation, NAIParams } from '../types';
+import type { CharacterParams, ImageEditOperation, NAIParams } from '../types';
 import { api } from './api';
 import { getCurrentCloudQueueStatus, emitCloudQueueStatus } from './cloudQueue';
 import { generateImage, generateImageEdit, generateImageStream, generateImageEditStream } from './naiService';
@@ -62,9 +62,30 @@ type CharacterPayload = { parameters: {
 } };
 const lastCharacterPayload = (stream: boolean) => (stream
   ? vi.mocked(api.postSse).mock.calls.at(-1)![1]
-  : vi.mocked(api.postBinaryDetailed).mock.calls.at(-1)![1]) as CharacterPayload;
+  : (vi.mocked(api.postBinaryDetailed).mock.calls.at(-1) || vi.mocked(api.postBinary).mock.calls.at(-1))![1]) as CharacterPayload;
 
 describe('编辑模式完整角色请求与历史坐标', () => {
+  it.each([
+    ['text-to-image', false], ['text-to-image', true], ['image-to-image', false], ['image-to-image', true],
+    ['inpaint', false], ['inpaint', true], ['outpaint', false], ['outpaint', true],
+  ] as const)('%s（stream=%s）按有效角色校验上限，结果不保存空项与停用项，草稿不变', async (operation, stream) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
+    const original: NAIParams & { characters: CharacterParams[] } = { ...params, characters: [characters[0],
+      ...Array.from({ length: 6 }, (_, index) => ({ ...characters[1], id: `paused-${index}`, enabled: false })),
+      { ...characters[1], id: 'empty', prompt: '  ' },
+    ] };
+    const edit = { operation: operation as ImageEditOperation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 1, noise: 0 };
+    const generate = (input: NAIParams) => operation === 'text-to-image'
+      ? (stream ? generateImageStream : generateImage)('test-key', '', '', input)
+      : (stream ? generateImageEditStream : generateImageEdit)('test-key', '', '', input, edit);
+    const result = await generate(original);
+    expect(lastCharacterPayload(stream).parameters.v4_prompt.caption.char_captions).toEqual([{ char_caption: characters[0].prompt, centers: [{ x: 0.5, y: 0.5 }] }]);
+    expect(result.params.characters).toEqual([characters[0]]);
+    expect(result.params.useCoords).toBe(false);
+    expect(original.characters).toHaveLength(8);
+    expect(original.characters[1].enabled).toBe(false);
+    await expect(generate({ ...original, characters: original.characters.map(character => ({ ...character, enabled: true })) })).rejects.toThrow('停用或删除多余角色');
+  });
   it.each([false, true])('扩图 stream=%s 发给接口的是当前文字；删除全局、角色及关闭预设后确实全空', async stream => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
     const cleared = { ...params, qualityToggle: false, qualityPresetId: 'none', ucPreset: 4, ucPresetId: 'none', characters: [] };
@@ -85,15 +106,16 @@ describe('编辑模式完整角色请求与历史坐标', () => {
   it.each(['nai-diffusion-4-full', 'nai-diffusion-4-5-full', 'nai-diffusion-5-full'])('%s 三种编辑模式普通／流式保留角色正负词及自动构图', async model => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
     const original = { ...params, model, characters, useCoords: false };
+    const expectedCharacters = model.startsWith('nai-diffusion-5-') ? characters : [characters[0], { ...characters[1], y: 0.3 }];
     const snapshot = structuredClone(original);
     for (const operation of ['image-to-image', 'inpaint', 'outpaint'] as const) for (const stream of [false, true]) {
       const result = await (stream ? generateImageEditStream : generateImageEdit)('test-key', 'base scene', 'global negative', original,
         { operation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 0.7, noise: 0 });
       const payload = lastCharacterPayload(stream).parameters;
-      expect(payload.v4_prompt.caption.char_captions).toEqual(characters.map(character => ({ char_caption: character.prompt, centers: [{ x: character.x, y: character.y }] })));
-      expect(payload.v4_negative_prompt.caption.char_captions).toEqual(characters.map(character => ({ char_caption: character.negativePrompt, centers: [{ x: character.x, y: character.y }] })));
+      expect(payload.v4_prompt.caption.char_captions).toEqual(expectedCharacters.map(character => ({ char_caption: character.prompt, centers: [{ x: character.x, y: character.y }] })));
+      expect(payload.v4_negative_prompt.caption.char_captions).toEqual(expectedCharacters.map(character => ({ char_caption: character.negativePrompt, centers: [{ x: character.x, y: character.y }] })));
       expect(payload.v4_prompt.use_coords).toBe(false);
-      expect(result.params.characters).toEqual(characters);
+      expect(result.params.characters).toEqual(expectedCharacters);
     }
     expect(original).toEqual(snapshot);
   });
@@ -111,7 +133,7 @@ describe('编辑模式完整角色请求与历史坐标', () => {
     const payload = lastCharacterPayload(stream).parameters;
     expect(payload.v4_prompt.use_coords).toBe(true);
     expect(payload.v4_prompt.caption.char_captions[0].centers[0].x).toBeCloseTo(0.5);
-    expect(payload.v4_prompt.caption.char_captions[0].centers[0].y).toBeCloseTo(2 / 3);
+    expect(payload.v4_prompt.caption.char_captions[0].centers[0].y).toBe(0.7);
     expect(payload.v4_negative_prompt.caption.char_captions[0].centers).toEqual(payload.v4_prompt.caption.char_captions[0].centers);
     expect(result.params).toMatchObject({ width: 1536, height: 2048, characters });
     expect(result.requestWidth).toBe(832);
@@ -129,8 +151,8 @@ describe('编辑模式完整角色请求与历史坐标', () => {
         { operation: 'outpaint', image: 'data:image/png;base64,AQID', strength: 1, noise: 0,
           expansion: { top: 0, right: 0, bottom: 192, left: 192 } });
       const payload = lastCharacterPayload(stream).parameters;
-      expect(payload.v4_prompt.caption.char_captions[0].centers[0].x).toBeCloseTo((416 + 192) / 1024);
-      expect(payload.v4_prompt.caption.char_captions[0].centers[0].y).toBeCloseTo(608 / 1408);
+      expect(payload.v4_prompt.caption.char_captions[0].centers[0].x).toBe(0.5);
+      expect(payload.v4_prompt.caption.char_captions[0].centers[0].y).toBe(0.5);
       expect(result.params.characters?.[0]).toMatchObject(payload.v4_prompt.caption.char_captions[0].centers[0]);
       expect(result.params).toMatchObject({ width: 1024, height: 1408 });
     }

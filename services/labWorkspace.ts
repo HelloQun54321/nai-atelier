@@ -1,6 +1,7 @@
 import { GenerationMode, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LabWorkspaceSession, NAIParams } from '../types';
 import { normalizeMinimumContextArea } from './imageEdit';
 import { getDefaultStepsForModel } from './naiModels';
+import { clampCharacterCoordinate } from './characterPrompts';
 
 const SESSION_PREFIX = 'nai-lab-workspace-v1:';
 const ASSET_DB_NAME = 'NAI_Lab_Workspace_DB';
@@ -20,6 +21,7 @@ export const LAB_DEFAULT_PARAMS: NAIParams = {
     qualityToggle: true,
     ucPreset: 4,
     characters: [],
+    useCoords: false,
 };
 
 /** 生成模式的中文名，用于重置确认弹窗与提示语。 */
@@ -37,7 +39,10 @@ export const normalizeParams = (params?: Partial<NAIParams> | null): NAIParams =
     steps: Number(safe.steps) || LAB_DEFAULT_PARAMS.steps,
     scale: Number(safe.scale) || LAB_DEFAULT_PARAMS.scale,
     sampler: safe.sampler || LAB_DEFAULT_PARAMS.sampler,
-    characters: Array.isArray(safe.characters) ? safe.characters.map(character => ({ ...character })) : [],
+    useCoords: safe.useCoords === true,
+    characters: Array.isArray(safe.characters) ? safe.characters.map(character => ({ ...character,
+      x: clampCharacterCoordinate(character.x), y: clampCharacterCoordinate(character.y),
+    })) : [],
     vibes: safe.vibes ? {
       ...safe.vibes,
       slots: Array.isArray(safe.vibes.slots) ? safe.vibes.slots.map(slot => ({ ...slot })) : [],

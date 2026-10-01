@@ -4,6 +4,7 @@ import { DEFAULT_NAI_MODEL, getModelFollowDefaultSteps, getRuntimeNaiModelInfo, 
 import { getNaiRuntimeModelCapability, useNaiRuntime } from '../services/naiRuntime';
 import { applyLowConsumptionParams, useLowConsumption } from '../services/lowConsumption';
 import { lowConsumptionStepLimit } from '../worker/lowConsumptionPolicy.mjs';
+import { getActiveCharacters } from '../services/characterPrompts';
 import {
     BUILTIN_ASPECT_RATIOS,
     calculateDimensionsForRatio,
@@ -361,9 +362,9 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                     </button>
                 )}
 
-                {(params.characters?.length || 0) > currentModelInfo.maxCharacters && (
+                {getActiveCharacters(params.characters).length > currentModelInfo.maxCharacters && (
                     <p className="col-span-full rounded-md bg-amber-50 px-2.5 py-1.5 text-meta leading-4 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-                        {currentModelInfo.label} 最多支持 {currentModelInfo.maxCharacters} 个角色提示词；当前保留了 {params.characters?.length} 个，请删除多余角色后再生成。
+                        {currentModelInfo.label} 最多支持 {currentModelInfo.maxCharacters} 个角色提示词；当前启用了 {getActiveCharacters(params.characters).length} 个，请停用或删除多余角色后再生成。
                     </p>
                 )}
             </div>

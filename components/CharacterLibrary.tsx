@@ -526,23 +526,15 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     notify(`已复制 ${selectedCards.length} 个角色提示词`);
   };
 
-  /** 批量导入实验室：自动将选中的多个角色分别填入独立的角色槽位 (CharacterParams[])，
-   * 并按选中的角色数量自动均匀分配站位坐标 (X: 0.2 ~ 0.8, Y: 0.5) */
+  /** 选中角色送往独立槽位，默认交给 AI 构图；手动站位在实验室设置。 */
   const importAllSelected = () => {
     if (selectedCards.length === 0) return;
     const count = selectedCards.length;
-    // 计算站位横坐标：单人居中 0.5；多人均匀分布
-    const getSlotX = (index: number, total: number) => {
-      if (total <= 1) return 0.5;
-      const step = 0.6 / (total - 1);
-      return parseFloat((0.2 + index * step).toFixed(2));
-    };
-
     const characters = selectedCards.map((card, idx) => ({
       id: `char-${Date.now()}-${idx}`,
       prompt: cardPromptText(card),
       negativePrompt: card.chain?.negativePrompt || '',
-      x: getSlotX(idx, count),
+      x: 0.5,
       y: 0.5,
     }));
 
@@ -553,7 +545,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       params: {
         ...(firstChain?.params || DEFAULT_PARAMS),
         characters,
-        useCoords: true,
+        useCoords: false,
       },
     }));
     clearSelection();

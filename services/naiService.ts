@@ -11,6 +11,7 @@ import { buildNaiImageEditPayload } from './naiPayload';
 import { getNaiRuntimeConfig } from './naiRuntime';
 import { composeImageEditResult, PreparedImageEdit, prepareImageEdit, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForOutpaint } from './imageEdit';
 import { applyLowConsumptionParams, getLowConsumption } from './lowConsumption';
+import { getActiveCharacters, withGenerationCharacters } from './characterPrompts';
 
 export interface NaiStreamPreview {
   image: string;
@@ -18,22 +19,26 @@ export interface NaiStreamPreview {
 }
 
 /** 草稿坐标基于底图；只为实际请求转换，不能把 Focused 裁剪坐标写回整图历史。 */
-const buildImageEditRequestParams = (params: NAIParams, prepared: PreparedImageEdit, operation: ImageEditOperation, expansion?: ImageEditCanvasExpansion): NAIParams => ({
-  ...params,
-  width: prepared.requestWidth,
-  height: prepared.requestHeight,
-  characters: prepared.focusedGeometry
-    ? transformCharacterCoordinatesForFocused(params.characters, prepared.focusedGeometry, prepared.sourceWidth, prepared.sourceHeight)
-    : operation === 'outpaint' && expansion
-      ? transformCharacterCoordinatesForOutpaint(params.characters,
-        prepared.sourceWidth - expansion.left - expansion.right,
-        prepared.sourceHeight - expansion.top - expansion.bottom, expansion)
-      : params.characters,
-});
+const buildImageEditRequestParams = (params: NAIParams, prepared: PreparedImageEdit, operation: ImageEditOperation, expansion?: ImageEditCanvasExpansion): NAIParams => {
+  params = withGenerationCharacters(params, true);
+  return {
+    ...params,
+    width: prepared.requestWidth,
+    height: prepared.requestHeight,
+    characters: prepared.focusedGeometry
+      ? transformCharacterCoordinatesForFocused(params.characters, prepared.focusedGeometry, prepared.sourceWidth, prepared.sourceHeight)
+      : operation === 'outpaint' && expansion
+        ? transformCharacterCoordinatesForOutpaint(params.characters,
+          prepared.sourceWidth - expansion.left - expansion.right,
+          prepared.sourceHeight - expansion.top - expansion.bottom, expansion)
+        : params.characters,
+  };
+};
 
-const buildImageEditResultParams = (params: NAIParams, requestParams: NAIParams, prepared: PreparedImageEdit): NAIParams => prepared.focusedGeometry
-  ? { ...requestParams, width: prepared.sourceWidth, height: prepared.sourceHeight, characters: params.characters }
-  : requestParams;
+const buildImageEditResultParams = (params: NAIParams, requestParams: NAIParams, prepared: PreparedImageEdit, freeform: boolean): NAIParams => prepared.focusedGeometry
+  // Focused 历史保留整图坐标，回放时再次裁剪、吸附；不能把裁剪区坐标当成整图坐标。
+  ? { ...withGenerationCharacters(requestParams, freeform), width: prepared.sourceWidth, height: prepared.sourceHeight, characters: withGenerationCharacters(params, true).characters }
+  : withGenerationCharacters(requestParams, freeform);
 
 const validateGenerationCapabilities = (params: NAIParams, runtime: Awaited<ReturnType<typeof getNaiRuntimeConfig>>, operation: 'text-to-image' | ImageEditOperation = 'text-to-image') => {
   const modelInfo = getRuntimeNaiModelInfo(params.model, runtime);
@@ -53,8 +58,8 @@ const validateGenerationCapabilities = (params: NAIParams, runtime: Awaited<Retu
   if (params.characterReferences?.enabled && params.characterReferences.slots.length > 4) {
     throw new Error('一次最多使用 4 个角色参考');
   }
-  if ((params.characters?.length || 0) > modelInfo.maxCharacters) {
-    throw new Error(`NovelAI ${modelInfo.label} 最多支持 ${modelInfo.maxCharacters} 个角色提示词，请先删除多余角色或切换模型`);
+  if (getActiveCharacters(params.characters).length > modelInfo.maxCharacters) {
+    throw new Error(`NovelAI ${modelInfo.label} 最多支持 ${modelInfo.maxCharacters} 个角色提示词，请先停用或删除多余角色，或切换模型`);
   }
   return modelInfo;
 };
@@ -79,7 +84,7 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
   params = applyLowConsumptionParams(params, (await getLowConsumption(apiKey)).enabled, runtime);
   const payload = buildNaiGenerationPayload(prompt, negative, params, { runtime });
   const seed = typeof payload.parameters.seed === 'number' ? payload.parameters.seed : undefined;
-  validateGenerationCapabilities(params, runtime);
+  const modelInfo = validateGenerationCapabilities(params, runtime);
 
   // 调用 Worker Proxy, 传递 API Key Header
   // Queue status is auxiliary.  A temporary failure to read its preference
@@ -176,7 +181,7 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
     // But typically NAI returns a JSON alongside the image in the zip.
   }
 
-  return { image: URL.createObjectURL(fileData), blob: fileData, seed: actualSeed, params };
+  return { image: URL.createObjectURL(fileData), blob: fileData, seed: actualSeed, params: withGenerationCharacters(params, modelInfo.freeformCharacterPosition) };
 };
 
 export const generateImageEdit = async (
@@ -208,7 +213,7 @@ export const generateImageEdit = async (
     runtimeModels: runtime.models,
     runtime,
   });
-  validateGenerationCapabilities(requestParams, runtime, edit.operation);
+  const modelInfo = validateGenerationCapabilities(requestParams, runtime, edit.operation);
   const queue = await (async () => {
     try { return await getCloudQueuePreferences(); } catch { return getCachedCloudQueuePreferences(); }
   })();
@@ -246,7 +251,7 @@ export const generateImageEdit = async (
       } catch { /* 固定响应中可能不带 JSON 元数据。 */ }
     }
     const composed = await composeImageEditResult(fileData, prepared);
-    return { image: URL.createObjectURL(composed), blob: composed, seed: actualSeed, params: buildImageEditResultParams(params, requestParams, prepared), estimatedCost: binaryResult.estimatedCost, requestWidth: prepared.requestWidth, requestHeight: prepared.requestHeight, focusedGeometry: prepared.focusedGeometry };
+    return { image: URL.createObjectURL(composed), blob: composed, seed: actualSeed, params: buildImageEditResultParams(params, requestParams, prepared, modelInfo.freeformCharacterPosition), estimatedCost: binaryResult.estimatedCost, requestWidth: prepared.requestWidth, requestHeight: prepared.requestHeight, focusedGeometry: prepared.focusedGeometry };
   } catch (error) {
     terminalPhase = isQueueCancelledError(error) ? 'cancelled' : 'error';
     terminalError = error instanceof Error ? error.message : '图片编辑失败';
@@ -318,7 +323,7 @@ export const generateImageStream = async (
     if (!finalImage) throw new Error('流式生成没有返回最终图片');
     terminalPhase = 'completed';
     const blob = blobFromDataUri(finalImage);
-    return { image: URL.createObjectURL(blob), blob, seed: finalSeed, params, estimatedCost: sseEstimatedCost };
+    return { image: URL.createObjectURL(blob), blob, seed: finalSeed, params: withGenerationCharacters(params, modelInfo.freeformCharacterPosition), estimatedCost: sseEstimatedCost };
   } catch (error) {
     terminalPhase = isQueueCancelledError(error) ? 'cancelled' : 'error';
     terminalError = error instanceof Error ? error.message : '流式生成失败';
@@ -422,7 +427,7 @@ export const generateImageEditStream = async (
       image: URL.createObjectURL(composed),
       blob: composed,
       seed: finalSeed,
-      params: buildImageEditResultParams(params, requestParams, prepared),
+      params: buildImageEditResultParams(params, requestParams, prepared, modelInfo.freeformCharacterPosition),
       estimatedCost: sseEstimatedCost,
       requestWidth: prepared.requestWidth,
       requestHeight: prepared.requestHeight,

@@ -63,6 +63,15 @@ const renderParams = (props: Record<string, unknown> = {}) => render(React.creat
 afterEach(() => { cleanup(); lowMode.enabled = false; });
 
 describe('ChainEditorParams', () => {
+  it('角色上限只计启用且有正向词的角色，切换旧模型可停用多余项', () => {
+    const characters = Array.from({ length: 7 }, (_, index) => ({ id: String(index), prompt: 'girl', x: 0.5, y: 0.5 }));
+    const { rerender } = renderParams({ params: { ...params, characters } });
+    expect(screen.getByText(/当前启用了 7 个/)).toBeTruthy();
+    rerender(React.createElement(ChainEditorParams, { params: { ...params, characters: characters.map((character, index) => index === 6 ? { ...character, enabled: false } : character) }, setParams: vi.fn(), canEdit: true, markChange: vi.fn() }));
+    expect(screen.queryByText(/当前启用了/)).toBeNull();
+    rerender(React.createElement(ChainEditorParams, { params: { ...params, characters: characters.map((character, index) => index === 6 ? { ...character, prompt: '  ' } : character) }, setParams: vi.fn(), canEdit: true, markChange: vi.fn() }));
+    expect(screen.queryByText(/当前启用了/)).toBeNull();
+  });
   it.each(['text-to-image', 'inpaint'] as const)('%s 低消耗压住已解除的步数上限，关闭恢复原参数', mode => {
     lowMode.enabled = true;
     const setParams = vi.fn();

@@ -83,4 +83,10 @@ describe('主动复制图片的会话内生成配置', () => {
     sessionStorage.setItem('nai_last_copied_image', 'broken');
     expect(await getCopiedImageData(file(image()))).toBeUndefined();
   });
+
+  it('带角色的旧复制记录缺省自动构图，复制关联保留临时停用项', async () => {
+    const characters = [{ ...params.characters[0], enabled: false }];
+    await rememberCopiedImage(beginImageClipboardCopy(), image(), image(), { prompt: '', params: { ...params, characters, useCoords: undefined } });
+    expect((await getCopiedImageData(file(image())))?.params).toMatchObject({ characters, useCoords: false });
+  });
 });

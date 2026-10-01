@@ -42,6 +42,18 @@ const rows = () => JSON.parse(screen.getByTestId('characters').textContent!) as 
 const deferred = () => { let resolve!: (value: ImageTaggerResult) => void; const promise = new Promise<ImageTaggerResult>(done => { resolve = done; }); return { promise, resolve }; };
 
 describe('角色就地粘贴反推', () => {
+  it('反推期间调整角色顺序，参考图和迟到结果仍跟随原角色 ID', async () => {
+    const job = deferred(); vi.mocked(imageTaggerService.tagFile).mockReturnValueOnce(job.promise);
+    render(<Harness />);
+    fireEvent.click(screen.getAllByRole('button', { name: '粘贴反推' })[1]);
+    await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: '上移角色 2' }));
+    expect(rows().map(character => character.id)).toEqual(['b', 'a']);
+    await act(async () => job.resolve(result));
+    expect(rows()).toEqual([{ ...initial[1], prompt: 'red hair, looking at viewer, sitting' }, initial[0]]);
+    expect(screen.getByAltText('反推参考图')).toBeTruthy();
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  });
   it('一次点击直接追加到对应角色，保留其他角色、负面词和坐标，沿用模型默认阈值', async () => {
     render(<Harness />);
     fireEvent.click(screen.getAllByRole('button', { name: '粘贴反推' })[1]);

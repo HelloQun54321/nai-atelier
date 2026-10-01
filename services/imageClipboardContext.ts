@@ -49,7 +49,7 @@ const commitCopiedImage = async (copyRevision: number, shared: Blob, original: B
     }
     if (!data || copyRevision !== revision) return;
     // 历史旧记录未写角色字段时代表没有角色，不能让目标草稿的旧角色混入。
-    if (data.params) data = { ...data, params: { ...data.params, characters: data.params.characters ?? [], useCoords: data.params.useCoords ?? Boolean(data.params.characters?.length) } };
+    if (data.params) data = { ...data, params: { ...data.params, characters: data.params.characters ?? [], useCoords: data.params.useCoords === true } };
     const fingerprint = await pixelFingerprint(shared);
     if (fingerprint && copyRevision === revision) {
       // 配置只留在工坊当前标签页的会话缓存；清洗副本及系统剪贴板中均不附加私有参数。

@@ -75,7 +75,7 @@ const params = {
   ucPreset: 4,
 };
 
-const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', manualMaskEditing = false, safeMode = false, tagAssistEnabled = false, paramsPatch: Partial<NAIParams> = {}, mobileTab: 'canvas' | 'prompt' | 'params' = 'canvas') => {
+const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', manualMaskEditing = false, safeMode = false, tagAssistEnabled = false, paramsPatch: Partial<NAIParams> = {}, mobileTab: 'canvas' | 'prompt' | 'params' = 'canvas', positionSource?: { image: string; width: number; height: number }) => {
   const draft = createLabImageEditDraft(operation, 'blue bottle', 'low quality', { ...params, ...paramsPatch },
     operation === 'outpaint' ? { expansion: { top: 0, bottom: 0, left: 640, right: 704 } } : {});
   const onManualMaskEditingChange = vi.fn();
@@ -104,6 +104,8 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     },
     latestTextToImageItem: historyItem,
     selectableParams: draft.params,
+    baseImagePreview: positionSource?.image,
+    outpaintSourceSize: positionSource,
     strength: draft.strength,
     noise: draft.noise,
     brushSize: draft.brushSize,
@@ -143,6 +145,18 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
 afterEach(() => { cleanup(); lowMode.enabled = false; vi.restoreAllMocks(); });
 
 describe('ImageEditControls', () => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 定位区按原图比例且沿用模型能力，手动定位原子更新开关和角色', operation => {
+    const character = { id: 'role', prompt: 'girl', negativePrompt: 'hat', x: 0.223, y: 0.887 };
+    const { onDraftChange } = renderControls(operation, false, false, false,
+      { model: 'nai-diffusion-5-full', width: 1792, height: 768, characters: [character], useCoords: false }, 'prompt',
+      { image: 'blob:original', width: 1280, height: 720 });
+    fireEvent.click(screen.getByRole('button', { name: '角色定位' }));
+    expect(screen.getByText('自由定位 · 1280 × 720')).toBeTruthy();
+    expect(screen.getByRole('group', { name: '角色定位画布' }).style.aspectRatio).toBe(String(1280 / 720));
+    expect(screen.getByAltText('角色定位底图').getAttribute('src')).toBe('blob:original');
+    fireEvent.keyDown(screen.getByRole('button', { name: '定位角色 1' }), { key: 'ArrowRight' });
+    expect(onDraftChange).toHaveBeenCalledExactlyOnceWith({ params: expect.objectContaining({ useCoords: true, width: 1792, height: 768, characters: [{ ...character, x: 0.233 }] }) });
+  });
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 粘贴反推只追加本模式角色，不改全局词、坐标或底图', async operation => {
     const character = { id: 'role', prompt: 'blue hair', negativePrompt: 'hat', x: 0.25, y: 0.75 };
     const originalCreate = URL.createObjectURL, originalRevoke = URL.revokeObjectURL;

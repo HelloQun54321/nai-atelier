@@ -182,6 +182,9 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
         params={selectableParams}
         setParams={params => onDraftChange({ params })}
         characters={selectableParams.characters || []}
+        freeformPosition={modelInfo.freeformCharacterPosition}
+        positionImage={baseImagePreview}
+        positionSize={baseImagePreview ? sourceSize : undefined}
         canEdit={!isBusy}
         tagAssistEnabled={tagAssistEnabled}
         characterPresetSources={{}}
@@ -195,7 +198,8 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
           if (characters.length >= maximum) { notify(`当前模型最多支持 ${maximum} 个角色提示词`, 'error'); return; }
           onDraftChange({ params: { ...selectableParams, characters: [...characters, { id: createUuid(), prompt: '', negativePrompt: '', x: 0.5, y: 0.5 }] } });
         }}
-        updateCharacter={(index, patch) => onDraftChange({ params: { ...selectableParams,
+        updateCharacter={(index, patch, useCoords) => onDraftChange({ params: { ...selectableParams,
+          ...(useCoords !== undefined ? { useCoords } : {}),
           characters: (selectableParams.characters || []).map((character, currentIndex) => currentIndex === index ? { ...character, ...patch } : character),
         } })}
         removeCharacter={index => onDraftChange({ params: { ...selectableParams,

@@ -207,6 +207,19 @@ it('自定义角色保留创建入口，画师选择仍能送往实验室', asyn
   expect(generateImage).not.toHaveBeenCalled();
 });
 
+it('角色送往独立槽位时默认 AI 构图，目录不强制站位', async () => {
+  const view = renderLibrary('character');
+  fireEvent.click(await screen.findByTestId(`cover-${fixtures.characters[0].name}`));
+  fireEvent.click(await screen.findByTestId(`cover-${fixtures.characters[1].name}`));
+  fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
+  const imported = JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!);
+  expect(imported.params.useCoords).toBe(false);
+  expect(imported.params.characters.map((character: { prompt: string; x: number; y: number }) => ({ prompt: character.prompt, x: character.x, y: character.y })))
+    .toEqual(fixtures.characters.map(character => ({ prompt: character.name, x: 0.5, y: 0.5 })));
+  expect(view.navigate).toHaveBeenCalledOnce();
+  expect(generateImage).not.toHaveBeenCalled();
+});
+
 it('自定义角色卡片信息编辑不选中条目，抽卡结果随名称更新', async () => {
   const p = renderLibrary('character', 390, [custom]);
   await screen.findByRole('button', { name: '编辑自定义角色信息' });
