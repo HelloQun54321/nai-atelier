@@ -4,6 +4,8 @@ import { LabPageLayout } from '../../services/appearancePreferences';
 import { LabModuleSection } from '../LabModuleSection';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 import { PresetSection, PresetSource, PresetSourceBadges } from './PresetSourceBadges';
+import { mergePromptFields } from '../../services/promptUtils';
+import { CharacterTaggerReference } from './CharacterTaggerReference';
 
 export interface ChainEditorCharactersProps {
     params: NAIParams;
@@ -20,6 +22,7 @@ export interface ChainEditorCharactersProps {
     activeLabLayout: LabPageLayout;
     mobileEditorTab: 'global' | 'character' | 'params';
     coordinateHint?: string;
+    scopeKey?: string;
 }
 
 export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
@@ -37,6 +40,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     activeLabLayout,
     mobileEditorTab,
     coordinateHint,
+    scopeKey = '',
 }) => (
     <LabModuleSection
         moduleId="characters"
@@ -81,9 +85,9 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                     <div className="text-xs text-gray-400 text-center py-2">暂无角色，点击上方添加</div>
                 )}
                 {(characters || []).map((char, idx) => (
-                    <div key={char.id} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700 shadow-sm relative">
-                        <div className="flex gap-3 items-start">
-                            <div className="flex-1 space-y-2">
+                    <div key={`${scopeKey}:${char.id}`} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700 shadow-sm relative">
+                        <div className="flex flex-wrap gap-3 items-start sm:flex-nowrap">
+                            <div className="min-w-0 flex-1 space-y-2">
                                 <div>
                                     <label className="text-micro text-gray-500 font-bold mb-1 block">角色提示词</label>
                                     <TagAutocompleteTextarea
@@ -107,7 +111,8 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                     />
                                 </div>
                             </div>
-                            <div className="w-24 flex flex-col gap-2">
+                            <div className="order-3 grid w-full grid-cols-2 items-start gap-3 sm:order-none sm:flex sm:w-28 sm:shrink-0 sm:flex-col">
+                              <div className="w-full space-y-2">
                                 <div className={!(params.useCoords ?? true) ? "opacity-40 pointer-events-none grayscale" : ""}>
                                     <label className="text-micro text-gray-500 font-bold mb-1 block">水平位置 (X)</label>
                                     <input
@@ -128,6 +133,8 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                         className="w-full text-xs p-1 border rounded bg-gray-50 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
                                     />
                                 </div>
+                              </div>
+                              <CharacterTaggerReference canEdit={canEdit} onAppend={tags => updateCharacter(idx, { prompt: mergePromptFields(char.prompt, tags) })} />
                             </div>
                             {canEdit && (
                                 <button type="button" title="移除角色提示词" aria-label="移除角色提示词" onClick={() => removeCharacter(idx)} className="text-gray-400 hover:text-red-500 mt-6">

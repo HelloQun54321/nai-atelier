@@ -178,6 +178,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
       </LabModuleSection>
 
       <ChainEditorCharacters
+        scopeKey={operation}
         params={selectableParams}
         setParams={params => onDraftChange({ params })}
         characters={selectableParams.characters || []}

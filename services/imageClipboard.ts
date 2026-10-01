@@ -23,9 +23,9 @@ export const isTextPasteTarget = (target: EventTarget | null): boolean => {
   return Boolean(editable && editable.getAttribute('contenteditable') !== 'false');
 };
 
-export const readClipboardImage = async (): Promise<File> => {
+export const readClipboardImage = async ({ pasteHint = '在编辑区按 Ctrl+V', imagePurpose = '底图' }: { pasteHint?: string; imagePurpose?: string } = {}): Promise<File> => {
   if (window.isSecureContext === false || !navigator.clipboard?.read) {
-    throw new Error('当前浏览器无法直接读取剪贴板图片，请在编辑区按 Ctrl+V，或使用 localhost／HTTPS 打开');
+    throw new Error(`当前浏览器无法直接读取剪贴板图片，请${pasteHint}，或使用 localhost／HTTPS 打开`);
   }
   let items: ClipboardItem[];
   try {
@@ -33,9 +33,9 @@ export const readClipboardImage = async (): Promise<File> => {
     items = await navigator.clipboard.read();
   } catch (error) {
     if (error instanceof Error && error.name === 'NotAllowedError') {
-      throw new Error('剪贴板读取未获允许，请允许浏览器访问，或在编辑区按 Ctrl+V');
+      throw new Error(`剪贴板读取未获允许，请允许浏览器访问，或${pasteHint}`);
     }
-    throw new Error('剪贴板读取失败，请重新复制图片后粘贴，或在编辑区按 Ctrl+V');
+    throw new Error(`剪贴板读取失败，请重新复制图片后粘贴，或${pasteHint}`);
   }
   for (const item of items) {
     const type = IMAGE_TYPES.find(type => item.types.includes(type));
@@ -45,7 +45,7 @@ export const readClipboardImage = async (): Promise<File> => {
     }
   }
   if (items.some(item => item.types.some(type => type.startsWith('image/')))) {
-    throw new Error('请粘贴 PNG、JPEG 或 WebP 图片作为底图');
+    throw new Error(`请粘贴 PNG、JPEG 或 WebP 图片作为${imagePurpose}`);
   }
-  throw new Error('剪贴板中没有图片，请先使用「复制图片」；复制链接或文字不能作为底图');
+  throw new Error(`剪贴板中没有图片，请先使用「复制图片」；复制链接或文字不能作为${imagePurpose}`);
 };

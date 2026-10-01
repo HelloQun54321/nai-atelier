@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createLabImageEditDraft } from '../services/labWorkspace';
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPanel } from './ImageEditPanel';
 import { ImageEditPreview } from './ImageEditPreview';
 import type { NAIParams } from '../types';
+import { imageTaggerService } from '../services/imageTaggerService';
 const lowMode = vi.hoisted(() => ({ enabled: false, focused: false }));
 vi.mock('../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: lowMode.enabled }) }));
 
@@ -139,9 +140,24 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
   })), onManualMaskEditingChange, onPromptChange, onSelectImageSource, onPasteImage, onDraftChange, notify };
 };
 
-afterEach(() => { cleanup(); lowMode.enabled = false; });
+afterEach(() => { cleanup(); lowMode.enabled = false; vi.restoreAllMocks(); });
 
 describe('ImageEditControls', () => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 粘贴反推只追加本模式角色，不改全局词、坐标或底图', async operation => {
+    const character = { id: 'role', prompt: 'blue hair', negativePrompt: 'hat', x: 0.25, y: 0.75 };
+    const originalCreate = URL.createObjectURL, originalRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => 'blob:role'); URL.revokeObjectURL = vi.fn();
+    const tag = vi.spyOn(imageTaggerService, 'tagFile').mockResolvedValue({ model: 'selected', threshold: 0.53, characterThreshold: 0.85, tags: [{ name: 'sitting', category: 'general', confidence: 0.9 }], character: [], general: [], rating: null });
+    vi.spyOn(imageTaggerService, 'getStatus').mockResolvedValue({ model: 'selected', downloaded: true, models: [], busy: false, downloadingModel: null });
+    try {
+      const { onDraftChange, onPromptChange, onSelectImageSource, onPasteImage } = renderControls(operation, false, false, false, { characters: [character] }, 'prompt');
+      fireEvent.paste(screen.getByRole('button', { name: '粘贴反推' }), { clipboardData: { files: [new File(['synthetic'], 'role.png', { type: 'image/png' })] } });
+      await waitFor(() => expect(onDraftChange).toHaveBeenCalledOnce());
+      expect(onDraftChange).toHaveBeenCalledWith({ params: expect.objectContaining({ characters: [{ ...character, prompt: 'blue hair, sitting' }] }) });
+      expect(tag).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'role.png' }));
+      expect(onPromptChange).not.toHaveBeenCalled(); expect(onSelectImageSource).not.toHaveBeenCalled(); expect(onPasteImage).not.toHaveBeenCalled();
+    } finally { cleanup(); URL.createObjectURL = originalCreate; URL.revokeObjectURL = originalRevoke; }
+  });
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 角色正负提示词、定位及增删只修改当前模式参数', operation => {
     const character = { id: 'c1', prompt: 'girl, blue hair', negativePrompt: 'red hair', x: 0.25, y: 0.75 };
     const { onDraftChange } = renderControls(operation, false, false, false, { characters: [character], useCoords: true }, 'prompt');

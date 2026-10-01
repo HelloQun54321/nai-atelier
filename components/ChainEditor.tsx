@@ -2060,6 +2060,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
                         {/* Character Management (New V4.5) */}
                         <ChainEditorCharacters
+                            scopeKey={`${chain.id}:text-to-image`}
                             params={params}
                             setParams={setParams}
                             characters={params.characters || []}
@@ -2186,6 +2187,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             </div>
 
             </> : activeEditOperation && activeEditDraft ? <ImageEditPanel
+                key={chain.id}
                 generationData={imageEditPreviewItem ? { prompt: imageEditPreviewItem.prompt, negativePrompt: imageEditPreviewItem.negativePrompt, params: imageEditPreviewItem.params } : undefined}
                 baseImage={imageEditBaseImage}
                 baseImageVersion={imageEditBaseVersion}
