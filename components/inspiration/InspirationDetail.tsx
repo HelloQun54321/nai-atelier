@@ -191,7 +191,7 @@ export const InspirationDetail: React.FC<Props> = ({
         type: 'style',
         name: draft.title || '灵感风格串',
         description: draft.notes || `由灵感库“${draft.title}”创建`,
-        tags: draft.tags || [],
+        tags: [],
         previewImage: draft.imageUrl,
         basePrompt: draft.prompt || '',
         negativePrompt: draft.negativePrompt || '',

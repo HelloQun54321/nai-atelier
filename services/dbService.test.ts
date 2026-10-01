@@ -63,4 +63,17 @@ describe('dbService 会话级 blob: 封面防护', () => {
     const payload = apiMock.post.mock.calls[0][1];
     expect(payload.previewImage).toBeUndefined();
   });
+
+  it('旧标签读取、Fork 和信息保存共用过滤，不改写传入的自定义资料', async () => {
+    const source = makeChain({ tags: ['aitag', 'NAI', '待实测', '夜景'], previewImage: '/api/assets/cover.png' });
+    apiMock.get.mockResolvedValue([source]); apiMock.post.mockResolvedValue({ id: 'new' });
+    expect((await db.getAllChains())[0].tags).toEqual(['待实测', '夜景']);
+    await db.createChain('副本', '', source);
+    expect(apiMock.post.mock.calls[0][1].tags).toEqual(['待实测', '夜景']);
+    const updates = { tags: ['NAI', 'aitag', '新分类'] };
+    await db.updateChain('c1', updates);
+    expect(apiMock.put).toHaveBeenLastCalledWith('/chains/c1', { tags: ['新分类'] });
+    expect(updates.tags).toEqual(['NAI', 'aitag', '新分类']);
+    expect(source.tags).toEqual(['aitag', 'NAI', '待实测', '夜景']);
+  });
 });

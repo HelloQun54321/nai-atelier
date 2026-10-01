@@ -36,6 +36,71 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('风格串列表的酒馆筛选交互', () => {
+  it.each(['desktop', 'mobile'])('%s 自定义标签可组合模型与状态筛选，多选要求同时包含，选项不被结果缩掉', surface => {
+    const items = [
+      { ...chain('a', '夜景 A'), tags: ['aitag', 'NAI', '星空', '水面', '待实测'] },
+      { ...chain('b', '夜景 B'), tags: ['星空'] },
+      { ...chain('v5', '夜景 V5', 'nai-diffusion-5-full'), tags: ['星空', '水面'] },
+      { ...chain('role', '角色'), type: 'character' as const, tags: ['角色专用分类'] },
+    ];
+    render(React.createElement(ChainList, { ...props(), chains: items }));
+    fireEvent.click(screen.getByRole('button', { name: surface === 'desktop' ? '筛选' : '筛选与排序' }));
+    const filter = within(screen.getByRole('dialog', { name: '筛选与排序' }));
+    for (const tag of ['aitag', 'NAI', '待实测', '角色专用分类']) expect(filter.queryByRole('button', { name: tag })).toBeNull();
+    fireEvent.click(filter.getByRole('button', { name: '星空' }));
+    fireEvent.click(filter.getByRole('button', { name: '水面' }));
+    expect(screen.queryByText('夜景 B')).toBeNull();
+    expect(screen.getByText('夜景 A')).toBeTruthy(); expect(screen.getByText('夜景 V5')).toBeTruthy();
+    expect(filter.getByText('2 项筛选已启用')).toBeTruthy();
+    fireEvent.change(filter.getByRole('combobox', { name: '模型筛选' }), { target: { value: 'nai-diffusion-4-5-full' } });
+    fireEvent.click(filter.getByRole('button', { name: '只看待实测' }));
+    expect(screen.queryByText('夜景 V5')).toBeNull();
+    expect(filter.getByRole('button', { name: '水面' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(filter.getByRole('button', { name: '重置筛选' }));
+    expect(screen.getByText('夜景 B')).toBeTruthy();
+    expect(filter.getByRole('button', { name: '水面' }).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('卡片保存后立即出现自定义标签，删除最后一处标签后撤掉失效筛选', async () => {
+    const p = props();
+    const Harness = () => {
+      const [items, setItems] = React.useState([chain('a', '风格 A'), chain('b', '风格 B')]);
+      return React.createElement(ChainList, { ...p, chains: items, onUpdateChain: async (id, updates) => { setItems(current => current.map(item => item.id === id ? { ...item, ...updates } : item)); } });
+    };
+    render(React.createElement(Harness));
+    fireEvent.click(screen.getByRole('button', { name: '编辑风格串信息：风格 A' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '添加标签' }), { target: { value: '我的标签' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑风格串信息' })).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '筛选与排序' })).getByRole('button', { name: '我的标签' }));
+    expect(screen.queryByText('风格 B')).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: '编辑风格串信息：风格 A' }));
+    fireEvent.click(screen.getByRole('button', { name: '移除标签 我的标签' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑风格串信息' })).toBeNull());
+    expect(screen.getByText('风格 B')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    expect(screen.queryByRole('button', { name: '我的标签' })).toBeNull();
+    expect(screen.getByText('暂无自定义标签，可在卡片铅笔中添加')).toBeTruthy();
+  });
+
+  it('导入新增大量标签可搜索并滚动；标签减少后隐藏搜索不会残留不可见条件', () => {
+    const p = props();
+    const view = render(React.createElement(ChainList, { ...p, chains: [chain('a', '风格 A')] }));
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    view.rerender(React.createElement(ChainList, { ...p, chains: [{ ...chain('a', '风格 A'), tags: Array.from({ length: 15 }, (_, i) => `分类${i}`) }] }));
+    const filter = within(screen.getByRole('dialog', { name: '筛选与排序' }));
+    fireEvent.change(filter.getByRole('textbox', { name: '搜索自定义标签' }), { target: { value: '分类14' } });
+    expect(filter.queryByRole('button', { name: '分类0' })).toBeNull();
+    const tag = filter.getByRole('button', { name: '分类14' });
+    expect(tag.closest('.max-h-40')?.classList.contains('overflow-y-auto')).toBe(true);
+    view.rerender(React.createElement(ChainList, { ...p, chains: [{ ...chain('a', '风格 A'), tags: ['新的分类'] }] }));
+    expect(filter.queryByRole('textbox', { name: '搜索自定义标签' })).toBeNull();
+    expect(filter.getByRole('button', { name: '新的分类' })).toBeTruthy();
+  });
+
   it('卡片铅笔可独立改名，支持键盘聚焦与触屏，不会进入工作台或改写生成配置', async () => {
     const p = props(); render(React.createElement(ChainList, p));
     const edit = screen.getByRole('button', { name: '编辑风格串信息：风格 A' });
@@ -86,8 +151,9 @@ describe('风格串列表的酒馆筛选交互', () => {
     fireEvent.click(screen.getByRole('button', { name: surface === 'desktop' ? '筛选' : '筛选与排序' }));
     const dialog = screen.getByRole('dialog', { name: '筛选与排序' });
     const filter = within(dialog);
-    expect(filter.queryByText('标签')).toBeNull();
-    expect(filter.queryByRole('button', { name: '标签甲' })).toBeNull();
+    expect(filter.getByText('自定义标签')).toBeTruthy();
+    expect(filter.getByRole('button', { name: '标签甲' })).toBeTruthy();
+    expect(filter.queryByRole('button', { name: '待实测' })).toBeNull();
     expect(screen.getByText('共同 A')).toBeTruthy(); expect(screen.getByText('共同 B')).toBeTruthy();
     fireEvent.click(filter.getByRole('button', { name: '只看收藏' }));
     expect(screen.queryByText('共同 B')).toBeNull(); expect(screen.getByText('共同 V5')).toBeTruthy();

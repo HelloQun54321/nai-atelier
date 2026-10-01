@@ -71,12 +71,40 @@ describe('卡片信息编辑', () => {
   });
 
   it('角色信息沿用同一编辑器，移除标签后不会重复追加已有标签', async () => {
-    const p = callbacks(); render(<ChainInfoModal chain={{ ...chain, type: 'character', tags: ['待实测', '标签'] }} {...p} />);
-    fireEvent.click(screen.getByRole('button', { name: '移除标签 待实测' }));
+    const p = callbacks(); render(<ChainInfoModal chain={{ ...chain, type: 'character', tags: ['待实测', '删除我', '标签'] }} {...p} />);
+    expect(screen.queryByRole('button', { name: '移除标签 待实测' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '移除标签 删除我' }));
     fireEvent.change(screen.getByRole('textbox', { name: '添加标签' }), { target: { value: '标签' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
     await waitFor(() => expect(p.onClose).toHaveBeenCalledOnce());
-    expect(p.onSave).toHaveBeenCalledExactlyOnceWith(chain.id, { name: chain.name, description: chain.description, tags: ['标签'] });
+    expect(p.onSave).toHaveBeenCalledExactlyOnceWith(chain.id, { name: chain.name, description: chain.description, tags: ['待实测', '标签'] });
     expect(p.notify).toHaveBeenCalledWith('自定义角色信息已保存', 'success');
+  });
+
+  it('旧来源与类型标签不进入编辑，自定义标签正常保存，内部状态保留', async () => {
+    const p = callbacks();
+    render(<ChainInfoModal chain={{ ...chain, tags: ['aitag', 'NAI', '收集中', '待实测', '__character_catalog__', '个人分类'] }} {...p} />);
+    for (const tag of ['aitag', 'NAI', '收集中', '待实测', '__character_catalog__']) expect(screen.queryByRole('button', { name: `移除标签 ${tag}` })).toBeNull();
+    fireEvent.change(screen.getByRole('textbox', { name: '添加标签' }), { target: { value: '新分类' } });
+    fireEvent.keyDown(screen.getByRole('textbox', { name: '添加标签' }), { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(p.onClose).toHaveBeenCalledOnce());
+    expect(p.onSave.mock.calls[0][1].tags).toEqual(['待实测', '__character_catalog__', '个人分类', '新分类']);
+  });
+
+  it('阻止重新添加来源、图片类型或状态，中文输入确认不提前添加', async () => {
+    const p = callbacks(); render(<ChainInfoModal chain={chain} {...p} />);
+    const input = screen.getByRole('textbox', { name: '添加标签' });
+    fireEvent.change(input, { target: { value: 'NAI' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.queryByRole('button', { name: '移除标签 NAI' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(p.notify).toHaveBeenCalledWith('来源、图片类型和状态不用作自定义标签', 'error'));
+    expect(p.onSave).not.toHaveBeenCalled(); expect(p.onClose).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: '星空' } });
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(screen.queryByRole('button', { name: '移除标签 星空' })).toBeNull();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.getByRole('button', { name: '移除标签 星空' })).toBeTruthy();
   });
 });

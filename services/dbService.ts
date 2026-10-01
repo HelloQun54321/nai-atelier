@@ -1,6 +1,7 @@
 
 import { PromptChain, Artist, Inspiration, InspirationBoard, User, ChainType } from '../types';
 import { api } from './api';
+import { normalizeChainTags } from './chainTags';
 
 /**
  * blob: URL 只在创建它的页面会话内有效，落库后重启即失效。
@@ -9,8 +10,11 @@ import { api } from './api';
  */
 const isSessionOnlyUrl = (url: unknown): url is string => typeof url === 'string' && url.startsWith('blob:');
 
-const sanitizeChain = <T extends PromptChain>(chain: T): T =>
-  isSessionOnlyUrl(chain.previewImage) ? { ...chain, previewImage: undefined } : chain;
+const sanitizeChain = <T extends PromptChain>(chain: T): T => ({
+  ...chain,
+  tags: normalizeChainTags(chain.tags),
+  ...(isSessionOnlyUrl(chain.previewImage) ? { previewImage: undefined } : {}),
+});
 
 class DBService {
   // Personal-mode local owner metadata.
@@ -38,7 +42,7 @@ class DBService {
       // Copy variable values as well to preserve the subject
       payload.variableValues = copyFrom.variableValues;
       // Copy tags from the source chain
-      payload.tags = copyFrom.tags || [];
+      payload.tags = normalizeChainTags(copyFrom.tags);
     } else {
       // Create Default Modules for new chain
       payload.modules = [];
@@ -55,6 +59,7 @@ class DBService {
 
   async updateChain(id: string, updates: Partial<PromptChain>): Promise<void> {
     if (isSessionOnlyUrl(updates.previewImage)) delete updates.previewImage;
+    if (updates.tags !== undefined) updates = { ...updates, tags: normalizeChainTags(updates.tags) };
     await api.put(`/chains/${id}`, updates);
   }
 

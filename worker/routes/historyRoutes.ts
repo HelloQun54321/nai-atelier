@@ -4,6 +4,7 @@
 import { json, error, clampInt, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, type D1Database, type D1Result, type Env, type RouteContext } from './types';
 import { parseImageData, parseUploadedImage, exactArrayBuffer, ensureVibeSchema, ensureCharacterReferenceSchema } from './vibeRoutes';
 import { deleteR2File, processImageUpload } from './settingsRoutes';
+import { normalizeChainTags } from '../../services/chainTags';
 
 // 进程内标记：DDL 幂等但昂贵（1 CREATE TABLE + 16 ALTER + 3 INDEX），
 // 同一实例只在首个请求跑一次，不再每个灵感请求都重复约 20 条语句。
@@ -265,7 +266,7 @@ export async function handleAgentRoute(ctx: RouteContext): Promise<Response | nu
       const output: any = {};
       if (kind === 'all' || kind === 'chains') {
           const rows = await db.prepare(`SELECT id, type, name, description, tags, base_prompt, negative_prompt, variable_values, created_at, updated_at FROM chains ORDER BY updated_at DESC`).all<any>();
-          output.chains = rows.results.map((item: any) => ({ ...item, tags: parseStoredJson(item.tags, []), variableValues: parseStoredJson(item.variable_values, {}), basePrompt: item.base_prompt, negativePrompt: item.negative_prompt, createdAt: item.created_at, updatedAt: item.updated_at }));
+          output.chains = rows.results.map((item: any) => ({ ...item, tags: normalizeChainTags(parseStoredJson(item.tags, [])), variableValues: parseStoredJson(item.variable_values, {}), basePrompt: item.base_prompt, negativePrompt: item.negative_prompt, createdAt: item.created_at, updatedAt: item.updated_at }));
       }
       if (kind === 'all' || kind === 'inspirations') {
           const rows = await db.prepare(`SELECT id, title, prompt, negative_prompt, params, board_id, notes, tags, source_type, source_id, source_url, rating, is_pinned, archived, last_used_at, use_count, parent_id, analysis, created_at, updated_at FROM inspirations ORDER BY is_pinned DESC, created_at DESC`).all<any>();

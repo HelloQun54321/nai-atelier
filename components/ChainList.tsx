@@ -20,6 +20,7 @@ import { isStChatu8ExportableChain } from '../worker/stChatu8Policy.mjs';
 import { WisdomSyncToolbar } from './WisdomSyncToolbar';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ChainInfoModal, UpdateChainInfo } from './chain/ChainInfoModal';
+import { getCustomChainTags } from '../services/chainTags';
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -175,6 +176,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [newDesc, setNewDesc] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
+  const [tagSearch, setTagSearch] = useState('');
   const [copyModalChain, setCopyModalChain] = useState<PromptChain | null>(null);
   const [infoChain, setInfoChain] = useState<PromptChain | null>(null);
   const [sortOption, setSortOption] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
@@ -243,7 +246,24 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const runtime = useNaiRuntime();
   const modelFilterOptions = useMemo(() => getSelectableNaiModels(runtime), [runtime]);
 
-  // 按类型、名称、收藏、模型及待实测状态筛选。
+  // 从当前资料类型的完整列表生成选项，编辑／导入后即时更新，不被其他筛选缩掉。
+  const customTagOptions = useMemo(() => [...new Set(chains
+    .filter(chain => chain.type === type || (!chain.type && type === 'style'))
+    .flatMap(chain => getCustomChainTags(chain.tags)))].sort((a, b) => a.localeCompare(b, 'zh-CN')), [chains, type]);
+  useEffect(() => {
+    setSelectedTags(current => {
+      const next = new Set([...current].filter(tag => customTagOptions.includes(tag)));
+      return next.size === current.size ? current : next;
+    });
+  }, [customTagOptions]);
+  const visibleTagOptions = customTagOptions.filter(tag => customTagOptions.length <= 12 || tag.toLowerCase().includes(tagSearch.trim().toLowerCase()));
+  const toggleTag = (tag: string) => setSelectedTags(current => {
+    const next = new Set(current);
+    if (next.has(tag)) next.delete(tag); else next.add(tag);
+    return next;
+  });
+
+  // 自定义标签可组合筛选；待实测独立于用户分类。
   const filteredChains = useMemo(() => {
     return chains
       .filter(c =>
@@ -254,6 +274,11 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       .filter(c => !favOnly || favorites.has(c.id))
       .filter(c => !untestedOnly || isUntestedChain(c))
       .filter(c => !selectedModel || (c.params?.model?.trim() || DEFAULT_NAI_MODEL) === selectedModel)
+      .filter(c => {
+        if (selectedTags.size === 0) return true;
+        const tags = new Set(getCustomChainTags(c.tags));
+        return [...selectedTags].every(tag => tags.has(tag));
+      })
       .filter(c => syncSelection.accepts(c.id))
       .slice()
       .sort((a, b) => {
@@ -273,9 +298,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             return ub - ua;
         }
       });
-  }, [chains, type, searchTerm, favOnly, untestedOnly, favorites, selectedModel, sortOption, syncSelection.open, syncSelection.view, syncSelection.recordFilter, syncSelection.entries]);
+  }, [chains, type, searchTerm, favOnly, untestedOnly, favorites, selectedModel, selectedTags, sortOption, syncSelection.open, syncSelection.view, syncSelection.recordFilter, syncSelection.entries]);
 
-  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, untestedOnly, selectedModel, sortOption, syncSelection.view, syncSelection.recordFilter, syncSelection.open]);
+  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, untestedOnly, selectedModel, selectedTags, sortOption, syncSelection.view, syncSelection.recordFilter, syncSelection.open]);
   useEffect(() => {
     if (!returnTargetId) return;
     const targetIndex = filteredChains.findIndex(chain => chain.id === returnTargetId);
@@ -411,7 +436,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
   const title = type === 'character' ? '我的自定义角色' : '我的风格串';
   const createLabel = type === 'character' ? '新建自定义角色' : '新建风格串';
-  const filterCount = Number(Boolean(selectedModel)) + Number(favOnly) + Number(untestedOnly);
+  const filterCount = Number(Boolean(selectedModel)) + Number(favOnly) + Number(untestedOnly) + selectedTags.size;
   const filtersActive = filterCount > 0 || sortOption !== 'updated_desc';
   useLayoutEffect(() => {
     if (!showDesktopFilters) return;
@@ -435,7 +460,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     return () => { window.removeEventListener('resize', align); observer?.disconnect(); };
   }, [showDesktopFilters, filterCount, canSync, syncSelection.savedCount]);
   const resetFilters = () => {
-    setSelectedModel(''); setFavOnly(false); setUntestedOnly(false); setSortOption('updated_desc');
+    setSelectedModel(''); setFavOnly(false); setUntestedOnly(false); setSortOption('updated_desc'); setSelectedTags(new Set()); setTagSearch('');
   };
   // 桌面弹层与手机抽屉共享筛选内容，切换视图也保持同一份筛选状态。
   const filterContent = <div className="space-y-4">
@@ -447,6 +472,12 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     <div className="grid grid-cols-2 gap-2">
       <button type="button" aria-pressed={untestedOnly} onClick={() => setUntestedOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${untestedOnly ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><EyeOff className="h-4 w-4" />只看待实测</button>
       <button type="button" aria-pressed={favOnly} onClick={() => setFavOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${favOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} />只看收藏</button>
+    </div>
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-2"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">自定义标签</span>{selectedTags.size > 0 && <button type="button" onClick={() => setSelectedTags(new Set())} className="mobile-touch px-2 text-xs text-gray-500 dark:text-gray-400">清除标签筛选</button>}</div>
+      {customTagOptions.length > 12 && <input aria-label="搜索自定义标签" placeholder="搜索标签" value={tagSearch} onChange={event => setTagSearch(event.target.value)} className="mobile-touch mb-2 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-900 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" />}
+      {customTagOptions.length === 0 ? <p className="text-xs text-gray-400">暂无自定义标签，可在卡片铅笔中添加</p> : <div className="max-h-40 overflow-y-auto"><div className="flex flex-wrap gap-1.5">{visibleTagOptions.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => toggleTag(tag)} className={`mobile-touch max-w-full break-words rounded-full border px-3 py-1.5 text-xs ${selectedTags.has(tag) ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-transparent bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{tag}</button>)}</div>{visibleTagOptions.length === 0 && <p className="py-1 text-xs text-gray-400">没有匹配的标签</p>}</div>}
+      {selectedTags.size > 1 && <p className="mt-2 text-xs text-gray-400">同时包含所选标签</p>}
     </div>
   </div>;
 

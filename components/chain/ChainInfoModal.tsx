@@ -4,6 +4,7 @@ import type { PromptChain } from '../../types';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useModalA11y } from '../useModalA11y';
 import { IconButton, ToolbarButton } from '../DesignSystem';
+import { getCustomChainTags, isCustomChainTag, replaceCustomChainTags } from '../../services/chainTags';
 
 export type ChainInfoUpdate = Pick<PromptChain, 'name' | 'description' | 'tags'>;
 export type UpdateChainInfo = (id: string, updates: ChainInfoUpdate) => Promise<void> | void;
@@ -22,7 +23,7 @@ export const ChainInfoModal: React.FC<ChainInfoModalProps> = props => <ImagePrev
 const ChainInfoForm: React.FC<ChainInfoModalProps> = ({ chain, onSave, onClose, notify }) => {
   const [name, setName] = useState(chain.name);
   const [description, setDescription] = useState(chain.description);
-  const [tags, setTags] = useState([...(chain.tags || [])]);
+  const [tags, setTags] = useState(() => getCustomChainTags(chain.tags));
   const [newTag, setNewTag] = useState('');
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -46,6 +47,7 @@ const ChainInfoForm: React.FC<ChainInfoModalProps> = ({ chain, onSave, onClose, 
 
   const addTag = () => {
     const tag = newTag.trim();
+    if (tag && !isCustomChainTag(tag)) { notify('来源、图片类型和状态不用作自定义标签', 'error'); return; }
     if (tag && !tags.includes(tag)) setTags(previous => [...previous, tag]);
     setNewTag('');
   };
@@ -56,7 +58,8 @@ const ChainInfoForm: React.FC<ChainInfoModalProps> = ({ chain, onSave, onClose, 
     setSaving(true);
     try {
       const tag = newTag.trim();
-      await onSave(chain.id, { name: name.trim(), description, tags: tag && !tags.includes(tag) ? [...tags, tag] : tags });
+      if (tag && !isCustomChainTag(tag)) { notify('来源、图片类型和状态不用作自定义标签', 'error'); return; }
+      await onSave(chain.id, { name: name.trim(), description, tags: replaceCustomChainTags(chain.tags, tag && !tags.includes(tag) ? [...tags, tag] : tags) });
       notify(`${label}信息已保存`, 'success');
       onClose();
     } catch (error) {
@@ -73,7 +76,7 @@ const ChainInfoForm: React.FC<ChainInfoModalProps> = ({ chain, onSave, onClose, 
       <div className="mb-4 flex items-center justify-between gap-3"><h2 className="text-base font-bold text-gray-900 dark:text-white">编辑{label}信息</h2><IconButton label="关闭" disabled={saving} onClick={close}><X /></IconButton></div>
       <label className="block text-xs font-semibold text-gray-500">名称<input ref={nameRef} value={name} disabled={saving} onChange={event => setName(event.target.value)} className={fieldClass} /></label>
       <label className="mt-4 block text-xs font-semibold text-gray-500">描述<textarea value={description} disabled={saving} onChange={event => setDescription(event.target.value)} className={`${fieldClass} min-h-20 resize-y`} /></label>
-      <div className="mt-4 text-xs font-semibold text-gray-500">标签</div>
+      <div className="mt-4 text-xs font-semibold text-gray-500">自定义标签</div>
       <div className="mt-2 flex flex-wrap gap-1.5">{tags.map(tag => <span key={tag} className="flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">{tag}<button type="button" aria-label={`移除标签 ${tag}`} disabled={saving} onClick={() => setTags(previous => previous.filter(value => value !== tag))}><X className="h-3 w-3" /></button></span>)}</div>
       <input aria-label="添加标签" value={newTag} disabled={saving} onChange={event => setNewTag(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); addTag(); } }} placeholder="添加标签，回车确认" className={fieldClass} />
       <div className="mt-5 flex justify-end gap-2"><ToolbarButton disabled={saving} onClick={close}>取消</ToolbarButton><ToolbarButton type="submit" disabled={saving || !name.trim()} className="!border-emerald-300 !bg-emerald-50 !text-emerald-600 dark:!border-emerald-900 dark:!bg-emerald-950/40 dark:!text-emerald-300">{saving ? '保存中…' : '保存'}</ToolbarButton></div>

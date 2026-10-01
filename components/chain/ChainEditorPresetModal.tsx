@@ -2,7 +2,8 @@ import React from 'react';
 import { Info } from 'lucide-react';
 import { PromptChain } from '../../types';
 import { LabPresetImportOptions } from '../../services/labModeTools';
-import { CloseButton, isInternalChainTag } from '../DesignSystem';
+import { CloseButton } from '../DesignSystem';
+import { getCustomChainTags } from '../../services/chainTags';
 import { SmartImage } from '../SmartImage';
 
 export interface ChainEditorPresetModalProps {
@@ -117,7 +118,7 @@ export const ChainEditorPresetModal: React.FC<ChainEditorPresetModalProps> = ({
                           const filteredForTags = allChains.filter(c => (importTab === 'character' ? c.type === 'character' : (c.type === 'style' || !c.type)));
                           const allModalTags = Array.from(
                             new Set(
-                              filteredForTags.flatMap(chain => chain.tags || []).filter(tag => !isInternalChainTag(tag))
+                              filteredForTags.flatMap(chain => getCustomChainTags(chain.tags))
                             )
                           ).sort();
 
@@ -129,7 +130,7 @@ export const ChainEditorPresetModal: React.FC<ChainEditorPresetModalProps> = ({
                             )
                             .filter(c => {
                               if (importModalSelectedTags.size === 0) return true;
-                              const chainTagSet = new Set(c.tags || []);
+                              const chainTagSet = new Set(getCustomChainTags(c.tags));
                               return Array.from(importModalSelectedTags).every(tag => chainTagSet.has(tag));
                             })
                             .sort((a, b) => {

@@ -3,6 +3,7 @@
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
 import { LAN_ACCESS_COOKIE } from '../sharedWhitelist.mjs';
 import { MEDIA_VARIANTS, validateMediaSource } from '../mediaValidation';
+import { normalizeChainTags } from '../../services/chainTags';
 import { json, error, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, type D1Database, type Env, type RouteContext } from './types';
 
 const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
@@ -651,7 +652,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     }
     const data = chainsResult.results.map((c: any) => ({
       id: c.id, userId: c.user_id, username: c.username, type: c.type || 'style', name: c.name, description: c.description,
-      tags: parseStoredJson(c.tags, []), previewImage: c.preview_image, base_prompt: c.base_prompt, // raw DB column needed? No, mapping below
+      tags: normalizeChainTags(parseStoredJson(c.tags, [])), previewImage: c.preview_image, base_prompt: c.base_prompt, // raw DB column needed? No, mapping below
       basePrompt: c.base_prompt,
       negativePrompt: c.negative_prompt, modules: parseStoredJson(c.modules, []), params: parseChainParams(c.params),
       variableValues: parseStoredJson(c.variable_values, {}), guestHidden: c.guest_hidden === 1, createdAt: c.created_at, updatedAt: c.updated_at
@@ -664,14 +665,8 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     const id = crypto.randomUUID();
     const type = body.type || 'style'; // Default to style
     const guestHidden = body.guestHidden ? 1 : 0;
-    // Sanitize and validate tags
-    let tags = '[]';
-    if (Array.isArray(body.tags)) {
-      const sanitizedTags = (body.tags as unknown[])
-        .map(tag => typeof tag === 'string' ? tag.trim().substring(0, 50) : '')
-        .filter(tag => tag.length > 0);
-      tags = JSON.stringify(sanitizedTags);
-    }
+    const tags = JSON.stringify(normalizeChainTags(Array.isArray(body.tags)
+      ? body.tags.map((tag: unknown) => typeof tag === 'string' ? tag.trim().substring(0, 50) : '') : []));
     const paramsToStore = JSON.stringify({ ...DEFAULT_CHAIN_PARAMS, ...(body.params && typeof body.params === 'object' ? body.params : {}) });
     try {
       await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, String(body.name || ''), String(body.description || ''), tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', paramsToStore, body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, Date.now(), Date.now()).run();
@@ -698,7 +693,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
       type: chain.type || 'style',
       name: chain.name,
       description: chain.description,
-      tags: parseStoredJson(chain.tags, []),
+      tags: normalizeChainTags(parseStoredJson(chain.tags, [])),
       previewImage: chain.preview_image,
       basePrompt: chain.base_prompt || '',
       negativePrompt: chain.negative_prompt || '',
@@ -743,7 +738,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     if (updates.modules !== undefined) { fields.push('modules = ?'); values.push(JSON.stringify(updates.modules)); }
     if (updates.params !== undefined) { fields.push('params = ?'); values.push(JSON.stringify(updates.params)); }
     if (updates.variableValues !== undefined) { fields.push('variable_values = ?'); values.push(JSON.stringify(updates.variableValues)); }
-    if (updates.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(updates.tags)); }
+    if (updates.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(normalizeChainTags(updates.tags))); }
     if (updates.guestHidden !== undefined) { fields.push('guest_hidden = ?'); values.push(updates.guestHidden ? 1 : 0); }
     if (fields.length > 0) {
       fields.push('updated_at = ?');
