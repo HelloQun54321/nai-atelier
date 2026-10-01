@@ -6,6 +6,7 @@ import { createLabImageEditDraft } from '../services/labWorkspace';
 import { DEFAULT_LAB_PAGE_LAYOUTS } from '../services/appearancePreferences';
 import { ImageEditPanel } from './ImageEditPanel';
 import { extractMetadata } from '../services/metadataService';
+import { getCopiedImageData } from '../services/imageClipboardContext';
 
 vi.mock('./ImageEditControls', () => ({
   ImageEditControls: (props: React.ComponentProps<typeof import('./ImageEditControls').ImageEditControls>) => React.createElement('div', null,
@@ -20,6 +21,7 @@ vi.mock('./ImageEditPreview', () => ({
 }));
 
 vi.mock('../services/metadataService', async importOriginal => ({ ...await importOriginal<typeof import('../services/metadataService')>(), extractMetadata: vi.fn(async () => null) }));
+vi.mock('../services/imageClipboardContext', () => ({ getCopiedImageData: vi.fn(async () => undefined) }));
 
 const params = {
   width: 832,
@@ -71,7 +73,7 @@ describe('ImageEditPanel 图片粘贴', () => {
     expect(document.activeElement).toBe(textarea);
   });
 
-  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 按钮只替换底图，不导入图片中的生成参数', async operation => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 无生成信息的图片只替换底图，不覆盖配置', async operation => {
     const close = vi.fn();
     vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close })));
     const getType = vi.fn(async () => new Blob(['synthetic'], { type: 'image/png' }));
@@ -80,10 +82,40 @@ describe('ImageEditPanel 图片粘贴', () => {
     render(React.createElement(ImageEditPanel, props));
     fireEvent.click(screen.getByRole('button', { name: '粘贴' }));
     await waitFor(() => expect(props.onBaseImageChange).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/^data:image\/png;base64,/), 'clipboard'));
-    expect(extractMetadata).not.toHaveBeenCalled();
+    expect(extractMetadata).toHaveBeenCalledTimes(1);
     expect(props.onPromptChange).not.toHaveBeenCalled();
     expect(props.onDraftChange).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 粘贴图片带入完整角色正负词与坐标，包括空全局文本', async operation => {
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+    vi.mocked(extractMetadata).mockResolvedValueOnce(JSON.stringify({ prompt: '', uc: '',
+      v4_prompt: { caption: { base_caption: '', char_captions: [{ char_caption: 'girl, blue hair', centers: [{ x: 0.3, y: 0.7 }] }] }, use_coords: true },
+      v4_negative_prompt: { caption: { base_caption: '', char_captions: [{ char_caption: 'red hair' }] } },
+    }));
+    mockClipboard(async () => [{ types: ['image/png'], getType: async () => new Blob(['synthetic'], { type: 'image/png' }) }]);
+    const props = panelProps(operation);
+    render(React.createElement(ImageEditPanel, props));
+    fireEvent.click(screen.getByRole('button', { name: '粘贴' }));
+    await waitFor(() => expect(props.onBaseImageChange).toHaveBeenCalledWith(expect.any(String), 'clipboard', undefined, {
+      prompt: '', negativePrompt: '', params: expect.objectContaining({ useCoords: true,
+        characters: [expect.objectContaining({ prompt: 'girl, blue hair', negativePrompt: 'red hair', x: 0.3, y: 0.7 })] }),
+    }));
+  });
+
+  it.each(['button', 'keyboard'])('%s 粘贴使用与图片匹配的工坊复制配置，不依赖已被清洗的元数据', async entry => {
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+    const meta = { prompt: 'history scene', negativePrompt: '', params: { ...params, characters: [{ id: 'source-role', prompt: 'history role', x: 0.2, y: 0.8 }] } };
+    vi.mocked(getCopiedImageData).mockResolvedValueOnce(meta);
+    const file = new File(['synthetic'], 'copy.png', { type: 'image/png' });
+    mockClipboard(async () => [{ types: ['image/png'], getType: async () => file }]);
+    const props = panelProps('outpaint');
+    const { container } = render(React.createElement(ImageEditPanel, props));
+    if (entry === 'button') fireEvent.click(screen.getByRole('button', { name: '粘贴' }));
+    else fireEvent.paste(container.querySelector('[data-image-edit-drop-zone]')!, { clipboardData: { files: [file], items: [] } });
+    await waitFor(() => expect(props.onBaseImageChange).toHaveBeenCalledWith(expect.any(String), 'clipboard', undefined, meta));
+    expect(extractMetadata).not.toHaveBeenCalled();
   });
 
   it('键盘粘贴接收图片，而提示词粘贴与普通文字不被劫持', async () => {

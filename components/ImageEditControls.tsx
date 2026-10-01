@@ -212,7 +212,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
             <button disabled={isBusy || !latestTextToImageItem} type="button" onClick={() => latestTextToImageItem && onSelectImageSource(latestTextToImageItem, 'generated')} className="flex h-10 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-gray-300 bg-white px-1 text-xs sm:gap-2 sm:px-3 font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" title={latestTextToImageItem ? '使用文生图最近一次生成结果' : '当前没有可用的文生图结果'}><Images className="h-4 w-4" />文生图最新</button>
             <button disabled={isBusy} type="button" onClick={onPasteImage} className="flex h-10 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-gray-300 bg-white px-1 text-xs sm:gap-2 sm:px-3 font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" title="粘贴剪贴板图片，也可在编辑区按 Ctrl+V"><ClipboardPaste className="h-4 w-4" />粘贴</button>
           </div>
-          <div className="mt-2 text-meta text-gray-500 dark:text-gray-400">在历史、灵感库或其他模式复制图片后，可直接粘贴或在编辑区按 Ctrl+V；粘贴保留当前提示词与参数。</div>
+          <div className="mt-2 text-meta text-gray-500 dark:text-gray-400">可直接粘贴或在编辑区按 Ctrl+V；图片携带的全局及角色提示词、参数会一并带入，没有生成信息时保留当前配置。</div>
           {operation === 'image-to-image' ? <>
             {baseImagePreview ? (
               <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">

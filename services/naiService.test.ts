@@ -65,6 +65,23 @@ const lastCharacterPayload = (stream: boolean) => (stream
   : vi.mocked(api.postBinaryDetailed).mock.calls.at(-1)![1]) as CharacterPayload;
 
 describe('编辑模式完整角色请求与历史坐标', () => {
+  it.each([false, true])('扩图 stream=%s 发给接口的是当前文字；删除全局、角色及关闭预设后确实全空', async stream => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
+    const cleared = { ...params, qualityToggle: false, qualityPresetId: 'none', ucPreset: 4, ucPresetId: 'none', characters: [] };
+    const generate = stream ? generateImageEditStream : generateImageEdit;
+    const edit = { operation: 'outpaint' as const, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 1, noise: 0 };
+    await generate('test-key', 'new landscape', 'new negative', { ...cleared, characters }, edit);
+    const before = (stream ? vi.mocked(api.postSse) : vi.mocked(api.postBinaryDetailed)).mock.calls.at(-1)![1] as { input: string; parameters: Record<string, any> };
+    expect(before.input).toBe('new landscape');
+    expect(before.parameters.v4_prompt.caption.base_caption).toBe('new landscape');
+    expect(before.parameters.v4_prompt.caption.char_captions).toHaveLength(2);
+    await generate('test-key', '', '', cleared, edit);
+    const after = (stream ? vi.mocked(api.postSse) : vi.mocked(api.postBinaryDetailed)).mock.calls.at(-1)![1] as { input: string; parameters: Record<string, any> };
+    expect(after.input).toBe('');
+    expect(after.parameters.negative_prompt).toBe('');
+    expect(after.parameters.v4_prompt.caption).toEqual({ base_caption: '', char_captions: [] });
+    expect(after.parameters.v4_negative_prompt.caption).toEqual({ base_caption: '', char_captions: [] });
+  });
   it.each(['nai-diffusion-4-full', 'nai-diffusion-4-5-full', 'nai-diffusion-5-full'])('%s 三种编辑模式普通／流式保留角色正负词及自动构图', async model => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
     const original = { ...params, model, characters, useCoords: false };

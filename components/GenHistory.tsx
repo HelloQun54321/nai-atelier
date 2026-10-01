@@ -161,7 +161,7 @@ const HistoryCard = React.memo(function HistoryCard({
                     ) : (
                         <FavoriteButton overlay active={Boolean(item.isFavorite)} className="!h-11 !w-11 md:!h-8 md:!w-8" onClick={e => onFavorite(item, e)} />
                     )}
-                    <ImageShareActions imageUrl={item.imageUrl} filename={getDownloadFilename(item.createdAt)} notify={notify} variant="card" className={`flex-col ${HISTORY_CARD_HOVER_ACTIONS}`} />
+                    <ImageShareActions imageUrl={item.imageUrl} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} filename={getDownloadFilename(item.createdAt)} notify={notify} variant="card" className={`flex-col ${HISTORY_CARD_HOVER_ACTIONS}`} />
                 </div>}
                 {!selectionMode && <div className={`absolute left-2 top-2 z-10 ${HISTORY_CARD_HOVER_ACTIONS}`} onPointerDown={event => event.stopPropagation()}>
                     <button type="button" onClick={e => onDelete(item, e)} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8" aria-label="删除历史图片" title="删除">
@@ -1213,7 +1213,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                         </ToolbarButton>
                                     </div>
                                 </div>
-                                <ImageShareActions imageUrl={lightbox.imageUrl} filename={getDownloadFilename(lightbox.createdAt)} notify={notify} />
+                                <ImageShareActions imageUrl={lightbox.imageUrl} generationData={{ prompt: lightbox.prompt, negativePrompt: lightbox.negativePrompt, params: lightbox.params }} filename={getDownloadFilename(lightbox.createdAt)} notify={notify} />
                                 <ToolbarButton tone="danger" className="mobile-touch w-full md:hidden" onClick={event => void handleDelete(lightbox.id, event)}>删除这张历史图片</ToolbarButton>
                             </div>
                         </div>

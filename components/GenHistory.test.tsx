@@ -82,7 +82,7 @@ describe('历史缩略图就地操作', () => {
             act(() => setCleanSharedImages(clean));
             const copy = within(cards[1]).getByRole('button', { name: '复制' });
             fireEvent.pointerDown(copy); fireEvent.click(copy);
-            await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(items[1].imageUrl, clean));
+            await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(items[1].imageUrl, clean, { prompt: items[1].prompt, negativePrompt: items[1].negativePrompt, params: items[1].params }));
             const download = within(cards[0]).getByRole('button', { name: '下载' });
             fireEvent.pointerDown(download); fireEvent.click(download);
             await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(items[0].imageUrl, 'NAI-2026-10-02-02-30-01.png', clean));
@@ -127,7 +127,7 @@ describe('历史缩略图就地操作', () => {
         fireEvent.click(within(cards[0]).getByRole('button', { name: '收藏' }));
         expect(within(cards[0]).getByRole('status', { name: '正在更新收藏' })).toBeTruthy();
         fireEvent.click(within(cards[0]).getByRole('button', { name: '复制' }));
-        await waitFor(() => expect(copySharedImage).toHaveBeenCalledWith(items[0].imageUrl, false));
+        await waitFor(() => expect(copySharedImage).toHaveBeenCalledWith(items[0].imageUrl, false, { prompt: items[0].prompt, negativePrompt: items[0].negativePrompt, params: items[0].params }));
         await act(async () => resolveFavorite(1));
         expect(within(cards[0]).getByRole('button', { name: '取消收藏' })).toBeTruthy();
     });

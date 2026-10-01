@@ -5,6 +5,7 @@ import { OriginalImage } from './SmartImage';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 import { isCloudQueueTaskActive } from '../services/cloudQueue';
 import { ImagePreviewActions } from './ImagePreviewActions';
+import type { ImageGenerationData } from '../services/imageClipboardContext';
 
 interface ChainEditorPreviewProps {
     isGenerating: boolean;
@@ -18,6 +19,7 @@ interface ChainEditorPreviewProps {
     handleSavePreview: () => void;
     handleUploadCover: (e: React.ChangeEvent<HTMLInputElement>) => void;
     getDownloadFilename: () => string;
+    generationData?: ImageGenerationData;
     hideCoverActions?: boolean;
     canNavigateHistory?: boolean;
     historyLabel?: string;
@@ -51,6 +53,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     handleSavePreview,
     handleUploadCover,
     getDownloadFilename,
+    generationData,
     hideCoverActions,
     canNavigateHistory = false,
     historyLabel,
@@ -146,6 +149,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                     <ImagePreviewActions
                         imageUrl={generatedImage || previewImage}
                         filename={getDownloadFilename()}
+                        generationData={generationData}
                         notify={notify}
                         canManageHistoryGroup={Boolean(generatedImage && canManageHistoryGroup)}
                         onRemoveCurrentHistory={onRemoveCurrentHistory}

@@ -13,6 +13,17 @@ beforeEach(() => { localStorage.clear(); vi.mocked(copySharedImage).mockReset().
 afterEach(() => { cleanup(); });
 
 describe('共用图片分享操作', () => {
+  it('复制带入当前图片的生成快照，下载仍只输出图片并跟随清洗设置', async () => {
+    const generationData = { prompt: 'source scene', negativePrompt: '', params: { width: 832, height: 1216, steps: 23, scale: 5, sampler: 'k_euler_ancestral',
+      characters: [{ id: 'source', prompt: 'blue hair', x: 0.2, y: 0.8 }] } };
+    setCleanSharedImages(true);
+    render(React.createElement(ImageShareActions, { imageUrl: '/source.png', filename: 'source.png', generationData }));
+    fireEvent.click(screen.getByRole('button', { name: '复制' }));
+    await waitFor(() => expect(copySharedImage).toHaveBeenCalledWith('/source.png', true, generationData));
+    await waitFor(() => expect((screen.getByRole('button', { name: '下载' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: '下载' }));
+    await waitFor(() => expect(downloadSharedImage).toHaveBeenCalledWith('/source.png', 'source.png', true));
+  });
   it.each(['overlay', 'toolbar', 'compact', 'card'] as const)('%s 始终仅两个按钮，复制和下载都跟随设置', async variant => {
     const parentClick = vi.fn();
     const parentPointerDown = vi.fn();

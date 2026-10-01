@@ -656,7 +656,7 @@ export const InspirationDetail: React.FC<Props> = ({
 
               {/* 分享副本与显式原图下载 */}
               <div className="flex flex-none items-center">
-                <ImageShareActions imageUrl={draft.imageUrl} filename={`${draft.title || 'inspiration'}.png`} notify={notify} variant="compact" />
+                <ImageShareActions imageUrl={draft.imageUrl} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} filename={`${draft.title || 'inspiration'}.png`} notify={notify} variant="compact" />
               </div>
             </div>
           </footer>

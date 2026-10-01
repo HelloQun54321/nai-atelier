@@ -71,6 +71,8 @@ vi.mock('./ImageEditPanel', () => ({ ImageEditPanel: (props: ImageEditPanelProps
   <button onClick={() => { void props.onBaseImageChange('data:image/png;base64,cGFzdGVk', 'clipboard', 'old-parent'); }}>粘贴合成底图</button>
   <button onClick={() => { void props.onBaseImageChange('data:image/png;base64,AQID', 'upload', undefined, { prompt: '', negativePrompt: '', params: { ...props.draft.params, characters: [{ id: 'imported', prompt: 'imported character', x: 0.2, y: 0.8 }] } }); }}>上传分角色底图</button>
   <button onClick={() => props.onDraftChange({ params: { ...props.draft.params, characters: [{ id: 'edited', prompt: 'edited character', negativePrompt: 'edited negative', x: 0.3, y: 0.7 }], useCoords: true } })}>修改编辑角色</button>
+  <button onClick={() => { void props.onBaseImageChange('data:image/png;base64,AQID', 'clipboard', undefined, { prompt: 'copied scene', negativePrompt: 'copied negative', params: { ...props.draft.params, characters: [{ id: 'copied', prompt: 'copied role', negativePrompt: 'copied role negative', x: 0.2, y: 0.8 }] } }); }}>粘贴分角色底图</button>
+  <button onClick={() => props.onDraftChange({ params: { ...props.draft.params, characters: [] } })}>清空编辑角色</button>
   <button onClick={() => { void props.onGenerate({ operation: props.operation, image: 'data:image/png;base64,AQID', canvasWidth: 832, canvasHeight: 1216, strength: 1, noise: 0, prompt: props.draft.prompt, negativePrompt: props.draft.negativePrompt, promptSource: props.draft.promptSource }); }}>生成合成编辑</button>
 </section> }));
 
@@ -106,6 +108,29 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('统一工作台真实状态链路', () => {
+  it('历史复制配置进入扩图；删除全局及角色后生成入口收到空内容，不补回文生图旧词', async () => {
+    sessionStorage.setItem('nai_api_key', 'synthetic-key');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]))));
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+    state.generate.mockRejectedValue(new Error('合成测试主动终止'));
+    setup();
+    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await switchTo('扩图');
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '粘贴分角色底图' })));
+    await waitFor(() => expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe('copied scene'));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成编辑' })));
+    await waitFor(() => expect(state.generate).toHaveBeenCalledTimes(1));
+    expect(state.generate.mock.calls[0].slice(1, 3)).toEqual(['copied scene', 'copied negative']);
+    expect(state.generate.mock.calls[0][3].characters[0]).toMatchObject({ prompt: 'copied role', negativePrompt: 'copied role negative' });
+    fireEvent.change(screen.getByLabelText('编辑提示词'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('编辑负面词'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: '清空编辑角色' }));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成编辑' })));
+    await waitFor(() => expect(state.generate).toHaveBeenCalledTimes(2));
+    expect(state.generate.mock.calls.at(-1)?.slice(1, 3)).toEqual(['', '']);
+    expect(state.generate.mock.calls.at(-1)?.[3].characters).toEqual([]);
+    expect(loadLabWorkspaceSession(chain.id, fallback()).textToImage.basePrompt).toBe('saved style');
+  });
   it.each([['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('%s 继承并保存角色模块，生成不清空，其他模式保持独立', async (operation, label) => {
     const character = { id: 'original', prompt: 'original character', negativePrompt: 'original negative', x: 0.5, y: 0.5 };
     const entry = { ...chain, params: { ...chain.params, characters: [character], useCoords: true } };

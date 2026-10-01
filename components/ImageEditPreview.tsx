@@ -1,6 +1,7 @@
 import React from 'react';
 import { ImageEditOperation } from '../types';
 import { ChainEditorPreview } from './ChainEditorPreview';
+import type { ImageGenerationData } from '../services/imageClipboardContext';
 
 interface ImageEditPreviewProps {
   operation: ImageEditOperation;
@@ -15,6 +16,7 @@ interface ImageEditPreviewProps {
   onGenerate: () => void;
   onOpenLightbox: (image: string | null) => void;
   getDownloadFilename: () => string;
+  generationData?: ImageGenerationData;
   canNavigateHistory?: boolean;
   historyLabel?: string;
   onPreviousHistory?: () => void;
@@ -29,7 +31,7 @@ const getOperationLabel = (operation: ImageEditOperation) => operation === 'imag
 export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
   operation, image, error, generationCostLabel, isGenerating = false, generationProgress, isLoading = false,
   canGenerate, generationDisabled,
-  onGenerate, onOpenLightbox, getDownloadFilename, canNavigateHistory, historyLabel, onPreviousHistory, onNextHistory,
+  onGenerate, onOpenLightbox, getDownloadFilename, generationData, canNavigateHistory, historyLabel, onPreviousHistory, onNextHistory,
   canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup,
 }) => {
   const isGenerationDisabled = generationDisabled !== undefined
@@ -51,6 +53,7 @@ export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
         handleSavePreview={() => undefined}
         handleUploadCover={() => undefined}
         getDownloadFilename={getDownloadFilename}
+        generationData={generationData}
         hideCoverActions
         canNavigateHistory={canNavigateHistory}
         historyLabel={historyLabel}

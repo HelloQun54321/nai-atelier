@@ -4,6 +4,7 @@ import { LabPageLayout } from '../services/appearancePreferences';
 import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, transformCharacterCoordinatesForImageRect, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions } from '../services/imageEdit';
 import { extractMetadata, parseNovelAIMetadata } from '../services/metadataService';
 import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
+import { getCopiedImageData, type ImageGenerationData } from '../services/imageClipboardContext';
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPreview } from './ImageEditPreview';
 import { useLowConsumption } from '../services/lowConsumption';
@@ -55,6 +56,7 @@ interface ImageEditPanelProps {
   latestTextToImageItem?: LocalGenItem;
   onOpenLightbox: (image: string | null) => void;
   getDownloadFilename: () => string;
+  generationData?: ImageGenerationData;
   canNavigateHistory?: boolean;
   historyLabel?: string;
   onPreviousHistory?: () => void;
@@ -114,6 +116,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   latestTextToImageItem,
   onOpenLightbox,
   getDownloadFilename,
+  generationData,
   canNavigateHistory,
   historyLabel,
   onPreviousHistory,
@@ -689,9 +692,9 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         reader.readAsDataURL(file);
       });
       if (!isCurrent()) return;
-      let extractedMeta: { prompt?: string; negativePrompt?: string; params?: import('../types').NAIParams } | undefined;
-      // 复制的像素不等于导入生成配置；粘贴始终保留当前模式的提示词与参数。
-      if (source === 'upload') {
+      let extractedMeta: ImageGenerationData | undefined = source === 'clipboard' ? await getCopiedImageData(file) : undefined;
+      // 项目内复制优先读取与实际像素匹配的配置；外部图片和上传共用元数据解析。
+      if (!extractedMeta) {
         try {
           const rawMeta = await extractMetadata(file);
           if (rawMeta) {
@@ -1092,6 +1095,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           generationProgress={generationProgress}
           onOpenLightbox={onOpenLightbox}
           getDownloadFilename={getDownloadFilename}
+          generationData={generationData}
           canNavigateHistory={canNavigateHistory}
           historyLabel={historyLabel}
           onPreviousHistory={onPreviousHistory}

@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Copy, Download, LoaderCircle } from 'lucide-react';
 import { copySharedImage, downloadSharedImage, useCleanSharedImages } from '../services/imageSharing';
+import type { ImageGenerationData } from '../services/imageClipboardContext';
 
 interface Props {
   imageUrl: string;
@@ -8,10 +9,11 @@ interface Props {
   notify?: (message: string, type?: 'success' | 'error') => void;
   variant?: 'overlay' | 'toolbar' | 'compact' | 'card';
   className?: string;
+  generationData?: ImageGenerationData;
 }
 
 /** 各页面仅提供复制和下载，是否清洗统一由设置决定。 */
-export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify, variant = 'toolbar', className = '' }) => {
+export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify, variant = 'toolbar', className = '', generationData }) => {
   const clean = useCleanSharedImages();
   const busyRef = useRef(false);
   const [busy, setBusy] = useState('');
@@ -23,7 +25,8 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
     setError('');
     try {
       if (action === 'copy') {
-        await copySharedImage(imageUrl, clean);
+        if (generationData) await copySharedImage(imageUrl, clean, generationData);
+        else await copySharedImage(imageUrl, clean);
         notify?.('已复制图片', 'success');
       } else {
         await downloadSharedImage(imageUrl, filename, clean);

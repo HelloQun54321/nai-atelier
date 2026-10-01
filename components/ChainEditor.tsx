@@ -295,6 +295,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const latestTextToImageItem = previewHistory.find(item => !item.edit);
     const selectedPreviewItem = previewMode === 'history' ? previewHistory[previewIndex] || null : null;
     const displayedPreviewImage = selectedPreviewItem?.imageUrl || generatedImage;
+    const displayedPreviewItem = previewHistory.find(item => item.imageUrl === displayedPreviewImage);
     // 移动端浮动圆圈：编辑模式显示最近一次编辑结果（底图已移入左侧「底图与导入」），文生图沿用最近生成结果
     const mobileFloatingPreviewImage = activeEditOperation
         ? imageEditPreviewImage
@@ -2156,6 +2157,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 {/* Right Panel - Preview (Testing) - Extracted Component */}
                 <div className="chain-editor-preview-wrapper hidden min-h-0 flex-1 lg:contents">
                 <ChainEditorPreview
+                    generationData={displayedPreviewItem ? { prompt: displayedPreviewItem.prompt, negativePrompt: displayedPreviewItem.negativePrompt, params: displayedPreviewItem.params } : undefined}
                     isGenerating={isGenerating}
                     handleGenerate={handleGenerate}
                     errorMsg={errorMsg}
@@ -2184,6 +2186,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             </div>
 
             </> : activeEditOperation && activeEditDraft ? <ImageEditPanel
+                generationData={imageEditPreviewItem ? { prompt: imageEditPreviewItem.prompt, negativePrompt: imageEditPreviewItem.negativePrompt, params: imageEditPreviewItem.params } : undefined}
                 baseImage={imageEditBaseImage}
                 baseImageVersion={imageEditBaseVersion}
                 previewImage={imageEditPreviewImage}
@@ -2340,6 +2343,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 <div role="dialog" aria-modal="true" aria-label="图片预览" className="fixed inset-0 z-[1500] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setLightboxImg(null)}>
                     <ImagePreviewActions
                         imageUrl={lightboxImg}
+                        generationData={lightboxItem ? { prompt: lightboxItem.prompt, negativePrompt: lightboxItem.negativePrompt, params: lightboxItem.params } : undefined}
                         filename={getDownloadFilename()}
                         notify={notify}
                         canManageHistoryGroup={Boolean(lightboxItem)}

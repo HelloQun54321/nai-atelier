@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { beginImageClipboardCopy, rememberCopiedImage, type ImageGenerationData } from './imageClipboardContext';
 
 export const IMAGE_SHARING_STORAGE_KEY = 'nai_clean_shared_images';
 const CHANGE_EVENT = 'nai-image-sharing-changed';
@@ -131,14 +132,15 @@ const convertToPng = async (blob: Blob): Promise<Blob> => {
   } finally { bitmap.close(); }
 };
 
-const prepareImage = async (source: string, clean: boolean, pngRequired: boolean) => {
-  const original = await readImage(source);
+const prepareImageBlob = async (original: Blob, clean: boolean, pngRequired: boolean) => {
   if (!clean && !pngRequired) return original;
   const png = await convertToPng(original);
   if (!clean) return png.type === 'image/png' ? png : new Blob([await png.arrayBuffer()], { type: 'image/png' });
   const cleaned = await cleanPngForSharing(new Uint8Array(await png.arrayBuffer()));
   return new Blob([cleaned.slice().buffer], { type: 'image/png' });
 };
+
+const prepareImage = async (source: string, clean: boolean, pngRequired: boolean) => prepareImageBlob(await readImage(source), clean, pngRequired);
 
 export const imageSharingFilename = (filename: string, blob: Blob, clean: boolean) => {
   const extension = blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/webp' ? 'webp' : 'png';
@@ -161,15 +163,18 @@ export const downloadSharedImage = async (source: string, filename: string, clea
   }
 };
 
-export const copySharedImage = async (source: string, clean = getCleanSharedImages()) => {
+export const copySharedImage = async (source: string, clean = getCleanSharedImages(), data?: ImageGenerationData) => {
   if (window.isSecureContext === false || !navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
     throw new Error('当前浏览器无法复制图片，请使用电脑 localhost／HTTPS 打开，或下载后发送');
   }
   // 同步提交 ClipboardItem，异步读取图片留在 Promise 内，保留 Safari 的点击授权。
-  const png = prepareImage(source, clean, true);
+  const copyRevision = beginImageClipboardCopy();
+  const original = readImage(source);
+  const png = original.then(blob => prepareImageBlob(blob, clean, true));
   void png.catch(() => {}); // 浏览器拒绝剪贴板时仍接住尚未完成的图片读取错误。
   try {
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+    await rememberCopiedImage(copyRevision, await png, await original, data);
   } catch (error) {
     if (error instanceof DOMException && error.name === 'NotAllowedError') throw new Error('浏览器未允许复制图片，请允许剪贴板访问后重试，或下载后发送');
     throw error;
