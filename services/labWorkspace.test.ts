@@ -49,6 +49,27 @@ describe('lab workspace session', () => {
     expect(loadLabWorkspaceSession('chain-b', fallback).textToImage.basePrompt).toBe('style');
   });
 
+  it('扩图保留本轮原图、已应用尺寸与待调整尺寸，旧画布不重复套用扩展', () => {
+    const fallback = createLabWorkspaceSession('', '', '', params, {});
+    const applied = { top: 128, bottom: 192, left: 0, right: 0 };
+    const pending = { ...applied, bottom: 256 };
+    const session = { ...fallback, edits: { ...fallback.edits, outpaint: {
+      ...fallback.edits.outpaint, baseImageRef: 'original', maskRef: 'mask',
+      expansion: pending, appliedExpansion: applied, outpaintRatioId: 'custom',
+    } } };
+    saveLabWorkspaceSession('new-outpaint', session);
+    expect(loadLabWorkspaceSession('new-outpaint', fallback).edits.outpaint).toMatchObject({
+      baseImageRef: 'original', maskRef: 'mask', expansion: pending, appliedExpansion: applied, outpaintRatioId: 'custom',
+    });
+    // 旧草稿已经把白边存入 base；只消除过期计划，不裁剪底图、不丢弃蒙版。
+    saveLabWorkspaceSession('old-outpaint', { ...session, edits: { ...session.edits, outpaint: {
+      ...session.edits.outpaint, appliedExpansion: undefined, outpaintRatioId: undefined,
+    } } });
+    expect(loadLabWorkspaceSession('old-outpaint', fallback).edits.outpaint).toMatchObject({
+      baseImageRef: 'original', maskRef: 'mask', expansion: { top: 0, bottom: 0, left: 0, right: 0 }, outpaintRatioId: 'custom',
+    });
+  });
+
   it('所有工作台入口均恢复各自模式，新工作台默认文生图', () => {
     const session = { ...createLabWorkspaceSession('style', '', '', params, {}), activeMode: 'outpaint' as const };
     for (const key of ['playground', 'style-chain', 'character-chain']) {

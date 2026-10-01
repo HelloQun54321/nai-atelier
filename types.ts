@@ -180,7 +180,10 @@ export interface LabImageEditDraft {
   focused: boolean;
   /** Focused Inpainting 的官方上下文像素值（32–96，旧版 0–1 值会在读取时转换）。 */
   minimumContextArea: number;
-  expansion: ImageEditCanvasExpansion;
+    expansion: ImageEditCanvasExpansion;
+    /** 待调整的扩展量与已应用画布分开保存；baseImageRef 始终指向本轮原图。 */
+    appliedExpansion?: ImageEditCanvasExpansion;
+    outpaintRatioId?: string;
   focusedRect?: { x: number; y: number; width: number; height: number };
   promptSource: 'current' | 'style-only' | 'history' | 'custom';
   /** 最近一次生成结果的工作区资产引用；历史导航不得覆盖它。 */

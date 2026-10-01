@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem } from '../types';
 import { LabPageLayout } from '../services/appearancePreferences';
-import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, limitFocusedImageEditRect, normalizeMinimumContextArea, validateImageEditDimensions } from '../services/imageEdit';
+import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, validateImageEditDimensions } from '../services/imageEdit';
 import { extractMetadata, parseNovelAIMetadata } from '../services/metadataService';
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPreview } from './ImageEditPreview';
@@ -47,7 +47,7 @@ interface ImageEditPanelProps {
   onPromptSource: (source: LabImageEditDraft['promptSource']) => void;
   onDraftChange: (patch: Partial<LabImageEditDraft> & { maskData?: string }) => void;
   onBaseImageChange: (dataUrl: string, source: 'generated' | 'history' | 'upload' | 'inspiration', parentHistoryId?: string, meta?: { prompt?: string; negativePrompt?: string; params?: import('../types').NAIParams }) => void;
-  onCanvasChange: (imageData: string, maskData?: string) => void;
+  onCanvasChange: (imageData: string, maskData?: string) => void | Promise<void>;
   onGenerate: (request: ImageEditRequest) => Promise<void>;
   latestTextToImageItem?: LocalGenItem;
   onOpenLightbox: (image: string | null) => void;
@@ -60,7 +60,7 @@ interface ImageEditPanelProps {
   onRemoveCurrentHistory?: () => void;
   onClearHistoryGroup?: () => void;
   /** 移动端悬浮生成栏状态变更回调：父组件据此驱动右下角悬浮胶囊按钮（每次渲染都会回调，内容不变时父组件自行去重）。 */
-  onGenerateBarChange?: (bar: { generate: () => void; costLabel: string; canGenerate: boolean }) => void;
+  onGenerateBarChange?: (bar: { generate: () => void; costLabel: string; canGenerate: boolean; unavailableLabel?: string }) => void;
 }
 
 type MaskSnapshot = {
@@ -133,6 +133,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const lastAppliedMaskRef = useRef<string | undefined>(undefined);
   const focusedSelectionArmedRef = useRef(!draft.focusedRect);
   const inFlightRef = useRef(false);
+  const applyingOutpaintRef = useRef(false);
   const focusedInteractionRef = useRef<{ mode: 'move' | 'resize'; point: { x: number; y: number }; rect: { x: number; y: number; width: number; height: number } } | null>(null);
   const imageLoadRevisionRef = useRef(0);
   const maskRestoreRevisionRef = useRef(0);
@@ -143,6 +144,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   // 卸载时释放撤销/重做栈中残留的位图快照，避免组件销毁后 GPU 位图泄漏
   useEffect(() => {
     return () => {
+      imageLoadRevisionRef.current += 1;
       undoRef.current.forEach(releaseSnapshotBitmap);
       redoRef.current.forEach(releaseSnapshotBitmap);
     };
@@ -160,6 +162,8 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [tool, setTool] = useState<'brush' | 'eraser'>('brush');
   const [manualMaskEditing, setManualMaskEditing] = useState(false);
   const [expansion, setExpansion] = useState<ImageEditCanvasExpansion>(draft.expansion || emptyExpansion);
+  const [sourceSize, setSourceSize] = useState({ width: 0, height: 0 });
+  const [isApplyingOutpaint, setIsApplyingOutpaint] = useState(false);
   const [state, setState] = useState<ImageEditPanelState>({ width: 0, height: 0, focusedRect: draft.focusedRect || null });
   const [normalization, setNormalization] = useState<ImageEditNormalizationState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -172,7 +176,8 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const maskEditable = !safeMode && (operation === 'inpaint' || (operation === 'outpaint' && manualMaskEditing));
   // 隐藏画布挂载即存在；只有真正载入底图（width/height 有效）且未在加载时才允许生成，
   // 否则无底图时也会点亮生成按钮，点击后才报尺寸错误。
-  const canGenerate = !isLoading && !isGenerating && state.width > 0 && state.height > 0 && Boolean(imageCanvasRef.current) && (operation === 'image-to-image' || Boolean(maskCanvasRef.current))
+  const pendingOutpaint = operation === 'outpaint' && !isSameOutpaintExpansion(expansion, draft.appliedExpansion || emptyExpansion);
+  const canGenerate = !isLoading && !isGenerating && !isApplyingOutpaint && !pendingOutpaint && state.width > 0 && state.height > 0 && Boolean(imageCanvasRef.current) && (operation === 'image-to-image' || Boolean(maskCanvasRef.current))
     && (!lowConsumption.enabled || operation === 'inpaint');
 
   // 每次渲染同步移动端悬浮生成栏入口，保证 ChainEditor 拿到的费用标签与预览卡一致；
@@ -183,6 +188,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       generate: () => { void submit(); },
       costLabel: generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea }),
       canGenerate,
+      unavailableLabel: pendingOutpaint ? '请先应用画布扩展' : isApplyingOutpaint || isLoading ? '画布加载中…' : '请先选择底图',
     });
   });
 
@@ -298,6 +304,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     const restoredMaskData = operation === 'image-to-image' ? undefined : restore.maskData;
     const restoredFocusedRect = operation === 'inpaint' ? restore.focusedRect || null : null;
     setIsLoading(true);
+    setIsApplyingOutpaint(false);
     setError(null);
     try {
       const bitmap = await createImageBitmap(await dataUrlToBlob(source));
@@ -306,13 +313,19 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         bitmap.close();
         return;
       }
-      imageCanvas.width = bitmap.width;
-      imageCanvas.height = bitmap.height;
+      const originalSize = { width: bitmap.width, height: bitmap.height };
+      const expanded = operation === 'outpaint' && draft.appliedExpansion
+        ? await createOutpaintCanvas(await dataUrlToBlob(source), draft.appliedExpansion)
+        : undefined;
+      if (loadRevision !== imageLoadRevisionRef.current) { bitmap.close(); return; }
+      setSourceSize(originalSize);
+      imageCanvas.width = expanded?.width || bitmap.width;
+      imageCanvas.height = expanded?.height || bitmap.height;
       const context = imageCanvas.getContext('2d');
       if (!context) throw new Error('无法创建图片画布');
-      context.drawImage(bitmap, 0, 0);
-      const dimensionError = validateImageEditDimensions(bitmap.width, bitmap.height);
-      const normalizationTarget = getImageEditNormalizationTarget(bitmap.width, bitmap.height);
+      context.drawImage(expanded?.image || bitmap, 0, 0);
+      const dimensionError = validateImageEditDimensions(imageCanvas.width, imageCanvas.height);
+      const normalizationTarget = getImageEditNormalizationTarget(imageCanvas.width, imageCanvas.height);
       bitmap.close();
       setNormalization(dimensionError ? { sourceWidth: imageCanvas.width, sourceHeight: imageCanvas.height, targetWidth: normalizationTarget.width, targetHeight: normalizationTarget.height } : null);
       focusedRectRef.current = restoredFocusedRect;
@@ -320,7 +333,9 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       // 图生图无蒙版画布：跳过蒙版重置与恢复，避免触碰不存在的 canvas
       if (operation !== 'image-to-image') {
         resetMask(imageCanvas.width, imageCanvas.height);
+        if (expanded) maskCanvasRef.current?.getContext('2d')?.drawImage(expanded.mask, 0, 0);
         restoreMask(restoredMaskData, loadRevision);
+        renderOverlay();
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '底图读取失败');
@@ -342,7 +357,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
 
   useEffect(() => {
     if (baseImage) void loadBaseImage(baseImage);
-  }, [baseImage, operation, draft.baseImageRef]);
+  }, [baseImage, operation, draft.baseImageRef, manualMaskEditing]);
 
   useEffect(() => {
     if (operation === 'image-to-image' || !maskData || maskData === lastAppliedMaskRef.current || drawingRef.current || selectingRef.current) return;
@@ -723,10 +738,16 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
 
   const applyOutpaint = async () => {
     const imageCanvas = imageCanvasRef.current;
-    if (!imageCanvas || !state.width || !state.height) return;
+    if (!baseImage || !imageCanvas || !state.width || !state.height || applyingOutpaintRef.current || isLoading || isGenerating || !pendingOutpaint) return;
+    applyingOutpaintRef.current = true;
+    setIsApplyingOutpaint(true);
+    const revision = imageLoadRevisionRef.current;
+    const appliedExpansion = { ...expansion };
     try {
+      // 每次都从本轮原图重建；上一轮白边永远不能变成下一次扩展的底图。
+      const result = await createOutpaintCanvas(await dataUrlToBlob(baseImage), appliedExpansion);
+      if (revision !== imageLoadRevisionRef.current) return;
       maskRestoreRevisionRef.current += 1;
-      const result = await createOutpaintCanvas(await dataUrlToBlob(canvasToDataUrl(imageCanvas)), expansion);
       const imageContext = imageCanvas.getContext('2d');
       if (!imageContext) return;
       imageCanvas.width = result.width;
@@ -744,14 +765,21 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       focusedRectRef.current = null;
       setState({ width: result.width, height: result.height, focusedRect: null });
       renderOverlay();
-      onCanvasChange(canvasToDataUrl(imageCanvas), canvasToDataUrl(mask));
+      const nextMaskData = canvasToDataUrl(mask);
+      lastAppliedMaskRef.current = nextMaskData;
+      await onCanvasChange(baseImage, nextMaskData);
+      if (revision !== imageLoadRevisionRef.current) return;
       onDraftChange({
-        maskData: canvasToDataUrl(mask),
+        maskData: nextMaskData,
         focusedRect: undefined,
-        expansion,
+        expansion: appliedExpansion,
+        appliedExpansion,
       });
     } catch (applyError) {
       setError(applyError instanceof Error ? applyError.message : '扩图尺寸无效');
+    } finally {
+      applyingOutpaintRef.current = false;
+      if (revision === imageLoadRevisionRef.current) setIsApplyingOutpaint(false);
     }
   };
 
@@ -820,11 +848,15 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     const imageData = canvasToDataUrl(imageCanvas);
     const maskData = maskCanvas ? canvasToDataUrl(maskCanvas) : undefined;
     onCanvasChange(imageData, maskData);
-    onDraftChange({ maskData, focusedRect: focusedRectRef.current || undefined });
+    onDraftChange({ maskData, focusedRect: focusedRectRef.current || undefined,
+      ...(operation === 'outpaint' ? { expansion: { ...emptyExpansion }, appliedExpansion: undefined, outpaintRatioId: 'custom' } : {}),
+    });
     notify(`已将底图规范化为 ${targetWidth} × ${targetHeight}`, 'success');
   };
 
   const submit = async () => {
+    if (isApplyingOutpaint || applyingOutpaintRef.current || isLoading) return;
+    if (pendingOutpaint) { setError('画布扩展已调整，请先应用后再生成'); return; }
     if (inFlightRef.current || isGenerating) return;
     if (lowConsumption.enabled && operation !== 'inpaint') return;
     const imageCanvas = imageCanvasRef.current;
@@ -866,7 +898,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       noise,
       focused: focused && operation === 'inpaint',
       minimumContextArea: focused && operation === 'inpaint' ? minimumContextArea : undefined,
-      expansion: operation === 'outpaint' ? expansion : undefined,
+      expansion: operation === 'outpaint' ? draft.appliedExpansion || emptyExpansion : undefined,
       focusedRect: focused && operation === 'inpaint' ? state.focusedRect || undefined : undefined,
       prompt: draft.prompt,
       negativePrompt: draft.negativePrompt,
@@ -944,7 +976,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           tool={tool}
           manualMaskEditing={manualMaskEditing}
           expansion={expansion}
-          isBusy={isLoading || isGenerating}
+          isBusy={isLoading || isGenerating || isApplyingOutpaint}
           safeMode={safeMode}
           tagAssistEnabled={tagAssistEnabled}
           apiKey={apiKey}
@@ -971,6 +1003,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           onUndo={undo}
           onRedo={redo}
           onExpansionChange={value => { setExpansion(value); onDraftChange({ expansion: value }); }}
+          outpaintSourceSize={sourceSize}
           onApplyOutpaint={() => { void applyOutpaint(); }}
           onResetFocusedRect={resetFocusedRect}
           normalization={normalization}

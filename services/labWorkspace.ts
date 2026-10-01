@@ -67,6 +67,7 @@ export const createLabImageEditDraft = (
   focused: false,
   minimumContextArea: 64,
   expansion: { ...emptyExpansion },
+  outpaintRatioId: operation === 'outpaint' ? '16:9' : undefined,
   promptSource: 'current',
   ...patch,
 });
@@ -116,7 +117,12 @@ const normalizeSession = (value: unknown, fallback: LabWorkspaceSession): LabWor
       ...Object.fromEntries((Object.keys(fallback.edits) as ImageEditOperation[]).map(operation => [
         operation,
         isEditDraft(source.edits?.[operation])
-        ? { ...fallback.edits[operation], ...source.edits[operation], minimumContextArea: normalizeMinimumContextArea(source.edits[operation]!.minimumContextArea), params: cloneParams(source.edits[operation]!.params), expansion: { ...emptyExpansion, ...(source.edits[operation]!.expansion || {}) } }
+        ? { ...fallback.edits[operation], ...source.edits[operation], minimumContextArea: normalizeMinimumContextArea(source.edits[operation]!.minimumContextArea), params: cloneParams(source.edits[operation]!.params),
+            // 旧草稿把补白后的画布存成底图，无法可靠反推原图；保留其底图／蒙版，清空过期扩展计划。
+            expansion: operation === 'outpaint' && source.edits[operation]!.baseImageRef && !source.edits[operation]!.appliedExpansion
+              ? { ...emptyExpansion } : { ...emptyExpansion, ...(source.edits[operation]!.expansion || {}) },
+            outpaintRatioId: source.edits[operation]!.outpaintRatioId || (source.edits[operation]!.baseImageRef ? 'custom' : '16:9'),
+          }
           : fallback.edits[operation],
       ])),
     },

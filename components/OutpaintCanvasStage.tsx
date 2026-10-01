@@ -37,23 +37,28 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
   const srcW = Math.max(64, Math.floor(Number(sourceWidth) || 1024));
   const srcH = Math.max(64, Math.floor(Number(sourceHeight) || 1024));
 
-  const currentPreset = OUTPAINT_RATIO_PRESETS.find(p => p.id === selectedRatioId) || OUTPAINT_RATIO_PRESETS[0];
-  const targetRatio = currentPreset.widthRatio / currentPreset.heightRatio;
+  const currentPreset = OUTPAINT_RATIO_PRESETS.find(p => p.id === selectedRatioId);
 
   // 基础目标尺寸（居中扩充）
-  const baseExpansion = calculateOutpaintTargetExpansion(srcW, srcH, currentPreset.widthRatio, currentPreset.heightRatio, 'center');
-  const targetW = srcW + baseExpansion.left + baseExpansion.right;
-  const targetH = srcH + baseExpansion.top + baseExpansion.bottom;
+  const baseExpansion = currentPreset ? calculateOutpaintTargetExpansion(srcW, srcH, currentPreset.widthRatio, currentPreset.heightRatio, 'center') : expansion;
+  // 模拟外框与拖拽坐标都取实际扩展量，手动数值不能继续套用比例预设的外框。
+  const targetW = srcW + expansion.left + expansion.right;
+  const targetH = srcH + expansion.top + expansion.bottom;
+  const targetRatio = targetW / targetH;
 
-  const deltaW = Math.max(0, targetW - srcW);
-  const deltaH = Math.max(0, targetH - srcH);
+  const deltaW = expansion.left + expansion.right;
+  const deltaH = expansion.top + expansion.bottom;
+  const presetDeltaW = baseExpansion.left + baseExpansion.right;
+  const presetDeltaH = baseExpansion.top + baseExpansion.bottom;
 
   // 当选择新比例或底图尺寸变动时，若当前 expansion 与目标差值不一致，立即自动计算并填充
   useEffect(() => {
-    if (!sourceWidth || !sourceHeight) return;
+    if (!sourceWidth || !sourceHeight || !currentPreset) return;
     const currentDw = (expansion.left || 0) + (expansion.right || 0);
     const currentDh = (expansion.top || 0) + (expansion.bottom || 0);
-    if (currentDw !== deltaW || currentDh !== deltaH) {
+    if (currentDw !== presetDeltaW || currentDh !== presetDeltaH) {
+      const deltaW = presetDeltaW;
+      const deltaH = presetDeltaH;
       let nextLeft = 0;
       if (deltaW > 0) {
         if (expansion.left + expansion.right > 0) {
@@ -79,7 +84,7 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
         left: nextLeft,
       });
     }
-  }, [selectedRatioId, sourceWidth, sourceHeight, deltaW, deltaH]);
+  }, [selectedRatioId, sourceWidth, sourceHeight, presetDeltaW, presetDeltaH]);
 
   // 动态测量外框容器，确保舞台无论何种比例都能等比居中渲染
   const [stageDimensions, setStageDimensions] = useState<{ width: number; height: number }>({ width: 320, height: 200 });
@@ -214,7 +219,7 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
       <div>
         <div className="mb-1.5 flex items-center justify-between">
           <span className="text-meta font-semibold text-gray-700 dark:text-gray-300">目标画幅比例（画布外框）</span>
-          <span className="text-micro text-gray-400">输出：{targetW} × {targetH} px ({currentPreset.ratio})</span>
+          <span className="text-micro text-gray-400">输出：{targetW} × {targetH} px ({currentPreset?.ratio || '自定义'})</span>
         </div>
         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
           {OUTPAINT_RATIO_PRESETS.map(preset => {
@@ -260,7 +265,7 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
             className="relative cursor-pointer select-none touch-none overflow-hidden rounded-lg border-2 border-dashed border-indigo-500/80 bg-white/95 shadow-md dark:border-indigo-400/70 dark:bg-gray-900"
           >
             {/* 网格斜纹提示 AI 扩图区域 */}
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(#6366f1_1.2px,transparent_1.2px)] [background-size:12px_12px] opacity-20" />
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(var(--nai-accent)_1.2px,transparent_1.2px)] [background-size:12px_12px] opacity-20" />
 
             {/* 四周扩展数值标签 */}
             {expansion.top > 0 && (

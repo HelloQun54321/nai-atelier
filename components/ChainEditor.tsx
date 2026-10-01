@@ -212,10 +212,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => loadLabWorkspaceSession(workspaceKey, workspaceFallback));
     const [imageEditMaskData, setImageEditMaskData] = useState<string | undefined>();
   const imageEditGenerateFnRef = useRef<(() => void) | null>(null);
-  const [imageEditGenerateBar, setImageEditGenerateBar] = useState<{ costLabel: string; canGenerate: boolean } | null>(null);
-  const handleImageEditGenerateBarChange = React.useCallback((bar: { generate: () => void; costLabel: string; canGenerate: boolean }) => {
+  const [imageEditGenerateBar, setImageEditGenerateBar] = useState<{ costLabel: string; canGenerate: boolean; unavailableLabel?: string } | null>(null);
+  const handleImageEditGenerateBarChange = React.useCallback((bar: { generate: () => void; costLabel: string; canGenerate: boolean; unavailableLabel?: string }) => {
     imageEditGenerateFnRef.current = bar.generate;
-    setImageEditGenerateBar(previous => previous && previous.costLabel === bar.costLabel && previous.canGenerate === bar.canGenerate ? previous : { costLabel: bar.costLabel, canGenerate: bar.canGenerate });
+    setImageEditGenerateBar(previous => previous && previous.costLabel === bar.costLabel && previous.canGenerate === bar.canGenerate && previous.unavailableLabel === bar.unavailableLabel ? previous : { costLabel: bar.costLabel, canGenerate: bar.canGenerate, unavailableLabel: bar.unavailableLabel });
   }, []);
     const [imageEditBaseLoading, setImageEditBaseLoading] = useState(false);
     const maskSaveRevisionRef = useRef(0);
@@ -747,7 +747,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             noise: editMetadata?.noise ?? 0,
             focused: operation === 'inpaint' && Boolean(editMetadata?.focused),
             minimumContextArea: editMetadata?.minimumContextArea ?? editMetadata?.contextArea ?? 64,
-            expansion: editMetadata?.canvasExpansion || { top: 0, right: 0, bottom: 0, left: 0 },
+            // 载入的生成结果已经是完整图片，上一轮扩展量不能再套在新底图上。
+            expansion: { top: 0, right: 0, bottom: 0, left: 0 },
+            outpaintRatioId: operation === 'outpaint' ? 'custom' : undefined,
             focusedRect: editMetadata?.focusedArea,
         });
         let restoredMask: string | undefined;
@@ -2236,8 +2238,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onBaseImageChange={(dataUrl, source, parentHistoryId, meta) => {
                     void (async () => {
                         cancelPendingMaskSave();
+                        const changeRevision = ++editBaseResolveRevisionRef.current;
                         const ref = await dataUrlToWorkspaceAsset(dataUrl, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'base'));
+                        if (changeRevision !== editBaseResolveRevisionRef.current || !mountedRef.current) return;
                         await deleteLabWorkspaceAsset(getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'mask'));
+                        if (changeRevision !== editBaseResolveRevisionRef.current || !mountedRef.current) return;
 
                         let inheritedPrompt = activeEditDraft.prompt;
                         let inheritedNegative = activeEditDraft.negativePrompt;
@@ -2271,6 +2276,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             parentHistoryId: (source === 'upload' || source === 'inspiration') ? undefined : parentHistoryId,
                             maskRef: undefined,
                             maskData: undefined,
+                            expansion: { top: 0, right: 0, bottom: 0, left: 0 },
+                            appliedExpansion: undefined,
+                            outpaintRatioId: '16:9',
                             focusedRect: undefined,
                             resultImageRef: undefined,
                             prompt: inheritedPrompt,
@@ -2286,6 +2294,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         // 换底图后右侧等待新结果；底图在左侧展示
                         setImageEditPreviewImage(null);
                         setImageEditMaskData(undefined);
+                        setImageEditBaseLoading(false);
                         if (parentHistoryId && source === 'history') {
                             const selectedIndex = previewHistory.findIndex(item => item.id === parentHistoryId);
                             if (selectedIndex >= 0) {
@@ -2295,23 +2304,23 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         }
                     })();
                 }}
-                onCanvasChange={(imageData, maskData) => {
-                    void (async () => {
-                        cancelPendingMaskSave();
-                        const [baseRef, maskRef] = await Promise.all([
-                            dataUrlToWorkspaceAsset(imageData, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'base')),
-                            maskData ? dataUrlToWorkspaceAsset(maskData, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'mask')) : Promise.resolve(undefined),
-                        ]);
-                        // 画布扩展/规范化改变画布尺寸：旧结果不再有效，作废
-                        const previousResultRef = activeEditDraft.resultImageRef;
-                        updateEditDraft(activeEditOperation, { baseImageRef: baseRef, maskRef, resultImageRef: undefined });
-                        if (previousResultRef) {
-                            void deleteLabWorkspaceAsset(previousResultRef).catch(error => console.warn('删除编辑结果资产失败:', error));
-                        }
-                        setImageEditBaseImage(imageData);
-                        setImageEditPreviewImage(null);
-                        setImageEditMaskData(maskData);
-                    })();
+                onCanvasChange={async (imageData, maskData) => {
+                    cancelPendingMaskSave();
+                    const changeRevision = editBaseResolveRevisionRef.current;
+                    const [baseRef, maskRef] = await Promise.all([
+                        dataUrlToWorkspaceAsset(imageData, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'base')),
+                        maskData ? dataUrlToWorkspaceAsset(maskData, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'mask')) : Promise.resolve(undefined),
+                    ]);
+                    if (changeRevision !== editBaseResolveRevisionRef.current || !mountedRef.current) return;
+                    // 画布扩展/规范化改变画布尺寸：旧结果不再有效，作废
+                    const previousResultRef = activeEditDraft.resultImageRef;
+                    updateEditDraft(activeEditOperation, { baseImageRef: baseRef, maskRef, resultImageRef: undefined });
+                    if (previousResultRef) {
+                        void deleteLabWorkspaceAsset(previousResultRef).catch(error => console.warn('删除编辑结果资产失败:', error));
+                    }
+                    setImageEditBaseImage(imageData);
+                    setImageEditPreviewImage(null);
+                    setImageEditMaskData(maskData);
                 }}
                 onGenerate={handleImageEditGenerate}
                 onGenerateBarChange={handleImageEditGenerateBarChange}
@@ -2322,7 +2331,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 {mobileFloatingPreviewImage && <button type="button" onClick={() => setLightboxImg(mobileFloatingPreviewImage)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-800" aria-label="查看当前预览图"><SmartImage src={mobileFloatingPreviewImage || ''} alt="当前预览图" /></button>}
                 <div className="flex flex-col items-end gap-2">
                     {queueStatus && <InlineCloudQueueStatus compact className="min-w-64 max-w-[calc(100vw-5rem)]" />}
-                    {!isCloudQueueTaskActive(queueStatus) && <button onClick={activeEditOperation ? () => imageEditGenerateFnRef.current?.() : handleGenerate} disabled={isGenerating || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canGenerate)} className={`generation-action-button mobile-touch rounded-full px-6 text-sm font-bold text-white shadow-xl disabled:opacity-60 ${isGenerating ? 'generation-action-button--loading' : ''}`}><span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : activeEditOperation && !imageEditGenerateBar?.canGenerate ? '请先选择底图' : `生成 · ${activeEditOperation ? imageEditGenerateBar?.costLabel ?? '' : generationCostLabel}`}</span></button>}
+                    {!isCloudQueueTaskActive(queueStatus) && <button onClick={activeEditOperation ? () => imageEditGenerateFnRef.current?.() : handleGenerate} disabled={isGenerating || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canGenerate)} className={`generation-action-button mobile-touch rounded-full px-6 text-sm font-bold text-white shadow-xl disabled:opacity-60 ${isGenerating ? 'generation-action-button--loading' : ''}`}><span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : activeEditOperation && !imageEditGenerateBar?.canGenerate ? imageEditGenerateBar?.unavailableLabel || '请先选择底图' : `生成 · ${activeEditOperation ? imageEditGenerateBar?.costLabel ?? '' : generationCostLabel}`}</span></button>}
                 </div>
             </div>}
 

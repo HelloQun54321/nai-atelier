@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.8.2-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.8.3-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -396,8 +396,9 @@ flowchart LR
 #### 4. 扩图（Outpainting）：无缝延展画面边界
 
 - **四向自由扩展画布**：支持在底图的上下左右四个方向自由设定扩展像素；
-- **智能规整与回贴**：点击「应用画布扩展」后，系统自动将画布尺寸补齐规整为 64 的整倍数并对齐免费面积规格；
-- 使用 Inpainting 填补外延区域；扩图蒙版内完整使用生成结果，保留区沿用羽化过渡，避免把画布白色补底混回接缝形成亮线。普通重绘与 Focused 重绘保留原有合成规则。
+- **基于原图更新画布**：点击「应用画布扩展」始终从本轮原图重建，重复点击不会叠加补白；改比例、摆放或四边数值后先应用再生成，模拟外框、请求与历史尺寸一致。切模式／重新进入恢复已应用画布，只有主动选用生成结果作为底图才进入下一轮扩图。旧草稿保留其现有底图和蒙版，不猜测裁剪原图。
+- 使用 Inpainting 填补外延区域，并在有扩展的一侧向原图内重绘 **32px 接缝**，降低新增区与原图的硬分界；未扩展的边不额外加入重绘区。蒙版内完整使用生成结果，保留区沿用羽化过渡，画面主体保留；可开启「手动调整蒙版」微调。普通重绘与 Focused 重绘保留原有规则。
+- 从历史／灵感载入底图时，默认仍保留当前提示词与参数；要自然延续原场景，应勾选「同时导入该图参数」，再调整本次扩展内容。32px 接缝处理能改善衔接，但模型生成仍可能有纹理或构图差异。
 
 #### 5. 编辑模式状态隔离与移动端专属交互
 

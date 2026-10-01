@@ -25,6 +25,8 @@ export const normalizeMinimumContextArea = (value: number | undefined) => {
 
 export const IMAGE_EDIT_FOCUSED_MAX_SELECTION_AREA = 589_824;
 export const IMAGE_EDIT_TARGET_AREA = 1_048_576;
+/** 扩图仅在有新增区域的一侧，向原图内留出少量接缝重绘空间。 */
+export const OUTPAINT_SEAM_OVERLAP = 32;
 
 export interface ImageEditRect {
   x: number;
@@ -32,6 +34,15 @@ export interface ImageEditRect {
   width: number;
   height: number;
 }
+
+export const getOutpaintPreservedRect = (width: number, height: number, expansion: ImageEditCanvasExpansion): ImageEditRect => {
+  const insetLeft = expansion.left > 0 ? Math.min(OUTPAINT_SEAM_OVERLAP, width) : 0;
+  const insetRight = expansion.right > 0 ? Math.min(OUTPAINT_SEAM_OVERLAP, width - insetLeft) : 0;
+  const insetTop = expansion.top > 0 ? Math.min(OUTPAINT_SEAM_OVERLAP, height) : 0;
+  const insetBottom = expansion.bottom > 0 ? Math.min(OUTPAINT_SEAM_OVERLAP, height - insetTop) : 0;
+  return { x: expansion.left + insetLeft, y: expansion.top + insetTop,
+    width: width - insetLeft - insetRight, height: height - insetTop - insetBottom };
+};
 
 export interface ImageEditFocusedGeometry {
   crop: ImageEditRect;
@@ -110,6 +121,9 @@ export const OUTPAINT_RATIO_PRESETS: OutpaintRatioOption[] = [
   { id: '2:3', label: '2:3 官方经典写真', ratio: '2:3', widthRatio: 2, heightRatio: 3 },
   { id: '3:2', label: '3:2 官方经典横图', ratio: '3:2', widthRatio: 3, heightRatio: 2 },
 ];
+
+export const isSameOutpaintExpansion = (left: ImageEditCanvasExpansion, right: ImageEditCanvasExpansion) =>
+  (['top', 'right', 'bottom', 'left'] as const).every(side => left[side] === right[side]);
 
 /**
  * 根据源图尺寸、目标比例与九向锚点，智能计算各方向所需的 expansion 像素量（保证最终新画布为 64 的整数倍）。
@@ -377,7 +391,9 @@ export const createOutpaintCanvas = async (source: Blob, expansion: ImageEditCan
   if (!maskContext) throw new Error('无法创建扩图蒙版');
   maskContext.fillStyle = '#ffffff';
   maskContext.fillRect(0, 0, width, height);
-  maskContext.clearRect(left, top, sourceWidth, sourceHeight);
+  // 蒙版若恰好截止在补白边界，模型会把它当作硬分界；只沿扩展侧向内重绘 32px。
+  const preserved = getOutpaintPreservedRect(sourceWidth, sourceHeight, { top, right, bottom, left });
+  maskContext.clearRect(preserved.x, preserved.y, preserved.width, preserved.height);
   return { image, mask, width, height };
 };
 

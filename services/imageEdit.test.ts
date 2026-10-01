@@ -1,7 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { blurImageEditMaskAlpha, buildImageEditCompositeMaskAlpha, buildImageEditParameters, buildOpaqueImageEditMaskRgba, calculateOutpaintTargetExpansion, dilateImageEditMaskAlpha, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, limitFocusedImageEditRect, normalizeMinimumContextArea, resizeImageEditMaskAlpha, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from './imageEdit';
+import { blurImageEditMaskAlpha, buildImageEditCompositeMaskAlpha, buildImageEditParameters, buildOpaqueImageEditMaskRgba, calculateOutpaintTargetExpansion, dilateImageEditMaskAlpha, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, getOutpaintPreservedRect, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, resizeImageEditMaskAlpha, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from './imageEdit';
 
 describe('image edit helpers', () => {
+  it('只在扩展侧保留 32px 接缝重绘，不扩展时不动原图蒙版', () => {
+    expect(getOutpaintPreservedRect(1344, 768, { top: 0, bottom: 0, left: 192, right: 256 }))
+      .toEqual({ x: 224, y: 0, width: 1280, height: 768 });
+    expect(getOutpaintPreservedRect(832, 1216, { top: 128, bottom: 192, left: 0, right: 0 }))
+      .toEqual({ x: 0, y: 160, width: 832, height: 1152 });
+    expect(getOutpaintPreservedRect(832, 1216, { top: 0, bottom: 0, left: 0, right: 0 }))
+      .toEqual({ x: 0, y: 0, width: 832, height: 1216 });
+    expect(getOutpaintPreservedRect(64, 64, { top: 64, bottom: 64, left: 64, right: 64 }))
+      .toEqual({ x: 96, y: 96, width: 0, height: 0 });
+  });
+
+  it('待调整与已应用的四边逐项比较，改变摆放也需重新应用', () => {
+    const applied = { top: 128, bottom: 192, left: 0, right: 0 };
+    expect(isSameOutpaintExpansion(applied, { ...applied })).toBe(true);
+    expect(isSameOutpaintExpansion(applied, { ...applied, top: 192, bottom: 128 })).toBe(false);
+  });
   it('validates NovelAI canvas dimensions and 64 pixel alignment', () => {
     expect(validateImageEditDimensions(832, 1216)).toBeNull();
     expect(validateImageEditDimensions(833, 1216)).toContain('64');

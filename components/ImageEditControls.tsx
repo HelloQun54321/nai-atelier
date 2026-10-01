@@ -4,7 +4,7 @@ import { ImageEditCanvasExpansion, ImageEditOperation, Inspiration, LabImageEdit
 import { DEFAULT_LAB_PAGE_LAYOUTS, LabPageLayout } from '../services/appearancePreferences';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
-import { calculateOutpaintTargetExpansion, ImageEditNormalizationMode, OUTPAINT_RATIO_PRESETS, OutpaintAnchor } from '../services/imageEdit';
+import { ImageEditNormalizationMode, isSameOutpaintExpansion } from '../services/imageEdit';
 import { ChainEditorParams } from './ChainEditorParams';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { HistoryImagePicker } from './HistoryImagePicker';
@@ -33,6 +33,7 @@ interface ImageEditControlsProps {
   manualMaskEditing?: boolean;
   onManualMaskEditingChange?: (value: boolean) => void;
   expansion: ImageEditCanvasExpansion;
+  outpaintSourceSize?: { width: number; height: number };
   isBusy?: boolean;
   safeMode?: boolean;
   tagAssistEnabled: boolean;
@@ -74,14 +75,21 @@ const getModuleOrder = (layout: LabPageLayout, moduleId: keyof LabPageLayout['co
 const isModuleCollapsed = (layout: LabPageLayout, moduleId: keyof LabPageLayout['collapsed']) => Boolean(layout.collapsed[moduleId]);
 
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
-  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, isBusy = false, safeMode = false, tagAssistEnabled, forceEmptySeed = false, enforceFreeStepLimit = true, apiKey, baseImagePreview, notify,
+  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, outpaintSourceSize, isBusy = false, safeMode = false, tagAssistEnabled, forceEmptySeed = false, enforceFreeStepLimit = true, apiKey, baseImagePreview, notify,
   onPromptChange, onNegativePromptChange, onDraftChange, onFileChange, onSelectImageSource, onStrengthChange, onNoiseChange, onBrushSizeChange, onFocusedChange,
   onMinimumContextAreaChange, onToolChange, manualMaskEditing = false, onManualMaskEditingChange = () => undefined, onClearMask, onInvertMask, onUndo, onRedo, onExpansionChange, onApplyOutpaint, onResetFocusedRect = () => undefined, normalization = null, onNormalize = () => undefined,
   mobileTab = 'canvas',
 }) => {
   const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
   const [inspirationPickerOpen, setInspirationPickerOpen] = useState(false);
-  const [selectedRatioId, setSelectedRatioId] = useState<string>('16:9');
+  const selectedRatioId = draft.outpaintRatioId || (Object.values(draft.expansion).some(Boolean) ? 'custom' : '16:9');
+  const sourceSize = outpaintSourceSize || { width: canvasProps.width, height: canvasProps.height };
+  const appliedExpansion = draft.appliedExpansion || { top: 0, right: 0, bottom: 0, left: 0 };
+  const expansionApplied = isSameOutpaintExpansion(expansion, appliedExpansion);
+  const setCustomExpansion = (value: ImageEditCanvasExpansion) => {
+    onDraftChange({ outpaintRatioId: 'custom' });
+    onExpansionChange(value);
+  };
 
   const runtime = useNaiRuntime();
   const modelInfo = getRuntimeNaiModelInfo(selectableParams.model, runtime);
@@ -203,19 +211,19 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                 <div className="mb-3 flex items-center justify-between">
                   <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">智能画幅扩展</span>
                   <span className="text-meta font-mono text-gray-400">
-                    {canvasProps.width && canvasProps.height ? `${canvasProps.width} × ${canvasProps.height} ➔ ${canvasProps.width + (expansion.left || 0) + (expansion.right || 0)} × ${canvasProps.height + (expansion.top || 0) + (expansion.bottom || 0)}` : ''}
+                    {sourceSize.width && sourceSize.height ? `${sourceSize.width} × ${sourceSize.height} ➔ ${sourceSize.width + expansion.left + expansion.right} × ${sourceSize.height + expansion.top + expansion.bottom}` : ''}
                   </span>
                 </div>
 
                 {/* 可视化画幅模拟摆放台（“布”与可拖拽原图） */}
                 <OutpaintCanvasStage
-                  sourceWidth={canvasProps.width}
-                  sourceHeight={canvasProps.height}
+                  sourceWidth={sourceSize.width}
+                  sourceHeight={sourceSize.height}
                   baseImagePreview={baseImagePreview}
                   expansion={expansion}
                   onExpansionChange={onExpansionChange}
                   selectedRatioId={selectedRatioId}
-                  onSelectRatioId={setSelectedRatioId}
+                  onSelectRatioId={outpaintRatioId => onDraftChange({ outpaintRatioId })}
                   isBusy={isBusy}
                 />
 
@@ -224,7 +232,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                   <button
                     type="button"
                     disabled={isBusy}
-                    onClick={() => onExpansionChange({ top: 128, right: 128, bottom: 128, left: 128 })}
+                    onClick={() => setCustomExpansion({ top: 128, right: 128, bottom: 128, left: 128 })}
                     className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-meta font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
                   >
                     四周 +128px
@@ -232,7 +240,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                   <button
                     type="button"
                     disabled={isBusy}
-                    onClick={() => onExpansionChange({ top: 64, right: 64, bottom: 64, left: 64 })}
+                    onClick={() => setCustomExpansion({ top: 64, right: 64, bottom: 64, left: 64 })}
                     className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-meta font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
                   >
                     四周 +64px
@@ -240,7 +248,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                   <button
                     type="button"
                     disabled={isBusy}
-                    onClick={() => onExpansionChange({ top: 0, right: 128, bottom: 0, left: 128 })}
+                    onClick={() => setCustomExpansion({ top: 0, right: 128, bottom: 0, left: 128 })}
                     className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-meta font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
                   >
                     左右 +128px
@@ -248,7 +256,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                   <button
                     type="button"
                     disabled={isBusy}
-                    onClick={() => onExpansionChange({ top: 0, right: 0, bottom: 0, left: 0 })}
+                    onClick={() => setCustomExpansion({ top: 0, right: 0, bottom: 0, left: 0 })}
                     className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-meta font-medium text-gray-500 transition hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
                   >
                     清零重置
@@ -266,19 +274,19 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                         min="0"
                         step="64"
                         value={expansion[side]}
-                        onChange={event => onExpansionChange({ ...expansion, [side]: Math.max(0, Number(event.target.value) || 0) })}
+                        onChange={event => setCustomExpansion({ ...expansion, [side]: Math.max(0, Number(event.target.value) || 0) })}
                         className="mt-1 h-9 w-full rounded-lg border border-gray-300 bg-white px-2 font-mono text-sm dark:border-gray-700 dark:bg-gray-900"
                       />
                     </label>
                   ))}
                 </div>
                 <button
-                  disabled={isBusy || (!expansion.top && !expansion.right && !expansion.bottom && !expansion.left)}
+                  disabled={isBusy || expansionApplied}
                   type="button"
                   onClick={onApplyOutpaint}
                   className="mt-3 h-9 w-full rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white shadow transition hover:bg-indigo-500 disabled:opacity-40"
                 >
-                  应用画布扩展
+                  {expansionApplied && Object.values(appliedExpansion).some(Boolean) ? '画布扩展已应用' : Object.values(appliedExpansion).some(Boolean) ? '更新画布扩展' : '应用画布扩展'}
                 </button>
               </div>
 
@@ -298,7 +306,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
               >
                 <span>
                   <span className="block">手动调整蒙版</span>
-                  <span className="mt-0.5 block text-micro font-normal text-gray-400">默认自动重绘全部新增边缘；开启后可用画笔微调接缝遮罩</span>
+                  <span className="mt-0.5 block text-micro font-normal text-gray-400">自动重绘新增区域及原图边缘 32px；开启后可微调接缝蒙版</span>
                 </span>
                 <span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${manualMaskEditing ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
                   <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${manualMaskEditing ? 'translate-x-4' : 'translate-x-0'}`} />

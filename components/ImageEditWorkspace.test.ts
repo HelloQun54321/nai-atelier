@@ -74,7 +74,8 @@ const params = {
 };
 
 const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', manualMaskEditing = false, safeMode = false, tagAssistEnabled = false) => {
-  const draft = createLabImageEditDraft(operation, 'blue bottle', 'low quality', params);
+  const draft = createLabImageEditDraft(operation, 'blue bottle', 'low quality', params,
+    operation === 'outpaint' ? { expansion: { top: 0, bottom: 0, left: 640, right: 704 } } : {});
   const onManualMaskEditingChange = vi.fn();
   const onPromptChange = vi.fn();
   const onSelectImageSource = vi.fn();
@@ -726,4 +727,3 @@ describe('ImageEditPreview', () => {
     });
   });
 });
-
