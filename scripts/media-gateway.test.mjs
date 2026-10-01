@@ -583,7 +583,6 @@ test('prompt agent exposes project settings without exposing API keys', async ()
     requestJson: async path => {
       calls.push(path);
       if (path === '/api/anlas-budget') return { remaining: 1666 };
-      if (path === '/api/config/benchmarks') return { config: { slots: 3 } };
       throw new Error(`unexpected ${path}`);
     },
     getQueuePreferences: () => ({ enabled: true, greeting: 'test', showGreeting: true }),
@@ -594,7 +593,9 @@ test('prompt agent exposes project settings without exposing API keys', async ()
   assert.equal(payload.anlasBudget.remaining, 1666);
   assert.equal(payload.client.novelAiKeyConfigured, true);
   assert.equal(JSON.stringify(payload).toLowerCase().includes('api_key'), false);
-  assert.deepEqual(calls, ['/api/anlas-budget', '/api/config/benchmarks']);
+  assert.deepEqual(calls, ['/api/anlas-budget']);
+  assert.equal('benchmarkConfig' in payload, false);
+  assert.equal(tools.some(item => item.name === 'set_artist_benchmark_config'), false);
 });
 
 test('NovelAI generation uses the computer outbound proxy transport', async () => {

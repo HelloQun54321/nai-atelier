@@ -12,8 +12,7 @@ import { generateImage } from '../services/naiService';
 
 const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo');
 
-// 目录、配置及生图全部隔离，测试只执行工具栏查找和显示切换。
-vi.mock('../services/dbService', () => ({ db: { getBenchmarkConfig: vi.fn(async () => null) } }));
+// 目录与生成服务隔离，验证精简后的入口及真实筛选行为。
 vi.mock('./ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => false) }));
 vi.mock('../services/lowConsumption', async importOriginal => ({
   ...await importOriginal<typeof import('../services/lowConsumption')>(), useLowConsumption: () => ({ enabled: false }),
@@ -64,26 +63,22 @@ afterEach(() => {
 });
 
 describe('资料目录工具栏行为', () => {
-  it('画师筛选改变真实目录排序，更多菜单切换预览方式后仍可再次访问', async () => {
-    render(<ArtistLibrary artistsData={[]} onRefresh={vi.fn(async () => {})} notify={vi.fn()} />);
+  it('画师排序仍作用于目录，测试与管理入口已移除', async () => {
+    render(<ArtistLibrary artistsData={[]} notify={vi.fn()} />);
     await waitFor(() => expect(getArtistDictionaryPage).toHaveBeenCalledWith(0, 'popular'));
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     fireEvent.change(screen.getByRole('combobox', { name: '画师排序' }), { target: { value: 'name-desc' } });
     await waitFor(() => expect(getArtistDictionaryPage).toHaveBeenCalledWith(0, 'name-desc'));
     expect(localStorage.getItem('nai_artist_sort')).toBe('name-desc');
     fireEvent.keyDown(window, { key: 'Escape' });
-    fireEvent.click(screen.getByRole('button', { name: '更多' }));
-    fireEvent.click(screen.getByRole('button', { name: '切换到基准图预览' }));
-    expect(screen.queryByRole('dialog', { name: '画师工具' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '更多' }));
-    expect(screen.getByRole('button', { name: '切换到原始图预览' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '复制历史' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '任务队列' })).toBeTruthy();
+    for (const name of ['更多', '复制历史', '任务队列', '画师配置', '批量导入画师', '切换到基准图预览']) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
     expect(generateImage).not.toHaveBeenCalled();
   });
 
   it('角色范围、排序与收藏集中筛选，抽卡设置独立且不会启动生成', async () => {
-    render(<CharacterLibrary chains={[]} onCreate={vi.fn()} onDelete={vi.fn()} onNavigateToPlayground={vi.fn()} onRefresh={vi.fn(async () => {})} notify={vi.fn()} onSelect={vi.fn()} />);
+    render(<CharacterLibrary chains={[]} onCreate={vi.fn()} onDelete={vi.fn()} onNavigateToPlayground={vi.fn()} notify={vi.fn()} onSelect={vi.fn()} />);
     await waitFor(() => expect(getCharacterDictionaryPage).toHaveBeenCalledWith(0, 'popular'));
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     fireEvent.change(screen.getByRole('combobox', { name: '角色排序' }), { target: { value: 'least' } });

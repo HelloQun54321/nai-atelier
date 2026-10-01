@@ -3149,11 +3149,11 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'get_project_settings', label: '读取项目设置', description: '读取Anlas预算、公共队列、画师基准图配置和当前浏览器的主题、安全模式、启动时安全模式、手机图片显示与缓存设置。不会返回任何API Key。',
+        name: 'get_project_settings', label: '读取项目设置', description: '读取Anlas预算、公共队列和当前浏览器的主题、安全模式、启动时安全模式、手机图片显示与缓存设置。不会返回任何API Key。',
         parameters: Type.Object({}),
         execute: async () => {
-          const [budget, benchmarks] = await Promise.all([readProject('/api/anlas-budget'), readProject('/api/config/benchmarks')]);
-          const result = { anlasBudget: budget, cloudQueue: project.getQueuePreferences?.() || null, benchmarkConfig: benchmarks.config, client: contextData.clientSettings || {} };
+          const budget = await readProject('/api/anlas-budget');
+          const result = { anlasBudget: budget, cloudQueue: project.getQueuePreferences?.() || null, client: contextData.clientSettings || {} };
           return { content: jsonText(result), details: result };
         },
       },
@@ -3164,29 +3164,6 @@ export class PromptAgentService {
           const result = await readProject('/api/anlas-budget', { method: 'PUT', body: { remaining: Math.max(0, Math.floor(clamp(args.remaining, 0, 1_000_000_000, 1666))) } });
           changed('settings');
           return { content: jsonText(result), details: result };
-        },
-      },
-      {
-        name: 'set_artist_benchmark_config', label: '设置画师基准图', description: '更新画师Tag页面使用的基准图Slot配置。先读取get_project_settings，只修改用户明确要求的内容。',
-        parameters: Type.Object({ config: Type.Any() }),
-        execute: async (_id, args) => {
-          if (!args.config || typeof args.config !== 'object' || Array.isArray(args.config)) throw new Error('基准图配置格式无效');
-          const current = await readProject('/api/config/benchmarks');
-          const incoming = args.config;
-          const allowed = ['slots', 'interval', 'steps', 'scale', 'negative', 'sampler', 'width', 'height'];
-          const unknown = Object.keys(incoming).filter(key => !allowed.includes(key));
-          if (unknown.length) throw new Error(`基准图配置包含不支持的字段：${unknown.join('、')}`);
-          const config = { ...(current.config || {}) };
-          if (incoming.slots !== undefined && Number.isFinite(Number(incoming.slots))) config.slots = Math.max(1, Math.min(10, Math.floor(Number(incoming.slots))));
-          if (incoming.interval !== undefined && Number.isFinite(Number(incoming.interval))) config.interval = Math.max(0, Math.min(86_400, Number(incoming.interval)));
-          if (incoming.steps !== undefined && Number.isFinite(Number(incoming.steps))) config.steps = Math.max(1, Math.min(50, Math.floor(Number(incoming.steps))));
-          if (incoming.scale !== undefined) config.scale = clamp(incoming.scale, 0, 10, 5);
-          if (incoming.width !== undefined) config.width = Math.round(clamp(incoming.width, 64, 2048, 832) / 64) * 64;
-          if (incoming.height !== undefined) config.height = Math.round(clamp(incoming.height, 64, 2048, 1216) / 64) * 64;
-          for (const key of ['negative', 'sampler']) if (incoming[key] !== undefined) config[key] = text(incoming[key]).slice(0, 8_000);
-          await readProject('/api/config/benchmarks', { method: 'PUT', body: { config } });
-          changed('settings');
-          return { content: jsonText({ ok: true }), details: config };
         },
       },
       {

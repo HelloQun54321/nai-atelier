@@ -255,11 +255,11 @@ export interface Artist {
   id: string;
   name: string;
   imageUrl: string; // Original (Danbooru) image
-  previewUrl?: string; // Legacy: Single benchmark
-  benchmarks?: string[]; // New: Array of 3 benchmark images [Face, Body, Scene]
+  previewUrl?: string; // 既有单张预览，仅兼容读取，不再从目录生成
+  benchmarks?: string[]; // 旧基准图资产保留，不迁移或删除
   chineseName?: string; // Local bilingual tag catalog label
   postCount?: number; // Danbooru usage count for catalog ranking
-  catalogOnly?: boolean; // Not persisted until a local preview is generated
+  catalogOnly?: boolean; // 本地词库条目，尚无持久画师记录
 }
 
 // Inspiration Gallery Types

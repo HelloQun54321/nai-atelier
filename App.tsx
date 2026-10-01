@@ -575,7 +575,6 @@ const App = () => {
           onCreate={handleCreateChain}
           onSelect={(id) => handleNavigate('edit', id)}
           onDelete={handleDelete}
-          onRefresh={async () => { await refreshData(true); }}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
           notify={notify}
           returnTargetId={view === 'characters' ? selectedId : undefined}
@@ -603,7 +602,6 @@ const App = () => {
       case 'library':
         return <ArtistLibrary
           artistsData={artistsCache}
-          onRefresh={() => loadArtists(true)}
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
         />;

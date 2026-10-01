@@ -18,17 +18,6 @@ class DBService {
     return await api.get('/auth/me');
   }
 
-  // --- Global Settings (Config) ---
-  async getBenchmarkConfig(): Promise<any> {
-    const res = await api.get('/config/benchmarks');
-    return res.config;
-  }
-
-  async saveBenchmarkConfig(config: any): Promise<void> {
-    await api.put('/config/benchmarks', { config });
-  }
-
-
   // --- Chains ---
   async getAllChains(): Promise<PromptChain[]> {
     const chains: PromptChain[] = await api.get('/chains');

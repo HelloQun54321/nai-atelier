@@ -1,134 +1,35 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Artist, NAIParams } from '../types';
-import { generateImage } from '../services/naiService'; // Import generation service
-import { applyLowConsumptionParams, assertLowConsumptionEstimate, getLowConsumption } from '../services/lowConsumption';
-import { api } from '../services/api'; // Import api for updating
-import { db } from '../services/dbService'; // Import DB to fetch config
+import { Artist } from '../types';
+import { compareLibraryTags } from '../services/tagLibrary';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
-import { ArtistLibraryConfig } from './ArtistLibraryConfig';
-import { ArtistLibraryCart } from './ArtistLibraryCart';
+import { TagSelectionBar } from './TagSelectionBar';
 import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryEntriesAt, getArtistDictionaryPage, searchArtistDictionary } from '../services/tagDictionary';
-import { OriginalImage, SmartImage } from './SmartImage';
-import { useConfirmDialog } from './ConfirmDialog';
-import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
-import { applyEstimatorRuntime, estimateV45GenerationCost, usageForCostEstimate, useAnlasBudget } from '../services/anlasBudget';
-import { DEFAULT_NAI_RUNTIME, getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
-import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
-import { ChevronDown, ClipboardList, Dice5, Download, LoaderCircle, MoreHorizontal } from 'lucide-react';
+import { ChevronDown, Dice5, LoaderCircle } from 'lucide-react';
 import { ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
-import { ToolbarPopover, TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
+import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { DanbooruCover } from './DanbooruCover';
-import type { DanbooruCoverCandidate } from '../services/danbooruService';
 import { danbooruService } from '../services/danbooruService';
-import { importDanbooruCoverAsDataUrl } from '../services/danbooruCoverImport';
 import { TagCoverActions } from './TagCoverActions';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
-import { readActiveNaiKey, getRememberNaiKey, setActiveNaiKey, setRememberNaiKey, NAI_KEY_REMEMBER_CHANGED } from '../services/naiKeyStorage';
 
 interface CartItem {
     name: string;
-    weight: number; // 0 normal, >0 {}, <0 []
 }
 
 interface ArtistLibraryProps {
-    // New props for caching
+    // 既有封面只读展示，不在目录中生成或维护基准图。
     artistsData: Artist[] | null;
-    onRefresh: () => Promise<void>;
     notify: (msg: string, type?: 'success' | 'error') => void;
     onNavigateToPlayground?: () => void;
 }
 
-const compressImage = async (source: string, quality = 0.8): Promise<string> => {
-    const response = await fetch(source);
-    const sourceBlob = await response.blob();
-    const toDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => reject(reader.error || new Error('读取压缩图片失败'));
-        reader.readAsDataURL(blob);
-    });
-    const bitmap = await createImageBitmap(sourceBlob);
-    try {
-        const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return toDataUrl(sourceBlob);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-        const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
-            value => value ? resolve(value) : reject(new Error('图片压缩失败')),
-            'image/jpeg',
-            quality,
-        ));
-        return await toDataUrl(blob);
-    } finally {
-        bitmap.close();
-    }
-};
-
-const LazyImage = SmartImage;
-
-// --- Benchmark Config Interface ---
-interface BenchmarkSlot {
-    label: string;
-    prompt: string;
-}
-
-interface BenchmarkConfig {
-    slots: BenchmarkSlot[]; // Flexible slots
-    negative: string;
-    seed: number;
-    steps: number;
-    scale: number;
-    interval?: number; // Added interval
-}
-
-const DEFAULT_BENCHMARK_CONFIG: BenchmarkConfig = {
-    slots: [
-        {
-            label: "面部",
-            prompt: "masterpiece, best quality, 1girl, solo,\ncowboy shot, slight tilt head, three-quarter view,\nhand on face, peace sign, index finger raised, (dynamic pose),\ndetailed face, detailed eyes, blushing, happy, open mouth,\nmessy hair, hair ornament,\nwhite shirt, collarbone,\nsimple background, soft lighting, "
-        },
-        {
-            label: "体态",
-            prompt: "masterpiece, best quality, 1girl, solo,\nkneeling, from above, looking at viewer,\nbikini, wet skin, long hair, medium breasts, soft shading, clear form, (detailed anatomy:1.1), extremely detailed figure, \nstomach, navel, cleavage, collarbone, beautiful hands,\nthighs, barefoot,\nbeach, ocean, cinematic lighting, detailed characters, amazing quality, very aesthetic, absurdres, high detail, ultra-detailed,"
-        },
-        {
-            label: "场景",
-            prompt: "masterpiece, best quality, 1girl, solo,\nfull body, walking, looking back,\nfantasy clothes, cape, armor, holding sword,\nwind, hair blowing, petals,\nruins, forest, overgrown, detailed background, depth of field,\ndappled sunlight, atmospheric, intricate details,"
-        }
-    ],
-    negative: "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, censorbar, mosaic, censoring, bar censor, convenient censoring, bad anatomy, bad hands, text, error, missing fingers, crop,",
-    seed: -1, // Random
-    steps: 28,
-    scale: 6,
-    interval: 3000 // Default 3s
-};
-
-// Queue Item Interface
-interface GenTask {
-    uniqueId: string;
-    artistId: string;
-    artistName: string;
-    slot: number;
-}
-
-interface LogEntry {
-    time: string;
-    message: string;
-    type: 'success' | 'error' | 'info';
-}
-
 type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
 
-export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRefresh, notify, onNavigateToPlayground }) => {
+export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notify, onNavigateToPlayground }) => {
     const imageDisplay = useMobileImageDisplayPreferences();
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
     const [artistRatios, setArtistRatios] = useState<Record<string, number>>({});
@@ -140,22 +41,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     const renderArtistCard = (artist: (typeof filteredArtists)[number]) => {
                             const isSelected = !!cart.find(c => c.name === artist.name);
                             const isFav = favorites.has(artist.name);
-                            let displayImg = artist.imageUrl || artist.benchmarks?.[0] || artist.previewUrl || '';
-                            let isBenchmarkMissing = false;
-
-                            if (viewMode === 'benchmark') {
-                                if (artist.benchmarks && artist.benchmarks[activeSlot]) {
-                                    displayImg = artist.benchmarks[activeSlot];
-                                } else if (activeSlot === 0 && artist.previewUrl) {
-                                    displayImg = artist.previewUrl;
-                                } else {
-                                    isBenchmarkMissing = true;
-                                }
-                            }
-
-                            const isTaskPending = taskQueue.some(t => t.artistId === artist.id);
-                            const isTaskRunning = currentTask?.artistId === artist.id;
-                            const isTaskFailed = failedTasks.some(t => t.artistId === artist.id);
+                            const displayImg = artist.imageUrl || artist.previewUrl || artist.benchmarks?.[0] || '';
 
                             return (
                                 <div
@@ -165,56 +51,15 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                     onClick={() => toggleCart(artist.name)}
                                 >
                                     <div className="mobile-gallery-frame md:aspect-[2/3] relative overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': artistRatios[artist.id] ? `${Math.round(artistRatios[artist.id] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
-                                        {viewMode === 'original' ? (
-                                            <DanbooruCover
-                                                tag={artist.name}
-                                                kind="artist"
-                                                alt={artist.chineseName || artist.name}
-                                                fixedSrc={displayImg}
-                                                onCandidateChange={candidate => rememberCoverCandidate(artist.id, candidate)}
-                                                onImageLoad={(width, height) => { const r = width / Math.max(1, height); if (Number.isFinite(r) && r > 0) setArtistRatios(previous => (previous[artist.id] === r ? previous : { ...previous, [artist.id]: r })); }}
-                                            />
-                                        ) : displayImg && !isBenchmarkMissing ? (
-                                            <LazyImage src={displayImg} alt={artist.name} onLoad={event => { const img = event.currentTarget; if (img.naturalWidth > 0 && img.naturalHeight > 0) { const r = img.naturalWidth / img.naturalHeight; if (Number.isFinite(r) && r > 0) setArtistRatios(previous => (previous[artist.id] === r ? previous : { ...previous, [artist.id]: r })); } }} />
-                                        ) : <DanbooruCover tag={artist.name} kind="artist" alt={artist.chineseName || artist.name} />}
-                                        {(isTaskPending || isTaskRunning || isTaskFailed) && (
-                                            <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center z-10">
-                                                {isTaskRunning ? (
-                                                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-white"></div>
-                                                ) : isTaskFailed ? (
-                                                    <div className="text-white text-xs font-bold bg-red-500 px-2 py-1 rounded">生成失败</div>
-                                                ) : (
-                                                    <div className="text-white text-xs font-bold bg-indigo-500 px-2 py-1 rounded">排队中</div>
-                                                )}
-                                            </div>
-                                        )}
+                                        <DanbooruCover
+                                            tag={artist.name}
+                                            kind="artist"
+                                            alt={artist.chineseName || artist.name}
+                                            fixedSrc={displayImg}
+                                            onImageLoad={(width, height) => { const ratio = width / Math.max(1, height); if (Number.isFinite(ratio) && ratio > 0) setArtistRatios(previous => previous[artist.id] === ratio ? previous : { ...previous, [artist.id]: ratio }); }}
+                                        />
                                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors pointer-events-none" />
-                                        <TagCoverActions
-                                            favorite={isFav}
-                                            onToggleFavorite={() => toggleFav(artist)}
-                                            candidate={viewMode === 'original' ? coverCandidates[artist.id] : null}
-                                            onSetCover={viewMode === 'original' ? candidate => setDanbooruCover(artist, candidate) : undefined}
-                                            pinPlacement="bottom-right"
-                                        >
-                                            {isAdmin && viewMode === 'benchmark' && apiKey && (
-                                                <>
-                                                    <button
-                                                        onClick={(e) => queueGeneration(artist, [activeSlot], e)}
-                                                        className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm pointer-events-auto text-purple-600 hover:text-purple-500"
-                                                        title={`生成当前测试组 (${config.slots[activeSlot]?.label || `第 ${activeSlot + 1} 组`})`}
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                                                    </button>
-                                                    <button
-                                                        onClick={(e) => queueGeneration(artist, config.slots.map((_, i) => i), e)}
-                                                        className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm pointer-events-auto text-green-600 hover:text-green-500"
-                                                        title={`生成全部 ${config.slots.length} 组测试图`}
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z" /></svg>
-                                                    </button>
-                                                </>
-                                            )}
-                                        </TagCoverActions>
+                                        <TagCoverActions favorite={isFav} onToggleFavorite={() => toggleFav(artist)} />
 
                                         {isSelected && (
                                             <div className="absolute inset-0 border-4 border-indigo-500/80 pointer-events-none">
@@ -242,13 +87,10 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         try { return JSON.parse(localStorage.getItem('nai_artist_favorite_details') || '{}'); }
         catch { return {}; }
     });
-    const [coverCandidates, setCoverCandidates] = useState<Record<string, DanbooruCoverCandidate | null>>({});
     const [showFavOnly, setShowFavOnly] = useState(false);
     const [usePrefix, setUsePrefix] = useState(true);
-    const [lightboxState, setLightboxState] = useState<{ artistIdx: number, slotIdx: number } | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const onScrollRestore = useKeepAliveScrollRestore(scrollContainerRef, 'library');
-    const [isLoading, setIsLoading] = useState(false);
     const [loadedCatalogArtists, setLoadedCatalogArtists] = useState<ArtistDictionaryEntry[]>([]);
     const [catalogSearchResults, setCatalogSearchResults] = useState<ArtistDictionaryEntry[]>([]);
     const [artistCatalogCount, setArtistCatalogCount] = useState(0);
@@ -267,11 +109,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     const catalogLoadGenerationRef = useRef(0);
     const artistSortRef = useRef<ArtistDictionarySort>(artistSort);
 
-    // New State for features
-    const [history, setHistory] = useState<{ text: string, time: string }[]>([]);
-    const [showHistory, setShowHistory] = useState(false);
-    const [showImport, setShowImport] = useState(false);
-    const [importText, setImportText] = useState('');
+    // 抽卡偏好
     const [gachaCount, setGachaCount] = useState<6 | 12 | 24>(() => {
         const saved = Number(localStorage.getItem('nai_artist_gacha_count'));
         return saved === 6 || saved === 24 ? saved : 12;
@@ -284,6 +122,13 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     const [isGachaLoading, setIsGachaLoading] = useState(false);
     const recentGachaIndicesRef = useRef<number[][]>([]);
     const catalogScrollTopRef = useRef(0);
+    const gachaGenerationRef = useRef(0);
+    const leaveGacha = useCallback(() => {
+        gachaGenerationRef.current++;
+        setGachaArtists(null);
+        setIsGachaLoading(false);
+    }, []);
+    useEffect(() => () => { gachaGenerationRef.current++; }, []);
 
     // View Settings
     const gridCols = 6;
@@ -308,54 +153,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         return () => window.removeEventListener('nai-agent-artist-favorites-change', syncAgentFavorites);
     }, []);
 
-    // Benchmark / Preview Mode State
-    const [viewMode, setViewMode] = useState<'original' | 'benchmark'>('original');
-    const [activeSlot, setActiveSlot] = useState<number>(0); // Index of config.slots
-
-    // Benchmark Settings
-    const [showConfig, setShowConfig] = useState(false);
-    const [config, setConfig] = useState<BenchmarkConfig>(DEFAULT_BENCHMARK_CONFIG);
-
-    const confirmAction = useConfirmDialog();
-    // Opus 限额透支后，受限模型（V5）的免费档不再免费，费用估算需同步真实额度。
-    const { usage: novelaiUsage, refreshIfStale: refreshUsageIfStale } = useNovelaiUsage();
-    const anlasBudget = useAnlasBudget();
-    // 成本估算常量（免费门槛、公式系数、受限模型清单）由网关自动同步。
-    const [naiRuntimeConfig, setNaiRuntimeConfig] = useState<NaiRuntimeConfig | null>(null);
-    useEffect(() => {
-        let active = true;
-        void getNaiRuntimeConfig().then(config => {
-            if (!active) return;
-            applyEstimatorRuntime(config);
-            setNaiRuntimeConfig(config);
-        });
-        return () => { active = false; };
-    }, []);
-    // 同步失效时“免费/扣费”判断可能基于过期规则，批量生成前必须向用户示警。
-    const runtimeSyncUnhealthy = isNaiRuntimeSyncUnhealthy(naiRuntimeConfig);
-    const runtimeSyncWarning = naiRuntimeConfig
-        ? `${describeNaiRuntimeSyncProblem(naiRuntimeConfig)}，费用估算与免费档判断可能过期，继续生成可能意外消耗共享 Anlas`
-        : '';
-
-    const [apiKey, setApiKey] = useState('');
-    // Personal mode: the local owner always manages this library.
-    const isAdmin = true;
-    const canManageArtists = true;
-
-    // Queue System
-    const [taskQueue, setTaskQueue] = useState<GenTask[]>([]);
-    const [failedTasks, setFailedTasks] = useState<GenTask[]>([]); // New: Failed Queue
-    const [isProcessing, setIsProcessing] = useState(false);
-    // 队列生命周期：卸载后不再启动新任务（进行中的生成允许完成并落库，避免浪费已扣费额度）；
-    const queueAliveRef = useRef(true);
-    useEffect(() => () => { queueAliveRef.current = false; }, []);
-    const [currentTask, setCurrentTask] = useState<GenTask | null>(null);
-
-    // Logs System
-    const [logs, setLogs] = useState<LogEntry[]>([]);
-    const [showLogs, setShowLogs] = useState(false);
-
-    // Load data & Config
+    // 只读取浏览偏好；本页不读取 Key 或生成配置。
     useEffect(() => {
         // localStorage 可能被并发写入损坏（如 Agent 面板写 nai_fav_artists），解析失败时回退为空
         const savedFav = localStorage.getItem('nai_fav_artists');
@@ -369,32 +167,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         const savedPrefix = localStorage.getItem('nai_use_prefix');
         if (savedPrefix !== null) setUsePrefix(savedPrefix === 'true');
 
-        const savedHistory = localStorage.getItem('nai_copy_history');
-        if (savedHistory) {
-            try {
-                const parsed = JSON.parse(savedHistory);
-                setHistory(Array.isArray(parsed) ? parsed : []);
-            } catch { setHistory([]); }
-        }
-
-        // Load Config from Server (Public)
-        db.getBenchmarkConfig().then(cfg => {
-            if (cfg) setConfig(cfg);
-        }).catch(err => {
-            console.error("Failed to load benchmark config from server", err);
-            // Fallback to local storage if server fails (backward compat)
-            const savedConfig = localStorage.getItem('nai_benchmark_config');
-            if (savedConfig) {
-                try {
-                    const parsed = JSON.parse(savedConfig);
-                    if (!parsed.slots || parsed.slots.length === 0) parsed.slots = DEFAULT_BENCHMARK_CONFIG.slots;
-                    setConfig(parsed);
-                } catch (e) { }
-            }
-        });
-
-        // API Key 安全存储策略：
-        setApiKey(readActiveNaiKey());
     }, []);
 
     const loadNextCatalogPage = useCallback(async () => {
@@ -493,64 +265,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         return () => observer.disconnect();
     }, [gachaArtists, hasMoreCatalog, loadNextCatalogPage, searchTerm]);
 
-    // 与设置、保管箱共用默认记住策略，显式关闭后只保留当前会话。
-    const [rememberApiKey, setRememberApiKey] = useState(getRememberNaiKey);
-
-    const handleApiKeyChange = (val: string) => {
-        setActiveNaiKey(val, rememberApiKey);
-        setApiKey(readActiveNaiKey());
-    };
-
-    useEffect(() => {
-        const syncApiKey = () => {
-            setApiKey(readActiveNaiKey());
-            setRememberApiKey(getRememberNaiKey());
-        };
-        window.addEventListener('nai-api-key-changed', syncApiKey);
-        window.addEventListener(NAI_KEY_REMEMBER_CHANGED, syncApiKey);
-        window.addEventListener('storage', syncApiKey);
-        return () => {
-            window.removeEventListener('nai-api-key-changed', syncApiKey);
-            window.removeEventListener(NAI_KEY_REMEMBER_CHANGED, syncApiKey);
-            window.removeEventListener('storage', syncApiKey);
-        };
-    }, []);
-
-    const handleRememberKeyChange = (remember: boolean) => {
-        setRememberNaiKey(remember);
-        setRememberApiKey(remember);
-    };
-
-    const setDanbooruCover = async (artist: Artist, candidate: DanbooruCoverCandidate) => {
-        try {
-            // 先通过本机媒体网关读取原图，再提交 data URL；Worker 只负责存储不再直连 Danbooru CDN
-            const coverDataUrl = await importDanbooruCoverAsDataUrl(candidate.sampleUrl);
-            await api.post('/artists', {
-                id: artist.id,
-                name: artist.name,
-                imageUrl: coverDataUrl,
-                previewUrl: artist.previewUrl,
-                benchmarks: artist.benchmarks || [],
-            });
-            await onRefresh();
-            notify(`已将当前热门图设为“${artist.chineseName || artist.name}”的封面`);
-        } catch (error) {
-            notify(`设置封面失败：${error instanceof Error ? error.message : '未知错误'}`, 'error');
-            throw error;
-        }
-    };
-
-    const rememberCoverCandidate = useCallback((artistId: string, candidate: DanbooruCoverCandidate | null) => {
-        setCoverCandidates(previous => previous[artistId]?.id === candidate?.id ? previous : { ...previous, [artistId]: candidate });
-    }, []);
-
-    const addToHistory = (text: string) => {
-        const newEntry = { text, time: new Date().toLocaleTimeString() };
-        const newHistory = [newEntry, ...history.filter(h => h.text !== text)].slice(30);
-        setHistory(newHistory);
-        localStorage.setItem('nai_copy_history', JSON.stringify(newHistory));
-    };
-
     const toggleFav = (artist: Artist, e?: React.MouseEvent) => {
         e?.stopPropagation();
         const wasFavorite = favorites.has(artist.name);
@@ -578,31 +292,19 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         if (cart.find(i => i.name === name)) {
             setCart(cart.filter(i => i.name !== name));
         } else {
-            setCart([...cart, { name, weight: 0 }]);
+            setCart([...cart, { name }]);
         }
     };
 
-    const updateWeight = (index: number, delta: number) => {
-        const newCart = [...cart];
-        let w = newCart[index].weight + delta;
-        if (w > 3) w = 3;
-        if (w < -3) w = -3;
-        newCart[index].weight = w;
-        setCart(newCart);
-    };
+    const formatTag = (item: CartItem) => (usePrefix ? 'artist:' : '') + item.name;
 
-    const formatTag = (item: CartItem) => {
-        let s = (usePrefix ? 'artist:' : '') + item.name;
-        if (item.weight > 0) s = "{".repeat(item.weight) + s + "}".repeat(item.weight);
-        if (item.weight < 0) s = "[".repeat(Math.abs(item.weight)) + s + "]".repeat(Math.abs(item.weight));
-        return s;
-    };
-
-    const copyCart = () => {
-        const str = cart.map(formatTag).join(', ');
-        navigator.clipboard.writeText(str);
-        addToHistory(str);
-        notify('组合串已复制！');
+    const copyCart = async () => {
+        try {
+            await navigator.clipboard.writeText(cart.map(formatTag).join(', '));
+            notify('画师 Tag 已复制');
+        } catch {
+            notify('复制失败，请检查浏览器剪贴板权限', 'error');
+        }
     };
 
     const importCartToPlayground = () => {
@@ -687,10 +389,10 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                 catalogOnly: !persisted,
             });
         }
-        return result;
-    }, [artistsData, favoriteArtistDetails, gachaArtists, loadedCatalogArtists, searchTerm, showFavOnly, favorites]);
+        return result.sort((left, right) => compareLibraryTags(left, right, artistSort));
+    }, [artistSort, artistsData, favoriteArtistDetails, gachaArtists, loadedCatalogArtists, searchTerm, showFavOnly, favorites]);
 
-    // MEMOIZED Filtered Artists to prevent stutter during layout changes
+    // 筛选结果保持稳定，收藏不受分页加载范围限制。
     const filteredArtists = useMemo(() => {
         if (favoriteArtists) return favoriteArtists;
         return availableArtists.filter(a => {
@@ -761,7 +463,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         }
     }, [filteredArtists, gachaArtists]);
 
-    // --- New Features Logic ---
+    // 抽卡只读取本地 Tag 目录，不触发生图。
 
     const drawGachaIndex = (mode: ArtistGachaMode, total: number) => {
         if (mode === 'uniform') return Math.floor(Math.random() * total);
@@ -776,6 +478,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         if (artistCatalogCount <= 0 || isGachaLoading) return;
         if (!gachaArtists) catalogScrollTopRef.current = scrollContainerRef.current?.scrollTop || 0;
 
+        const generation = ++gachaGenerationRef.current;
         setIsGachaLoading(true);
         setSearchTerm('');
         setShowFavOnly(false);
@@ -785,328 +488,37 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         try {
             const recentIndices = new Set(recentGachaIndicesRef.current.flat());
             const selectedIndices = new Set<number>();
+            const targetCount = Math.min(gachaCount, artistCatalogCount);
             let attempts = 0;
-            while (selectedIndices.size < gachaCount && attempts < 10_000) {
+            while (selectedIndices.size < targetCount && attempts < 10_000) {
                 attempts += 1;
                 const index = drawGachaIndex(gachaMode, artistCatalogCount);
                 if (!recentIndices.has(index)) selectedIndices.add(index);
             }
-            while (selectedIndices.size < gachaCount) {
-                selectedIndices.add(drawGachaIndex(gachaMode, artistCatalogCount));
+            for (let index = 0; selectedIndices.size < targetCount && index < artistCatalogCount; index++) {
+                selectedIndices.add(index);
             }
 
             const indices = [...selectedIndices];
             const artists = await getArtistDictionaryEntriesAt(indices);
+            if (generation !== gachaGenerationRef.current) return;
             setGachaArtists(artists);
             recentGachaIndicesRef.current = [...recentGachaIndicesRef.current, indices].slice(-5);
             scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         } catch (error) {
+            if (generation !== gachaGenerationRef.current) return;
             console.warn('Artist gacha failed:', error);
             notify('抽卡失败，请稍后重试', 'error');
         } finally {
-            setIsGachaLoading(false);
+            if (generation === gachaGenerationRef.current) setIsGachaLoading(false);
         }
     };
 
     const returnToCatalog = () => {
         setSearchTerm('');
-        setGachaArtists(null);
+        leaveGacha();
         requestAnimationFrame(() => scrollContainerRef.current?.scrollTo({ top: catalogScrollTopRef.current }));
     };
-
-    const handleImport = () => {
-        const tags = importText.split(/[,，\n]/).map(s => s.trim()).filter(s => s);
-        const newItems: CartItem[] = [];
-
-        tags.forEach(raw => {
-            let name = raw.replace(/^artist:/i, '');
-            let weight = 0;
-
-            // Simple brace counting
-            const openBraces = (name.match(/\{/g) || []).length;
-            const closeBraces = (name.match(/\}/g) || []).length;
-            const openBrackets = (name.match(/\[/g) || []).length;
-            const closeBrackets = (name.match(/\]/g) || []).length;
-
-            if (openBraces > 0 && openBraces === closeBraces) {
-                weight = openBraces;
-                name = name.replace(/[\{\}]/g, '');
-            } else if (openBrackets > 0 && openBrackets === closeBrackets) {
-                weight = -openBrackets;
-                name = name.replace(/[\[\]]/g, '');
-            }
-
-            // Match with known artists
-            const matched = availableArtists.find(a => a.name.toLowerCase() === name.toLowerCase());
-            if (matched) {
-                // Avoid duplicates in batch
-                if (!newItems.find(i => i.name === matched.name)) {
-                    newItems.push({ name: matched.name, weight });
-                }
-            }
-        });
-
-        // Merge with cart
-        const finalCart = [...cart];
-        newItems.forEach(item => {
-            if (!finalCart.find(c => c.name === item.name)) {
-                finalCart.push(item);
-            }
-        });
-        setCart(finalCart);
-        setShowImport(false);
-        setImportText('');
-        notify(`已导入 ${newItems.length} 位画师`);
-    };
-
-    // --- Config Modal Logic (Refactored to separate component) ---
-    const saveConfig = async (newConfig: BenchmarkConfig) => {
-        // Basic validation
-        if (newConfig.slots.length === 0) {
-            notify('至少需要一个测试分组', 'error');
-            return;
-        }
-        // Apply Draft to Real Config & Save to Server
-        setConfig(newConfig);
-
-        try {
-            await db.saveBenchmarkConfig(newConfig);
-            notify('配置已保存 (同步至云端)');
-        } catch (e) {
-            console.error(e);
-            notify('保存失败，仅本地生效', 'error');
-            localStorage.setItem('nai_benchmark_config', JSON.stringify(newConfig)); // Fallback
-        }
-
-        // Safety: if active slot was deleted, reset to 0
-        if (activeSlot >= newConfig.slots.length) {
-            setActiveSlot(0);
-        }
-
-        setShowConfig(false);
-    };
-
-    // Helper Log
-    const addLog = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
-        const entry: LogEntry = {
-            time: new Date().toLocaleTimeString(),
-            message: msg,
-            type
-        };
-        setLogs(prev => [entry, ...prev].slice(0, 100)); // Keep last 100 logs
-        console.log(`[Queue] ${msg}`);
-    };
-
-    // --- Queue Processor ---
-    useEffect(() => {
-        const processNext = async () => {
-            // Check Pause state
-            if (isProcessing || taskQueue.length === 0) return;
-
-            // Delay to prevent 429 (Throttle)
-            setIsProcessing(true);
-            // Use configured interval, default to 2000ms if missing
-            const delay = config.interval && config.interval > 500 ? config.interval : 2000;
-            await new Promise(res => setTimeout(res, delay));
-
-            // 等待期间组件已卸载或队列被暂停：不再启动新的生成
-            if (!queueAliveRef.current) {
-                setIsProcessing(false);
-                return;
-            }
-
-            const task = taskQueue[0];
-            setCurrentTask(task);
-            let generatedObjectUrl = '';
-
-            try {
-                // Find the artist info
-                const artist = artistsData?.find(a => a.id === task.artistId)
-                    || availableArtists.find(a => a.id === task.artistId)
-                    || { id: task.artistId, name: task.artistName, imageUrl: '', benchmarks: [], catalogOnly: true };
-                if (!artist) {
-                    throw new Error(`Artist ID ${task.artistId} not found`);
-                }
-
-                // Actual generation Logic
-                const slot = config.slots[task.slot];
-                if (!slot) throw new Error(`Slot config missing for index ${task.slot}`);
-
-                const slotPrompt = slot.prompt;
-                const prompt = `artist:${artist.name}, ${slotPrompt}`;
-                const negative = config.negative;
-                // Pass -1 (Random) or configured seed
-                const seed = config.seed;
-
-                // Generate
-                const result = await generateImage(apiKey, prompt, negative, {
-                    width: 832, height: 1216, steps: config.steps, scale: config.scale, sampler: 'k_euler_ancestral', seed: seed,
-                    qualityToggle: true, ucPreset: 0
-                });
-                generatedObjectUrl = result.image;
-
-                // Compress before upload (Save Space!)
-                const compressedImg = await compressImage(result.image, 0.8);
-
-                // Construct update payload
-                // Fetch FRESH benchmarks from current state to avoid overwrites if multiple tasks ran
-                const currentBenchmarks = artist.benchmarks ? [...artist.benchmarks] : (artist.previewUrl ? [artist.previewUrl] : []);
-
-                // Pad array if needed
-                while (currentBenchmarks.length <= task.slot) currentBenchmarks.push("");
-                currentBenchmarks[task.slot] = compressedImg;
-
-                await api.post('/artists', {
-                    id: artist.id,
-                    name: artist.name,
-                    imageUrl: artist.imageUrl,
-                    previewUrl: artist.previewUrl,
-                    benchmarks: currentBenchmarks
-                });
-
-                // Refresh UI
-                await onRefresh();
-                addLog(`Generated & Compressed: ${artist.name} (Slot ${task.slot + 1})`, 'success');
-
-            } catch (err: any) {
-                const errMsg = err.message || JSON.stringify(err);
-                const is429 = errMsg.includes('429') || errMsg.includes('Concurrent') || errMsg.includes('locked');
-
-                if (is429) {
-                    addLog('Rate Limit (429) detected. Cooling down for 60s...', 'error');
-                    await new Promise(res => setTimeout(res, 60000));
-                }
-
-                const artistName = artistsData?.find(a => a.id === task.artistId)?.name || task.artistName || 'Unknown';
-                const logMsg = is429
-                    ? `Rate Limit (429) for ${artistName}. Task moved to Retry Queue.`
-                    : `Failed: ${artistName} - ${errMsg}`;
-
-                addLog(logMsg, 'error');
-
-                // Move to Failed Queue instead of discarding
-                setFailedTasks(prev => [...prev, task]);
-
-                if (!is429) {
-                    notify(`生成失败: ${artistName}`, 'error');
-                }
-            } finally {
-                if (generatedObjectUrl.startsWith('blob:')) URL.revokeObjectURL(generatedObjectUrl);
-                // Remove done task and loop
-                setTaskQueue(prev => prev.slice(1));
-                setCurrentTask(null);
-                setIsProcessing(false);
-            }
-        };
-
-        processNext();
-    }, [taskQueue, isProcessing, apiKey, config, artistsData, availableArtists, onRefresh, notify]);
-
-    // Add tasks to queue
-    const queueGeneration = async (artist: Artist, slots: number[], e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (!apiKey) {
-            notify('请先在设置中配置 API Key', 'error');
-            setShowConfig(true); // Open config modal
-            return;
-        }
-
-        // 与队列处理器 processNext 完全一致的请求参数（无 model → 默认 V4.5 Full），
-        // 入队前按任务数统一估算并确认费用，避免批量生成逐张静默扣费。
-        const taskCount = slots.length;
-        let estimateParams: NAIParams = {
-            width: 832, height: 1216, steps: config.steps, scale: config.scale, sampler: 'k_euler_ancestral',
-            seed: config.seed, qualityToggle: true, ucPreset: 0
-        };
-        let lowEnabled: boolean;
-        try { lowEnabled = (await getLowConsumption(apiKey)).enabled; estimateParams = applyLowConsumptionParams(estimateParams, lowEnabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME); }
-        catch (error) { notify(error instanceof Error ? error.message : '读取低消耗设置失败', 'error'); return; }
-        // 受限额模型（V5）在免费档生成前强制刷新真实 Opus 额度，与 ChainEditor 同源。
-        const freshSubscription = await refreshUsageIfStale();
-        const perTaskCost = estimateV45GenerationCost(estimateParams, isActiveOpusSubscription(freshSubscription), await usageForCostEstimate(novelaiUsage, refreshUsageIfStale, estimateParams.model));
-        if (lowEnabled) {
-            try { assertLowConsumptionEstimate(estimateParams, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, perTaskCost); }
-            catch (error) { notify(error instanceof Error ? error.message : '低消耗检查失败', 'error'); return; }
-        }
-        const totalCost = perTaskCost * taskCount;
-
-        if (totalCost > 0 && anlasBudget.remaining <= 0) {
-            // 本地 Anlas 预算已用尽但仍需扣费：红色警告，由用户确认后才入队。
-            if (!await confirmAction({
-                title: 'Anlas 预算已用尽',
-                message: `本地预算已扣到 0，本次 ${taskCount} 个任务预计共消耗 ${totalCost} Anlas（共享账号额度），继续将透支你手动设定的预算线。\n\n若预算数字过期，可先到全局设置校准。`,
-                confirmLabel: `仍要消耗 ${totalCost} 点生成`,
-                tone: 'danger',
-            })) return;
-        } else if (totalCost > 0 && !await confirmAction({
-            title: '确认批量生成',
-            message: `${taskCount} 个任务 × 每张 ${perTaskCost} 点 ≈ 共 ${totalCost} 点 Anlas${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
-            confirmLabel: `消耗 ${totalCost} 点并生成 ${taskCount} 张`,
-        })) return;
-
-        const newTasks = slots.map(s => ({
-            uniqueId: createUuid(),
-            artistId: artist.id,
-            artistName: artist.name,
-            slot: s
-        }));
-
-        setTaskQueue(prev => [...prev, ...newTasks]);
-        notify(`已添加 ${newTasks.length} 个任务到队列`);
-    };
-
-    const retryFailedTasks = () => {
-        if (failedTasks.length === 0) return;
-        setTaskQueue(prev => [...prev, ...failedTasks]);
-        setFailedTasks([]);
-        addLog(`Retrying ${failedTasks.length} failed tasks`, 'info');
-        notify(`已重新加入 ${failedTasks.length} 个失败任务`);
-    };
-
-    // --- Lightbox Navigation Logic ---
-    const navigateLightbox = useCallback((direction: 'next' | 'prev') => {
-        setLightboxState(current => {
-            if (!current) return null;
-            const { slotIdx } = current;
-            let { artistIdx } = current;
-            const totalArtists = filteredArtists.length;
-            if (direction === 'next') {
-                artistIdx = (artistIdx + 1) % totalArtists;
-            } else {
-                artistIdx = (artistIdx - 1 + totalArtists) % totalArtists;
-            }
-            return { artistIdx, slotIdx };
-        });
-    }, [filteredArtists.length]);
-
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (!lightboxState) return;
-            if (e.key === 'ArrowRight') navigateLightbox('next');
-            if (e.key === 'ArrowLeft') navigateLightbox('prev');
-            if (e.key === 'Escape') setLightboxState(null);
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [lightboxState, navigateLightbox]);
-
-    // Helper to get current lightbox image details
-    const currentLightboxImage = useMemo(() => {
-        if (!lightboxState) return null;
-        const artist = filteredArtists[lightboxState.artistIdx];
-        if (!artist) return null;
-
-        const { slotIdx } = lightboxState;
-        if (slotIdx === -1) {
-            const src = artist.imageUrl || artist.benchmarks?.[0] || artist.previewUrl;
-            return src ? { src, name: artist.name } : null;
-        }
-        // Fallback logic for slot 0 to use legacy previewUrl if benchmark array is empty
-        const src = artist.benchmarks?.[slotIdx] || (slotIdx === 0 ? artist.previewUrl : null);
-        const slotName = config.slots[slotIdx]?.label || `Slot ${slotIdx + 1}`;
-
-        return src ? { src, name: `${artist.name} - ${slotName}` } : null;
-    }, [lightboxState, filteredArtists, config.slots]);
 
     return (
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
@@ -1114,20 +526,20 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
             {/* --- Controls Header --- */}
             <WorkspaceToolbar>
                 <div className="relative min-w-0 flex-1">
-                    <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="搜索画师 Tag（支持中文）" containerClassName="md:max-w-none!" />
-                    {isCatalogLoading && <span className="absolute right-3 top-3.5 h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
+                    <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder="搜索画师名称或 Tag" containerClassName="md:max-w-none!" className="pr-9" />
+                    {isCatalogLoading && <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
                 </div>
                 <ToolbarPopover title="筛选画师" count={Number(artistSort !== 'popular') + Number(showFavOnly)}>
                     <div className="space-y-3">
-                        <label className="block text-sm font-semibold dark:text-white">排序<select aria-label="画师排序" value={artistSort} onChange={event => setArtistSort(event.target.value as ArtistDictionarySort)} disabled={Boolean(gachaArtists)} className={TOOLBAR_FIELD_CLASS}>
+                        <label className="block text-sm font-semibold dark:text-white">排序<select aria-label="画师排序" value={artistSort} onChange={event => { setArtistSort(event.target.value as ArtistDictionarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}>
                             <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">名称 A → Z</option><option value="name-desc">名称 Z → A</option>
                         </select></label>
-                        <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={showFavOnly} onChange={event => setShowFavOnly(event.target.checked)} />只看收藏</label>
-                        <button type="button" onClick={() => { setArtistSort('popular'); setShowFavOnly(false); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">重置筛选</button>
+                        <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={showFavOnly} onChange={event => { setShowFavOnly(event.target.checked); leaveGacha(); }} />只看收藏</label>
+                        <button type="button" onClick={() => { setArtistSort('popular'); setShowFavOnly(false); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">重置筛选</button>
                     </div>
                 </ToolbarPopover>
                 <div className="flex flex-none items-center border-l border-gray-200 pl-2 dark:border-gray-700">
-                    <ToolbarButton aria-label={gachaArtists ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} disabled={isGachaLoading || artistCatalogCount <= 0} className="mobile-touch !rounded-r-none !border-r-0" tone="primary">
+                    <ToolbarButton aria-label={gachaArtists ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} disabled={isGachaLoading || artistCatalogCount <= 0} className="mobile-touch !rounded-r-none !border-r-0" tone="neutral">
                         {isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaArtists ? '再抽一批' : '随机抽卡'}</span>
                     </ToolbarButton>
                     <ToolbarPopover label="抽卡设置" title="画师抽卡设置" icon={<ChevronDown />} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden" width={320}>
@@ -1137,16 +549,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                         </div>
                     </ToolbarPopover>
                 </div>
-                <ToolbarButton onClick={() => setShowImport(true)} aria-label="批量导入画师" className="hidden md:inline-flex"><Download /><span className="hidden lg:inline">批量导入</span></ToolbarButton>
-                <ToolbarPopover label="更多" title="画师工具" icon={<MoreHorizontal />} width={320}>
-                    {close => <div className="space-y-1">
-                        <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); setViewMode(value => value === 'original' ? 'benchmark' : 'original'); }}>{viewMode === 'original' ? '切换到基准图预览' : '切换到原始图预览'}</button>
-                        <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); setShowConfig(true); }}>画师配置</button>
-                        <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); setShowHistory(true); }}>复制历史</button>
-                        <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); setShowLogs(true); }}>任务队列{taskQueue.length > 0 ? ' · ' + taskQueue.length : ''}</button>
-                        <button type="button" className={TOOLBAR_MENU_CLASS + ' md:hidden'} onClick={() => { close(); setShowImport(true); }}>批量导入画师</button>
-                    </div>}
-                </ToolbarPopover>
             </WorkspaceToolbar>
 
             {gachaArtists && (
@@ -1162,12 +564,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
 
             {/* --- Main Content Area --- */}
             <div ref={scrollContainerRef} onScroll={onScrollRestore} className="flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
-                {isLoading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gray-50/80 dark:bg-gray-900/80 z-20">
-                        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-                    </div>
-                )}
-
                 {imageDisplay.layout === 'masonry' ? (
                     <ShortestColumnMasonry<Artist>
                         items={filteredArtists}
@@ -1178,7 +574,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                     />
                 ) : (
                     <div
-                        className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid md:pr-6`}
+                        className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid`}
                         style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { '--mobile-gallery-columns': gridCols }) }}
                     >
                         {filteredArtists.map(renderArtistCard)}
@@ -1198,134 +594,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                 )}
             </div>
 
-            <ArtistLibraryCart
-                cart={cart}
-                setCart={setCart}
-                updateWeight={updateWeight}
-                toggleCart={toggleCart}
-                copyCart={copyCart}
-                importCart={onNavigateToPlayground ? importCartToPlayground : undefined}
-                formatTag={formatTag}
-            />
+            <TagSelectionBar count={cart.length} unit="位画师" onClear={() => setCart([])} onCopy={copyCart} onImport={onNavigateToPlayground ? importCartToPlayground : undefined} />
 
-            {currentLightboxImage && (
-                <div className="fixed inset-0 z-50 bg-white/95 dark:bg-black/95 flex items-center justify-center backdrop-blur-sm select-none" onClick={() => setLightboxState(null)}>
-                    <div className="relative max-w-full max-h-full p-4 flex flex-col items-center pointer-events-auto" onClick={(e) => e.stopPropagation()}>
-                        <OriginalImage
-                            src={currentLightboxImage.src}
-                            alt={currentLightboxImage.name}
-                            className="max-w-full max-h-[85dvh] rounded shadow-2xl object-contain cursor-pointer"
-                            onClick={() => setLightboxState(null)}
-                        />
-                        <div className="mt-4 text-center">
-                            <h3 className="text-lg font-bold text-gray-800 dark:text-white drop-shadow-md">{currentLightboxImage.name}</h3>
-                        </div>
-                    </div>
-
-                    <div
-                        className="absolute right-0 top-0 bottom-0 w-[20%] z-20 flex items-center justify-end pr-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
-                        onClick={(e) => { e.stopPropagation(); navigateLightbox('next'); }}
-                    >
-                        <div className="p-2 rounded-full bg-white/10 backdrop-blur opacity-0 group-hover:opacity-100 transition-opacity">
-                            <svg className="w-8 h-8 text-gray-800 dark:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                        </div>
-                    </div>
-
-                    <button
-                        className="absolute top-4 right-4 z-30 p-2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white bg-white/10 rounded-full backdrop-blur"
-                        onClick={() => setLightboxState(null)}
-                    >
-                        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                    </button>
-                </div>
-            )}
-
-            {/* History, Logs, Import Modal rendering kept ... */}
-            {/* z-[60]/z-[55]：高于移动端底部导航（z-50），否则导航条盖住抽屉底部的「清空历史」 */}
-            <div className={`fixed top-0 right-0 w-full max-w-80 h-full bg-white dark:bg-gray-900 shadow-2xl z-[60] transform transition-transform duration-300 border-l border-gray-200 dark:border-gray-800 flex flex-col md:w-80 ${showHistory ? 'translate-x-0' : 'translate-x-full'}`}>
-                <div className="p-4 pt-[max(1rem,env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
-                    <h3 className="flex items-center gap-2 font-bold text-gray-800 dark:text-white"><ClipboardList className="h-4 w-4" />复制历史</h3>
-                    <button onClick={() => setShowHistory(false)} className="text-gray-500 hover:text-gray-800 dark:hover:text-white">×</button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                    {history.map((h, i) => (
-                        <div key={i} onClick={() => { navigator.clipboard.writeText(h.text); notify('已复制') }} className="p-3 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-800 hover:border-indigo-500 cursor-pointer transition-colors">
-                            <div className="text-xs text-gray-800 dark:text-gray-200 break-all line-clamp-3 font-mono">{h.text}</div>
-                            <div className="text-micro text-gray-400 mt-2 text-right">{h.time}</div>
-                        </div>
-                    ))}
-                    {history.length === 0 && <div className="text-center text-gray-400 mt-10">暂无历史</div>}
-                </div>
-                <div className="p-3 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
-                    <button onClick={() => { setHistory([]); localStorage.setItem('nai_copy_history', '[]') }} className="w-full py-2 text-sm text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400">清空历史</button>
-                </div>
-            </div>
-            {showHistory && <div className="fixed inset-0 z-[55] bg-black/20 dark:bg-black/50 backdrop-blur-[1px]" onClick={() => setShowHistory(false)} />}
-
-            {showLogs && (
-                <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-800 p-6 flex flex-col max-h-[80dvh]">
-                        <div className="flex justify-between items-center mb-4 border-b border-gray-200 dark:border-gray-800 pb-2">
-                            <h3 className="text-lg font-bold text-gray-900 dark:text-white">任务日志</h3>
-                            <button onClick={() => setShowLogs(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white">✕</button>
-                        </div>
-                        {failedTasks.length > 0 && (
-                            <div className="mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 rounded-lg flex justify-between items-center">
-                                <span className="text-sm text-red-700 dark:text-red-300 font-bold">{failedTasks.length} 个任务失败</span>
-                                <button
-                                    onClick={retryFailedTasks}
-                                    className="text-xs bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded font-bold shadow-sm"
-                                >
-                                    重试所有失败任务
-                                </button>
-                            </div>
-                        )}
-                        <div className="flex-1 overflow-y-auto space-y-2 bg-gray-50 dark:bg-gray-950 p-2 rounded border border-gray-200 dark:border-gray-800">
-                            {logs.length === 0 && <div className="text-center text-gray-400 py-4 text-xs">暂无日志</div>}
-                            {logs.map((log, i) => (
-                                <div key={i} className={`p-2 rounded text-xs font-mono border ${log.type === 'error' ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400' :
-                                    log.type === 'success' ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-900/50 text-green-600 dark:text-green-400' :
-                                        'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400'
-                                    }`}>
-                                    <span className="opacity-50 mr-2">[{log.time}]</span>
-                                    {log.message}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {showImport && (
-                <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-800 p-6">
-                        <h3 className="mb-2 flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white"><Download className="h-5 w-5" />批量导入画师</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">粘贴你的风格串，支持 artist: 前缀和 {'{}'} [] 权重符号</p>
-                        <textarea
-                            className="w-full h-32 bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
-                            placeholder="例如：artist:wlop, {artist:nixeu}, [[shaluo]]"
-                            value={importText}
-                            onChange={e => setImportText(e.target.value)}
-                        />
-                        <div className="flex justify-end gap-3 mt-4">
-                            <button onClick={() => setShowImport(false)} className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">取消</button>
-                            <button onClick={handleImport} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg transition-colors">导入</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <ArtistLibraryConfig
-                show={showConfig}
-                onClose={() => setShowConfig(false)}
-                onSave={saveConfig}
-                initialConfig={config}
-                apiKey={apiKey}
-                onApiKeyChange={handleApiKeyChange}
-                rememberApiKey={rememberApiKey}
-                onRememberApiKeyChange={handleRememberKeyChange}
-                notify={notify}
-            />
         </div>
     );
 };
