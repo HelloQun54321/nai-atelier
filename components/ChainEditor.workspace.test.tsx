@@ -69,6 +69,9 @@ vi.mock('./ImageEditPanel', () => ({ ImageEditPanel: (props: ImageEditPanelProps
   <output aria-label="编辑底图">{props.baseImage}</output>
   <output aria-label="编辑蒙版">{props.maskData}</output>
   <button onClick={() => { void props.onBaseImageChange('data:image/png;base64,cGFzdGVk', 'clipboard', 'old-parent'); }}>粘贴合成底图</button>
+  <button onClick={() => { void props.onBaseImageChange('data:image/png;base64,AQID', 'upload', undefined, { prompt: '', negativePrompt: '', params: { ...props.draft.params, characters: [{ id: 'imported', prompt: 'imported character', x: 0.2, y: 0.8 }] } }); }}>上传分角色底图</button>
+  <button onClick={() => props.onDraftChange({ params: { ...props.draft.params, characters: [{ id: 'edited', prompt: 'edited character', negativePrompt: 'edited negative', x: 0.3, y: 0.7 }], useCoords: true } })}>修改编辑角色</button>
+  <button onClick={() => { void props.onGenerate({ operation: props.operation, image: 'data:image/png;base64,AQID', canvasWidth: 832, canvasHeight: 1216, strength: 1, noise: 0, prompt: props.draft.prompt, negativePrompt: props.draft.negativePrompt, promptSource: props.draft.promptSource }); }}>生成合成编辑</button>
 </section> }));
 
 const chain: PromptChain = {
@@ -94,7 +97,7 @@ beforeEach(() => {
   state.low.enabled = false;
   state.assets.clear();
   state.delayedAsset = null;
-  state.confirm.mockClear(); state.history.mockClear(); state.generate.mockClear();
+  state.confirm.mockClear(); state.history.mockClear(); state.generate.mockReset();
   localStorage.clear(); sessionStorage.clear();
   vi.stubGlobal('innerWidth', 1280);
   vi.stubGlobal('matchMedia', (media: string) => ({ matches: false, media, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
@@ -103,6 +106,32 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('统一工作台真实状态链路', () => {
+  it.each([['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('%s 继承并保存角色模块，生成不清空，其他模式保持独立', async (operation, label) => {
+    const character = { id: 'original', prompt: 'original character', negativePrompt: 'original negative', x: 0.5, y: 0.5 };
+    const entry = { ...chain, params: { ...chain.params, characters: [character], useCoords: true } };
+    sessionStorage.setItem('nai_api_key', 'synthetic-key');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]))));
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+    // 请求入口捕获后主动失败，不执行任何真实生成、落库或结算。
+    state.generate.mockRejectedValueOnce(new Error('合成测试主动终止'));
+    setup(entry);
+    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await switchTo(label);
+    expect(loadLabWorkspaceSession(chain.id, fallback()).edits[operation].params.characters).toEqual([character]);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '上传分角色底图' })));
+    await waitFor(() => expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe(''));
+    expect(loadLabWorkspaceSession(chain.id, fallback()).edits[operation].params.characters?.[0].prompt).toBe('imported character');
+    fireEvent.click(screen.getByRole('button', { name: '修改编辑角色' }));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成编辑' })));
+    await waitFor(() => expect(state.generate).toHaveBeenCalled());
+    expect(state.generate.mock.calls[0][3]).toMatchObject({ useCoords: true,
+      characters: [{ id: 'edited', prompt: 'edited character', negativePrompt: 'edited negative', x: 0.3, y: 0.7 }] });
+    const saved = loadLabWorkspaceSession(chain.id, fallback());
+    expect(saved.edits[operation].params.characters?.[0].prompt).toBe('edited character');
+    expect(saved.textToImage.params.characters).toEqual([character]);
+    for (const other of ['image-to-image', 'inpaint', 'outpaint'] as const) if (other !== operation) expect(saved.edits[other].params.characters).toEqual([character]);
+  });
+
   it.each([['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('%s 粘贴保留当前配置，清除旧底图编辑状态并独立持久化', async (operation, label) => {
     const session = fallback();
     session.activeMode = operation;

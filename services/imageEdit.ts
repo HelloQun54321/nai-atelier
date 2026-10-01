@@ -92,6 +92,21 @@ export const transformCharacterCoordinatesForOutpaint = (
   }));
 };
 
+/** 裁剪／完整填充规范化时，角色定位跟随图片的同一几何变换。 */
+export const transformCharacterCoordinatesForImageRect = (
+  characters: CharacterParams[] | undefined,
+  sourceWidth: number,
+  sourceHeight: number,
+  sourceRect: ImageEditRect,
+  destinationRect: ImageEditRect,
+  targetWidth: number,
+  targetHeight: number,
+): CharacterParams[] | undefined => characters?.map(character => ({
+  ...character,
+  x: clampUnit(((character.x * sourceWidth - sourceRect.x) * destinationRect.width / Math.max(1, sourceRect.width) + destinationRect.x) / Math.max(1, targetWidth)),
+  y: clampUnit(((character.y * sourceHeight - sourceRect.y) * destinationRect.height / Math.max(1, sourceRect.height) + destinationRect.y) / Math.max(1, targetHeight)),
+}));
+
 export type OutpaintAnchor =
   | 'top-left'
   | 'top-center'

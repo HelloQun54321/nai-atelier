@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blurImageEditMaskAlpha, buildImageEditCompositeMaskAlpha, buildImageEditParameters, buildOpaqueImageEditMaskRgba, calculateOutpaintTargetExpansion, dilateImageEditMaskAlpha, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, getOutpaintPreservedRect, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, resizeImageEditMaskAlpha, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from './imageEdit';
+import { blurImageEditMaskAlpha, buildImageEditCompositeMaskAlpha, buildImageEditParameters, buildOpaqueImageEditMaskRgba, calculateOutpaintTargetExpansion, dilateImageEditMaskAlpha, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, getOutpaintPreservedRect, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, resizeImageEditMaskAlpha, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForImageRect, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from './imageEdit';
 
 describe('image edit helpers', () => {
   it('只在扩展侧保留 32px 接缝重绘，不扩展时不动原图蒙版', () => {
@@ -99,6 +99,20 @@ describe('image edit helpers', () => {
     const outpainted = transformCharacterCoordinatesForOutpaint([character], 1000, 800, { top: 64, right: 128, bottom: 0, left: 64 })?.[0];
     expect(outpainted?.x).toBeCloseTo(0.473154, 5);
     expect(outpainted?.y).toBeCloseTo(0.537037, 5);
+  });
+
+  it('角色定位随尺寸规范化裁剪、填充或缩放，原草稿不变', () => {
+    const characters = [{ id: 'c1', prompt: 'girl', negativePrompt: 'red hair', x: 0.25, y: 0.25 }];
+    const crop = transformCharacterCoordinatesForImageRect(characters, 1000, 800,
+      { x: 100, y: 0, width: 800, height: 800 }, { x: 0, y: 0, width: 800, height: 800 }, 800, 800);
+    expect(crop?.[0]).toMatchObject({ x: 0.1875, y: 0.25, prompt: 'girl', negativePrompt: 'red hair' });
+    const contain = transformCharacterCoordinatesForImageRect(characters, 1000, 800,
+      { x: 0, y: 0, width: 1000, height: 800 }, { x: 0, y: 100, width: 1000, height: 800 }, 1000, 1000);
+    expect(contain?.[0]).toMatchObject({ x: 0.25, y: 0.3 });
+    const stretch = transformCharacterCoordinatesForImageRect(characters, 1000, 800,
+      { x: 0, y: 0, width: 1000, height: 800 }, { x: 0, y: 0, width: 800, height: 1600 }, 800, 1600);
+    expect(stretch?.[0]).toMatchObject({ x: 0.25, y: 0.25 });
+    expect(characters[0]).toMatchObject({ x: 0.25, y: 0.25 });
   });
 
   it('calculates outpaint expansions accurately for various aspect ratios and 9-grid anchors', () => {

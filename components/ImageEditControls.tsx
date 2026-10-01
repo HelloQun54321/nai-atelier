@@ -13,6 +13,8 @@ import { OutpaintCanvasStage } from './OutpaintCanvasStage';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { VibeManager } from './VibeManager';
 import { useLowConsumption } from '../services/lowConsumption';
+import { ChainEditorCharacters } from './chain/ChainEditorCharacters';
+import { createUuid } from '../services/id';
 
 interface ImageEditControlsProps {
   operation: ImageEditOperation;
@@ -174,6 +176,32 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
           <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">全局负面提示词<TagAutocompleteTextarea tagAssistEnabled={tagAssistEnabled} disabled={isBusy} value={draft.negativePrompt} onValueChange={onNegativePromptChange} className="mt-2 min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder="输入本次负面提示词" /></label>
         </section>
       </LabModuleSection>
+
+      <ChainEditorCharacters
+        params={selectableParams}
+        setParams={params => onDraftChange({ params })}
+        characters={selectableParams.characters || []}
+        canEdit={!isBusy}
+        tagAssistEnabled={tagAssistEnabled}
+        characterPresetSources={{}}
+        markPresetSectionModified={() => undefined}
+        markChange={() => undefined}
+        activeLabLayout={layout}
+        mobileEditorTab={mobileTab === 'prompt' ? 'character' : 'global'}
+        addCharacter={() => {
+          const characters = selectableParams.characters || [];
+          const maximum = getRuntimeNaiModelInfo(selectableParams.model, runtime).maxCharacters;
+          if (characters.length >= maximum) { notify(`当前模型最多支持 ${maximum} 个角色提示词`, 'error'); return; }
+          onDraftChange({ params: { ...selectableParams, characters: [...characters, { id: createUuid(), prompt: '', negativePrompt: '', x: 0.5, y: 0.5 }] } });
+        }}
+        updateCharacter={(index, patch) => onDraftChange({ params: { ...selectableParams,
+          characters: (selectableParams.characters || []).map((character, currentIndex) => currentIndex === index ? { ...character, ...patch } : character),
+        } })}
+        removeCharacter={index => onDraftChange({ params: { ...selectableParams,
+          characters: (selectableParams.characters || []).filter((_, currentIndex) => currentIndex !== index),
+        } })}
+        coordinateHint={operation === 'outpaint' ? '角色位置以原图为准，扩展画布后自动换算' : undefined}
+      />
 
       <LabModuleSection moduleId="baseImage" label="底图与导入" order={getModuleOrder(layout, 'baseImage')} defaultCollapsed={isModuleCollapsed(layout, 'baseImage')} className={mobileTab === 'canvas' ? 'block' : 'hidden lg:block'}>
         <section className="space-y-3">

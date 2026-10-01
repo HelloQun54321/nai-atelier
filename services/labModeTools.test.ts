@@ -45,6 +45,16 @@ const allOptions: LabPresetImportOptions = {
 };
 
 describe('buildImageEditPresetPatch', () => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 引用仅角色预设时不改全局文本，并保留专属负面词和位置', operation => {
+    const character = { id: 'preset-character', prompt: 'girl, blue hair', negativePrompt: 'red hair', x: 0.2, y: 0.8 };
+    const current = createLabImageEditDraft(operation, 'current scene', 'current negative', params);
+    const patch = buildImageEditPresetPatch(current, { ...preset, params: { ...preset.params, characters: [character] } },
+      { ...allOptions, importBasePrompt: false, importSubject: false, importModules: false, importNegative: false, importSettings: false, importSeed: false, importCharacters: true }, new Set(), () => 'new-id');
+    expect(patch.prompt).toBeUndefined();
+    expect(patch.params?.characters).toEqual([{ ...character, id: 'new-id' }]);
+    expect(current.params.characters).toEqual([]);
+  });
+
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('为 %s 编译完整提示词并恢复参数', operation => {
     const current = createLabImageEditDraft(operation, 'old prompt', 'old negative', params);
     const patch = buildImageEditPresetPatch(current, preset, allOptions, new Set(['pre', 'post']), () => 'new-id');

@@ -19,7 +19,7 @@ vi.mock('./ImageEditPreview', () => ({
   ImageEditPreview: ({ error }: { error: string | null }) => React.createElement('div', null, error || '编辑预览'),
 }));
 
-vi.mock('../services/metadataService', () => ({ extractMetadata: vi.fn(async () => null), parseNovelAIMetadata: vi.fn() }));
+vi.mock('../services/metadataService', async importOriginal => ({ ...await importOriginal<typeof import('../services/metadataService')>(), extractMetadata: vi.fn(async () => null) }));
 
 const params = {
   width: 832,
@@ -45,6 +45,21 @@ const mockClipboard = (read: () => Promise<unknown[]>) => {
 };
 
 describe('ImageEditPanel 图片粘贴', () => {
+  it('上传全局为空的原图仍导入角色提示词，不丢掉有效生成信息', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+    vi.mocked(extractMetadata).mockResolvedValueOnce(JSON.stringify({ prompt: '',
+      v4_prompt: { caption: { base_caption: '', char_captions: [{ char_caption: 'girl, blue hair', centers: [{ x: 0.3, y: 0.7 }] }] }, use_coords: true },
+      v4_negative_prompt: { caption: { base_caption: '', char_captions: [{ char_caption: 'red hair' }] } },
+    }));
+    const props = panelProps();
+    const { container } = render(React.createElement(ImageEditPanel, props));
+    fireEvent.drop(container.querySelector('[data-image-edit-drop-zone]')!, { dataTransfer: { files: [new File(['synthetic'], 'original.png', { type: 'image/png' })], items: [] } });
+    await waitFor(() => expect(props.onBaseImageChange).toHaveBeenCalledWith(expect.any(String), 'upload', undefined, {
+      prompt: '', negativePrompt: '', params: expect.objectContaining({ useCoords: true, characters: [expect.objectContaining({ prompt: 'girl, blue hair', negativePrompt: 'red hair', x: 0.3, y: 0.7 })] }),
+    }));
+    expect(props.notify).toHaveBeenCalledWith('已自动解析并带入底图提示词与参数', 'success');
+  });
+
   it('点击编辑区后可直接键盘粘贴，不抢走输入框焦点', () => {
     const { container } = render(React.createElement(ImageEditPanel, panelProps()));
     const zone = container.querySelector('[data-image-edit-drop-zone]')!;

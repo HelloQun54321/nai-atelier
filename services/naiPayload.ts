@@ -172,8 +172,8 @@ export const buildNaiImageEditPayload = (
     : params.seed === -1
       ? -1
       : Math.floor(0x100000000 * Math.random() - 1);
-  // 编辑模式只使用整图提示词；文生图草稿中保留的多角色提示词与坐标不得泄漏到请求。
-  const requestParams: NAIParams = { ...params, seed, characters: [], useCoords: false };
+  // 角色提示词也是当前模式的创作内容；保留正负提示词与定位，不能只发送全局文本。
+  const requestParams: NAIParams = { ...params, seed };
   const base = buildNaiGenerationPayload(prompt, negative, requestParams, {
     runtime: options.runtime,
     allowVibes: options.operation === 'image-to-image',

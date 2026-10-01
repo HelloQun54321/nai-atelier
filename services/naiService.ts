@@ -1,6 +1,6 @@
 
 import JSZip from 'jszip';
-import { ImageEditOperation, NAIParams } from '../types';
+import { ImageEditCanvasExpansion, ImageEditOperation, NAIParams } from '../types';
 import { api, isQueueCancelledError } from './api';
 import { getRuntimeNaiModelInfo } from './naiModels';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
@@ -9,13 +9,31 @@ import { emitCloudQueueStatus, getCachedCloudQueuePreferences, getCloudQueuePref
 import { buildNaiGenerationPayload } from './naiPayload';
 import { buildNaiImageEditPayload } from './naiPayload';
 import { getNaiRuntimeConfig } from './naiRuntime';
-import { composeImageEditResult, prepareImageEdit } from './imageEdit';
+import { composeImageEditResult, PreparedImageEdit, prepareImageEdit, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForOutpaint } from './imageEdit';
 import { applyLowConsumptionParams, getLowConsumption } from './lowConsumption';
 
 export interface NaiStreamPreview {
   image: string;
   step?: number;
 }
+
+/** 草稿坐标基于底图；只为实际请求转换，不能把 Focused 裁剪坐标写回整图历史。 */
+const buildImageEditRequestParams = (params: NAIParams, prepared: PreparedImageEdit, operation: ImageEditOperation, expansion?: ImageEditCanvasExpansion): NAIParams => ({
+  ...params,
+  width: prepared.requestWidth,
+  height: prepared.requestHeight,
+  characters: prepared.focusedGeometry
+    ? transformCharacterCoordinatesForFocused(params.characters, prepared.focusedGeometry, prepared.sourceWidth, prepared.sourceHeight)
+    : operation === 'outpaint' && expansion
+      ? transformCharacterCoordinatesForOutpaint(params.characters,
+        prepared.sourceWidth - expansion.left - expansion.right,
+        prepared.sourceHeight - expansion.top - expansion.bottom, expansion)
+      : params.characters,
+});
+
+const buildImageEditResultParams = (params: NAIParams, requestParams: NAIParams, prepared: PreparedImageEdit): NAIParams => prepared.focusedGeometry
+  ? { ...requestParams, width: prepared.sourceWidth, height: prepared.sourceHeight, characters: params.characters }
+  : requestParams;
 
 const validateGenerationCapabilities = (params: NAIParams, runtime: Awaited<ReturnType<typeof getNaiRuntimeConfig>>, operation: 'text-to-image' | ImageEditOperation = 'text-to-image') => {
   const modelInfo = getRuntimeNaiModelInfo(params.model, runtime);
@@ -175,12 +193,13 @@ export const generateImageEdit = async (
     focused?: boolean;
     focusedRect?: { x: number; y: number; width: number; height: number };
     minimumContextArea?: number;
+    expansion?: ImageEditCanvasExpansion;
   },
 ) => {
   const runtime = await getNaiRuntimeConfig();
   params = applyLowConsumptionParams(params, (await getLowConsumption(apiKey)).enabled, runtime, edit.operation);
   const prepared = await prepareImageEdit(edit);
-  const requestParams: NAIParams = { ...params, width: prepared.requestWidth, height: prepared.requestHeight };
+  const requestParams = buildImageEditRequestParams(params, prepared, edit.operation, edit.expansion);
   const payload = buildNaiImageEditPayload(prompt, negative, requestParams, {
     ...edit,
     image: prepared.image,
@@ -227,7 +246,7 @@ export const generateImageEdit = async (
       } catch { /* 固定响应中可能不带 JSON 元数据。 */ }
     }
     const composed = await composeImageEditResult(fileData, prepared);
-    return { image: URL.createObjectURL(composed), blob: composed, seed: actualSeed, params: requestParams, estimatedCost: binaryResult.estimatedCost, requestWidth: prepared.requestWidth, requestHeight: prepared.requestHeight, focusedGeometry: prepared.focusedGeometry };
+    return { image: URL.createObjectURL(composed), blob: composed, seed: actualSeed, params: buildImageEditResultParams(params, requestParams, prepared), estimatedCost: binaryResult.estimatedCost, requestWidth: prepared.requestWidth, requestHeight: prepared.requestHeight, focusedGeometry: prepared.focusedGeometry };
   } catch (error) {
     terminalPhase = isQueueCancelledError(error) ? 'cancelled' : 'error';
     terminalError = error instanceof Error ? error.message : '图片编辑失败';
@@ -332,6 +351,7 @@ export const generateImageEditStream = async (
     focused?: boolean;
     focusedRect?: { x: number; y: number; width: number; height: number };
     minimumContextArea?: number;
+    expansion?: ImageEditCanvasExpansion;
   },
   onPreview?: (preview: NaiStreamPreview) => void,
   runtimeStreamSupported = false,
@@ -339,7 +359,7 @@ export const generateImageEditStream = async (
   const runtime = await getNaiRuntimeConfig();
   params = applyLowConsumptionParams(params, (await getLowConsumption(apiKey)).enabled, runtime, edit.operation);
   const prepared = await prepareImageEdit(edit);
-  const requestParams: NAIParams = { ...params, width: prepared.requestWidth, height: prepared.requestHeight };
+  const requestParams = buildImageEditRequestParams(params, prepared, edit.operation, edit.expansion);
   const modelInfo = validateGenerationCapabilities(requestParams, runtime, edit.operation);
   if (!modelInfo.supportsStreamedResponses && !runtimeStreamSupported) {
     throw new Error(`NovelAI ${modelInfo.label} 暂不支持生成过程预览`);
@@ -402,7 +422,7 @@ export const generateImageEditStream = async (
       image: URL.createObjectURL(composed),
       blob: composed,
       seed: finalSeed,
-      params: requestParams,
+      params: buildImageEditResultParams(params, requestParams, prepared),
       estimatedCost: sseEstimatedCost,
       requestWidth: prepared.requestWidth,
       requestHeight: prepared.requestHeight,

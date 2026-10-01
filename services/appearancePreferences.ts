@@ -38,6 +38,7 @@ export const DEFAULT_LAB_MODULE_COLLAPSED: LabModuleCollapsedPreferences = {
 const DEFAULT_LAB_EDIT_MODULE_ORDER: LabPageModuleId[] = [
   'baseImage',
   'prompt',
+  'characters',
   'editSettings',
   'params',
   'characterReference',
@@ -46,6 +47,7 @@ const DEFAULT_LAB_EDIT_MODULE_ORDER: LabPageModuleId[] = [
 
 const DEFAULT_LAB_EDIT_MODULE_COLLAPSED: LabPageLayout['collapsed'] = {
   prompt: false,
+  characters: false,
   baseImage: false,
   params: false,
   editSettings: false,
@@ -222,6 +224,11 @@ const normalizeLabPageLayout = (value: unknown, defaults: LabPageLayout): LabPag
     ...new Set(persistedOrder),
     ...defaults.order.filter(item => !persistedOrder.includes(item)),
   ];
+  // 旧编辑模式布局没有角色模块：补在提示词后，保留其他模块的自定义顺序。
+  if (defaults.order.includes('characters') && !persistedOrder.includes('characters')) {
+    order.splice(order.indexOf('characters'), 1);
+    order.splice(order.indexOf('prompt') + 1, 0, 'characters');
+  }
   const persistedCollapsed = input.collapsed && typeof input.collapsed === 'object'
     ? input.collapsed as Partial<Record<LabPageModuleId, boolean>>
     : {};

@@ -143,6 +143,7 @@ describe('appearance preferences', () => {
     expect(normalized.labPageLayouts.inpaint.order).toEqual([
       'editSettings',
       'prompt',
+      'characters',
       'baseImage',
       'params',
       'characterReference',

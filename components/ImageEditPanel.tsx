@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ImageEditBaseImageSource, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem } from '../types';
 import { LabPageLayout } from '../services/appearancePreferences';
-import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, validateImageEditDimensions } from '../services/imageEdit';
+import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, transformCharacterCoordinatesForImageRect, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions } from '../services/imageEdit';
 import { extractMetadata, parseNovelAIMetadata } from '../services/metadataService';
 import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
 import { ImageEditControls } from './ImageEditControls';
@@ -696,7 +696,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           const rawMeta = await extractMetadata(file);
           if (rawMeta) {
             const parsed = parseNovelAIMetadata(rawMeta);
-            if (parsed.prompt) {
+            if (parsed.prompt || parsed.params.characters?.some(character => character.prompt.trim())) {
               extractedMeta = {
                 prompt: parsed.prompt,
                 negativePrompt: parsed.negativePrompt,
@@ -712,7 +712,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       if (extractedMeta) await onBaseImageChange(dataUrl, source, undefined, extractedMeta);
       else await onBaseImageChange(dataUrl, source);
       // 等父层更新草稿后再由底图 effect 加载，避免沿用上一张图的已应用扩展量。
-      if (isCurrent() && extractedMeta?.prompt) {
+      if (isCurrent() && extractedMeta) {
         notify('已自动解析并带入底图提示词与参数', 'success');
       }
     } catch (error) {
@@ -890,8 +890,14 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     }
     const imageData = canvasToDataUrl(imageCanvas);
     const maskData = maskCanvas ? canvasToDataUrl(maskCanvas) : undefined;
+    // 扩图草稿位置仍基于原图；规范化把当前扩展画布变为新底图，先换算到该画布再随裁剪／填充变换。
+    const canvasCharacters = operation === 'outpaint' && draft.appliedExpansion
+      ? transformCharacterCoordinatesForOutpaint(draft.params.characters, sourceSize.width, sourceSize.height, draft.appliedExpansion)
+      : draft.params.characters;
     onCanvasChange(imageData, maskData);
     onDraftChange({ maskData, focusedRect: focusedRectRef.current || undefined,
+      params: { ...draft.params, characters: transformCharacterCoordinatesForImageRect(canvasCharacters,
+        sourceWidth, sourceHeight, sourceRect, destinationRect, targetWidth, targetHeight) },
       ...(operation === 'outpaint' ? { expansion: { ...emptyExpansion }, appliedExpansion: undefined, outpaintRatioId: 'custom' } : {}),
     });
     notify(`已将底图规范化为 ${targetWidth} × ${targetHeight}`, 'success');

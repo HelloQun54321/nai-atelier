@@ -167,7 +167,7 @@ export const parseNovelAIMetadata = (
             const json = JSON.parse(rawMetadata);
 
             // 基础字段提取
-            if (json.prompt) prompt = json.prompt;
+            if (typeof json.prompt === 'string') prompt = json.prompt;
             if (json.uc) negative = json.uc;
             if (json.steps != null) newParams.steps = json.steps;
             if (json.scale != null) newParams.scale = json.scale;
@@ -205,7 +205,7 @@ export const parseNovelAIMetadata = (
                 const v4 = json.v4_prompt;
 
                 // base_caption 覆盖顶层 prompt
-                if (v4.caption?.base_caption) {
+                if (typeof v4.caption?.base_caption === 'string') {
                     prompt = v4.caption.base_caption;
                 }
 
@@ -233,7 +233,7 @@ export const parseNovelAIMetadata = (
                 const v4Neg = json.v4_negative_prompt;
 
                 // base_caption 覆盖全局负面
-                if (v4Neg.caption?.base_caption) {
+                if (typeof v4Neg.caption?.base_caption === 'string') {
                     negative = v4Neg.caption.base_caption;
                 }
 

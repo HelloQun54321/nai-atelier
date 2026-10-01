@@ -811,7 +811,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             }
             const sourceItem = selectedPreviewItem;
             const sourceImage = displayedPreviewImage || chain.previewImage;
-            await createEditDraftFromSource(mode, sourceImage, sourceItem ? 'history' : 'generated', sourceItem?.id, sourceItem?.prompt || finalPrompt, sourceItem?.negativePrompt || negativePrompt, sourceItem?.params || params);
+            await createEditDraftFromSource(mode, sourceImage, sourceItem ? 'history' : 'generated', sourceItem?.id, sourceItem?.prompt ?? finalPrompt, sourceItem?.negativePrompt ?? negativePrompt, sourceItem?.params || params);
         } catch (error) {
             notify(error instanceof Error ? error.message : '切换生成模式失败', 'error');
         } finally {
@@ -1693,8 +1693,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 width: sourceWidth,
                 height: sourceHeight,
                 seed: forceEmptySeed ? undefined : editParamsSource.seed,
-                characters: [],
-                useCoords: false,
             };
             const streamSupported = getRuntimeNaiModelInfo(editParams.model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).supportsStreamedResponses;
             let result;
@@ -2251,7 +2249,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     let promptSource = activeEditDraft.promptSource;
 
                     if (meta) {
-                        if (meta.prompt) {
+                        if (meta.prompt !== undefined) {
                             inheritedPrompt = meta.prompt;
                             promptSource = (source === 'history' || source === 'inspiration') ? 'history' : 'current';
                         }
@@ -2262,7 +2260,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             inheritedParams = { ...activeEditDraft.params, ...meta.params };
                         }
                     } else if (source === 'generated' && latestTextToImageItem) {
-                        inheritedPrompt = latestTextToImageItem.prompt || finalPrompt || activeEditDraft.prompt;
+                        inheritedPrompt = latestTextToImageItem.prompt ?? finalPrompt ?? activeEditDraft.prompt;
                         inheritedNegative = latestTextToImageItem.negativePrompt ?? activeEditDraft.negativePrompt;
                         if (latestTextToImageItem.params) {
                             inheritedParams = { ...activeEditDraft.params, ...latestTextToImageItem.params };

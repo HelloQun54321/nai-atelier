@@ -9,6 +9,19 @@ import {
 
 const encoder = new TextEncoder();
 
+describe('全局为空的分角色元数据', () => {
+  it.each(['', 'obsolete global prompt'])('空 base_caption 覆盖顶层文本 %s，角色正负词与位置完整保留', prompt => {
+    const parsed = parseNovelAIMetadata(JSON.stringify({ prompt, uc: 'obsolete negative',
+      v4_prompt: { caption: { base_caption: '', char_captions: [{ char_caption: 'girl, blue hair', centers: [{ x: 0.3, y: 0.7 }] }] }, use_coords: true },
+      v4_negative_prompt: { caption: { base_caption: '', char_captions: [{ char_caption: 'red hair' }] } },
+    }));
+    expect(parsed.prompt).toBe('');
+    expect(parsed.negativePrompt).toBe('');
+    expect(parsed.params.characters).toEqual([expect.objectContaining({ prompt: 'girl, blue hair', negativePrompt: 'red hair', x: 0.3, y: 0.7 })]);
+    expect(parsed.params.useCoords).toBe(true);
+  });
+});
+
 const concatBytes = (...parts: Uint8Array[]): Uint8Array => {
   const output = new Uint8Array(parts.reduce((total, part) => total + part.byteLength, 0));
   let offset = 0;

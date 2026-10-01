@@ -163,7 +163,7 @@ describe('NovelAI generation payload', () => {
     expect(payload.parameters.qualityPresetId).toBe('none');
   });
 
-  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('does not send text-to-image characters in %s payloads', operation => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('preserves character prompts and positioning in %s payloads', operation => {
     const payload = buildNaiImageEditPayload('overall prompt', '', {
       ...baseParams,
       useCoords: true,
@@ -181,9 +181,9 @@ describe('NovelAI generation payload', () => {
     const v4Prompt = parameters.v4_prompt as { caption: { base_caption: string; char_captions: unknown[] }; use_coords: boolean };
     const v4NegativePrompt = parameters.v4_negative_prompt as { caption: { char_captions: unknown[] } };
     expect(v4Prompt.caption.base_caption).toBe('overall prompt');
-    expect(v4Prompt.caption.char_captions).toEqual([]);
-    expect(v4NegativePrompt.caption.char_captions).toEqual([]);
-    expect(v4Prompt.use_coords).toBe(false);
+    expect(v4Prompt.caption.char_captions).toEqual([{ char_caption: 'retained text-to-image character', centers: [{ x: 0.5, y: 0.5 }] }]);
+    expect(v4NegativePrompt.caption.char_captions).toEqual([{ char_caption: 'character negative', centers: [{ x: 0.5, y: 0.5 }] }]);
+    expect(v4Prompt.use_coords).toBe(true);
   });
 
   it('does not send retained Vibe selections for inpainting or outpainting', () => {

@@ -6,6 +6,7 @@ import { createLabImageEditDraft } from '../services/labWorkspace';
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPanel } from './ImageEditPanel';
 import { ImageEditPreview } from './ImageEditPreview';
+import type { NAIParams } from '../types';
 const lowMode = vi.hoisted(() => ({ enabled: false, focused: false }));
 vi.mock('../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: lowMode.enabled }) }));
 
@@ -73,13 +74,15 @@ const params = {
   ucPreset: 4,
 };
 
-const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', manualMaskEditing = false, safeMode = false, tagAssistEnabled = false) => {
-  const draft = createLabImageEditDraft(operation, 'blue bottle', 'low quality', params,
+const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', manualMaskEditing = false, safeMode = false, tagAssistEnabled = false, paramsPatch: Partial<NAIParams> = {}, mobileTab: 'canvas' | 'prompt' | 'params' = 'canvas') => {
+  const draft = createLabImageEditDraft(operation, 'blue bottle', 'low quality', { ...params, ...paramsPatch },
     operation === 'outpaint' ? { expansion: { top: 0, bottom: 0, left: 640, right: 704 } } : {});
   const onManualMaskEditingChange = vi.fn();
   const onPromptChange = vi.fn();
   const onSelectImageSource = vi.fn();
   const onPasteImage = vi.fn();
+  const onDraftChange = vi.fn();
+  const notify = vi.fn();
   const historyItem = { id: 'history-1', imageUrl: 'data:image/png;base64,fixture', prompt: 'history prompt', negativePrompt: '', params, createdAt: 1 };
   return { ...render(React.createElement(ImageEditControls, {
     operation,
@@ -111,11 +114,12 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     tagAssistEnabled,
     expansion: draft.expansion,
     apiKey: 'test-key',
-    notify: vi.fn(),
+    notify,
+    mobileTab,
     onPromptChange,
     onNegativePromptChange: vi.fn(),
     onPromptSource: vi.fn(),
-    onDraftChange: vi.fn(),
+    onDraftChange,
     onFileChange: vi.fn(),
     onPasteImage,
     onSelectImageSource,
@@ -132,21 +136,48 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     onRedo: vi.fn(),
     onExpansionChange: vi.fn(),
     onApplyOutpaint: vi.fn(),
-  })), onManualMaskEditingChange, onPromptChange, onSelectImageSource, onPasteImage };
+  })), onManualMaskEditingChange, onPromptChange, onSelectImageSource, onPasteImage, onDraftChange, notify };
 };
 
 afterEach(() => { cleanup(); lowMode.enabled = false; });
 
 describe('ImageEditControls', () => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 角色正负提示词、定位及增删只修改当前模式参数', operation => {
+    const character = { id: 'c1', prompt: 'girl, blue hair', negativePrompt: 'red hair', x: 0.25, y: 0.75 };
+    const { onDraftChange } = renderControls(operation, false, false, false, { characters: [character], useCoords: true }, 'prompt');
+    fireEvent.change(screen.getByPlaceholderText('角色提示词'), { target: { value: 'girl, white hair' } });
+    expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ characters: [{ ...character, prompt: 'girl, white hair' }] }) });
+    fireEvent.change(screen.getByDisplayValue('red hair'), { target: { value: 'black hair' } });
+    expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ characters: [{ ...character, negativePrompt: 'black hair' }] }) });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'AI 自动构图' }));
+    expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ useCoords: false, characters: [character] }) });
+    fireEvent.click(screen.getByRole('button', { name: '+ 添加角色' }));
+    expect(onDraftChange.mock.calls.at(-1)?.[0].params.characters).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: '移除角色提示词' }));
+    expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ characters: [] }) });
+    const module = screen.getByText('角色专属提示词').closest('details')!;
+    expect(module.classList.contains('block')).toBe(true);
+    expect(module.style.order).toBe('2');
+    expect(character.prompt).toBe('girl, blue hair');
+  });
+
   it('低消耗隐藏角色参考模块和普通重绘切换，保留蒙版与免费编辑参数', () => {
     lowMode.enabled = true;
     renderControls('inpaint');
     expect(screen.queryByTestId('character-reference-manager')).toBeNull();
     expect(screen.queryByText('角色参考')).toBeNull();
-    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Focused Inpainting' })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'AI 自动构图' })).toBeTruthy();
     expect(screen.getByText(/低消耗仅使用 Focused 局部重绘/)).toBeTruthy();
     expect(screen.getByRole('slider', { name: 'Strength' })).toBeTruthy();
     expect(screen.getByTestId('edit-canvas')).toBeTruthy();
+  });
+  it('编辑模式遵守当前模型的角色数量限制', () => {
+    const characters = Array.from({ length: 6 }, (_, index) => ({ id: String(index), prompt: 'girl', x: 0.5, y: 0.5 }));
+    const { onDraftChange, notify } = renderControls('inpaint', false, false, false, { model: 'nai-diffusion-4-5-full', characters });
+    fireEvent.click(screen.getByRole('button', { name: '+ 添加角色' }));
+    expect(onDraftChange).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith('当前模型最多支持 6 个角色提示词', 'error');
   });
   it('低消耗临时启用 Focused 不写回草稿，关闭后恢复普通重绘', () => {
     const draft = createLabImageEditDraft('inpaint', 'test prompt', '', params, { focused: false });
@@ -688,24 +719,28 @@ describe('ImageEditPreview', () => {
       const promptSection = container.querySelector('[data-lab-module="prompt"]');
       const paramsSection = container.querySelector('[data-lab-module="params"]');
       const editSettingsSection = container.querySelector('[data-lab-module="editSettings"]');
+      const charactersSection = container.querySelector('[data-lab-module="characters"]');
 
       expect(baseImageSection?.className).toContain('block');
       expect(baseImageSection?.className).not.toContain('hidden lg:block');
       expect(promptSection?.className).toContain('hidden lg:block');
       expect(paramsSection?.className).toContain('hidden lg:block');
       expect(editSettingsSection?.className).toContain('hidden lg:block');
+      expect(charactersSection?.className).toContain('hidden lg:block');
 
       // mobileTab = 'prompt' 时：prompt 是 block，baseImage 和 params 是 hidden lg:block
       rerender(React.createElement(ImageEditControls, { ...baseProps, mobileTab: 'prompt' }));
       expect(baseImageSection?.className).toContain('hidden lg:block');
       expect(promptSection?.className).toContain('block');
       expect(promptSection?.className).not.toContain('hidden lg:block');
+      expect(charactersSection?.classList.contains('hidden')).toBe(false);
       expect(paramsSection?.className).toContain('hidden lg:block');
 
       // mobileTab = 'params' 时：params 与 editSettings 是 block，baseImage 和 prompt 是 hidden lg:block
       rerender(React.createElement(ImageEditControls, { ...baseProps, mobileTab: 'params' }));
       expect(baseImageSection?.className).toContain('hidden lg:block');
       expect(promptSection?.className).toContain('hidden lg:block');
+      expect(charactersSection?.className).toContain('hidden lg:block');
       expect(paramsSection?.className).toContain('block');
       expect(paramsSection?.className).not.toContain('hidden lg:block');
       expect(editSettingsSection?.className).toContain('block');
