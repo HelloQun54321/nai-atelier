@@ -1,5 +1,6 @@
 import { api } from './api';
 import { normalizeTagQuery, searchTagDictionary } from './tagDictionary';
+import { countDanbooruQueryTerms, DANBOORU_RATIO_QUERIES, splitDanbooruQuery, validateDanbooruQuery } from './danbooruQuery';
 
 export type DanbooruTagCategory = 'general' | 'artist' | 'copyright' | 'character' | 'meta';
 
@@ -102,12 +103,11 @@ const persistCoverCache = () => {
 const normalizeSingleTag = async (rawValue: string) => {
   const value = rawValue.trim();
   if (!value) return '';
-  if (/^[a-z_][a-z0-9_:.()'!+\-/]*$/i.test(value)) return value.toLowerCase().replaceAll(' ', '_');
+  if (/^[a-z0-9_~*-][a-z0-9_:.()'!+\-/<>=~*]*$/i.test(value)) return value.toLowerCase();
 
   const normalized = normalizeTagQuery(value);
   const matches = await searchTagDictionary(value, 12).catch(() => []);
-  // 精确匹配优先；否则取最相关结果作为翻译（worker 只接受 ASCII tag，
-  // 原样返回中文会导致请求 400、搜索无声失败）。
+  // 精确匹配优先；否则取最相关结果作为翻译。
   const exact = matches.find(item => normalizeTagQuery(item.chinese) === normalized || normalizeTagQuery(item.name) === normalized);
   const best = exact || matches[0];
   return (best?.name || normalized).replaceAll(' ', '_');
@@ -115,7 +115,8 @@ const normalizeSingleTag = async (rawValue: string) => {
 
 /** Search accepts one or two comma-separated tags. Spaces inside one tag are normalized to underscores. */
 export const resolveDanbooruQuery = async (rawValue: string) => {
-  const parts = rawValue.split(/[,，]+/).map(value => value.trim()).filter(Boolean).slice(0, 2);
+  const parts = rawValue.split(/[,，]+/).map(value => value.trim()).filter(Boolean);
+  if (parts.length > 2) throw new Error('Danbooru 搜索最多输入两个关键词，请用逗号分隔');
   return (await Promise.all(parts.map(normalizeSingleTag))).filter(Boolean).join(' ');
 };
 
@@ -141,42 +142,43 @@ export interface DanbooruFilterOptions {
 }
 
 export const buildDanbooruFilterQuery = (options: DanbooruFilterOptions = {}): string => {
-  const parts: string[] = [];
   const raw = (options.query || '').trim();
-  if (raw) parts.push(raw);
+  const parts = splitDanbooruQuery(raw).filter(token => !options.sort || !token.startsWith('order:'));
+  const hasQuery = parts.length > 0;
 
   // 排序修饰：
   // 1. 当有关键词时（如 frieren order:score），Danbooru 的索引能极快响应；
   // 2. 当无关键词时（全站大库），全表 order:score 或 order:favcount 会触发 Danbooru 官方数据库 500 timeout；
   //    此时无缝路由到 Danbooru 官方专用的 /explore/posts/popular 聚合接口（日榜/周榜/月榜），秒级响应且结果高质量。
   if (options.sort === 'score') {
-    parts.push(raw ? 'order:score' : 'explore:popular_month');
+    parts.push(hasQuery ? 'order:score' : 'explore:popular_month');
   } else if (options.sort === 'favcount') {
-    parts.push(raw ? 'order:favcount' : 'explore:popular_week');
+    parts.push(hasQuery ? 'order:favcount' : 'explore:popular_week');
   } else if (options.sort === 'latest') {
-    parts.push('order:id_desc');
+    // 官方默认就是最新；两个关键词时省去会占一个名额的显式排序。
+    if (countDanbooruQueryTerms(parts.join(' ')) < 2) parts.push('order:id_desc');
   } else if (options.sort === 'rank' || (!options.sort && !raw)) {
     parts.push('order:rank');
   }
 
-  // 评级修饰（仅在不超过 2 Tag 匿名上限时可并入上游检索）
-  if (options.rating && options.rating !== 'all' && parts.length < 2 && !parts[0]?.startsWith('explore:')) {
+  // rating/ratio 属于官方免费修饰条件，不应因为普通 Tag 已满而被省略。
+  if (options.rating && options.rating !== 'all') {
     parts.push(`rating:${options.rating}`);
   }
 
   // 构图比例修饰
-  if (parts.length < 2 && !parts[0]?.startsWith('explore:')) {
-    if (options.ratio === 'portrait') parts.push('ratio:<0.8');
-    else if (options.ratio === 'landscape') parts.push('ratio:>1.2');
-    else if (options.ratio === 'square') parts.push('ratio:square');
-  }
+  if (options.ratio && options.ratio !== 'all') parts.push(DANBOORU_RATIO_QUERIES[options.ratio]);
 
   // 主体修饰
-  if (options.subject && options.subject !== 'all' && parts.length < 2 && !parts[0]?.startsWith('explore:')) {
+  // solo 是普通 Tag；没有上游名额时由页面对每个加载页做相同条件的筛选。
+  if (options.subject && options.subject !== 'all'
+    && (parts[0]?.startsWith('explore:') || countDanbooruQueryTerms(parts.join(' ')) < 2)) {
     parts.push(options.subject);
   }
 
-  return parts.join(' ');
+  const query = parts.join(' ');
+  validateDanbooruQuery(query);
+  return query;
 };
 
 const search = (options: { query?: string; page?: number; limit?: number } = {}): Promise<DanbooruSearchResult> => {

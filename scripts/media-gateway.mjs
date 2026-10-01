@@ -337,7 +337,8 @@ export const classifyDanbooruRemoteTarget = value => {
   if (target.protocol !== 'https:' || target.username || target.password) return null;
   const hostname = target.hostname.toLowerCase();
   if (hostname !== 'danbooru.donmai.us' && hostname !== 'safebooru.donmai.us') return null;
-  return target.pathname === '/posts.json' ? 'json' : null;
+  if (target.port && target.port !== '443') return null;
+  return ['/posts.json', '/explore/posts/popular.json'].includes(target.pathname) ? 'json' : null;
 };
 
 const normalizeIp = value => String(value || '').replace(/^::ffff:/, '');
@@ -2376,7 +2377,7 @@ const handleAitagRemoteRequest = async (req, res, url, lanSecret, remoteFetch) =
   }
 };
 
-const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remoteFetch) => {
+export const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remoteFetch) => {
   const suppliedSecret = String(req.headers['x-nai-internal-secret'] || '');
   const expected = Buffer.from(lanSecret);
   const supplied = Buffer.from(suppliedSecret);

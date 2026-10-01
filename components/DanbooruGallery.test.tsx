@@ -1,0 +1,110 @@
+// @vitest-environment jsdom
+import React from 'react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { DanbooruGallery } from './DanbooruGallery';
+import { danbooruService, resolveDanbooruQuery, type DanbooruPost } from '../services/danbooruService';
+import type { User } from '../types';
+
+vi.mock('../services/danbooruService', async original => ({
+  ...await original<typeof import('../services/danbooruService')>(),
+  danbooruService: { search: vi.fn() }, resolveDanbooruQuery: vi.fn(),
+}));
+vi.mock('./ShortestColumnMasonry', () => ({
+  useMasonryColumnCount: () => 3,
+  ShortestColumnMasonry: ({ items, renderItem }: { items: DanbooruPost[]; renderItem: (post: DanbooruPost) => React.ReactNode }) => <div>{items.map(renderItem)}</div>,
+}));
+vi.mock('../services/galleryHistoryService', () => ({ galleryHistoryService: { recordView: vi.fn(), getHistory: () => [] } }));
+vi.mock('./ImageTaggerPanel', () => ({ ImageTaggerAction: () => null }));
+
+const observers: Array<(entries: Array<{ isIntersecting: boolean }>) => void> = [];
+const search = vi.mocked(danbooruService.search);
+const resolve = vi.mocked(resolveDanbooruQuery);
+const result = (query = 'order:rank', items: DanbooruPost[] = [], page = 1, hasMore = false) => ({ query, items, page, hasMore, limit: 40 });
+const post: DanbooruPost = { id: 1, rating: 'g', score: 10, favCount: 10, width: 800, height: 1200, fileExt: 'png', previewUrl: '', sampleUrl: '', sourceUrl: '', postUrl: '', tags: { general: ['solo'], artist: ['synthetic_artist'], copyright: [], character: [], meta: [] } };
+const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; };
+
+beforeEach(() => {
+  localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks(); observers.length = 0;
+  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(callback: typeof observers[number]) { observers.push(callback); }
+    observe() {} disconnect() {}
+  });
+  search.mockImplementation(async options => result(options?.query, [], options?.page));
+  resolve.mockImplementation(async value => value);
+});
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+const setup = async () => {
+  const notify = vi.fn();
+  const view = render(<DanbooruGallery active currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={vi.fn()} />);
+  await waitFor(() => expect(screen.queryByText('正在读取 Danbooru…')).toBeNull());
+  return { ...view, notify };
+};
+const openFilters = () => fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+const changeFilter = (name: string, value: string) => fireEvent.change(screen.getByRole('combobox', { name }), { target: { value } });
+const submit = (value: string) => { const input = screen.getByRole('searchbox', { name: '搜索 Danbooru' }); fireEvent.change(input, { target: { value } }); fireEvent.submit(input.closest('form')!); };
+
+it('慢翻译不能覆盖后来选择的筛选，也不能发送过期请求', async () => {
+  await setup();
+  const first = deferred<string>();
+  resolve.mockReturnValueOnce(first.promise).mockResolvedValueOnce('synthetic');
+  submit('旧中文'); submit('新中文');
+  await waitFor(() => expect(search).toHaveBeenLastCalledWith({ query: 'synthetic order:rank', page: 1, limit: 40 }));
+  const calls = search.mock.calls.length;
+  await act(async () => first.resolve('old_tag'));
+  expect(search).toHaveBeenCalledTimes(calls);
+  expect(screen.queryByText('检索：old tag order:rank')).toBeNull();
+});
+
+it('超限组合在出站前提示，选择最新后可用两个关键词和画幅／评级', async () => {
+  const { notify } = await setup();
+  submit('frieren solo');
+  await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.stringContaining('选择「最新」'), 'error'));
+  expect(search).toHaveBeenCalledTimes(1);
+  openFilters(); changeFilter('排序方式', 'latest');
+  await waitFor(() => expect(search).toHaveBeenLastCalledWith({ query: 'frieren solo', page: 1, limit: 40 }));
+  changeFilter('评级范围', 'g');
+  await waitFor(() => expect(search).toHaveBeenLastCalledWith({ query: 'frieren solo rating:g', page: 1, limit: 40 }));
+  changeFilter('画幅比例', 'portrait');
+  await waitFor(() => expect(search).toHaveBeenLastCalledWith({ query: 'frieren solo rating:g ratio:<0.85', page: 1, limit: 40 }));
+});
+
+it('点击详情 Tag 沿用当前排序和筛选，不偷换成高分排序', async () => {
+  search.mockImplementation(async options => result(options?.query, [post]));
+  await setup(); openFilters(); changeFilter('评级范围', 'g');
+  await waitFor(() => expect(search).toHaveBeenLastCalledWith({ query: 'order:rank rating:g', page: 1, limit: 40 }));
+  fireEvent.keyDown(window, { key: 'Escape' });
+  fireEvent.click(screen.getByRole('button', { name: /synthetic artist/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'synthetic artist' }));
+  await waitFor(() => expect(search).toHaveBeenLastCalledWith({ query: 'synthetic_artist order:rank rating:g', page: 1, limit: 40 }));
+});
+
+it('同查询重新加载时，之前的追加页不能拼回新结果', async () => {
+  const nextPage = deferred<ReturnType<typeof result>>();
+  let first = true;
+  search.mockImplementation(async options => {
+    if (options?.page === 2) return nextPage.promise;
+    if (first) { first = false; return result('order:rank', [post], 1, true); }
+    return result();
+  });
+  await setup();
+  await waitFor(() => expect(search).toHaveBeenCalledWith({ query: 'order:rank', page: 2, limit: 40 }));
+  // 空 src 的合成图不会注册图片观察器，此处只有列表触底观察器。
+  act(() => observers.at(-1)?.([{ isIntersecting: true }]));
+  submit('');
+  await waitFor(() => expect(screen.getByText('没有找到匹配图片')).toBeTruthy());
+  await act(async () => nextPage.resolve(result('order:rank', [{ ...post, id: 2 }], 2, false)));
+  expect(screen.queryByRole('button', { name: /synthetic artist/ })).toBeNull();
+});
+
+it('筛选后的空页仍可继续读取后续页，不因条目数量未变而停止观察', async () => {
+  search.mockImplementation(async options => result(options?.query, [], options?.page, (options?.page || 1) < 3));
+  await setup();
+  await waitFor(() => expect(search).toHaveBeenCalledWith({ query: 'order:rank', page: 2, limit: 40 }));
+  const previousObservers = observers.length;
+  await act(async () => observers.at(-1)?.([{ isIntersecting: true }]));
+  await waitFor(() => expect(observers.length).toBeGreaterThan(previousObservers));
+  expect(search).toHaveBeenCalledWith({ query: 'order:rank', page: 3, limit: 40 });
+});

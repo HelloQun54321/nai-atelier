@@ -1,6 +1,7 @@
 // Danbooru proxy/search routes.
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
-import { json, error, clampInt, type D1Database, type Env, type RouteContext } from './types';
+import { json, error, clampInt, type Env, type RouteContext } from './types';
+import { matchesDanbooruImageFilters, parseDanbooruExploreQuery, splitDanbooruQuery, validateDanbooruQuery } from '../../services/danbooruQuery';
 
 const DANBOORU_BASE_URL = 'https://danbooru.donmai.us';
 const DANBOORU_MAX_PAGE_SIZE = 200;
@@ -92,15 +93,11 @@ function normalizeDanbooruPost(post: any) {
 }
 
 const normalizeDanbooruQuery = (value: string | null) => {
-  const query = String(value || '').trim().replace(/[,，]+/g, ' ').replace(/\s+/g, ' ').slice(0, 240);
+  const query = String(value || '').trim().replace(/[,，]+/g, ' ').replace(/\s+/g, ' ');
   if (!query) return 'order:rank';
-  const tokens = query.split(' ').filter(Boolean);
-  if (tokens.length > 2) throw Object.assign(new Error('Danbooru 匿名检索一次最多支持两个 Tag，请用逗号分隔并减少条件'), { status: 400 });
-  // 允许 Unicode 字母数字与高级搜索符号（<, >, =, ~, * 等），仍拒绝空白、引号、反斜杠等符号类注入。
-  if (tokens.some(token => !/^[\p{L}\p{N}_:.()'!+\-/<>=~*]+$/u.test(token))) {
-    throw Object.assign(new Error('Danbooru 查询中包含不支持的字符'), { status: 400 });
-  }
-  return tokens.join(' ');
+  try { validateDanbooruQuery(query); }
+  catch (e) { throw Object.assign(e as Error, { status: 400 }); }
+  return query;
 };
 
 export async function handleDanbooruRoute(ctx: RouteContext): Promise<Response | null> {
@@ -111,30 +108,29 @@ export async function handleDanbooruRoute(ctx: RouteContext): Promise<Response |
       const page = clampInt(url.searchParams.get('page'), 1, 1, 1000);
       const limit = clampInt(url.searchParams.get('limit'), 40, 1, DANBOORU_MAX_PAGE_SIZE);
       const query = normalizeDanbooruQuery(url.searchParams.get('tags'));
-      const isRandom = query.includes('order:random');
+      const isRandom = splitDanbooruQuery(query).includes('order:random');
+      const explore = parseDanbooruExploreQuery(query);
       
       let target: URL;
       // 当全局无额外 Tag 且请求 popular/rank 时，优先使用 Danbooru Explore Popular 接口，避免大库全表排序 500 超时
-      if (query === 'explore:popular_week') {
-        target = new URL('/explore/posts/popular.json?scale=week', DANBOORU_BASE_URL);
-      } else if (query === 'explore:popular_month') {
-        target = new URL('/explore/posts/popular.json?scale=month', DANBOORU_BASE_URL);
-      } else if (query === 'explore:popular_day') {
-        target = new URL('/explore/posts/popular.json?scale=day', DANBOORU_BASE_URL);
+      if (explore) {
+        target = new URL('/explore/posts/popular.json', DANBOORU_BASE_URL);
+        target.searchParams.set('scale', explore.scale);
       } else {
         target = new URL('/posts.json', DANBOORU_BASE_URL);
         target.searchParams.set('tags', query);
-        // Danbooru 官方 API 规定：order:random 查询不允许 page > 1（否则上游直接抛 500），必须固定 page=1
-        target.searchParams.set('page', isRandom ? '1' : String(page));
-        target.searchParams.set('limit', String(limit));
       }
+      // 随机不翻页；普通搜索与排行榜都传入实际页码和页长。
+      target.searchParams.set('page', isRandom ? '1' : String(page));
+      target.searchParams.set('limit', String(limit));
 
       const payload = await fetchDanbooruJson(target, env);
-      const items = (Array.isArray(payload) ? payload : [])
+      if (!Array.isArray(payload)) throw new Error('Danbooru 返回了无效的图片列表');
+      const items = payload
         .map(normalizeDanbooruPost)
-        .filter(Boolean);
-      const isExplore = query.startsWith('explore:');
-      return json({ items, page: isRandom || isExplore ? 1 : page, limit, query, hasMore: isRandom || isExplore ? false : (Array.isArray(payload) && payload.length >= limit) }, 200, {
+        .filter(post => post && (!explore || matchesDanbooruImageFilters(post, explore.filters)));
+      // 用筛选前的上游页长判断后续页，不能把筛选后的空页误报为全部加载完毕。
+      return json({ items, page: isRandom ? 1 : page, limit, query, hasMore: !isRandom && page < 1000 && payload.length >= limit }, 200, {
         'Cache-Control': isRandom ? 'no-cache, no-store' : 'private, max-age=120',
       });
     } catch (e: any) {

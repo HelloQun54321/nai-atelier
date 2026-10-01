@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.8.4-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.8.5-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -644,9 +644,10 @@ flowchart LR
 
 ### Danbooru：通用级素材与 Tag 参考
 
-接入 Safebooru 全年龄图库，适合寻找构图灵感、查验 Danbooru 标准 Tag 与画师代表作；图片经电脑媒体网关实时抓取并按需缓存，不占用本地大容量存储。
+接入 Danbooru 图库，适合寻找构图灵感、查验标准 Tag 与画师代表作，可按评级筛选；图片经电脑媒体网关实时抓取并按需缓存。
 
 - 支持英文 Tag、中文精确匹配和最多两个 Tag 的组合检索；中文会先匹配项目本地中英词典，再转换为 Danbooru 标准 Tag。
+- 匿名检索中，热度／评分／收藏排序会占一个检索条件，两个关键词请选择「最新」；评级与画幅不占名额。无关键词高分榜／收藏榜沿用月度热门／本周精选，支持连续翻页，评级、画幅与单人在榜单结果中筛选；普通搜索将评级／画幅传入上游，solo 在有名额时传入，否则按加载页筛选。
 - 详情按画师、作品、角色、通用和元 Tag 分类展示，可复制或把角色与通用 Tag 追加到实验室。
 - 画师与角色卡片可左右切换查看同一精确 Tag 的全部可用候选图，按 Danbooru 热度降序逐页加载；角色候选会继续排除多人图、漫画、文字梗、玩偶和特殊服装等干扰。首次默认图即为热度最高的合格候选；选中某张候选后可点右上角图钉设为固定封面，图片会保存到项目自己的存储中。老师、提督等没有可靠单人形象的泛角色宁可留空，不强行误配；候选结果缓存 14 天。
 - 外部图片经过电脑媒体网关提供给局域网设备，并继续受全局安全模式的模糊规则控制。

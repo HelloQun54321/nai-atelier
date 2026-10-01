@@ -26,6 +26,7 @@ import { buildMediaUrl } from '../services/mobileImageCache';
 import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHistoryService';
 import { Clock } from 'lucide-react';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
+import { matchesDanbooruImageFilters } from '../services/danbooruQuery';
 
 interface DanbooruGalleryProps {
   active: boolean;
@@ -106,6 +107,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   const pageRef = useRef(page);
   const appendingRef = useRef(false);
   const loadGuard = useStaleGuard();
+  const loadSeqRef = useRef(0);
   const nextPagePrefetchRef = useRef<{ query: string; page: number; promise: Promise<Awaited<ReturnType<typeof danbooruService.search>> | null> } | null>(null);
 
   const scheduleNextPagePrefetch = (query: string, page: number, hasMore: boolean) => {
@@ -163,16 +165,25 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   }, [selected]);
 
   const loadHistory = () => {
+    loadSeqRef.current = loadGuard.begin();
+    nextPagePrefetchRef.current = null;
+    setLoading(false);
     const history = galleryHistoryService.getHistory('danbooru');
     setHistoryItems(history);
     setShowHistory(true);
   };
 
-  const load = async (nextQuery = query, nextPage = page) => {
-    setShowHistory(false);
-    const mySeq = loadGuard.begin();
+  const beginLoad = () => {
+    const seq = loadGuard.begin();
+    loadSeqRef.current = seq;
+    nextPagePrefetchRef.current = null;
     setLoading(true);
     setError('');
+    return seq;
+  };
+
+  const load = async (nextQuery = query, nextPage = page, mySeq = beginLoad()) => {
+    setShowHistory(false);
     try {
       const result = await danbooruService.search({ query: nextQuery, page: nextPage, limit: PAGE_SIZE });
       if (!loadGuard.isCurrent(mySeq)) return;
@@ -210,6 +221,9 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     const rat = overrides.ratio !== undefined ? overrides.ratio : ratio;
     const solo = overrides.soloOnly !== undefined ? overrides.soloOnly : soloOnly;
     const term = overrides.inputVal !== undefined ? overrides.inputVal : input;
+    // 序号覆盖翻译、下载及追加整个链路，慢词典响应也不得发起过期查询。
+    const mySeq = beginLoad();
+    setShowHistory(false);
 
     if (overrides.sort !== undefined) setSort(s);
     if (overrides.rating !== undefined) setRating(r);
@@ -218,6 +232,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
 
     try {
       const resolvedTag = term.trim() ? await resolveDanbooruQuery(term.trim()) : '';
+      if (!loadGuard.isCurrent(mySeq)) return;
       const finalQuery = buildDanbooruFilterQuery({
         query: resolvedTag,
         sort: s,
@@ -225,35 +240,23 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
         ratio: rat,
         subject: solo ? 'solo' : 'all',
       });
-      await load(finalQuery || 'order:rank', 1);
+      await load(finalQuery || 'order:rank', 1, mySeq);
     } catch (e: any) {
-      notify(e?.message || '筛选查询失败', 'error');
+      if (!loadGuard.isCurrent(mySeq)) return;
+      const message = e?.message || '筛选查询失败';
+      setError(message);
+      // 请求还未发出时保留原筛选，避免界面宣称已应用无效条件。
+      setSort(sort); setRating(rating); setRatio(ratio); setSoloOnly(soloOnly);
+      notify(message, 'error');
+    } finally {
+      if (loadGuard.isCurrent(mySeq)) setLoading(false);
     }
   };
 
-  // 前端辅助过滤：当关键词本身已有 1~2 个 Tag，导致无法在上游 API 追加 rating/ratio/solo 时，
-  // 在本地对返回列表进行即时过滤，确保用户在任何检索词下点击筛选都绝对生效。
+  // 排行榜与名额不足的 solo 查询在本地筛选；边界与普通搜索的上游条件一致。
   const displayedItems = useMemo(() => {
     if (showHistory) return items;
-    return items.filter(post => {
-      // 评级过滤
-      if (rating !== 'all' && post.rating?.toLowerCase() !== rating) {
-        return false;
-      }
-      // 比例过滤
-      if (ratio !== 'all') {
-        const r = Number(post.width) / Math.max(1, Number(post.height) || 1);
-        if (ratio === 'portrait' && r >= 0.85) return false;
-        if (ratio === 'landscape' && r <= 1.15) return false;
-        if (ratio === 'square' && (r < 0.85 || r > 1.15)) return false;
-      }
-      // 单人过滤
-      if (soloOnly) {
-        const hasSolo = post.tags?.general?.includes('solo') || post.tags?.general?.includes('1girl') || post.tags?.general?.includes('1boy');
-        if (!hasSolo) return false;
-      }
-      return true;
-    });
+    return items.filter(post => matchesDanbooruImageFilters(post, { rating, ratio, subject: soloOnly ? 'solo' : 'all' }));
   }, [items, rating, ratio, showHistory, soloOnly]);
   // 自动加载：把下一页内容追加到当前列表下方（连续滚动、无切页感）。
   // 与 Pixiv/历史页一致；软上限后停止自动追加，按钮可继续手动加载。
@@ -262,14 +265,18 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     if (!force && items.length >= DANBOORU_APPEND_LIMIT) return;
     const beforePage = pageRef.current;
     const beforeQuery = queryRef.current;
+    const beforeSeq = loadSeqRef.current;
     appendingRef.current = true;
     try {
       // 优先消费投机预取的下一页（预取失败则回退正常请求）
       const prefetched = await consumeNextPagePrefetch(beforeQuery, beforePage + 1);
       const result = prefetched || await danbooruService.search({ query: beforeQuery, page: beforePage + 1, limit: PAGE_SIZE });
       // 加载期间用户搜索/跳页：丢弃本次结果，避免拼接到错误列表上。
-      if (pageRef.current !== beforePage || queryRef.current !== beforeQuery) return;
-      setItems(previous => [...previous, ...result.items]);
+      if (!loadGuard.isCurrent(beforeSeq) || pageRef.current !== beforePage || queryRef.current !== beforeQuery) return;
+      setItems(previous => {
+        const ids = new Set(previous.map(post => post.id));
+        return [...previous, ...result.items.filter(post => !ids.has(post.id))];
+      });
       setHasMore(result.hasMore);
       setPage(result.page);
       pageRef.current = result.page;
@@ -277,6 +284,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       prewarmSources(result.items.map(item => item.sampleUrl));
       scheduleNextPagePrefetch(beforeQuery, result.page, result.hasMore);
     } catch (appendError) {
+      if (!loadGuard.isCurrent(beforeSeq)) return;
       const message = appendError instanceof Error ? appendError.message : 'Danbooru 加载失败';
       notify(message, 'error');
     } finally {
@@ -295,7 +303,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   useEffect(() => {
     const sentinel = appendSentinelRef.current;
     const root = scrollRef.current;
-    if (!sentinel || !root || !hasMore || loading || items.length >= DANBOORU_APPEND_LIMIT) return;
+    if (!sentinel || !root || showHistory || !hasMore || loading || items.length >= DANBOORU_APPEND_LIMIT) return;
     if (!('IntersectionObserver' in window)) return;
     const observer = new IntersectionObserver(entries => {
       if (entries[0]?.isIntersecting) void appendNextPage();
@@ -304,7 +312,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     return () => observer.disconnect();
     // appendNextPage 闭包随 items.length 重建，无需列入依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMore, items.length, loading]);
+  }, [hasMore, items.length, loading, page, showHistory]);
 
   // 瀑布流（masonry 布局时）：真实宽高比完整显示，最短列分配互相补齐。
   const masonryColumns = useMasonryColumnCount(imageDisplay);
@@ -495,9 +503,9 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
               <span>
                 {query === 'order:rank'
                   ? '综合热门推荐'
-                  : query === 'explore:popular_month'
+                  : query.startsWith('explore:popular_month')
                   ? '高分榜 · 月度热门'
-                  : query === 'explore:popular_week'
+                  : query.startsWith('explore:popular_week')
                   ? '收藏榜 · 本周精选'
                   : `检索：${query.replaceAll('_', ' ')}`}
               </span>
@@ -628,7 +636,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             <button type="button" onClick={() => void copyAll(selected)} className="text-xs font-bold text-indigo-600 hover:text-indigo-500 dark:text-indigo-300">复制包含元数据的全部 Tag</button>
             {(Object.keys(categoryLabels) as DanbooruTagCategory[]).map(category => selected.tags[category].length > 0 && <section key={category}>
               <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-black text-gray-700 dark:text-gray-200">{categoryLabels[category]} · {selected.tags[category].length}</h3><button type="button" onClick={() => void copyText(selected.tags[category].join(', ')).then(() => notify(`已复制${categoryLabels[category]} Tag`))} className="text-micro text-gray-500 hover:text-indigo-500">复制</button></div>
-              <TagChipGroup chips={selected.tags[category].map(tag => ({ label: tag.replaceAll('_', ' '), onClick: () => { setInput(tag.replaceAll('_', ' ')); void load(`${tag} order:score`, 1); } }))} />
+              <TagChipGroup chips={selected.tags[category].map(tag => ({ label: tag.replaceAll('_', ' '), onClick: () => { setInput(tag); void handleApplyFilter({ inputVal: tag }); } }))} />
             </section>)}
           </div> : <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">选择一张作品后查看图片、Tag 和导入操作。</div>}
         </DetailSidePanel>

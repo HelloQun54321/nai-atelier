@@ -18,6 +18,7 @@ import {
   getVibeCacheSecretKey,
   classifyAitagRemoteTarget,
   classifyDanbooruRemoteTarget,
+  handleDanbooruRemoteRequest,
   estimateNovelAiGenerationCost,
   fetchAitagRemoteResponse,
   fetchNovelAiSubscription,
@@ -705,13 +706,43 @@ test('AITag JSON proxy uses the curl transport before Node fetch', async () => {
   assert.equal(await response.json().then(payload => payload.items.length), 0);
 });
 
-test('Danbooru computer proxy only accepts the Danbooru/Safebooru posts API', () => {
+test('Danbooru computer proxy accepts exact search and popular APIs only', () => {
   assert.equal(classifyDanbooruRemoteTarget('https://danbooru.donmai.us/posts.json?tags=1girl'), 'json');
   assert.equal(classifyDanbooruRemoteTarget('https://safebooru.donmai.us/posts.json?tags=1girl'), 'json');
+  for (const host of ['danbooru.donmai.us', 'safebooru.donmai.us']) {
+    assert.equal(classifyDanbooruRemoteTarget(`https://${host}/explore/posts/popular.json?scale=month&page=2&limit=40`), 'json');
+    assert.equal(classifyDanbooruRemoteTarget(`https://${host}/explore/posts/popular.json/extra`), null);
+    assert.equal(classifyDanbooruRemoteTarget(`https://${host}/explore/posts/viewed.json`), null);
+    assert.equal(classifyDanbooruRemoteTarget(`https://${host}:8443/posts.json`), null);
+    assert.equal(classifyDanbooruRemoteTarget(`http://${host}/posts.json`), null);
+    assert.equal(classifyDanbooruRemoteTarget(`https://user:password@${host}/posts.json`), null);
+  }
   assert.equal(classifyDanbooruRemoteTarget('https://danbooru.donmai.us/posts/1.json'), null);
   assert.equal(classifyDanbooruRemoteTarget('https://safebooru.donmai.us.evil.example/posts.json'), null);
   assert.equal(classifyDanbooruRemoteTarget('https://danbooru.donmai.us.evil.example/posts.json'), null);
   assert.equal(classifyDanbooruRemoteTarget('file:///etc/passwd'), null);
+});
+
+test('Danbooru popular relay preserves parameters and local authorization', async () => {
+  const target = 'https://danbooru.donmai.us/explore/posts/popular.json?scale=month&page=2&limit=40';
+  const url = new URL('http://localhost/api/internal/danbooru-remote');
+  url.searchParams.set('url', target);
+  const req = { method: 'GET', socket: { remoteAddress: '127.0.0.1' }, headers: { 'x-nai-internal-secret': 'synthetic-secret' } };
+  let status, body, called = 0;
+  const res = { writeHead(value) { status = value; }, end(value) { body = value; } };
+  const remoteFetch = async (address, options) => {
+    called++;
+    assert.equal(String(address), target);
+    assert.equal(options.redirect, 'manual');
+    return new Response('[{"id":123}]', { headers: { 'content-type': 'application/json' } });
+  };
+  await handleDanbooruRemoteRequest(req, res, url, 'synthetic-secret', remoteFetch);
+  assert.equal(status, 200); assert.deepEqual(JSON.parse(String(body)), [{ id: 123 }]);
+  await handleDanbooruRemoteRequest({ ...req, headers: {} }, res, url, 'synthetic-secret', remoteFetch);
+  assert.equal(status, 404);
+  url.searchParams.set('url', 'https://example.com/posts.json');
+  await handleDanbooruRemoteRequest(req, res, url, 'synthetic-secret', remoteFetch);
+  assert.equal(status, 400); assert.equal(called, 1);
 });
 
 test('media thumbnails accept project and st-chatu8 history sources without opening arbitrary local routes', () => {
