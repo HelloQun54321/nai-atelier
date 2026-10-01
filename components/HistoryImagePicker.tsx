@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, LoaderCircle, RefreshCw, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, LoaderCircle, X } from 'lucide-react';
 import { PAGINATION_CONFIG } from '../config/pagination';
 import { localHistory } from '../services/localHistory';
 import { LocalGenItem } from '../types';
@@ -106,7 +106,6 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
             <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">数据与历史页面一致；默认只替换底图，勾选「同时导入该图参数」才载入提示词与参数。</p>
           </div>
           <div className="flex flex-none items-center gap-1">
-            <button type="button" onClick={() => void loadPage(page)} disabled={loading} className="mobile-touch flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 disabled:opacity-50 dark:hover:bg-gray-800" aria-label="刷新历史图片"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
             <button type="button" onClick={onClose} className="mobile-touch flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="关闭历史图片选择"><X className="h-5 w-5" /></button>
           </div>
         </header>

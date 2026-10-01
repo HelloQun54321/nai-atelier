@@ -7,7 +7,6 @@ import {
   Loader2,
   Monitor,
   Play,
-  RefreshCw,
 } from 'lucide-react';
 import {
   DesktopLauncherStatus,
@@ -23,7 +22,6 @@ interface DesktopLauncherManagerProps {
 
 export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ notify }) => {
   const [status, setStatus] = useState<DesktopLauncherStatus | null>(null);
-  const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [openingFolder, setOpeningFolder] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,15 +30,12 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
   const [hideBat, setHideBat] = useState(true);
 
   const loadStatus = async () => {
-    setLoading(true);
     setError(null);
     try {
       const data = await getDesktopLauncherStatus();
       setStatus(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : '无法获取桌面启动器状态');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -87,15 +82,6 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
           </p>
         </div>
         <div className="flex items-center gap-1.5 flex-none">
-          <button
-            type="button"
-            onClick={() => void loadStatus()}
-            disabled={loading}
-            className="mobile-touch flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-            title="刷新桌面状态"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-          </button>
           <Monitor className="h-4 w-4 text-indigo-500" />
         </div>
       </div>

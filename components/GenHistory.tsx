@@ -13,7 +13,7 @@ import { ImageActivityContext, OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, Layers, ListChecks, LoaderCircle, Pencil, RefreshCw, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, Layers, ListChecks, LoaderCircle, Pencil, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { CloseButton, EmptyState, FavoriteButton, IconButton, PageSpinner, ToolbarButton, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
@@ -201,7 +201,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     const dateRangeRef = useRef<LocalHistoryDateRange>({});
     const [migrationProgress, setMigrationProgress] = useState<{ current: number; total: number } | null>(null);
     const [pendingFavoriteIds, setPendingFavoriteIds] = useState<Set<string>>(new Set());
-    
     // 缓存管理
     const pageCacheRef = useRef<Record<number, LocalGenItem[]>>({});
     const inflightPagesRef = useRef<Record<string, Promise<LocalHistoryPage>>>({});
@@ -390,7 +389,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             if (requestId !== loadRequestRef.current) return;
 
             setItems(data);
-            
             // 更新缓存并清理
             const nextCache = {
                 ...pageCacheRef.current,
@@ -398,7 +396,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             };
             setCacheState(nextCache);
             trimCacheAroundPage(targetPage, calculatedTotalPages, nextCache);
-            
             // 预加载相邻页面（当前页 +1 和 -1）
             if (targetPage > 1) {
                 void preloadPage(targetPage - 1, calculatedTotalPages, targetPage);
@@ -406,7 +403,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             if (targetPage < calculatedTotalPages) {
                 void preloadPage(targetPage + 1, calculatedTotalPages, targetPage);
             }
-            
         } catch (e) {
             console.error('加载页面失败:', e);
             if (requestId === loadRequestRef.current) {
@@ -747,7 +743,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         setCleanMode(mode);
         setShowCleanMenu(false);
         setShowCleanModal(true);
-        
         // 预览将删除的数量
         if (mode === 'days') {
             localHistory.countOlderThan(cleanDays).then(setCleanPreviewCount).catch(() => setCleanPreviewCount(0));
@@ -849,14 +844,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         }));
         setLightbox(null);
         onNavigateToPlayground?.();
-    };
-
-    const handleRefresh = async () => {
-        setCacheState({});
-        inflightPagesRef.current = {};
-        currentPageRef.current = 1;
-        if (historyScrollRef.current) historyScrollRef.current.scrollTop = 0;
-        await goToPage(1, true);
     };
 
     const historyGroups = useMemo(() => {
@@ -980,7 +967,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                 </div>
                             )}
                         </div>
-                        <IconButton label="刷新历史" onClick={handleRefresh} disabled={isLoading || migrationProgress !== null}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
                         <ImageTaggerAction notify={notify} />
                     </div>
             </WorkspaceToolbar>
@@ -1133,7 +1119,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                           </section>)}
                         </div>
                         {selectionMode && <div className="mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><div className="mb-1 text-center text-xs font-bold dark:text-white">多选模式 · 已选 {selectedIds.size} 张</div><div className="grid grid-cols-3 gap-2"><button onClick={selectCurrentPage} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">全选</button><button onClick={invertCurrentPageSelection} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">反选</button><button onClick={exitSelectionMode} className="mobile-touch rounded-xl bg-gray-100 text-sm font-bold dark:bg-gray-800">退出</button><button onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-500 text-sm font-bold text-white disabled:opacity-40">收藏</button><button onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-50 text-sm font-bold text-rose-600 disabled:opacity-40 dark:bg-rose-950/40 dark:text-rose-300">取消收藏</button><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch rounded-xl bg-red-600 text-sm font-bold text-white disabled:opacity-40">删除</button></div></div>}
-                        
                         {/* 底部分页信息 */}
                         <div className="mt-12 md:mt-16">
                             {totalCount > 0 && <>
@@ -1231,7 +1216,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 </ImagePreviewPortal>
             )}
 
-
             {/* Clean Modal */}
             {showCleanModal && (
                 <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -1244,7 +1228,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                             }
                         </p>
                         <p className="text-xs text-red-500 mb-4">此操作无法恢复</p>
-                        
                         <div className="mb-4">
                             {cleanMode === 'days' ? (
                                 <div>
@@ -1288,7 +1271,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                 </div>
                             )}
                         </div>
-                        
                         <div className="flex gap-2">
                             <button
                                 onClick={() => setShowCleanModal(false)}

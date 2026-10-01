@@ -18,7 +18,7 @@ import { createUuid } from '../services/id';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
-import { ChevronDown, ClipboardList, Dice5, Download, Heart, LoaderCircle, Menu, RefreshCw } from 'lucide-react';
+import { ChevronDown, ClipboardList, Dice5, Download, Heart, LoaderCircle, Menu } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { DanbooruCover } from './DanbooruCover';
@@ -232,7 +232,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
                                     </div>
                                 </div>
                             )
-                        
     };
 
     const [searchTerm, setSearchTerm] = useState('');
@@ -342,7 +341,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         : '';
 
     const [apiKey, setApiKey] = useState('');
-    
     // Personal mode: the local owner always manages this library.
     const isAdmin = true;
     const canManageArtists = true;
@@ -526,12 +524,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         setRememberApiKey(remember);
     };
 
-    const handleRefresh = async () => {
-        setIsLoading(true);
-        await onRefresh();
-        setIsLoading(false);
-    };
-
     const setDanbooruCover = async (artist: Artist, candidate: DanbooruCoverCandidate) => {
         try {
             // 先通过本机媒体网关读取原图，再提交 data URL；Worker 只负责存储不再直连 Danbooru CDN
@@ -628,7 +620,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         notify(`已把 ${cart.length} 位画师 Tag 送往实验室`);
         onNavigateToPlayground?.();
     };
-
 
     const catalogArtistId = (name: string) => {
         let hash = 2166136261;
@@ -1120,7 +1111,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
         return src ? { src, name: `${artist.name} - ${slotName}` } : null;
     }, [lightboxState, filteredArtists, config.slots]);
 
-
     return (
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
 
@@ -1196,7 +1186,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
 
                     <IconButton label="批量导入画师" onClick={() => setShowImport(true)} title="批量导入画师"><Download className="h-4 w-4" /></IconButton>
 
-                    {canManageArtists && <IconButton label="刷新画师列表" onClick={handleRefresh} disabled={isLoading}><RefreshCw className={isLoading ? 'animate-spin' : ''} /></IconButton>}
                     <ImageTaggerAction notify={notify} />
                 </div>
             </WorkspaceToolbar>

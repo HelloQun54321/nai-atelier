@@ -24,7 +24,6 @@ import {
   HardDrive,
   Loader2,
   Play,
-  RefreshCw,
   Trash2,
   X,
   AlertCircle,
@@ -36,7 +35,6 @@ interface DataBackupManagerProps {
 
 export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) => {
   const [status, setStatus] = useState<BackupStatus | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [backupLabel, setBackupLabel] = useState('');
   const [isEditingTargetDir, setIsEditingTargetDir] = useState(false);
@@ -46,8 +44,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null);
   const lastFinishedAtRef = useRef<string | null>(null);
 
-  const fetchStatus = useCallback(async (isManual = false) => {
-    if (isManual) setLoading(true);
+  const fetchStatus = useCallback(async () => {
     try {
       const data = await getLocalBackupStatus();
       setStatus(data);
@@ -70,8 +67,6 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
     } catch (err) {
       const msg = err instanceof Error ? err.message : '无法读取备份状态';
       setError(msg);
-    } finally {
-      if (isManual) setLoading(false);
     }
   }, [isEditingTargetDir, notify]);
 
@@ -140,7 +135,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
       await deleteLocalBackup(name);
       notify(`已删除备份存档：${name}`, 'success');
       setConfirmDeleteName(null);
-      await fetchStatus(true);
+      await fetchStatus();
     } catch (err: any) {
       notify(`删除备份失败：${err?.message || '未知错误'}`);
     } finally {
@@ -172,16 +167,6 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
           </p>
         </div>
         <div className="flex flex-none items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void fetchStatus(true)}
-            disabled={loading || isRunning}
-            className="mobile-touch flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-            title="刷新备份状态"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            刷新
-          </button>
           <button
             type="button"
             onClick={() => void handleOpenFolder(status?.targetDir)}

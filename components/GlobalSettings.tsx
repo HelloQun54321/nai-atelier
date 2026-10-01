@@ -45,7 +45,7 @@ import {
   ThemeMode,
   validateAppearancePreset,
 } from '../services/appearancePreferences';
-import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Database, Edit2, ExternalLink, FileDown, FileUp, FolderInput, FolderOutput, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RefreshCw, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Database, Edit2, ExternalLink, FileDown, FileUp, FolderInput, FolderOutput, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
 
 type SettingsSection = 'appearance' | 'generation' | 'novelai' | 'agent' | 'privacy' | 'maintenance';
 type SettingsPage = 'home' | SettingsSection;
@@ -176,7 +176,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [anlasInput, setAnlasInput] = useState(String(DEFAULT_ANLAS_BUDGET));
   const [maintenanceStatus, setMaintenanceStatus] = useState<LocalMaintenanceStatus | null>(null);
   const [maintenanceStatusError, setMaintenanceStatusError] = useState('');
-  const [maintenanceStatusLoading, setMaintenanceStatusLoading] = useState(false);
   const [lanPin, setLanPin] = useState('');
   const [lanPinSaving, setLanPinSaving] = useState(false);
   const [isCreatingPreset, setIsCreatingPreset] = useState(false);
@@ -248,7 +247,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   }, [open]);
 
   const refreshMaintenanceStatus = useCallback(async () => {
-    setMaintenanceStatusLoading(true);
     setMaintenanceStatusError('');
     try {
       const response = await fetch('/api/local-maintenance/status', { cache: 'no-store' });
@@ -257,8 +255,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       setMaintenanceStatus(payload);
     } catch (error) {
       setMaintenanceStatusError(error instanceof Error ? error.message : '无法读取本地服务状态');
-    } finally {
-      setMaintenanceStatusLoading(false);
     }
   }, []);
   const saveLanPin = async () => {
@@ -1344,7 +1340,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><h4 className="font-semibold text-gray-900 dark:text-white">Tag 补全词库</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">词库由用户按需下载（源自 ffdkj 开源项目），支持查看版本、数量并检查中英 Tag 数据更新。</p></div><div className="flex flex-none sm:justify-end"><TagDictionaryUpdater notify={notify} /></div></div></div>
 
               {/* 本地服务状态 */}
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">本地服务状态</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">状态来自当前运行的媒体网关与核心页面服务；手机访问时也会经过同一套验证。</p></div><button type="button" onClick={() => void refreshMaintenanceStatus()} disabled={maintenanceStatusLoading} className="mobile-touch flex flex-none items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" title="刷新本地服务状态"><RefreshCw className={`h-3.5 w-3.5 ${maintenanceStatusLoading ? 'animate-spin' : ''}`} />刷新</button></div>{maintenanceStatusError ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2.5 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">{maintenanceStatusError}</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2"><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.gatewayReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>媒体网关：{maintenanceStatus?.gatewayReady ? '可用' : '正在检查'}</div><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.workerReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : maintenanceStatus ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>核心页面服务：{maintenanceStatus?.workerReady ? '可用' : maintenanceStatus ? '未就绪' : '正在检查'}</div></div>}</div>
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">本地服务状态</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">状态来自当前运行的媒体网关与核心页面服务；手机访问时也会经过同一套验证。</p></div></div>{maintenanceStatusError ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2.5 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">{maintenanceStatusError}</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2"><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.gatewayReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>媒体网关：{maintenanceStatus?.gatewayReady ? '可用' : '正在检查'}</div><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.workerReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : maintenanceStatus ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>核心页面服务：{maintenanceStatus?.workerReady ? '可用' : maintenanceStatus ? '未就绪' : '正在检查'}</div></div>}</div>
 
               {/* 关于 NAI Atelier */}
               <div className="flex items-center justify-between gap-4"><div><h4 className="font-semibold text-gray-900 dark:text-white">关于 NAI Atelier</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">个人维护版本 · v{__APP_VERSION__}</p></div><a href="https://github.com/HelloQun54321/nai-atelier" target="_blank" rel="noreferrer" className="mobile-touch flex flex-none items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-2 text-xs font-bold text-white transition hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"><ExternalLink className="h-3.5 w-3.5" />打开 GitHub</a></div>

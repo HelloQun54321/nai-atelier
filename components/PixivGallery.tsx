@@ -508,17 +508,6 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     void loadFeed(tab, {});
   };
 
-  const refreshCurrent = () => {
-    if (showHistory) {
-      loadHistory();
-      return;
-    }
-    if (mode === 'user' && userContext) void loadFeed('user', { user: userContext });
-    else if (mode === 'search') void loadFeed('search', { word: searchInput });
-    else if (mode === 'ranking') void loadFeed('ranking', { ranking_mode: rankingMode, date: rankingDate });
-    else void loadFeed(mode, {});
-  };
-
   const loadMore = () => {
     if (!nextCursor || loadingMore || showHistory) return;
     void loadFeed(mode, {
@@ -695,7 +684,6 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
         <WorkspaceToolbar>
           <div className="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold text-gray-700 dark:text-gray-200">Pixiv 图库</div>
-          <IconButton label="重新检查连接状态" onClick={() => void refreshStatus()}><RefreshCw /></IconButton>
         </WorkspaceToolbar>
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto p-6">
           <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -834,9 +822,6 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
         </div>
         <IconButton label="断开 Pixiv 连接" tone="danger" onClick={() => void handleDisconnect()} title="断开 Pixiv 连接">
           <Unplug />
-        </IconButton>
-        <IconButton label="刷新当前列表" onClick={() => void refreshCurrent()} disabled={loading}>
-          <RefreshCw className={loading ? 'animate-spin' : ''} />
         </IconButton>
         <ImageTaggerAction notify={notify} />
       </WorkspaceToolbar>

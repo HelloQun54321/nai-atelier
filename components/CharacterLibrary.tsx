@@ -21,7 +21,7 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
-import { Check, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Dice5, Eye, GripVertical, Heart, LoaderCircle, Menu, Pencil, Plus, RefreshCw, Settings2, SlidersHorizontal, Tag, UserRound, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Dice5, Eye, GripVertical, Heart, LoaderCircle, Menu, Pencil, Plus, Settings2, SlidersHorizontal, Tag, UserRound, X } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, EmptyState } from './DesignSystem';
 import { useModalA11y } from './useModalA11y';
 import { ImageTaggerAction } from './ImageTaggerPanel';
@@ -175,7 +175,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                 </div>
               </article>
             );
-          
     };
 
   const confirmAction = useConfirmDialog();
@@ -631,7 +630,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const importAllSelected = () => {
     if (selectedCards.length === 0) return;
     const count = selectedCards.length;
-    
     // 计算站位横坐标：单人居中 0.5；多人均匀分布
     const getSlotX = (index: number, total: number) => {
       if (total <= 1) return 0.5;
@@ -919,7 +917,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                )}
              </div>
              <IconButton label={showFavOnly ? '显示全部角色' : '只看收藏'} tone={showFavOnly ? 'favorite' : 'neutral'} onClick={() => setShowFavOnly(value => !value)}><Heart className={`h-4 w-4 ${showFavOnly ? 'fill-current' : ''}`} /></IconButton>
-             <IconButton label="刷新列表" onClick={() => void onRefresh()} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
              <ImageTaggerAction notify={notify} />
              <ToolbarButton tone="primary" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4" />自定义角色</ToolbarButton>
          </div>

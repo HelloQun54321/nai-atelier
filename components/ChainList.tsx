@@ -6,9 +6,8 @@ import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { SmartImage } from './SmartImage';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, Copy, EyeOff, Filter, FolderUp, Heart, Image, Link2, Menu, Plus, RefreshCw, Trash2, User } from 'lucide-react';
-import { FavoriteButton, IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isInternalChainTag, isUntestedChain } from './DesignSystem';
-import { ImageTaggerAction } from './ImageTaggerPanel';
+import { Check, Copy, EyeOff, Filter, FolderUp, Heart, Image, Link2, Plus, Trash2, User } from 'lucide-react';
+import { FavoriteButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isInternalChainTag, isUntestedChain } from './DesignSystem';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
@@ -162,7 +161,7 @@ const CopyModal: React.FC<{
     );
 };
 
-export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onRefresh, isLoading, notify, isGuest = false, returnTargetId }) => {
+export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onRefresh, notify, isGuest = false, returnTargetId }) => {
   const RENDER_BATCH_SIZE = 60;
   const imageDisplay = useMobileImageDisplayPreferences();
   const masonryColumns = useMasonryColumnCount(imageDisplay);
@@ -186,6 +185,13 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const syncPreferences = useStChatu8Preferences(!isGuest && type === 'style');
   const canSync = !isGuest && type === 'style' && syncPreferences.enabled;
   const syncSelection = useStChatu8Selection(canSync, chains, notify);
+
+  useEffect(() => {
+    if (!showDesktopFilters) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setShowDesktopFilters(false); };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [showDesktopFilters]);
 
   // Load favorites from localStorage (client-side only)
   useEffect(() => {
@@ -239,7 +245,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     ).sort();
   }, [chains, type]);
 
-  // 常驻筛选：选项固定为可选模型清单（注册表 + 网关同步的新模型），与链表内容无关。
+  // 模型筛选：选项固定为可选模型清单（注册表 + 网关同步的新模型），与链表内容无关。
   const runtime = useNaiRuntime();
   const modelFilterOptions = useMemo(() => getSelectableNaiModels(runtime), [runtime]);
 
@@ -417,59 +423,60 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
   const title = type === 'character' ? '我的自定义角色' : '我的风格串';
   const createLabel = type === 'character' ? '新建自定义角色' : '新建风格串';
+  const filterCount = selectedTags.size + Number(Boolean(selectedModel)) + Number(favOnly) + Number(untestedOnly);
+  const filtersActive = filterCount > 0 || sortOption !== 'updated_desc';
+  const resetFilters = () => {
+    setSelectedTags(new Set()); setSelectedModel(''); setFavOnly(false); setUntestedOnly(false); setSortOption('updated_desc');
+  };
+  // 桌面弹层与手机抽屉共享筛选内容，切换视图也保持同一份筛选状态。
+  const filterContent = <div className="space-y-4">
+    <div className="flex items-center justify-between"><span className="text-xs text-gray-500 dark:text-gray-400">{filterCount > 0 ? `${filterCount} 项筛选已启用` : '全部资料'}</span>{filtersActive && <button type="button" onClick={resetFilters} className="mobile-touch px-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300">重置筛选</button>}</div>
+    <div className="grid grid-cols-2 gap-3">
+      <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">排序<select aria-label="排序" value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className="mobile-touch mt-2 h-10 w-full rounded-lg border border-gray-200 bg-white px-2 text-xs font-normal outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option></select></label>
+      <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">模型<select aria-label="模型筛选" value={selectedModel} onChange={event => setSelectedModel(event.target.value)} className="mobile-touch mt-2 h-10 w-full rounded-lg border border-gray-200 bg-white px-2 text-xs font-normal outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"><option value="">全部模型</option>{modelFilterOptions.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}</select></label>
+    </div>
+    <div className="grid grid-cols-2 gap-2">
+      <button type="button" aria-pressed={untestedOnly} onClick={() => setUntestedOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${untestedOnly ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><EyeOff className="h-4 w-4" />只看待实测</button>
+      <button type="button" aria-pressed={favOnly} onClick={() => setFavOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${favOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} />只看收藏</button>
+    </div>
+    {allTags.length > 0 && <div><p className="mb-2 text-xs font-semibold text-gray-600 dark:text-gray-300">标签</p><div className="flex max-h-52 flex-wrap gap-2 overflow-y-auto">{allTags.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`mobile-touch rounded-full px-3 py-1.5 text-xs font-medium ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{tag}</button>)}</div></div>}
+  </div>;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
       <div className="mx-auto flex min-h-0 w-full max-w-[1920px] flex-1 flex-col">
         <WorkspaceToolbar>
-          <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={`搜索${title}`} containerClassName="min-w-0 flex-1 md:min-w-[12rem] md:max-w-none!" />
-          {!isGuest && type === 'style' && <StyleCollectorControl onSaved={onRefresh} notify={notify} />}
-          <div className="hidden min-w-0 flex-none items-center gap-2 md:flex">
-            {allTags.length > 0 && <div className="relative flex-none">
-              <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} className={selectedTags.size > 0 ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!bg-indigo-950/40' : ''} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" />标签{selectedTags.size > 0 ? ` ${selectedTags.size}` : ''}</ToolbarButton>
-              {showDesktopFilters && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowDesktopFilters(false)} />
-                  <div role="dialog" aria-label="标签筛选" className="absolute left-1/2 top-[calc(100%+0.5rem)] z-50 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                    <div className="mb-3 flex items-center justify-between"><b className="text-sm dark:text-white">标签筛选</b>{selectedTags.size > 0 && <button type="button" onClick={() => setSelectedTags(new Set())} className="text-xs font-bold text-indigo-600">清除</button>}</div>
-                    <div className="flex max-h-52 flex-wrap gap-2 overflow-y-auto">{allTags.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`rounded-full px-3 py-1.5 text-xs font-medium ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>{tag}</button>)}</div>
-                  </div>
-                </>
-              )}
-            </div>}
-            <select value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className="h-10 w-36 rounded-xl border border-gray-200 bg-white px-2 text-xs text-gray-600 outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option></select>
-            <select value={selectedModel} onChange={event => setSelectedModel(event.target.value)} aria-label="模型筛选" className="h-10 w-36 rounded-xl border border-gray-200 bg-white px-2 text-xs text-gray-600 outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"><option value="">全部模型</option>{modelFilterOptions.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}</select>
-            <IconButton label="仅看待实测" onClick={() => setUntestedOnly(value => !value)} className={untestedOnly ? '!border-amber-300 !bg-amber-50 !text-amber-600 dark:!bg-amber-950/40 dark:!text-amber-400' : ''}><EyeOff className={`h-4 w-4 ${untestedOnly ? 'stroke-[2.5]' : ''}`} /></IconButton>
-            <IconButton label="仅显示收藏" tone={favOnly ? 'favorite' : 'neutral'} onClick={() => setFavOnly(value => !value)}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} /></IconButton>
-            {!isGuest && type === 'style' && <ToolbarButton onClick={() => setIsFolderImportOpen(true)} title="从本地文件夹批量读取 NovelAI 原图为风格串"><FolderUp className="h-4 w-4" />批量导入</ToolbarButton>}
-            {canSync && <ToolbarButton onClick={syncSelection.open ? syncSelection.cancel : syncSelection.begin} disabled={syncSelection.busy && !syncSelection.open} title="挑选风格串、待同步与同步记录" aria-expanded={syncSelection.open}><Link2 className="h-4 w-4" />智慧姬同步{syncSelection.savedCount > 0 ? ` ${syncSelection.savedCount}` : ''}</ToolbarButton>}
-            <IconButton label="刷新列表" onClick={onRefresh} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></IconButton>
-            <ImageTaggerAction notify={notify} />
-            {!isGuest && <ToolbarButton tone="primary" onClick={() => setIsModalOpen(true)}><Plus className="h-4 w-4" />{createLabel}</ToolbarButton>}
+          <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={`搜索${title}`} containerClassName="min-w-0 flex-1 md:max-w-none!" />
+          <div className="hidden flex-none items-center gap-2 md:flex">
+            <div className="relative flex-none">
+              <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} title="筛选与排序" aria-label={`筛选${filterCount > 0 ? ` ${filterCount}` : ''}`} className={filtersActive ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-700 dark:!bg-indigo-950/40 dark:!text-indigo-300' : ''} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" /><span className="hidden xl:inline">筛选{filterCount > 0 ? ` ${filterCount}` : ''}</span></ToolbarButton>
+              {showDesktopFilters && <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowDesktopFilters(false)} />
+                <div role="dialog" aria-label="筛选与排序" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 max-h-[calc(100dvh-7rem)] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-800 dark:bg-gray-900">{filterContent}</div>
+              </>}
+            </div>
+            {canSync && <div className="border-l border-gray-200 pl-2 dark:border-gray-700"><ToolbarButton onClick={syncSelection.open ? syncSelection.cancel : syncSelection.begin} disabled={syncSelection.busy && !syncSelection.open} title="挑选风格串、待同步与同步记录" aria-label={`智慧姬同步${syncSelection.savedCount > 0 ? ` ${syncSelection.savedCount}` : ''}`} aria-expanded={syncSelection.open}><Link2 className="h-4 w-4" /><span className="hidden xl:inline">智慧姬同步{syncSelection.savedCount > 0 ? ` ${syncSelection.savedCount}` : ''}</span></ToolbarButton></div>}
           </div>
-          <div className="flex gap-2 md:hidden">
-            <MobileIconButton label="筛选与排序" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"><Menu className="h-5 w-5" /></MobileIconButton>
-            <ImageTaggerAction notify={notify} />
-            {!isGuest && type === 'style' && <MobileIconButton label="批量导入" onClick={() => setIsFolderImportOpen(true)} className="border border-gray-200 bg-white text-indigo-600 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-400"><FolderUp className="h-5 w-5" /></MobileIconButton>}
-            {!isGuest && <MobileIconButton label={createLabel} onClick={() => setIsModalOpen(true)} className="bg-indigo-600 text-white"><Plus className="h-5 w-5" /></MobileIconButton>}
+          <div className="flex flex-none gap-1 md:hidden">
+            <MobileIconButton label="筛选与排序" onClick={() => setShowMobileFilters(true)} className={`border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 ${filtersActive ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-600 dark:text-gray-300'}`}><Filter className="h-5 w-5" /></MobileIconButton>
+            {canSync && <MobileIconButton label={`智慧姬同步（待同步 ${syncSelection.savedCount}）`} onClick={syncSelection.open ? syncSelection.cancel : syncSelection.begin} disabled={syncSelection.busy && !syncSelection.open} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"><Link2 className="h-5 w-5" /></MobileIconButton>}
           </div>
+          {!isGuest && <div className="flex flex-none items-center gap-1 border-l border-gray-200 pl-2 dark:border-gray-700 md:gap-2">
+            {type === 'style' && <StyleCollectorControl onSaved={onRefresh} notify={notify} />}
+            <div className="hidden items-center gap-2 md:flex">
+              {type === 'style' && <ToolbarButton onClick={() => setIsFolderImportOpen(true)} title="从本地文件夹批量读取 NovelAI 原图为风格串" aria-label="批量导入"><FolderUp className="h-4 w-4" /><span className="hidden xl:inline">批量导入</span></ToolbarButton>}
+              <ToolbarButton tone="primary" onClick={() => setIsModalOpen(true)} aria-label={createLabel} title={createLabel}><Plus className="h-4 w-4" /><span className="hidden xl:inline">{createLabel}</span></ToolbarButton>
+            </div>
+            <div className="flex gap-1 md:hidden">
+              {type === 'style' && <MobileIconButton label="批量导入" onClick={() => setIsFolderImportOpen(true)} className="border border-gray-200 bg-white text-indigo-600 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-400"><FolderUp className="h-5 w-5" /></MobileIconButton>}
+              <MobileIconButton label={createLabel} onClick={() => setIsModalOpen(true)} className="bg-indigo-600 text-white"><Plus className="h-5 w-5" /></MobileIconButton>
+            </div>
+          </div>}
         </WorkspaceToolbar>
 
         {canSync && syncSelection.open && <WisdomSyncToolbar sync={syncSelection} filteredIds={filteredChains.map(chain => chain.id)} />}
 
-        <MobileBottomSheet open={showMobileFilters} title="筛选与排序" onClose={() => setShowMobileFilters(false)}>
-          <div className="space-y-5">
-            <label className="block text-sm font-bold dark:text-white">排序<select value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="created_desc">最近创建</option><option value="created_asc">最早创建</option></select></label>
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => setUntestedOnly(value => !value)} className={`mobile-touch w-full rounded-xl px-3 py-2 text-center text-xs font-bold ${untestedOnly ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-gray-100 dark:bg-gray-800'}`}>👁‍🗨 只看待实测</button>
-              <button onClick={() => setFavOnly(value => !value)} className={`mobile-touch w-full rounded-xl px-3 py-2 text-center text-xs font-bold ${favOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'bg-gray-100 dark:bg-gray-800'}`}>★ 只看收藏</button>
-            </div>
-            <label className="block text-sm font-bold dark:text-white">模型版本<select value={selectedModel} onChange={event => setSelectedModel(event.target.value)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="">全部模型</option>{modelFilterOptions.map(model => <option key={model.id} value={model.id}>{model.label}</option>)}</select></label>
-            {allTags.length > 0 && <div><div className="mb-2 text-sm font-bold dark:text-white">Tag</div><div className="flex flex-wrap gap-2">{allTags.map(tag => <button key={tag} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`mobile-touch rounded-full px-3 text-xs ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}>{tag}</button>)}</div></div>}
-            {canSync && <button type="button" disabled={syncSelection.busy && !syncSelection.open} onClick={() => { if (!syncSelection.open) syncSelection.begin(); setShowMobileFilters(false); }} className="mobile-touch flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 text-sm dark:border-gray-600 disabled:opacity-40"><Link2 className="h-4 w-4" />智慧姬同步（待同步 {syncSelection.savedCount}）</button>}
-            <button onClick={() => { void onRefresh(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl border border-gray-300 dark:border-gray-600">刷新列表</button>
-          </div>
-        </MobileBottomSheet>
+        <MobileBottomSheet open={showMobileFilters} title="筛选与排序" onClose={() => setShowMobileFilters(false)}>{filterContent}</MobileBottomSheet>
 
         <div ref={chainScrollRef} onScroll={onScrollRestore} className="min-h-0 flex-1 overflow-y-auto p-3 md:p-5">
           {filteredChains.length === 0 ? (

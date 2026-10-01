@@ -12,7 +12,7 @@ class FakeEvents {
   constructor() { FakeEvents.instances.push(this); }
   emit(state: CollectorState) { this.onmessage?.({ data: JSON.stringify(state) }); }
 }
-const initial: CollectorState = { available: true, enabled: false, paused: false, stage: '已关闭', session: '', pending: 0, saved: 0, failed: 0, skipped: 0, error: '', failures: [] };
+const initial: CollectorState = { available: true, enabled: false, paused: false, stage: '已关闭', session: '', pending: 0, saved: 0, failed: 0, skipped: 0, error: '' };
 let state: CollectorState;
 const fetchMock = vi.fn();
 beforeEach(() => {
@@ -49,22 +49,17 @@ describe('风格串收集工具栏', () => {
     events.emit({ ...initial, session: 'run', enabled: false, saved: 1 });
     await waitFor(() => expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false'));
   });
-  it('手动重试入口只发指定任务，不因失败自动重试', async () => {
-    state = { ...initial, enabled: true, failed: 1, failures: [{ id: 'failed-task', name: 'synthetic.png', error: '模拟下载失败' }] };
+  it('失败仍显示简略原因，不提供下拉面板或手动重试，也不自动重新请求', async () => {
+    state = { ...initial, enabled: true, failed: 1, detail: '失败：模拟下载失败' };
     render(React.createElement(StyleCollectorControl, { onSaved: vi.fn(), notify: vi.fn() }));
-    fireEvent.click(await screen.findByLabelText('收集状态与手动重试'));
+    const toggle = await screen.findByRole('switch', { name: '收集中' });
+    expect(toggle.title).toBe(state.detail);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('button', { name: /重试|收集状态/ })).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByTitle('手动重试'));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(fetchMock.mock.calls[1][0]).toBe('/api/style-collector/retry');
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ id: 'failed-task' });
-  });
-  it('显示与悬浮窗同步的一行处理原因，保留完整悬停文本', async () => {
-    state = { ...initial, detail: '失败：域名解析失败，请检查网络或代理' };
-    render(React.createElement(StyleCollectorControl, { onSaved: vi.fn(), notify: vi.fn() }));
-    fireEvent.click(await screen.findByLabelText('收集状态与手动重试'));
-    const detail = screen.getByText(state.detail!);
-    expect(detail.title).toBe(state.detail); expect(detail.className).toContain('truncate');
+    FakeEvents.instances[0].emit({ ...state, error: '本机服务连接中断' });
+    await waitFor(() => expect(toggle.title).toBe('本机服务连接中断 · 失败：模拟下载失败'));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
   it('Windows 不可用时不显示会失效的开关；启动失败提示原因', async () => {
     state = { ...initial, available: false };

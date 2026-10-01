@@ -70,11 +70,11 @@ export class StyleCollector extends EventEmitter {
     super(); Object.assign(this, { worker, download, listener, platform, proxyUrl, modelMappings });
     this.run = null; this.control = Promise.resolve(); this.disposed = false;
     this.appearance = { themeMode: 'system', isDark: true, accentColor: '#0ea5e9', motion: 'full' };
-    this.stopped = { enabled: false, paused: false, stage: '已关闭', pending: 0, saved: 0, skipped: 0, failed: 0, failures: [], error: '', detail: '', session: '' };
+    this.stopped = { enabled: false, paused: false, stage: '已关闭', pending: 0, saved: 0, skipped: 0, failed: 0, error: '', detail: '', session: '' };
   }
   state() {
     const state = this.run?.state || this.stopped;
-    return { ...state, appearance: { ...this.appearance }, available: this.platform === 'win32', failures: state.failures.map(({ id, name, error }) => ({ id, name, error })) };
+    return { ...state, appearance: { ...this.appearance }, available: this.platform === 'win32' };
   }
   publish(run) {
     if (this.run !== run) return;
@@ -98,11 +98,6 @@ export class StyleCollector extends EventEmitter {
         run.state.paused = action === 'pause';
         if (!run.busy) run.state.stage = run.state.paused ? '已暂停' : '等待复制图片链接';
         this.publish(run);
-      } else if (action === 'retry') {
-        const failure = run.state.failures.find(f => f.id === id);
-        if (!failure) throw new Error('重试任务不存在');
-        run.state.failures = run.state.failures.filter(f => f !== failure);
-        run.seen.delete(failure.url); this.accept(run, failure.url, true);
       } else throw new Error('未知收集操作');
       return this.state();
     });
@@ -112,7 +107,7 @@ export class StyleCollector extends EventEmitter {
     if (this.disposed) throw new Error('本机服务已退出');
     if (this.run) return this.state();
     if (this.platform !== 'win32') throw new Error('收集模式仅支持 Windows 电脑本机');
-    const run = { state: { ...this.stopped, enabled: false, paused: false, saved: 0, skipped: 0, failed: 0, failures: [], error: '', detail: '', stage: '正在启动', session: randomUUID() }, queue: [], seen: new Set(), abort: new AbortController(), busy: false, native: null };
+    const run = { state: { ...this.stopped, enabled: false, paused: false, saved: 0, skipped: 0, failed: 0, error: '', detail: '', stage: '正在启动', session: randomUUID() }, queue: [], seen: new Set(), abort: new AbortController(), busy: false, native: null };
     this.run = run; this.publish(run);
     try {
       const position = await this.worker('position');
@@ -138,14 +133,14 @@ export class StyleCollector extends EventEmitter {
     }
   }
   failListener(run, error) { if (this.run === run) { run.state.error = error.message; void this.command('stop').catch(() => {}); } }
-  accept(run, text, retry = false) {
-    if (this.run !== run || !run.state.enabled || run.abort.signal.aborted || (run.state.paused && !retry)) return;
+  accept(run, text) {
+    if (this.run !== run || !run.state.enabled || run.abort.signal.aborted || run.state.paused) return;
     const url = imageLink(text); if (!url) return;
     if (run.seen.has(url)) { run.state.skipped++; run.state.detail = '跳过：本次已经接收过这个链接'; this.publish(run); return; }
     run.seen.add(url);
     if (run.queue.length >= 200) { run.state.failed++; run.state.error = '待处理链接过多，请暂停后等待队列完成'; this.publish(run); return; }
     let name = ''; try { name = decodeURIComponent(new URL(url).pathname.split('/').pop() || ''); } catch { /* 无文件名。 */ }
-    run.queue.push({ id: randomUUID(), url, name }); this.publish(run);
+    run.queue.push({ url, name }); this.publish(run);
     if (!run.busy) run.processing = this.process(run);
   }
   async process(run) {
@@ -170,8 +165,7 @@ export class StyleCollector extends EventEmitter {
       } catch (error) {
         if (!run.abort.signal.aborted) {
           const reason = collectorErrorReason(error);
-          run.state.failed++; run.state.detail = `失败：${reason}`; run.state.failures.unshift({ ...item, error: reason });
-          run.state.failures = run.state.failures.slice(0, 20);
+          run.state.failed++; run.state.detail = `失败：${reason}`;
         }
       }
       this.publish(run);

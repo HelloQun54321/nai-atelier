@@ -62,7 +62,7 @@ describe('智慧姬同步工具栏', () => {
   it('核对中禁用提交和批量操作，返回与视图切换仍可使用；错误才占用提示行', () => {
     const sync = selection({ busy: true, error: '连接暂时不可用' });
     const view = render(React.createElement(WisdomSyncToolbar, { sync, filteredIds: ['a', 'b'] }));
-    for (const name of ['全选筛选结果', '取消筛选结果', '加入待同步', '核对同步列表']) expect(screen.getByRole('button', { name }).hasAttribute('disabled')).toBe(true);
+    for (const name of ['全选筛选结果', '取消筛选结果', '加入待同步']) expect(screen.getByRole('button', { name }).hasAttribute('disabled')).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: '返回资料库' }));
     expect(sync.cancel).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole('tab', { name: '同步记录 0' }));
@@ -70,8 +70,8 @@ describe('智慧姬同步工具栏', () => {
     expect(screen.getByRole('alert').textContent).toContain('连接暂时不可用');
     view.rerender(React.createElement(WisdomSyncToolbar, { sync: { ...sync, busy: false, error: '' }, filteredIds: ['a', 'b'] }));
     expect(screen.queryByRole('alert')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '核对同步列表' }));
-    expect(sync.load).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: '核对同步列表' })).toBeNull();
+    expect(sync.load).not.toHaveBeenCalled();
   });
 
   it('待同步移出与记录状态筛选沿用原行为，没有任务时隐藏批量移出', () => {

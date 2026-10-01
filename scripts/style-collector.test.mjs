@@ -158,11 +158,14 @@ test('stop invalidates session and prevents late downloads; fresh start isolates
   await h.manager.command('start'); oldEvent({ type: 'link', url: 'https://example.com/old-listener.png' });
   assert.equal(h.manager.run.seen.size, 0); assert.equal(h.manager.state().saved, 0); await h.manager.command('stop');
 });
-test('no metadata and non-images skip; failures retry only when explicitly requested', async () => {
+test('no metadata skips; failures keep a reason without automatic or manual retries', async () => {
   let calls = 0; const h = harness({ download: async url => { calls++; if (url.includes('failed') && calls === 1) throw new Error('synthetic failure'); return { bytes: url.includes('plain') ? plain() : hidden(), finalUrl: url }; } });
   await h.manager.command('start'); h.copy('https://example.com/failed.png'); await until(() => h.manager.state().failed === 1);
-  assert.equal(calls, 1); const id = h.manager.state().failures[0].id; await h.manager.command('retry', id); await until(() => h.manager.state().saved === 1);
-  assert.match(h.manager.state().detail, /^已保存：/);
+  assert.equal(calls, 1); assert.equal(h.manager.state().saved, 0);
+  assert.equal(h.manager.state().detail, '失败：synthetic failure');
+  assert.equal('failures' in h.manager.state(), false);
+  await assert.rejects(h.manager.command('retry', 'removed-task'), /未知收集操作/);
+  assert.equal(calls, 1); assert.equal(h.imports.length, 0);
   h.copy('https://example.com/plain.png'); await until(() => h.manager.state().skipped === 1); await h.manager.command('stop');
   assert.equal(h.manager.state().detail, '跳过：未找到有效 NovelAI 生成信息');
 });
@@ -172,7 +175,7 @@ test('failure detail survives idle, native state matches, fresh session clears i
   await h.manager.command('start'); h.receive({ type: 'link', url: 'https://example.com/a.png' });
   await until(() => h.manager.state().failed === 1);
   assert.equal(h.manager.state().stage, '等待复制图片链接'); assert.match(h.manager.state().detail, /^失败：域名解析/);
-  assert.equal(updates.at(-1).detail, h.manager.state().detail); assert.equal(h.manager.state().failures[0].error, h.manager.state().detail.slice(3));
+  assert.equal(updates.at(-1).detail, h.manager.state().detail); assert.equal('failures' in h.manager.state(), false);
   await h.manager.command('stop'); await h.manager.command('start'); assert.equal(h.manager.state().detail, ''); await h.manager.command('stop');
 });
 test('skip detail distinguishes non-PNG responses, damaged images and stored duplicates', async () => {

@@ -29,7 +29,7 @@ describe('DesktopLauncherManager', () => {
       iconExists: true,
     };
 
-    vi.spyOn(desktopLauncherService, 'getDesktopLauncherStatus').mockResolvedValue(mockStatus);
+    const statusSpy = vi.spyOn(desktopLauncherService, 'getDesktopLauncherStatus').mockResolvedValue(mockStatus);
     const createSpy = vi.spyOn(desktopLauncherService, 'createDesktopLauncher').mockResolvedValue({
       success: true,
       batCreated: true,
@@ -47,10 +47,13 @@ describe('DesktopLauncherManager', () => {
       expect(screen.getByText('更新桌面启动器')).toBeTruthy();
     });
 
+    expect(statusSpy).toHaveBeenCalledOnce();
+    expect(screen.queryByTitle('刷新桌面状态')).toBeNull();
     const updateBtn = screen.getByText('更新桌面启动器');
     fireEvent.click(updateBtn);
 
     await waitFor(() => {
+      expect(statusSpy).toHaveBeenCalledTimes(2);
       expect(createSpy).toHaveBeenCalledWith({
         createShortcut: true,
         hideBat: true,
@@ -77,7 +80,7 @@ describe('DesktopLauncherManager', () => {
       iconExists: true,
     };
 
-    vi.spyOn(desktopLauncherService, 'getDesktopLauncherStatus').mockResolvedValue(mockStatus);
+    const statusSpy = vi.spyOn(desktopLauncherService, 'getDesktopLauncherStatus').mockResolvedValue(mockStatus);
 
     render(React.createElement(DesktopLauncherManager, { notify }));
 

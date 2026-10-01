@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, CheckSquare, Filter, FolderPlus, Library, Pencil, Pin, Plus, RefreshCw, Sparkles, Star, Trash2, Upload, X } from 'lucide-react';
+import { Check, CheckSquare, Filter, FolderPlus, Library, Pencil, Pin, Plus, Sparkles, Star, Trash2, Upload, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { api } from '../services/api';
 import { Inspiration, InspirationBoard, InspirationSourceType, NAIParams, PromptChain, User } from '../types';
@@ -123,7 +123,6 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   }, [items, collection, boardId, tagFilter, ratingFilter, debouncedSearch, sort]);
 
   const setUploadValue = <K extends keyof UploadDraft>(key: K, value: UploadDraft[K]) => setUploadDraft(previous => ({ ...previous, [key]: value }));
-  const refreshAll = async () => { setBusy('refresh'); try { await Promise.all([onRefresh(), loadBoards()]); } finally { setBusy(''); } };
 
   const saveBoard = async () => {
     if (!boardEditor?.name.trim()) return;
@@ -213,7 +212,6 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       </div>
       <IconButton label={selectedIds.size ? `取消选择 ${selectedIds.size} 项` : '选择灵感'} onClick={() => setSelectedIds(selectedIds.size ? new Set() : new Set(filtered.filter(item => canEditItem(item, currentUser)).map(item => item.id)))} tone={selectedIds.size ? 'primary' : 'neutral'} className="md:hidden"><CheckSquare /></IconButton>
       <ToolbarButton onClick={() => setSelectedIds(selectedIds.size ? new Set() : new Set(filtered.filter(item => canEditItem(item, currentUser)).map(item => item.id)))} tone={selectedIds.size ? 'primary' : 'neutral'} className="hidden md:inline-flex"><CheckSquare />{selectedIds.size ? `${selectedIds.size} 项` : '选择'}</ToolbarButton>
-      <IconButton label="刷新灵感库" disabled={busy === 'refresh'} onClick={() => void refreshAll()}><RefreshCw className={busy === 'refresh' ? 'animate-spin' : ''} /></IconButton>
       <ImageTaggerAction notify={notify} />
       <IconButton label="加入灵感库" tone="primary" onClick={() => setUploadOpen(true)} className="md:hidden"><Plus /></IconButton>
       <ToolbarButton tone="primary" onClick={() => setUploadOpen(true)} className="hidden md:inline-flex"><Plus />加入灵感库</ToolbarButton>

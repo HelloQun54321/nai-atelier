@@ -1,4 +1,4 @@
-import { ArrowLeft, CheckCheck, Clock3, ListFilter, RefreshCw } from 'lucide-react';
+import { ArrowLeft, CheckCheck, Clock3, ListFilter } from 'lucide-react';
 import { IconButton, ToolbarButton } from './DesignSystem';
 import type { WisdomSyncSelection, WisdomSyncView } from '../services/stChatu8Sync';
 
@@ -21,7 +21,6 @@ export function WisdomSyncToolbar({ sync, filteredIds }: { sync: WisdomSyncSelec
             {tab.count !== undefined && <span className="text-micro tabular-nums opacity-70">{tab.count}</span>}
           </button>)}
         </div>
-        <IconButton label="核对同步列表" title="刷新本机记录；对方删除会在连接器下一次成功同步时核对" disabled={sync.busy} onClick={() => void sync.load()} className="mobile-touch !h-8 !w-8 !rounded-lg"><RefreshCw className={`h-4 w-4 ${sync.busy ? 'animate-spin' : ''}`} /></IconButton>
       </div>
       <div role="group" aria-label="当前同步视图操作" className="flex w-full min-w-0 flex-wrap items-center gap-1.5 text-xs sm:w-auto sm:border-l sm:border-gray-200 sm:pl-3 dark:sm:border-gray-700">
         {sync.view === 'pick' ? <>
@@ -38,6 +37,6 @@ export function WisdomSyncToolbar({ sync, filteredIds }: { sync: WisdomSyncSelec
         </>}
       </div>
     </div>
-    {sync.error && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{sync.error} · 保留上次记录，可手动刷新。</p>}
+    {sync.error && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{sync.error} · 暂时保留上次同步记录。</p>}
   </div>;
 }

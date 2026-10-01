@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Folder, LoaderCircle, RefreshCw, Search, Sparkles, X } from 'lucide-react';
+import { Folder, LoaderCircle, Search, Sparkles, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { Inspiration, InspirationBoard } from '../types';
 import { SmartImage } from './SmartImage';
@@ -109,15 +109,6 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
             </p>
           </div>
           <div className="flex flex-none items-center gap-1">
-            <button
-              type="button"
-              onClick={() => void loadData()}
-              disabled={loading}
-              className="mobile-touch flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 disabled:opacity-50 dark:hover:bg-gray-800"
-              aria-label="刷新灵感图片"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
             <button
               type="button"
               onClick={onClose}
