@@ -1,0 +1,12 @@
+// 固定发布修订与文件指纹，防止模型和词表来自不同版本。
+const tagFile = { name: 'selected_tags.csv', size: 308468, sha256: '298633d94d0031d2081c0893f29c82eab7f0df00b08483ba8f29d1e979441217' };
+export const IMAGE_TAGGER_MODELS = [
+  { id: 'SmilingWolf/wd-vit-tagger-v3', label: 'WD ViT V3', directory: 'wd-vit-tagger-v3', description: '轻量均衡，当前默认', threshold: 0.35, characterThreshold: 0.85,
+    revision: '7f6b584d0bd3f55c4531f14ba3d4761b2bccdc0f', files: [{ name: 'model.onnx', size: 378536310, sha256: '35f23693620b668f4d53fd3c62bf65e40af739bc52c7eb0fbc49258b58d065b6' }, tagFile] },
+  { id: 'SmilingWolf/wd-swinv2-tagger-v3', label: 'WD SwinV2 V3', directory: 'wd-swinv2-tagger-v3', description: '轻量升级，识别表现略优', threshold: 0.35, characterThreshold: 0.85,
+    revision: '627aef95638667ddcaa3ac8ae625e88ea5b02f51', files: [{ name: 'model.onnx', size: 467460978, sha256: 'e6774bff34d43bd49f75a47db4ef217dce701c9847b546523eb85ff6dbba1db1' }, tagFile] },
+  { id: 'SmilingWolf/wd-eva02-large-tagger-v3', label: 'WD EVA02-Large V3', directory: 'wd-eva02-large-tagger-v3', description: '优先识别效果，CPU 等待更长', threshold: 0.53, characterThreshold: 0.85,
+    revision: 'b25b82a03f7282e41aa2f257a52c7583b710bd1c', files: [{ name: 'model.onnx', size: 1260435999, sha256: '9e768793060c7939b277ccb382783e8670e8a042d29d77aa736be0c8cc898bfc' }, tagFile] },
+];
+export const DEFAULT_IMAGE_TAGGER_MODEL = IMAGE_TAGGER_MODELS[0].id;
+export const findImageTaggerModel = id => IMAGE_TAGGER_MODELS.find(model => model.id === id);

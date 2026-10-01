@@ -28,6 +28,18 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 
 describe('图片识别入口与当前图片衔接', () => {
+  it('选用 EVA02 后使用对应名称和阈值，不再沿用 ViT 默认值', async () => {
+    vi.mocked(imageTaggerService.getStatus).mockResolvedValueOnce({ model: 'eva', downloaded: false, models: [{ id: 'eva', label: 'WD EVA02-Large V3', description: '', threshold: 0.53, characterThreshold: 0.85, downloaded: false, stage: 'missing', totalBytes: 1_260_000_000, receivedBytes: 0, error: '' }], busy: false, downloadingModel: null });
+    render(<ImageTaggerPanel open imageUrl="/api/media/eva.png" onClose={vi.fn()} onInsert={vi.fn()} notify={vi.fn()} />);
+    await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalledWith(expect.any(File), { threshold: 0.53, characterThreshold: 0.85, model: 'eva' }));
+    expect(screen.getByText(/WD EVA02-Large V3/)).toBeTruthy();
+  });
+
+  it('自动识别失败展示真实模型错误，不误报为图片无法读取', async () => {
+    const notify = vi.fn(); vi.mocked(imageTaggerService.tagFile).mockRejectedValueOnce(new Error('模型下载失败（HTTP 503）'));
+    render(<ImageTaggerPanel open imageUrl="/api/media/failure.png" onClose={vi.fn()} onInsert={vi.fn()} notify={notify} />);
+    await waitFor(() => expect(notify).toHaveBeenCalledWith('模型下载失败（HTTP 503）', 'error'));
+  });
   it('实验室默认面板保留原名称和追加语义', () => {
     render(<ImageTaggerPanel open onClose={vi.fn()} onInsert={vi.fn()} notify={vi.fn()} />);
     expect(screen.getByRole('dialog', { name: '图片反推 Tag' })).toBeTruthy();

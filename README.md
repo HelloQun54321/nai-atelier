@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.10.2-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.11.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -663,7 +663,12 @@ flowchart LR
 
 ### 图片反推 Tag：本地 WD Tagger
 
-直接在电脑本地用 CPU 反推图片的 Danbooru Tag，无需上传第三方云端。首次使用自动下载约 379 MB 的 WD Tagger V3 模型（存入本地缓存目录 `local-cache/models`）；支持微调通用词与角色词置信度阈值，过滤掉误识别杂词后一键送入生图实验室。
+直接在电脑本地用 CPU 反推图片的 Danbooru Tag，无需上传第三方云端，也不消耗 NovelAI Anlas。模型不随 GitHub 代码分发，默认使用 WD ViT V3；首次识别按需下载，或在「设置 → 数据与维护 → 图片反推模型」提前准备。
+
+- **模型选择**：支持 WD ViT V3（约 379 MB）、WD SwinV2 V3（约 468 MB）及 WD EVA02-Large V3（约 1.26 GB，CPU 等待更长）。各模型独立下载、缓存；下载不会自动切换，点击「使用」后所有图片识别入口共用该模型。选择保存在本机服务的既有设置表，重启和不同页面保持一致；未下载的模型可先选择，首次识别会自动准备。
+- **下载反馈与恢复**：显示已接收大小、百分比、校验阶段和简短失败原因；下载在本机后台继续，关闭设置或网页不会中断。支持暂停及手动继续，失败不自动重试；服务重启后可继续尚未完成的下载。若源站不支持 Range，安全地从头下载；异常续传范围会清理本次临时副本，等待用户重新下载。
+- **文件可靠性**：模型与配套词表固定同一发布修订，检查准确大小与 SHA-256 后才启用。缓存放在 `local-cache/models`，完整旧 ViT 文件通过校验即可复用，无需重复下载；中断副本使用专用 `.download` 文件，不清理私人图片或其他模型。模型下载需要电脑能访问 Hugging Face，使用本机网关的网络／代理；文件准备完成后可离线识别本地图片。
+- **识别阈值**：切换模型后面板使用对应默认值（ViT／SwinV2 通用词 0.35，EVA02 通用词 0.53；角色词均 0.85），仍可手动调节；结果按置信度挑选后复制或送入实验室。识别期间不允许切换模型，避免请求和词表混用。
 
 - **入口跟随当前图片**：资料列表顶栏不常驻通用反推按钮。Pixiv 详情提供「识别当前页 Tag」，Danbooru 放在详情「更多」，灵感详情放在标签区并可追加到灵感标签；AITag 及历史详情仅在没有可用原始提示词时提供识别入口。读取这些图片无需先手动下载。
 - **提示词编辑**：风格串／自定义角色编辑器在全局提示词旁提供「从图片识别 Tag」；「读取图片生成信息／导入 JSON」在导入菜单，直接读取文件中保存的配置，区别于 WD 模型预测。实验室保持原有入口。
@@ -958,7 +963,7 @@ NAI Atelier/
 - AITag 作品与元数据：[aitag.win](https://aitag.win/)
 - Pixiv 作品与图片：[Pixiv](https://www.pixiv.net/)（图片权利归各自作者或权利人所有，仅经本机网关按官方规则抓取）
 - Danbooru 数据与图片：[Danbooru / Safebooru](https://safebooru.donmai.us/)（图片权利归各自作者或权利人所有）
-- 图片反推 Tag 模型：[SmilingWolf/wd-vit-tagger-v3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3)（Apache-2.0）
+- 图片反推 Tag 模型：[WD ViT V3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3)、[WD SwinV2 V3](https://huggingface.co/SmilingWolf/wd-swinv2-tagger-v3)、[WD EVA02-Large V3](https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3)（Apache-2.0）
 - 本地 ONNX 推理：[microsoft/onnxruntime](https://github.com/microsoft/onnxruntime)（MIT）
 - 预处理与推理实现参考：[pythongosssss/ComfyUI-WD14-Tagger](https://github.com/pythongosssss/ComfyUI-WD14-Tagger)（MIT）
 - 应用图标：Microsoft Fluent Emoji，详见 [第三方资源说明](./docs/THIRD_PARTY_ASSETS.md)

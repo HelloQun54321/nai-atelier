@@ -2766,6 +2766,35 @@ export const handleCreativePresetsRequest = async (req, res, url, promptAgent) =
   }
 };
 
+export async function handleImageTaggerRequest(req, res, url, lanSecret, imageTagger) {
+  const statusRequest = url.pathname.endsWith('/status');
+  if (req.method !== (statusRequest ? 'GET' : 'POST')) return sendJson(res, 405, { error: 'Method not allowed' });
+  if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+  if (!statusRequest && (req.headers['sec-fetch-site'] === 'cross-site' || (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`))) return sendJson(res, 403, { error: '仅允许当前页面管理反推模型' });
+  try {
+    if (statusRequest) return sendJson(res, 200, await imageTagger.status());
+    if (url.pathname.endsWith('/pause')) { await imageTagger.pauseDownload(); return sendJson(res, 200, { success: true }); }
+    if (url.pathname.endsWith('/model') || url.pathname.endsWith('/download')) {
+      const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8'));
+      if (typeof body?.model !== 'string') return sendJson(res, 400, { error: '请选择反推模型' });
+      if (url.pathname.endsWith('/model')) await imageTagger.select(body.model);
+      else imageTagger.startDownload(body.model);
+      return sendJson(res, 200, { success: true });
+    }
+    const contentType = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(contentType)) return sendJson(res, 415, { error: '只支持 PNG、JPEG 和 WebP 图片' });
+    const image = await readRequestBody(req, 20 * 1024 * 1024);
+    if (!image.length) return sendJson(res, 400, { error: '图片内容为空' });
+    const parseThreshold = name => {
+      if (!url.searchParams.has(name)) return undefined;
+      const value = Number(url.searchParams.get(name));
+      if (!Number.isFinite(value) || value < 0.05 || value > 0.99) throw Object.assign(new Error('识别阈值无效'), { status: 400 });
+      return value;
+    };
+    return sendJson(res, 200, await imageTagger.tag(image, { threshold: parseThreshold('threshold'), characterThreshold: parseThreshold('characterThreshold'), model: url.searchParams.get('model') || undefined }));
+  } catch (error) { return sendJson(res, Number(error.status) || (statusRequest ? 503 : url.pathname === '/api/image-tagger' ? 500 : 400), { error: error.message || '反推模型操作失败' }); }
+}
+
 export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSecret = '', outboundProxyUrl = '', pixivFetch, pixivTokenDir, pixivWebLogin } = {}) {
 // 静态前端资源直接由网关从 dist/ 提供：页面与资源加载不依赖 workerd，也不占用其请求槽。
 const STATIC_CONTENT_TYPES = {
@@ -2824,7 +2853,10 @@ const serveDistFile = async (req, res, url) => {
   collectorReset = styleCollector.worker('session', { session: '' }).catch(() => {});
   await collectorReset;
   const cloudQueue = new CloudQueueCoordinator(remoteFetch);
-  const imageTagger = new ImageTaggerService(remoteFetch);
+  const imageTagger = new ImageTaggerService(remoteFetch, {
+    loadPreference: () => requestWorkerJson('/api/internal/image-tagger/preferences', internalWorkerRequest, workerPort, { headers: { 'x-nai-tagger-control': 'true' } }),
+    savePreference: body => requestWorkerJson('/api/internal/image-tagger/preferences', internalWorkerRequest, workerPort, { method: 'PUT', body, headers: { 'x-nai-tagger-control': 'true' } }),
+  });
   const cloudQueueStore = await loadCloudQueuePreferences();
   const getCloudQueueScope = async req => {
     const keyHash = keyHashFromRequest(req);
@@ -3297,26 +3329,7 @@ const serveDistFile = async (req, res, url) => {
         return sendJson(res, Number(error.status) || 400, { error: error.message || 'Agent 请求失败' });
       }
     }
-    if (url.pathname === '/api/image-tagger/status') {
-      if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
-      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
-      return sendJson(res, 200, await imageTagger.status());
-    }
-    if (url.pathname === '/api/image-tagger') {
-      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
-      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
-      const contentType = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-      if (!['image/png', 'image/jpeg', 'image/webp'].includes(contentType)) return sendJson(res, 415, { error: '只支持 PNG、JPEG 和 WebP 图片' });
-      try {
-        const image = await readRequestBody(req, 20 * 1024 * 1024);
-        if (!image.length) return sendJson(res, 400, { error: '图片内容为空' });
-        const threshold = Math.min(0.95, Math.max(0.05, Number(url.searchParams.get('threshold') || 0.35)));
-        const characterThreshold = Math.min(0.99, Math.max(0.05, Number(url.searchParams.get('characterThreshold') || 0.85)));
-        return sendJson(res, 200, await imageTagger.tag(image, { threshold, characterThreshold }));
-      } catch (error) {
-        return sendJson(res, Number(error.status) || 500, { error: error.message || '图片反推 Tag 失败' });
-      }
-    }
+    if (['/api/image-tagger', '/api/image-tagger/status', '/api/image-tagger/model', '/api/image-tagger/download', '/api/image-tagger/pause'].includes(url.pathname)) return handleImageTaggerRequest(req, res, url, lanSecret, imageTagger);
     if (url.pathname === '/api/local-maintenance/status') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
@@ -3657,13 +3670,14 @@ const serveDistFile = async (req, res, url) => {
     }
   });
   server.on('close', () => {
+    void imageTagger.pauseDownload();
     styleCollector.shutdown();
     proxyAgent?.close().catch(() => {});
     void webLoginOrchestrator.shutdown?.();
   });
   // close 可能等待 SSE 连接，先同步结束监听再进入 HTTP 关闭流程。
   const closeServer = server.close.bind(server);
-  server.close = (...args) => { styleCollector.shutdown(); for (const subscriber of collectorSubscribers) subscriber.end(); return closeServer(...args); };
+  server.close = (...args) => { void imageTagger.pauseDownload(); styleCollector.shutdown(); for (const subscriber of collectorSubscribers) subscriber.end(); return closeServer(...args); };
   const exitCollector = () => styleCollector.shutdown();
   process.once('exit', exitCollector);
   server.once('close', () => process.off('exit', exitCollector));

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useModalA11y } from './useModalA11y';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
+import { ImageTaggerModelManager } from './ImageTaggerModelManager';
 import { setCleanSharedImages, useCleanSharedImages } from '../services/imageSharing';
 import { DataBackupManager } from './DataBackupManager';
 import { DesktopLauncherManager } from './DesktopLauncherManager';
@@ -69,7 +70,7 @@ const settingsSections: Array<{ id: SettingsSection; label: string; description:
   { id: 'novelai', label: 'NovelAI 与 Anlas', description: '连接、队列与本地预算', icon: KeyRound },
   { id: 'agent', label: '项目 Agent', description: '模型、权限与服务商', icon: Bot },
   { id: 'privacy', label: '隐私与分享', description: '分享图片的生成信息清洗', icon: ShieldCheck },
-  { id: 'maintenance', label: '数据与维护', description: '备份、局域网访问、缓存与服务状态', icon: Database },
+  { id: 'maintenance', label: '数据与维护', description: '反推模型、备份、缓存与本地服务', icon: Database },
 ];
 
 interface GlobalSettingsProps {
@@ -1284,6 +1285,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
           <section id="settings-maintenance" className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'maintenance' ? 'hidden' : ''}`}>
             {activeSection === 'maintenance' && <div className="space-y-5">
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><ImageTaggerModelManager notify={notify} /></div>
               {/* 本地数据备份与还原 */}
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
                 <DataBackupManager notify={notify} />

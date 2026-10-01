@@ -4,6 +4,7 @@
 import { LAN_ACCESS_COOKIE } from '../sharedWhitelist.mjs';
 import { MEDIA_VARIANTS, validateMediaSource } from '../mediaValidation';
 import { normalizeChainTags } from '../../services/chainTags';
+import { DEFAULT_IMAGE_TAGGER_MODEL, findImageTaggerModel } from '../../services/imageTaggerModels.mjs';
 import { json, error, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, type D1Database, type Env, type RouteContext } from './types';
 
 const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
@@ -378,6 +379,23 @@ const lowConsumptionRequiresGateway = async (db: D1Database, authorization: stri
 // All settings-domain routes that run AFTER currentUser is resolved.
 export async function handleSettingsRoute(ctx: RouteContext): Promise<Response | null> {
   const { request, env, url, path, method, db, currentUser, initDB } = ctx;
+
+  // 模型偏好使用既有 settings 表，只允许本机网关内部读写。
+  if (path === '/api/internal/image-tagger/preferences') {
+    if (request.headers.get('x-nai-tagger-control') !== 'true' || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.headers.get('x-nai-client-ip') || '')) return error('仅允许本机服务管理反推模型', 403);
+    const key = 'image_tagger_model_v1';
+    if (method === 'GET') {
+      const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+      return json({ model: findImageTaggerModel(row?.value)?.id || DEFAULT_IMAGE_TAGGER_MODEL });
+    }
+    if (method === 'PUT') {
+      const body = await request.json().catch(() => null) as { model?: unknown } | null;
+      if (typeof body?.model !== 'string' || !findImageTaggerModel(body.model)) return error('不支持的反推模型', 400);
+      await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, body.model).run();
+      return json({ model: body.model });
+    }
+    return error('Method not allowed', 405);
+  }
 
   // 复用现有 settings 表按 Key 保存开关，不迁移预算或历史数据。
   if (path === '/api/low-consumption') {

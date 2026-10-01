@@ -7,6 +7,7 @@ import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { MobileIconButton } from './MobileUI';
 import { useModalA11y } from './useModalA11y';
+import { taggerProgressText, useImageTaggerStatus } from './useImageTaggerStatus';
 
 interface ImageTaggerPanelProps {
   /** 资料页面采用识别语义；实验室保留原展示。 */
@@ -43,16 +44,23 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [threshold, setThreshold] = useState(0.35);
   const [characterThreshold, setCharacterThreshold] = useState(0.85);
-  const [downloaded, setDownloaded] = useState<boolean | null>(null);
+  const { status: modelStatus, error: modelStatusError } = useImageTaggerStatus(open);
+  const [thresholdModel, setThresholdModel] = useState<string | undefined>('');
+  const selectedModel = modelStatus?.models?.find(model => model.id === modelStatus.model);
+  const modelReady = Boolean(modelStatus && thresholdModel === modelStatus.model);
+  const modelOptions = { threshold, characterThreshold, ...(modelStatus?.model ? { model: modelStatus.model } : {}) };
   const [busy, setBusy] = useState(false);
   // P2-17：模态焦点管理（焦点移入 / Tab 圈禁 / 关闭后归还）。
   const dialogRef = useModalA11y<HTMLDivElement>(open);
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
   useEffect(() => {
-    if (!open) return;
-    imageTaggerService.getStatus().then(status => setDownloaded(status.downloaded)).catch(() => setDownloaded(null));
-  }, [open]);
+    if (!open || !modelStatus || thresholdModel === modelStatus.model) return;
+    setThreshold(selectedModel?.threshold ?? 0.35);
+    setCharacterThreshold(selectedModel?.characterThreshold ?? 0.85);
+    setThresholdModel(modelStatus.model);
+    setResult(null); setSelected(new Set());
+  }, [open, modelStatus, selectedModel, thresholdModel]);
 
   useEffect(() => {
     if (!open) return;
@@ -68,7 +76,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
 
   // 打开面板时若提供了 imageUrl（图库“反推此图”），自动抓取并识别，无需手动选文件。
   useEffect(() => {
-    if (!open || !imageUrl) return;
+    if (!open || !imageUrl || !modelReady) return;
     let active = true;
     const load = async () => {
       setBusy(true);
@@ -87,13 +95,12 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
         const nextFile = new File([blob], 'tagger-image', { type: blob.type });
         setFile(nextFile);
         setPreview(URL.createObjectURL(blob));
-        const next = await imageTaggerService.tagFile(nextFile, { threshold, characterThreshold });
+        const next = await imageTaggerService.tagFile(nextFile, modelOptions);
         if (!active) return;
         setResult(next);
         setSelected(new Set(next.tags.map(item => item.name)));
-        setDownloaded(true);
-      } catch {
-        if (active) notify('无法直接读取这张图片，请先保存到本地再反推', 'error');
+      } catch (error) {
+        if (active) notify(error instanceof Error ? error.message : '无法读取或识别这张图片', 'error');
       } finally {
         if (active) setBusy(false);
       }
@@ -102,17 +109,16 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
     return () => { active = false; };
     // 面板重新打开同一 URL 时无需重复识别；imageUrl 变化才重新加载。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, imageUrl]);
+  }, [open, imageUrl, modelReady, thresholdModel]);
 
   const run = async (nextFile = file) => {
-    if (!nextFile || busy) return;
+    if (!nextFile || busy || !modelReady) return;
     setBusy(true);
     setResult(null);
     try {
-      const next = await imageTaggerService.tagFile(nextFile, { threshold, characterThreshold });
+      const next = await imageTaggerService.tagFile(nextFile, modelOptions);
       setResult(next);
       setSelected(new Set(next.tags.map(item => item.name)));
-      setDownloaded(true);
     } catch (error) {
       notify(error instanceof Error ? error.message : '图片反推 Tag 失败', 'error');
     } finally {
@@ -165,15 +171,16 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
   return <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={contextual ? '识别图片 Tag' : '图片反推 Tag'} className={`fixed inset-0 ${contextual ? 'z-[2000]' : 'z-[1250]'} flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5`} onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
     <div className="flex max-h-[94dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl dark:bg-gray-950 md:rounded-2xl">
       <header className="flex h-14 flex-none items-center justify-between border-b border-gray-200 px-4 dark:border-gray-800">
-        <div><h2 className="text-sm font-black">{contextual ? '识别图片 Tag' : '图片反推 Danbooru Tag'}</h2><p className="text-micro text-gray-500">WD Tagger V3 · 图片只在你的电脑上处理</p></div>
+        <div><h2 className="text-sm font-black">{contextual ? '识别图片 Tag' : '图片反推 Danbooru Tag'}</h2><p className="text-micro text-gray-500">{selectedModel?.label || 'WD Tagger V3'} · 图片只在你的电脑上处理</p></div>
         <button type="button" disabled={busy} onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800" aria-label="关闭"><X className="h-4 w-4" /></button>
       </header>
       <div className="grid min-h-0 flex-1 overflow-y-auto md:grid-cols-[300px_minmax(0,1fr)] md:overflow-hidden">
         <section className="space-y-4 border-b border-gray-200 p-4 dark:border-gray-800 md:overflow-y-auto md:border-b-0 md:border-r">
           <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => chooseFile(event.target.files?.[0])} />
-          <button type="button" disabled={busy} onClick={() => inputRef.current?.click()} className="relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-gray-400 hover:border-violet-400 dark:border-gray-800 dark:bg-gray-900">
+          {modelStatusError && <p role="alert" className="text-xs text-red-600 dark:text-red-300">{modelStatusError}</p>}
+          <button type="button" disabled={busy || !modelReady} onClick={() => inputRef.current?.click()} className="relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-gray-400 hover:border-violet-400 dark:border-gray-800 dark:bg-gray-900">
             {preview ? <img src={preview} alt="待识别图片" className="h-full w-full object-contain" /> : <span className="flex flex-col items-center gap-2 text-xs"><ImagePlus className="h-8 w-8" />选择图片</span>}
-            {busy && <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 px-6 text-center text-xs text-white"><LoaderCircle className="h-7 w-7 animate-spin" />{downloaded === false ? '首次使用正在下载约 379 MB 模型，请稍候…' : '正在本地识别图片…'}</span>}
+            {busy && <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 px-6 text-center text-xs text-white"><LoaderCircle className="h-7 w-7 animate-spin" />{selectedModel && !selectedModel.downloaded ? taggerProgressText(selectedModel) : '正在本地识别图片…'}{selectedModel && ['downloading', 'verifying'].includes(selectedModel.stage) && <progress aria-label="模型下载进度" max={selectedModel.totalBytes} value={selectedModel.receivedBytes} className="h-1.5 w-full accent-white" />}</span>}
           </button>
           <div className="space-y-3 rounded-2xl border border-gray-200 p-3 dark:border-gray-800">
             <div className="flex items-center gap-2 text-xs font-bold"><SlidersHorizontal className="h-4 w-4" />识别阈值</div>
@@ -217,7 +224,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
               </div>
               <input type="range" min="0.4" max="0.95" step="0.01" aria-label="角色 Tag 阈值" disabled={busy} value={characterThreshold} onChange={event => setCharacterThreshold(Number(event.target.value))} className="w-full cursor-pointer accent-violet-600 disabled:cursor-not-allowed disabled:opacity-50" />
             </div>
-            <button type="button" disabled={!file || busy} onClick={() => void run()} className="h-9 w-full rounded-xl bg-violet-600 text-xs font-bold text-white disabled:opacity-40">按当前阈值重新识别</button>
+            <button type="button" disabled={!file || busy || !modelReady} onClick={() => void run()} className="h-9 w-full rounded-xl bg-violet-600 text-xs font-bold text-white disabled:opacity-40">按当前阈值重新识别</button>
           </div>
         </section>
         <section className="min-h-72 p-4 md:overflow-y-auto">
