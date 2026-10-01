@@ -546,12 +546,25 @@ const buildRequestMaskFromLowResolutionMask = (lowResolutionMaskCanvas: HTMLCanv
   return canvas;
 };
 
-/** 从内部 1/8 二值蒙版构建官方标准的无缝合成羽化回贴蒙版。 */
-const buildCompositeMaskFromLowResolutionMask = (lowResolutionMaskCanvas: HTMLCanvasElement, targetWidth: number, targetHeight: number) => {
-  const alpha = readImageEditMaskAlpha(lowResolutionMaskCanvas);
-  const dilated = dilateImageEditMaskAlpha(alpha, lowResolutionMaskCanvas.width, lowResolutionMaskCanvas.height, 4);
-  const scaled = resizeImageEditMaskAlpha(dilated, lowResolutionMaskCanvas.width, lowResolutionMaskCanvas.height, targetWidth, targetHeight);
+/** 沿用标准羽化；扩图的蒙版内必须完整覆盖生成图，避免把新增区的白色补底混回结果。 */
+export const buildImageEditCompositeMaskAlpha = (alpha: Uint8ClampedArray, width: number, height: number, targetWidth: number, targetHeight: number, operation: ImageEditOperation) => {
+  const dilated = dilateImageEditMaskAlpha(alpha, width, height, 4);
+  const scaled = resizeImageEditMaskAlpha(dilated, width, height, targetWidth, targetHeight);
   const blurred = blurImageEditMaskAlpha(scaled, targetWidth, targetHeight);
+  if (operation === 'outpaint') {
+    const painted = resizeImageEditMaskAlpha(alpha, width, height, targetWidth, targetHeight);
+    for (let pixel = 0; pixel < blurred.length; pixel += 1) {
+      // 两轮 20px 模糊的影响范围大于 32px 膨胀，边界附近的补白原本会残留约 2%。
+      // 保留区仍用原羽化权重；蒙版内由生成图全量覆盖，手工调整的蒙版同样遵循此规则。
+      if (painted[pixel] === 255) blurred[pixel] = 255;
+    }
+  }
+  return blurred;
+};
+
+/** 从内部 1/8 二值蒙版构建回贴蒙版，扩图额外消除白色补底的残留。 */
+const buildCompositeMaskFromLowResolutionMask = (lowResolutionMaskCanvas: HTMLCanvasElement, targetWidth: number, targetHeight: number, operation: ImageEditOperation) => {
+  const blurred = buildImageEditCompositeMaskAlpha(readImageEditMaskAlpha(lowResolutionMaskCanvas), lowResolutionMaskCanvas.width, lowResolutionMaskCanvas.height, targetWidth, targetHeight, operation);
 
   const compositeCanvas = createCanvas(targetWidth, targetHeight);
   const compositeContext = compositeCanvas.getContext('2d');
@@ -589,7 +602,7 @@ export interface PreparedImageEdit {
   focusedGeometry?: ImageEditFocusedGeometry;
 }
 
-/** 将编辑器的全尺寸蒙版转换为 NovelAI 官方使用的 1/8 尺寸蒙版，并生成官方标准羽化回贴蒙版。 */
+/** 全尺寸蒙版先按 1/8 二值化再恢复请求尺寸；回贴沿用标准羽化并按扩图语义处理补白。 */
 export const prepareImageEdit = async (edit: {
   operation: ImageEditOperation;
   image: string;
@@ -656,7 +669,7 @@ export const prepareImageEdit = async (edit: {
 
     lowResolutionMaskCanvas = buildThresholdMask(focusedRequestMaskCanvas, focusedGeometry.requestWidth, focusedGeometry.requestHeight, Math.max(8, focusedGeometry.requestWidth / 8), Math.max(8, focusedGeometry.requestHeight / 8));
     requestMaskCanvas = buildRequestMaskFromLowResolutionMask(lowResolutionMaskCanvas, focusedGeometry.requestWidth, focusedGeometry.requestHeight);
-    compositeMaskCanvas = buildCompositeMaskFromLowResolutionMask(lowResolutionMaskCanvas, focusedGeometry.requestWidth, focusedGeometry.requestHeight);
+    compositeMaskCanvas = buildCompositeMaskFromLowResolutionMask(lowResolutionMaskCanvas, focusedGeometry.requestWidth, focusedGeometry.requestHeight, edit.operation);
   } else {
     requestImageCanvas = createCanvas(originalWidth, originalHeight);
     const requestImageContext = requestImageCanvas.getContext('2d');
@@ -670,7 +683,7 @@ export const prepareImageEdit = async (edit: {
       const requestHeight = requestImageCanvas.height;
       lowResolutionMaskCanvas = buildThresholdMask(sourceMaskCanvas, originalWidth, originalHeight, Math.max(8, requestWidth / 8), Math.max(8, requestHeight / 8));
       requestMaskCanvas = buildRequestMaskFromLowResolutionMask(lowResolutionMaskCanvas, requestWidth, requestHeight);
-      compositeMaskCanvas = buildCompositeMaskFromLowResolutionMask(lowResolutionMaskCanvas, originalWidth, originalHeight);
+      compositeMaskCanvas = buildCompositeMaskFromLowResolutionMask(lowResolutionMaskCanvas, originalWidth, originalHeight, edit.operation);
     }
   }
 
@@ -692,7 +705,7 @@ export const prepareImageEdit = async (edit: {
   };
 };
 
-/** 将 NovelAI 编辑结果按官方蒙版合成回原图，Focused 结果会先缩回原选区。 */
+/** 将 NovelAI 编辑结果按预处理的羽化蒙版合成回原图，Focused 结果会先缩回原选区。 */
 export const composeImageEditResult = async (result: Blob, prepared: PreparedImageEdit) => {
   if (!prepared.compositeMask) return result;
   const baseBitmap = await loadBitmap(prepared.originalImage);

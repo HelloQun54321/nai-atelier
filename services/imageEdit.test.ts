@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blurImageEditMaskAlpha, buildImageEditParameters, buildOpaqueImageEditMaskRgba, calculateOutpaintTargetExpansion, dilateImageEditMaskAlpha, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, limitFocusedImageEditRect, normalizeMinimumContextArea, resizeImageEditMaskAlpha, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from './imageEdit';
+import { blurImageEditMaskAlpha, buildImageEditCompositeMaskAlpha, buildImageEditParameters, buildOpaqueImageEditMaskRgba, calculateOutpaintTargetExpansion, dilateImageEditMaskAlpha, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, limitFocusedImageEditRect, normalizeMinimumContextArea, resizeImageEditMaskAlpha, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from './imageEdit';
 
 describe('image edit helpers', () => {
   it('validates NovelAI canvas dimensions and 64 pixel alignment', () => {
@@ -144,5 +144,49 @@ describe('image edit helpers', () => {
 
     const blurred = blurImageEditMaskAlpha(new Uint8ClampedArray([0, 0, 255, 0, 0]), 5, 1);
     expect([...blurred]).toEqual([6, 6, 6, 6, 6]);
+  });
+
+  it.each(['top', 'right', 'bottom', 'left', 'all'] as const)('扩图 %s 边及角落不把补白混入生成图，保留区仍平滑过渡', side => {
+    const width = 48, height = 48, targetWidth = width * 8, targetHeight = height * 8;
+    const mask = new Uint8ClampedArray(width * height);
+    const isPainted = (x: number, y: number) =>
+      ((side === 'top' || side === 'all') && y < 8) ||
+      ((side === 'right' || side === 'all') && x >= width - 8) ||
+      ((side === 'bottom' || side === 'all') && y >= height - 8) ||
+      ((side === 'left' || side === 'all') && x < 8);
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) if (isPainted(x, y)) mask[y * width + x] = 255;
+    const oldFeather = buildImageEditCompositeMaskAlpha(mask, width, height, targetWidth, targetHeight, 'inpaint');
+    const corrected = buildImageEditCompositeMaskAlpha(mask, width, height, targetWidth, targetHeight, 'outpaint');
+    let oldBrightPixels = 0, transitionPixels = 0, incorrectPadding = 0, changedPreservedPixels = 0;
+    for (let y = 0; y < targetHeight; y += 1) {
+      for (let x = 0; x < targetWidth; x += 1) {
+        const pixel = y * targetWidth + x;
+        if (isPainted(Math.floor(x / 8), Math.floor(y / 8))) {
+          // 生成图和原图都是灰度 20 时，补白不应制造出额外亮度或边界线。
+          const oldBrightness = Math.round((20 * oldFeather[pixel] + 255 * (255 - oldFeather[pixel])) / 255);
+          if (oldBrightness > 20) oldBrightPixels += 1;
+          if (corrected[pixel] !== 255) incorrectPadding += 1;
+        } else {
+          if (corrected[pixel] !== oldFeather[pixel]) changedPreservedPixels += 1;
+          if (corrected[pixel] > 0 && corrected[pixel] < 255) transitionPixels += 1;
+        }
+      }
+    }
+    expect(oldBrightPixels).toBeGreaterThan(0);
+    expect(incorrectPadding).toBe(0);
+    expect(changedPreservedPixels).toBe(0);
+    expect(transitionPixels).toBeGreaterThan(0);
+    expect(corrected[(targetHeight / 2) * targetWidth + targetWidth / 2]).toBe(0);
+  });
+
+  it('扩图手工小蒙版完整替换选区，普通重绘继续保留原羽化且未选远处不变', () => {
+    const mask = new Uint8ClampedArray(32 * 32);
+    mask[16 * 32 + 16] = 255;
+    const normal = buildImageEditCompositeMaskAlpha(mask, 32, 32, 256, 256, 'inpaint');
+    const outpaint = buildImageEditCompositeMaskAlpha(mask, 32, 32, 256, 256, 'outpaint');
+    expect(normal[128 * 256 + 128]).toBeLessThan(255);
+    expect(outpaint[128 * 256 + 128]).toBe(255);
+    expect(outpaint[0]).toBe(0);
+    expect(outpaint[127 * 256 + 127]).toBe(normal[127 * 256 + 127]);
   });
 });
