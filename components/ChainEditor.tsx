@@ -202,6 +202,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // 最近一次生成结果的内存 blob：卸载时 blob: 预览可能已被 revoke，自动补封面用它兜底。
     const lastGeneratedBlobRef = useRef<Blob | null>(null);
     const [imageEditBaseImage, setImageEditBaseImage] = useState<string | null>(null);
+    const [imageEditBaseVersion, setImageEditBaseVersion] = useState(0);
     const [imageEditPreviewImage, setImageEditPreviewImage] = useState<string | null>(null);
     const workspaceKey = getLabWorkspaceSessionKey(chain.id);
     const workspaceFallback = createLabWorkspaceSession(chain.basePrompt || '', String(chain.variableValues?.subject || ''), chain.negativePrompt || '', normalizeParams(chain.params), Object.fromEntries((chain.modules || []).map(module => [module.id, module.isActive])));
@@ -2186,6 +2187,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
             </> : activeEditOperation && activeEditDraft ? <ImageEditPanel
                 baseImage={imageEditBaseImage}
+                baseImageVersion={imageEditBaseVersion}
                 previewImage={imageEditPreviewImage}
                 operation={activeEditOperation}
                 draft={activeEditDraft}
@@ -2235,74 +2237,73 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     updateEditDraft(activeEditOperation, { prompt: value, promptSource: source });
                 }}
                 onDraftChange={patch => updateEditDraft(activeEditOperation, patch)}
-                onBaseImageChange={(dataUrl, source, parentHistoryId, meta) => {
-                    void (async () => {
-                        cancelPendingMaskSave();
-                        const changeRevision = ++editBaseResolveRevisionRef.current;
-                        const ref = await dataUrlToWorkspaceAsset(dataUrl, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'base'));
-                        if (changeRevision !== editBaseResolveRevisionRef.current || !mountedRef.current) return;
-                        await deleteLabWorkspaceAsset(getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'mask'));
-                        if (changeRevision !== editBaseResolveRevisionRef.current || !mountedRef.current) return;
+                onBaseImageChange={async (dataUrl, source, parentHistoryId, meta) => {
+                    cancelPendingMaskSave();
+                    const changeRevision = ++editBaseResolveRevisionRef.current;
+                    const ref = await dataUrlToWorkspaceAsset(dataUrl, getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'base'));
+                    if (changeRevision !== editBaseResolveRevisionRef.current || !mountedRef.current) return;
+                    await deleteLabWorkspaceAsset(getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'mask'));
+                    if (changeRevision !== editBaseResolveRevisionRef.current || !mountedRef.current) return;
 
-                        let inheritedPrompt = activeEditDraft.prompt;
-                        let inheritedNegative = activeEditDraft.negativePrompt;
-                        let inheritedParams = activeEditDraft.params;
-                        let promptSource = activeEditDraft.promptSource;
+                    let inheritedPrompt = activeEditDraft.prompt;
+                    let inheritedNegative = activeEditDraft.negativePrompt;
+                    let inheritedParams = activeEditDraft.params;
+                    let promptSource = activeEditDraft.promptSource;
 
-                        if (meta) {
-                            if (meta.prompt) {
-                                inheritedPrompt = meta.prompt;
-                                promptSource = (source === 'history' || source === 'inspiration') ? 'history' : 'current';
-                            }
-                            if (meta.negativePrompt !== undefined) {
-                                inheritedNegative = meta.negativePrompt;
-                            }
-                            if (meta.params) {
-                                inheritedParams = { ...activeEditDraft.params, ...meta.params };
-                            }
-                        } else if (source === 'generated' && latestTextToImageItem) {
-                            inheritedPrompt = latestTextToImageItem.prompt || finalPrompt || activeEditDraft.prompt;
-                            inheritedNegative = latestTextToImageItem.negativePrompt ?? activeEditDraft.negativePrompt;
-                            if (latestTextToImageItem.params) {
-                                inheritedParams = { ...activeEditDraft.params, ...latestTextToImageItem.params };
-                            }
-                            promptSource = 'current';
+                    if (meta) {
+                        if (meta.prompt) {
+                            inheritedPrompt = meta.prompt;
+                            promptSource = (source === 'history' || source === 'inspiration') ? 'history' : 'current';
                         }
+                        if (meta.negativePrompt !== undefined) {
+                            inheritedNegative = meta.negativePrompt;
+                        }
+                        if (meta.params) {
+                            inheritedParams = { ...activeEditDraft.params, ...meta.params };
+                        }
+                    } else if (source === 'generated' && latestTextToImageItem) {
+                        inheritedPrompt = latestTextToImageItem.prompt || finalPrompt || activeEditDraft.prompt;
+                        inheritedNegative = latestTextToImageItem.negativePrompt ?? activeEditDraft.negativePrompt;
+                        if (latestTextToImageItem.params) {
+                            inheritedParams = { ...activeEditDraft.params, ...latestTextToImageItem.params };
+                        }
+                        promptSource = 'current';
+                    }
 
-                        const previousResultRef = activeEditDraft.resultImageRef;
-                        updateEditDraft(activeEditOperation, {
-                            baseImageRef: ref,
-                            baseImageSource: source,
-                            parentHistoryId: (source === 'upload' || source === 'inspiration') ? undefined : parentHistoryId,
-                            maskRef: undefined,
-                            maskData: undefined,
-                            expansion: { top: 0, right: 0, bottom: 0, left: 0 },
-                            appliedExpansion: undefined,
-                            outpaintRatioId: '16:9',
-                            focusedRect: undefined,
-                            resultImageRef: undefined,
-                            prompt: inheritedPrompt,
-                            negativePrompt: inheritedNegative,
-                            params: inheritedParams,
-                            promptSource,
-                        });
-                        // 换底图作废旧结果资产
-                        if (previousResultRef) {
-                            void deleteLabWorkspaceAsset(previousResultRef).catch(error => console.warn('删除编辑结果资产失败:', error));
+                    const previousResultRef = activeEditDraft.resultImageRef;
+                    updateEditDraft(activeEditOperation, {
+                        baseImageRef: ref,
+                        baseImageSource: source,
+                        parentHistoryId: (source === 'upload' || source === 'inspiration' || source === 'clipboard') ? undefined : parentHistoryId,
+                        maskRef: undefined,
+                        maskData: undefined,
+                        expansion: { top: 0, right: 0, bottom: 0, left: 0 },
+                        appliedExpansion: undefined,
+                        outpaintRatioId: '16:9',
+                        focusedRect: undefined,
+                        resultImageRef: undefined,
+                        prompt: inheritedPrompt,
+                        negativePrompt: inheritedNegative,
+                        params: inheritedParams,
+                        promptSource,
+                    });
+                    // 换底图作废旧结果资产
+                    if (previousResultRef) {
+                        void deleteLabWorkspaceAsset(previousResultRef).catch(error => console.warn('删除编辑结果资产失败:', error));
+                    }
+                    setImageEditBaseImage(dataUrl);
+                    setImageEditBaseVersion(previous => previous + 1);
+                    // 换底图后右侧等待新结果；底图在左侧展示
+                    setImageEditPreviewImage(null);
+                    setImageEditMaskData(undefined);
+                    setImageEditBaseLoading(false);
+                    if (parentHistoryId && source === 'history') {
+                        const selectedIndex = previewHistory.findIndex(item => item.id === parentHistoryId);
+                        if (selectedIndex >= 0) {
+                            setPreviewIndex(selectedIndex);
+                            setPreviewMode('history');
                         }
-                        setImageEditBaseImage(dataUrl);
-                        // 换底图后右侧等待新结果；底图在左侧展示
-                        setImageEditPreviewImage(null);
-                        setImageEditMaskData(undefined);
-                        setImageEditBaseLoading(false);
-                        if (parentHistoryId && source === 'history') {
-                            const selectedIndex = previewHistory.findIndex(item => item.id === parentHistoryId);
-                            if (selectedIndex >= 0) {
-                                setPreviewIndex(selectedIndex);
-                                setPreviewMode('history');
-                            }
-                        }
-                    })();
+                    }
                 }}
                 onCanvasChange={async (imageData, maskData) => {
                     cancelPendingMaskSave();

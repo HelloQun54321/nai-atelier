@@ -79,6 +79,7 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
   const onManualMaskEditingChange = vi.fn();
   const onPromptChange = vi.fn();
   const onSelectImageSource = vi.fn();
+  const onPasteImage = vi.fn();
   const historyItem = { id: 'history-1', imageUrl: 'data:image/png;base64,fixture', prompt: 'history prompt', negativePrompt: '', params, createdAt: 1 };
   return { ...render(React.createElement(ImageEditControls, {
     operation,
@@ -116,6 +117,7 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     onPromptSource: vi.fn(),
     onDraftChange: vi.fn(),
     onFileChange: vi.fn(),
+    onPasteImage,
     onSelectImageSource,
     onStrengthChange: vi.fn(),
     onNoiseChange: vi.fn(),
@@ -130,7 +132,7 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     onRedo: vi.fn(),
     onExpansionChange: vi.fn(),
     onApplyOutpaint: vi.fn(),
-  })), onManualMaskEditingChange, onPromptChange, onSelectImageSource };
+  })), onManualMaskEditingChange, onPromptChange, onSelectImageSource, onPasteImage };
 };
 
 afterEach(() => { cleanup(); lowMode.enabled = false; });
@@ -222,6 +224,7 @@ describe('ImageEditControls', () => {
       onPromptSource: vi.fn(),
       onDraftChange: vi.fn(),
       onFileChange: vi.fn(),
+    onPasteImage: vi.fn(),
       onSelectImageSource: vi.fn(),
       onStrengthChange: vi.fn(),
       onNoiseChange: vi.fn(),
@@ -276,6 +279,7 @@ describe('ImageEditControls', () => {
       onPromptSource: vi.fn(),
       onDraftChange: vi.fn(),
       onFileChange: vi.fn(),
+    onPasteImage: vi.fn(),
       onSelectImageSource: vi.fn(),
       onStrengthChange: vi.fn(),
       onNoiseChange: vi.fn(),
@@ -304,39 +308,19 @@ describe('ImageEditControls', () => {
     expect(screen.queryByText('扩展画布（像素）')).toBeNull();
   });
 
-  it('底图区域可选择文生图最新结果或历史页图片', async () => {
-    const { onSelectImageSource } = renderControls('image-to-image');
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 底图入口统一为上传、文生图最新和粘贴', operation => {
+    const { onSelectImageSource, onPasteImage } = renderControls(operation);
 
     fireEvent.click(screen.getByRole('button', { name: /文生图最新/ }));
     expect(onSelectImageSource).toHaveBeenCalledWith(expect.objectContaining({ id: 'history-1' }), 'generated');
-
-    fireEvent.click(screen.getByRole('button', { name: /选择历史图片/ }));
-    expect(screen.getByRole('dialog', { name: '选择历史图片' })).toBeTruthy();
-    fireEvent.click(await screen.findByRole('button', { name: /选择历史生成图片/ }));
-    expect(onSelectImageSource).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'history-1' }), 'history', false);
-  });
-
-  it('底图区域支持选择灵感图片并展示灵感库来源状态', async () => {
-    const { onSelectImageSource } = renderControls('image-to-image');
-
-    fireEvent.click(screen.getByRole('button', { name: /选择灵感图片/ }));
-    expect(screen.getByRole('dialog', { name: '选择灵感图片' })).toBeTruthy();
-    fireEvent.click(await screen.findByRole('button', { name: /选择灵感图片：测试灵感/ }));
-    expect(onSelectImageSource).toHaveBeenCalledWith(expect.objectContaining({ id: 'insp-1' }), 'inspiration', false);
-  });
-
-  it('历史选择器读取全局分页数据并完整显示缩略图', async () => {
-    const { onSelectImageSource } = renderControls('inpaint');
-
-    fireEvent.click(screen.getByRole('button', { name: /选择历史图片/ }));
-    expect(await screen.findByText('全部 21 张')).toBeTruthy();
-    expect(screen.getByText('第 1 / 2 页 · 每页 20 张')).toBeTruthy();
-    expect(screen.getByRole('img', { name: '历史生成图片' }).className).toContain('object-contain');
-
-    fireEvent.click(screen.getByRole('button', { name: '下一页历史图片' }));
-    expect(await screen.findByText('第 2 / 2 页 · 每页 20 张')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /选择历史生成图片/ }));
-    expect(onSelectImageSource).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'history-21' }), 'history', false);
+    fireEvent.click(screen.getByRole('button', { name: '粘贴' }));
+    expect(onPasteImage).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: '上传图片' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /选择历史图片|选择灵感图片/ })).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const sourceGroup = screen.getByRole('button', { name: '粘贴' }).parentElement!;
+    expect(sourceGroup.querySelectorAll('button')).toHaveLength(3);
+    expect(sourceGroup.className).toContain('grid-cols-3');
   });
 
   it('扩图默认只显示自动边缘扩展与模拟画板摆放台，不直接暴露画笔工具', () => {
@@ -415,6 +399,7 @@ describe('ImageEditControls', () => {
       onPromptSource: vi.fn(),
       onDraftChange: vi.fn(),
       onFileChange: vi.fn(),
+    onPasteImage: vi.fn(),
       onSelectImageSource: vi.fn(),
       onStrengthChange: vi.fn(),
       onNoiseChange: vi.fn(),
@@ -679,6 +664,7 @@ describe('ImageEditPreview', () => {
         onPromptSource: vi.fn(),
         onDraftChange: vi.fn(),
         onFileChange: vi.fn(),
+    onPasteImage: vi.fn(),
         onSelectImageSource: vi.fn(),
         onStrengthChange: vi.fn(),
         onNoiseChange: vi.fn(),

@@ -132,6 +132,8 @@ export interface NAIParams {
 
 export type ImageEditOperation = 'image-to-image' | 'inpaint' | 'outpaint';
 export type GenerationMode = 'text-to-image' | ImageEditOperation;
+/** 历史／灵感来源保留旧草稿与历史记录兼容；新底图入口使用上传、最新结果与剪贴板。 */
+export type ImageEditBaseImageSource = 'generated' | 'history' | 'upload' | 'inspiration' | 'clipboard';
 
 export interface ImageEditCanvasExpansion {
   top: number;
@@ -143,7 +145,7 @@ export interface ImageEditCanvasExpansion {
 export interface ImageEditMetadata {
   operation: ImageEditOperation;
   parentHistoryId?: string;
-  baseImageSource?: 'generated' | 'history' | 'upload' | 'inspiration';
+  baseImageSource?: ImageEditBaseImageSource;
   strength?: number;
   noise?: number;
   /** 旧版本把完整蒙版 Base64 直接写进历史；新记录只通过独立资产读取。 */
@@ -171,7 +173,7 @@ export interface LabImageEditDraft {
   negativePrompt: string;
   params: NAIParams;
   baseImageRef?: string;
-  baseImageSource?: 'generated' | 'history' | 'upload' | 'inspiration';
+  baseImageSource?: ImageEditBaseImageSource;
   parentHistoryId?: string;
   maskRef?: string;
   strength: number;

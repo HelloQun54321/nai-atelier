@@ -39,6 +39,10 @@ vi.mock('../services/labWorkspace', async importOriginal => ({
   cleanupLabWorkspaceAssets: async () => {},
   readLabWorkspaceAsset: async (id: string) => id === 'delayed-base' && state.delayedAsset ? state.delayedAsset : state.assets.get(id) || null,
   deleteLabWorkspaceAsset: async () => {},
+  dataUrlToWorkspaceAsset: async (dataUrl: string, id = 'synthetic-pasted-asset') => {
+    state.assets.set(id, new Blob([Uint8Array.from(atob(dataUrl.split(',')[1]), character => character.charCodeAt(0))], { type: 'image/png' }));
+    return id;
+  },
 }));
 vi.mock('../services/naiService', () => ({ generateImage: state.generate, generateImageStream: state.generate, generateImageEdit: state.generate, generateImageEditStream: state.generate }));
 vi.mock('./ConfirmDialog', () => ({ useConfirmDialog: () => state.confirm }));
@@ -64,6 +68,7 @@ vi.mock('./ImageEditPanel', () => ({ ImageEditPanel: (props: ImageEditPanelProps
   <output aria-label="编辑强度">{props.draft.strength}</output>
   <output aria-label="编辑底图">{props.baseImage}</output>
   <output aria-label="编辑蒙版">{props.maskData}</output>
+  <button onClick={() => { void props.onBaseImageChange('data:image/png;base64,cGFzdGVk', 'clipboard', 'old-parent'); }}>粘贴合成底图</button>
 </section> }));
 
 const chain: PromptChain = {
@@ -98,6 +103,48 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('统一工作台真实状态链路', () => {
+  it.each([['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('%s 粘贴保留当前配置，清除旧底图编辑状态并独立持久化', async (operation, label) => {
+    const session = fallback();
+    session.activeMode = operation;
+    const previous = {
+      ...session.edits[operation], prompt: 'current edit prompt', negativePrompt: 'current edit negative',
+      baseImageRef: 'old-base', baseImageSource: 'history' as const, parentHistoryId: 'old-parent',
+      maskRef: 'old-mask', focusedRect: { x: 0, y: 0, width: 64, height: 64 },
+      resultImageRef: 'old-result', expansion: { top: 64, right: 0, bottom: 128, left: 0 },
+      appliedExpansion: { top: 64, right: 0, bottom: 128, left: 0 },
+    };
+    session.edits[operation] = previous;
+    state.assets.set('old-base', new Blob(['old base'], { type: 'image/png' }));
+    state.assets.set('old-mask', new Blob(['old mask'], { type: 'image/png' }));
+    state.assets.set('old-result', new Blob(['old result'], { type: 'image/png' }));
+    saveLabWorkspaceSession(chain.id, session);
+    setup();
+    await waitFor(() => expect(screen.getByRole('region', { name: operation })).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('编辑底图').textContent).toContain('data:image/png'));
+    const beforePaste = loadLabWorkspaceSession(chain.id, fallback());
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '粘贴合成底图' })); });
+    await waitFor(() => expect(screen.getByLabelText('编辑底图').textContent).toBe('data:image/png;base64,cGFzdGVk'));
+    const saved = loadLabWorkspaceSession(chain.id, fallback());
+    expect(saved.edits[operation]).toEqual(expect.objectContaining({
+      baseImageSource: 'clipboard', prompt: previous.prompt, negativePrompt: previous.negativePrompt,
+      params: previous.params, strength: previous.strength, noise: previous.noise,
+      expansion: { top: 0, right: 0, bottom: 0, left: 0 },
+    }));
+    expect(saved.edits[operation].parentHistoryId).toBeUndefined();
+    expect(saved.edits[operation].maskRef).toBeUndefined();
+    expect(saved.edits[operation].focusedRect).toBeUndefined();
+    expect(saved.edits[operation].appliedExpansion).toBeUndefined();
+    expect(saved.edits[operation].resultImageRef).toBeUndefined();
+    expect(saved.textToImage).toEqual(beforePaste.textToImage);
+    for (const other of ['image-to-image', 'inpaint', 'outpaint'] as const) {
+      if (other !== operation) expect(saved.edits[other]).toEqual(beforePaste.edits[other]);
+    }
+    await switchTo('文生图');
+    await switchTo(label);
+    await waitFor(() => expect(screen.getByLabelText('编辑底图').textContent).toBe('data:image/png;base64,cGFzdGVk'));
+    expect(screen.getByLabelText('编辑蒙版').textContent).toBe('');
+  });
+
   it('卡片改名后保存既有草稿使用最新信息，同时保留未保存提示词', async () => {
     const view = setup();
     await waitFor(() => expect(textPrompt().value).toBe(chain.basePrompt));

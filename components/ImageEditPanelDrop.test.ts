@@ -1,18 +1,25 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createLabImageEditDraft } from '../services/labWorkspace';
 import { DEFAULT_LAB_PAGE_LAYOUTS } from '../services/appearancePreferences';
 import { ImageEditPanel } from './ImageEditPanel';
+import { extractMetadata } from '../services/metadataService';
 
 vi.mock('./ImageEditControls', () => ({
-  ImageEditControls: () => React.createElement('div', null, '编辑控件'),
+  ImageEditControls: (props: React.ComponentProps<typeof import('./ImageEditControls').ImageEditControls>) => React.createElement('div', null,
+    React.createElement('button', { onClick: props.onPasteImage, disabled: props.isBusy }, '粘贴'),
+    props.latestTextToImageItem && React.createElement('button', { onClick: () => props.onSelectImageSource(props.latestTextToImageItem!, 'generated'), disabled: props.isBusy }, '文生图最新'),
+    React.createElement('textarea', { 'aria-label': '提示词' }),
+  ),
 }));
 
 vi.mock('./ImageEditPreview', () => ({
-  ImageEditPreview: () => React.createElement('div', null, '编辑预览'),
+  ImageEditPreview: ({ error }: { error: string | null }) => React.createElement('div', null, error || '编辑预览'),
 }));
+
+vi.mock('../services/metadataService', () => ({ extractMetadata: vi.fn(async () => null), parseNovelAIMetadata: vi.fn() }));
 
 const params = {
   width: 832,
@@ -22,7 +29,122 @@ const params = {
   sampler: 'k_euler_ancestral',
 };
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
+
+const panelProps = (operation: 'image-to-image' | 'inpaint' | 'outpaint' = 'inpaint') => ({
+  baseImage: null, previewImage: null, operation, layout: DEFAULT_LAB_PAGE_LAYOUTS[operation],
+  draft: createLabImageEditDraft(operation, 'current prompt', 'current negative', params),
+  generationCostLabel: () => '免费', tagAssistEnabled: false, apiKey: '', notify: vi.fn(),
+  onPromptChange: vi.fn(), onNegativePromptChange: vi.fn(), onPromptSource: vi.fn(), onDraftChange: vi.fn(),
+  onBaseImageChange: vi.fn(), onCanvasChange: vi.fn(), onGenerate: vi.fn(async () => undefined),
+  onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png',
+});
+
+const mockClipboard = (read: () => Promise<unknown[]>) => {
+  vi.stubGlobal('navigator', { clipboard: { read } });
+};
+
+describe('ImageEditPanel 图片粘贴', () => {
+  it('点击编辑区后可直接键盘粘贴，不抢走输入框焦点', () => {
+    const { container } = render(React.createElement(ImageEditPanel, panelProps()));
+    const zone = container.querySelector('[data-image-edit-drop-zone]')!;
+    fireEvent.pointerDown(screen.getByText('编辑预览'));
+    expect(document.activeElement).toBe(zone);
+    const textarea = screen.getByLabelText('提示词');
+    textarea.focus();
+    fireEvent.pointerDown(textarea);
+    expect(document.activeElement).toBe(textarea);
+  });
+
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 按钮只替换底图，不导入图片中的生成参数', async operation => {
+    const close = vi.fn();
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close })));
+    const getType = vi.fn(async () => new Blob(['synthetic'], { type: 'image/png' }));
+    mockClipboard(async () => [{ types: ['image/png'], getType }]);
+    const props = panelProps(operation);
+    render(React.createElement(ImageEditPanel, props));
+    fireEvent.click(screen.getByRole('button', { name: '粘贴' }));
+    await waitFor(() => expect(props.onBaseImageChange).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/^data:image\/png;base64,/), 'clipboard'));
+    expect(extractMetadata).not.toHaveBeenCalled();
+    expect(props.onPromptChange).not.toHaveBeenCalled();
+    expect(props.onDraftChange).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('键盘粘贴接收图片，而提示词粘贴与普通文字不被劫持', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+    const props = panelProps();
+    const { container } = render(React.createElement(ImageEditPanel, props));
+    const zone = container.querySelector('[data-image-edit-drop-zone]')!;
+    const file = new File(['image'], 'test.png', { type: 'image/png' });
+    const clipboardData = { files: [file], items: [] };
+    fireEvent.paste(screen.getByLabelText('提示词'), { clipboardData });
+    fireEvent.paste(zone, { clipboardData: { files: [], items: [{ kind: 'string', type: 'text/plain' }] } });
+    expect(props.onBaseImageChange).not.toHaveBeenCalled();
+    expect(fireEvent.paste(zone, { clipboardData })).toBe(false);
+    await waitFor(() => expect(props.onBaseImageChange).toHaveBeenCalledExactlyOnceWith(expect.any(String), 'clipboard'));
+  });
+
+  it('图片损坏或保存失败时显示原因，损坏图片不提交底图', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => { throw new Error('图片解码失败'); }));
+    mockClipboard(async () => [{ types: ['image/png'], getType: async () => new Blob(['broken'], { type: 'image/png' }) }]);
+    const props = panelProps();
+    render(React.createElement(ImageEditPanel, props));
+    fireEvent.click(screen.getByRole('button', { name: '粘贴' }));
+    await screen.findByText('图片解码失败');
+    expect(props.onBaseImageChange).not.toHaveBeenCalled();
+    expect(props.notify).toHaveBeenCalledWith('图片解码失败', 'error');
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+    props.onBaseImageChange.mockRejectedValueOnce(new Error('本地保存失败'));
+    fireEvent.click(screen.getByRole('button', { name: '粘贴' }));
+    await screen.findByText('本地保存失败');
+    expect((screen.getByRole('button', { name: '粘贴' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('读取期间只发起一次请求，切模式后旧读取不提交', async () => {
+    let resolveRead!: (items: unknown[]) => void;
+    const read = vi.fn(() => new Promise<unknown[]>(resolve => { resolveRead = resolve; }));
+    mockClipboard(read);
+    const props = panelProps();
+    const view = render(React.createElement(ImageEditPanel, props));
+    fireEvent.click(screen.getByRole('button', { name: '粘贴' }));
+    fireEvent.click(screen.getByRole('button', { name: '粘贴' }));
+    expect(read).toHaveBeenCalledTimes(1);
+    const nextProps = { ...panelProps('outpaint'), onBaseImageChange: props.onBaseImageChange };
+    view.rerender(React.createElement(ImageEditPanel, nextProps));
+    await act(async () => { resolveRead([{ types: ['image/png'], getType: async () => new Blob(['image'], { type: 'image/png' }) }]); });
+    await waitFor(() => expect((screen.getByRole('button', { name: '粘贴' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(props.onBaseImageChange).not.toHaveBeenCalled();
+  });
+
+  it('生成期间不接收粘贴图片', () => {
+    const read = vi.fn(async () => []);
+    mockClipboard(read);
+    const props = panelProps();
+    const { container } = render(React.createElement(ImageEditPanel, { ...props, isGenerating: true }));
+    fireEvent.click(screen.getByRole('button', { name: '粘贴' }));
+    fireEvent.paste(container.querySelector('[data-image-edit-drop-zone]')!, { clipboardData: { files: [new File(['image'], 'test.png', { type: 'image/png' })] } });
+    expect(read).not.toHaveBeenCalled();
+    expect(props.onBaseImageChange).not.toHaveBeenCalled();
+  });
+
+  it('文生图最新仍在保存时不能并发粘贴，避免两个底图互相覆盖', async () => {
+    const read = vi.fn(async () => []);
+    mockClipboard(read);
+    let finish!: () => void;
+    const props = panelProps();
+    props.onBaseImageChange.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+    render(React.createElement(ImageEditPanel, { ...props, latestTextToImageItem: {
+      id: 'latest', imageUrl: 'data:image/png;base64,bGF0ZXN0', prompt: 'latest', negativePrompt: '', params, createdAt: 1,
+    } }));
+    fireEvent.click(screen.getByRole('button', { name: '文生图最新' }));
+    fireEvent.click(screen.getByRole('button', { name: '粘贴' }));
+    expect(read).not.toHaveBeenCalled();
+    expect(props.onBaseImageChange).toHaveBeenCalledExactlyOnceWith('data:image/png;base64,bGF0ZXN0', 'generated', 'latest');
+    await act(async () => { finish(); });
+    expect((screen.getByRole('button', { name: '粘贴' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+});
 
 describe('ImageEditPanel base image drop', () => {
   it('优先接收编辑区内拖入的图片并阻止全局配置导入', async () => {

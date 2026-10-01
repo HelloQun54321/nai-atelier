@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem } from '../types';
+import { ImageEditBaseImageSource, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem } from '../types';
 import { LabPageLayout } from '../services/appearancePreferences';
 import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, validateImageEditDimensions } from '../services/imageEdit';
 import { extractMetadata, parseNovelAIMetadata } from '../services/metadataService';
+import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPreview } from './ImageEditPreview';
 import { useLowConsumption } from '../services/lowConsumption';
@@ -13,7 +14,7 @@ export interface ImageEditRequest {
   canvasWidth: number;
   canvasHeight: number;
   parentHistoryId?: string;
-  baseImageSource?: 'generated' | 'history' | 'upload' | 'inspiration';
+  baseImageSource?: ImageEditBaseImageSource;
   mask?: string;
   strength: number;
   noise: number;
@@ -28,6 +29,8 @@ export interface ImageEditRequest {
 
 interface ImageEditPanelProps {
   baseImage: string | null;
+  /** 同一张图片再次作为新底图导入时，也必须重建画布并清掉旧蒙版。 */
+  baseImageVersion?: number;
   previewImage: string | null;
   operation: ImageEditOperation;
   draft: LabImageEditDraft;
@@ -46,7 +49,7 @@ interface ImageEditPanelProps {
   onNegativePromptChange: (value: string) => void;
   onPromptSource: (source: LabImageEditDraft['promptSource']) => void;
   onDraftChange: (patch: Partial<LabImageEditDraft> & { maskData?: string }) => void;
-  onBaseImageChange: (dataUrl: string, source: 'generated' | 'history' | 'upload' | 'inspiration', parentHistoryId?: string, meta?: { prompt?: string; negativePrompt?: string; params?: import('../types').NAIParams }) => void;
+  onBaseImageChange: (dataUrl: string, source: ImageEditBaseImageSource, parentHistoryId?: string, meta?: { prompt?: string; negativePrompt?: string; params?: import('../types').NAIParams }) => void | Promise<void>;
   onCanvasChange: (imageData: string, maskData?: string) => void | Promise<void>;
   onGenerate: (request: ImageEditRequest) => Promise<void>;
   latestTextToImageItem?: LocalGenItem;
@@ -89,6 +92,7 @@ const emptyExpansion: ImageEditCanvasExpansion = { top: 0, right: 0, bottom: 0, 
 
 export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   baseImage,
+  baseImageVersion = 0,
   previewImage,
   operation,
   draft,
@@ -126,6 +130,8 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const maskCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const baseImportRevisionRef = useRef(0);
+  const importingImageRef = useRef(false);
   const dragDepthRef = useRef(0);
   const drawingRef = useRef(false);
   const selectingRef = useRef(false);
@@ -167,17 +173,24 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [state, setState] = useState<ImageEditPanelState>({ width: 0, height: 0, focusedRect: draft.focusedRect || null });
   const [normalization, setNormalization] = useState<ImageEditNormalizationState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isImportingImage, setIsImportingImage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isBaseImageDragActive, setIsBaseImageDragActive] = useState(false);
   const [mobileTab, setMobileTab] = useState<'canvas' | 'prompt' | 'params'>('canvas');
   useEffect(() => {
     setMobileTab('canvas');
   }, [operation]);
-  const maskEditable = !safeMode && (operation === 'inpaint' || (operation === 'outpaint' && manualMaskEditing));
+  useEffect(() => {
+    importingImageRef.current = false;
+    setIsImportingImage(false);
+    // 切模式、重置／换底图或卸载后，旧剪贴板读取与文件解析不得提交到新草稿。
+    return () => { baseImportRevisionRef.current += 1; };
+  }, [operation, baseImage, draft.baseImageRef, baseImageVersion]);
+  const maskEditable = !safeMode && !isImportingImage && (operation === 'inpaint' || (operation === 'outpaint' && manualMaskEditing));
   // 隐藏画布挂载即存在；只有真正载入底图（width/height 有效）且未在加载时才允许生成，
   // 否则无底图时也会点亮生成按钮，点击后才报尺寸错误。
   const pendingOutpaint = operation === 'outpaint' && !isSameOutpaintExpansion(expansion, draft.appliedExpansion || emptyExpansion);
-  const canGenerate = !isLoading && !isGenerating && !isApplyingOutpaint && !pendingOutpaint && state.width > 0 && state.height > 0 && Boolean(imageCanvasRef.current) && (operation === 'image-to-image' || Boolean(maskCanvasRef.current))
+  const canGenerate = !isLoading && !isImportingImage && !isGenerating && !isApplyingOutpaint && !pendingOutpaint && state.width > 0 && state.height > 0 && Boolean(imageCanvasRef.current) && (operation === 'image-to-image' || Boolean(maskCanvasRef.current))
     && (!lowConsumption.enabled || operation === 'inpaint');
 
   // 每次渲染同步移动端悬浮生成栏入口，保证 ChainEditor 拿到的费用标签与预览卡一致；
@@ -188,7 +201,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       generate: () => { void submit(); },
       costLabel: generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea }),
       canGenerate,
-      unavailableLabel: pendingOutpaint ? '请先应用画布扩展' : isApplyingOutpaint || isLoading ? '画布加载中…' : '请先选择底图',
+      unavailableLabel: isImportingImage ? '读取图片中…' : pendingOutpaint ? '请先应用画布扩展' : isApplyingOutpaint || isLoading ? '画布加载中…' : '请先选择底图',
     });
   });
 
@@ -353,11 +366,11 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     focusedSelectionArmedRef.current = !draft.focusedRect;
     setExpansion(draft.expansion || emptyExpansion);
     setManualMaskEditing(false);
-  }, [operation, draft.baseImageRef]);
+  }, [operation, draft.baseImageRef, baseImageVersion]);
 
   useEffect(() => {
     if (baseImage) void loadBaseImage(baseImage);
-  }, [baseImage, operation, draft.baseImageRef, manualMaskEditing]);
+  }, [baseImage, operation, draft.baseImageRef, manualMaskEditing, baseImageVersion]);
 
   useEffect(() => {
     if (operation === 'image-to-image' || !maskData || maskData === lastAppliedMaskRef.current || drawingRef.current || selectingRef.current) return;
@@ -650,54 +663,84 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     persistMask();
   };
 
-  const importBaseImageFile = (file: File) => {
-    const isSupportedImage = ['image/png', 'image/jpeg', 'image/webp'].includes(file.type)
-      || /\.(?:png|jpe?g|webp)$/i.test(file.name);
-    if (!isSupportedImage) {
-      setError('请拖入 PNG、JPEG 或 WebP 图片作为底图');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const dataUrl = String(reader.result || '');
-      if (!dataUrl) {
-        setError('底图读取失败');
-        return;
-      }
+  const importBaseImageFile = async (readFile: () => File | Promise<File>, source: 'upload' | 'clipboard' = 'upload') => {
+    if (importingImageRef.current || isLoading || isGenerating || isApplyingOutpaint) return;
+    const revision = ++baseImportRevisionRef.current;
+    const isCurrent = () => revision === baseImportRevisionRef.current;
+    importingImageRef.current = true;
+    setIsImportingImage(true);
+    setError(null);
+    try {
+      const file = await readFile();
+      if (!isCurrent()) return;
+      const isSupportedImage = ['image/png', 'image/jpeg', 'image/webp'].includes(file.type)
+        || (!file.type && /\.(?:png|jpe?g|webp)$/i.test(file.name));
+      if (!isSupportedImage) throw new Error('请使用 PNG、JPEG 或 WebP 图片作为底图');
+      // 先确认可解码再保存，损坏图片不能覆盖现有底图。尺寸规范化仍交给原画布流程。
+      const bitmap = await createImageBitmap(file);
+      const pixels = bitmap.width * bitmap.height;
+      bitmap.close();
+      if (!isCurrent()) return;
+      if (!pixels || pixels > 40_000_000) throw new Error('底图尺寸无效或超过 4000 万像素，请使用较小的图片');
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => reader.result ? resolve(String(reader.result)) : reject(new Error('底图读取失败'));
+        reader.onerror = () => reject(new Error('底图读取失败'));
+        reader.readAsDataURL(file);
+      });
+      if (!isCurrent()) return;
       let extractedMeta: { prompt?: string; negativePrompt?: string; params?: import('../types').NAIParams } | undefined;
-      try {
-        const rawMeta = await extractMetadata(file);
-        if (rawMeta) {
-          const parsed = parseNovelAIMetadata(rawMeta);
-          if (parsed.prompt) {
-            extractedMeta = {
-              prompt: parsed.prompt,
-              negativePrompt: parsed.negativePrompt,
-              params: parsed.params,
-            };
+      // 复制的像素不等于导入生成配置；粘贴始终保留当前模式的提示词与参数。
+      if (source === 'upload') {
+        try {
+          const rawMeta = await extractMetadata(file);
+          if (rawMeta) {
+            const parsed = parseNovelAIMetadata(rawMeta);
+            if (parsed.prompt) {
+              extractedMeta = {
+                prompt: parsed.prompt,
+                negativePrompt: parsed.negativePrompt,
+                params: parsed.params,
+              };
+            }
           }
+        } catch (metaErr) {
+          console.warn('解析底图元数据跳过:', metaErr);
         }
-      } catch (metaErr) {
-        console.warn('解析底图元数据跳过:', metaErr);
       }
-      if (extractedMeta) {
-        onBaseImageChange(dataUrl, 'upload', undefined, extractedMeta);
-      } else {
-        onBaseImageChange(dataUrl, 'upload');
-      }
-      void loadBaseImage(dataUrl, { maskData: undefined, focusedRect: undefined });
-      if (extractedMeta?.prompt) {
+      if (!isCurrent()) return;
+      if (extractedMeta) await onBaseImageChange(dataUrl, source, undefined, extractedMeta);
+      else await onBaseImageChange(dataUrl, source);
+      // 等父层更新草稿后再由底图 effect 加载，避免沿用上一张图的已应用扩展量。
+      if (isCurrent() && extractedMeta?.prompt) {
         notify('已自动解析并带入底图提示词与参数', 'success');
       }
-    };
-    reader.onerror = () => setError('底图读取失败');
-    reader.readAsDataURL(file);
+    } catch (error) {
+      if (!isCurrent()) return;
+      const message = error instanceof Error ? error.message : '底图读取失败';
+      setError(message);
+      if (source === 'clipboard') notify(message, 'error');
+    } finally {
+      if (isCurrent()) {
+        importingImageRef.current = false;
+        setIsImportingImage(false);
+      }
+    }
   };
 
   const handleUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
-    if (file) importBaseImageFile(file);
+    if (file) void importBaseImageFile(() => file);
+  };
+
+  const handleBaseImagePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    if (isTextPasteTarget(event.target)) return;
+    const file = getPastedImageFile(event.clipboardData);
+    if (!file) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void importBaseImageFile(() => file, 'clipboard');
   };
 
   const hasDraggedImage = (dataTransfer: DataTransfer) => Array.from(dataTransfer.items || []).some(item => item.kind === 'file' && (item.type.startsWith('image/') || !item.type));
@@ -732,13 +775,13 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     event.stopPropagation();
     dragDepthRef.current = 0;
     setIsBaseImageDragActive(false);
-    if (imageFile) importBaseImageFile(imageFile);
+    if (imageFile) void importBaseImageFile(() => imageFile);
     else setError('请拖入 PNG、JPEG 或 WebP 图片作为底图');
   };
 
   const applyOutpaint = async () => {
     const imageCanvas = imageCanvasRef.current;
-    if (!baseImage || !imageCanvas || !state.width || !state.height || applyingOutpaintRef.current || isLoading || isGenerating || !pendingOutpaint) return;
+    if (!baseImage || !imageCanvas || !state.width || !state.height || applyingOutpaintRef.current || importingImageRef.current || isLoading || isGenerating || !pendingOutpaint) return;
     applyingOutpaintRef.current = true;
     setIsApplyingOutpaint(true);
     const revision = imageLoadRevisionRef.current;
@@ -855,7 +898,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   };
 
   const submit = async () => {
-    if (isApplyingOutpaint || applyingOutpaintRef.current || isLoading) return;
+    if (isApplyingOutpaint || applyingOutpaintRef.current || importingImageRef.current || isLoading) return;
     if (pendingOutpaint) { setError('画布扩展已调整，请先应用后再生成'); return; }
     if (inFlightRef.current || isGenerating) return;
     if (lowConsumption.enabled && operation !== 'inpaint') return;
@@ -891,7 +934,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       image: canvasToDataUrl(imageCanvas),
       canvasWidth: imageCanvas.width,
       canvasHeight: imageCanvas.height,
-      parentHistoryId: draft.baseImageSource === 'upload' || draft.baseImageSource === 'inspiration' ? undefined : draft.parentHistoryId,
+      parentHistoryId: draft.baseImageSource === 'upload' || draft.baseImageSource === 'inspiration' || draft.baseImageSource === 'clipboard' ? undefined : draft.parentHistoryId,
       baseImageSource: draft.baseImageSource,
       mask: operation === 'image-to-image' ? undefined : canvasToDataUrl(maskCanvas!),
       strength,
@@ -932,11 +975,18 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       </nav>
       <div
         data-image-edit-drop-zone="true"
+        tabIndex={-1}
         className="chain-editor-body relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-white dark:bg-gray-900 lg:flex-row lg:overflow-hidden"
         onDragEnter={handleBaseImageDragEnter}
         onDragOver={handleBaseImageDragOver}
         onDragLeave={handleBaseImageDragLeave}
         onDrop={handleBaseImageDrop}
+        onPaste={handleBaseImagePaste}
+        onPointerDownCapture={event => {
+          if (!(event.target instanceof Element)) return;
+          const control = event.target.closest('button, a, input, textarea, select, [contenteditable], [tabindex]');
+          if (!control || control === event.currentTarget) event.currentTarget.focus({ preventScroll: true });
+        }}
       >
         {isBaseImageDragActive && <div className="pointer-events-none absolute inset-0 z-[90] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm"><div className="rounded-xl border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center text-sm font-bold text-indigo-700 shadow-2xl dark:bg-gray-900/95 dark:text-indigo-300">松手导入为当前编辑底图<br /><span className="mt-1 block text-xs font-normal text-gray-500 dark:text-gray-400">支持 PNG、JPEG、WebP；导入后自动检查并提示规范化尺寸</span></div></div>}
         <ImageEditControls
@@ -957,7 +1007,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
             focusedRect: state.focusedRect,
             focused,
             isLoading,
-            isBusy: isLoading || isGenerating,
+            isBusy: isLoading || isImportingImage || isGenerating,
             maskEditable,
             onPointerDown: handlePointerDown,
             onPointerMove: handlePointerMove,
@@ -976,7 +1026,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           tool={tool}
           manualMaskEditing={manualMaskEditing}
           expansion={expansion}
-          isBusy={isLoading || isGenerating || isApplyingOutpaint}
+          isBusy={isLoading || isImportingImage || isGenerating || isApplyingOutpaint}
           safeMode={safeMode}
           tagAssistEnabled={tagAssistEnabled}
           apiKey={apiKey}
@@ -986,11 +1036,26 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           onPromptSource={onPromptSource}
           onDraftChange={onDraftChange}
           onFileChange={handleUpload}
-          onSelectImageSource={(item, source, importParams) => onBaseImageChange(item.imageUrl, source, source === 'inspiration' ? undefined : item.id, importParams ? {
-            prompt: item.prompt,
-            negativePrompt: item.negativePrompt,
-            params: item.params,
-          } : undefined)}
+          onPasteImage={() => { void importBaseImageFile(readClipboardImage, 'clipboard'); }}
+          onSelectImageSource={(item, source) => {
+            if (importingImageRef.current || isLoading || isGenerating || isApplyingOutpaint) return;
+            const revision = ++baseImportRevisionRef.current;
+            importingImageRef.current = true;
+            setIsImportingImage(true);
+            setError(null);
+            void (async () => {
+              try {
+                await onBaseImageChange(item.imageUrl, source, item.id);
+              } catch (error) {
+                if (revision === baseImportRevisionRef.current) setError(error instanceof Error ? error.message : '底图载入失败');
+              } finally {
+                if (revision === baseImportRevisionRef.current) {
+                  importingImageRef.current = false;
+                  setIsImportingImage(false);
+                }
+              }
+            })();
+          }}
           onStrengthChange={value => { setStrength(value); onDraftChange({ strength: value }); }}
           onNoiseChange={value => { setNoise(value); onDraftChange({ noise: value }); }}
           onBrushSizeChange={value => { setBrushSize(value); onDraftChange({ brushSize: value }); }}
@@ -1015,7 +1080,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           error={error}
           generationCostLabel={generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea })}
           onGenerate={() => { void submit(); }}
-          isLoading={isLoading}
+          isLoading={isLoading || isImportingImage}
           isGenerating={isGenerating}
           canGenerate={canGenerate}
           generationProgress={generationProgress}

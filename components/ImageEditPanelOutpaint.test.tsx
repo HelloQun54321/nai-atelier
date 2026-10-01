@@ -61,6 +61,35 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('扩图应用与提交', () => {
+  it('同一张图片重新作为底图导入时，依旧重建画布并清除上轮扩展与蒙版', async () => {
+    const clearRect = vi.fn();
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockImplementation(() => ({
+      drawImage: vi.fn(), clearRect, putImageData: vi.fn(),
+      createImageData: () => ({ data: new Uint8ClampedArray(4) }),
+      getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+    }) as unknown as CanvasRenderingContext2D);
+    const draft = createLabImageEditDraft('outpaint', 'current style', '', params,
+      { baseImageRef: 'same-asset', expansion, appliedExpansion: expansion });
+    const props = {
+      baseImage: 'same-image', baseImageVersion: 0, previewImage: null, operation: 'outpaint' as const,
+      draft, layout: DEFAULT_LAB_PAGE_LAYOUTS.outpaint, tagAssistEnabled: false, apiKey: '', notify: vi.fn(),
+      generationCostLabel: () => '点数', onPromptChange: vi.fn(), onNegativePromptChange: vi.fn(),
+      onPromptSource: vi.fn(), onDraftChange: vi.fn(), onBaseImageChange: vi.fn(), onCanvasChange,
+      onGenerate, onOpenLightbox: vi.fn(), getDownloadFilename: () => 'fixture.png',
+    };
+    const view = render(<ImageEditPanel {...props} />);
+    await waitFor(() => expect(screen.getByTestId('image')).toHaveProperty('height', 1536));
+    const previousClears = clearRect.mock.calls.length;
+    view.rerender(<ImageEditPanel {...props} baseImageVersion={1} draft={{ ...draft,
+      expansion: { top: 0, right: 0, bottom: 0, left: 0 }, appliedExpansion: undefined,
+    }} />);
+    await waitFor(() => expect(screen.getByTestId('image')).toHaveProperty('height', 1216));
+    await waitFor(() => expect((screen.getByText('生成') as HTMLButtonElement).disabled).toBe(false));
+    expect(clearRect.mock.calls.length).toBeGreaterThan(previousClears);
+    expect(createOutpaintCanvas).toHaveBeenCalledTimes(1);
+    expect(createImageBitmap).toHaveBeenCalledTimes(2);
+  });
+
   it('重复应用不会叠加，改比例重新从原图生成，未应用时拦截生成', async () => {
     render(<Harness />);
     await waitFor(() => expect(screen.getByTestId('source').textContent).toBe('832×1216'));
