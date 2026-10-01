@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createLabWorkspaceSession, getLabModeLabel, getLabWorkspaceAssetId, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, saveLabWorkspaceSession, scopeLabWorkspaceSessionToEntry } from './labWorkspace';
+import { createLabWorkspaceSession, getLabModeLabel, getLabWorkspaceAssetId, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, saveLabWorkspaceSession } from './labWorkspace';
 
 const params = {
   model: 'nai-diffusion-4-5-full',
@@ -49,13 +49,13 @@ describe('lab workspace session', () => {
     expect(loadLabWorkspaceSession('chain-b', fallback).textToImage.basePrompt).toBe('style');
   });
 
-  it('only the laboratory restores image editing modes', () => {
+  it('所有工作台入口均恢复各自模式，新工作台默认文生图', () => {
     const session = { ...createLabWorkspaceSession('style', '', '', params, {}), activeMode: 'outpaint' as const };
-
-    expect(scopeLabWorkspaceSessionToEntry('playground', session).activeMode).toBe('outpaint');
-    expect(scopeLabWorkspaceSessionToEntry('style-chain', session).activeMode).toBe('text-to-image');
-    expect(scopeLabWorkspaceSessionToEntry('character-chain', session).activeMode).toBe('text-to-image');
-    expect(session.activeMode).toBe('outpaint');
+    for (const key of ['playground', 'style-chain', 'character-chain']) {
+      saveLabWorkspaceSession(key, session);
+      expect(loadLabWorkspaceSession(key, createLabWorkspaceSession('', '', '', params, {})).activeMode).toBe('outpaint');
+    }
+    expect(loadLabWorkspaceSession('new-chain', createLabWorkspaceSession('', '', '', params, {})).activeMode).toBe('text-to-image');
   });
 
   it('LAB_DEFAULT_PARAMS 是重置使用的免费边界默认参数', () => {

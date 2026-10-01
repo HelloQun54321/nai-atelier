@@ -1,10 +1,10 @@
 import React, { useRef, useState } from 'react';
-import { FileDown, ImagePlus, MoreHorizontal, Quote, RotateCcw, Save, Tags } from 'lucide-react';
+import { Copy, FileDown, ImagePlus, MoreHorizontal, Quote, RotateCcw, Save, Tags } from 'lucide-react';
 import { GenerationMode } from '../../types';
 import { ChainEditorModeHeader } from '../ChainEditorModeHeader';
-import { IconButton, ToolbarButton } from '../DesignSystem';
+import { IconButton } from '../DesignSystem';
 import { MobileBottomSheet, MobileIconButton } from '../MobileUI';
-import { ToolbarPopover, TOOLBAR_MENU_CLASS } from '../ToolbarPopover';
+import { AnchoredToolbarPopover, TOOLBAR_MENU_CLASS } from '../ToolbarPopover';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 
 const MobileActionRow: React.FC<{
@@ -108,11 +108,32 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
     const closeMobileActions = () => setMobileActionsOpen(false);
     const ActionLayer = isPlayground ? React.Fragment : ImagePreviewPortal;
+    const saveAnchorRef = useRef<HTMLDivElement>(null);
+    const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+    const [saveActionsOpen, setSaveActionsOpen] = useState(false);
+    const closeSaveActions = React.useCallback(() => setSaveActionsOpen(false), []);
+    const entityLabel = isCharacterMode ? '自定义角色' : '风格串';
+    const saveLabel = isUploading ? '正在保存' : `保存${entityLabel}`;
+    const saveDetail = hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存';
+    const saveClass = canSaveCurrentChain && !isUploading
+        ? '!border-emerald-300 !bg-emerald-50 !text-emerald-600 hover:!bg-emerald-100 dark:!border-emerald-900/70 dark:!bg-emerald-950/35 dark:!text-emerald-300'
+        : '';
+    const renderSaveOptions = () => <div className="space-y-1">
+        <button type="button" className={`${TOOLBAR_MENU_CLASS} disabled:cursor-not-allowed disabled:opacity-40`} disabled={!canSaveCurrentChain || isUploading} onClick={() => { closeSaveActions(); handleSaveAll(); }}><Save />{saveDetail}</button>
+        <button type="button" className={`${TOOLBAR_MENU_CLASS} disabled:cursor-not-allowed disabled:opacity-40`} disabled={isUploading} onClick={() => { closeSaveActions(); handleFork(); }}><Copy />另存为新串</button>
+    </div>;
+    React.useEffect(() => {
+        const onResize = () => { setIsMobile(window.innerWidth < 768); closeSaveActions(); };
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, [closeSaveActions]);
+    // 切入编辑模式时关闭保存面板，不能从旧面板提交不完整的底图／蒙版配置。
+    React.useEffect(() => { closeSaveActions(); }, [activeGenerationMode, closeSaveActions]);
 
     return (
         <>
-        <header className={`chain-editor-header workspace-command-bar relative z-30 h-auto flex-shrink-0 items-center overflow-visible border-b border-gray-200 bg-white px-2 py-1 dark:border-gray-800/80 dark:bg-gray-900/90 md:px-5 lg:py-0 ${isPlayground ? 'grid grid-cols-1 gap-1 lg:grid-cols-2 lg:gap-0' : 'flex gap-2'}`}>
-            <div className={`chain-editor-header-main relative flex min-w-0 items-center gap-2 md:gap-4 lg:pr-4 ${isPlayground ? '' : 'flex-1'}`}>
+        <header className="chain-editor-header workspace-command-bar relative z-30 h-auto flex-shrink-0 items-center overflow-visible border-b border-gray-200 bg-white px-2 py-1 dark:border-gray-800/80 dark:bg-gray-900/90 md:px-5 lg:py-0 grid grid-cols-1 gap-1 lg:grid-cols-2 lg:gap-0">
+            <div className="chain-editor-header-main relative flex min-w-0 items-start lg:items-center gap-2 md:gap-4 lg:pr-4">
                 <ChainEditorModeHeader
                     isLaboratory={isPlayground}
                     chainName={chainName}
@@ -177,8 +198,8 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     </div>
                     <div className="mt-4 flex justify-end"><button type="button" onClick={() => setIsEditingInfo(false)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-500">完成</button></div>
                 </div>}
-                {!isPlayground && canSaveActiveModeToLibrary && isOwner && <ToolbarButton aria-label={isUploading ? '正在保存' : hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存'} disabled={!canSaveCurrentChain || isUploading} onClick={handleSaveAll} className={`mobile-touch !px-2 md:hidden ${canSaveCurrentChain && !isUploading ? '!border-emerald-600 !bg-emerald-600 !text-white hover:!bg-emerald-500' : ''}`}><Save /></ToolbarButton>}
-                {!isPlayground && canSaveActiveModeToLibrary && !isOwner && !isGuest && <ToolbarButton aria-label="复制为新串" disabled={isUploading} onClick={handleFork} className="mobile-touch !px-2 md:hidden"><Save /></ToolbarButton>}
+                {!isPlayground && canSaveActiveModeToLibrary && isOwner && <IconButton label={saveLabel} disabled={isUploading} onClick={() => setSaveActionsOpen(true)} className={`mobile-touch md:hidden ${saveClass}`}><Save /></IconButton>}
+                {!isPlayground && canSaveActiveModeToLibrary && !isOwner && !isGuest && <IconButton label="另存为新串" disabled={isUploading} onClick={handleFork} className="mobile-touch md:hidden"><Save /></IconButton>}
                 <MobileIconButton
                     label="更多操作"
                     onClick={() => setMobileActionsOpen(true)}
@@ -189,45 +210,12 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
             </div>
 
             <div className="chain-editor-actions hidden md:flex flex-none items-center gap-2 overflow-x-auto md:ml-auto md:justify-end">
-                {canEdit && (
-                    <>
-                        <input
-                            type="file"
-                            ref={importInputRef}
-                            className="hidden"
-                            accept="image/png,application/json,.json"
-                            onChange={handleImportImage}
-                        />
-                        {isPlayground ? <IconButton
-                            label="导入图片或 JSON 配置"
-                            onClick={() => importInputRef.current?.click()}
-                        >
-                            <FileDown className="h-4 w-4" />
-                        </IconButton> : <ToolbarPopover label="导入" title="导入创作配置" icon={<FileDown />} width={320}>
-                            {close => <div className="space-y-1">
-                                <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); importInputRef.current?.click(); }}><FileDown />读取图片生成信息／导入 JSON</button>
-                                <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); setShowImportPreset(true); }}><Quote />引用预设</button>
-                            </div>}
-                        </ToolbarPopover>}
-                    </>
-                )}
-                {isPlayground && canEdit && (
-                    <IconButton
-                        label="引用预设"
-                        onClick={() => setShowImportPreset(true)}
-                    >
-                        <Quote className="h-4 w-4" />
-                    </IconButton>
-                )}
-                {isPlayground && canEdit && (
-                    <IconButton
-                        label="图片反推 Tag"
-                        onClick={() => setTaggerOpen(true)}
-                    >
-                        <ImagePlus className="h-4 w-4" />
-                    </IconButton>
-                )}
-                {isPlayground && <IconButton
+                {canEdit && <>
+                    <IconButton label="导入图片或 JSON 配置" onClick={() => importInputRef.current?.click()}><FileDown /></IconButton>
+                    <IconButton label="引用预设" onClick={() => setShowImportPreset(true)}><Quote /></IconButton>
+                    <IconButton label="图片反推 Tag" onClick={() => setTaggerOpen(true)}><ImagePlus /></IconButton>
+                </>}
+                <IconButton
                     label={tagAssistEnabled ? '关闭 Tag 辅助' : '开启 Tag 辅助'}
                     aria-pressed={tagAssistEnabled}
                     onClick={() => {
@@ -237,66 +225,27 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     }}
                     className={tagAssistEnabled ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-800 dark:!bg-indigo-950/40 dark:!text-indigo-300' : ''}
                 >
-                    <span className="relative block">
-                        <Tags className="h-4 w-4" />
-                        <span aria-hidden="true" className="absolute -bottom-1.5 -right-1.5 text-mini font-black leading-none">
-                            {tagAssistEnabled ? 'o' : '−'}
-                        </span>
-                    </span>
-                </IconButton>}
-                {isPlayground && (
-                    <IconButton
-                        label="重置实验室"
-                        tone="danger"
-                        onClick={handleReset}
-                    >
-                        <RotateCcw className="h-4 w-4" />
-                    </IconButton>
-                )}
-                {/* Fork / Save to Library Button */}
-                {canSaveActiveModeToLibrary && ((!isOwner && !isGuest) || isPlayground) && (
-                    isPlayground ? (
-                        <IconButton
-                            label="保存到库"
-                            disabled={isUploading}
-                            onClick={handleFork}
-                            className="!border-emerald-300 !bg-emerald-50 !text-emerald-600 hover:!bg-emerald-100 dark:!border-emerald-900/70 dark:!bg-emerald-950/35 dark:!text-emerald-300"
-                        >
-                            <Save className="h-4 w-4" />
-                        </IconButton>
-                    ) : (
-                        <ToolbarButton
-                            disabled={isUploading}
-                            onClick={handleFork}
-                        >
-                            <Save className="h-4 w-4" />
-                            <span>复制为新串</span>
-                        </ToolbarButton>
-                    )
-                )}
-                {canSaveActiveModeToLibrary && isOwner && !isPlayground && (
-                    <ToolbarButton
-                        tone="primary"
-                        onClick={handleSaveAll}
-                        disabled={!canSaveCurrentChain || isUploading}
-                        className={canSaveCurrentChain && !isUploading
-                            ? '!border-emerald-600 !bg-emerald-600 !text-white hover:!bg-emerald-500 shadow-sm shadow-emerald-600/20'
-                            : ''}
-                        title={isUploading ? '正在保存' : hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存'}
-                        aria-label={isUploading ? '正在保存' : hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存'}
-                    >
-                        <Save className="h-4 w-4" />
-                        <span className="hidden sm:inline">{isUploading ? '保存中' : canSaveCurrentChain ? '保存修改' : '已保存'}</span>
-                    </ToolbarButton>
-                )}
+                    <span className="relative block"><Tags /><span aria-hidden="true" className="absolute -bottom-1.5 -right-1.5 text-mini font-black leading-none">{tagAssistEnabled ? 'o' : '−'}</span></span>
+                </IconButton>
+                {canEdit && <IconButton label="重置当前模式" tone="danger" onClick={handleReset}><RotateCcw /></IconButton>}
+                {canSaveActiveModeToLibrary && (isPlayground || (!isOwner && !isGuest)) && <IconButton label={isPlayground ? '保存到库' : '另存为新串'} disabled={isUploading} onClick={handleFork} className="!border-emerald-300 !bg-emerald-50 !text-emerald-600 hover:!bg-emerald-100 dark:!border-emerald-900/70 dark:!bg-emerald-950/35 dark:!text-emerald-300"><Save /></IconButton>}
+                {canSaveActiveModeToLibrary && isOwner && !isPlayground && <div ref={saveAnchorRef} className="flex-none">
+                    <IconButton label={saveLabel} title={saveDetail} disabled={isUploading} aria-haspopup="dialog" aria-expanded={saveActionsOpen} onClick={() => setSaveActionsOpen(value => !value)} className={saveClass}><Save /></IconButton>
+                </div>}
             </div>
         </header>
+        <input type="file" ref={importInputRef} className="hidden" accept="image/png,application/json,.json" onChange={handleImportImage} />
+        {saveActionsOpen && canSaveActiveModeToLibrary && isOwner && !isPlayground && <>
+            {isMobile
+                ? <ActionLayer><MobileBottomSheet open title={`保存${entityLabel}`} onClose={closeSaveActions}>{renderSaveOptions()}</MobileBottomSheet></ActionLayer>
+                : <AnchoredToolbarPopover anchorRef={saveAnchorRef} title={`保存${entityLabel}`} width={280} onClose={closeSaveActions}>{renderSaveOptions()}</AnchoredToolbarPopover>}
+        </>}
         <ActionLayer><MobileBottomSheet open={mobileActionsOpen} title="更多操作" onClose={closeMobileActions}>
             <div className="flex flex-col gap-1">
-                {canEdit && <MobileActionRow icon={<FileDown className="h-4 w-4" />} label={isPlayground ? '导入图片或 JSON 配置' : '读取图片生成信息／导入 JSON'} onClick={() => { closeMobileActions(); importInputRef.current?.click(); }} />}
+                {canEdit && <MobileActionRow icon={<FileDown className="h-4 w-4" />} label="导入图片或 JSON 配置" onClick={() => { closeMobileActions(); importInputRef.current?.click(); }} />}
                 {canEdit && <MobileActionRow icon={<Quote className="h-4 w-4" />} label="引用预设" onClick={() => { closeMobileActions(); setShowImportPreset(true); }} />}
-                {isPlayground && canEdit && <MobileActionRow icon={<ImagePlus className="h-4 w-4" />} label="图片反推 Tag" onClick={() => { closeMobileActions(); setTaggerOpen(true); }} />}
-                {isPlayground && <MobileActionRow
+                {canEdit && <MobileActionRow icon={<ImagePlus className="h-4 w-4" />} label="图片反推 Tag" onClick={() => { closeMobileActions(); setTaggerOpen(true); }} />}
+                <MobileActionRow
                     icon={<Tags className="h-4 w-4" />}
                     label="Tag 辅助"
                     detail={tagAssistEnabled ? '已开启' : '已关闭'}
@@ -306,8 +255,8 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                         notify(`Tag 辅助已${enabled ? '开启' : '关闭'}`);
                         closeMobileActions();
                     }}
-                />}
-                {isPlayground && <MobileActionRow icon={<RotateCcw className="h-4 w-4" />} label="重置实验室" tone="danger" onClick={() => { closeMobileActions(); handleReset(); }} />}
+                />
+                {canEdit && <MobileActionRow icon={<RotateCcw className="h-4 w-4" />} label="重置当前模式" tone="danger" onClick={() => { closeMobileActions(); handleReset(); }} />}
                 {canSaveActiveModeToLibrary && isPlayground && <MobileActionRow icon={<Save className="h-4 w-4" />} label="保存到库" tone="primary" disabled={isUploading} onClick={() => { closeMobileActions(); handleFork(); }} />}
             </div>
         </MobileBottomSheet></ActionLayer>

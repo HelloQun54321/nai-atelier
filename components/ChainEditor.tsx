@@ -29,7 +29,7 @@ import { LabPageLayouts } from '../services/appearancePreferences';
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, useAnlasBudget } from '../services/anlasBudget';
-import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, scopeLabWorkspaceSessionToEntry, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
+import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME, getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
@@ -182,6 +182,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // --- Generation State ---
     const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
     const [isGenerating, setIsGenerating] = useState(false);
+    const [isSwitchingMode, setIsSwitchingMode] = useState(false);
+    const modeTransitionRef = useRef(false);
     const [generationProgress, setGenerationProgress] = useState<{ step: number; total: number } | null>(null);
     const [isUploading, setIsUploading] = useState(false);
     const [generatedImage, setGeneratedImage] = useState<string | null>(null);
@@ -203,7 +205,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [imageEditPreviewImage, setImageEditPreviewImage] = useState<string | null>(null);
     const workspaceKey = getLabWorkspaceSessionKey(chain.id);
     const workspaceFallback = createLabWorkspaceSession(chain.basePrompt || '', String(chain.variableValues?.subject || ''), chain.negativePrompt || '', normalizeParams(chain.params), Object.fromEntries((chain.modules || []).map(module => [module.id, module.isActive])));
-    const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => scopeLabWorkspaceSessionToEntry(chain.id, loadLabWorkspaceSession(workspaceKey, workspaceFallback)));
+    // 首次进入编辑模式也带上完整风格模块；之后各模式沿用自己的独立草稿。
+    for (const draft of Object.values(workspaceFallback.edits)) {
+        draft.prompt = compilePrompt(chain, String(chain.variableValues?.subject || ''));
+    }
+    const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => loadLabWorkspaceSession(workspaceKey, workspaceFallback));
     const [imageEditMaskData, setImageEditMaskData] = useState<string | undefined>();
   const imageEditGenerateFnRef = useRef<(() => void) | null>(null);
   const [imageEditGenerateBar, setImageEditGenerateBar] = useState<{ costLabel: string; canGenerate: boolean } | null>(null);
@@ -280,7 +286,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const sourceChainId = chain.id === 'playground' ? 'playground' : chain.id;
-    const activeGenerationMode = chain.id === 'playground' ? resolveLowConsumptionMode(workspaceSession.activeMode, lowConsumption.enabled) : 'text-to-image';
+    const activeGenerationMode = resolveLowConsumptionMode(workspaceSession.activeMode, lowConsumption.enabled);
     const canSaveActiveModeToLibrary = canSaveLabModeToLibrary(activeGenerationMode);
     const activeEditOperation = activeGenerationMode === 'text-to-image' ? null : activeGenerationMode;
     const activeEditDraft = activeEditOperation ? workspaceSession.edits[activeEditOperation] : null;
@@ -399,7 +405,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         prevChainIdRef.current = chain.id;
         clearPresetSources();
 
-        const storedWorkspace = scopeLabWorkspaceSessionToEntry(chain.id, loadLabWorkspaceSession(workspaceKey, workspaceFallback));
+        const storedWorkspace = loadLabWorkspaceSession(workspaceKey, workspaceFallback);
         workspaceInitializedKeyRef.current = workspaceKey;
         workspaceSyncBlockedRef.current = true;
         setWorkspaceSession(storedWorkspace);
@@ -463,15 +469,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
 
         void reloadPreviewHistory(sourceChainId);
-
-        const initialEditOperation = storedWorkspace.activeMode === 'text-to-image' ? null : storedWorkspace.activeMode;
-        if (initialEditOperation) void resolveEditBaseImage(storedWorkspace.edits[initialEditOperation]);
-        else {
-            setImageEditBaseImage(null);
-            setImageEditPreviewImage(null);
-            setImageEditMaskData(undefined);
-        }
-
     }, [chain.id, chain.basePrompt, chain.negativePrompt, chain.modules, chain.params, chain.name, chain.description, chain.variableValues]);
     // Dependency note: we still list props to satisfy linter, but the guard 'if (prevChainId === chain.id) return' blocks re-execution.
 
@@ -674,6 +671,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setImageEditBaseImage(null);
             setImageEditPreviewImage(null);
             setImageEditMaskData(undefined);
+            setImageEditBaseLoading(false);
             return;
         }
         setImageEditBaseLoading(true);
@@ -681,6 +679,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             const blob = await readLabWorkspaceAsset(draft.baseImageRef);
             if (resolveRevision !== editBaseResolveRevisionRef.current) return;
             const restoredBaseImage = blob ? await blobToDataUrl(blob) : null;
+            if (resolveRevision !== editBaseResolveRevisionRef.current || !mountedRef.current) return;
             setImageEditBaseImage(restoredBaseImage);
             // 有「生成本草稿」时右侧优先显示结果；否则显示底图
             let restoredResult: string | null = null;
@@ -688,18 +687,31 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 const resultBlob = await readLabWorkspaceAsset(draft.resultImageRef);
                 if (resolveRevision !== editBaseResolveRevisionRef.current) return;
                 restoredResult = resultBlob ? await blobToDataUrl(resultBlob) : null;
+                if (resolveRevision !== editBaseResolveRevisionRef.current || !mountedRef.current) return;
             }
             // 底图在左侧「底图与导入」展示；右侧只显示结果，无结果时为 null（空态引导左侧）
             setImageEditPreviewImage(restoredResult);
             if (draft.maskRef) {
                 const maskBlob = await readLabWorkspaceAsset(draft.maskRef);
                 if (resolveRevision !== editBaseResolveRevisionRef.current) return;
-                setImageEditMaskData(maskBlob ? await blobToDataUrl(maskBlob) : undefined);
+                const maskData = maskBlob ? await blobToDataUrl(maskBlob) : undefined;
+                if (resolveRevision !== editBaseResolveRevisionRef.current || !mountedRef.current) return;
+                setImageEditMaskData(maskData);
             } else setImageEditMaskData(undefined);
         } finally {
-            if (resolveRevision === editBaseResolveRevisionRef.current) setImageEditBaseLoading(false);
+            if (resolveRevision === editBaseResolveRevisionRef.current && mountedRef.current) setImageEditBaseLoading(false);
         }
     };
+
+    useEffect(() => {
+        // 入口、切模式和低消耗开关共用恢复流程；隐藏模式保留原资产，重新可见时恢复。
+        const draft = activeEditOperation ? workspaceSession.edits[activeEditOperation] : null;
+        void resolveEditBaseImage(draft).catch(error => notify(error instanceof Error ? error.message : '恢复编辑底图失败', 'error'));
+        setShowForkModal(false);
+        return () => { editBaseResolveRevisionRef.current += 1; };
+        // 只在进入模式时恢复；当前模式上传／画布变更已有各自的即时更新。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [workspaceKey, activeEditOperation]);
 
     /** 仅重置单个编辑模式的持久化底图/蒙版资产与草稿；不触碰文生图与其他编辑模式。 */
     const resetEditOperation = async (operation: ImageEditOperation) => {
@@ -707,7 +719,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const maskAssetId = getLabWorkspaceAssetId(workspaceKey, operation, 'mask');
         const previousDraft = workspaceSession.edits[operation];
         const currentEditDraft = activeEditOperation === operation && activeEditDraft ? activeEditDraft : previousDraft;
-        const defaultDraft = createLabImageEditDraft(operation, '', '', LAB_DEFAULT_PARAMS);
+        const defaultDraft = chain.id === 'playground'
+            ? createLabImageEditDraft(operation, '', '', LAB_DEFAULT_PARAMS)
+            : createLabImageEditDraft(operation, finalPrompt, negativePrompt, params);
         await Promise.all([
             deleteLabWorkspaceAsset(baseAssetId),
             deleteLabWorkspaceAsset(previousDraft.maskRef !== maskAssetId ? maskAssetId : undefined),
@@ -769,28 +783,40 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const selectGenerationMode = async (mode: GenerationMode) => {
         // 生成进行中不允许切换模式：视觉层（模式导航禁用）+ 逻辑层（此处拦截）双保险
-        if (isGenerating) return;
+        if (isGenerating || modeTransitionRef.current || mode === activeGenerationMode) return;
         if (lowConsumption.enabled && !isLowConsumptionModeAllowed(mode)) return;
-        if (activeEditOperation) await flushMaskSave(activeEditOperation).catch(error => console.warn('切换编辑模式前保存蒙版失败:', error));
-        // 切模式前先清空蒙版态：否则 Panel 会以「新 operation + 上一模式的 maskData」渲染，
-        // loadBaseImage 的默认恢复参数把旧模式蒙版画进新模式画布并随请求发出。
-        setImageEditMaskData(undefined);
-        if (mode === 'text-to-image') {
-            updateWorkspace(previous => ({ ...previous, activeMode: mode }));
+        modeTransitionRef.current = true;
+        setIsSwitchingMode(true);
+        try {
+            if (activeEditOperation) await flushMaskSave(activeEditOperation).catch(error => console.warn('切换编辑模式前保存蒙版失败:', error));
+            // 切模式前先清空蒙版态：否则 Panel 会以「新 operation + 上一模式的 maskData」渲染，
+            // loadBaseImage 的默认恢复参数把旧模式蒙版画进新模式画布并随请求发出。
+            setImageEditMaskData(undefined);
             setImageEditBaseImage(null);
             setImageEditPreviewImage(null);
-            setImageEditMaskData(undefined);
-            return;
+            if (mode === 'text-to-image') {
+                editBaseResolveRevisionRef.current += 1;
+                setImageEditBaseLoading(false);
+                updateWorkspace(previous => ({ ...previous, activeMode: mode }));
+                setImageEditBaseImage(null);
+                setImageEditPreviewImage(null);
+                setImageEditMaskData(undefined);
+                return;
+            }
+            const existing = workspaceSession.edits[mode];
+            if (existing.baseImageRef || existing.prompt || existing.parentHistoryId) {
+                updateWorkspace(previous => ({ ...previous, activeMode: mode }));
+                return;
+            }
+            const sourceItem = selectedPreviewItem;
+            const sourceImage = displayedPreviewImage || chain.previewImage;
+            await createEditDraftFromSource(mode, sourceImage, sourceItem ? 'history' : 'generated', sourceItem?.id, sourceItem?.prompt || finalPrompt, sourceItem?.negativePrompt || negativePrompt, sourceItem?.params || params);
+        } catch (error) {
+            notify(error instanceof Error ? error.message : '切换生成模式失败', 'error');
+        } finally {
+            modeTransitionRef.current = false;
+            if (mountedRef.current) setIsSwitchingMode(false);
         }
-        const existing = workspaceSession.edits[mode];
-        if (existing.baseImageRef || existing.prompt || existing.parentHistoryId) {
-            updateWorkspace(previous => ({ ...previous, activeMode: mode }));
-            await resolveEditBaseImage(existing);
-            return;
-        }
-        const sourceItem = selectedPreviewItem;
-        const sourceImage = displayedPreviewImage || chain.previewImage;
-        await createEditDraftFromSource(mode, sourceImage, sourceItem ? 'history' : 'generated', sourceItem?.id, sourceItem?.prompt || finalPrompt, sourceItem?.negativePrompt || negativePrompt, sourceItem?.params || params);
     };
 
     const getDownloadFilename = () => {
@@ -1277,7 +1303,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
 
     const handleSaveAll = async () => {
-        if (!isOwner || isUploading) return;
+        if (!isOwner || isUploading || !canSaveActiveModeToLibrary || chain.id === 'playground') return;
         setIsUploading(true);
         const updatedModules = modules.map(m => ({
             ...m,
@@ -1315,10 +1341,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const handleFork = () => {
+        if (!canSaveActiveModeToLibrary || isUploading) return;
         setShowForkModal(true);
     };
 
     const handleReset = async () => {
+        if (isGenerating || modeTransitionRef.current) return;
         if (activeEditOperation) {
             const modeLabel = getLabModeLabel(activeEditOperation);
             if (!await confirmAction({
@@ -1343,25 +1371,36 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
         if (!await confirmAction({
             title: '重置文生图？',
-            message: '将恢复文生图的提示词、模块与参数为默认值。此操作无法撤销。',
+            message: chain.id === 'playground'
+                ? '将恢复文生图的提示词、模块与参数为默认值。此操作无法撤销。'
+                : `将放弃当前修改，恢复「${chain.name}」已保存的内容。其他模式的草稿保留。`,
             confirmLabel: '确认重置',
             tone: 'danger',
         })) return;
 
-        setBasePrompt('');
-        setNegativePrompt('');
-        setSubjectPrompt('');
-        setModules([]);
-        setActiveModules({});
-        setParams({ ...LAB_DEFAULT_PARAMS });
+        const resetToSaved = chain.id !== 'playground';
+        const restored = resetToSaved ? workspaceFallback.textToImage : createLabWorkspaceSession('', '', '', LAB_DEFAULT_PARAMS, {}).textToImage;
+        editorRevisionRef.current += 1;
+        setBasePrompt(restored.basePrompt);
+        setNegativePrompt(restored.negativePrompt);
+        setSubjectPrompt(restored.subjectPrompt);
+        setModules(resetToSaved ? (chain.modules || []).map(module => ({ ...module, position: module.position || 'post' })) : []);
+        setActiveModules(restored.activeModules);
+        setParams(restored.params);
+        if (resetToSaved) {
+            setChainName(chain.name);
+            setChainDesc(chain.description);
+            setChainTags(chain.tags || []);
+            setHasChanges(false);
+        }
         clearPresetSources();
         setGeneratedImage(null);
         setPreviewMode('cover');
-        notify('文生图已重置');
+        notify(resetToSaved ? '已恢复保存的内容' : '文生图已重置');
     };
 
     const confirmFork = async (targetType: 'style' | 'character') => {
-        if (isUploading) return;
+        if (isUploading || !canSaveActiveModeToLibrary) return;
         setIsUploading(true);
         const updatedModules = modules.map(m => ({
             ...m,
@@ -1962,7 +2001,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onTagAssistEnabledChange={onTagAssistEnabledChange}
                 activeGenerationMode={activeGenerationMode}
                 selectGenerationMode={selectGenerationMode}
-                isGenerating={isGenerating}
+                isGenerating={isGenerating || isSwitchingMode}
                 onBack={onBack}
                 markChange={markChange}
                 handleReset={handleReset}
@@ -2020,8 +2059,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 <div className="chain-editor-main flex w-full lg:w-1/2 min-h-full flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
                     <div className="flex w-full max-w-3xl flex-col gap-6 p-4 pb-24 md:p-6 md:pb-24 mx-auto">
                         <ChainEditorPromptInputs
-                            onRecognizeImage={chain.id === 'playground' ? undefined : () => setTaggerOpen(true)}
-                            onTagAssistEnabledChange={chain.id === 'playground' ? undefined : enabled => { onTagAssistEnabledChange(enabled); notify('Tag 辅助已' + (enabled ? '开启' : '关闭')); }}
                             prompt={basePrompt}
                             setPrompt={setBasePrompt}
                             presetSources={presetSources}

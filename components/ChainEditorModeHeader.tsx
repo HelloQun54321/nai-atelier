@@ -39,7 +39,7 @@ export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
   );
 
   return (
-    <div className="flex w-full min-w-0 items-center gap-2">
+    <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
       <IconButton
         label={`返回${entityLabel}列表`}
         onClick={() => void onBack()}
@@ -54,7 +54,10 @@ export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
           <Pencil className="h-4 w-4" />
         </IconButton>
       )}
-      <h1 className="min-w-0 flex-1 truncate text-base font-bold text-gray-900 dark:text-white md:text-lg" title={chainName}>{chainName}</h1>
+      <h1 className="min-w-0 flex-1 truncate text-sm font-bold text-gray-900 dark:text-white lg:max-w-24 xl:max-w-36" title={chainName}>{chainName}</h1>
+      <div className="min-w-0 basis-full lg:basis-64 lg:flex-1">
+        <GenerationModeNav activeMode={activeMode} onSelect={onSelectMode} disabled={isGenerating} />
+      </div>
     </div>
   );
 };

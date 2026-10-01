@@ -7,21 +7,25 @@ import { ChainEditorModeHeader } from './ChainEditorModeHeader';
 afterEach(() => cleanup());
 
 describe('ChainEditorModeHeader', () => {
-  it('风格串详情隐藏模式导航，并按返回、铅笔、名称顺序显示截断标题', () => {
+  it('风格串工作台保留返回、铅笔与截断标题，并可切换四模式', () => {
     const onEditInfo = vi.fn();
     const onBack = vi.fn();
+    const onSelectMode = vi.fn();
     const { container } = render(React.createElement(ChainEditorModeHeader, {
       isLaboratory: false,
       chainName: '这是一个非常长的风格串名称，用于验证标题不会越过左侧参数区域',
       entityLabel: '风格串',
       isOwner: true,
       activeMode: 'inpaint',
-      onSelectMode: vi.fn(),
+      onSelectMode,
       onEditInfo,
       onBack,
     }));
 
-    expect(screen.queryByRole('navigation', { name: '生成模式' })).toBeNull();
+    expect(screen.getByRole('navigation', { name: '生成模式' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '局部重绘' }).getAttribute('aria-current')).toBe('page');
+    fireEvent.click(screen.getByRole('button', { name: '扩图' }));
+    expect(onSelectMode).toHaveBeenCalledWith('outpaint');
     const backButton = screen.getByRole('button', { name: '返回风格串列表' });
     const editButton = screen.getByRole('button', { name: '编辑风格串信息' });
     const title = screen.getByRole('heading', { level: 1 });

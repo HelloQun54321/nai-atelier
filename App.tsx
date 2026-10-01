@@ -583,6 +583,7 @@ const App = () => {
         const editChain = getSelectedChain();
         if (!editChain) return <div>Chain not found</div>;
         return <ChainEditor
+          key={editChain.id}
           chain={editChain}
           allChains={chains}
           onUpdateChain={handleUpdateChain}

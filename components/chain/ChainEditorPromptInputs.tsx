@@ -2,13 +2,9 @@ import React from 'react';
 import { LabPageLayout } from '../../services/appearancePreferences';
 import { LabModuleSection } from '../LabModuleSection';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
-import { ImagePlus, Tags } from 'lucide-react';
-import { IconButton } from '../DesignSystem';
 import { PresetSection, PresetSource, PresetSourceBadges, PromptCopyButton } from './PresetSourceBadges';
 
 export interface ChainEditorPromptInputsProps {
-    onRecognizeImage?: () => void;
-    onTagAssistEnabledChange?: (enabled: boolean) => void;
     prompt: string;
     setPrompt: (value: string) => void;
     presetSources: Partial<Record<PresetSection, PresetSource>>;
@@ -21,8 +17,6 @@ export interface ChainEditorPromptInputsProps {
     mobileEditorTab: 'global' | 'character' | 'params';
 }
 export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = ({
-    onRecognizeImage,
-    onTagAssistEnabledChange,
     prompt,
     setPrompt,
     presetSources,
@@ -48,13 +42,7 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                     <PresetSourceBadges sources={Object.fromEntries(Object.entries({ base: presetSources.base, subject: presetSources.subject }).filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />
                 </div>
 
-                {onRecognizeImage || onTagAssistEnabledChange ? (
-                    <div className="flex items-center gap-1">
-                        {onRecognizeImage && canEdit && <IconButton label="从图片识别 Tag" onClick={onRecognizeImage} className="mobile-touch !h-8 !w-8 !rounded-lg"><ImagePlus /></IconButton>}
-                        {onTagAssistEnabledChange && <IconButton label={tagAssistEnabled ? '关闭 Tag 辅助' : '开启 Tag 辅助'} aria-pressed={tagAssistEnabled} onClick={() => onTagAssistEnabledChange(!tagAssistEnabled)} className="mobile-touch !h-8 !w-8 !rounded-lg"><Tags /></IconButton>}
-                        <PromptCopyButton onClick={() => copyPromptToClipboard(prompt, '全局提示词')} title="复制全局提示词" />
-                    </div>
-                ) : <PromptCopyButton onClick={() => copyPromptToClipboard(prompt, '全局提示词')} title="复制全局提示词" />}
+                <PromptCopyButton onClick={() => copyPromptToClipboard(prompt, '全局提示词')} title="复制全局提示词" />
             </div>
             <TagAutocompleteTextarea
                 tagAssistEnabled={tagAssistEnabled}

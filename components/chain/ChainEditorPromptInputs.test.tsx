@@ -30,17 +30,11 @@ describe('提示词上下文工具隔离', () => {
     expect(props.markChange).toHaveBeenCalledOnce();
   });
 
-  it('资料编辑器工具回调不改写提示词，只读时不能追加识别结果', () => {
-    const onRecognizeImage = vi.fn(); const onTagAssistEnabledChange = vi.fn();
-    const props = setup({ onRecognizeImage, onTagAssistEnabledChange });
-    fireEvent.click(screen.getByRole('button', { name: '从图片识别 Tag' }));
-    expect(onRecognizeImage).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole('button', { name: '开启 Tag 辅助' }));
-    expect(onTagAssistEnabledChange).toHaveBeenCalledWith(true);
-    expect(props.setPrompt).not.toHaveBeenCalled();
-    cleanup();
-    setup({ canEdit: false, onRecognizeImage, onTagAssistEnabledChange });
-    expect(screen.queryByRole('button', { name: '从图片识别 Tag' })).toBeNull();
+  it('提示词区不重复顶栏的识别和辅助入口，只读时仍可复制', () => {
+    const props = setup({ canEdit: false });
+    expect(screen.queryByRole('button', { name: /识别|辅助/ })).toBeNull();
     expect((screen.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTitle('复制全局提示词'));
+    expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '全局提示词');
   });
 });
