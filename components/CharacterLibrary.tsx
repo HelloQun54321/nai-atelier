@@ -422,8 +422,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   useRestoreListAnchor(scrollRef, returnTargetId, `${visibleCards.length}:${isLoading ? 1 : 0}`);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'characters');
 
-  // 目录预取：当前页可见目录角色（前 40 个）的封面候选提前请求并固定保存（pin），
-  // 滚动/浏览时封面秒出；getCoverSet 自带 14 天缓存与 300ms 串行限流，不重复打 Danbooru API。
+  // 目录预取：前 40 个角色提前查候选并固定缩略图缓存，不改写私人封面。
+  // getCoverSet 合并相同请求并限流，正常结果缓存 14 天，空候选仅短期缓存。
   const coverPrewarmedRef = useRef(new Set<string>());
   useEffect(() => {
     if (gachaCards || tab === 'custom' || showFavOnly) return;

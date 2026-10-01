@@ -440,8 +440,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
         return () => { cancelled = true; };
     }, [showFavOnly, searchTerm, gachaArtists, favorites, favoriteArtistDetails, artistSort]);
 
-    // 目录预取：当前页可见画师（前 40 个）的封面候选提前请求并固定保存（pin），
-    // 滚动/浏览时封面秒出；getCoverSet 自带 14 天缓存与 300ms 串行限流，不重复打 Danbooru API。
+    // 目录预取：前 40 个画师提前查候选并固定缩略图缓存，不改写私人封面。
+    // getCoverSet 合并相同请求并限流，正常结果缓存 14 天，空候选仅短期缓存。
     const coverPrewarmedRef = useRef(new Set<string>());
     useEffect(() => {
         if (gachaArtists) return;

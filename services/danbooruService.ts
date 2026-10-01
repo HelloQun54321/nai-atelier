@@ -27,8 +27,11 @@ export interface DanbooruSearchResult {
   hasMore: boolean;
 }
 
-const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v10';
+const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v11';
 const COVER_CACHE_TTL = 14 * 24 * 60 * 60 * 1000;
+const COVER_EMPTY_CACHE_TTL = 60_000;
+const COVER_SOURCE_PAGE_SIZE = 200;
+const COVER_EMPTY_PAGE_LOOKAHEAD = 3;
 const COVER_CACHE_LIMIT = 150;
 // 候选枚举调度：5 并发 + 60ms 启动间隔（有效速率 ~12/s，充分利用媒体网关与并发吞吐）；
 // 遭遇 429 时整体退避 1.5s。
@@ -49,6 +52,8 @@ export interface DanbooruCoverSet {
   representative: DanbooruCoverCandidate | null;
   candidates: DanbooruCoverCandidate[];
   hasMore: boolean;
+  /** 缓存首屏被截短时重读本页补齐，避免遗漏该页其余可用图片。 */
+  nextPage?: number;
 }
 
 type StoredCover = DanbooruCoverSet & { updatedAt: number };
@@ -295,25 +300,40 @@ const getCoverSet = (tag: string, kind: 'artist' | 'character'): Promise<Danboor
   if (!normalizedTag) return Promise.resolve({ representative: null, candidates: [], hasMore: false });
   const key = `${kind}:${normalizedTag}`;
   const cached = readCoverCache()[key];
-  if (cached && Date.now() - cached.updatedAt < COVER_CACHE_TTL) {
-    return Promise.resolve({ representative: cached.representative || null, candidates: cached.candidates || [], hasMore: Boolean(cached.hasMore) });
+  if (cached && Date.now() - cached.updatedAt < (cached.candidates?.length ? COVER_CACHE_TTL : COVER_EMPTY_CACHE_TTL)) {
+    return Promise.resolve({ representative: cached.representative || null, candidates: cached.candidates || [], hasMore: Boolean(cached.hasMore), nextPage: cached.nextPage || 1 });
   }
   const pending = coverRequests.get(key);
   if (pending) return pending;
 
-  const request = scheduleCoverRequest(() => search({ query: `${normalizedTag} order:score`, limit: kind === 'character' ? 60 : 20 }))
-    .then(result => {
+  // 排除已被上游禁用的作品；评级／权限限制仍由官方决定，不构造隐藏图片地址。
+  const query = `${normalizedTag} order:score -status:banned`;
+  const request = (async () => {
+      let result = await scheduleCoverRequest(() => search({ query, limit: kind === 'character' ? 60 : 20 }));
+      let candidatePosts = candidatePostsFor(result.items, normalizedTag, kind);
+      let sourcePage = 1;
+      let fullSourcePage = false;
+      // 首批热门作品可能全无图片权限。只对空候选向后查有限页，不镜像整个目录。
+      while (!candidatePosts.length && result.hasMore && sourcePage <= COVER_EMPTY_PAGE_LOOKAHEAD) {
+        const page = sourcePage;
+        result = await scheduleCoverRequest(() => search({ query, page, limit: COVER_SOURCE_PAGE_SIZE }));
+        candidatePosts = candidatePostsFor(result.items, normalizedTag, kind);
+        fullSourcePage = true;
+        if (!candidatePosts.length) sourcePage++;
+      }
       const representativePost = chooseCover(result.items, normalizedTag, kind);
-      const candidatePosts = candidatePostsFor(result.items, normalizedTag, kind);
+      const truncated = candidatePosts.length > COVER_CACHE_CANDIDATE_LIMIT;
       const coverSet: DanbooruCoverSet = {
         representative: representativePost ? toCoverCandidate(representativePost) : null,
         candidates: [...candidatePosts].sort((left, right) => right.score - left.score).slice(0, COVER_CACHE_CANDIDATE_LIMIT).map(toCoverCandidate),
-        hasMore: result.hasMore,
+        hasMore: result.hasMore || truncated,
+        // 小首屏尚未读完整的 200 条源页，或截短候选时，下次先补同一页。
+        nextPage: fullSourcePage && candidatePosts.length && !truncated ? sourcePage + 1 : sourcePage,
       };
       readCoverCache()[key] = { ...coverSet, updatedAt: Date.now() };
       persistCoverCache();
       return coverSet;
-    })
+    })()
     .finally(() => coverRequests.delete(key));
   coverRequests.set(key, request);
   return request;
@@ -323,7 +343,7 @@ const getCoverSet = (tag: string, kind: 'artist' | 'character'): Promise<Danboor
 const getCoverCandidatePage = async (tag: string, kind: 'artist' | 'character', page: number) => {
   const normalizedTag = tag.trim().toLowerCase().replaceAll(' ', '_');
   if (!normalizedTag) return { candidates: [], hasMore: false };
-  const result = await scheduleCoverRequest(() => search({ query: `${normalizedTag} order:score`, page, limit: 200 }));
+  const result = await scheduleCoverRequest(() => search({ query: `${normalizedTag} order:score -status:banned`, page, limit: COVER_SOURCE_PAGE_SIZE }));
   return {
     candidates: candidatePostsFor(result.items, normalizedTag, kind)
       .sort((left, right) => right.score - left.score)
