@@ -1,12 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ImagePlus, LoaderCircle, SlidersHorizontal, X } from 'lucide-react';
+import { Check, ImagePlus, LoaderCircle, MoreHorizontal, SlidersHorizontal, X } from 'lucide-react';
 import { ImageTaggerResult, imageTaggerService } from '../services/imageTaggerService';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
-import { IconButton } from './DesignSystem';
+import { IconButton, ToolbarButton } from './DesignSystem';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { MobileIconButton } from './MobileUI';
 import { useModalA11y } from './useModalA11y';
 
 interface ImageTaggerPanelProps {
+  /** 资料页面采用识别语义；实验室保留原展示。 */
+  contextual?: boolean;
   open: boolean;
   onClose: () => void;
   onInsert: (tags: string) => void;
@@ -31,7 +35,7 @@ const TAGGER_DEFAULT_PARAMS: PendingImportData['params'] = {
   ucPreset: 4,
 };
 
-export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClose, onInsert, notify, actionLabel, imageUrl }) => {
+export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClose, onInsert, notify, actionLabel, imageUrl, contextual = false }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
@@ -53,13 +57,14 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busy) {
-        onClose();
+      if (e.key === 'Escape') {
+        if (contextual) { e.preventDefault(); e.stopPropagation(); }
+        if (!busy) onClose();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, busy, onClose]);
+    window.addEventListener('keydown', handleKeyDown, contextual);
+    return () => window.removeEventListener('keydown', handleKeyDown, contextual);
+  }, [open, busy, onClose, contextual]);
 
   // 打开面板时若提供了 imageUrl（图库“反推此图”），自动抓取并识别，无需手动选文件。
   useEffect(() => {
@@ -157,10 +162,10 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
 
   if (!open) return null;
 
-  return <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="图片反推 Tag" className="fixed inset-0 z-[1250] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+  return <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={contextual ? '识别图片 Tag' : '图片反推 Tag'} className={`fixed inset-0 ${contextual ? 'z-[2000]' : 'z-[1250]'} flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5`} onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
     <div className="flex max-h-[94dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl dark:bg-gray-950 md:rounded-2xl">
       <header className="flex h-14 flex-none items-center justify-between border-b border-gray-200 px-4 dark:border-gray-800">
-        <div><h2 className="text-sm font-black">图片反推 Danbooru Tag</h2><p className="text-micro text-gray-500">WD Tagger V3 · 图片只在你的电脑上处理</p></div>
+        <div><h2 className="text-sm font-black">{contextual ? '识别图片 Tag' : '图片反推 Danbooru Tag'}</h2><p className="text-micro text-gray-500">WD Tagger V3 · 图片只在你的电脑上处理</p></div>
         <button type="button" disabled={busy} onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800" aria-label="关闭"><X className="h-4 w-4" /></button>
       </header>
       <div className="grid min-h-0 flex-1 overflow-y-auto md:grid-cols-[300px_minmax(0,1fr)] md:overflow-hidden">
@@ -236,6 +241,9 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
 };
 
 interface ImageTaggerActionProps {
+  placement?: 'direct' | 'more';
+  text?: boolean;
+  label?: string;
   notify: (message: string, type?: 'success' | 'error') => void;
   /** 默认把选中 Tag 复制到剪贴板；实验室等页面传入追加到全局提示词的逻辑 */
   onInsert?: (tags: string) => void;
@@ -246,8 +254,8 @@ interface ImageTaggerActionProps {
   imageUrl?: string;
 }
 
-/** 全局右上角“图片反推 Tag”入口：桌面用 DesignSystem 图标按钮、手机用移动图标按钮，共用同一个面板。 */
-export const ImageTaggerAction: React.FC<ImageTaggerActionProps> = ({ notify, onInsert, actionLabel, className = '', imageUrl }) => {
+/** 资料图片的上下文识别入口；不再作为列表顶栏的通用工具。 */
+export const ImageTaggerAction: React.FC<ImageTaggerActionProps> = ({ notify, onInsert, actionLabel, className = '', imageUrl, placement = 'direct', text = false, label = '识别图片 Tag' }) => {
   const [open, setOpen] = useState(false);
   const handleInsert = onInsert ?? ((tags: string) => {
     void navigator.clipboard.writeText(tags).then(
@@ -256,8 +264,10 @@ export const ImageTaggerAction: React.FC<ImageTaggerActionProps> = ({ notify, on
     );
   });
   return <>
-    <IconButton label="图片反推 Tag" onClick={() => setOpen(true)} className={`max-md:hidden ${className}`}><ImagePlus className="h-4 w-4" /></IconButton>
-    <MobileIconButton label="图片反推 Tag" onClick={() => setOpen(true)} className={`border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden ${className}`}><ImagePlus className="h-5 w-5" /></MobileIconButton>
-    {open && <ImageTaggerPanel open={open} onClose={() => setOpen(false)} onInsert={handleInsert} notify={notify} actionLabel={actionLabel ?? (onInsert ? '追加 {count} 个 Tag 到全局提示词' : '复制 {count} 个 Tag')} imageUrl={imageUrl} />}
+    {placement === 'more' ? <ToolbarPopover label="更多" title="图片工具" icon={<MoreHorizontal />} width={280}>{close => <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); setOpen(true); }}><ImagePlus />{label}</button>}</ToolbarPopover> : text ? <ToolbarButton onClick={() => setOpen(true)} className={`mobile-touch ${className}`}><ImagePlus />{label}</ToolbarButton> : <>
+      <IconButton label={label} onClick={() => setOpen(true)} className={`max-md:hidden ${className}`}><ImagePlus className="h-4 w-4" /></IconButton>
+      <MobileIconButton label={label} onClick={() => setOpen(true)} className={`border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden ${className}`}><ImagePlus className="h-5 w-5" /></MobileIconButton>
+    </>}
+    {open && <ImagePreviewPortal><ImageTaggerPanel contextual open={open} onClose={() => setOpen(false)} onInsert={handleInsert} notify={notify} actionLabel={actionLabel ?? (onInsert ? '追加 {count} 个 Tag 到全局提示词' : '复制 {count} 个 Tag')} imageUrl={imageUrl} /></ImagePreviewPortal>}
   </>;
 };

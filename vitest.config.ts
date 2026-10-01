@@ -1,13 +1,13 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
 
-// TS 侧单元测试（纯逻辑）：组件与集成验证仍以 test:gateway 与手动 smoke 为准
+// 服务纯逻辑与 jsdom 组件定向测试；网关验证仍由 test:gateway 独立执行。
 export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, '.') },
   },
   test: {
     environment: 'node',
-    include: ['services/**/*.test.ts', 'worker/**/*.test.ts', 'components/**/*.test.ts'],
+    include: ['services/**/*.test.ts', 'worker/**/*.test.ts', 'components/**/*.test.{ts,tsx}'],
   },
 });

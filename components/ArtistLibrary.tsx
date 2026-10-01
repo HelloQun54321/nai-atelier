@@ -15,12 +15,11 @@ import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage'
 import { applyEstimatorRuntime, estimateV45GenerationCost, usageForCostEstimate, useAnlasBudget } from '../services/anlasBudget';
 import { DEFAULT_NAI_RUNTIME, getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import { createUuid } from '../services/id';
-import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
-import { ChevronDown, ClipboardList, Dice5, Download, Heart, LoaderCircle, Menu } from 'lucide-react';
-import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
-import { ImageTaggerAction } from './ImageTaggerPanel';
+import { ChevronDown, ClipboardList, Dice5, Download, LoaderCircle, MoreHorizontal } from 'lucide-react';
+import { ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { ToolbarPopover, TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { DanbooruCover } from './DanbooruCover';
 import type { DanbooruCoverCandidate } from '../services/danbooruService';
 import { danbooruService } from '../services/danbooruService';
@@ -289,8 +288,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
     // View Settings
     const gridCols = 6;
     const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
-    const [showMobileTools, setShowMobileTools] = useState(false);
-    const [showGachaTools, setShowGachaTools] = useState(false);
 
     useEffect(() => {
         const media = window.matchMedia('(max-width: 767px)');
@@ -1116,104 +1113,47 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, onRef
 
             {/* --- Controls Header --- */}
             <WorkspaceToolbar>
-                <div className="flex gap-2 md:hidden">
-                    <div className="relative min-w-0 flex-1">
-                        <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="搜索画师 Tag" />
-                        {isCatalogLoading && <span className="absolute right-3 top-3.5 h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
-                    </div>
-                    <MobileIconButton label="筛选和工具" onClick={() => setShowMobileTools(true)} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><Menu className="h-5 w-5" /></MobileIconButton>
-                    <ImageTaggerAction notify={notify} />
-                    <MobileIconButton label={gachaArtists ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} disabled={isGachaLoading} className="bg-indigo-600 text-white"><Dice5 className="h-5 w-5" /></MobileIconButton>
+                <div className="relative min-w-0 flex-1">
+                    <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="搜索画师 Tag（支持中文）" containerClassName="md:max-w-none!" />
+                    {isCatalogLoading && <span className="absolute right-3 top-3.5 h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
                 </div>
-                <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
-                    {/* Primary search */}
-                    <ToolbarSearch
-                        type="text"
-                        placeholder="搜索全部画师 Tag（支持中文）..."
-                        containerClassName="min-w-0 flex-1 md:max-w-none"
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                    />
-
-                    <select
-                        value={artistSort}
-                        onChange={event => setArtistSort(event.target.value as ArtistDictionarySort)}
-                        disabled={!!gachaArtists}
-                        className="h-10 flex-none rounded-xl border border-gray-200 bg-white px-3 text-xs text-gray-700 outline-none hover:border-gray-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700"
-                        title={gachaArtists ? '返回目录后可调整排序' : '画师目录排序'}
-                    >
-                        <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option>
-                        <option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option>
-                        <option value="name-asc">{searchTerm.trim() ? '相关性优先 · 名称 A → Z' : '名称 A → Z'}</option>
-                        <option value="name-desc">{searchTerm.trim() ? '相关性优先 · 名称 Z → A' : '名称 Z → A'}</option>
-                    </select>
-
-                    <div className="relative flex flex-none items-center">
-                        <ToolbarButton onClick={() => void drawGacha()} disabled={isGachaLoading || artistCatalogCount <= 0} className="!rounded-r-none !border-r-0 !bg-indigo-600 !text-white hover:!bg-indigo-500">
-                            {isGachaLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Dice5 className="h-4 w-4" />}{gachaArtists ? '再抽一批' : '随机抽卡'}
-                        </ToolbarButton>
-                        <IconButton label="抽卡设置" onClick={() => setShowGachaTools(value => !value)} className="!rounded-l-none" aria-expanded={showGachaTools}><ChevronDown /></IconButton>
-                        {showGachaTools && (
-                            <>
-                                <div className="fixed inset-0 z-40" onClick={() => setShowGachaTools(false)} />
-                                <div role="dialog" aria-label="随机抽卡设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                                    <div className="mb-2 text-xs font-bold text-gray-800 dark:text-white">随机抽卡设置</div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <label className="text-xs text-gray-500 dark:text-gray-400">
-                                            抽卡方式
-                                            <select value={gachaMode} onChange={event => setGachaMode(event.target.value as ArtistGachaMode)} className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white">
-                                                <option value="mixed">惊喜混合</option>
-                                                <option value="uniform">完全随机</option>
-                                                <option value="popular">热门画师</option>
-                                            </select>
-                                        </label>
-                                        <label className="text-xs text-gray-500 dark:text-gray-400">
-                                            数量
-                                            <select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white">
-                                                <option value={6}>6 位</option>
-                                                <option value={12}>12 位</option>
-                                                <option value={24}>24 位</option>
-                                            </select>
-                                        </label>
-                                    </div>
-                                    {gachaArtists && <button type="button" onClick={() => { returnToCatalog(); setShowGachaTools(false); }} className="mt-3 w-full rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">返回完整目录</button>}
-                                </div>
-                            </>
-                        )}
+                <ToolbarPopover title="筛选画师" count={Number(artistSort !== 'popular') + Number(showFavOnly)}>
+                    <div className="space-y-3">
+                        <label className="block text-sm font-semibold dark:text-white">排序<select aria-label="画师排序" value={artistSort} onChange={event => setArtistSort(event.target.value as ArtistDictionarySort)} disabled={Boolean(gachaArtists)} className={TOOLBAR_FIELD_CLASS}>
+                            <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">名称 A → Z</option><option value="name-desc">名称 Z → A</option>
+                        </select></label>
+                        <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={showFavOnly} onChange={event => setShowFavOnly(event.target.checked)} />只看收藏</label>
+                        <button type="button" onClick={() => { setArtistSort('popular'); setShowFavOnly(false); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">重置筛选</button>
                     </div>
-
-                    <IconButton label={showFavOnly ? '显示全部画师' : '只看收藏'} tone={showFavOnly ? 'favorite' : 'neutral'} onClick={() => setShowFavOnly(value => !value)}><Heart className={`h-4 w-4 ${showFavOnly ? 'fill-current' : ''}`} /></IconButton>
-
-                    <IconButton label="批量导入画师" onClick={() => setShowImport(true)} title="批量导入画师"><Download className="h-4 w-4" /></IconButton>
-
-                    <ImageTaggerAction notify={notify} />
+                </ToolbarPopover>
+                <div className="flex flex-none items-center border-l border-gray-200 pl-2 dark:border-gray-700">
+                    <ToolbarButton aria-label={gachaArtists ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} disabled={isGachaLoading || artistCatalogCount <= 0} className="mobile-touch !rounded-r-none !border-r-0" tone="primary">
+                        {isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaArtists ? '再抽一批' : '随机抽卡'}</span>
+                    </ToolbarButton>
+                    <ToolbarPopover label="抽卡设置" title="画师抽卡设置" icon={<ChevronDown />} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden" width={320}>
+                        <div className="grid grid-cols-2 gap-3">
+                            <label className="text-sm font-semibold dark:text-white">抽卡方式<select value={gachaMode} onChange={event => setGachaMode(event.target.value as ArtistGachaMode)} className={TOOLBAR_FIELD_CLASS}><option value="mixed">惊喜混合</option><option value="uniform">完全随机</option><option value="popular">热门画师</option></select></label>
+                            <label className="text-sm font-semibold dark:text-white">数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className={TOOLBAR_FIELD_CLASS}><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label>
+                        </div>
+                    </ToolbarPopover>
                 </div>
+                <ToolbarButton onClick={() => setShowImport(true)} aria-label="批量导入画师" className="hidden md:inline-flex"><Download /><span className="hidden lg:inline">批量导入</span></ToolbarButton>
+                <ToolbarPopover label="更多" title="画师工具" icon={<MoreHorizontal />} width={320}>
+                    {close => <div className="space-y-1">
+                        <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); setViewMode(value => value === 'original' ? 'benchmark' : 'original'); }}>{viewMode === 'original' ? '切换到基准图预览' : '切换到原始图预览'}</button>
+                        <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); setShowConfig(true); }}>画师配置</button>
+                        <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); setShowHistory(true); }}>复制历史</button>
+                        <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); setShowLogs(true); }}>任务队列{taskQueue.length > 0 ? ' · ' + taskQueue.length : ''}</button>
+                        <button type="button" className={TOOLBAR_MENU_CLASS + ' md:hidden'} onClick={() => { close(); setShowImport(true); }}>批量导入画师</button>
+                    </div>}
+                </ToolbarPopover>
             </WorkspaceToolbar>
-
-            <MobileBottomSheet open={showMobileTools} title="画师 Tag 工具" onClose={() => setShowMobileTools(false)}>
-                <div className="space-y-5">
-                    <label className="block text-sm font-bold dark:text-white">排序<select value={artistSort} onChange={event => setArtistSort(event.target.value as ArtistDictionarySort)} disabled={Boolean(gachaArtists)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="popular">热度从高到低</option><option value="least">热度从低到高</option><option value="name-asc">名称 A → Z</option><option value="name-desc">名称 Z → A</option></select></label>
-                    <div className="grid grid-cols-2 gap-3">
-                        <label className="text-sm font-bold dark:text-white">抽卡方式<select value={gachaMode} onChange={event => setGachaMode(event.target.value as ArtistGachaMode)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="mixed">冷热混合</option><option value="popular">热门画师</option><option value="uniform">完全随机</option></select></label>
-                        <label className="text-sm font-bold dark:text-white">抽卡数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-600 dark:bg-gray-800"><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        <button onClick={() => setViewMode(value => value === 'original' ? 'benchmark' : 'original')} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">{viewMode === 'original' ? '原始预览' : '基准图模式'}</button>
-                        <button onClick={() => setShowFavOnly(value => !value)} className={`mobile-touch rounded-xl text-sm ${showFavOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'bg-gray-100 dark:bg-gray-800'}`}>★ 只看收藏</button>
-                        <button onClick={() => { setShowMobileTools(false); setShowConfig(true); }} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">画师配置</button>
-                        <button onClick={() => { setShowMobileTools(false); setShowHistory(true); }} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">复制历史</button>
-                        <button onClick={() => { setShowMobileTools(false); setShowImport(true); }} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">批量导入</button>
-                        <button onClick={() => { setShowMobileTools(false); setShowLogs(true); }} className="mobile-touch rounded-xl bg-gray-100 text-sm dark:bg-gray-800">任务队列</button>
-                    </div>
-                    {gachaArtists && <button onClick={() => { returnToCatalog(); setShowMobileTools(false); }} className="mobile-touch w-full rounded-xl border border-gray-300 text-sm dark:border-gray-600">返回完整目录</button>}
-                    <div className="rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">当前显示 {filteredArtists.length.toLocaleString('zh-CN')} · 手机固定双列</div>
-                </div>
-            </MobileBottomSheet>
 
             {gachaArtists && (
                 <GalleryActiveStateBanner
                     count={filteredArtists.length}
                     entityName="画师"
+                    showDrawAgain={false}
                     onDrawAgain={() => void drawGacha()}
                     onExit={returnToCatalog}
                     isLoading={isGachaLoading}

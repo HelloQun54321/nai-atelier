@@ -100,4 +100,37 @@ describe('ChainEditorHeader 工具栏', () => {
     expect(onTagAssistEnabledChange).toHaveBeenCalledWith(true);
     expect(notify).toHaveBeenCalledWith('Tag 辅助已开启');
   });
+
+  it.each([false, true])('资料编辑器合并导入入口，手机直接保存且更多菜单不重复提示词工具，角色模式=%s', isCharacterMode => {
+    const setShowImportPreset = vi.fn(); const handleSaveAll = vi.fn();
+    const { container } = renderHeader({ chainId: 'asset-1', isCharacterMode, hasChanges: true, setShowImportPreset, handleSaveAll });
+    const actions = container.querySelector('.chain-editor-actions') as HTMLElement;
+    expect(within(actions).queryByRole('button', { name: '图片反推 Tag' })).toBeNull();
+    expect(within(actions).queryByRole('button', { name: /Tag 辅助/ })).toBeNull();
+    fireEvent.click(within(actions).getByRole('button', { name: '导入' }));
+    const imports = screen.getByRole('dialog', { name: '导入创作配置' });
+    expect(within(imports).getByRole('button', { name: '读取图片生成信息／导入 JSON' })).toBeTruthy();
+    fireEvent.click(within(imports).getByRole('button', { name: '引用预设' }));
+    expect(setShowImportPreset).toHaveBeenCalledWith(true);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const mobileSave = screen.getAllByRole('button', { name: '保存修改' }).find(button => button.classList.contains('md:hidden'))!;
+    fireEvent.click(mobileSave);
+    expect(handleSaveAll).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    const more = screen.getByRole('dialog', { name: '更多操作' });
+    expect(within(more).queryByRole('button', { name: /保存|反推|Tag 辅助/ })).toBeNull();
+    expect(within(more).getByRole('button', { name: '读取图片生成信息／导入 JSON' })).toBeTruthy();
+  });
+
+  it('手机资料保存遵守上传状态和访客权限', () => {
+    const handleSaveAll = vi.fn();
+    const view = renderHeader({ chainId: 'asset-1', isUploading: true, handleSaveAll });
+    const mobileSave = screen.getAllByRole('button', { name: '正在保存' }).find(button => button.classList.contains('md:hidden')) as HTMLButtonElement;
+    expect(mobileSave.disabled).toBe(true);
+    fireEvent.click(mobileSave);
+    expect(handleSaveAll).not.toHaveBeenCalled();
+    view.unmount();
+    renderHeader({ chainId: 'asset-1', isOwner: false, isGuest: true, canEdit: false });
+    expect(screen.queryByRole('button', { name: /复制为新串|保存修改|导入/ })).toBeNull();
+  });
 });

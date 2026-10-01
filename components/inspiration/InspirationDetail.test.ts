@@ -24,8 +24,7 @@ vi.mock('../ParamsViewer', () => ({
 }));
 
 vi.mock('../ImageTaggerPanel', () => ({
-  ImageTaggerAction: () => React.createElement('button', { type: 'button' }, '反推 Tag'),
-  ImageTaggerPanel: (props: any) => props.open ? React.createElement('div', { 'data-testid': 'image-tagger-panel' }, '反推面板') : null,
+  ImageTaggerPanel: (props: any) => props.open ? React.createElement('div', { 'data-testid': 'image-tagger-panel', 'data-image-url': props.imageUrl, 'data-action-label': props.actionLabel }, '反推面板') : null,
 }));
 
 vi.mock('../MobileUI', () => ({
@@ -111,8 +110,8 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(screen.getByText('#夏日')).toBeTruthy();
     expect(screen.getByText('#少女')).toBeTruthy();
 
-    // 底部工具条包含「反推 Tag」、高亮主按钮「导入实验室」、次按钮「提取资产」与下载
-    expect(screen.getByRole('button', { name: /反推 Tag/ })).toBeTruthy();
+    // 图片识别在标签区；底部保留导入、提取资产与图片分享
+    expect(screen.getByRole('button', { name: /识别图片 Tag/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /导入实验室/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /提取资产/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: '下载' })).toBeTruthy();
@@ -132,7 +131,7 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(footer?.firstElementChild?.classList.contains('flex-wrap')).toBe(true);
   });
 
-  it('底部点击反推 Tag 按钮弹出 WD Tagger 反推面板', () => {
+  it('标签区识别当前图片，结果追加到灵感标签', () => {
     render(
       React.createElement(InspirationDetail, {
         item: mockItem,
@@ -146,9 +145,12 @@ describe('InspirationDetail 全新重构界面走查', () => {
       })
     );
 
-    const taggerBtn = screen.getByRole('button', { name: /反推 Tag/ });
+    const taggerBtn = screen.getByRole('button', { name: /识别图片 Tag/ });
     fireEvent.click(taggerBtn);
-    expect(screen.getByTestId('image-tagger-panel')).toBeTruthy();
+    const panel = screen.getByTestId('image-tagger-panel');
+    expect(panel.dataset.imageUrl).toBe(mockItem.imageUrl);
+    expect(panel.dataset.actionLabel).toBe('追加 {count} 个 Tag 到灵感标签');
+    expect(taggerBtn.closest('footer')).toBeNull();
   });
 
   it('顶栏切换画板即时持久化到数据库', async () => {

@@ -22,11 +22,13 @@ import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './Mo
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { ExternalLink, Filter, FlaskConical, Menu, Package, Search, Star } from 'lucide-react';
+import { ExternalLink, Filter, FlaskConical, Package, Star } from 'lucide-react';
 import { FavoriteButton, IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { ImageTaggerAction } from './ImageTaggerPanel';
+import { AnchoredToolbarPopover } from './ToolbarPopover';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { buildMediaUrl } from '../services/mobileImageCache';
 
 interface AitagGalleryProps {
@@ -321,6 +323,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const [pageInputValue, setPageInputValue] = useState(String(aitagPageCache.page));
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showDesktopFilters, setShowDesktopFilters] = useState(false);
+  const filterAnchorRef = useRef<HTMLDivElement>(null);
   const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState === 'visible');
 
   const selectedDetail = selectedId ? details[selectedId] : null;
@@ -1192,42 +1195,38 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     }
   };
 
+  const activeFilterCount = Number(Boolean(prompt.trim())) + Number(cacheFilter !== 'all') + Number(sort !== 'new') + Number(Boolean(modelFilter)) + Number(sort === 'monthly' && rankMonth !== 'current');
+
   return (
     <div className="aitag-workspace flex-1 min-h-0 flex flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceToolbar>
         <div className="flex w-full min-w-0 items-center gap-2 md:hidden">
           <span title={isAitagConnected ? '连接正常' : '当前使用本地缓存'} className={`h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
           <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) handleSearch(); }} placeholder="搜索 AITag 作品" />
-          <MobileIconButton label="AITag 筛选" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"><Menu className="h-5 w-5" /></MobileIconButton>
-          <ImageTaggerAction notify={notify} />
+          <MobileIconButton label={activeFilterCount > 0 ? "AITag 筛选 " + activeFilterCount : "AITag 筛选"} onClick={() => setShowMobileFilters(true)} className={activeFilterCount > 0 ? 'border border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'}><Filter className="h-5 w-5" /></MobileIconButton>
         </div>
         <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
           <span title={isAitagConnected ? 'aitag.win 连接正常' : 'aitag.win 暂时不可用'} className={`h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]' : 'bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.14)]'}`} />
           <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) handleSearch(); }} placeholder="作品、作者、标题或标签，回车检索" containerClassName="min-w-[14rem] flex-1 md:max-w-none!" />
-          <div className="relative flex-none">
-            <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} className={showDesktopFilters ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!bg-indigo-950/40 dark:!text-indigo-400' : ''} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" />筛选</ToolbarButton>
-            {showDesktopFilters && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowDesktopFilters(false)} />
-                <div role="dialog" aria-label="AITag 筛选" className="absolute left-1/2 top-[calc(100%+0.5rem)] z-50 hidden w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900 md:block">
-                  <div className="mb-3 flex items-center justify-between"><h2 className="font-bold text-gray-900 dark:text-white">AITag 筛选</h2><button type="button" onClick={() => setShowDesktopFilters(false)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300">×</button></div>
-                  <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">提示词搜索<input value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { handleSearch(); setShowDesktopFilters(false); } }} placeholder="搜索 NovelAI 元数据提示词" className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-950 dark:text-white" /></label>
-                  <div className="grid grid-cols-3 gap-3">
-                    <label className="text-xs text-gray-500 dark:text-gray-400">缓存<select value={cacheFilter} onChange={e => handleCacheFilterChange(e.target.value as AitagCacheFilter)} disabled={isLoading} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="all">全部</option><option value="favorite">收藏</option><option value="full">已缓存全部</option><option value="first-image">已缓存首图</option></select></label>
-                    <label className="text-xs text-gray-500 dark:text-gray-400">排序<select value={sort} onChange={e => handleSortChange(e.target.value as AitagSort)} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="new">最新</option><option value="monthly">月榜</option></select></label>
-                    <label className="text-xs text-gray-500 dark:text-gray-400">月份<select value={sort === 'monthly' ? rankMonth : ''} onChange={e => handleRankMonthChange(e.target.value)} disabled={isLoading || sort !== 'monthly'} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="">无需月份</option><option value="current">当前月份</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">更早</option></select></label>
-                  </div>
-                  <label className="mt-3 block text-xs text-gray-500 dark:text-gray-400">模型版本（已加载条目）<select value={modelFilter} onChange={e => setModelFilter(e.target.value)} disabled={isLoading || modelOptions.length === 0} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="">全部</option>{modelOptions.map(label => <option key={label} value={label}>{label}</option>)}</select></label>
-                  <button type="button" onClick={() => { handleSearch(); setShowDesktopFilters(false); }} className="mt-4 h-10 w-full rounded-lg bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-500">应用筛选</button>
-                </div>
-              </>
-            )}
+          <div ref={filterAnchorRef} className="relative flex-none">
+            <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} className={activeFilterCount > 0 ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!bg-indigo-950/40 dark:!text-indigo-400' : ''} aria-label={activeFilterCount > 0 ? "筛选 " + activeFilterCount : "筛选"} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" />筛选{activeFilterCount > 0 ? " " + activeFilterCount : ""}</ToolbarButton>
+            {showDesktopFilters && <AnchoredToolbarPopover anchorRef={filterAnchorRef} title="AITag 筛选" width={544} onClose={() => setShowDesktopFilters(false)}>
+
+            <div className="mb-3 flex items-center justify-between"><h2 className="font-bold text-gray-900 dark:text-white">AITag 筛选</h2><button type="button" onClick={() => setShowDesktopFilters(false)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300">×</button></div>
+            <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">提示词搜索<input value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { handleSearch(); setShowDesktopFilters(false); } }} placeholder="搜索 NovelAI 元数据提示词" className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-950 dark:text-white" /></label>
+            <div className="grid grid-cols-3 gap-3">
+              <label className="text-xs text-gray-500 dark:text-gray-400">缓存<select value={cacheFilter} onChange={e => handleCacheFilterChange(e.target.value as AitagCacheFilter)} disabled={isLoading} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="all">全部</option><option value="favorite">收藏</option><option value="full">已缓存全部</option><option value="first-image">已缓存首图</option></select></label>
+              <label className="text-xs text-gray-500 dark:text-gray-400">排序<select value={sort} onChange={e => handleSortChange(e.target.value as AitagSort)} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="new">最新</option><option value="monthly">月榜</option></select></label>
+              <label className="text-xs text-gray-500 dark:text-gray-400">月份<select value={sort === 'monthly' ? rankMonth : ''} onChange={e => handleRankMonthChange(e.target.value)} disabled={isLoading || sort !== 'monthly'} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="">无需月份</option><option value="current">当前月份</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">更早</option></select></label>
+            </div>
+            <label className="mt-3 block text-xs text-gray-500 dark:text-gray-400">模型版本（已加载条目）<select value={modelFilter} onChange={e => setModelFilter(e.target.value)} disabled={isLoading || modelOptions.length === 0} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="">全部</option>{modelOptions.map(label => <option key={label} value={label}>{label}</option>)}</select></label>
+            <button type="button" onClick={() => { handleSearch(); setShowDesktopFilters(false); }} className="mt-4 h-10 w-full rounded-lg bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-500">应用筛选</button>
+            </AnchoredToolbarPopover>}
           </div>
           <div className="ml-auto hidden items-center gap-2 text-xs text-gray-500 xl:flex"><span>已加载 {formatCount(visibleItems.length)} 条</span><span>共 {formatCount(total)} 条</span></div>
-          <ImageTaggerAction notify={notify} />
         </div>
       </WorkspaceToolbar>
-      <MobileBottomSheet open={showMobileFilters} title="AITag 筛选" onClose={() => setShowMobileFilters(false)} footer={<button onClick={() => { handleSearch(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl bg-indigo-600 font-bold text-white">应用筛选</button>}>
+      <ImagePreviewPortal><MobileBottomSheet open={showMobileFilters} title="AITag 筛选" onClose={() => setShowMobileFilters(false)} footer={<button onClick={() => { handleSearch(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl bg-indigo-600 font-bold text-white">应用筛选</button>}>
         <div className="space-y-4">
           <label className="block text-sm font-bold dark:text-white">提示词搜索<input value={prompt} onChange={event => setPrompt(event.target.value)} placeholder="搜索 NovelAI 元数据提示词" className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 font-normal dark:border-gray-800 dark:bg-gray-800" /></label>
           <div className="grid grid-cols-2 gap-3">
@@ -1238,7 +1237,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             <label className="text-sm font-bold dark:text-white">模型版本（已加载条目）<select value={modelFilter} onChange={event => setModelFilter(event.target.value)} disabled={modelOptions.length === 0} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-800 dark:bg-gray-800"><option value="">全部</option>{modelOptions.map(label => <option key={label} value={label}>{label}</option>)}</select></label>
           <div className="rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">已加载 {formatCount(visibleItems.length)} 条 · 共 {formatCount(total)} 条</div>
         </div>
-      </MobileBottomSheet>
+      </MobileBottomSheet></ImagePreviewPortal>
 
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selectedWork ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main
@@ -1391,12 +1390,12 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                               <IconButton label="保存到风格串" onClick={() => saveAsArtistChain(image, index)}><Package /></IconButton>
                               <IconButton label="加入灵感库" tone="favorite" onClick={() => saveToInspiration(image, index)}><Star /></IconButton>
                               <IconButton label="导入实验室" tone="primary" onClick={() => importToPlayground(image)}><FlaskConical /></IconButton>
-                              <ImageTaggerAction
+                              {!promptText.trim() && <ImageTaggerAction
                                 notify={notify}
                                 imageUrl={image.local_image_url || buildMediaUrl(buildAitagImageUrl(image), 'original')}
                                 actionLabel="复制 {count} 个 Tag"
                                 className="!w-10 !h-10"
-                              />
+                              />}
                             </div>
                           </div>
                           <div className="text-xs font-mono text-gray-700 dark:text-gray-300 leading-relaxed bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded p-2 max-h-28 overflow-y-auto custom-scrollbar break-words">

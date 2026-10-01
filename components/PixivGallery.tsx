@@ -4,7 +4,6 @@ import {
   Calendar,
   CircleUserRound,
   Clock,
-  Compass,
   ExternalLink,
   Filter,
   Flame,
@@ -16,7 +15,6 @@ import {
   Search,
   Sparkles,
   Unplug,
-  Users,
   X,
 } from 'lucide-react';
 import { db } from '../services/dbService';
@@ -24,10 +22,11 @@ import { createUuid } from '../services/id';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { NAIParams, User } from '../types';
-import { EmptyState, FilterPill, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, FilterPill, MediaCardShell, PageSpinner, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ImageTaggerAction } from './ImageTaggerPanel';
+import { ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { SmartImage } from './SmartImage';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -820,10 +819,9 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             )}
           </div>
         </div>
-        <IconButton label="断开 Pixiv 连接" tone="danger" onClick={() => void handleDisconnect()} title="断开 Pixiv 连接">
-          <Unplug />
-        </IconButton>
-        <ImageTaggerAction notify={notify} />
+        <ToolbarPopover label="账户" title="Pixiv 账户" icon={<CircleUserRound />} width={280}>
+          {close => <button type="button" onClick={() => { close(); void handleDisconnect(); }} className={TOOLBAR_MENU_CLASS + ' !text-red-600 dark:!text-red-400'}><Unplug />断开 Pixiv 连接</button>}
+        </ToolbarPopover>
       </WorkspaceToolbar>
 
       {/* 移动端独立导航行（搜索与操作按钮保持首行，导航 Tab 单行横向滚动） */}
@@ -1147,8 +1145,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 </ToolbarLink>
               </div>
               <div className="flex items-center gap-2">
-                <ImageTaggerAction notify={notify} imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} actionLabel="复制 {count} 个 Tag" />
-                <span className="text-meta text-gray-500">反推当前页图片（本地识别）</span>
+                <ImageTaggerAction notify={notify} imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} actionLabel="复制 {count} 个 Tag" text label="识别当前页 Tag" />
               </div>
               {selected.tags.length > 0 && (
                 <section>

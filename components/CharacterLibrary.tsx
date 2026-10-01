@@ -18,13 +18,13 @@ import {
 } from '../services/tagDictionary';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
-import { MobileBottomSheet, MobileDetailView, MobileIconButton } from './MobileUI';
+import { MobileDetailView } from './MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
-import { Check, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Dice5, Eye, GripVertical, Heart, LoaderCircle, Menu, Pencil, Plus, Settings2, SlidersHorizontal, Tag, UserRound, X } from 'lucide-react';
-import { IconButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, EmptyState } from './DesignSystem';
+import { Check, ChevronDown, ArrowUp, ArrowDown, Dice5, GripVertical, LoaderCircle, Pencil, Plus, SlidersHorizontal, Tag, UserRound, X } from 'lucide-react';
+import { ToolbarButton, ToolbarSearch, WorkspaceToolbar, EmptyState } from './DesignSystem';
 import { useModalA11y } from './useModalA11y';
-import { ImageTaggerAction } from './ImageTaggerPanel';
+import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { DanbooruCover } from './DanbooruCover';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
 import { danbooruService } from '../services/danbooruService';
@@ -239,8 +239,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
   const [lightbox, setLightbox] = useState<CharacterCard | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [showMobileFilters, setShowMobileFilters] = useState(false);
-  const [showGachaTools, setShowGachaTools] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
@@ -828,128 +826,28 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
        <WorkspaceToolbar>
-         <div className="flex gap-2 md:hidden">
-           <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品或 Tag" />
-           <MobileIconButton label="筛选和抽卡设置" onClick={() => setShowMobileFilters(true)} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><Menu className="h-5 w-5" /></MobileIconButton>
-           <ImageTaggerAction notify={notify} />
-           <MobileIconButton label={gachaCards ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} className="bg-indigo-600 text-white"><Dice5 className="h-5 w-5" /></MobileIconButton>
-         </div>
-         <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
-             <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品、变体或英文 Tag…" containerClassName="min-w-0 flex-1 md:max-w-none" />
-             <select
-               value={tab}
-               onChange={event => { setTab(event.target.value as CharacterTab); setGachaCards(null); }}
-               className="h-10 flex-none rounded-xl border border-gray-200 bg-white px-3 text-xs text-gray-700 outline-none hover:border-gray-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700"
-               aria-label="角色范围筛选"
-             >
-               <option value="all">全部角色</option>
-               <option value="catalog">角色 Tag</option>
-              <option value="custom">自定义角色</option>
-             </select>
-             <select
-               value={sort}
-               disabled={Boolean(gachaCards)}
-               onChange={event => setSort(event.target.value as CharacterDictionarySort)}
-               className="h-10 flex-none rounded-xl border border-gray-200 bg-white px-3 text-xs text-gray-700 outline-none hover:border-gray-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700"
-             >
-               <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">{searchTerm.trim() ? '相关性优先 · 名称 A → Z' : '名称 A → Z'}</option><option value="name-desc">{searchTerm.trim() ? '相关性优先 · 名称 Z → A' : '名称 Z → A'}</option>
-             </select>
-             <div className="relative flex flex-none items-center">
-               <ToolbarButton
-                 onClick={() => void drawGacha()}
-                 disabled={isGachaLoading || catalogTotal <= 0}
-                 className="!rounded-r-none !border-r-0 !bg-indigo-600 !text-white hover:!bg-indigo-500"
-               >
-                 {isGachaLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Dice5 className="h-4 w-4" />}
-                 {gachaCards ? '再抽一批' : '随机抽卡'}
-               </ToolbarButton>
-               <IconButton
-                 label="抽卡设置"
-                 onClick={() => setShowGachaTools(value => !value)}
-                 className="!rounded-l-none"
-                 aria-expanded={showGachaTools}
-                 aria-haspopup="dialog"
-               >
-                 <ChevronDown className="h-3.5 w-3.5" />
-               </IconButton>
-               {showGachaTools && (
-                 <>
-                   <div className="fixed inset-0 z-40" onClick={() => setShowGachaTools(false)} />
-                   <div role="dialog" aria-label="随机抽卡设置" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                     <div className="mb-2 text-xs font-bold text-gray-800 dark:text-white">随机抽卡设置</div>
-                     <div className="grid grid-cols-2 gap-2">
-                       <label className="text-xs text-gray-500 dark:text-gray-400">
-                         抽卡范围
-                         <select
-                           value={gachaMode}
-                           onChange={event => setGachaMode(event.target.value as GachaMode)}
-                           className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white"
-                         >
-                           <option value="mixed">Tag + 自定义</option>
-                           <option value="catalog">只抽角色 Tag</option>
-                           <option value="custom">只抽自定义</option>
-                         </select>
-                       </label>
-                       <label className="text-xs text-gray-500 dark:text-gray-400">
-                         数量
-                         <select
-                           value={gachaCount}
-                           onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)}
-                           className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white"
-                         >
-                           <option value={6}>6 位</option>
-                           <option value={12}>12 位</option>
-                           <option value={24}>24 位</option>
-                         </select>
-                       </label>
-                     </div>
-                     {gachaCards && (
-                       <button
-                         type="button"
-                         onClick={() => { setGachaCards(null); setShowGachaTools(false); }}
-                         className="mt-3 w-full rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
-                       >
-                         返回完整目录
-                       </button>
-                     )}
-                   </div>
-                 </>
-               )}
+         <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); setGachaCards(null); }} placeholder="搜索角色、作品或 Tag" containerClassName="min-w-0 flex-1 md:max-w-none!" />
+         <ToolbarPopover title="筛选角色" count={Number(tab !== 'all') + Number(sort !== 'popular') + Number(showFavOnly)}>
+           <div className="space-y-3">
+             <label className="block text-sm font-semibold dark:text-white">显示范围<select aria-label="角色范围" value={tab} onChange={event => { setTab(event.target.value as CharacterTab); setGachaCards(null); }} className={TOOLBAR_FIELD_CLASS}><option value="all">全部角色</option><option value="catalog">角色 Tag</option><option value="custom">自定义角色</option></select></label>
+             <label className="block text-sm font-semibold dark:text-white">排序<select aria-label="角色排序" value={sort} disabled={Boolean(gachaCards)} onChange={event => setSort(event.target.value as CharacterDictionarySort)} className={TOOLBAR_FIELD_CLASS}><option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">名称 A → Z</option><option value="name-desc">名称 Z → A</option></select></label>
+             <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={showFavOnly} onChange={event => setShowFavOnly(event.target.checked)} />只看收藏</label>
+             <button type="button" onClick={() => { setTab('all'); setSort('popular'); setShowFavOnly(false); setGachaCards(null); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">重置筛选</button>
+           </div>
+         </ToolbarPopover>
+         <div className="flex flex-none items-center border-l border-gray-200 pl-2 dark:border-gray-700">
+           <ToolbarButton aria-label={gachaCards ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} disabled={isGachaLoading || catalogTotal <= 0} className="mobile-touch !rounded-r-none !border-r-0" tone="primary">{isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaCards ? '再抽一批' : '随机抽卡'}</span></ToolbarButton>
+           <ToolbarPopover label="抽卡设置" title="角色抽卡设置" icon={<ChevronDown />} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden" width={320}>
+             <div className="grid grid-cols-2 gap-3">
+               <label className="text-sm font-semibold dark:text-white">抽卡范围<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className={TOOLBAR_FIELD_CLASS}><option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option></select></label>
+               <label className="text-sm font-semibold dark:text-white">数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className={TOOLBAR_FIELD_CLASS}><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label>
              </div>
-             <IconButton label={showFavOnly ? '显示全部角色' : '只看收藏'} tone={showFavOnly ? 'favorite' : 'neutral'} onClick={() => setShowFavOnly(value => !value)}><Heart className={`h-4 w-4 ${showFavOnly ? 'fill-current' : ''}`} /></IconButton>
-             <ImageTaggerAction notify={notify} />
-             <ToolbarButton tone="primary" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4" />自定义角色</ToolbarButton>
+           </ToolbarPopover>
          </div>
+         <ToolbarButton tone="primary" aria-label="新建自定义角色" onClick={() => setShowCreate(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">新建自定义角色</span></ToolbarButton>
        </WorkspaceToolbar>
 
-       {gachaCards && (
-         <GalleryActiveStateBanner
-           count={visibleCards.length}
-           entityName="角色"
-           onDrawAgain={() => void drawGacha()}
-           onExit={() => setGachaCards(null)}
-           isLoading={isGachaLoading}
-         />
-       )}
-
-       <MobileBottomSheet open={showMobileFilters} title="角色筛选与抽卡" onClose={() => setShowMobileFilters(false)}>
-         <div className="space-y-5">
-           <div className="grid grid-cols-2 gap-2">
-             <button onClick={() => { setShowMobileFilters(false); setShowCreate(true); }} className="mobile-touch rounded-xl bg-indigo-600 px-3 text-sm font-bold text-white">＋ 新建自定义角色</button>
-             {gachaCards && <button onClick={() => { setGachaCards(null); setShowMobileFilters(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">返回目录</button>}
-           </div>
-           <div><div className="mb-2 text-sm font-bold dark:text-white">显示范围</div><div className="grid grid-cols-3 gap-2">
-            {([['all', '全部'], ['catalog', '角色 Tag'], ['custom', '自定义角色']] as [CharacterTab, string][]).map(([value, label]) => <button key={value} onClick={() => { setTab(value); setGachaCards(null); }} className={`mobile-touch rounded-xl px-2 text-xs font-bold ${tab === value ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{label}</button>)}
-           </div></div>
-           <button onClick={() => setShowFavOnly(value => !value)} className={`mobile-touch w-full rounded-xl text-sm font-bold ${showFavOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>★ 只看收藏 {favorites.size > 0 ? `(${favorites.size})` : ''}</button>
-           <label className="block text-sm font-bold dark:text-white">排序方式<select value={sort} disabled={Boolean(gachaCards)} onChange={event => setSort(event.target.value as CharacterDictionarySort)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="popular">热度从高到低</option><option value="least">热度从低到高</option><option value="name-asc">名称 A → Z</option><option value="name-desc">名称 Z → A</option></select></label>
-           <div className="grid grid-cols-2 gap-3">
-             <label className="text-sm font-bold dark:text-white">抽卡范围<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-600 dark:bg-gray-800"><option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option></select></label>
-             <label className="text-sm font-bold dark:text-white">抽卡数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-2 font-normal dark:border-gray-600 dark:bg-gray-800"><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label>
-           </div>
-           <div className="rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">目录 {catalogTotal.toLocaleString('zh-CN')} · 自定义 {customChains.length} · 当前显示 {visibleCards.length}</div>
-         </div>
-       </MobileBottomSheet>
+       {gachaCards && <GalleryActiveStateBanner count={visibleCards.length} entityName="角色" showDrawAgain={false} onDrawAgain={() => void drawGacha()} onExit={() => setGachaCards(null)} isLoading={isGachaLoading} />}
 
       <div ref={scrollRef} onScroll={onScrollRestore} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
         <div className="mb-3 hidden items-center gap-1.5 text-meta text-gray-400 dark:text-gray-500 md:flex">

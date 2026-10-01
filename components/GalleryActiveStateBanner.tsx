@@ -7,6 +7,7 @@ interface GalleryActiveStateBannerProps {
   onDrawAgain: () => void;
   onExit: () => void;
   isLoading?: boolean;
+  showDrawAgain?: boolean;
 }
 
 export const GalleryActiveStateBanner: React.FC<GalleryActiveStateBannerProps> = ({
@@ -15,6 +16,7 @@ export const GalleryActiveStateBanner: React.FC<GalleryActiveStateBannerProps> =
   onDrawAgain,
   onExit,
   isLoading = false,
+  showDrawAgain = true,
 }) => (
   <div className="flex h-9 flex-none items-center justify-between border-b border-indigo-100 bg-indigo-50/70 px-4 text-xs dark:border-indigo-900/40 dark:bg-indigo-950/30">
     <span className="flex items-center gap-1.5 font-medium text-indigo-700 dark:text-indigo-300">
@@ -22,7 +24,7 @@ export const GalleryActiveStateBanner: React.FC<GalleryActiveStateBannerProps> =
       正在浏览随机抽取的 {count} 位{entityName}
     </span>
     <div className="flex items-center gap-2.5">
-      <button
+      {showDrawAgain && <><button
         type="button"
         onClick={onDrawAgain}
         disabled={isLoading}
@@ -30,7 +32,7 @@ export const GalleryActiveStateBanner: React.FC<GalleryActiveStateBannerProps> =
       >
         再抽一批
       </button>
-      <span className="text-gray-300 dark:text-gray-700">|</span>
+      <span className="text-gray-300 dark:text-gray-700">|</span></>}
       <button
         type="button"
         onClick={onExit}
@@ -41,4 +43,3 @@ export const GalleryActiveStateBanner: React.FC<GalleryActiveStateBannerProps> =
     </div>
   </div>
 );
-

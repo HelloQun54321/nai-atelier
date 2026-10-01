@@ -379,6 +379,7 @@ export const InspirationDetail: React.FC<Props> = ({
                     <span className="ml-1 text-micro font-normal text-gray-400">（{(draft.tags || []).length}）</span>
                   )}
                 </span>
+                <button type="button" disabled={Boolean(busy)} onClick={() => setTaggerOpen(true)} aria-label="识别图片 Tag" title="识别当前图片，挑选后追加到灵感标签" className="mobile-touch flex items-center gap-1 rounded-lg px-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><ImagePlus className="h-3.5 w-3.5" />识别图片 Tag</button>
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5">
@@ -536,21 +537,6 @@ export const InspirationDetail: React.FC<Props> = ({
           {/* 底部操作条：窄屏换行，分享操作保持可靠触控宽度。 */}
           <footer className="flex-none border-t border-gray-200 p-3.5 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/60 backdrop-blur-sm">
             <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
-              {/* 反推 Tag（置于导入实验室左侧） */}
-              <div className="flex-none">
-                <button
-                  type="button"
-                  disabled={Boolean(busy)}
-                  onClick={() => setTaggerOpen(true)}
-                  aria-label="反推 Tag"
-                  title="使用 WD Tagger 反推图片标签"
-                  className="mobile-touch flex h-10 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-2.5 text-xs font-bold text-gray-700 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-700 dark:hover:bg-gray-800/80 whitespace-nowrap transition-colors sm:px-3.5"
-                >
-                  <ImagePlus className="h-3.5 w-3.5 text-violet-500 dark:text-violet-400" />
-                  <span>反推 Tag</span>
-                </button>
-              </div>
-
               {/* 导入实验室（带底图模式分流，自适应撑开，居于视觉核心） */}
               <div className="relative flex-1 min-w-[9rem] flex h-10 rounded-xl bg-indigo-600 shadow-sm shadow-indigo-600/20 hover:bg-indigo-500 transition-colors">
                 <button
@@ -679,6 +665,7 @@ export const InspirationDetail: React.FC<Props> = ({
 
       {taggerOpen && (
         <ImageTaggerPanel
+          contextual
           open={taggerOpen}
           onClose={() => setTaggerOpen(false)}
           imageUrl={draft.imageUrl}

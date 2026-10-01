@@ -15,12 +15,13 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, Layers, ListChecks, LoaderCircle, Pencil, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { CloseButton, EmptyState, FavoriteButton, IconButton, PageSpinner, ToolbarButton, WorkspaceToolbar } from './DesignSystem';
-import { ImageTaggerAction } from './ImageTaggerPanel';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useLowConsumption } from '../services/lowConsumption';
 import { ImageShareActions } from './ImageShareActions';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { ImageTaggerAction } from './ImageTaggerPanel';
+import { AnchoredToolbarPopover } from './ToolbarPopover';
 
 interface GenHistoryProps {
     currentUser: User;
@@ -210,6 +211,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
     // 清理相关状态
     const [showCleanMenu, setShowCleanMenu] = useState(false);
+    const managementAnchorRef = useRef<HTMLDivElement>(null);
     const [showPageMenu, setShowPageMenu] = useState(false);
     const [showDateFilter, setShowDateFilter] = useState(false);
     const [showCleanModal, setShowCleanModal] = useState(false);
@@ -922,20 +924,20 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
             <WorkspaceToolbar>
                     {migrationProgress && <span className="hidden truncate text-xs text-indigo-600 dark:text-indigo-400 md:block">{migrationProgress.total > 0 ? `正在迁移浏览器历史 ${migrationProgress.current}/${migrationProgress.total}，请勿关闭页面…` : '正在检查浏览器历史…'}</span>}
-                    <div className="ml-auto flex items-center gap-2">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
                         <ToolbarButton onClick={() => setShowDateFilter(true)}><CalendarDays className="h-4 w-4" />筛选日期</ToolbarButton>
                         <ToolbarButton tone={favoriteOnly ? 'favorite' : 'neutral'} onClick={toggleFavoriteFilter} aria-pressed={favoriteOnly} title={favoriteOnly ? '显示全部历史图片' : '只看收藏图片'}><Heart className={favoriteOnly ? 'fill-current' : ''} />收藏</ToolbarButton>
-                        <div className="hidden rounded-full bg-gray-100 px-3 py-1.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400 md:flex">{favoriteOnly ? '收藏 ' : ''}{totalCount} 张</div>
-                        <IconButton label="历史管理" onClick={() => setShowCleanMenu(true)} className="md:hidden"><ListChecks /></IconButton>
-                        <div className="relative hidden md:block">
+                        <div className="ml-auto hidden rounded-full bg-gray-100 px-3 py-1.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400 md:flex">{favoriteOnly ? '收藏 ' : ''}{totalCount} 张</div>
+                        <IconButton className="ml-auto md:hidden" label="历史管理" disabled={migrationProgress !== null} onClick={() => setShowCleanMenu(true)}><ListChecks /></IconButton>
+                        <div ref={managementAnchorRef} className="relative hidden md:block">
                             <ToolbarButton 
                                 onClick={() => setShowCleanMenu(!showCleanMenu)} 
                                 disabled={migrationProgress !== null}
                             >
                                 <ListChecks className="h-4 w-4" />管理<ChevronDown className="h-3.5 w-3.5" />
                             </ToolbarButton>
-                            {showCleanMenu && (
-                                <div role="menu" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-48 rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                            {showCleanMenu && !isMobileViewport && (
+                                <AnchoredToolbarPopover anchorRef={managementAnchorRef} title="历史管理" width={256} onClose={() => setShowCleanMenu(false)}>
                                     <button
                                         type="button"
                                         onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }}
@@ -964,14 +966,13 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                     >
                                         <Layers className="h-4 w-4" />按数量保留最新…
                                     </button>
-                                </div>
+                                </AnchoredToolbarPopover>
                             )}
                         </div>
-                        <ImageTaggerAction notify={notify} />
                     </div>
             </WorkspaceToolbar>
 
-            <MobileBottomSheet open={showDateFilter} title="筛选历史日期" onClose={() => setShowDateFilter(false)}>
+            <ImagePreviewPortal><MobileBottomSheet open={showDateFilter && isMobileViewport} title="筛选历史日期" onClose={() => setShowDateFilter(false)}>
                 <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
                         <label className="text-sm font-bold dark:text-white">开始日期<input type="date" value={dateFilter.from} onChange={event => { const from = event.currentTarget.value; setDateFilter(previous => ({ ...previous, from })); }} className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-600 dark:bg-gray-800" /></label>
@@ -984,9 +985,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                     </div>
                     <button onClick={() => applyDateFilter(dateFilter)} className="mobile-touch w-full rounded-xl bg-indigo-600 font-bold text-white">应用筛选</button>
                 </div>
-            </MobileBottomSheet>
+            </MobileBottomSheet></ImagePreviewPortal>
 
-            {showDateFilter && <div className="fixed inset-0 z-[1250] hidden items-center justify-center bg-slate-950/35 p-6 backdrop-blur-sm md:flex" onPointerDown={event => {
+            {showDateFilter && !isMobileViewport && <ImagePreviewPortal><div className="fixed inset-0 z-[1250] hidden items-center justify-center bg-slate-950/35 p-6 backdrop-blur-sm md:flex" onPointerDown={event => {
                 if (event.target === event.currentTarget) setShowDateFilter(false);
             }}>
                 <section role="dialog" aria-modal="true" aria-label="筛选历史日期" className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900" onPointerDown={event => event.stopPropagation()}>
@@ -1007,18 +1008,18 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                         <button type="button" onClick={() => applyDateFilter(dateFilter)} className="h-11 w-full rounded-xl bg-indigo-600 font-bold text-white hover:bg-indigo-500">应用筛选</button>
                     </div>
                 </section>
-            </div>}
+            </div></ImagePreviewPortal>}
 
-            <MobileBottomSheet open={showCleanMenu} title="历史管理" onClose={() => setShowCleanMenu(false)}>
+            <ImagePreviewPortal><MobileBottomSheet open={showCleanMenu && isMobileViewport} title="历史管理" onClose={() => setShowCleanMenu(false)}>
                 <div className="space-y-2">
                             <button onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-50 px-4 text-left text-sm font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">批量选择图片</button>
                             <button onClick={() => handleCleanMenuClick('days')} className="mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">删除指定天数以前的历史</button>
                             <button onClick={() => handleCleanMenuClick('count')} className="mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">只保留最近指定数量</button>
                             <button onClick={handleClearAll} className="mobile-touch w-full rounded-xl bg-red-50 px-4 text-left text-sm font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">清空全部历史</button>
                 </div>
-            </MobileBottomSheet>
+            </MobileBottomSheet></ImagePreviewPortal>
 
-            <MobileBottomSheet open={showPageMenu} title="跳转页码" onClose={() => setShowPageMenu(false)}>
+            <ImagePreviewPortal><MobileBottomSheet open={showPageMenu && isMobileViewport} title="跳转页码" onClose={() => setShowPageMenu(false)}>
                 <div className="space-y-3">
                     <div className="grid grid-cols-[auto_1fr_auto] gap-2">
                         <button onClick={() => { void goToPage(1); setShowPageMenu(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">首页</button>
@@ -1027,7 +1028,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                     </div>
                     <button onClick={() => { const page = Number(jumpPage); if (page >= 1 && page <= totalPages) void goToPage(page); setJumpPage(''); setShowPageMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-600 font-bold text-white">跳转</button>
                 </div>
-            </MobileBottomSheet>
+            </MobileBottomSheet></ImagePreviewPortal>
 
             <div ref={historyScrollRef} onScroll={onScrollRestore} className="flex-1 overflow-y-auto p-4 md:p-6 pb-20">
                 {selectionMode && (
@@ -1168,6 +1169,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                             </div>
 
                             <div className="flex-1 overflow-y-auto space-y-6 pr-2 custom-scrollbar">
+                                {!lightbox.prompt?.trim() && <ImageTaggerAction notify={notify} imageUrl={buildMediaUrl(lightbox.imageUrl, 'original')} text label="识别图片 Tag" />}
                                 <ParamsViewer
                                     params={lightbox.params}
                                     prompt={lightbox.prompt}
