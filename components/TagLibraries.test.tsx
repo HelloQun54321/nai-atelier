@@ -67,10 +67,11 @@ function renderLibrary(kind: Kind, width = 1280, chains: PromptChain[] = []) {
   const navigate = vi.fn();
   const onCreate = vi.fn();
   const onSelect = vi.fn();
+  const onUpdateChain = vi.fn();
   const view = kind === 'artist'
     ? render(<ArtistLibrary artistsData={[]} notify={notify} onNavigateToPlayground={navigate} />)
-    : render(<CharacterLibrary chains={chains} onCreate={onCreate} onSelect={onSelect} onDelete={vi.fn()} onNavigateToPlayground={navigate} notify={notify} />);
-  return { ...view, navigate, onCreate, onSelect };
+    : render(<CharacterLibrary chains={chains} onCreate={onCreate} onSelect={onSelect} onDelete={vi.fn()} onUpdateChain={onUpdateChain} onNavigateToPlayground={navigate} notify={notify} />);
+  return { ...view, navigate, onCreate, onSelect, onUpdateChain };
 }
 
 beforeEach(() => {
@@ -203,5 +204,27 @@ it('自定义角色保留创建入口，画师选择仍能送往实验室', asyn
   expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ prompt: 'artist:sample_artist_a', mode: 'append-prompt' });
   expect(artistView.navigate).toHaveBeenCalledOnce();
   expect(screen.queryByRole('button', { name: '复制全部' })).toBeNull();
+  expect(generateImage).not.toHaveBeenCalled();
+});
+
+it('自定义角色卡片信息编辑不选中条目，抽卡结果随名称更新', async () => {
+  const p = renderLibrary('character', 390, [custom]);
+  await screen.findByRole('button', { name: '编辑自定义角色信息' });
+  fireEvent.click(screen.getByRole('button', { name: '抽卡设置' }));
+  fireEvent.change(screen.getByRole('combobox', { name: '抽卡范围' }), { target: { value: 'custom' } });
+  fireEvent.keyDown(window, { key: 'Escape' });
+  fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
+  await screen.findByText(/正在浏览随机抽取的 1 位角色/);
+  const edit = screen.getByRole('button', { name: '编辑自定义角色信息' });
+  expect(edit.className).not.toContain('md:hidden');
+  fireEvent.click(edit);
+  expect(screen.queryByRole('button', { name: '复制' })).toBeNull();
+  expect(p.onSelect).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByRole('textbox', { name: '名称' }), { target: { value: '新的角色名称' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(p.onUpdateChain).toHaveBeenCalledWith(custom.id, { name: '新的角色名称', description: '', tags: [] }));
+  p.rerender(<CharacterLibrary chains={[{ ...custom, name: '新的角色名称' }]} onCreate={p.onCreate} onSelect={p.onSelect} onDelete={vi.fn()} onUpdateChain={p.onUpdateChain} onNavigateToPlayground={p.navigate} notify={vi.fn()} />);
+  expect(screen.getByRole('heading', { name: '新的角色名称' })).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: custom.name })).toBeNull();
   expect(generateImage).not.toHaveBeenCalled();
 });

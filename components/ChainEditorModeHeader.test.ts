@@ -7,105 +7,51 @@ import { ChainEditorModeHeader } from './ChainEditorModeHeader';
 afterEach(() => cleanup());
 
 describe('ChainEditorModeHeader', () => {
-  it('风格串工作台保留返回、铅笔与截断标题，并可切换四模式', () => {
-    const onEditInfo = vi.fn();
+  it.each(['风格串', '自定义角色'] as const)('%s 工作台只保留返回与模式导航，四模式共用剩余宽度', entityLabel => {
     const onBack = vi.fn();
     const onSelectMode = vi.fn();
     const { container } = render(React.createElement(ChainEditorModeHeader, {
-      isLaboratory: false,
-      chainName: '这是一个非常长的风格串名称，用于验证标题不会越过左侧参数区域',
-      entityLabel: '风格串',
-      isOwner: true,
-      activeMode: 'inpaint',
-      onSelectMode,
-      onEditInfo,
-      onBack,
-    }));
-
-    expect(screen.getByRole('navigation', { name: '生成模式' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '局部重绘' }).getAttribute('aria-current')).toBe('page');
-    fireEvent.click(screen.getByRole('button', { name: '扩图' }));
-    expect(onSelectMode).toHaveBeenCalledWith('outpaint');
-    const backButton = screen.getByRole('button', { name: '返回风格串列表' });
-    const editButton = screen.getByRole('button', { name: '编辑风格串信息' });
-    const title = screen.getByRole('heading', { level: 1 });
-    expect(backButton.compareDocumentPosition(editButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(editButton.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(title.className).toContain('flex-1');
-    expect(title.className).toContain('truncate');
-    expect(container.firstElementChild?.className).toContain('w-full');
-    expect(title.getAttribute('title')).toBe(title.textContent);
-    fireEvent.click(backButton);
-    expect(onBack).toHaveBeenCalledOnce();
-    fireEvent.click(editButton);
-    expect(onEditInfo).toHaveBeenCalledOnce();
-  });
-
-  it('实验室显示四模式导航与手机端返回箭头，不显示风格串名称与铅笔', () => {
-    const onBack = vi.fn();
-    render(React.createElement(ChainEditorModeHeader, {
-      isLaboratory: true,
-      chainName: '不应显示',
-      entityLabel: '风格串',
-      isOwner: true,
-      activeMode: 'text-to-image',
-      onSelectMode: vi.fn(),
-      onEditInfo: vi.fn(),
-      onBack,
-    }));
-
-    expect(screen.getByRole('navigation', { name: '生成模式' })).toBeTruthy();
-    expect(screen.getAllByRole('button')).toHaveLength(5);
-    expect(screen.queryByRole('button', { name: '编辑风格串信息' })).toBeNull();
-    expect(screen.queryByText('不应显示')).toBeNull();
-    // 返回箭头只在无侧边栏的窄屏（<md）显示，桌面/平板由侧边栏承担退出，不造重复入口
-    const backButton = screen.getByRole('button', { name: '退出实验室，返回上一页面' });
-    expect(backButton.className).toContain('md:hidden');
-    fireEvent.click(backButton);
-    expect(onBack).toHaveBeenCalledOnce();
-  });
-
-  it('实验室生成进行中禁用四模式切换并透传到模式导航', () => {
-    const onSelectMode = vi.fn();
-    render(React.createElement(ChainEditorModeHeader, {
-      isLaboratory: true,
-      chainName: '不应显示',
-      entityLabel: '风格串',
-      isOwner: true,
-      activeMode: 'outpaint',
-      isGenerating: true,
-      onSelectMode,
-      onEditInfo: vi.fn(),
-      onBack: vi.fn(),
+      isLaboratory: false, entityLabel, activeMode: 'inpaint', onSelectMode, onBack,
     }));
 
     const nav = screen.getByRole('navigation', { name: '生成模式' });
-    expect(nav).toBeTruthy();
-    // 4 个模式按钮 + 1 个手机端返回箭头
-    const buttons = screen.getAllByRole('button');
-    expect(buttons).toHaveLength(5);
-    const navButtons = nav.querySelectorAll('button');
-    expect(navButtons).toHaveLength(4);
-    navButtons.forEach(button => {
-      expect((button as HTMLButtonElement).disabled).toBe(true);
-    });
-    fireEvent.click(screen.getByRole('button', { name: '局部重绘' }));
-    expect(onSelectMode).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '局部重绘' }).getAttribute('aria-current')).toBe('page');
+    fireEvent.click(screen.getByRole('button', { name: '扩图' }));
+    expect(onSelectMode).toHaveBeenCalledWith('outpaint');
+    const back = screen.getByRole('button', { name: `返回${entityLabel}列表` });
+    expect(back.className).not.toContain('md:hidden');
+    expect(back.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByRole('button')).toHaveLength(5);
+    expect(screen.queryByRole('heading')).toBeNull();
+    expect(screen.queryByRole('button', { name: /编辑.*信息/ })).toBeNull();
+    expect(container.firstElementChild?.className).not.toContain('flex-wrap');
+    expect(nav.parentElement?.className).toContain('min-w-0 flex-1');
+    fireEvent.click(back);
+    expect(onBack).toHaveBeenCalledOnce();
   });
 
-  it('自定义角色详情使用对应的返回与编辑文案', () => {
+  it('实验室保留仅手机端的返回箭头', () => {
+    const onBack = vi.fn();
     render(React.createElement(ChainEditorModeHeader, {
-      isLaboratory: false,
-      chainName: '自定义角色名称',
-      entityLabel: '自定义角色',
-      isOwner: true,
-      activeMode: 'text-to-image',
-      onSelectMode: vi.fn(),
-      onEditInfo: vi.fn(),
-      onBack: vi.fn(),
+      isLaboratory: true, entityLabel: '风格串', activeMode: 'text-to-image',
+      onSelectMode: vi.fn(), onBack,
     }));
+    const back = screen.getByRole('button', { name: '退出实验室，返回上一页面' });
+    expect(back.className).toContain('md:hidden');
+    fireEvent.click(back);
+    expect(onBack).toHaveBeenCalledOnce();
+  });
 
-    expect(screen.getByRole('button', { name: '返回自定义角色列表' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '编辑自定义角色信息' })).toBeTruthy();
+  it.each([true, false])('生成中禁用全部模式切换：实验室=%s', isLaboratory => {
+    const onSelectMode = vi.fn();
+    render(React.createElement(ChainEditorModeHeader, {
+      isLaboratory, entityLabel: '风格串', activeMode: 'outpaint', isGenerating: true,
+      onSelectMode, onBack: vi.fn(),
+    }));
+    const buttons = screen.getByRole('navigation', { name: '生成模式' }).querySelectorAll('button');
+    expect(buttons).toHaveLength(4);
+    buttons.forEach(button => expect(button.disabled).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: '局部重绘' }));
+    expect(onSelectMode).not.toHaveBeenCalled();
   });
 });

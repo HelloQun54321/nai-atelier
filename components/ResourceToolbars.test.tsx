@@ -78,7 +78,7 @@ describe('资料目录工具栏行为', () => {
   });
 
   it('角色范围、排序与收藏集中筛选，抽卡设置独立且不会启动生成', async () => {
-    render(<CharacterLibrary chains={[]} onCreate={vi.fn()} onDelete={vi.fn()} onNavigateToPlayground={vi.fn()} notify={vi.fn()} onSelect={vi.fn()} />);
+    render(<CharacterLibrary chains={[]} onCreate={vi.fn()} onDelete={vi.fn()} onUpdateChain={vi.fn()} onNavigateToPlayground={vi.fn()} notify={vi.fn()} onSelect={vi.fn()} />);
     await waitFor(() => expect(getCharacterDictionaryPage).toHaveBeenCalledWith(0, 'popular'));
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     fireEvent.change(screen.getByRole('combobox', { name: '角色排序' }), { target: { value: 'least' } });

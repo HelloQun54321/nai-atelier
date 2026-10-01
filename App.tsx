@@ -563,6 +563,7 @@ const App = () => {
           onCreate={handleCreateChain}
           onSelect={(id) => handleNavigate('edit', id)}
           onDelete={handleDelete}
+          onUpdateChain={handleUpdateChain}
           onRefresh={() => refreshData(true)}
           isLoading={loading}
           notify={notify}
@@ -575,6 +576,7 @@ const App = () => {
           onCreate={handleCreateChain}
           onSelect={(id) => handleNavigate('edit', id)}
           onDelete={handleDelete}
+          onUpdateChain={handleUpdateChain}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
           notify={notify}
           returnTargetId={view === 'characters' ? selectedId : undefined}

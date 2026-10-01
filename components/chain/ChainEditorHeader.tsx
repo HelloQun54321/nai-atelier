@@ -35,18 +35,10 @@ const MobileActionRow: React.FC<{
 
 export interface ChainEditorHeaderProps {
     chainId: string;
-    chainName: string;
-    chainDesc: string;
-    chainTags: string[];
-    setChainName: (value: string) => void;
-    setChainDesc: (value: string) => void;
-    setChainTags: (value: string[]) => void;
     isCharacterMode: boolean;
     isOwner: boolean;
     isGuest: boolean;
     canEdit: boolean;
-    isEditingInfo: boolean;
-    setIsEditingInfo: (value: boolean) => void;
     canSaveActiveModeToLibrary: boolean;
     canSaveCurrentChain: boolean;
     isUploading: boolean;
@@ -59,7 +51,6 @@ export interface ChainEditorHeaderProps {
     /** 生成进行中禁用模式切换（透传至模式导航）。 */
     isGenerating?: boolean;
     onBack: () => void | Promise<void>;
-    markChange: () => void;
     handleReset: () => void;
     handleFork: () => void;
     handleSaveAll: () => void;
@@ -71,18 +62,10 @@ export interface ChainEditorHeaderProps {
 
 export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     chainId,
-    chainName,
-    chainDesc,
-    chainTags,
-    setChainName,
-    setChainDesc,
-    setChainTags,
     isCharacterMode,
     isOwner,
     isGuest,
     canEdit,
-    isEditingInfo,
-    setIsEditingInfo,
     canSaveActiveModeToLibrary,
     canSaveCurrentChain,
     isUploading,
@@ -94,7 +77,6 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     selectGenerationMode,
     isGenerating = false,
     onBack,
-    markChange,
     handleReset,
     handleFork,
     handleSaveAll,
@@ -136,68 +118,12 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
             <div className="chain-editor-header-main relative flex min-w-0 items-start lg:items-center gap-2 md:gap-4 lg:pr-4">
                 <ChainEditorModeHeader
                     isLaboratory={isPlayground}
-                    chainName={chainName}
                     entityLabel={isCharacterMode ? '自定义角色' : '风格串'}
-                    isOwner={isOwner}
                     activeMode={activeGenerationMode}
                     onSelectMode={selectGenerationMode}
                     isGenerating={isGenerating}
-                    onEditInfo={() => setIsEditingInfo(true)}
                     onBack={onBack}
                 />
-                {!isPlayground && isEditingInfo && isOwner && <div role="dialog" aria-label={`编辑${isCharacterMode ? '自定义角色' : '风格串'}信息`} className="absolute left-12 top-[calc(100%+0.5rem)] z-50 w-[min(40rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        <label className="text-xs font-bold text-gray-500">名称<input type="text" value={chainName} onChange={e => { setChainName(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-800 dark:text-white" placeholder="名称" /></label>
-                        <label className="text-xs font-bold text-gray-500">描述<input type="text" value={chainDesc} onChange={e => { setChainDesc(e.target.value); markChange(); }} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-300" placeholder="描述" /></label>
-                    </div>
-                    <div className="mt-3 text-xs font-bold text-gray-500">标签</div>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                        {chainTags.map((tag, idx) => (
-                            <span key={idx} className="px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 flex items-center gap-1">
-                                {tag}
-                                {canEdit && (
-                                    <button
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setChainTags(chainTags.filter((_, i) => i !== idx));
-                                            markChange();
-                                        }}
-                                        className="text-indigo-500 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
-                                    >
-                                        ✕
-                                    </button>
-                                )}
-                            </span>
-                        ))}
-                        {canEdit && <input
-                            type="text"
-                            placeholder="添加标签..."
-                            className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-full bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                                    const newTag = e.currentTarget.value.trim();
-                                    if (!chainTags.includes(newTag)) {
-                                        setChainTags([...chainTags, newTag]);
-                                        markChange();
-                                    }
-                                    e.currentTarget.value = '';
-                                }
-                            }}
-                            onBlur={(e) => {
-                                if (e.target.value.trim()) {
-                                    const newTag = e.target.value.trim();
-                                    if (!chainTags.includes(newTag)) {
-                                        setChainTags([...chainTags, newTag]);
-                                        markChange();
-                                    }
-                                    e.target.value = '';
-                                }
-                            }}
-                        />}
-                    </div>
-                    <div className="mt-4 flex justify-end"><button type="button" onClick={() => setIsEditingInfo(false)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-500">完成</button></div>
-                </div>}
                 {!isPlayground && canSaveActiveModeToLibrary && isOwner && <IconButton label={saveLabel} disabled={isUploading} onClick={() => setSaveActionsOpen(true)} className={`mobile-touch md:hidden ${saveClass}`}><Save /></IconButton>}
                 {!isPlayground && canSaveActiveModeToLibrary && !isOwner && !isGuest && <IconButton label="另存为新串" disabled={isUploading} onClick={handleFork} className="mobile-touch md:hidden"><Save /></IconButton>}
                 <MobileIconButton

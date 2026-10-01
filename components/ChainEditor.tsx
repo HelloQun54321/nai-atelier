@@ -73,11 +73,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // Distinguish Editor Mode
     const isCharacterMode = chain.type === 'character';
 
-    // --- Chain Info State ---
-    const [chainName, setChainName] = useState(chain.name);
-    const [chainDesc, setChainDesc] = useState(chain.description);
+    // 信息由卡片编辑；工作台使用最新资料，不能在保存草稿时回写旧名称。
+    const chainName = chain.name;
+    const chainDesc = chain.description;
     const [chainTags, setChainTags] = useState<string[]>(chain.tags || []);
-    const [isEditingInfo, setIsEditingInfo] = useState(false);
+    useEffect(() => { setChainTags(chain.tags || []); }, [chain.id, chain.tags]);
 
     // --- Prompt State ---
     const [basePrompt, setBasePrompt] = useState(chain.basePrompt || '');
@@ -423,8 +423,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             cfgRescale: chain.params?.cfgRescale ?? 0,
             ...storedWorkspace.textToImage.params
         }));
-        setChainName(chain.name);
-        setChainDesc(chain.description);
         setChainTags(chain.tags || []);
 
         // Default subject to empty, not '1girl'
@@ -1331,7 +1329,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 coverAutoSaveTriggeredRef.current = true;
             }
             setHasChanges(false);
-            setIsEditingInfo(false);
             notify(`${isCharacterMode ? '自定义角色' : '风格串'}已保存${cover.changed ? '，当前图片已设为封面' : ''}`);
         } catch (error: any) {
             notify(`保存失败：${error?.message || '未知错误'}`, 'error');
@@ -1388,8 +1385,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setActiveModules(restored.activeModules);
         setParams(restored.params);
         if (resetToSaved) {
-            setChainName(chain.name);
-            setChainDesc(chain.description);
             setChainTags(chain.tags || []);
             setHasChanges(false);
         }
@@ -1901,7 +1896,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     previewImage: uploadRes.url,
                 });
                 setHasChanges(false);
-                setIsEditingInfo(false);
                 notify(`${isCharacterMode ? '自定义角色' : '风格串'}已保存，封面已更新`);
             } catch (e: unknown) {
                 const errMessage = e instanceof Error ? e.message : String(e);
@@ -1941,7 +1935,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     previewImage: res.url,
                 });
                 setHasChanges(false);
-                setIsEditingInfo(false);
                 notify(`${isCharacterMode ? '自定义角色' : '风格串'}已保存，封面已更新`);
             } catch (err: unknown) {
                 const errMessage = err instanceof Error ? err.message : String(err);
@@ -1980,18 +1973,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             {/* Top Bar */}
             <ChainEditorHeader
                 chainId={chain.id}
-                chainName={chainName}
-                chainDesc={chainDesc}
-                chainTags={chainTags}
-                setChainName={setChainName}
-                setChainDesc={setChainDesc}
-                setChainTags={setChainTags}
                 isCharacterMode={isCharacterMode}
                 isOwner={isOwner}
                 isGuest={isGuest}
                 canEdit={canEdit}
-                isEditingInfo={isEditingInfo}
-                setIsEditingInfo={setIsEditingInfo}
                 canSaveActiveModeToLibrary={canSaveActiveModeToLibrary}
                 canSaveCurrentChain={canSaveCurrentChain}
                 isUploading={isUploading}
@@ -2003,7 +1988,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 selectGenerationMode={selectGenerationMode}
                 isGenerating={isGenerating || isSwitchingMode}
                 onBack={onBack}
-                markChange={markChange}
                 handleReset={handleReset}
                 handleFork={handleFork}
                 handleSaveAll={handleSaveAll}

@@ -26,6 +26,7 @@ import { TagSelectionBar } from './TagSelectionBar';
 import { TagCoverActions } from './TagCoverActions';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
+import { ChainInfoModal, UpdateChainInfo } from './chain/ChainInfoModal';
 
 const CATALOG_MARKER = '__character_catalog__';
 const getDanbooruPostsUrl = (tagName: string) =>
@@ -61,6 +62,7 @@ interface CharacterLibraryProps {
   chains: PromptChain[];
   onCreate: (name: string, description: string, type: 'character') => void;
   onSelect: (id: string) => void;
+  onUpdateChain: UpdateChainInfo;
   onDelete: (id: string) => Promise<void> | void;
   onNavigateToPlayground: () => void;
   notify: (message: string, type?: 'success' | 'error') => void;
@@ -73,6 +75,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   chains,
   onCreate,
   onSelect,
+  onUpdateChain,
   onDelete,
   onNavigateToPlayground,
   notify,
@@ -98,7 +101,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                       <span className="mt-2 text-meta">暂无封面</span>
                     </div>
                   )}
-                  <TagCoverActions favorite={favorite} onToggleFavorite={() => toggleFavorite(card)} />
+                  <TagCoverActions favorite={favorite} onToggleFavorite={() => toggleFavorite(card)} onEditInfo={card.kind === 'custom' && card.chain ? () => setInfoChain(card.chain!) : undefined} />
                   {selected && (
                     <div className="pointer-events-none absolute inset-0 z-10 border-4 border-indigo-500/80">
                       <div className="absolute left-2 top-2 rounded-full bg-indigo-600 p-1 text-white shadow-lg"><Check className="h-3 w-3" strokeWidth={4} /></div>
@@ -143,6 +146,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     };
 
   const confirmAction = useConfirmDialog();
+  const [infoChain, setInfoChain] = useState<PromptChain | null>(null);
   const [tab, setTab] = useState<CharacterTab>('all');
   const [showFavOnly, setShowFavOnly] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -363,7 +367,11 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   }), []);
 
   const visibleCards = useMemo(() => {
-    if (gachaCards) return gachaCards;
+    if (gachaCards) return gachaCards.flatMap(card => {
+      if (card.kind !== 'custom') return [card];
+      const current = customChains.find(chain => chain.id === card.chain?.id);
+      return current ? [customToCard(current)] : [];
+    });
     const query = searchTerm.trim().toLowerCase();
     // "只看收藏"（无搜索词时）以收藏清单为准渲染：词库是无限分页加载的，按"已加载子集"
     // 过滤会让未加载页的收藏永远显示不出来。自定义角色取本地链，词库角色取已加载条目 →
@@ -623,6 +631,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
+       {infoChain && <ChainInfoModal key={infoChain.id} chain={infoChain} onSave={onUpdateChain} onClose={() => setInfoChain(null)} notify={notify} />}
        <WorkspaceToolbar>
          <div className="relative min-w-0 flex-1">
            <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder="搜索角色、作品或 Tag" containerClassName="md:max-w-none!" className="pr-9" />

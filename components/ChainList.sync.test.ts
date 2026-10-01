@@ -25,7 +25,7 @@ const chain = (id: string, name: string, model = 'nai-diffusion-4-5-full'): Prom
   params: { model, width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: 1, qualityToggle: true, ucPreset: 4 }, createdAt: 1, updatedAt: 1,
 });
 const chains = [chain('a', '风格 A'), chain('b', '风格 B'), chain('v5', '风格 V5', 'nai-diffusion-5-full'), chain('v4', '风格 V4', 'nai-diffusion-4-full')];
-const props = () => ({ chains, type: 'style' as const, onCreate: vi.fn(), onSelect: vi.fn(), onDelete: vi.fn(), onRefresh: vi.fn(), isLoading: false, notify: vi.fn() });
+const props = () => ({ chains, type: 'style' as const, onCreate: vi.fn(), onSelect: vi.fn(), onDelete: vi.fn(), onRefresh: vi.fn(), onUpdateChain: vi.fn(), isLoading: false, notify: vi.fn() });
 beforeEach(() => {
   localStorage.clear(); preferences.enabled = true;
   get.mockReset(); post.mockReset(); get.mockResolvedValue({ entries: [], lastSnapshotAt: 0 });
@@ -36,6 +36,29 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('风格串列表的酒馆筛选交互', () => {
+  it('卡片铅笔可独立改名，支持键盘聚焦与触屏，不会进入工作台或改写生成配置', async () => {
+    const p = props(); render(React.createElement(ChainList, p));
+    const edit = screen.getByRole('button', { name: '编辑风格串信息：风格 A' });
+    expect(edit.className).not.toContain('hidden');
+    expect(edit.parentElement?.className).toContain('md:group-focus-within:opacity-100');
+    fireEvent.click(edit);
+    expect(p.onSelect).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('textbox', { name: '名称' }), { target: { value: '改名后的风格' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑风格串信息' })).toBeNull());
+    expect(p.onUpdateChain).toHaveBeenCalledExactlyOnceWith('a', { name: '改名后的风格', description: '', tags: [] });
+    expect(p.onDelete).not.toHaveBeenCalled(); expect(p.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('访客及同步挑选模式不显示卡片编辑入口', async () => {
+    const p = props(); const view = render(React.createElement(ChainList, { ...p, isGuest: true }));
+    expect(screen.queryByRole('button', { name: /编辑风格串信息/ })).toBeNull();
+    view.rerender(React.createElement(ChainList, p));
+    await waitFor(() => expect(screen.getByRole('button', { name: '智慧姬同步' }).hasAttribute('disabled')).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: '智慧姬同步' }));
+    expect(screen.queryByRole('button', { name: /编辑风格串信息/ })).toBeNull();
+  });
+
   it('顶栏按查找、同步、添加排序；刷新与图片反推入口移除', async () => {
     const p = props(); const view = render(React.createElement(ChainList, p));
     const header = view.container.querySelector('header')!;

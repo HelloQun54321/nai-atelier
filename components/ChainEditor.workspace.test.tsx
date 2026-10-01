@@ -98,6 +98,20 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('统一工作台真实状态链路', () => {
+  it('卡片改名后保存既有草稿使用最新信息，同时保留未保存提示词', async () => {
+    const view = setup();
+    await waitFor(() => expect(textPrompt().value).toBe(chain.basePrompt));
+    fireEvent.change(textPrompt(), { target: { value: '未保存的提示词草稿' } });
+    const renamed = { ...chain, name: '卡片新名称', description: '卡片新描述', tags: ['新标签'] };
+    view.rerender(<ChainEditor {...view.props} chain={renamed} allChains={[renamed]} />);
+    expect(textPrompt().value).toBe('未保存的提示词草稿');
+    fireEvent.click(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '保存风格串' }));
+    await act(async () => { fireEvent.click(within(screen.getByRole('dialog', { name: '保存风格串' })).getByRole('button', { name: '保存修改' })); });
+    expect(view.props.onUpdateChain).toHaveBeenCalledWith(chain.id, expect.objectContaining({
+      name: renamed.name, description: renamed.description, tags: renamed.tags, basePrompt: '未保存的提示词草稿',
+    }));
+  });
+
   it.each(['style', 'character'] as const)('%s 入口的四模式草稿独立，返回后可恢复', async type => {
     const entry = { ...chain, type };
     const view = setup(entry);
