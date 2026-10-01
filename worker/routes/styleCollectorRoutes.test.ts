@@ -3,6 +3,7 @@ import { encode } from 'fast-png';
 import { describe, it, expect } from 'vitest';
 import { handleStyleCollectorRoute } from './styleCollectorRoutes';
 import { INIT_SQL, type D1Database, type RouteContext } from './types';
+import { isUntestedChain, UNTESTED_CHAIN_TAG } from '../../services/chainStatus';
 
 const metadata = { prompt: 'artist:synthetic, original scene', uc: 'lowres', steps: 23, sampler: 'k_euler_ancestral', seed: 42, Source: 'NovelAI' };
 function png(value: unknown = metadata) {
@@ -40,24 +41,29 @@ function fixture() {
 }
 
 describe('后台收集原子入库（隔离 SQLite 与内存封面）', () => {
-  it('保存完整提示词、参数、封面、来源及收集中标签', async () => {
+  it('保存完整提示词、参数、封面与来源，仅添加待实测状态', async () => {
     const f = fixture(); await f.invoke('session', { session: f.session });
     const result = await f.collect(); expect(result?.status).toBe(200);
     const row = f.sqlite.prepare('SELECT * FROM chains').get() as any;
     expect(row.base_prompt).toBe(metadata.prompt); expect(row.negative_prompt).toBe('lowres');
     expect(JSON.parse(row.params)).toMatchObject({ steps: 23, seed: 42, qualityToggle: false, ucPreset: 4 });
-    expect(JSON.parse(row.variable_values)).toEqual({}); expect(JSON.parse(row.tags)).toEqual(['收集中']);
+    expect(JSON.parse(row.variable_values)).toEqual({}); expect(JSON.parse(row.tags)).toEqual([UNTESTED_CHAIN_TAG]);
+    expect(isUntestedChain({ tags: JSON.parse(row.tags) })).toBe(true);
     expect(row.description).toContain('signature=1'); expect(f.assets.size).toBe(1); f.sqlite.close();
   });
   it('不同签名同内容、重启后同内容不重复；风格串删除后可重收', async () => {
     const f = fixture(); await f.invoke('session', { session: f.session }); await f.collect();
+    // 已完成实测的条目重复收集不能被重新标记为待实测。
+    f.sqlite.prepare('UPDATE chains SET tags = ?').run(JSON.stringify(['个人分类']));
     await f.invoke('session', { session: '' }); await f.invoke('session', { session: f.session });
     const duplicate = await f.collect(png(), 'https://example.com/a.png?signature=2');
     expect(await duplicate?.json()).toMatchObject({ outcome: 'skipped' }); expect(f.assets.size).toBe(1);
+    expect(JSON.parse(String(f.sqlite.prepare('SELECT tags FROM chains').get()?.tags))).toEqual(['个人分类']);
     const previousId = f.sqlite.prepare('SELECT id FROM chains').get()?.id;
     f.sqlite.exec('DELETE FROM chains'); await f.collect();
     expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM chains').get()?.n).toBe(1);
-    expect(f.sqlite.prepare('SELECT id FROM chains').get()?.id).not.toBe(previousId); f.sqlite.close();
+    expect(f.sqlite.prepare('SELECT id FROM chains').get()?.id).not.toBe(previousId);
+    expect(JSON.parse(String(f.sqlite.prepare('SELECT tags FROM chains').get()?.tags))).toEqual([UNTESTED_CHAIN_TAG]); f.sqlite.close();
   });
   it('结构化角色提示词允许空全局正文，不存入 JSON 字面量', async () => {
     const f = fixture(); await f.invoke('session', { session: f.session });

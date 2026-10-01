@@ -1,5 +1,5 @@
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PromptChain, ChainType } from '../types';
 import { useConfirmDialog } from './ConfirmDialog';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
@@ -7,7 +7,7 @@ import { SmartImage } from './SmartImage';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { Check, Copy, EyeOff, Filter, FolderUp, Heart, Image, Link2, Plus, Trash2, User } from 'lucide-react';
-import { FavoriteButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isInternalChainTag, isUntestedChain } from './DesignSystem';
+import { FavoriteButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
@@ -18,6 +18,7 @@ import { useStChatu8Selection, wisdomEntryLabel } from '../services/stChatu8Sync
 import { useStChatu8Preferences } from '../services/stChatu8Preferences';
 import { isStChatu8ExportableChain } from '../worker/stChatu8Policy.mjs';
 import { WisdomSyncToolbar } from './WisdomSyncToolbar';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -85,7 +86,7 @@ const CopyModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+        <div role="dialog" aria-modal="true" aria-label={chain.type === 'character' ? '复制自定义角色内容' : '复制风格串内容'} className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
             <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col max-h-[85dvh]" onClick={e => e.stopPropagation()}>
                 <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-900 rounded-t-2xl">
                     <h3 className="font-bold text-gray-900 dark:text-white truncate pr-4">{chain.name}</h3>
@@ -171,7 +172,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [selectedModel, setSelectedModel] = useState('');
   const [copyModalChain, setCopyModalChain] = useState<PromptChain | null>(null);
   const [sortOption, setSortOption] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
@@ -181,6 +181,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showDesktopFilters, setShowDesktopFilters] = useState(false);
+  const filterAnchorRef = useRef<HTMLDivElement>(null);
+  const filterPanelRef = useRef<HTMLDivElement>(null);
+  const [filterPosition, setFilterPosition] = useState({ left: 0, top: 0, offset: 0 });
   const [visibleCount, setVisibleCount] = useState(RENDER_BATCH_SIZE);
   const syncPreferences = useStChatu8Preferences(!isGuest && type === 'style');
   const canSync = !isGuest && type === 'style' && syncPreferences.enabled;
@@ -233,23 +236,11 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     setNewDesc('');
   };
 
-  // Memoize allTags extraction (only tags of the chains shown in this view, hiding internal markers)
-  const allTags = useMemo(() => {
-    return Array.from(
-      new Set(
-        chains
-          .filter(c => c.type === type || (!c.type && type === 'style'))
-          .flatMap(chain => chain.tags || [])
-          .filter(tag => !isInternalChainTag(tag))
-      )
-    ).sort();
-  }, [chains, type]);
-
   // 模型筛选：选项固定为可选模型清单（注册表 + 网关同步的新模型），与链表内容无关。
   const runtime = useNaiRuntime();
   const modelFilterOptions = useMemo(() => getSelectableNaiModels(runtime), [runtime]);
 
-  // Filter chains by Type, search term, favorites, model version and selected tags
+  // 按类型、名称、收藏、模型及待实测状态筛选。
   const filteredChains = useMemo(() => {
     return chains
       .filter(c =>
@@ -261,13 +252,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       .filter(c => !untestedOnly || isUntestedChain(c))
       .filter(c => !selectedModel || (c.params?.model?.trim() || DEFAULT_NAI_MODEL) === selectedModel)
       .filter(c => syncSelection.accepts(c.id))
-      .filter(c => {
-        // If no tags are selected, show all
-        if (selectedTags.size === 0) return true;
-        // Check if the chain has ALL the selected tags (AND logic)
-        const chainTagSet = new Set(c.tags || []);
-        return Array.from(selectedTags).every(tag => chainTagSet.has(tag));
-      })
       .slice()
       .sort((a, b) => {
         const ca = a.createdAt || 0;
@@ -286,9 +270,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             return ub - ua;
         }
       });
-  }, [chains, type, searchTerm, favOnly, untestedOnly, favorites, selectedModel, selectedTags, sortOption, syncSelection.open, syncSelection.view, syncSelection.recordFilter, syncSelection.entries]);
+  }, [chains, type, searchTerm, favOnly, untestedOnly, favorites, selectedModel, sortOption, syncSelection.open, syncSelection.view, syncSelection.recordFilter, syncSelection.entries]);
 
-  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, untestedOnly, selectedModel, selectedTags, sortOption, syncSelection.view, syncSelection.recordFilter, syncSelection.open]);
+  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, untestedOnly, selectedModel, sortOption, syncSelection.view, syncSelection.recordFilter, syncSelection.open]);
   useEffect(() => {
     if (!returnTargetId) return;
     const targetIndex = filteredChains.findIndex(chain => chain.id === returnTargetId);
@@ -423,10 +407,31 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
   const title = type === 'character' ? '我的自定义角色' : '我的风格串';
   const createLabel = type === 'character' ? '新建自定义角色' : '新建风格串';
-  const filterCount = selectedTags.size + Number(Boolean(selectedModel)) + Number(favOnly) + Number(untestedOnly);
+  const filterCount = Number(Boolean(selectedModel)) + Number(favOnly) + Number(untestedOnly);
   const filtersActive = filterCount > 0 || sortOption !== 'updated_desc';
+  useLayoutEffect(() => {
+    if (!showDesktopFilters) return;
+    const align = () => {
+      if (window.innerWidth < 768) { setShowDesktopFilters(false); return; }
+      const anchor = filterAnchorRef.current?.getBoundingClientRect();
+      const panel = filterPanelRef.current?.getBoundingClientRect();
+      if (!anchor) return;
+      // 默认与按钮中心对齐，仅在靠近屏幕边缘时让位，保证整个弹层可见。
+      const width = panel?.width || Math.min(384, window.innerWidth - 32);
+      const centeredLeft = anchor.left + (anchor.width - width) / 2;
+      const visibleLeft = Math.max(16, Math.min(centeredLeft, window.innerWidth - width - 16));
+      const next = { left: anchor.left + anchor.width / 2, top: anchor.bottom + 8, offset: visibleLeft - centeredLeft };
+      setFilterPosition(current => current.left === next.left && current.top === next.top && current.offset === next.offset ? current : next);
+    };
+    align(); window.addEventListener('resize', align);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(align);
+    if (filterAnchorRef.current) observer?.observe(filterAnchorRef.current);
+    const toolbar = filterAnchorRef.current?.closest('header');
+    if (toolbar) observer?.observe(toolbar);
+    return () => { window.removeEventListener('resize', align); observer?.disconnect(); };
+  }, [showDesktopFilters, filterCount, canSync, syncSelection.savedCount]);
   const resetFilters = () => {
-    setSelectedTags(new Set()); setSelectedModel(''); setFavOnly(false); setUntestedOnly(false); setSortOption('updated_desc');
+    setSelectedModel(''); setFavOnly(false); setUntestedOnly(false); setSortOption('updated_desc');
   };
   // 桌面弹层与手机抽屉共享筛选内容，切换视图也保持同一份筛选状态。
   const filterContent = <div className="space-y-4">
@@ -439,7 +444,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       <button type="button" aria-pressed={untestedOnly} onClick={() => setUntestedOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${untestedOnly ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><EyeOff className="h-4 w-4" />只看待实测</button>
       <button type="button" aria-pressed={favOnly} onClick={() => setFavOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${favOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} />只看收藏</button>
     </div>
-    {allTags.length > 0 && <div><p className="mb-2 text-xs font-semibold text-gray-600 dark:text-gray-300">标签</p><div className="flex max-h-52 flex-wrap gap-2 overflow-y-auto">{allTags.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => setSelectedTags(previous => { const next = new Set(previous); next.has(tag) ? next.delete(tag) : next.add(tag); return next; })} className={`mobile-touch rounded-full px-3 py-1.5 text-xs font-medium ${selectedTags.has(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{tag}</button>)}</div></div>}
   </div>;
 
   return (
@@ -448,12 +452,12 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         <WorkspaceToolbar>
           <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={`搜索${title}`} containerClassName="min-w-0 flex-1 md:max-w-none!" />
           <div className="hidden flex-none items-center gap-2 md:flex">
-            <div className="relative flex-none">
+            <div ref={filterAnchorRef} className="relative flex-none">
               <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} title="筛选与排序" aria-label={`筛选${filterCount > 0 ? ` ${filterCount}` : ''}`} className={filtersActive ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-700 dark:!bg-indigo-950/40 dark:!text-indigo-300' : ''} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" /><span className="hidden xl:inline">筛选{filterCount > 0 ? ` ${filterCount}` : ''}</span></ToolbarButton>
-              {showDesktopFilters && <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowDesktopFilters(false)} />
-                <div role="dialog" aria-label="筛选与排序" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 max-h-[calc(100dvh-7rem)] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-800 dark:bg-gray-900">{filterContent}</div>
-              </>}
+              {showDesktopFilters && <ImagePreviewPortal>
+                <div className="fixed inset-0 z-[1000]" onClick={() => setShowDesktopFilters(false)} />
+                <div ref={filterPanelRef} role="dialog" aria-label="筛选与排序" style={{ left: filterPosition.left, top: filterPosition.top, marginLeft: filterPosition.offset }} className="fixed -translate-x-1/2 z-[1001] max-h-[calc(100dvh-7rem)] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-800 dark:bg-gray-900">{filterContent}</div>
+              </ImagePreviewPortal>}
             </div>
             {canSync && <div className="border-l border-gray-200 pl-2 dark:border-gray-700"><ToolbarButton onClick={syncSelection.open ? syncSelection.cancel : syncSelection.begin} disabled={syncSelection.busy && !syncSelection.open} title="挑选风格串、待同步与同步记录" aria-label={`智慧姬同步${syncSelection.savedCount > 0 ? ` ${syncSelection.savedCount}` : ''}`} aria-expanded={syncSelection.open}><Link2 className="h-4 w-4" /><span className="hidden xl:inline">智慧姬同步{syncSelection.savedCount > 0 ? ` ${syncSelection.savedCount}` : ''}</span></ToolbarButton></div>}
           </div>
@@ -476,7 +480,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
         {canSync && syncSelection.open && <WisdomSyncToolbar sync={syncSelection} filteredIds={filteredChains.map(chain => chain.id)} />}
 
-        <MobileBottomSheet open={showMobileFilters} title="筛选与排序" onClose={() => setShowMobileFilters(false)}>{filterContent}</MobileBottomSheet>
+        <ImagePreviewPortal><MobileBottomSheet open={showMobileFilters} title="筛选与排序" onClose={() => setShowMobileFilters(false)}>{filterContent}</MobileBottomSheet></ImagePreviewPortal>
 
         <div ref={chainScrollRef} onScroll={onScrollRestore} className="min-h-0 flex-1 overflow-y-auto p-3 md:p-5">
           {filteredChains.length === 0 ? (
@@ -508,7 +512,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
       {/* Simple Create Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <ImagePreviewPortal><div role="dialog" aria-modal="true" aria-label={createLabel} className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 md:p-8 w-full max-w-md border border-gray-200 dark:border-gray-700 shadow-2xl">
             <h2 className="mb-4 text-xl font-bold text-gray-900 dark:text-white">{createLabel}</h2>
             <div className="space-y-4">
@@ -539,15 +543,15 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             </div>
           </div>
         </div>
-      )}
+      </ImagePreviewPortal>)}
 
       {/* Smart Copy Modal */}
       {copyModalChain && (
-          <CopyModal
+          <ImagePreviewPortal><CopyModal
             chain={copyModalChain}
             onClose={() => setCopyModalChain(null)}
             notify={notify}
-          />
+          /></ImagePreviewPortal>
       )}
 
       {/* Folder Batch Import Modal */}

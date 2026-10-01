@@ -3,7 +3,8 @@ import { AlertCircle, AlertTriangle, Check, CheckSquare, EyeOff, FileQuestion, F
 import { extractMetadata, parseNovelAIMetadata } from '../../services/metadataService';
 import { api } from '../../services/api';
 import { db } from '../../services/dbService';
-import { UNTESTED_CHAIN_TAG } from '../DesignSystem';
+import { UNTESTED_CHAIN_TAG } from '../../services/chainStatus';
+import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { getNaiModelDisplayLabel } from '../../services/naiModels';
 import { NAIParams, PromptChain } from '../../types';
 
@@ -908,7 +909,8 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 md:p-6" onClick={handleModalClose}>
+    <ImagePreviewPortal>
+    <div role="dialog" aria-modal="true" aria-label="批量导入风格串" className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 md:p-6" onClick={handleModalClose}>
       <div
         className="flex max-h-[90dvh] w-full max-w-4xl flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
         onClick={e => e.stopPropagation()}
@@ -928,6 +930,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
             type="button"
             onClick={handleModalClose}
             disabled={isScanning || isImporting}
+            aria-label="关闭批量导入"
             className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200 disabled:opacity-30"
           >
             <X className="h-5 w-5" />
@@ -1504,5 +1507,6 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
         </div>
       )}
     </div>
+    </ImagePreviewPortal>
   );
 };

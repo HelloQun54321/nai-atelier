@@ -1,6 +1,7 @@
 import { parseNovelAIMetadata } from '../../services/metadataService';
 import { extractPngMetadata, hasCollectibleNaiMetadata } from '../../services/pngMetadata.mjs';
 import { readImageDimensions } from '../imageDimensions.mjs';
+import { UNTESTED_CHAIN_TAG } from '../../services/chainStatus';
 import { json, error, MAX_MANAGED_IMAGE_BYTES, parseStoredJson, type RouteContext } from './types';
 
 const SESSION_KEY = 'style_collector_session_v1';
@@ -78,7 +79,7 @@ export async function handleStyleCollectorRoute(ctx: RouteContext): Promise<Resp
       db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at)
         SELECT ?, ?, ?, 'style', ?, ?, ?, ?, ?, ?, '[]', ?, '{}', 0, ?, ? WHERE EXISTS (SELECT 1 FROM settings WHERE key = ? AND value = ?)
         AND NOT EXISTS (SELECT 1 FROM settings s JOIN chains c ON c.id = s.value WHERE s.key = ?)`)
-        .bind(id, currentUser.id, currentUser.username, name, `自动收集原图\n${provenance}`, JSON.stringify(['收集中']), preview, parsed.prompt, parsed.negativePrompt, JSON.stringify(parsed.params), now, now, SESSION_KEY, body.session, mappingKey),
+        .bind(id, currentUser.id, currentUser.username, name, `自动收集原图\n${provenance}`, JSON.stringify([UNTESTED_CHAIN_TAG]), preview, parsed.prompt, parsed.negativePrompt, JSON.stringify(parsed.params), now, now, SESSION_KEY, body.session, mappingKey),
       db.prepare('INSERT OR REPLACE INTO settings (key, value) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM chains WHERE id = ? AND preview_image = ?)')
         .bind(mappingKey, id, id, preview),
     ]);

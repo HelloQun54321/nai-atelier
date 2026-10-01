@@ -33,7 +33,7 @@ beforeEach(() => {
   vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
   window.history.replaceState(null, '');
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('风格串列表的酒馆筛选交互', () => {
   it('顶栏按查找、同步、添加排序；刷新与图片反推入口移除', async () => {
@@ -63,13 +63,13 @@ describe('风格串列表的酒馆筛选交互', () => {
     fireEvent.click(screen.getByRole('button', { name: surface === 'desktop' ? '筛选' : '筛选与排序' }));
     const dialog = screen.getByRole('dialog', { name: '筛选与排序' });
     const filter = within(dialog);
-    fireEvent.click(filter.getByRole('button', { name: '标签甲' }));
-    fireEvent.click(filter.getByRole('button', { name: '标签乙' }));
-    expect(screen.queryByText('共同 A')).toBeNull(); expect(screen.getByText('共同 B')).toBeTruthy();
+    expect(filter.queryByText('标签')).toBeNull();
+    expect(filter.queryByRole('button', { name: '标签甲' })).toBeNull();
+    expect(screen.getByText('共同 A')).toBeTruthy(); expect(screen.getByText('共同 B')).toBeTruthy();
     fireEvent.click(filter.getByRole('button', { name: '只看收藏' }));
     expect(screen.queryByText('共同 B')).toBeNull(); expect(screen.getByText('共同 V5')).toBeTruthy();
     fireEvent.change(filter.getByRole('combobox', { name: '模型筛选' }), { target: { value: 'nai-diffusion-4-5-full' } });
-    expect(screen.queryByText('共同 V5')).toBeNull();
+    expect(screen.queryByText('共同 V5')).toBeNull(); expect(screen.getByText('共同 A')).toBeTruthy();
     fireEvent.click(filter.getByRole('button', { name: '重置筛选' }));
     expect((screen.getByPlaceholderText('搜索我的风格串') as HTMLInputElement).value).toBe('共同');
     expect(screen.getByText('共同 A')).toBeTruthy(); expect(screen.queryByText('其他')).toBeNull();
@@ -85,6 +85,58 @@ describe('风格串列表的酒馆筛选交互', () => {
     const other = within(screen.getByRole('dialog', { name: '筛选与排序' }));
     expect(other.getByRole('button', { name: '只看待实测' }).getAttribute('aria-pressed')).toBe('true');
     expect((other.getByRole('combobox', { name: '排序' }) as HTMLSelectElement).value).toBe('created_desc');
+  });
+
+  it.each([
+    { anchorLeft: 600, anchorWidth: 88, viewport: 1400, offset: 0 },
+    { anchorLeft: 0, anchorWidth: 40, viewport: 1000, offset: 188 },
+    { anchorLeft: 760, anchorWidth: 24, viewport: 800, offset: -180 },
+  ])('筛选默认居中，屏幕边缘仅作可见范围修正：$anchorLeft', ({ anchorLeft, anchorWidth, viewport, offset }) => {
+    vi.stubGlobal('innerWidth', viewport);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.getAttribute('aria-label') === '筛选与排序') return { width: 384 } as DOMRect;
+      return { left: anchorLeft, width: anchorWidth, bottom: 72 } as DOMRect;
+    });
+    render(React.createElement(ChainList, props()));
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    const dialog = screen.getByRole('dialog', { name: '筛选与排序' });
+    expect(dialog.classList.contains('fixed')).toBe(true);
+    expect(dialog.classList.contains('-translate-x-1/2')).toBe(true);
+    expect(dialog.classList.contains('right-0')).toBe(false);
+    expect(dialog.style.left).toBe(`${anchorLeft + anchorWidth / 2}px`);
+    expect(dialog.style.top).toBe('80px');
+    expect(dialog.closest('header')).toBeNull();
+    expect(dialog.style.marginLeft).toBe(`${offset}px`);
+    if (anchorLeft === 600) {
+      vi.stubGlobal('innerWidth', 800); fireEvent(window, new Event('resize'));
+      expect(dialog.style.marginLeft).toBe('-52px');
+      vi.stubGlobal('innerWidth', 600); fireEvent(window, new Event('resize'));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      return;
+    }
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it.each(['style', 'character'] as const)('%s 新建与复制弹窗脱离工作区隔离层，保留回调与应用主题', type => {
+    const p = { ...props(), type, chains: chains.map(item => ({ ...item, type })) };
+    const label = type === 'character' ? '新建自定义角色' : '新建风格串';
+    const view = render(React.createElement('div', { className: 'agent-stage safe-mode' },
+      React.createElement('aside', { className: 'z-40' }, '侧边栏'),
+      React.createElement('main', { className: 'isolate overflow-hidden' }, React.createElement(ChainList, p)),
+    ));
+    const stage = view.container.firstElementChild;
+    fireEvent.click(screen.getAllByRole('button', { name: label })[0]);
+    const create = screen.getByRole('dialog', { name: label });
+    expect(create.parentElement).toBe(stage); expect(create.closest('main')).toBeNull();
+    expect(create.classList.contains('z-[1200]')).toBe(true);
+    fireEvent.change(screen.getByPlaceholderText(type === 'character' ? '例如：新角色' : '例如：新风格串'), { target: { value: '合成预设' } });
+    fireEvent.click(within(create).getByRole('button', { name: '创建' }));
+    expect(p.onCreate).toHaveBeenCalledWith('合成预设', '', type);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getAllByTitle('复制/查看详情')[0]);
+    const copy = screen.getByRole('dialog', { name: type === 'character' ? '复制自定义角色内容' : '复制风格串内容' });
+    expect(copy.parentElement).toBe(stage); expect(copy.closest('.safe-mode')).toBe(stage);
   });
 
   it('卡片勾选取代打开编辑；跨搜索保持选择，V5 可选、V4 禁用，保存所选 V4.5 与 V5', async () => {
