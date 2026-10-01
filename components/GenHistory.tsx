@@ -46,6 +46,14 @@ const formatHistoryDay = (key: string) => {
 };
 
 const HISTORY_THUMBNAIL_VARIANT = 'thumb-960';
+const HISTORY_CARD_HOVER_ACTIONS = 'opacity-100 pointer-events-auto md:opacity-0 md:pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto transition-opacity';
+
+const getDownloadFilename = (createdAt = Date.now()) => {
+    const date = new Date(createdAt);
+    const pad = (value: number) => String(value).padStart(2, '0');
+    const timestamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+    return `NAI-${timestamp}.png`;
+};
 
 const prewarmHistoryThumbnails = async (items: LocalGenItem[]) => {
     const sources = items.map(item => item.imageUrl).filter(canUseMediaGateway);
@@ -95,6 +103,7 @@ const HistoryCard = React.memo(function HistoryCard({
     onFavorite,
     onDelete,
     onImageLoadRatio,
+    notify,
 }: {
     item: LocalGenItem;
     /** 已加载测量的真实比例（纠正错误元数据），缺省时卡片用 params/默认比例兜底 */
@@ -108,6 +117,7 @@ const HistoryCard = React.memo(function HistoryCard({
     onFavorite: (item: LocalGenItem, e: React.MouseEvent) => void;
     onDelete: (item: LocalGenItem, e: React.MouseEvent) => void;
     onImageLoadRatio: (itemId: string, ratio: number) => void;
+    notify: GenHistoryProps['notify'];
 }) {
     // 卡片自身的手势时间戳放在组件内：长按进入多选，结束时清除计时，避免误触选择。
     const longPressTimerRef = useRef<number | null>(null);
@@ -144,17 +154,17 @@ const HistoryCard = React.memo(function HistoryCard({
                 }} />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                 {selectionMode && <div className={`absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-sm font-bold shadow backdrop-blur transition ${isSelected ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/80 bg-black/35 text-transparent'}`}>{isSelected ? '✓' : ''}</div>}
-                {!selectionMode && (isFavoritePending ? (
-                    // 收藏写入中：角上显示小型旋转指示，操作完成后由父级把 pending 置空、还原为心形钮
-                    <span className="pointer-events-none absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-black/45 text-white shadow backdrop-blur"><LoaderCircle className="h-4 w-4 animate-spin" /></span>
-                ) : (
-                    // 阻止 pointerdown 冒泡：不触发卡片的“长按进入多选”手势
-                    <span className="absolute right-2 top-2" onPointerDown={event => event.stopPropagation()}>
-                        <FavoriteButton overlay active={Boolean(item.isFavorite)} onClick={e => onFavorite(item, e)} />
-                    </span>
-                ))}
-                {!selectionMode && <div className="absolute right-2 top-12 hidden opacity-0 transition-opacity group-hover:opacity-100 md:block">
-                    <button onClick={e => onDelete(item, e)} className="rounded-full bg-red-500 p-1.5 text-white shadow hover:bg-red-600" aria-label="删除历史图片" title="删除">
+                {!selectionMode && <div className="absolute right-2 top-2 z-10 flex flex-col items-end gap-2" onPointerDown={event => event.stopPropagation()}>
+                    {isFavoritePending ? (
+                        // 收藏写入中只替换心形，下载和复制仍能使用。
+                        <span role="status" aria-label="正在更新收藏" className="pointer-events-none flex h-11 w-11 items-center justify-center rounded-full border border-white/60 bg-black/45 text-white shadow backdrop-blur md:h-8 md:w-8"><LoaderCircle className="h-4 w-4 animate-spin" /></span>
+                    ) : (
+                        <FavoriteButton overlay active={Boolean(item.isFavorite)} className="!h-11 !w-11 md:!h-8 md:!w-8" onClick={e => onFavorite(item, e)} />
+                    )}
+                    <ImageShareActions imageUrl={item.imageUrl} filename={getDownloadFilename(item.createdAt)} notify={notify} variant="card" className={`flex-col ${HISTORY_CARD_HOVER_ACTIONS}`} />
+                </div>}
+                {!selectionMode && <div className={`absolute left-2 top-2 z-10 ${HISTORY_CARD_HOVER_ACTIONS}`} onPointerDown={event => event.stopPropagation()}>
+                    <button type="button" onClick={e => onDelete(item, e)} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8" aria-label="删除历史图片" title="删除">
                         <Trash2 className="h-4 w-4" />
                     </button>
                 </div>}
@@ -568,13 +578,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         };
     }, []);
 
-    const getDownloadFilename = () => {
-        const now = new Date();
-        const pad = (n: number) => String(n).padStart(2, '0');
-        const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-        return `NAI-${timestamp}.png`;
-    };
-
     const getDisplayedRange = () => {
         if (items.length === 0 || totalCount === 0) {
             return { start: 0, end: 0 };
@@ -917,6 +920,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             onFavorite={handleCardFavorite}
             onDelete={handleCardDelete}
             onImageLoadRatio={handleImageLoadRatio}
+            notify={notify}
         />
     );
 
@@ -1209,7 +1213,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                         </ToolbarButton>
                                     </div>
                                 </div>
-                                <ImageShareActions imageUrl={lightbox.imageUrl} filename={getDownloadFilename()} notify={notify} />
+                                <ImageShareActions imageUrl={lightbox.imageUrl} filename={getDownloadFilename(lightbox.createdAt)} notify={notify} />
                                 <ToolbarButton tone="danger" className="mobile-touch w-full md:hidden" onClick={event => void handleDelete(lightbox.id, event)}>删除这张历史图片</ToolbarButton>
                             </div>
                         </div>

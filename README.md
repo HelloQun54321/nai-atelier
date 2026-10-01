@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.9.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.10.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -419,11 +419,12 @@ flowchart LR
 - **原图与参数本地持久化**：成功保存的生成 PNG、Prompt、Seed 与参数存入电脑 D1 + R2，清空浏览器缓存不会删除这些记录。保存失败时需按界面提示处理，长期保留仍依赖备份。
 - **丝滑浏览与筛选**：支持按日期范围筛选、分页跳转、即时刷新与失败快速重试。
 - **批量管理与清理**：支持单张删除、批量勾选清理旧历史或一键清空全部。
+- **小图就地分享**：左上删除，右上依次收藏、下载、复制，全部为圆形图标；桌面悬停或键盘聚焦可见，触屏直接显示，多选时隐藏单图操作，避免误触。
 - **创作枢纽中转**：历史图片可一键送回实验室继续微调、随手标记收藏、永久收入灵感库，或直接下载无损原图。
 
 ### 图片分享与生成信息保护
 
-实验室四模式的预览／大图、历史详情和灵感详情统一提供「复制」与「下载」，可直接粘贴到支持图片的聊天窗口，无需先下载。复制图片需要浏览器允许剪贴板访问，推荐在电脑的 `localhost` 页面使用；手机经普通局域网 HTTP 访问时可能不可用，可下载后发送。
+实验室四模式的预览／大图、历史小图与详情、灵感详情统一提供「复制」与「下载」，可直接粘贴到支持图片的聊天窗口，无需先下载。历史小图分享使用原图，下载文件名采用生成时间。复制图片需要浏览器允许剪贴板访问，推荐在电脑的 `localhost` 页面使用；手机经普通局域网 HTTP 访问时可能不可用，可下载后发送。
 
 图生图、局部重绘和扩图的「粘贴」也可接收这些复制结果，支持 PNG、JPEG、WebP 图片；仅复制链接或文字不会作为底图。按钮直接读取剪贴板需要浏览器授权以及 `localhost`／HTTPS 环境，无法读取时可尝试在编辑区用键盘粘贴，或上传图片。功能只响应主动粘贴，不持续监听剪贴板；原历史、灵感图片和其他模式草稿保留，旧草稿中的历史／灵感底图来源仍可恢复。
 
