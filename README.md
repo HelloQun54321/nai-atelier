@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.9.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.9.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -684,6 +684,7 @@ Pixiv 页面连接 Pixiv 官方 App API，提供推荐、日榜、周榜、月�
 - **智慧姬同步（npm-bridge）**：项目内置的酒馆专属第三方扩展（源码位于 `sillytavern-extension/npm-bridge`，平滑兼容并自动清理旧版 `npm-bridge`）。
 - **智能路径检测**：控制台与网关自动嗅探本机标准安装路径（`D:\SillyTavern`、`C:\SillyTavern`、上级工作区等），无需手工翻找扩展目录。
 - **一键安装与更新**：在前端设置中可一键将连接器安装/更新至 SillyTavern 扩展库；对于跨设备或容器环境，亦支持一键导出离线 ZIP 安装包。
+- **更新已安装副本**：项目代码更新不会自动覆盖酒馆扩展目录；连接器有改动时需再次使用一键更新，并刷新已打开的酒馆网页，让名称、折叠面板及同步协议一并生效。批量整理酒馆预设前先备份酒馆的 `data/default-user/settings.json`，整理后刷新旧标签页，避免旧页面内存再次写回旧列表。
 - **自动化双向桥接**：在设置开启后，由电脑图片网关提供受限桥接接口自动同步，也可在 SillyTavern 的扩展面板中随时点击“立即同步”。
 
 ### 数据同步内容与规则
