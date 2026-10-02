@@ -88,6 +88,59 @@ it('经典单人代表图不吞掉其他精确角色候选，坏图之后仍可�
   expect(page.candidates.map(item => item.id)).toEqual([1, 2, 3, 4, 5]);
 });
 
+it.each(['general', 'meta'] as const)('跨角色高分照片／拼贴的 %s 标签不抢首图，候选与全部评级仍保留', async category => {
+  const tags = ['synthetic_a', 'synthetic_b', 'synthetic_c'];
+  const mosaic = {
+    ...post(1, 'synthetic_a'), score: 10_000,
+    tags: { ...post(1, 'synthetic_a').tags, character: tags, [category]: ['photomosaic', 'photo'] },
+  };
+  apiGet.mockImplementation(async path => {
+    const tag = new URL(path, 'http://localhost').searchParams.get('tags')!.split(' ')[0];
+    return result([mosaic, { ...post(tags.indexOf(tag) + 2, tag), rating: 'e' }]);
+  });
+  const { danbooruService } = await import('./danbooruService');
+  for (const [index, tag] of tags.entries()) {
+    const covers = await settle(danbooruService.getCoverSet(tag, 'character'));
+    expect(covers.representative?.id).toBe(index + 2);
+    expect(covers.candidates.map(item => item.id)).toEqual([index + 2, 1]);
+    expect((await danbooruService.getCoverSet(tag, 'character')).candidates[0].id).toBe(index + 2);
+  }
+});
+
+it('照片带 solo 且评分更高时，换装／多人插画也优先作为代表图', async () => {
+  const photo = { ...post(1, 'synthetic'), score: 10_000, tags: { ...post(1, 'synthetic').tags, general: ['solo', 'photo'] } };
+  const illustration = { ...post(2, 'synthetic'), tags: { ...post(2, 'synthetic').tags, general: ['alternate_costume', 'multiple_girls'] } };
+  apiGet.mockResolvedValue(result([photo, illustration]));
+  const { danbooruService } = await import('./danbooruService');
+  const covers = await settle(danbooruService.getCoverSet('synthetic', 'character'));
+  expect(covers.representative?.id).toBe(2);
+  expect(covers.candidates.map(item => item.id)).toEqual([2, 1]);
+});
+
+it('代表图评分在 24 名以后时仍进入首屏，截短页可补齐其他图片', async () => {
+  const photos = Array.from({ length: 30 }, (_, index) => ({
+    ...post(index + 1, 'synthetic'), tags: { ...post(index + 1, 'synthetic').tags, meta: ['photomosaic'] },
+  }));
+  apiGet.mockResolvedValue(result([...photos, post(31, 'synthetic')]));
+  const { danbooruService } = await import('./danbooruService');
+  const covers = await settle(danbooruService.getCoverSet('synthetic', 'character'));
+  expect(covers.representative?.id).toBe(31);
+  expect(covers.candidates[0].id).toBe(31);
+  expect(covers.candidates).toHaveLength(24);
+  expect(covers).toMatchObject({ hasMore: true, nextPage: 1 });
+  const page = await settle(danbooruService.getCoverCandidatePage('synthetic', 'character', 1));
+  expect(page.candidates.map(item => item.id)).toEqual(Array.from({ length: 31 }, (_, index) => index + 1));
+});
+
+it('只有照片可用时仍可显示，不增加无封面情况，画师候选保持评分顺序', async () => {
+  const photo = { ...post(1, 'synthetic'), tags: { ...post(1, 'synthetic').tags, meta: ['photo'] } };
+  apiGet.mockResolvedValue(result([photo]));
+  const { danbooruService } = await import('./danbooruService');
+  expect((await settle(danbooruService.getCoverSet('synthetic', 'character'))).candidates.map(item => item.id)).toEqual([1]);
+  apiGet.mockResolvedValue(result([photo, post(2, 'synthetic')]));
+  expect((await settle(danbooruService.getCoverSet('synthetic', 'artist'))).candidates.map(item => item.id)).toEqual([1, 2]);
+});
+
 it('并发封面请求逐一错开启动，不让同时醒来的等待者形成突发', async () => {
   const starts: number[] = [];
   apiGet.mockImplementation(async () => { starts.push(Date.now()); return result(); });

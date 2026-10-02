@@ -13,6 +13,11 @@ interface DanbooruCoverProps {
   onImageLoad?: (width: number, height: number) => void;
 }
 
+const firstCandidateIndex = (result: DanbooruCoverSet) => {
+  const representativeIndex = result.candidates.findIndex(candidate => candidate.id === result.representative?.id);
+  return representativeIndex >= 0 ? representativeIndex : 0;
+};
+
 export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fixedSrc = '', onCandidateChange, onImageLoad }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const [activated, setActivated] = useState(false);
@@ -65,7 +70,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
         if (!active) return;
         setCoverSet(result);
         setNextSourcePage(result.nextPage || 1);
-        if (!fixedSrc) setCandidateIndex(0);
+        if (!fixedSrc) setCandidateIndex(firstCandidateIndex(result));
       } catch {
         await new Promise(resolve => window.setTimeout(resolve, 2000));
         if (!active) return;
@@ -74,7 +79,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
           if (active) {
             setCoverSet(result);
             setNextSourcePage(result.nextPage || 1);
-            if (!fixedSrc) setCandidateIndex(0);
+            if (!fixedSrc) setCandidateIndex(firstCandidateIndex(result));
           }
         } catch (error) {
           if (active) {

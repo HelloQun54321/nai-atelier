@@ -27,7 +27,7 @@ export interface DanbooruSearchResult {
   hasMore: boolean;
 }
 
-const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v12';
+const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v13';
 const COVER_CACHE_TTL = 14 * 24 * 60 * 60 * 1000;
 const COVER_EMPTY_CACHE_TTL = 60_000;
 const COVER_SOURCE_PAGE_SIZE = 200;
@@ -211,6 +211,10 @@ const CHARACTER_COVER_EXCLUDED_TAGS = new Set([
   'sketch', 'lineart',
 ]);
 
+// 照片、拼贴和梗图可能标注许多角色且评分很高，优先从角色插画中挑代表图。
+// 仅影响首图选择；这些作品仍保留在完整候选中，只有它们可用时也不制造空封面。
+const CHARACTER_COVER_PRESENTATION_TAGS = new Set(['photo', 'photo_(medium)', 'photomosaic', 'mosaic_art', 'collage', 'meme', 'cosplay']);
+
 const CHARACTER_COVER_VARIANT_TAGS = new Set([
   'alternate_costume', 'official_alternate_costume', 'alternate_hairstyle', 'alternate_hair_length',
   'genderswap', 'genderswap_(mtf)', 'genderswap_(ftm)', 'aged_up', 'aged_down', 'swimsuit',
@@ -241,11 +245,14 @@ const candidatePostsFor = (items: DanbooruPost[], normalizedTag: string, kind: '
 const getCharacterCandidates = (items: DanbooruPost[], normalizedTag: string) => {
   const exact = items.filter(post => post.tags.character.some(value => value.toLowerCase() === normalizedTag));
   if (!exact.length) return [];
+  const illustrations = exact.filter(post => ![...post.tags.general, ...post.tags.meta]
+    .some(value => CHARACTER_COVER_PRESENTATION_TAGS.has(value)));
+  const preferred = illustrations.length ? illustrations : exact;
 
   const targetIsVariant = CHARACTER_VARIANT_NAME.test(normalizedTag);
 
   // 梯队 1：严格单人经典立绘（无 Q 版、无草稿、无换装）
-  const representative = exact.filter(post => (
+  const representative = preferred.filter(post => (
     post.tags.general.includes('solo')
     && post.tags.character.length <= 2
     && !post.tags.general.some(value => CHARACTER_COVER_EXCLUDED_TAGS.has(value))
@@ -259,15 +266,15 @@ const getCharacterCandidates = (items: DanbooruPost[], normalizedTag: string) =>
   if (representative.length) return representative;
 
   // 梯队 2：放宽换装与常规排除词限制（只要是 solo 单人即可）
-  const relaxedSolo = exact.filter(post => post.tags.general.includes('solo'));
+  const relaxedSolo = preferred.filter(post => post.tags.general.includes('solo'));
   if (relaxedSolo.length) return relaxedSolo;
 
   // 梯队 3：放宽 solo 单人限制（允许双人或合照图）
-  const relaxedCharacterCount = exact.filter(post => post.tags.character.length <= 2);
+  const relaxedCharacterCount = preferred.filter(post => post.tags.character.length <= 2);
   if (relaxedCharacterCount.length) return relaxedCharacterCount;
 
   // 梯队 4：终极兜底，返回所有匹配该角色标签的帖子
-  return exact;
+  return preferred;
 };
 
 const chooseCover = (items: DanbooruPost[], tag: string, kind: 'artist' | 'character') => {
@@ -327,10 +334,14 @@ const getCoverSet = (tag: string, kind: 'artist' | 'character'): Promise<Danboor
         if (!candidatePosts.length) sourcePage++;
       }
       const representativePost = chooseCover(result.items, normalizedTag, kind);
+      const rankedCandidates = [...candidatePosts].sort((left, right) => right.score - left.score);
+      // 首屏缓存必须包含代表图，即使它的评分排在 24 名之后；其余候选仍按评分翻看。
+      const orderedCandidates = representativePost
+        ? [representativePost, ...rankedCandidates.filter(post => post.id !== representativePost.id)] : rankedCandidates;
       const truncated = candidatePosts.length > COVER_CACHE_CANDIDATE_LIMIT;
       const coverSet: DanbooruCoverSet = {
         representative: representativePost ? toCoverCandidate(representativePost) : null,
-        candidates: [...candidatePosts].sort((left, right) => right.score - left.score).slice(0, COVER_CACHE_CANDIDATE_LIMIT).map(toCoverCandidate),
+        candidates: orderedCandidates.slice(0, COVER_CACHE_CANDIDATE_LIMIT).map(toCoverCandidate),
         hasMore: result.hasMore || truncated,
         // 小首屏尚未读完整的 200 条源页，或截短候选时，下次先补同一页。
         nextPage: fullSourcePage && candidatePosts.length && !truncated ? sourcePage + 1 : sourcePage,

@@ -30,6 +30,28 @@ it('大图失败先换公开预览，再失败自动换下一候选，上一张�
   failImage(); await waitFor(() => expect(image().src).toBe(candidate(2).sampleUrl));
   expect((screen.getByRole('button', { name: '上一张' }) as HTMLButtonElement).disabled).toBe(true);
 });
+it('初次展示使用代表图而非评分第一项，回调与前后翻图对应同一作品', async () => {
+  covers.mockResolvedValue({ ...set([candidate(1), candidate(2), candidate(3)]), representative: candidate(2) });
+  const onCandidateChange = vi.fn();
+  render(<DanbooruCover tag="synthetic" kind="character" alt="封面" onCandidateChange={onCandidateChange} />);
+  await waitFor(() => expect(image().src).toBe(candidate(2).sampleUrl));
+  expect(onCandidateChange).toHaveBeenLastCalledWith(expect.objectContaining({ id: 2, sampleUrl: candidate(2).sampleUrl }));
+  fireEvent.click(screen.getByRole('button', { name: '下一张' }));
+  expect(image().src).toBe(candidate(3).sampleUrl);
+  fireEvent.click(screen.getByRole('button', { name: '上一张' }));
+  expect(image().src).toBe(candidate(2).sampleUrl);
+  fireEvent.click(screen.getByRole('button', { name: '上一张' }));
+  expect(image().src).toBe(candidate(1).sampleUrl);
+});
+it('代表图加载失败仍保留其他候选，回退和翻页不丢图', async () => {
+  covers.mockResolvedValue({ ...set([candidate(2), candidate(1), candidate(3)]), representative: candidate(2) });
+  render(<DanbooruCover tag="synthetic" kind="character" alt="封面" />);
+  await waitFor(() => expect(image().src).toBe(candidate(2).sampleUrl));
+  failImage(); expect(image().src).toBe(candidate(2).previewUrl);
+  failImage(); await waitFor(() => expect(image().src).toBe(candidate(1).sampleUrl));
+  fireEvent.click(screen.getByRole('button', { name: '下一张' }));
+  expect(image().src).toBe(candidate(3).sampleUrl);
+});
 it('已保存封面优先展示，失效后仅在本次展示回退，不改写原资料', async () => {
   render(<DanbooruCover tag="synthetic" kind="character" alt="封面" fixedSrc="/api/images/synthetic-original" />);
   await screen.findByText('已保存封面');
