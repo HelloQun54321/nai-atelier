@@ -111,6 +111,14 @@ describe('ImageEditCanvas', () => {
       expect(refs.map(ref => ref.current)).toEqual(canvases);
       fireEvent.wheel(dialog.querySelector('.overflow-auto')!, { ctrlKey: true, deltaY: -1 });
       expect(dialog.textContent).toContain(i === 0 ? '125%' : '150%');
+      const confirm = document.createElement('div');
+      confirm.setAttribute('role', 'alertdialog');
+      confirm.setAttribute('aria-modal', 'true');
+      confirm.className = 'fixed z-[1800]';
+      document.body.appendChild(confirm);
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(screen.getByRole('dialog', { name: '全屏大画板精修' })).toBeTruthy();
+      confirm.remove();
       fireEvent.keyDown(window, { key: 'Escape' });
       expect(refs.map(ref => ref.current)).toEqual(canvases);
       expect(canvases[0]?.closest('main')).toBeTruthy();

@@ -3,7 +3,7 @@ import { Folder, LoaderCircle, Search, Sparkles, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { Inspiration, InspirationBoard } from '../types';
 import { SmartImage } from './SmartImage';
-import { useModalA11y } from './useModalA11y';
+import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 
 interface InspirationImagePickerProps {
@@ -58,7 +58,7 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape' && isTopmostModal(dialogRef.current)) onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -97,7 +97,7 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
       aria-label="选择灵感图片"
       onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}
     >
-      <section className="flex h-[100dvh] w-full max-w-6xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-900 sm:h-auto sm:max-h-[90vh] sm:rounded-2xl sm:border sm:border-gray-200 sm:dark:border-gray-800">
+      <section className="operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
         <header className="flex flex-none items-center justify-between gap-4 border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-5">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -202,7 +202,7 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
               {items.length === 0 && <span className="text-micro text-gray-400">可在灵感库中收藏或上传图片</span>}
             </div>
           ) : (
-            <div className="grid grid-cols-2 items-start gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            <div className="operation-card-grid grid items-start gap-3">
               {filteredItems.map(item => (
                 <button
                   key={item.id}

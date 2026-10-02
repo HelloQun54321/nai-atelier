@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { useModalA11y } from './useModalA11y';
+import { useModalA11y, isTopmostModal } from './useModalA11y';
 
 export interface ConfirmDialogOptions {
     title: string;
@@ -51,7 +51,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
         if (!options) return;
 
         const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') closeDialog(false);
+            if (event.key === 'Escape' && isTopmostModal(dialogRef.current)) closeDialog(false);
         };
 
         window.addEventListener('keydown', handleKeyDown);

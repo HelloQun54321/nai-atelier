@@ -1,5 +1,6 @@
 import React from 'react';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
+import { useModalA11y, isTopmostModal } from '../useModalA11y';
 import { Palette, UserRound } from 'lucide-react';
 import { ChainCoverDecision } from '../../services/chainCover';
 
@@ -18,10 +19,11 @@ export const ChainEditorForkModal: React.FC<ChainEditorForkModalProps> = ({
     isUploading,
     currentPreviewCover,
 }) => {
+    const dialogRef = useModalA11y<HTMLDivElement>(showForkModal);
     React.useEffect(() => {
         if (!showForkModal) return;
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && !isUploading) {
+            if (e.key === 'Escape' && !isUploading && isTopmostModal(dialogRef.current)) {
                 setShowForkModal(false);
             }
         };
@@ -32,7 +34,7 @@ export const ChainEditorForkModal: React.FC<ChainEditorForkModalProps> = ({
     if (!showForkModal) return null;
 
     return (
-    <ImagePreviewPortal><div role="dialog" aria-modal="true" aria-label="选择保存类型" className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onMouseDown={e => { if (e.target === e.currentTarget && !isUploading) setShowForkModal(false); }}>
+    <ImagePreviewPortal><div ref={dialogRef} role="dialog" aria-modal="true" aria-label="选择保存类型" className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onMouseDown={e => { if (e.target === e.currentTarget && !isUploading) setShowForkModal(false); }}>
         <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-sm shadow-2xl border border-gray-200 dark:border-gray-800 p-6">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1 text-center">选择保存类型</h3>
             {currentPreviewCover.source && <p className="mb-4 text-center text-xs text-gray-500 dark:text-gray-400">保存为风格串时，当前显示图片会自动成为封面。</p>}

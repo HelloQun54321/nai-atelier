@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.13.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.13.2-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -481,6 +481,10 @@ flowchart LR
 - **草稿箱式事务安全**：实验室修改先在后台草稿中推演，全部步骤成功、且没有与您正在手动输入的内容冲突时才一次性应用，减少部分应用或覆盖手动输入的风险。
 
 ### 🌌 永久 Vibe Transfer：编码一次，长期复用
+
+资料管理、引用预设、批量导入／文件整理、图片反推、灵感收录、复制内容和全局设置共用居中的操作窗口：桌面标准为 **1120 × 760 CSS 像素**，随可用视口缩小；手机保留安全边距和可靠触控区。确认框与短表单保持紧凑，大图查看和大画板保留原有查看模式。标题／操作区保持可达，长内容在正文内滚动；设置中的 Agent 子页面在同一外框内返回。
+
+Vibe／角色参考管理共用资料库／归档工具栏，按实际窗口宽度排列完整图片；手机在「资料库／当前选择」之间切换，已选项可展开参数，Vibe 的「组合管理」集中提供命名、载入与维护。选择与本次参数即时生效，「完成」结束窗口；资料详情的名称与默认强度／保真度通过「保存资料」明确保存，只影响下次添加。详情返回保留列表位置和搜索，右上关闭退出整个窗口。搜索和归档切换只影响列表，不隐藏已选资产的有效编码。
 
 实验室内置永久 Vibe 资料库（**当前内置能力表支持 NovelAI V4 / V4.5 系列模型**，V5 未启用；后续以官方运行时同步结果为准）。它会调用 NovelAI V4.5 Full 的 Vibe 编码接口，将参考图转换成不可逆编码；每个新的 Information Extracted 数值编码一次需消耗 **2 Anlas**，以后使用该编码生图不再重复支付编码费用。
 

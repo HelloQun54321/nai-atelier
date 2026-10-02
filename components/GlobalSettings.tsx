@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useModalA11y } from './useModalA11y';
+import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
 import { ImageTaggerModelManager } from './ImageTaggerModelManager';
 import { setCleanSharedImages, useCleanSharedImages } from '../services/imageSharing';
@@ -230,7 +230,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !closingRef.current) {
+      if (event.key === 'Escape' && isTopmostModal(dialogRef.current) && !closingRef.current) {
         closingRef.current = true;
         requestClose();
       }
@@ -638,7 +638,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
         role="dialog"
         aria-modal="true"
         aria-label="全局设置"
-        className="settings-dialog ui-modal-enter flex h-[100dvh] max-h-none w-full max-w-none flex-col overflow-hidden border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 md:h-[82vh] md:max-h-[860px] md:max-w-6xl md:rounded-2xl md:border"
+        className="settings-dialog ui-modal-enter operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
         onMouseDown={event => event.stopPropagation()}
       >
         <div className="workspace-command-bar flex items-center justify-between border-b border-gray-200 px-3 dark:border-gray-800 md:px-5">

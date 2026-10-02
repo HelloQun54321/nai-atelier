@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PromptAgentPanel } from './PromptAgentPanel';
 import { ConfirmDialogProvider } from './ConfirmDialog';
@@ -122,6 +122,21 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+  });
+
+  it('其他操作窗口在前景时 Esc 保留后台 Agent 菜单状态', async () => {
+    stubServices(); renderPanel(false);
+    await screen.findByRole('heading', { name: '新对话' });
+    fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }));
+    const before = screen.getByRole('button', { name: '更多会话操作' }).parentElement!.textContent;
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.className = 'fixed z-[1250]';
+    document.body.appendChild(dialog);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByRole('button', { name: '更多会话操作' }).parentElement!.textContent).toBe(before);
+    dialog.remove();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByRole('button', { name: '更多会话操作' }).parentElement!.textContent).not.toBe(before);
   });
 
   it('顶栏纯图标按钮（返回、会话列表、模型设置、更多）具有统一的 h-9 w-9 尺寸规范，且彻底移除全屏按钮', async () => {

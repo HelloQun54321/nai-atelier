@@ -5,6 +5,7 @@ import { api } from '../../services/api';
 import { db } from '../../services/dbService';
 import { UNTESTED_CHAIN_TAG } from '../../services/chainStatus';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
+import { useModalA11y, isTopmostModal } from '../useModalA11y';
 import { getNaiModelDisplayLabel } from '../../services/naiModels';
 import { NAIParams, PromptChain } from '../../types';
 
@@ -243,6 +244,8 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
   const [detectedItems, setDetectedItems] = useState<DetectedChainItem[]>([]);
   const [ignoredFiles, setIgnoredFiles] = useState<IgnoredFileItem[]>([]);
   const [showCleanupModal, setShowCleanupModal] = useState(false);
+  const dialogRef = useModalA11y<HTMLDivElement>(isOpen);
+  const cleanupRef = useModalA11y<HTMLDivElement>(showCleanupModal);
   const [cleanupCategory, setCleanupCategory] = useState<'all' | 'no-metadata' | 'duplicate'>('all');
   const [selectedCleanupIds, setSelectedCleanupIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
@@ -603,12 +606,13 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !isScanning && !isImporting && !isDeleting) {
-        handleModalClose();
+        if (showCleanupModal && isTopmostModal(cleanupRef.current)) setShowCleanupModal(false);
+        else if (isTopmostModal(dialogRef.current)) handleModalClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isScanning, isImporting, isDeleting, handleModalClose]);
+  }, [isOpen, isScanning, isImporting, isDeleting, showCleanupModal, handleModalClose]);
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -910,13 +914,13 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
 
   return (
     <ImagePreviewPortal>
-    <div role="dialog" aria-modal="true" aria-label="批量导入风格串" className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 md:p-6" onClick={handleModalClose}>
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="批量导入风格串" className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 md:p-6" onClick={handleModalClose}>
       <div
-        className="flex max-h-[90dvh] w-full max-w-4xl flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
+        className="operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
         onClick={e => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="flex flex-none items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+        <div className="operation-header flex flex-none items-center justify-between border-b border-gray-200 px-5 dark:border-gray-800">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
               <FolderUp className="h-5 w-5" />
@@ -1265,7 +1269,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="flex flex-none items-center justify-between border-t border-gray-200 px-5 py-3.5 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/50 rounded-b-2xl">
+        <div className="operation-footer flex flex-none items-center justify-between border-t border-gray-200 px-5 py-3.5 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/50 rounded-b-2xl">
           <div className="text-xs text-gray-500 dark:text-gray-400">
             {detectedItems.length > 0 && !isScanning && !isImporting && (
               <span>
@@ -1312,15 +1316,16 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
       {/* Junk Files Cleanup Modal */}
       {showCleanupModal && (
         <div
+          ref={cleanupRef} role="dialog" aria-modal="true" aria-label="整理待清理文件"
           className="fixed inset-0 z-[1400] flex items-center justify-center bg-black/70 backdrop-blur-sm p-3 md:p-6"
           onClick={() => !isDeleting && setShowCleanupModal(false)}
         >
           <div
-            className="flex max-h-[85dvh] w-full max-w-2xl flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
+            className="operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
             onClick={e => e.stopPropagation()}
           >
             {/* Cleanup Header */}
-            <div className="flex flex-none items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+            <div className="operation-header flex flex-none items-center justify-between border-b border-gray-200 px-5 dark:border-gray-800">
               <div className="flex items-center gap-2.5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400">
                   <Trash2 className="h-5 w-5" />
@@ -1402,7 +1407,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
             </div>
 
             {/* Cleanup Items List */}
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5 space-y-2.5 max-h-[46dvh]">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5 space-y-2.5 ">
               {currentCategoryJunkItems.length === 0 ? (
                 <div className="py-12 text-center text-xs text-gray-400">当前分类下没有可清理的图片</div>
               ) : (

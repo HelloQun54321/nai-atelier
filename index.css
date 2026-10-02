@@ -1,5 +1,6 @@
 
 @import "tailwindcss";
+@import "./components/operationDialog.css";
 
 /* Theme selection is controlled by App.tsx, not directly by the OS media query. */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -529,7 +530,6 @@ body,
 .workspace-history-grid { --workspace-card-min: 145px; }
 .workspace-inspiration-grid { --workspace-card-min: 190px; }
 .workspace-aitag-grid { --workspace-card-min: 175px; }
-.workspace-manager-grid { --workspace-card-min: 160px; }
 
 /* 实验室命令栏与正文使用同一列结构：桌面左右等分，窄屏上下排列。 */
 .chain-editor-header {
@@ -694,26 +694,6 @@ body,
 }
 
 @container workspace (max-width: 980px) {
-  .agent-panel-docked .workspace-manager-detail {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
-
-  .agent-panel-docked .workspace-manager-split {
-    display: flex !important;
-    flex-direction: column;
-    overflow-y: auto;
-  }
-
-  .agent-panel-docked .workspace-manager-list,
-  .agent-panel-docked .workspace-manager-selection {
-    overflow: visible !important;
-  }
-
-  .agent-panel-docked .workspace-manager-selection {
-    border-left-width: 0 !important;
-    border-top-width: 1px !important;
-  }
-
   .agent-panel-docked .aitag-split {
     grid-template-columns: minmax(0, 1fr) !important;
   }

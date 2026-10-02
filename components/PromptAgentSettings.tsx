@@ -3,7 +3,7 @@ import { ArrowLeft, Check, Copy, Download, FileUp, LogIn, Plus, Save, Settings2,
 import { PromptAgentAuthPrompt, PromptAgentConfig, PromptAgentCreativeInspectResult, PromptAgentCreativePreset, PromptAgentCreativePresetRevision, PromptAgentCreativePresetState, PromptAgentCustomProvider, PromptAgentInjectionItem, PromptAgentLabTarget, PromptAgentModel, PromptAgentProvider, displayModelName, formatModelOptionTitle, promptAgentService } from '../services/promptAgent';
 import { useConfirmDialog } from './ConfirmDialog';
 import { useMobileHistoryLayer } from './MobileUI';
-import { useModalA11y } from './useModalA11y';
+import { useModalA11y, isTopmostModal } from './useModalA11y';
 
 interface PromptAgentSettingsProps {
   notify: (message: string, type?: 'success' | 'error') => void;
@@ -459,7 +459,7 @@ const CreativeLabView: React.FC<{
   useEffect(() => {
     if (!inspectorOpen && !revisionPresetId) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !document.querySelector('[role="alertdialog"]')) {
         event.stopPropagation();
         if (inspectorOpen) setInspectorOpen(false);
         if (revisionPresetId) setRevisionPresetId(null);
@@ -765,7 +765,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
   useEffect(() => {
     if (view === 'home') return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') view === 'key' ? (setView('login'), setApiKey('')) : requestClose();
+      if (event.key === 'Escape' && isTopmostModal(subViewRef.current)) view === 'key' ? (setView('login'), setApiKey('')) : requestClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -1097,7 +1097,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         role="dialog"
         aria-modal="true"
         aria-label={view === 'login' ? '选择要配置的服务' : view === 'logout' ? '选择要退出的服务' : view === 'model' ? '选择 Agent 模型' : view === 'vision' ? '选择视觉模型' : view === 'auth' ? '选择登录方式' : view === 'custom' ? (customDraft.id ? '编辑自定义接口' : '添加自定义接口') : view === 'creative_lab' ? '注入预设管理' : '登录模型服务'}
-        className="fixed inset-0 z-[1100] flex flex-col bg-gray-50 dark:bg-gray-950"
+        className="agent-settings-subview absolute inset-0 z-[1100] flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950"
       >
       <header className="workspace-command-bar flex flex-none items-center gap-3 border-b border-gray-200 bg-white px-3 pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900 md:px-5">
         <button type="button" onClick={view === 'key' ? () => { setView('login'); setApiKey(''); } : requestClose} className="mobile-touch flex items-center justify-center rounded-xl p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="返回"><ArrowLeft className="h-5 w-5" /></button>

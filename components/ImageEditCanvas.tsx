@@ -1,3 +1,4 @@
+import { isTopmostModal } from './useModalA11y';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Maximize2, Minimize2, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { createPortal } from 'react-dom';
@@ -128,7 +129,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
         setSpacePressed(true);
       }
       // 全屏模式必须保留 Esc 退出逻辑：无论焦点落在画布内哪个控件上都应能退出全屏
-      if (event.key === 'Escape' && isFullscreen) {
+      if (event.key === 'Escape' && isFullscreen && isTopmostModal(containerRef.current?.closest<HTMLElement>('[aria-modal="true"]') ?? null)) {
         setIsFullscreen(false);
       }
     };

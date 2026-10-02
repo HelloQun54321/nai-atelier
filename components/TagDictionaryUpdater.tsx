@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { resetTagDictionaryCache } from '../services/tagDictionary';
 import { getTagUpdateStatus, startTagUpdate, TagUpdatePhase, TagUpdateStatus } from '../services/tagDictionaryUpdater';
 import { CloseButton } from './DesignSystem';
-import { useModalA11y } from './useModalA11y';
+import { useModalA11y, isTopmostModal } from './useModalA11y';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
 
 interface TagDictionaryUpdaterProps {
   notify: (message: string, type?: 'success' | 'error') => void;
@@ -58,7 +59,7 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !status?.running) {
+      if (e.key === 'Escape' && isTopmostModal(dialogRef.current) && !status?.running) {
         setIsOpen(false);
       }
     };
@@ -110,16 +111,16 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
       </div>
 
       {isOpen && (
-        <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 p-4" onMouseDown={() => !isRunning && setIsOpen(false)}>
+        <ImagePreviewPortal><div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onMouseDown={() => !isRunning && setIsOpen(false)}>
           <div
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-label="Tag 补全词库"
-            className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-2xl"
+            className="operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
             onMouseDown={event => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 px-5 py-4">
+            <div className="operation-header flex flex-none items-center justify-between border-b border-gray-200 dark:border-gray-800 px-5 py-4">
               <div>
                 <h2 className="font-bold text-gray-900 dark:text-white">Tag 补全词库</h2>
                 <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">源自 ffdkj 开源中英对照库 · 本地按需下载生成</p>
@@ -127,7 +128,7 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
               <CloseButton onClick={() => { if (!isRunning) setIsOpen(false); }} className={isRunning ? 'pointer-events-none opacity-40' : ''} size="sm" />
             </div>
 
-            <div className="space-y-4 px-5 py-5">
+            <div className="min-h-0 flex-1 overflow-y-auto space-y-4 px-5 py-5">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-xl bg-gray-50 dark:bg-gray-800 p-3">
                   <div className="text-xs text-gray-500 dark:text-gray-400">当前 Tag 数量</div>
@@ -155,14 +156,14 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
               </p>
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-gray-200 dark:border-gray-800 px-5 py-4">
+            <div className="operation-footer flex flex-none justify-end gap-2 border-t border-gray-200 dark:border-gray-800 px-5 py-4">
               <button type="button" disabled={isRunning} onClick={() => setIsOpen(false)} className="rounded-xl px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40">关闭</button>
               <button type="button" disabled={isRunning} onClick={handleUpdate} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
                 {isRunning ? '更新中…' : '检查并更新'}
               </button>
             </div>
           </div>
-        </div>
+        </div></ImagePreviewPortal>
       )}
     </>
   );

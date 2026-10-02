@@ -1,0 +1,65 @@
+/* 操作窗口使用同一外框；确认框、图像查看器和锚点菜单保留各自语义。 */
+.operation-dialog.operation-dialog {
+  box-sizing: border-box;
+  position: relative;
+  width: min(1120px, calc(100vw - 48px));
+  height: min(760px, calc(100dvh - 48px));
+  max-width: none;
+  max-height: none;
+  min-height: 0;
+  flex-shrink: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  container-type: inline-size;
+  container-name: operation;
+}
+.operation-dialog [hidden] { display: none !important; }
+.operation-dialog button.mobile-touch { min-height: 36px; }
+.operation-header { height: 56px; min-height: 56px; padding-block: 0; }
+.operation-toolbar { min-height: 48px; padding-block: 6px; }
+.operation-toolbar input:not([type="file"]),
+.operation-toolbar button { min-height: 36px; }
+.operation-footer { min-height: 56px; padding: 10px 20px; }
+.operation-footer button { min-height: 36px; }
+.manager-library { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.operation-dialog .workspace-manager-split { display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
+.operation-dialog .workspace-manager-list { container-type: inline-size; min-height: 0; }
+.operation-dialog .workspace-manager-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.operation-dialog .workspace-manager-selection { min-height: 0; border-top-width: 0; border-left-width: 1px; }
+.operation-dialog .workspace-manager-grid article > button:last-child { min-height: 32px; }
+.operation-dialog .workspace-manager-detail { grid-template-columns: minmax(220px, 380px) minmax(0, 1fr); }
+.manager-mobile-tabs { display: none; }
+.operation-dialog .operation-card-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@container operation (max-width: 900px) {
+  .operation-dialog .operation-card-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@container operation (max-width: 700px) {
+  .operation-dialog .operation-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container operation (max-width: 440px) {
+  .operation-dialog .operation-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (max-width: 620px) {
+  .operation-dialog .workspace-manager-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container (max-width: 440px) {
+  .operation-dialog .workspace-manager-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container operation (max-width: 760px) {
+  .operation-dialog .workspace-manager-split { grid-template-columns: minmax(0, 1fr); }
+  .operation-dialog .workspace-manager-selection { border-left-width: 0; }
+  .operation-dialog .workspace-manager-detail { grid-template-columns: minmax(0, 1fr); }
+  .manager-mobile-tabs { display: flex; }
+  .manager-library[data-pane="library"] .workspace-manager-selection,
+  .manager-library[data-pane="selection"] .workspace-manager-list { display: none; }
+}
+@media (max-width: 767px) {
+  .operation-dialog.operation-dialog {
+    width: calc(100vw - 24px);
+    height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    border-radius: 12px;
+  }
+  .operation-toolbar input:not([type="file"]), .operation-toolbar button,
+  .operation-footer button, .operation-dialog button.mobile-touch { min-height: 44px; }
+  .operation-footer { padding: 8px 12px; }
+}

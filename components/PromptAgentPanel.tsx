@@ -1,3 +1,4 @@
+import { isTopmostModal } from './useModalA11y';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PromptAgentDraft } from '../types';
@@ -431,7 +432,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   useEffect(() => {
     if (!props.open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && isTopmostModal(panelRef.current)) {
         if (sessionMenuId) {
           setSessionMenuId('');
           return;

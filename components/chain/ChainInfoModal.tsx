@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { PromptChain } from '../../types';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
-import { useModalA11y } from '../useModalA11y';
+import { useModalA11y, isTopmostModal } from '../useModalA11y';
 import { IconButton, ToolbarButton } from '../DesignSystem';
 import { getCustomChainTags, isCustomChainTag, replaceCustomChainTags } from '../../services/chainTags';
 
@@ -39,7 +39,7 @@ const ChainInfoForm: React.FC<ChainInfoModalProps> = ({ chain, onSave, onClose, 
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !savingRef.current) { event.preventDefault(); onClose(); }
+      if (event.key === 'Escape' && !savingRef.current && isTopmostModal(dialogRef.current)) { event.preventDefault(); onClose(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

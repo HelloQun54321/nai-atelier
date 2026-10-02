@@ -190,4 +190,14 @@ describe('InspirationGallery 来源筛选与未整理心智', () => {
     expect(screen.queryByText('已选 3 项')).toBeNull();
     expect(screen.getByRole('button', { name: '全选筛选结果' })).toBeTruthy();
   });
+
+  it('手动收录保留独立滚动正文与固定操作区，Esc 关闭且不写入资料', () => {
+    render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
+    fireEvent.click(screen.getByRole('button', { name: '加入灵感库' }));
+    const dialog = screen.getByRole('dialog', { name: '加入灵感库' });
+    expect(dialog.querySelector('header')?.nextElementSibling?.classList.contains('overflow-y-auto')).toBe(true);
+    expect(dialog.querySelector('footer')?.classList.contains('flex-none')).toBe(true);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: '加入灵感库' })).toBeNull();
+  });
 });

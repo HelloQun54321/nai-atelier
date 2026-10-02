@@ -6,6 +6,7 @@ const FOCUSABLE_SELECTOR = [
   'input:not([disabled])',
   'select:not([disabled])',
   'textarea:not([disabled])',
+  'summary',
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ');
 
@@ -18,12 +19,43 @@ const isExposed = (element: HTMLElement) => {
   return style.display !== 'none' && style.visibility !== 'hidden';
 };
 
+/** 按遮罩层级与嵌套关系识别最上层窗口，避免确认框与父窗口同时处理键盘。 */
+export const isTopmostModal = (root: HTMLElement | null) => {
+  if (!root) return false;
+  const dialogs = Array.from(document.querySelectorAll<HTMLElement>('[aria-modal="true"]')).filter(dialog => {
+    for (let node: HTMLElement | null = dialog; node; node = node.parentElement) {
+      if (!isExposed(node)) return false;
+    }
+    return true;
+  });
+  const layer = (dialog: HTMLElement) => {
+    let z = 0;
+    for (let node: HTMLElement | null = dialog; node; node = node.parentElement) {
+      const value = Number(window.getComputedStyle(node).zIndex);
+      const token = /(?:^|\s)z-\[(\d+)\]/.exec(node.className);
+      z = Math.max(z, Number.isFinite(value) ? value : 0, Number(token?.[1] || 0));
+    }
+    return z;
+  };
+  const top = dialogs.reduce<HTMLElement | null>((current, dialog) => {
+    if (!current || current.contains(dialog)) return dialog;
+    if (dialog.contains(current)) return current;
+    return layer(dialog) >= layer(current) ? dialog : current;
+  }, null);
+  return top === root;
+};
+
 /** 弹层内当前可聚焦元素（排除禁用 / aria-hidden / 不可见）。 */
 const getFocusable = (root: HTMLElement | null) => {
   if (!root) return [];
-  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(element =>
-    !element.closest('[aria-hidden="true"]') && isExposed(element),
-  );
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(element => {
+    for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+      if (!isExposed(node)) return false;
+      if (node instanceof HTMLDetailsElement && !node.open && !node.querySelector('summary')?.contains(element)) return false;
+      if (node === root) break;
+    }
+    return true;
+  });
 };
 
 /**
@@ -56,7 +88,7 @@ export const useModalA11y = <T extends HTMLElement = HTMLElement>(open: boolean)
 
     // Tab 圈禁：焦点在弹层外或到达首/末元素时折返。
     const handleTab = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab') return;
+      if (event.key !== 'Tab' || event.defaultPrevented || !isTopmostModal(dialogRef.current)) return;
       const root = dialogRef.current;
       if (!root) return;
       const focusable = getFocusable(root);

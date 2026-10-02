@@ -21,6 +21,20 @@ const slots = Array.from({ length: 4 }, (_, i) => ({ vibeId: `v-${i}`, encodingI
 const params: NAIParams = { model: 'nai-diffusion-4-5-full', steps: 28, width: 832, height: 1216, scale: 5, sampler: 'k_euler_ancestral',
   vibes: { enabled: true, normalizeStrengths: true, slots } };
 describe('低消耗 Vibe 复用入口', () => {
+  it('费用确认期间切换 Key 时不发出旧 Key 的编码请求', async () => {
+    fixtures.needsEncoding = true;
+    let confirm!: (value: boolean) => void;
+    fixtures.confirm.mockImplementationOnce(() => new Promise<boolean>(resolve => { confirm = resolve; }));
+    const props = { params: { ...params, vibes: { ...params.vibes!, slots: [] } }, setParams: vi.fn(), notify: vi.fn(), markChange: vi.fn(), apiKey: 'first-synthetic-key' };
+    const view = render(React.createElement(VibeManager, props));
+    fireEvent.click(screen.getByRole('button', { name: '管理' }));
+    fireEvent.click(await screen.findByRole('button', { name: /新 Vibe/ }));
+    await waitFor(() => expect(fixtures.confirm).toHaveBeenCalledOnce());
+    view.rerender(React.createElement(VibeManager, { ...props, apiKey: 'second-synthetic-key' }));
+    confirm(true);
+    await waitFor(() => expect((screen.getByRole('button', { name: '上传并编码' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(fixtures.encode).not.toHaveBeenCalled(); expect(props.setParams).not.toHaveBeenCalled();
+  });
   it('订阅过期仍可手动编码，取消费用确认不调用上游，确认后仅编码一次', async () => {
     fixtures.needsEncoding = true;
     fixtures.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
@@ -49,6 +63,7 @@ describe('低消耗 Vibe 复用入口', () => {
     const add = await screen.findByRole('button', { name: /新 Vibe/ });
     fireEvent.click(add);
     await waitFor(() => expect(notify).toHaveBeenCalledWith('一次最多启用 4 个 Vibe', 'error'));
+    fireEvent.click(screen.getByRole('tab', { name: '组合管理' }));
     fireEvent.click(screen.getByRole('button', { name: /五图组合 5 个 Vibe/ }));
     expect(setParams).not.toHaveBeenCalled();
     expect(fixtures.encode).not.toHaveBeenCalled();

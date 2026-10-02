@@ -19,6 +19,7 @@ import { useStChatu8Preferences } from '../services/stChatu8Preferences';
 import { isStChatu8ExportableChain } from '../worker/stChatu8Policy.mjs';
 import { WisdomSyncToolbar } from './WisdomSyncToolbar';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ChainInfoModal, UpdateChainInfo } from './chain/ChainInfoModal';
 import { getCustomChainTags } from '../services/chainTags';
 
@@ -42,6 +43,12 @@ const CopyModal: React.FC<{
     onClose: () => void;
     notify: (msg: string) => void;
 }> = ({ chain, onClose, notify }) => {
+    const dialogRef = useModalA11y<HTMLDivElement>(true);
+    useEffect(() => {
+        const close = (event: KeyboardEvent) => { if (event.key === 'Escape' && isTopmostModal(dialogRef.current)) onClose(); };
+        window.addEventListener('keydown', close);
+        return () => window.removeEventListener('keydown', close);
+    }, [onClose]);
     // Default checked based on chain type
     // Artist chain: usually Base (artist tag) + Modules (Style)
     // Character chain: usually Base (char tag) + Modules (Costume)
@@ -89,14 +96,14 @@ const CopyModal: React.FC<{
     };
 
     return (
-        <div role="dialog" aria-modal="true" aria-label={chain.type === 'character' ? '复制自定义角色内容' : '复制风格串内容'} className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-            <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col max-h-[85dvh]" onClick={e => e.stopPropagation()}>
-                <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-900 rounded-t-2xl">
+        <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={chain.type === 'character' ? '复制自定义角色内容' : '复制风格串内容'} className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+            <div className="operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900" onClick={e => e.stopPropagation()}>
+                <div className="operation-header px-4 border-b border-gray-200 dark:border-gray-800 flex flex-none justify-between items-center bg-gray-50 dark:bg-gray-900">
                     <h3 className="font-bold text-gray-900 dark:text-white truncate pr-4">{chain.name}</h3>
                     <button onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white">✕</button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
                     {/* Description Section (Full View) */}
                     {chain.description && (
                          <div className="bg-yellow-50 dark:bg-yellow-900/10 p-3 rounded-xl border border-yellow-100 dark:border-yellow-900/30 text-sm text-gray-700 dark:text-gray-300">
@@ -156,7 +163,7 @@ const CopyModal: React.FC<{
                     </div>
                 </div>
 
-                <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 rounded-b-2xl flex justify-end gap-2">
+                <div className="operation-footer border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex flex-none justify-end gap-2">
                     <button onClick={onClose} className="px-4 py-2 text-gray-500 hover:text-gray-800 dark:hover:text-white">关闭</button>
                     <button onClick={handleCopy} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg">复制选中组合</button>
                 </div>
