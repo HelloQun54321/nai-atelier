@@ -16,11 +16,11 @@ const complete = (batch: ReturnType<typeof harness>['batches'][number]) => {
   batch.queries.forEach((query, index) => batch.reply({ index, status: 200, data: data(query.query) })); batch.end();
 };
 
-it('收集同帧卡片，最多两批／每批四项，并逐项展示而不等待最慢查询', async () => {
+it('收集同帧卡片，最多两批／每批五项，填满十个任务且逐项展示', async () => {
   const { batches, request } = harness();
   const pending = Array.from({ length: 12 }, (_, index) => request(query(String(index))));
   await vi.advanceTimersByTimeAsync(100);
-  expect(batches.map(batch => batch.queries.length)).toEqual([4, 4]);
+  expect(batches.map(batch => batch.queries.length)).toEqual([5, 5]);
   const first = vi.fn(); void pending[0].then(first);
   batches[0].reply({ index: 0, status: 200, data: data('first') });
   await Promise.resolve(); expect(first).toHaveBeenCalledWith(data('first'));
@@ -55,26 +55,26 @@ it('附近预取每秒最多一项，并为可见请求保留连接', async () =
 
 it('取消排队项不发请求，单项取消不打断同批，全部离开才中止流', async () => {
   const { batches, request } = harness();
-  const controllers = Array.from({ length: 9 }, () => new AbortController());
+  const controllers = Array.from({ length: 11 }, () => new AbortController());
   const pending = controllers.map((controller, index) => request(query(String(index)), controller.signal).catch(error => error));
   await vi.advanceTimersByTimeAsync(100);
-  controllers[8].abort(); controllers[0].abort(); expect(batches[0].signal.aborted).toBe(false);
-  controllers.slice(1, 4).forEach(controller => controller.abort()); expect(batches[0].signal.aborted).toBe(true);
+  controllers[10].abort(); controllers[0].abort(); expect(batches[0].signal.aborted).toBe(false);
+  controllers.slice(1, 5).forEach(controller => controller.abort()); expect(batches[0].signal.aborted).toBe(true);
   complete(batches[1]); await vi.runAllTimersAsync();
   const values = await Promise.all(pending);
-  expect(values[8].name).toBe('AbortError'); expect(values[4].query).toBe('4'); expect(batches).toHaveLength(2);
+  expect(values[10].name).toBe('AbortError'); expect(values[5].query).toBe('5'); expect(batches).toHaveLength(2);
 });
 
 it('单项失败／429 不冒充空结果，尚未启动的批次共同退避且可以恢复', async () => {
   const { batches, request } = harness();
-  const pending = Array.from({ length: 9 }, (_, index) => request(query(String(index))).catch(error => error));
+  const pending = Array.from({ length: 11 }, (_, index) => request(query(String(index))).catch(error => error));
   await vi.advanceTimersByTimeAsync(100);
   batches[0].reply({ index: 0, status: 429, data: { error: 'Danbooru 429' } });
   complete(batches[0]); complete(batches[1]);
   await vi.advanceTimersByTimeAsync(1999); expect(batches).toHaveLength(2);
   await vi.advanceTimersByTimeAsync(1); expect(batches).toHaveLength(3);
   complete(batches[2]); const values = await Promise.all(pending);
-  expect(values[0].status).toBe(429); expect(values[8].query).toBe('8');
+  expect(values[0].status).toBe(429); expect(values[10].query).toBe('10');
 });
 
 it('流中断只拒绝未完成项，已经收到的结果仍可使用', async () => {

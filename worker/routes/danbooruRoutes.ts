@@ -132,7 +132,7 @@ const startCoverQuery = (signal: AbortSignal, background: boolean) => {
       });
       signal.throwIfAborted();
     }
-    nextCoverStartAt = Date.now() + (background ? 1000 : 150);
+    nextCoverStartAt = Date.now() + (background ? 1000 : 100);
   });
   coverStartQueue = start.catch(() => {});
   return start;
@@ -146,7 +146,7 @@ export async function handleDanbooruRoute(ctx: RouteContext): Promise<Response |
       const text = await ctx.request.text();
       if (text.length > 8192) return error('封面查询过大', 400);
       const body = JSON.parse(text);
-      if (!Array.isArray(body.requests) || !body.requests.length || body.requests.length > 4) return error('每批封面查询必须为 1～4 项', 400);
+      if (!Array.isArray(body.requests) || !body.requests.length || body.requests.length > 5) return error('每批封面查询必须为 1～5 项', 400);
       const urls = body.requests.map((item: any) => {
         if (typeof item?.query !== 'string' || item.query.length > 500
           || !Number.isInteger(item.page) || item.page < 1 || item.page > 1000

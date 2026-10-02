@@ -2,10 +2,15 @@ import { createHash } from 'node:crypto';
 import { mkdir, readdir, stat, readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 
-/** 所有公开 API 共用预算：突发池八个、持续每秒补一个，实际联网最多四个。 */
+// 官方读取上限为短时 10 次／秒、长期建议约 1 次／秒；20 次是本机首屏突发预算，并非官方公布的池大小。
+const READ_BURST = 20;
+const READ_CONCURRENCY = 10;
+const READ_INTERVAL_MS = 100;
+
+/** 三类图库与局域网设备共用预算，最多十个进行中查询；长期仍每秒补一个。 */
 export const createDanbooruLimiter = ({ now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, popularBurst = 50 } = {}) => {
   const queue = [];
-  let tokens = 8, updated = now(), active = 0, nextStart = 0, blockedUntil = 0, failures = 0, timer;
+  let tokens = READ_BURST, updated = now(), active = 0, nextStart = 0, blockedUntil = 0, failures = 0, timer;
   let popularTokens = popularBurst, popularUpdated = now();
   const cooldownError = () => Object.assign(new Error(`Danbooru 429：已暂停联网查询，请 ${Math.ceil((blockedUntil - now()) / 1000)} 秒后重试`), { status: 429, retryAfter: Math.ceil((blockedUntil - now()) / 1000) });
   const wake = () => {
@@ -13,9 +18,9 @@ export const createDanbooruLimiter = ({ now = Date.now, setTimer = setTimeout, c
     pump();
   };
   const pump = () => {
-    if (!queue.length || active >= 4) return;
+    if (!queue.length || active >= READ_CONCURRENCY) return;
     const time = now();
-    tokens = Math.min(8, tokens + Math.max(0, time - updated) / 1000); updated = Math.max(time, blockedUntil);
+    tokens = Math.min(READ_BURST, tokens + Math.max(0, time - updated) / 1000); updated = Math.max(time, blockedUntil);
     const wait = Math.max(0, blockedUntil - time, nextStart - time, tokens >= 1 ? 0 : (1 - tokens) * 1000);
     if (wait > 0) { timer = setTimer(() => { timer = undefined; pump(); }, Math.ceil(wait)); return; }
     queue.sort((left, right) => left.priority - right.priority);
@@ -25,7 +30,7 @@ export const createDanbooruLimiter = ({ now = Date.now, setTimer = setTimeout, c
     if (index < 0) { timer = setTimer(() => { timer = undefined; pump(); }, Math.ceil((1 - popularTokens) * 60_000)); return; }
     const task = queue.splice(index, 1)[0]; task.signal?.removeEventListener('abort', task.abort);
     if (task.signal?.aborted) { task.reject(new DOMException('Aborted', 'AbortError')); wake(); return; }
-    tokens--; active++; nextStart = time + 150;
+    tokens--; active++; nextStart = time + READ_INTERVAL_MS;
     if (task.popular) popularTokens--;
     void Promise.resolve().then(task.load).then(task.resolve, task.reject).finally(() => { active--; wake(); });
     pump();

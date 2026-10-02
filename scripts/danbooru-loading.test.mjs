@@ -25,34 +25,39 @@ const clock = () => {
   };
 };
 
-test('全局查询突发池八个，持续每秒补一个，启动至少相隔 150ms', async () => {
+test('全局短突发达到十次／秒，任意滚动秒不超限，二十次首屏预算后持续每秒补一次', async () => {
   const time = clock(), limiter = createDanbooruLimiter(time), starts = [];
-  const requests = Array.from({ length: 20 }, () => limiter.run(async () => { starts.push(time.now()); return 1; }));
-  await time.advance(30_000); await Promise.all(requests);
-  assert.equal(starts.length, 20);
-  assert.ok(starts.slice(1).every((at, index) => at - starts[index] >= 150));
-  for (let index = 0; index < starts.length; index++) assert.ok(index + 1 <= 8 + Math.floor(starts[index] / 1000));
-  assert.ok(starts[19] >= 12_000);
+  const requests = Array.from({ length: 50 }, () => limiter.run(async () => { starts.push(time.now()); return 1; }));
+  await time.advance(40_000); await Promise.all(requests);
+  assert.equal(starts.length, 50);
+  assert.deepEqual(starts.slice(0, 10), Array.from({ length: 10 }, (_, index) => index * 100));
+  assert.equal(starts[19], 1900);
+  assert.ok(starts.slice(1).every((at, index) => at - starts[index] >= 100));
+  for (let index = 0; index < starts.length; index++) {
+    assert.ok(starts.filter(at => at >= starts[index] && at < starts[index] + 1000).length <= 10);
+    assert.ok(index + 1 <= 20 + Math.floor(starts[index] / 1000));
+  }
+  assert.ok(starts[49] >= 30_000);
 });
 
-test('实际联网不超过四个，可见查询排在后台前，取消排队不花请求预算', async () => {
+test('实际联网可填满十个槽但不超过，可见查询排在后台前，取消排队不花请求预算', async () => {
   const time = clock(), limiter = createDanbooruLimiter(time), order = [];
   let release; const blocked = new Promise(resolve => { release = resolve; });
-  const first = Array.from({ length: 4 }, (_, index) => limiter.run(async () => { order.push(index); await blocked; }));
-  await time.advance(450); assert.equal(order.length, 4);
+  const first = Array.from({ length: 10 }, (_, index) => limiter.run(async () => { order.push(index); await blocked; }));
+  await time.advance(2000); assert.equal(order.length, 10);
   const background = limiter.run(async () => { order.push('background'); }, undefined, 1);
   const controller = new AbortController();
   const cancelled = limiter.run(async () => { order.push('cancelled'); }, controller.signal).catch(error => error);
   const visible = limiter.run(async () => { order.push('visible'); });
   controller.abort(); assert.equal((await cancelled).name, 'AbortError');
   release(); await time.advance(2000); await Promise.all([...first, background, visible]);
-  assert.deepEqual(order, [0, 1, 2, 3, 'visible', 'background']);
+  assert.deepEqual(order, [...Array.from({ length: 10 }, (_, index) => index), 'visible', 'background']);
 });
 
 test('热门榜遵循独立端点预算，耗尽后普通检索仍可进行', async () => {
   const time = clock(), limiter = createDanbooruLimiter({ ...time, popularBurst: 2 }), starts = [];
   const popular = Array.from({ length: 3 }, () => limiter.run(async () => { starts.push(time.now()); }, undefined, 0, true));
-  await time.advance(500); assert.deepEqual(starts, [0, 150]);
+  await time.advance(500); assert.deepEqual(starts, [0, 100]);
   const ordinary = limiter.run(async () => 'ordinary'); await time.advance(500); assert.equal(await ordinary, 'ordinary');
   await time.advance(60_000); await Promise.all(popular); assert.ok(starts[2] >= 60_000 && starts[2] <= 60_002);
 });

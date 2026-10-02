@@ -5,7 +5,7 @@ export interface CoverQuery { query: string; page: number; limit: number }
 export interface CoverReply { index: number; status: number; data: DanbooruSearchResult | { error: string } }
 type LoadBatch = (queries: CoverQuery[], reply: (item: CoverReply) => void, signal: AbortSignal, background: boolean) => Promise<unknown>;
 
-/** 最多两条浏览器连接；批内逐项返回，慢查询不阻挡已完成的封面。 */
+/** 最多两条浏览器连接、每批五项，为网关十个并发提供任务；批内逐项返回。 */
 export const createCoverTransport = (load: LoadBatch) => {
   type Task = { query: CoverQuery; priority: () => number; resolve: (value: DanbooruSearchResult) => void; reject: (error: unknown) => void; done: boolean; signal?: AbortSignal; abort: () => void; batch?: { controller: AbortController; tasks: Task[] } };
   const queue: Task[] = [];
@@ -35,7 +35,7 @@ export const createCoverTransport = (load: LoadBatch) => {
       wake(active ? 150 : nextBackgroundAt - Date.now());
       return;
     }
-    const tasks = (foreground.length ? foreground.slice(0, 4) : pending.slice(0, 1));
+    const tasks = (foreground.length ? foreground.slice(0, 5) : pending.slice(0, 1));
     for (const task of tasks) queue.splice(queue.indexOf(task), 1);
     if (!foreground.length) nextBackgroundAt = Date.now() + 1000;
     const batch = { controller: new AbortController(), tasks };

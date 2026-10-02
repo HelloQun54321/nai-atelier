@@ -32,18 +32,18 @@ describe('封面合并流', () => {
   it('本地缓存可立即并行返回，实际联网预算交给网关；保留后台标记与取消信号', async () => {
     vi.useFakeTimers(); const invokeBatch = await batchHandler();
     const fetchMock = mockFetch([post()]);
-    const finished = (await invokeBatch(['a', 'b', 'c', 'd'].map(coverQuery), true, {
+    const finished = (await invokeBatch(['a', 'b', 'c', 'd', 'e'].map(coverQuery), true, {
       DANBOORU_LOCAL_PROXY_URL: 'http://127.0.0.1:3000/__internal/danbooru-fetch', LAN_ACCESS_SECRET: 'synthetic-secret',
     })).text();
     await vi.advanceTimersByTimeAsync(0);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(fetchMock.mock.calls.every(([, options]) => options.headers['X-Nai-Danbooru-Prefetch'] === '1' && options.signal instanceof AbortSignal)).toBe(true);
-    expect(await finished).toContain('"index":3');
+    expect(await finished).toContain('"index":4');
     expect(vi.getTimerCount()).toBe(0);
   });
   it('复用普通查询校验，超量或非法参数整批拒绝，不启动上游请求', async () => {
     const fetchMock = mockFetch([]); const invokeBatch = await batchHandler();
-    for (const requests of [[], Array.from({ length: 5 }, () => coverQuery('solo')), [coverQuery('a b c')], [{ ...coverQuery('solo'), page: 0 }]]) {
+    for (const requests of [[], Array.from({ length: 6 }, () => coverQuery('solo')), [coverQuery('a b c')], [{ ...coverQuery('solo'), page: 0 }]]) {
       expect((await invokeBatch(requests)).status).toBe(400);
     }
     expect(fetchMock).not.toHaveBeenCalled();
@@ -64,7 +64,7 @@ describe('封面合并流', () => {
     await vi.advanceTimersByTimeAsync(200);
     const result = new TextDecoder().decode((await reader.read()).value);
     expect(result).toContain('"index":1'); expect(result).toContain('"rating":"e"');
-    expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(150);
+    expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(100);
     release(); await vi.runAllTimersAsync();
     expect(new TextDecoder().decode((await reader.read()).value)).toContain('"index":0');
     expect((await reader.read()).done).toBe(true);
