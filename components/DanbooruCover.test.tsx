@@ -18,7 +18,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
   covers.mockResolvedValue(set()); pages.mockResolvedValue({ candidates: [], hasMore: false });
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 it('大图失败先换公开预览，再失败自动换下一候选，上一张不返回坏图', async () => {
   covers.mockResolvedValue(set([candidate(1), candidate(2)]));
@@ -54,8 +54,39 @@ it('坏图后的自动补页最多三页，不进入无界请求循环', async (
   await waitFor(() => expect(image().src).toBe(broken.sampleUrl));
   failImage();
   await waitFor(() => expect(pages).toHaveBeenCalledTimes(3));
-  expect(await screen.findByText('暂无可用的 Danbooru 封面')).toBeTruthy();
+  expect(await screen.findByText('封面图片加载失败')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '重试加载封面' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '继续查找封面' })).toBeTruthy();
+});
+
+it('连续请求失败显示连接错误，手动重试成功后恢复，不误报无封面', async () => {
+  vi.useFakeTimers();
+  covers.mockRejectedValue(new Error('network failed'));
+  render(<DanbooruCover tag="synthetic" kind="artist" alt="封面" />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+  expect(covers).toHaveBeenCalledTimes(2);
+  expect(screen.getByText('暂时无法读取 Danbooru 封面，请重试')).toBeTruthy();
+  expect(screen.queryByText('暂无可用的 Danbooru 封面')).toBeNull();
+  covers.mockResolvedValue(set([candidate(7)]));
+  fireEvent.click(screen.getByRole('button', { name: '重试加载封面' }));
+  await act(async () => {});
+  expect(image().src).toBe(candidate(7).sampleUrl);
+  expect(screen.queryByText('暂时无法读取 Danbooru 封面，请重试')).toBeNull();
+});
+
+it('真实空结果仍显示无封面，429 限流可辨认且不无限重试', async () => {
+  vi.useFakeTimers();
+  covers.mockRejectedValue(new Error('Danbooru 429'));
+  const { rerender } = render(<DanbooruCover tag="busy" kind="character" alt="封面" />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+  expect(screen.getByText('Danbooru 请求过于频繁，请稍后重试')).toBeTruthy();
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  expect(covers).toHaveBeenCalledTimes(2);
+  covers.mockResolvedValue(set([]));
+  rerender(<DanbooruCover tag="empty" kind="character" alt="封面" />);
+  await act(async () => {});
+  expect(screen.getByText('暂无可用的 Danbooru 封面')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '重试加载封面' })).toBeNull();
 });
 it('更换 Tag 后，旧候选翻页的迟到结果和结束状态不能污染新卡片', async () => {
   covers.mockResolvedValueOnce(set([], true, 4)).mockResolvedValueOnce(set([candidate(9)]));

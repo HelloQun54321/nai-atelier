@@ -22,6 +22,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
   const [nextSourcePage, setNextSourcePage] = useState(1);
   const [failedSources, setFailedSources] = useState<Set<string>>(() => new Set());
   const [lookupError, setLookupError] = useState('');
+  const [retryToken, setRetryToken] = useState(0);
   const sessionRef = useRef(0);
   const loadingMoreRef = useRef(false);
   const automaticPagesLeft = useRef(3);
@@ -75,14 +76,18 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
             setNextSourcePage(result.nextPage || 1);
             if (!fixedSrc) setCandidateIndex(0);
           }
-        } catch {
-          if (active) setCoverSet(null);
+        } catch (error) {
+          if (active) {
+            setCoverSet(null);
+            setLookupError(error instanceof Error && /429/.test(error.message)
+              ? 'Danbooru 请求过于频繁，请稍后重试' : '暂时无法读取 Danbooru 封面，请重试');
+          }
         }
       }
     };
     void load();
     return () => { active = false; if (sessionRef.current === session) sessionRef.current++; };
-  }, [activated, fixedSrc, kind, tag]);
+  }, [activated, fixedSrc, kind, tag, retryToken]);
 
   const candidates = coverSet?.candidates || [];
   const currentCandidate = candidateIndex === null ? null : candidates[candidateIndex];
@@ -186,7 +191,8 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
       {canBrowse && <button type="button" disabled={isLoadingMore || (nextIndex < 0 && !coverSet?.hasMore)} onClick={event => { event.stopPropagation(); moveCandidate(1); }} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-35" title="下一张" aria-label="下一张"><ChevronRight className="h-4 w-4" /></button>}
     </> : <div className="absolute inset-0 flex flex-col items-center justify-center px-3 text-center text-gray-400">
       <ImageIcon className={`h-7 w-7 ${coverSet === undefined || isLoadingMore ? 'animate-pulse' : ''}`} />
-      <span className="mt-2 text-micro">{coverSet === undefined || isLoadingMore ? '正在查找参考图…' : lookupError || '暂无可用的 Danbooru 封面'}</span>
+      <span className="mt-2 text-micro">{coverSet === undefined || isLoadingMore ? '正在查找参考图…' : lookupError || (failedSources.size ? '封面图片加载失败' : '暂无可用的 Danbooru 封面')}</span>
+      {(coverSet === null || failedSources.size > 0) && !isLoadingMore && <button type="button" onClick={event => { event.stopPropagation(); setRetryToken(value => value + 1); }} className="mt-2 rounded-lg border border-gray-300 px-2 py-1.5 text-micro hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800">重试加载封面</button>}
       {coverSet?.hasMore && <button type="button" disabled={isLoadingMore} onClick={event => { event.stopPropagation(); void loadNextCandidatePage(); }} className="mt-2 rounded-lg border border-gray-300 px-2 py-1.5 text-micro hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800">继续查找封面</button>}
     </div>}
   </div>;

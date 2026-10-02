@@ -63,4 +63,51 @@ describe.each(['artist', 'character'] as const)('%s 可用封面查找', kind =>
     await danbooruService.getCoverSet('synthetic', kind);
     expect(apiGet).toHaveBeenCalledTimes(2);
   });
+  it('全部评级都可成为封面，首屏与后续页不隐式限制 SFW', async () => {
+    const items = ['g', 's', 'q', 'e'].map((rating, index) => ({ ...post(index + 1, 'synthetic'), rating }));
+    apiGet.mockResolvedValue(result(items));
+    const { danbooruService } = await import('./danbooruService');
+    expect((await settle(danbooruService.getCoverSet('synthetic', kind))).candidates.map(item => item.id)).toEqual([1, 2, 3, 4]);
+    expect((await settle(danbooruService.getCoverCandidatePage('synthetic', kind, 2))).candidates.map(item => item.id)).toEqual([1, 2, 3, 4]);
+    for (const [path] of apiGet.mock.calls) {
+      expect(new URL(path, 'http://localhost').searchParams.get('tags')).toBe('synthetic order:score -status:banned');
+    }
+  });
+});
+
+it('经典单人代表图不吞掉其他精确角色候选，坏图之后仍可回退', async () => {
+  const variants = ['alternate_costume', 'nude', 'chibi', 'multiple_girls'].map((tag, index) => ({
+    ...post(index + 2, 'synthetic'), tags: { ...post(index + 2, 'synthetic').tags, general: [tag] },
+  }));
+  apiGet.mockResolvedValue(result([post(1, 'synthetic'), ...variants, post(6, 'other')]));
+  const { danbooruService } = await import('./danbooruService');
+  const covers = await settle(danbooruService.getCoverSet('synthetic', 'character'));
+  expect(covers.representative?.id).toBe(1);
+  expect(covers.candidates.map(item => item.id)).toEqual([1, 2, 3, 4, 5]);
+  const page = await settle(danbooruService.getCoverCandidatePage('synthetic', 'character', 2));
+  expect(page.candidates.map(item => item.id)).toEqual([1, 2, 3, 4, 5]);
+});
+
+it('并发封面请求逐一错开启动，不让同时醒来的等待者形成突发', async () => {
+  const starts: number[] = [];
+  apiGet.mockImplementation(async () => { starts.push(Date.now()); return result(); });
+  const { danbooruService } = await import('./danbooruService');
+  await settle(Promise.all(Array.from({ length: 9 }, (_, index) => danbooruService.getCoverSet(`synthetic_${index}`, 'artist'))));
+  expect(starts).toHaveLength(9);
+  expect(starts.slice(1).every((time, index) => time - starts[index] >= 60)).toBe(true);
+});
+
+it('429 后尚未启动的并发请求共同退避，失败不写入空封面缓存', async () => {
+  const starts: number[] = [];
+  apiGet.mockImplementation(async () => {
+    starts.push(Date.now());
+    if (starts.length === 1) throw new Error('Danbooru 429');
+    return result([post(1, 'synthetic_b')]);
+  });
+  const { danbooruService } = await import('./danbooruService');
+  const settled = Promise.allSettled([danbooruService.getCoverSet('synthetic_a', 'artist'), danbooruService.getCoverSet('synthetic_b', 'artist')]);
+  expect((await settle(settled))[0].status).toBe('rejected');
+  expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(2000);
+  apiGet.mockResolvedValue(result([post(2, 'synthetic_a')]));
+  expect((await settle(danbooruService.getCoverSet('synthetic_a', 'artist'))).candidates[0].id).toBe(2);
 });

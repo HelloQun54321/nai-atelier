@@ -20,6 +20,27 @@ const mockFetch = (payload: unknown) => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Danbooru 请求、筛选与分页', () => {
+  it('不加 SFW 条件，四种评级的公开封面都返回', async () => {
+    const fetchMock = mockFetch(['g', 's', 'q', 'e'].map((rating, index) => post(index + 1, { rating })));
+    const query = 'synthetic order:score -status:banned';
+    const { body } = await invoke(query, 1, 60);
+    expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get('tags')).toBe(query);
+    expect(body.items.map((item: { rating: string }) => item.rating)).toEqual(['g', 's', 'q', 'e']);
+  });
+  it('缺失预览仍保留上游公开变体或大图，不构造无权限地址', async () => {
+    mockFetch([
+      post(1, { preview_file_url: '', file_url: '', media_asset: { variants: [{ type: '720x720', url: 'https://cdn.donmai.us/sample/1.webp' }] } }),
+      post(2, { preview_file_url: '', large_file_url: 'https://cdn.donmai.us/sample/2.jpg' }),
+      post(3, { preview_file_url: '', file_url: '' }),
+      post(4, { preview_file_url: 'https://cdn.donmai.us.evil.example/4.jpg', file_url: '', media_asset: { variants: [{ type: '360x360', url: 'https://cdn.donmai.us/preview/4.jpg' }] } }),
+      post(5, { preview_file_url: '', file_url: 'https://cdn.donmai.us@evil.example/5.jpg' }),
+    ]);
+    const { body } = await invoke('synthetic order:score');
+    expect(body.items.map((item: { id: number }) => item.id)).toEqual([1, 2, 4]);
+    expect(body.items[0]).toMatchObject({ previewUrl: 'https://cdn.donmai.us/sample/1.webp', sampleUrl: 'https://cdn.donmai.us/sample/1.webp' });
+    expect(body.items[1]).toMatchObject({ previewUrl: 'https://cdn.donmai.us/sample/2.jpg', sampleUrl: 'https://cdn.donmai.us/sample/2.jpg' });
+    expect(body.items[2].previewUrl).toBe('https://cdn.donmai.us/preview/4.jpg');
+  });
   it.each(['day', 'week', 'month'])('排行榜 %s 使用网关支持的接口，传入实际页码与页长', async scale => {
     const fetchMock = mockFetch([post(1), post(2)]);
     const { body } = await invoke(`explore:popular_${scale}`, 3);

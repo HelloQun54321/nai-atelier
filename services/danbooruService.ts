@@ -27,14 +27,14 @@ export interface DanbooruSearchResult {
   hasMore: boolean;
 }
 
-const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v11';
+const COVER_CACHE_KEY = 'nai_danbooru_cover_cache_v12';
 const COVER_CACHE_TTL = 14 * 24 * 60 * 60 * 1000;
 const COVER_EMPTY_CACHE_TTL = 60_000;
 const COVER_SOURCE_PAGE_SIZE = 200;
 const COVER_EMPTY_PAGE_LOOKAHEAD = 3;
 const COVER_CACHE_LIMIT = 150;
-// 候选枚举调度：5 并发 + 60ms 启动间隔（有效速率 ~12/s，充分利用媒体网关与并发吞吐）；
-// 遭遇 429 时整体退避 1.5s。
+// 候选枚举最多 5 并发，串行安排启动时刻，避免多个等待者同时醒来形成请求突发。
+// 遭遇 429 时所有尚未启动的请求共同退避 2 秒。
 const COVER_REQUEST_CONCURRENCY = 5;
 const COVER_REQUEST_INTERVAL_MS = 60;
 // Keep the cached first screen compact. The cover component loads later pages on demand.
@@ -62,6 +62,7 @@ const coverRequests = new Map<string, Promise<DanbooruCoverSet>>();
 let coverInFlight = 0;
 const coverWaiters: Array<() => void> = [];
 let nextCoverRequestAt = 0;
+let coverStartQueue = Promise.resolve();
 
 const scheduleCoverRequest = <T>(request: () => Promise<T>): Promise<T> => {
   const acquire = async () => {
@@ -69,9 +70,15 @@ const scheduleCoverRequest = <T>(request: () => Promise<T>): Promise<T> => {
       await new Promise<void>(resolve => coverWaiters.push(resolve));
     }
     coverInFlight++;
-    const wait = Math.max(0, nextCoverRequestAt - Date.now());
-    if (wait) await new Promise(resolve => window.setTimeout(resolve, wait));
-    nextCoverRequestAt = Date.now() + COVER_REQUEST_INTERVAL_MS;
+    const start = coverStartQueue.then(async () => {
+      // 等待期间也可能收到 429，醒来后重新检查退避时间。
+      while (nextCoverRequestAt > Date.now()) {
+        await new Promise(resolve => window.setTimeout(resolve, nextCoverRequestAt - Date.now()));
+      }
+      nextCoverRequestAt = Date.now() + COVER_REQUEST_INTERVAL_MS;
+    });
+    coverStartQueue = start;
+    await start;
   };
   return acquire().then(() =>
     request().catch(error => {
@@ -227,11 +234,9 @@ const toCoverCandidate = (post: DanbooruPost): DanbooruCoverCandidate => ({
   postUrl: post.postUrl,
 });
 
-const candidatePostsFor = (items: DanbooruPost[], normalizedTag: string, kind: 'artist' | 'character') => (
-  kind === 'character'
-    ? getCharacterCandidates(items, normalizedTag)
-    : items.filter(post => post.tags.artist.some(value => value.toLowerCase() === normalizedTag))
-);
+// 经典立绘只影响代表图排序，不丢弃换装、多人或任何评级的精确匹配候选。
+const candidatePostsFor = (items: DanbooruPost[], normalizedTag: string, kind: 'artist' | 'character') =>
+  items.filter(post => post.tags[kind].some(value => value.toLowerCase() === normalizedTag));
 
 const getCharacterCandidates = (items: DanbooruPost[], normalizedTag: string) => {
   const exact = items.filter(post => post.tags.character.some(value => value.toLowerCase() === normalizedTag));

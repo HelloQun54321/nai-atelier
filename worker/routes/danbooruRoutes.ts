@@ -64,12 +64,23 @@ async function fetchDanbooruJson(target: URL, env?: Env) {
 const splitDanbooruTags = (value: unknown) => String(value || '').split(/\s+/).map(tag => tag.trim()).filter(Boolean);
 
 function normalizeDanbooruPost(post: any) {
-  const previewUrl = String(post?.preview_file_url || '');
-  if (!Number.isFinite(Number(post?.id)) || !previewUrl.startsWith('https://cdn.donmai.us/')) return null;
   const variants = Array.isArray(post?.media_asset?.variants) ? post.media_asset.variants : [];
-  const preferredVariant = variants.find((variant: any) => variant?.type === '720x720')
-    || variants.find((variant: any) => variant?.type === '360x360');
-  const sampleUrl = String(preferredVariant?.url || post?.large_file_url || post?.file_url || previewUrl);
+  const publicImageUrl = (value: unknown) => {
+    if (typeof value !== 'string') return '';
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' && url.hostname === 'cdn.donmai.us'
+        && !url.username && !url.password && (!url.port || url.port === '443') ? value : '';
+    }
+    catch { return ''; }
+  };
+  // 只使用上游实际公开的地址；预览缺失时仍可用公开缩略变体或大图，不推算受限地址。
+  const variantUrl = (type: string) => variants.map((variant: any) => variant?.type === type ? publicImageUrl(variant?.url) : '').find(Boolean) || '';
+  const sampleUrl = variantUrl('720x720') || variantUrl('360x360')
+    || publicImageUrl(post?.large_file_url) || publicImageUrl(post?.file_url)
+    || publicImageUrl(post?.preview_file_url) || variantUrl('180x180');
+  const previewUrl = publicImageUrl(post?.preview_file_url) || variantUrl('180x180') || variantUrl('360x360') || sampleUrl;
+  if (!Number.isFinite(Number(post?.id)) || !previewUrl) return null;
   return {
     id: Number(post.id),
     rating: String(post.rating || 'g'),
@@ -79,7 +90,7 @@ function normalizeDanbooruPost(post: any) {
     height: Number(post.image_height || 0),
     fileExt: String(post.file_ext || ''),
     previewUrl,
-    sampleUrl: sampleUrl.startsWith('https://cdn.donmai.us/') ? sampleUrl : previewUrl,
+    sampleUrl,
     sourceUrl: String(post.source || '').slice(0, 2048),
     postUrl: `https://danbooru.donmai.us/posts/${Number(post.id)}`,
     tags: {
