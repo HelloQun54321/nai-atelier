@@ -18,7 +18,7 @@ export interface HistoryBrowseOrder {
   sources: { id: string; name: string }[];
 }
 export const HISTORY_SORT_LABELS: Record<HistorySort, string> = {
-  newest: '最新生成', oldest: '最早生成', favorite: '最近收藏', random: '随机浏览',
+  newest: '最新优先', oldest: '最早优先', favorite: '最近收藏', random: '随机浏览',
 };
 
 /** 固定种子的洗牌：输入先按 ID 排序，数据库返回顺序不影响结果。只处理索引，不读取原图。 */

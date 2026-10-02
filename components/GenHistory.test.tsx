@@ -42,7 +42,7 @@ beforeEach(() => {
     vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     vi.stubGlobal('ResizeObserver', class {
         constructor(private callback: ResizeObserverCallback) {}
-        observe() { this.callback([{ contentRect: { width: 1024 } } as ResizeObserverEntry], this as unknown as ResizeObserver); }
+        observe() { this.callback([{ contentRect: { width: Math.min(1024, window.innerWidth - 24) } } as ResizeObserverEntry], this as unknown as ResizeObserver); }
         unobserve() {} disconnect() {}
     });
     vi.stubGlobal('IntersectionObserver', class {
@@ -192,9 +192,7 @@ const emit = (event: Parameters<typeof listeners.add>[0] extends (event: infer E
 describe('历史连续浏览会话', () => {
     it('随机覆盖全部结果，翻图跨过第 20 张且返回/重开保留相同种子与位置', async () => {
         browseFixture(); const { container } = await setup(1280, 20);
-        fireEvent.click(screen.getByRole('button', { name: '最新生成' }));
-        fireEvent.change(screen.getByRole('combobox', { name: '历史排序' }), { target: { value: 'random' } });
-        fireEvent.click(screen.getByRole('button', { name: '应用筛选' }));
+        fireEvent.click(screen.getByRole('button', { name: '随机浏览' }));
         await screen.findByRole('button', { name: '重新洗牌' });
         await waitFor(() => expect(vi.mocked(localHistory.getPage).mock.calls.at(-1)?.[2]?.sort).toBe('random'));
         const query = vi.mocked(localHistory.getBrowseOrder).mock.calls.at(-1)![0];
@@ -238,6 +236,7 @@ describe('历史连续浏览会话', () => {
         data.unshift({ ...data[0], id: 'brand-new', imageUrl: '/synthetic/new.png', createdAt: Date.now() });
         await act(async () => emit({ type: 'add', id: 'brand-new' }));
         expect(await screen.findByRole('button', { name: '新增 1 张图片 · 查看最新' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: '新增 1 张图片 · 查看最新' }).closest('header')).toBe(container.querySelector('header'));
         expect(vi.mocked(localHistory.getPage).mock.calls.length).toBe(before);
         expect(screen.getByText('6 / 25')).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: '返回历史列表' }));
@@ -248,7 +247,7 @@ describe('历史连续浏览会话', () => {
 
     it('收藏中取消当前收藏或删除当前图片继续下一张，末张则退到上一张', async () => {
         const data = browseFixture(3, true); const { container } = await setup(1280, 3);
-        fireEvent.click(screen.getAllByRole('button', { name: '收藏' })[0]);
+        fireEvent.click(screen.getByRole('button', { name: '只看收藏' }));
         await waitFor(() => expect(localHistory.getBrowseOrder).toHaveBeenLastCalledWith(expect.objectContaining({ favoriteOnly: true })));
         await waitFor(() => expect(cardById(container, data[0].id)).toBeTruthy());
         fireEvent.click(cardById(container, data[0].id));
@@ -342,5 +341,55 @@ describe('历史连续浏览会话', () => {
         expect(screen.queryByRole('button', { name: '加载更多失败 · 重试' })).toBeNull();
         expect(localHistory.getBrowseOrder).toHaveBeenCalledOnce();
         warn.mockRestore(); error.mockRestore();
+    });
+});
+
+describe('历史顶栏状态一致性', () => {
+    it('桌面管理按维护顺序排列，清空全部放最后，打开菜单不执行删除', async () => {
+        await setup();
+        fireEvent.click(screen.getByRole('button', { name: '管理' }));
+        const dialog = within(screen.getByRole('dialog', { name: '历史管理' }));
+        expect(dialog.getAllByRole('button').map(button => button.textContent?.trim())).toEqual(['批量选择图片', '按时间清理历史…', '按数量保留最新…', '清空全部']);
+        expect(localHistory.delete).not.toHaveBeenCalled();
+        expect(localHistory.keepOnly).not.toHaveBeenCalled();
+    });
+
+    it('多选操作替换固定顶栏，退出保留排序、已加载图片和滚动位置', async () => {
+        browseFixture(8);
+        const { container } = await setup(1280, 8);
+        fireEvent.change(screen.getByRole('combobox', { name: '历史排序' }), { target: { value: 'oldest' } });
+        await waitFor(() => expect(localHistory.getBrowseOrder).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'oldest' })));
+        const scroll = container.querySelector<HTMLElement>('.overflow-y-auto.p-4')!;
+        scroll.scrollTop = 600;
+        const requests = vi.mocked(localHistory.getPage).mock.calls.length;
+        fireEvent.click(screen.getByRole('button', { name: '管理' }));
+        fireEvent.click(screen.getByRole('button', { name: '批量选择图片' }));
+        const header = within(container.querySelector('header')!);
+        expect(header.queryByRole('combobox', { name: '历史排序' })).toBeNull();
+        expect(header.getByRole('button', { name: '删除选中' })).toBeTruthy();
+        expect(scroll.querySelector('.history-selection-actions')).toBeNull();
+        fireEvent.click(header.getByRole('button', { name: '全选本页' }));
+        expect(header.getByText(/多选模式 · 已选/).textContent).toContain('8');
+        fireEvent.click(header.getByRole('button', { name: '退出多选' }));
+        expect((header.getByRole('combobox', { name: '历史排序' }) as HTMLSelectElement).value).toBe('oldest');
+        expect(scroll.scrollTop).toBe(600);
+        expect(vi.mocked(localHistory.getPage).mock.calls.length).toBe(requests);
+    });
+
+    it('手机新图提示可从管理角标进入查看最新，日期始终在更多筛选中可达', async () => {
+        const data = browseFixture(8);
+        const { container } = await setup(360, 8);
+        expect(screen.queryByRole('button', { name: /^时间范围：/ })).toBeNull();
+        container.querySelector<HTMLElement>('.overflow-y-auto.p-4')!.scrollTop = 600;
+        data.unshift({ ...data[0], id: 'mobile-new', imageUrl: '/synthetic/new.png', createdAt: Date.now() });
+        await act(async () => emit({ type: 'add', id: 'mobile-new' }));
+        fireEvent.click(await screen.findByRole('button', { name: '管理，新增 1 张图片' }));
+        const dialog = within(screen.getByRole('dialog', { name: '历史管理' }));
+        fireEvent.click(dialog.getByRole('button', { name: '新增 1 张图片 · 查看最新' }));
+        await waitFor(() => expect(cardById(container, 'mobile-new')).toBeTruthy());
+        expect(screen.queryByRole('dialog', { name: '历史管理' })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: '更多筛选' }));
+        expect(screen.getByLabelText('开始日期')).toBeTruthy();
+        expect(screen.getByLabelText('结束日期')).toBeTruthy();
     });
 });

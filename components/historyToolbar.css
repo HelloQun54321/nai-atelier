@@ -1,0 +1,72 @@
+/* 根据工作区而非浏览器宽度收纳；浏览状态共用随密度设置变化的单行顶栏。 */
+.history-toolbar-shell {
+  container: history-toolbar / inline-size;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  gap: 8px;
+}
+.history-browse-controls {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.history-date-anchor { width: 148px; }
+.history-date-button { width: 100%; }
+.history-date-button > span { min-width: 0; }
+.history-more-button { min-width: 124px; }
+.history-random-button { width: 112px; }
+.history-toolbar-divider { width: 1px; height: 20px; margin: 0 4px; background: var(--color-gray-200); }
+.dark .history-toolbar-divider { background: var(--color-gray-700); }
+.history-sort-select {
+  width: 120px;
+  height: calc(var(--spacing) * 10);
+  flex: none;
+  border: 1px solid var(--color-gray-200);
+  border-radius: 12px;
+  background-color: var(--color-white);
+  color: var(--color-gray-600);
+  padding: 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+}
+.history-sort-select:focus-visible { outline: 2px solid var(--color-indigo-500); outline-offset: 2px; }
+.dark .history-sort-select { border-color: var(--color-gray-800); background-color: var(--color-gray-900); color: var(--color-gray-300); }
+.history-toolbar-status { margin-left: auto; display: flex; flex: none; align-items: center; gap: 12px; white-space: nowrap; }
+.history-result-count { font-size: 12px; color: var(--color-gray-500); font-variant-numeric: tabular-nums; }
+.dark .history-result-count { color: var(--color-gray-400); }
+.history-new-image-badge { display: none; }
+.history-selection-actions { min-width: 0; align-items: center; gap: 8px; overflow-x: auto; white-space: nowrap; }
+@container history-toolbar (max-width: 1100px) {
+  .history-result-count, .history-new-image-label { display: none; }
+}
+@container history-toolbar (max-width: 900px) {
+  .history-button-label, .history-management-label, .history-management-chevron { display: none; }
+  .history-icon-compact, .history-management-button { width: 40px; padding-inline: 0 !important; }
+  .history-date-anchor { width: 132px; }
+  .history-toolbar-status { gap: 8px; }
+}
+@container history-toolbar (max-width: 560px) {
+  .history-more-label, .history-more-chevron { display: none; }
+  .history-more-button { position: relative; min-width: 40px; gap: 0; padding-inline: 8px !important; }
+  .history-more-count { position: absolute; top: -4px; right: -4px; border-radius: 999px; padding: 0 4px; background: var(--color-indigo-600); color: white; font-size: 10px; line-height: 16px; }
+  .history-sort-select { width: 104px; }
+  .history-toolbar-divider { margin-inline: 0; }
+}
+@container history-toolbar (max-width: 380px) {
+  .history-browse-controls { gap: 4px; }
+  .history-toolbar-status { gap: 4px; }
+  .history-toolbar-divider { display: none; }
+  .history-sort-select { width: 96px; }
+  .history-new-image-action { display: none; }
+  .history-new-image-badge { display: block; position: absolute; top: -4px; right: -4px; border-radius: 999px; padding: 0 4px; background: var(--color-indigo-600); color: white; font-size: 10px; line-height: 16px; }
+}
+@media (max-width: 767px) {
+  .history-icon-compact, .history-more-button, .history-management-button { min-width: 44px; }
+  .history-sort-select { min-height: 44px; }
+}

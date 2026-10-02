@@ -685,11 +685,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         void goToPage(1, true);
     };
 
-    const toggleFavoriteFilter = () => {
-        const favorite = !dateRangeRef.current.favoriteOnly;
-        applyBrowseQuery({ ...browseQuery, favoriteOnly: favorite, sort: !favorite && browseQuery.sort === 'favorite' ? 'newest' : browseQuery.sort });
-    };
-
     const submitDesktopPageJump = (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         const page = Number.parseInt(desktopJumpPage, 10);
@@ -1094,59 +1089,115 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     return (
         <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
             <WorkspaceToolbar>
-                    {migrationProgress && <span className="hidden truncate text-xs text-indigo-600 dark:text-indigo-400 md:block">{migrationProgress.total > 0 ? `正在迁移浏览器历史 ${migrationProgress.current}/${migrationProgress.total}，请勿关闭页面…` : '正在检查浏览器历史…'}</span>}
-                    <div className="flex min-w-0 flex-1 items-center gap-2">
-                        <HistoryBrowseControls query={browseQuery} options={browseOptions} mobile={isMobileViewport} onApply={applyBrowseQuery} />
-                        <ToolbarButton tone={favoriteOnly ? 'favorite' : 'neutral'} onClick={toggleFavoriteFilter} aria-pressed={favoriteOnly} title={favoriteOnly ? '显示全部历史图片' : '只看收藏图片'}><Heart className={favoriteOnly ? 'fill-current' : ''} />收藏</ToolbarButton>
-                        <div className="ml-auto hidden rounded-full bg-gray-100 px-3 py-1.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400 md:flex">{favoriteOnly ? '收藏 ' : ''}{totalCount} 张</div>
-                        <IconButton className="ml-auto md:hidden" label="历史管理" disabled={migrationProgress !== null} onClick={() => setShowCleanMenu(true)}><ListChecks /></IconButton>
-                        <div ref={managementAnchorRef} className="relative hidden md:block">
-                            <ToolbarButton 
-                                onClick={() => setShowCleanMenu(!showCleanMenu)} 
-                                disabled={migrationProgress !== null}
-                            >
-                                <ListChecks className="h-4 w-4" />管理<ChevronDown className="h-3.5 w-3.5" />
-                            </ToolbarButton>
-                            {showCleanMenu && !isMobileViewport && (
-                                <AnchoredToolbarPopover anchorRef={managementAnchorRef} title="历史管理" width={256} onClose={() => setShowCleanMenu(false)}>
-                                    <button
-                                        type="button"
-                                        onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }}
-                                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
-                                    >
-                                        <ListChecks className="h-4 w-4" />批量选择图片
-                                    </button>
-                                    <button 
-                                        type="button"
-                                        onClick={handleClearAll} 
-                                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
-                                    >
-                                        <Trash2 className="h-4 w-4" />清空全部
-                                    </button>
-                                    <button 
-                                        type="button"
-                                        onClick={() => handleCleanMenuClick('days')} 
-                                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
-                                    >
-                                        <Clock3 className="h-4 w-4" />按时间清理历史…
-                                    </button>
-                                    <button 
-                                        type="button"
-                                        onClick={() => handleCleanMenuClick('count')} 
-                                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
-                                    >
-                                        <Layers className="h-4 w-4" />按数量保留最新…
-                                    </button>
-                                </AnchoredToolbarPopover>
-                            )}
+                <div className="history-toolbar-shell">
+                    {selectionMode ? <>
+                        <span className="flex-1 whitespace-nowrap text-sm font-semibold md:hidden">已选 {selectedIds.size} 张</span>
+                        <ToolbarButton onClick={exitSelectionMode} className="md:hidden">完成</ToolbarButton>
+                        <div className="history-selection-actions hidden flex-1 md:flex">
+                            <span className="mr-auto flex-none text-xs font-bold text-indigo-800 dark:text-indigo-200">
+                                多选模式 · 已选 <span className="font-extrabold text-indigo-600 dark:text-indigo-400">{selectedIds.size}</span> 张
+                            </span>
+                            <div className="flex flex-none items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    onClick={selectCurrentPage}
+                                    className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:text-indigo-200 dark:hover:bg-indigo-900/50"
+                                >
+                                    全选本页
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={invertCurrentPageSelection}
+                                    className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:text-indigo-200 dark:hover:bg-indigo-900/50"
+                                >
+                                    反选本页
+                                </button>
+                                <div className="mx-1 h-3.5 w-px bg-indigo-200 dark:bg-indigo-800/60" />
+                                <button
+                                    type="button"
+                                    onClick={() => void handleBulkFavorite(true)}
+                                    disabled={!selectedIds.size || selectionFavoritePending}
+                                    className="rounded-xl bg-rose-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-rose-400 disabled:opacity-40"
+                                >
+                                    收藏选中
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => void handleBulkFavorite(false)}
+                                    disabled={!selectedIds.size || selectionFavoritePending}
+                                    className="rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40 dark:border-rose-900/40 dark:bg-gray-900 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                                >
+                                    取消收藏
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => void handleBulkDelete()}
+                                    disabled={!selectedIds.size}
+                                    className="rounded-xl bg-red-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-red-500 disabled:opacity-40"
+                                >
+                                    删除选中
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={exitSelectionMode}
+                                    className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                                >
+                                    退出多选
+                                </button>
+                            </div>
                         </div>
-                    </div>
-            </WorkspaceToolbar>
+                    </> : <>
+                        <HistoryBrowseControls query={browseQuery} options={browseOptions} mobile={isMobileViewport} onApply={applyBrowseQuery} />
+                        <div className="history-toolbar-status">
+                            {newImageCount > 0 && <ToolbarButton aria-label={`新增 ${newImageCount} 张图片 · 查看最新`} title={`新增 ${newImageCount} 张图片 · 查看最新`} onClick={showNewImages} className="history-new-image-action !px-2.5"><span className="history-new-image-label">新图</span><span className="tabular-nums">+{newImageCount}</span></ToolbarButton>}
+                            <span className="history-result-count">{totalCount} 张</span>
+                            <div ref={managementAnchorRef} className="relative">
+                                <ToolbarButton aria-label={newImageCount ? `管理，新增 ${newImageCount} 张图片` : '管理'} title={migrationProgress ? migrationProgress.total > 0 ? `正在迁移浏览器历史 ${migrationProgress.current}/${migrationProgress.total}，请勿关闭页面…` : '正在检查浏览器历史…' : '历史管理'} className="history-management-button relative" onClick={() => setShowCleanMenu(value => !value)} disabled={migrationProgress !== null}>
+                                    {migrationProgress ? <span role="status" aria-label="历史迁移进度"><LoaderCircle className="animate-spin" /></span> : <ListChecks />}<span className="history-management-label">管理</span><ChevronDown className="history-management-chevron" />
+                                    {newImageCount > 0 && <span aria-hidden="true" className="history-new-image-badge">+{newImageCount > 99 ? '99+' : newImageCount}</span>}
+                                </ToolbarButton>
+                                {showCleanMenu && !isMobileViewport && (
+                                    <AnchoredToolbarPopover anchorRef={managementAnchorRef} title="历史管理" width={256} onClose={() => setShowCleanMenu(false)}>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }}
+                                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+                                        >
+                                            <ListChecks className="h-4 w-4" />批量选择图片
+                                        </button>
 
-            {newImageCount > 0 && <div className="flex flex-none justify-center border-b border-gray-200 bg-white py-1 dark:border-gray-800 dark:bg-gray-900"><ToolbarButton onClick={showNewImages}>新增 {newImageCount} 张图片 · 查看最新</ToolbarButton></div>}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleCleanMenuClick('days')}
+                                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+                                        >
+                                            <Clock3 className="h-4 w-4" />按时间清理历史…
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleCleanMenuClick('count')}
+                                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+                                        >
+                                            <Layers className="h-4 w-4" />按数量保留最新…
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleClearAll}
+                                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm border-t border-gray-200 mt-2 pt-3 dark:border-gray-800 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                                        >
+                                            <Trash2 className="h-4 w-4" />清空全部
+                                        </button>
+                                    </AnchoredToolbarPopover>
+                                )}
+                            </div>
+                        </div>
+                    </>}
+                </div>
+            </WorkspaceToolbar>
 
             <ImagePreviewPortal><MobileBottomSheet open={showCleanMenu && isMobileViewport} title="历史管理" onClose={() => setShowCleanMenu(false)}>
                 <div className="space-y-2">
+                            {newImageCount > 0 && <ToolbarButton className="w-full" onClick={() => { setShowCleanMenu(false); showNewImages(); }}>新增 {newImageCount} 张图片 · 查看最新</ToolbarButton>}
                             <button onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-50 px-4 text-left text-sm font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">批量选择图片</button>
                             <button onClick={() => handleCleanMenuClick('days')} className="mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">删除指定天数以前的历史</button>
                             <button onClick={() => handleCleanMenuClick('count')} className="mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">只保留最近指定数量</button>
@@ -1167,61 +1218,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
             <div ref={historyScrollRef} onScroll={onScrollRestore} className="flex-1 overflow-y-auto p-4 md:p-6 pb-20">
                 {loadFailed && <div role="alert" className="mb-4 flex items-center justify-center gap-3 text-sm text-gray-500"><span>历史加载失败</span><ToolbarButton onClick={() => void goToPage(currentPageRef.current, true)}>重试</ToolbarButton></div>}
-                {selectionMode && (
-                    <div className="mb-5 hidden items-center gap-2 rounded-2xl border border-indigo-100 bg-indigo-50/80 px-4 py-2.5 shadow-sm dark:border-indigo-900/40 dark:bg-indigo-950/30 md:flex">
-                        <span className="mr-auto text-xs font-bold text-indigo-800 dark:text-indigo-200">
-                            多选模式 · 已选 <span className="font-extrabold text-indigo-600 dark:text-indigo-400">{selectedIds.size}</span> 张
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                            <button
-                                type="button"
-                                onClick={selectCurrentPage}
-                                className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:text-indigo-200 dark:hover:bg-indigo-900/50"
-                            >
-                                全选本页
-                            </button>
-                            <button
-                                type="button"
-                                onClick={invertCurrentPageSelection}
-                                className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:text-indigo-200 dark:hover:bg-indigo-900/50"
-                            >
-                                反选本页
-                            </button>
-                            <div className="mx-1 h-3.5 w-px bg-indigo-200 dark:bg-indigo-800/60" />
-                            <button
-                                type="button"
-                                onClick={() => void handleBulkFavorite(true)}
-                                disabled={!selectedIds.size || selectionFavoritePending}
-                                className="rounded-xl bg-rose-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-rose-400 disabled:opacity-40"
-                            >
-                                收藏选中
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => void handleBulkFavorite(false)}
-                                disabled={!selectedIds.size || selectionFavoritePending}
-                                className="rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40 dark:border-rose-900/40 dark:bg-gray-900 dark:text-rose-300 dark:hover:bg-rose-950/40"
-                            >
-                                取消收藏
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => void handleBulkDelete()}
-                                disabled={!selectedIds.size}
-                                className="rounded-xl bg-red-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-red-500 disabled:opacity-40"
-                            >
-                                删除选中
-                            </button>
-                            <button
-                                type="button"
-                                onClick={exitSelectionMode}
-                                className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                            >
-                                退出多选
-                            </button>
-                        </div>
-                    </div>
-                )}
                 {isLoading ? (
                     <PageSpinner label="加载中…" className="h-full" />
                 ) : items.length === 0 ? (
@@ -1350,7 +1346,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                     <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200 dark:border-gray-800">
                         <h3 className="mb-4 flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white"><AlertTriangle className="h-5 w-5 text-amber-500" />确认清理</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                            {cleanMode === 'days' 
+                            {cleanMode === 'days'
                                 ? `将删除 ${cleanDays} 天前的 ${cleanPreviewCount} 张图片`
                                 : `按全部生成历史执行，将删除 ${cleanPreviewCount} 张，只保留最近 ${cleanCount} 张`
                             }
