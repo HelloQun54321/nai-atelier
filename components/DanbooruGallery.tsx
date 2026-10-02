@@ -1,5 +1,5 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { ExternalLink, RefreshCw, Search } from 'lucide-react';
+import { RefreshCw, Search } from 'lucide-react';
 import {
   DanbooruPost,
   DanbooruTagCategory,
@@ -18,7 +18,7 @@ import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataServi
 import { Inspiration, NAIParams, User } from '../types';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { EmptyState, PageSpinner, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { ExternalImageTools } from './ExternalImageTools';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
@@ -627,6 +627,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
           title={selected ? `Danbooru #${selected.id}` : '作品详情'}
           sensitiveTitle
           subInfo={selected ? `${selected.width}×${selected.height} · ${selected.fileExt.toUpperCase()}` : undefined}
+          sourceUrl={selected?.postUrl}
           onBack={closeMobileDetail}
           onClose={() => setSelectedId(null)}
         >
@@ -636,7 +637,6 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             </DetailImageStage>
             <ExternalImageTools key={`danbooru:${selected.id}`} source="danbooru" sourceId={String(selected.id)} imageUrl={buildMediaUrl(selected.sampleUrl, 'original')}
               sourcePrompt={danbooruPromptTags(selected)} sourceCopy={danbooruAllTags(selected).join(', ')} onImport={importToPlayground} onSave={(reverse, existing) => saveToInspiration(selected, reverse, existing)} notify={notify}
-              sourceActions={<ToolbarLink href={selected.postUrl} target="_blank" rel="noreferrer"><ExternalLink />查看原帖</ToolbarLink>}
               sourceTags={<>
                 {(Object.keys(categoryLabels) as DanbooruTagCategory[]).map(category => selected.tags[category].length > 0 && <section key={category}>
               <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-black text-gray-700 dark:text-gray-200">{categoryLabels[category]} · {selected.tags[category].length}</h3><button type="button" onClick={() => void copyText(selected.tags[category].join(', ')).then(() => notify(`已复制${categoryLabels[category]} Tag`))} className="text-micro text-gray-500 hover:text-indigo-500">复制</button></div>

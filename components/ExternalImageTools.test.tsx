@@ -19,7 +19,7 @@ const reverse: ExternalImageTags = { result, prompt: 'blue hair, custom words', 
 const saved = (page = 0): Inspiration => ({ id: `saved-${page}`, userId: 'owner', title: 'saved', imageUrl: '/api/assets/saved', prompt: reverse.prompt, sourceType: 'pixiv', sourceId: '100', notes: 'keep notes', boardId: 'board', createdAt: 1, analysis: externalImageAnalysis(['原站标签'], page, reverse) });
 let serial = 0;
 const props = () => ({ source: 'danbooru' as const, sourceId: String(++serial), imageUrl: '/api/media/current.png', sourcePrompt: 'solo, original tag', onImport: vi.fn(),
-  onSave: vi.fn(async (draft: ExternalImageTags | undefined) => ({ ...saved(), analysis: externalImageAnalysis(['original tag'], 0, draft) })), notify: vi.fn(), sourceActions: <a href="https://example.invalid/post">查看原帖</a>, sourceTags: <span>原始分类</span> });
+  onSave: vi.fn(async (draft: ExternalImageTags | undefined) => ({ ...saved(), analysis: externalImageAnalysis(['original tag'], 0, draft) })), notify: vi.fn(), sourceTags: <span>原始分类</span> });
 beforeEach(() => {
   vi.clearAllMocks(); vi.mocked(db.getInspirationsBySource).mockResolvedValue([]); vi.mocked(imageTaggerService.tagFile).mockResolvedValue(result);
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, blob: async () => new Blob(['synthetic'], { type: 'image/png' }) })));
@@ -28,6 +28,23 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const ready = () => waitFor(() => expect(screen.getByRole('button', { name: '图片反推' }).hasAttribute('disabled')).toBe(false));
+
+it('图片处理与保存共享内容宽度的单行，站内状态在同一行右侧，窄栏仅收起保存文字', async () => {
+  const view = render(<ExternalImageTools {...props()} trailingAction={<button aria-label="收藏到 Pixiv">♡</button>} />); await ready();
+  const row = screen.getByRole('group', { name: '图片操作' });
+  expect(row.contains(screen.getByRole('button', { name: '图片反推' }))).toBe(true);
+  const save = screen.getByRole('button', { name: '加入灵感库' });
+  expect(row.contains(save)).toBe(true);
+  expect(row.contains(screen.getByRole('button', { name: '收藏到 Pixiv' }))).toBe(true);
+  expect(row.classList.contains('flex')).toBe(true);
+  expect(row.classList.contains('flex-wrap')).toBe(false);
+  expect(row.classList.contains('grid')).toBe(false);
+  expect(save.querySelector('span')?.className).toBe('hidden @[20rem]:inline');
+  expect(row.parentElement?.classList.contains('@container')).toBe(true);
+  expect(screen.queryByRole('link', { name: '查看原帖' })).toBeNull();
+  view.unmount(); render(<ExternalImageTools {...props()} />); await ready();
+  expect(screen.getByRole('group', { name: '图片操作' }).childElementCount).toBe(2);
+});
 
 it('反推直接可达，原站和预测分别复制／导入，保存前允许编辑并保留模型结果', async () => {
   const p = { ...props(), sourceCopy: 'original_artist, solo, original_tag, metadata' }; render(<ExternalImageTools {...p} />); await ready();

@@ -16,12 +16,13 @@ interface ExternalImageToolsProps {
   onImport: (prompt: string) => void;
   onSave: (reverse: ExternalImageTags | undefined, existing: Inspiration | undefined) => Promise<Inspiration>;
   notify: (message: string, type?: 'success' | 'error') => void;
-  sourceActions: React.ReactNode;
+  /** 当前图片的站内状态操作；来源导航由详情标题栏承载。 */
+  trailingAction?: React.ReactNode;
   sourceTags: React.ReactNode;
 }
 
-/** 外部作品统一按获取提示词、保存素材、查看来源分组；两种 Tag 不相互覆盖。 */
-export const ExternalImageTools: React.FC<ExternalImageToolsProps> = ({ source, sourceId, page = 0, imageUrl, sourcePrompt, sourceCopy = sourcePrompt, onImport, onSave, notify, sourceActions, sourceTags }) => {
+/** 图片处理与保存保持紧凑单行，两种 Tag 不相互覆盖。 */
+export const ExternalImageTools: React.FC<ExternalImageToolsProps> = ({ source, sourceId, page = 0, imageUrl, sourcePrompt, sourceCopy = sourcePrompt, onImport, onSave, notify, trailingAction, sourceTags }) => {
   const key = `${source}:${sourceId}:${page}`;
   const [reverse, setReverse] = useState<ExternalImageTags | undefined>(() => externalImageDrafts.get(key));
   const [existing, setExisting] = useState<Inspiration>();
@@ -59,13 +60,14 @@ export const ExternalImageTools: React.FC<ExternalImageToolsProps> = ({ source, 
   };
   const savedReverse = readExternalImageTags(existing);
   const saved = Boolean(reverse && savedReverse && reverse.prompt === savedReverse.prompt && reverse.createdAt === savedReverse.createdAt);
+  const saveLabel = saving ? '保存中…' : existing ? '更新灵感库' : '加入灵感库';
   return <>
-    <div className="space-y-2">
-      <div className="grid grid-cols-2 gap-2">
-        <ToolbarButton tone="primary" disabled={loading} onClick={() => { initial.current = reverse; setTaggerOpen(true); }}><ImagePlus />图片反推</ToolbarButton>
-        <ToolbarButton disabled={loading || loadError || saving} onClick={() => void save()}><Bookmark />{saving ? '保存中…' : existing ? '更新灵感库' : '加入灵感库'}</ToolbarButton>
+    <div className="@container space-y-2">
+      <div role="group" aria-label="图片操作" className="flex items-center gap-2">
+        <ToolbarButton tone="primary" className="whitespace-nowrap" disabled={loading} onClick={() => { initial.current = reverse; setTaggerOpen(true); }}><ImagePlus />图片反推</ToolbarButton>
+        <ToolbarButton aria-label={saveLabel} title={saveLabel} className="whitespace-nowrap" disabled={loading || loadError || saving} onClick={() => void save()}><Bookmark /><span className="hidden @[20rem]:inline">{saveLabel}</span></ToolbarButton>
+        {trailingAction && <div className="ml-auto flex flex-none items-center">{trailingAction}</div>}
       </div>
-      <div className="flex flex-wrap items-center gap-2">{sourceActions}</div>
       {loadError && <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-300"><span>无法读取已保存的 Tag</span><ToolbarButton onClick={() => setLoadToken(value => value + 1)}>重试读取</ToolbarButton></div>}
     </div>
     {reverse && <section className="space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">

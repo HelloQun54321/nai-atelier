@@ -27,7 +27,7 @@ const observers: Array<(entries: Array<{ isIntersecting: boolean }>) => void> = 
 const search = vi.mocked(danbooruService.search);
 const resolve = vi.mocked(resolveDanbooruQuery);
 const result = (query = 'order:rank', items: DanbooruPost[] = [], page = 1, hasMore = false) => ({ query, items, page, hasMore, limit: 40 });
-const post: DanbooruPost = { id: 1, rating: 'g', score: 10, favCount: 10, width: 800, height: 1200, fileExt: 'png', previewUrl: '', sampleUrl: '', sourceUrl: '', postUrl: '', tags: { general: ['solo'], artist: ['synthetic_artist'], copyright: [], character: [], meta: [] } };
+const post: DanbooruPost = { id: 1, rating: 'g', score: 10, favCount: 10, width: 800, height: 1200, fileExt: 'png', previewUrl: '', sampleUrl: '', sourceUrl: '', postUrl: 'https://danbooru.donmai.us/posts/1', tags: { general: ['solo'], artist: ['synthetic_artist'], copyright: [], character: [], meta: [] } };
 const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; };
 
 beforeEach(() => {
@@ -60,6 +60,10 @@ it('详情主操作是图片反推，原站复制／使用独立，保存实际�
   await waitFor(() => expect(screen.getByRole('button', { name: '图片反推' }).hasAttribute('disabled')).toBe(false));
   expect(screen.queryByRole('button', { name: '更多' })).toBeNull();
   expect(screen.queryByRole('button', { name: '导入实验室' })).toBeNull();
+  const source = screen.getByRole('link', { name: '查看原帖' });
+  expect(source.closest('header')).toBeTruthy();
+  expect(source.getAttribute('href')).toBe(post.postUrl);
+  expect(screen.getByRole('group', { name: '图片操作' }).contains(source)).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: '原站 Tag 送往实验室' }));
   expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ prompt: 'solo', mode: 'append-prompt' });
   fireEvent.click(screen.getByRole('button', { name: '加入灵感库' }));

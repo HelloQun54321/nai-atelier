@@ -1,6 +1,6 @@
 import React from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { BackButton, CloseButton, IconButton } from './DesignSystem';
+import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
+import { BackButton, CloseButton, IconButton, IconLink } from './DesignSystem';
 
 /**
  * 图库详情层共享组件：统一"移动端/平板全屏覆盖 → lg 桌面右侧栏"的面板骨架。
@@ -18,6 +18,8 @@ interface DetailSidePanelProps {
   sensitiveTitle?: boolean;
   /** 标题下的副信息行（尺寸·页数·来源等） */
   subInfo?: string;
+  /** 原帖入口固定在标题栏，与作品身份相邻，不随正文滚出视野。 */
+  sourceUrl?: string;
   onClose: () => void;
   /** 覆盖形态下的返回按钮（移动端历史层） */
   onBack?: () => void;
@@ -28,21 +30,24 @@ interface DetailSidePanelProps {
   children: React.ReactNode;
 }
 
-export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, sensitiveTitle = false, subInfo, onClose, onBack, bodyRef, onBodyScroll, children }) => (
+export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, sensitiveTitle = false, subInfo, sourceUrl, onClose, onBack, bodyRef, onBodyScroll, children }) => (
   <aside
     data-safe-mode-work={sensitiveTitle ? 'true' : undefined}
     className={`aitag-detail-panel appearance-surface ${open ? 'aitag-detail-panel--open flex' : 'aitag-detail-panel--closed hidden'} fixed inset-0 z-[1100] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:static lg:z-auto lg:border-l`}
     aria-label={title}
   >
     <header className="flex h-14 flex-none items-center justify-between gap-2 border-b border-gray-200 px-4 dark:border-gray-800">
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         {onBack && <BackButton onClick={onBack} className="mobile-touch aitag-detail-back lg:hidden" />}
         <div className="min-w-0">
           <p data-safe-mode-title={sensitiveTitle ? 'true' : undefined} className="truncate text-sm font-bold">{title}</p>
           {subInfo && <p className="truncate text-micro text-gray-500 dark:text-gray-400">{subInfo}</p>}
         </div>
       </div>
-      <CloseButton onClick={onClose} className="hidden lg:inline-flex" />
+      <div className="flex flex-none items-center gap-2">
+        {sourceUrl && <IconLink label="查看原帖" href={sourceUrl} target="_blank" rel="noreferrer"><ExternalLink /></IconLink>}
+        <CloseButton onClick={onClose} className="hidden lg:inline-flex" />
+      </div>
     </header>
     <div ref={bodyRef} onScroll={onBodyScroll} className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
   </aside>

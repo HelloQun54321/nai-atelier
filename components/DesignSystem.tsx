@@ -120,6 +120,14 @@ export const ToolbarSearch: React.FC<React.InputHTMLAttributes<HTMLInputElement>
   </label>
 );
 
+const ICON_CONTROL_CLASS = 'inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl border outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0';
+const ICON_NEUTRAL_CLASS = 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-white';
+
+/** 来源导航使用原生链接，尺寸与图标按钮一致，并保留新窗口／键盘行为。 */
+export const IconLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement> & { label: string }> = ({ label, className = '', children, ...props }) => (
+  <a aria-label={label} title={label} className={`${ICON_CONTROL_CLASS} ${ICON_NEUTRAL_CLASS} ${className}`} {...props}>{children}</a>
+);
+
 export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
   tone?: 'neutral' | 'primary' | 'danger' | 'favorite';
@@ -130,9 +138,9 @@ export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> 
       ? 'border-rose-500 bg-rose-500 text-white hover:bg-rose-400 dark:border-rose-500 dark:bg-rose-500 dark:text-white'
     : tone === 'danger'
       ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300'
-      : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-white';
+      : ICON_NEUTRAL_CLASS;
   return (
-    <button type="button" aria-label={label} title={label} className={`inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl border outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 ${toneClass} ${className}`} {...props}>
+    <button type="button" aria-label={label} title={label} className={`${ICON_CONTROL_CLASS} ${toneClass} ${className}`} {...props}>
       {children}
     </button>
   );

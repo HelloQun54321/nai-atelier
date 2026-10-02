@@ -3,12 +3,12 @@ import {
   Calendar,
   CircleUserRound,
   Clock,
-  ExternalLink,
   Filter,
   Flame,
   Heart,
   KeyRound,
   LogIn,
+  LoaderCircle,
   RefreshCw,
   Search,
   Sparkles,
@@ -21,7 +21,7 @@ import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataServi
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { Inspiration, NAIParams, User } from '../types';
 import { externalImageAnalysis, type ExternalImageTags } from '../services/externalImageTags';
-import { EmptyState, FilterPill, MediaCardShell, PageSpinner, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, FilterPill, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ExternalImageTools } from './ExternalImageTools';
@@ -1089,6 +1089,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
           title={selected ? selected.title : '作品详情'}
           sensitiveTitle
           subInfo={selected ? `Pixiv #${selected.id} · ${selected.width}×${selected.height} · ${currentPageCount} 页` : undefined}
+          sourceUrl={selected ? pixivArtworkUrl(selected) : undefined}
           onBack={closeMobileDetail}
           onClose={() => setSelectedId(null)}
         >
@@ -1116,25 +1117,23 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                   动图（ugoira）：这里展示首帧，动画请到 Pixiv 查看。
                 </div>
               )}
-              <div className="flex items-center justify-between text-meta text-gray-500">
-                <span>♥ {formatCount(selected.totalBookmarks)}</span>
-                <span>浏览 {formatCount(selected.totalViews)}</span>
-                <span className="font-semibold text-indigo-600 dark:text-indigo-400">{selected.user.name}</span>
+              <div className="flex min-w-0 items-center gap-3 text-meta text-gray-500">
+                <span className="flex-none">♥ {formatCount(selected.totalBookmarks)}</span>
+                <span className="flex-none">浏览 {formatCount(selected.totalViews)}</span>
+                <button type="button" aria-label={`查看 ${selected.user.name} 的作者全集`} title={`查看 ${selected.user.name} 的作者全集`} onClick={() => openAuthorWorks(selected.user.id, selected.user.name)} className="ml-auto min-h-10 min-w-0 truncate rounded text-right font-semibold text-indigo-600 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-indigo-400 lg:min-h-0">{selected.user.name}</button>
               </div>
               <ExternalImageTools key={`pixiv:${selected.id}:${selectedPage}`} source="pixiv" sourceId={selected.id} page={selectedPage} imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')}
                 sourcePrompt={selected.tags.join(', ')} onImport={importToPlayground} onSave={(reverse, existing) => saveToInspiration(selected, selectedPage, reverse, existing)} notify={notify}
-                sourceActions={<>
-                <ToolbarLink href={pixivArtworkUrl(selected)} target="_blank" rel="noreferrer"><ExternalLink />查看原帖</ToolbarLink>
-                <ToolbarButton onClick={() => openAuthorWorks(selected.user.id, selected.user.name)}><CircleUserRound />作者全集</ToolbarButton>
-                <ToolbarButton
+                trailingAction={<IconButton
+                  label={bookmarking ? '正在同步 Pixiv 收藏' : selected.isBookmarked ? '取消 Pixiv 收藏' : '收藏到 Pixiv'}
+                  aria-pressed={Boolean(selected.isBookmarked)}
+                  aria-busy={bookmarking}
                   tone={selected.isBookmarked ? 'favorite' : undefined}
                   disabled={bookmarking}
                   onClick={() => void handleToggleBookmark(selected)}
                 >
-                  <Heart className={selected.isBookmarked ? 'fill-rose-500 text-rose-500' : ''} />
-                  {bookmarking ? '同步中…' : selected.isBookmarked ? '已收藏到Pixiv' : '收藏到Pixiv'}
-                </ToolbarButton>
-                </>}
+                  {bookmarking ? <LoaderCircle className="animate-spin" /> : <Heart className={selected.isBookmarked ? 'fill-current' : ''} />}
+                </IconButton>}
                 sourceTags={selected.tags.length > 0 ? (
                   <TagChipGroup
                     chips={selected.tags.map(tag => ({
