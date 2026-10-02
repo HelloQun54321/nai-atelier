@@ -22,7 +22,8 @@ import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { OriginalImage, SmartImage } from './SmartImage';
-import { buildMediaUrl } from '../services/mobileImageCache';
+import { buildMediaUrl, selectThumbnailVariant } from '../services/mobileImageCache';
+import { createMediaPrewarmSession } from '../services/mediaPrewarm';
 import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHistoryService';
 import { Clock } from 'lucide-react';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -108,40 +109,56 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   const appendingRef = useRef(false);
   const loadGuard = useStaleGuard();
   const loadSeqRef = useRef(0);
-  const nextPagePrefetchRef = useRef<{ query: string; page: number; promise: Promise<Awaited<ReturnType<typeof danbooruService.search>> | null> } | null>(null);
+  const activeRef = useRef(active); activeRef.current = active;
+  const requestController = useRef<AbortController | null>(null);
+  const prewarm = useRef<ReturnType<typeof createMediaPrewarmSession> | null>(null);
+  if (!prewarm.current) prewarm.current = createMediaPrewarmSession();
+  const nextPagePrefetchRef = useRef<{ query: string; page: number; controller: AbortController; promise: Promise<Awaited<ReturnType<typeof danbooruService.search>> | null> } | null>(null);
 
   const scheduleNextPagePrefetch = (query: string, page: number, hasMore: boolean) => {
-    if (!hasMore || showHistory) return;
+    if (!activeRef.current || !hasMore || showHistory) return;
     const existing = nextPagePrefetchRef.current;
     if (existing && existing.query === query && existing.page === page + 1) return;
-    const promise = danbooruService.search({ query, page: page + 1, limit: PAGE_SIZE })
+    existing?.controller.abort();
+    const controller = new AbortController();
+    const seq = loadSeqRef.current;
+    const promise = danbooruService.search({ query, page: page + 1, limit: PAGE_SIZE, signal: controller.signal })
       .then(result => {
-        prewarmSources(result.items.map(item => item.sampleUrl));
+        if (controller.signal.aborted || !activeRef.current || !loadGuard.isCurrent(seq)) return null;
+        prewarmSources(result.items.map(item => item.sampleUrl), seq);
         return result;
       })
       .catch(() => null);
-    nextPagePrefetchRef.current = { query, page: page + 1, promise };
+    nextPagePrefetchRef.current = { query, page: page + 1, controller, promise };
   };
 
   const consumeNextPagePrefetch = (query: string, page: number) => {
     const prefetch = nextPagePrefetchRef.current;
     if (!prefetch || prefetch.query !== query || prefetch.page !== page) return null;
-    nextPagePrefetchRef.current = null;
-    return prefetch.promise;
+    return prefetch.promise.finally(() => {
+      if (nextPagePrefetchRef.current === prefetch) nextPagePrefetchRef.current = null;
+    });
   };
 
   const selected = useMemo(() => items.find(item => item.id === selectedId) || null, [items, selectedId]);
   const closeMobileDetail = useMobileHistoryLayer(Boolean(selected), () => setSelectedId(null), 'danbooru-detail');
 
-  // 后台预热该批缩略图：滚动时缓存命中，不再等待首次抓取。
-  const prewarmSources = (sources: string[]) => {
-    const valid = sources.filter(Boolean);
-    if (!valid.length) return;
-    fetch('/api/media/prewarm', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sources: valid }),
-    }).catch(() => {});
+  // 只预热下一页的前两行；当前屏幕由 SmartImage 的显示请求优先加载。
+  const prewarmSources = (sources: string[], seq: number) => {
+    requestAnimationFrame(() => {
+      if (!activeRef.current || !loadGuard.isCurrent(seq)) return;
+      const frame = scrollRef.current?.querySelector<HTMLElement>('.mobile-gallery-frame');
+      const width = frame?.clientWidth || 160;
+      const columns = Math.max(1, Math.round((scrollRef.current?.clientWidth || window.innerWidth) / width));
+      const variant = selectThumbnailVariant(width * Math.max(1, window.devicePixelRatio || 1));
+      prewarm.current?.enqueue(sources.filter(Boolean).slice(0, Math.min(18, columns * 2)), variant);
+    });
+  };
+  const cancelBackground = () => {
+    requestController.current?.abort();
+    nextPagePrefetchRef.current?.controller.abort();
+    nextPagePrefetchRef.current = null;
+    prewarm.current?.cancel();
   };
 
   // 记录足迹
@@ -166,7 +183,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
 
   const loadHistory = () => {
     loadSeqRef.current = loadGuard.begin();
-    nextPagePrefetchRef.current = null;
+    cancelBackground();
     setLoading(false);
     const history = galleryHistoryService.getHistory('danbooru');
     setHistoryItems(history);
@@ -176,7 +193,8 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   const beginLoad = () => {
     const seq = loadGuard.begin();
     loadSeqRef.current = seq;
-    nextPagePrefetchRef.current = null;
+    cancelBackground();
+    requestController.current = new AbortController();
     setLoading(true);
     setError('');
     return seq;
@@ -185,8 +203,8 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   const load = async (nextQuery = query, nextPage = page, mySeq = beginLoad()) => {
     setShowHistory(false);
     try {
-      const result = await danbooruService.search({ query: nextQuery, page: nextPage, limit: PAGE_SIZE });
-      if (!loadGuard.isCurrent(mySeq)) return;
+      const result = await danbooruService.search({ query: nextQuery, page: nextPage, limit: PAGE_SIZE, signal: requestController.current?.signal });
+      if (!activeRef.current || !loadGuard.isCurrent(mySeq)) return;
       setItems(result.items);
       setHasMore(result.hasMore);
       setQuery(result.query);
@@ -195,7 +213,6 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       pageRef.current = result.page;
       setSelectedId(current => result.items.some(item => item.id === current) ? current : null);
       loadedRef.current = true;
-      prewarmSources(result.items.map(item => item.sampleUrl));
       scheduleNextPagePrefetch(result.query, result.page, result.hasMore);
       requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; });
     } catch (loadError) {
@@ -270,9 +287,10 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     try {
       // 优先消费投机预取的下一页（预取失败则回退正常请求）
       const prefetched = await consumeNextPagePrefetch(beforeQuery, beforePage + 1);
-      const result = prefetched || await danbooruService.search({ query: beforeQuery, page: beforePage + 1, limit: PAGE_SIZE });
+      if (!activeRef.current || !loadGuard.isCurrent(beforeSeq)) return;
+      const result = prefetched || await danbooruService.search({ query: beforeQuery, page: beforePage + 1, limit: PAGE_SIZE, signal: requestController.current?.signal });
       // 加载期间用户搜索/跳页：丢弃本次结果，避免拼接到错误列表上。
-      if (!loadGuard.isCurrent(beforeSeq) || pageRef.current !== beforePage || queryRef.current !== beforeQuery) return;
+      if (!activeRef.current || !loadGuard.isCurrent(beforeSeq) || pageRef.current !== beforePage || queryRef.current !== beforeQuery) return;
       setItems(previous => {
         const ids = new Set(previous.map(post => post.id));
         return [...previous, ...result.items.filter(post => !ids.has(post.id))];
@@ -280,8 +298,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       setHasMore(result.hasMore);
       setPage(result.page);
       pageRef.current = result.page;
-      // 追加页同样预热：否则滚到新页时每张图都要首次抓取，出现“断一下”。
-      prewarmSources(result.items.map(item => item.sampleUrl));
+      // 延续下一页元数据预取，图片只预热前两行。
       scheduleNextPagePrefetch(beforeQuery, result.page, result.hasMore);
     } catch (appendError) {
       if (!loadGuard.isCurrent(beforeSeq)) return;
@@ -293,7 +310,16 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   };
 
   useEffect(() => {
-    if (active && !loadedRef.current) void load('order:rank', 1);
+    if (!active) {
+      loadSeqRef.current = loadGuard.begin(); cancelBackground(); setLoading(false);
+    } else if (!loadedRef.current) void load(queryRef.current, pageRef.current);
+    else {
+      requestController.current = new AbortController();
+      scheduleNextPagePrefetch(queryRef.current, pageRef.current, hasMore);
+    }
+    return () => cancelBackground();
+    // 隐藏保留已完成列表，返回时只恢复下一页预取。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
   // 滚动接近列表底部自动加载下一页（追加模式，与 Pixiv 相同的哨兵机制）：
@@ -303,7 +329,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   useEffect(() => {
     const sentinel = appendSentinelRef.current;
     const root = scrollRef.current;
-    if (!sentinel || !root || showHistory || !hasMore || loading || items.length >= DANBOORU_APPEND_LIMIT) return;
+    if (!active || !sentinel || !root || showHistory || !hasMore || loading || items.length >= DANBOORU_APPEND_LIMIT) return;
     if (!('IntersectionObserver' in window)) return;
     const observer = new IntersectionObserver(entries => {
       if (entries[0]?.isIntersecting) void appendNextPage();
@@ -312,7 +338,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     return () => observer.disconnect();
     // appendNextPage 闭包随 items.length 重建，无需列入依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMore, items.length, loading, page, showHistory]);
+  }, [active, hasMore, items.length, loading, page, showHistory]);
 
   // 瀑布流（masonry 布局时）：真实宽高比完整显示，最短列分配互相补齐。
   const masonryColumns = useMasonryColumnCount(imageDisplay);
@@ -573,6 +599,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
           ) : displayedItems.length ? (
             imageDisplay.layout === 'masonry' ? (
               <ShortestColumnMasonry
+                stableColumns
                 items={displayedItems}
                 columns={masonryColumns}
                 getItemKey={post => String(post.id)}

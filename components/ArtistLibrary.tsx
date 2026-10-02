@@ -1,3 +1,4 @@
+import { useImageRatios } from './useImageRatios';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -12,7 +13,6 @@ import { ChevronDown, Dice5, LoaderCircle } from 'lucide-react';
 import { ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { DanbooruCover } from './DanbooruCover';
-import { danbooruService } from '../services/danbooruService';
 import { TagCoverActions } from './TagCoverActions';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -33,7 +33,7 @@ type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
 export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notify, onNavigateToPlayground }) => {
     const imageDisplay = useMobileImageDisplayPreferences();
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
-    const [artistRatios, setArtistRatios] = useState<Record<string, number>>({});
+    const [artistRatios, updateImageRatio] = useImageRatios();
     const estimateArtistCardHeight = React.useCallback((artist: (typeof filteredArtists)[number], columnWidth: number) => {
       const ratio = artistRatios[artist.id] || 2 / 3;
       const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
@@ -57,7 +57,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                                             kind="artist"
                                             alt={artist.chineseName || artist.name}
                                             fixedSrc={displayImg}
-                                            onImageLoad={(width, height) => { const ratio = width / Math.max(1, height); if (Number.isFinite(ratio) && ratio > 0) setArtistRatios(previous => previous[artist.id] === ratio ? previous : { ...previous, [artist.id]: ratio }); }}
+                                            onImageLoad={(width, height) => updateImageRatio(artist.id, width, height)}
                                         />
                                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors pointer-events-none" />
                                         <TagCoverActions favorite={isFav} onToggleFavorite={() => toggleFav(artist)} />
@@ -441,29 +441,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
         return () => { cancelled = true; };
     }, [showFavOnly, searchTerm, gachaArtists, favorites, favoriteArtistDetails, artistSort]);
 
-    // 目录预取：前 40 个画师提前查候选并固定缩略图缓存，不改写私人封面。
-    // getCoverSet 合并相同请求并限流，正常结果缓存 14 天，空候选仅短期缓存。
-    const coverPrewarmedRef = useRef(new Set<string>());
-    useEffect(() => {
-        if (gachaArtists) return;
-        const targets = filteredArtists
-            .filter(artist => !coverPrewarmedRef.current.has(artist.name))
-            .slice(0, 40);
-        if (!targets.length) return;
-        for (const artist of targets) {
-            coverPrewarmedRef.current.add(artist.name);
-            void danbooruService.getCoverSet(artist.name, 'artist').then(set => {
-                const src = set.representative?.sampleUrl || set.candidates?.[0]?.sampleUrl;
-                if (!src) return;
-                fetch('/api/media/prewarm', {
-                    method: 'POST',
-                    headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({ sources: [src], pin: true }),
-                }).catch(() => {});
-            }).catch(() => {});
-        }
-    }, [filteredArtists, gachaArtists]);
-
     // 抽卡只读取本地 Tag 目录，不触发生图。
 
     const drawGachaIndex = (mode: ArtistGachaMode, total: number) => {
@@ -567,6 +544,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
             <div ref={scrollContainerRef} onScroll={onScrollRestore} className="flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
                 {imageDisplay.layout === 'masonry' ? (
                     <ShortestColumnMasonry<Artist>
+                        stableColumns
                         items={filteredArtists}
                         columns={gridCols}
                         getItemKey={artist => String(artist.id)}

@@ -62,6 +62,8 @@ export const computeShortestColumnAssignment = <T,>(
   columnCount: number,
   estimateHeight: (item: T, columnWidth: number) => number,
   columnWidth: number,
+  /** 已显示卡片保持原列，尺寸更新只影响新卡片的最短列选择。 */
+  placement?: { previous: ReadonlyMap<string, number>; next: Map<string, number>; key: (item: T) => string },
 ): T[][] => {
   const count = Math.max(0, Math.min(columnCount, items.length));
   const columns: T[][] = Array.from({ length: count }, () => []);
@@ -71,6 +73,11 @@ export const computeShortestColumnAssignment = <T,>(
     let target = 0;
     for (let i = 1; i < count; i += 1) {
       if (heights[i] < heights[target]) target = i;
+    }
+    if (placement) {
+      const retained = placement.previous.get(placement.key(item));
+      if (retained !== undefined && retained < count) target = retained;
+      placement.next.set(placement.key(item), target);
     }
     columns[target].push(item);
     heights[target] += estimateHeight(item, columnWidth);
@@ -90,6 +97,7 @@ interface ShortestColumnMasonryProps<T> {
   className?: string;
   /** 列间距与卡片间距，默认 12px（与 .75rem 一致）。 */
   gap?: number;
+  stableColumns?: boolean;
 }
 
 /**
@@ -104,9 +112,11 @@ export const ShortestColumnMasonry = <T,>({
   renderItem,
   className,
   gap = 12,
+  stableColumns = false,
 }: ShortestColumnMasonryProps<T>) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const committed = useRef({ count: 0, keys: [] as string[], placement: new Map<string, number>() });
 
   useEffect(() => {
     const element = containerRef.current;
@@ -128,10 +138,22 @@ export const ShortestColumnMasonry = <T,>({
   const columnWidth =
     containerWidth > 0 ? (containerWidth - (requestedColumns - 1) * gap) / requestedColumns : 0;
 
-  const layout = useMemo(() => {
-    if (usedColumns === 0 || columnWidth <= 0 || items.length === 0) return [] as T[][];
-    return computeShortestColumnAssignment(items, usedColumns, estimateItemHeight, columnWidth);
-  }, [items, usedColumns, estimateItemHeight, columnWidth]);
+  const computed = useMemo(() => {
+    const keys = items.map(getItemKey);
+    const keySet = new Set(keys);
+    const oldSet = new Set(committed.current.keys);
+    const retainedOrder = committed.current.keys.filter(key => keySet.has(key));
+    const reordered = keys.filter(key => oldSet.has(key)).some((key, index) => key !== retainedOrder[index]);
+    const previous = stableColumns && committed.current.count === usedColumns && !reordered
+      ? committed.current.placement : new Map<string, number>();
+    const placement = new Map<string, number>();
+    const layout = usedColumns === 0 || columnWidth <= 0 ? [] as T[][]
+      : computeShortestColumnAssignment(items, usedColumns, estimateItemHeight, columnWidth,
+        stableColumns ? { previous, next: placement, key: getItemKey } : undefined);
+    return { layout, placement, keys, count: usedColumns };
+  }, [items, usedColumns, estimateItemHeight, columnWidth, stableColumns, getItemKey]);
+  useEffect(() => { if (columnWidth > 0) committed.current = computed; }, [computed, columnWidth]);
+  const layout = computed.layout;
 
   return (
     <div

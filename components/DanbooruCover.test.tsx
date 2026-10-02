@@ -4,15 +4,39 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DanbooruCover } from './DanbooruCover';
 import { danbooruService, type DanbooruCoverCandidate } from '../services/danbooruService';
+import { ImageActivityContext } from './SmartImage';
 
 vi.mock('../services/danbooruService', () => ({ danbooruService: { getCoverSet: vi.fn(), getCoverCandidatePage: vi.fn() } }));
-vi.mock('./SmartImage', () => ({ SmartImage: ({ src, alt, onError }: { src: string; alt: string; onError: () => void }) => <img src={src} alt={alt} onError={onError} /> }));
+vi.mock('./SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: ({ src, alt, onError }: { src: string; alt: string; onError: () => void }) => <img src={src} alt={alt} onError={onError} /> }));
 const covers = vi.mocked(danbooruService.getCoverSet);
 const pages = vi.mocked(danbooruService.getCoverCandidatePage);
 const candidate = (id: number): DanbooruCoverCandidate => ({ id, score: 20, previewUrl: `https://cdn.donmai.us/preview/${id}.jpg`, sampleUrl: `https://cdn.donmai.us/sample/${id}.webp`, postUrl: '' });
 const set = (candidates = [candidate(1)], hasMore = false, nextPage = 1) => ({ candidates, representative: candidates[0] || null, hasMore, nextPage });
 const image = () => screen.getByRole('img') as HTMLImageElement;
 const failImage = () => fireEvent.error(image());
+it('保存封面直接展示，一次翻图才检索并立即显示代表图', async () => {
+  covers.mockResolvedValue({ ...set([candidate(1), candidate(2)]), representative: candidate(2) });
+  render(<DanbooruCover tag="saved" kind="character" alt="封面" fixedSrc="/api/assets/synthetic" />);
+  expect(image().getAttribute('src')).toBe('/api/assets/synthetic');
+  expect(covers).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '下一张' }));
+  await waitFor(() => expect(image().src).toBe(candidate(2).sampleUrl));
+  expect(covers).toHaveBeenCalledTimes(1);
+});
+it('离开视图取消查询和预热，回来保留已选图片且不重新查询', async () => {
+  covers.mockResolvedValue(set([candidate(1), candidate(2), candidate(3)]));
+  const view = (active: boolean) => <ImageActivityContext.Provider value={active}><DanbooruCover tag="retained" kind="artist" alt="封面" /></ImageActivityContext.Provider>;
+  const { rerender } = render(view(true));
+  await waitFor(() => expect(image().src).toBe(candidate(1).sampleUrl));
+  fireEvent.click(screen.getByRole('button', { name: '下一张' })); expect(image().src).toBe(candidate(2).sampleUrl);
+  const signal = covers.mock.calls[0][2]?.signal;
+  rerender(view(false)); expect(signal?.aborted).toBe(true);
+  rerender(view(true)); await act(async () => {});
+  expect(image().src).toBe(candidate(2).sampleUrl); expect(covers).toHaveBeenCalledTimes(1);
+  const bodies = vi.mocked(fetch).mock.calls.map(call => JSON.parse(String(call[1]?.body)));
+  expect(bodies.some(body => body.cancel === true)).toBe(true);
+  expect(bodies.filter(body => body.sources).every(body => body.sources.length === 1 && body.variant.startsWith('thumb-'))).toBe(true);
+});
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
@@ -66,7 +90,8 @@ it('空首屏提供继续查找，从服务记录的页码补读并跳过空页'
   render(<DanbooruCover tag="synthetic" kind="character" alt="封面" />);
   fireEvent.click(await screen.findByRole('button', { name: '继续查找封面' }));
   await waitFor(() => expect(image().src).toBe(candidate(5).sampleUrl));
-  expect(pages.mock.calls).toEqual([['synthetic', 'character', 4], ['synthetic', 'character', 5]]);
+  expect(pages.mock.calls.map(call => call.slice(0, 3))).toEqual([['synthetic', 'character', 4], ['synthetic', 'character', 5]]);
+  expect(pages.mock.calls.every(call => call[3]?.signal instanceof AbortSignal)).toBe(true);
 });
 it('坏图后的自动补页最多三页，不进入无界请求循环', async () => {
   const broken = { ...candidate(1), previewUrl: candidate(1).sampleUrl };

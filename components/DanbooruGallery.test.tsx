@@ -45,13 +45,37 @@ const setup = async () => {
 const openFilters = () => fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
 const changeFilter = (name: string, value: string) => fireEvent.change(screen.getByRole('combobox', { name }), { target: { value } });
 const submit = (value: string) => { const input = screen.getByRole('searchbox', { name: '搜索 Danbooru' }); fireEvent.change(input, { target: { value } }); fireEvent.submit(input.closest('form')!); };
+it('切换查询中止旧预取，迟到预取不再发起图片预热', async () => {
+  const pending = deferred<ReturnType<typeof result>>();
+  search.mockImplementation(async options => options?.page === 2 ? pending.promise : result(options?.query, [], 1, !options?.query?.includes('new')));
+  await setup(); await waitFor(() => expect(search).toHaveBeenCalledTimes(2));
+  const signal = search.mock.calls[1][0]?.signal;
+  submit('new'); await waitFor(() => expect(search).toHaveBeenCalledTimes(3));
+  expect(signal?.aborted).toBe(true);
+  await act(async () => pending.resolve(result('order:rank', [{ ...post, sampleUrl: 'https://cdn.donmai.us/synthetic.webp' }], 2)));
+  await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });
+  const bodies = vi.mocked(fetch).mock.calls.filter(call => String(call[0]) === '/api/media/prewarm').map(call => JSON.parse(String(call[1]?.body)));
+  expect(bodies.some(body => body.sources?.includes('https://cdn.donmai.us/synthetic.webp'))).toBe(false);
+});
+it('隐藏中止首屏，返回恢复加载，不被迟到旧响应覆盖', async () => {
+  const pending = deferred<ReturnType<typeof result>>();
+  search.mockReturnValueOnce(pending.promise).mockResolvedValue(result());
+  const props = { currentUser: { id: 'synthetic' } as User, notify: vi.fn(), onNavigateToPlayground: vi.fn() };
+  const { rerender } = render(<DanbooruGallery {...props} active />);
+  const signal = search.mock.calls[0][0]?.signal;
+  rerender(<DanbooruGallery {...props} active={false} />); expect(signal?.aborted).toBe(true);
+  rerender(<DanbooruGallery {...props} active />);
+  await waitFor(() => expect(search).toHaveBeenCalledTimes(2));
+  await act(async () => pending.resolve(result('old', [post])));
+  expect(screen.queryByRole('button', { name: /synthetic artist/ })).toBeNull();
+});
 
 it('慢翻译不能覆盖后来选择的筛选，也不能发送过期请求', async () => {
   await setup();
   const first = deferred<string>();
   resolve.mockReturnValueOnce(first.promise).mockResolvedValueOnce('synthetic');
   submit('旧中文'); submit('新中文');
-  await waitFor(() => expect(search).toHaveBeenLastCalledWith({ query: 'synthetic order:rank', page: 1, limit: 40 }));
+  await waitFor(() => expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ query: 'synthetic order:rank', page: 1, limit: 40 })));
   const calls = search.mock.calls.length;
   await act(async () => first.resolve('old_tag'));
   expect(search).toHaveBeenCalledTimes(calls);
@@ -64,21 +88,21 @@ it('超限组合在出站前提示，选择最新后可用两个关键词和画�
   await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.stringContaining('选择「最新」'), 'error'));
   expect(search).toHaveBeenCalledTimes(1);
   openFilters(); changeFilter('排序方式', 'latest');
-  await waitFor(() => expect(search).toHaveBeenLastCalledWith({ query: 'frieren solo', page: 1, limit: 40 }));
+  await waitFor(() => expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ query: 'frieren solo', page: 1, limit: 40 })));
   changeFilter('评级范围', 'g');
-  await waitFor(() => expect(search).toHaveBeenLastCalledWith({ query: 'frieren solo rating:g', page: 1, limit: 40 }));
+  await waitFor(() => expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ query: 'frieren solo rating:g', page: 1, limit: 40 })));
   changeFilter('画幅比例', 'portrait');
-  await waitFor(() => expect(search).toHaveBeenLastCalledWith({ query: 'frieren solo rating:g ratio:<0.85', page: 1, limit: 40 }));
+  await waitFor(() => expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ query: 'frieren solo rating:g ratio:<0.85', page: 1, limit: 40 })));
 });
 
 it('点击详情 Tag 沿用当前排序和筛选，不偷换成高分排序', async () => {
   search.mockImplementation(async options => result(options?.query, [post]));
   await setup(); openFilters(); changeFilter('评级范围', 'g');
-  await waitFor(() => expect(search).toHaveBeenLastCalledWith({ query: 'order:rank rating:g', page: 1, limit: 40 }));
+  await waitFor(() => expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ query: 'order:rank rating:g', page: 1, limit: 40 })));
   fireEvent.keyDown(window, { key: 'Escape' });
   fireEvent.click(screen.getByRole('button', { name: /synthetic artist/ }));
   fireEvent.click(screen.getByRole('button', { name: 'synthetic artist' }));
-  await waitFor(() => expect(search).toHaveBeenLastCalledWith({ query: 'synthetic_artist order:rank rating:g', page: 1, limit: 40 }));
+  await waitFor(() => expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ query: 'synthetic_artist order:rank rating:g', page: 1, limit: 40 })));
 });
 
 it('同查询重新加载时，之前的追加页不能拼回新结果', async () => {
@@ -90,7 +114,7 @@ it('同查询重新加载时，之前的追加页不能拼回新结果', async (
     return result();
   });
   await setup();
-  await waitFor(() => expect(search).toHaveBeenCalledWith({ query: 'order:rank', page: 2, limit: 40 }));
+  await waitFor(() => expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: 'order:rank', page: 2, limit: 40 })));
   // 空 src 的合成图不会注册图片观察器，此处只有列表触底观察器。
   act(() => observers.at(-1)?.([{ isIntersecting: true }]));
   submit('');
@@ -102,9 +126,9 @@ it('同查询重新加载时，之前的追加页不能拼回新结果', async (
 it('筛选后的空页仍可继续读取后续页，不因条目数量未变而停止观察', async () => {
   search.mockImplementation(async options => result(options?.query, [], options?.page, (options?.page || 1) < 3));
   await setup();
-  await waitFor(() => expect(search).toHaveBeenCalledWith({ query: 'order:rank', page: 2, limit: 40 }));
+  await waitFor(() => expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: 'order:rank', page: 2, limit: 40 })));
   const previousObservers = observers.length;
   await act(async () => observers.at(-1)?.([{ isIntersecting: true }]));
   await waitFor(() => expect(observers.length).toBeGreaterThan(previousObservers));
-  expect(search).toHaveBeenCalledWith({ query: 'order:rank', page: 3, limit: 40 });
+  expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: 'order:rank', page: 3, limit: 40 }));
 });

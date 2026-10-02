@@ -149,10 +149,11 @@ const notifyQueueCleanupFailed = (res: Response, headers?: Record<string, string
 };
 
 export const api = {
-  get: async (endpoint: string, options: { cache?: RequestCache } = {}) => {
+  get: async (endpoint: string, options: { cache?: RequestCache; signal?: AbortSignal } = {}) => {
     const res = await fetch(`${API_BASE}${endpoint}`, {
         headers: getHeaders(),
         cache: options.cache || 'default',
+        signal: options.signal,
     });
     return handleResponse(res);
   },

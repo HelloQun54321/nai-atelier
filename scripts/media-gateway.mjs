@@ -21,6 +21,7 @@ import { PixivWebLoginOrchestrator } from './pixiv-web-login.mjs';
 import { localBackupService, saveBackupConfig, openInExplorer } from './local-backup.mjs';
 import { getDesktopLauncherStatus, createDesktopLauncher, openDesktopFolder, generateLauncherBatContent } from './desktop-launcher.mjs';
 import { StyleCollector, collectorLocalRequest } from './style-collector.mjs';
+import { createResponseMemoryCache, danbooruResponseTtl } from './media-memory-cache.mjs';
 
 const CACHE_VERSION = 'v1';
 const HISTORY_THUMBNAIL_CACHE_VERSION = 'v2';
@@ -2116,59 +2117,63 @@ const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, vibeId, 
   }
 };
 
-/** 图库浏览预热：feed/search 返回后，后台按低优先级把该批缩略图抓好写进磁盘缓存，
- *  用户滚动到对应图片时直接缓存命中（~3ms），消除首次抓取（0.8-3s）的等待。
- *  只预热桌面/常见布局实际使用的 thumb-320：高分屏所需的 640/960 按需首抓后同样入缓存，
- *  避免一半预热工作量生成用不到的档位。 */
-const PREWARM_VARIANTS = ['thumb-320'];
-const PREWARM_CONCURRENCY = 6;
+/** 图库低优先级预热：按实际缩略图档位入队，同来源共享任务；页面离开撤销未启动租约。 */
+const PREWARM_CONCURRENCY = 2;
 const PREWARM_MAX_PENDING = 300;
-/** 队列内部分辨“固定保留”任务的内部后缀（URL 之外的哨兵，不参与网络请求）。 */
-const PIN_SUFFIX = '\u0001pin';
 
-export const createThumbnailPreWarmer = ({
-  cache,
-  loadOriginal,
-  concurrency = PREWARM_CONCURRENCY,
-  maxPending = PREWARM_MAX_PENDING,
-} = {}) => {
-  const pending = new Set();
-  let running = 0;
-  // 即时调度：占用一个并发槽立即启动一个任务，完成后再补，无需定时器轮询限速。
+export const createThumbnailPreWarmer = ({ cache, loadOriginal, concurrency = PREWARM_CONCURRENCY, maxPending = PREWARM_MAX_PENDING } = {}) => {
+  const pending = new Map();
+  const running = new Map();
+  const owners = new Map();
+  let scheduled = false;
+  const isNeeded = task => task.leases.size > 0;
   const pump = () => {
-    while (running < concurrency && pending.size > 0) {
-      const next = pending.values().next();
-      if (next.done) break;
-      pending.delete(next.value);
-      running += 1;
-      const pinned = next.value.endsWith(PIN_SUFFIX);
-      const source = pinned ? next.value.slice(0, -PIN_SUFFIX.length) : next.value;
-      Promise.allSettled(
-        PREWARM_VARIANTS.map(variant => cache.get(source, variant, loadOriginal, { pinned }).catch(() => {})),
-      ).finally(() => {
-        running -= 1;
-        pump();
-      });
+    scheduled = false;
+    while (running.size < concurrency && pending.size) {
+      const task = [...pending.values()].sort((a, b) => a.priority - b.priority)[0];
+      pending.delete(task.key);
+      if (!isNeeded(task)) continue;
+      running.set(task.key, task);
+      // cache.get 调用零参数闭包，来源必须在此绑定，不能直接传入需要 source 的函数。
+      Promise.resolve().then(() => cache.get(task.source, task.variant, () => loadOriginal(task.source), { pinned: task.pinned, priority: task.priority }))
+        .catch(() => {}).finally(() => { running.delete(task.key); pump(); });
     }
   };
+  const schedule = () => { if (!scheduled) { scheduled = true; setImmediate(pump); } };
   return {
-    /** 把一批来源加入预热队列（跳过已缓存/已在队列）；返回新加入数量。
-     *  pinned=true 时跳过条件改为“已缓存且已固定保留”，并以此生成（封面图持久本地化）。 */
-    enqueue(sources, { pinned = false } = {}) {
+    enqueue(sources, { pinned = false, variant = 'thumb-320', owner = '', generation = 0, priority = 2 } = {}) {
+      if (!THUMB_WIDTHS.has(variant)) return 0;
+      const state = owners.get(owner);
+      if (owner && state && (generation < state.generation || (generation === state.generation && state.cancelled))) return 0;
+      if (owner) {
+        owners.delete(owner); owners.set(owner, { generation, cancelled: false });
+        while (owners.size > 1024) owners.delete(owners.keys().next().value);
+      }
       let added = 0;
       for (const source of sources) {
-        const queuedKey = pinned ? `${source}${PIN_SUFFIX}` : source;
-        if (pending.size + added > maxPending) break;
-        const skip = pinned
-          ? PREWARM_VARIANTS.every(variant => cache.isPinned(source, variant))
-          : PREWARM_VARIANTS.every(variant => cache.has(source, variant));
-        if (skip) continue;
-        if (pending.has(queuedKey)) continue;
-        pending.add(queuedKey);
-        added += 1;
+        if (pinned ? cache.isPinned(source, variant) : cache.has(source, variant)) continue;
+        const key = JSON.stringify([source, variant, pinned]);
+        let task = pending.get(key) || running.get(key);
+        if (!task) {
+          if (pending.size >= maxPending) break;
+          task = { key, source, variant, pinned, priority, leases: new Map() };
+          pending.set(key, task); added++;
+        }
+        task.priority = Math.min(task.priority, priority);
+        task.leases.set(owner, generation);
       }
-      if (added) pump();
+      if (pending.size) schedule();
       return added;
+    },
+    cancel(owner, generation) {
+      if (!owner) return;
+      const state = owners.get(owner);
+      if (!state || generation >= state.generation) owners.set(owner, { generation, cancelled: true });
+      while (owners.size > 1024) owners.delete(owners.keys().next().value);
+      for (const task of pending.values()) {
+        if ((task.leases.get(owner) ?? Infinity) <= generation) task.leases.delete(owner);
+        if (!isNeeded(task)) pending.delete(task.key);
+      }
     },
     get pendingCount() { return pending.size; },
   };
@@ -2377,7 +2382,7 @@ const handleAitagRemoteRequest = async (req, res, url, lanSecret, remoteFetch) =
   }
 };
 
-export const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remoteFetch) => {
+export const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remoteFetch, responseCache) => {
   const suppliedSecret = String(req.headers['x-nai-internal-secret'] || '');
   const expected = Buffer.from(lanSecret);
   const supplied = Buffer.from(suppliedSecret);
@@ -2389,25 +2394,29 @@ export const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remo
   try {
     const target = new URL(url.searchParams.get('url') || '');
     if (!classifyDanbooruRemoteTarget(target.toString())) return sendJson(res, 400, { error: 'Invalid Danbooru target' });
-    const response = await remoteFetch(target, {
-      redirect: 'manual',
-      signal: AbortSignal.timeout(30_000),
-      headers: {
-        accept: 'application/json',
-        'user-agent': 'NAI-Atelier/0.5 (+local personal use)',
-      },
-    });
-    const contentType = response.headers.get('content-type') || '';
-    const body = await readLimitedResponse(response);
-    if (body.length > 16 * 1024 * 1024) return sendJson(res, 502, { error: 'Danbooru response is too large' });
-    if (!contentType.toLowerCase().includes('json')) return sendJson(res, 502, { error: 'Danbooru returned a non-JSON response' });
-    res.writeHead(response.status, {
-      'Content-Type': contentType,
-      'Content-Length': body.length,
+    const load = async () => {
+      const response = await remoteFetch(target, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(30_000),
+        headers: {
+          accept: 'application/json',
+          'user-agent': 'NAI-Atelier/0.5 (+local personal use)',
+        },
+      });
+      const contentType = response.headers.get('content-type') || '';
+      const body = await readLimitedResponse(response);
+      if (body.length > 16 * 1024 * 1024) throw new Error('Danbooru response is too large');
+      if (!contentType.toLowerCase().includes('json')) throw new Error('Danbooru returned a non-JSON response');
+      return { status: response.status, contentType, body };
+    };
+    const result = responseCache ? await responseCache.get(target.toString(), load, danbooruResponseTtl(target)) : await load();
+    res.writeHead(result.status, {
+      'Content-Type': result.contentType,
+      'Content-Length': result.body.length,
       'Cache-Control': 'private, max-age=120',
       'X-Content-Type-Options': 'nosniff',
     });
-    return res.end(body);
+    return res.end(result.body);
   } catch (error) {
     return sendJson(res, error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 504 : 502, {
       error: `电脑无法连接 Danbooru：${error?.cause?.message || error?.message || '未知错误'}`,
@@ -2509,7 +2518,7 @@ class ThumbnailCache {
   constructor(concurrency = THUMBNAIL_JOB_CONCURRENCY) {
     this.entries = {};
     this.inFlight = new Map();
-    this.sourceInFlight = new Map();
+    this.sourceMemoryCache = createResponseMemoryCache({ maxEntries: 16, maxBytes: 32 * 1024 * 1024 });
     this.activeJobs = 0;
     this.concurrency = concurrency;
     this.jobQueue = [];
@@ -2550,16 +2559,16 @@ class ThumbnailCache {
     this.writeTimer.unref?.();
   }
 
-  async withJobSlot(task) {
+  async withJobSlot(task, priority = 0) {
     // 循环等待而非一次判断：被唤醒者恢复执行前，并发的早到调用可能已把槽位占满，
     // 单次 if 会短暂突破并发上限（sharp 内存尖峰）
     while (this.activeJobs >= this.concurrency) {
-      await new Promise(resolve => this.jobQueue.push(resolve));
+      await new Promise(resolve => { this.jobQueue.push({ resolve, priority }); this.jobQueue.sort((a, b) => a.priority - b.priority); });
     }
     this.activeJobs++;
     try { return await task(); } finally {
       this.activeJobs--;
-      this.jobQueue.shift()?.();
+      this.jobQueue.shift()?.resolve();
     }
   }
 
@@ -2645,7 +2654,7 @@ class ThumbnailCache {
     return { etag: `"nai-${key}"` };
   }
 
-  async get(source, variant, loadOriginal, { pinned = false } = {}) {
+  async get(source, variant, loadOriginal, { pinned = false, priority = 0 } = {}) {
     const key = this.keyFor(source, variant);
     const existing = this.entries[key];
     if (existing) {
@@ -2662,12 +2671,7 @@ class ThumbnailCache {
     }
     if (this.inFlight.has(key)) return this.inFlight.get(key);
     const promise = this.withJobSlot(async () => {
-      let originalPromise = this.sourceInFlight.get(source);
-      if (!originalPromise) {
-        originalPromise = Promise.resolve().then(loadOriginal).finally(() => this.sourceInFlight.delete(source));
-        this.sourceInFlight.set(source, originalPromise);
-      }
-      const original = await originalPromise;
+      const original = await this.sourceMemoryCache.get(source, loadOriginal, 30_000);
       if (original.status >= 400) {
         const error = new Error('Source image was not found');
         error.status = original.status;
@@ -2687,7 +2691,7 @@ class ThumbnailCache {
       this.scheduleIndexWrite();
       await this.prune();
       return { buffer: output, etag: `"nai-${key}"` };
-    }).finally(() => this.inFlight.delete(key));
+    }, priority).finally(() => this.inFlight.delete(key));
     this.inFlight.set(key, promise);
     return promise;
   }
@@ -2837,6 +2841,13 @@ const serveDistFile = async (req, res, url) => {
 };
   const proxyAgent = outboundProxyUrl ? new ProxyAgent(outboundProxyUrl) : null;
   const remoteFetch = (url, options = {}) => undiciFetch(url, { ...options, ...(proxyAgent ? { dispatcher: proxyAgent } : {}) });
+  const danbooruResponseCache = createResponseMemoryCache({
+    maxEntries: 256, maxBytes: 64 * 1024 * 1024,
+    cacheable: value => {
+      if (value.status !== 200) return false;
+      try { const data = JSON.parse(value.body.toString('utf8')); return Array.isArray(data) && data.length > 0; } catch { return false; }
+    },
+  });
   let collectorReset = Promise.resolve();
   const styleCollector = new StyleCollector({
     worker: async (action, body) => {
@@ -3463,7 +3474,7 @@ const serveDistFile = async (req, res, url) => {
       }
     }
     if (url.pathname === '/__internal/aitag-fetch') return handleAitagRemoteRequest(req, res, url, lanSecret, remoteFetch);
-    if (url.pathname === '/__internal/danbooru-fetch') return handleDanbooruRemoteRequest(req, res, url, lanSecret, remoteFetch);
+    if (url.pathname === '/__internal/danbooru-fetch') return handleDanbooruRemoteRequest(req, res, url, lanSecret, remoteFetch, danbooruResponseCache);
     if (url.pathname === '/api/generate') {
       const { preferences } = await getCloudQueueScope(req);
       return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, preferences, remoteFetch);
@@ -3581,7 +3592,15 @@ const serveDistFile = async (req, res, url) => {
             if (validated.type === 'remote') sources.push(validated.source);
           } catch { /* 非法来源跳过 */ }
         }
-        const queued = thumbnailPreWarmer.enqueue(sources, { pinned: body.pin === true });
+        const variant = body.variant || 'thumb-320';
+        if (!THUMB_WIDTHS.has(variant)) return sendJson(res, 400, { error: 'Invalid prewarm variant' });
+        const owner = typeof body.owner === 'string' ? body.owner.slice(0, 100) : '';
+        const generation = Math.max(0, Number(body.generation) || 0);
+        if (body.cancel === true) {
+          thumbnailPreWarmer.cancel(owner, generation);
+          return sendJson(res, 200, { queued: 0, pending: thumbnailPreWarmer.pendingCount });
+        }
+        const queued = thumbnailPreWarmer.enqueue(sources, { pinned: body.pin === true, variant, owner, generation, priority: Math.max(1, Math.min(2, Number(body.priority) || 2)) });
         return sendJson(res, 200, { queued, pending: thumbnailPreWarmer.pendingCount });
       } catch (error) {
         return sendJson(res, 400, { error: error.message || 'Invalid prewarm request' });

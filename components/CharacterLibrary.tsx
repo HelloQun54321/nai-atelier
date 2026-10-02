@@ -1,3 +1,4 @@
+import { useImageRatios } from './useImageRatios';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NAIParams, PromptChain } from '../types';
@@ -23,7 +24,6 @@ import { useModalA11y } from './useModalA11y';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { DanbooruCover } from './DanbooruCover';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
-import { danbooruService } from '../services/danbooruService';
 import { TagSelectionBar } from './TagSelectionBar';
 import { TagCoverActions } from './TagCoverActions';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
@@ -85,7 +85,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 }) => {
   const imageDisplay = useMobileImageDisplayPreferences();
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
-    const [cardRatios, setCardRatios] = useState<Record<string, number>>({});
+    const [cardRatios, updateImageRatio] = useImageRatios();
     const estimateCharacterCardHeight = React.useCallback((card: CharacterCard, columnWidth: number) => {
       const ratio = cardRatios[card.key] || 2 / 3;
       const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
@@ -97,7 +97,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             return (
               <article key={card.key} data-safe-mode-work="true" data-return-item-id={card.kind === 'custom' ? card.chain?.id : undefined} onClick={() => toggleSelect(card)} aria-pressed={selected} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-2xl border bg-white transition-colors cursor-pointer dark:bg-gray-900 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-indigo-400 dark:border-gray-800 dark:hover:border-indigo-600'}`}>
                 <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': cardRatios[card.key] ? `${Math.round(cardRatios[card.key] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
-                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} onImageLoad={(width, height) => { const r = width / Math.max(1, height); if (Number.isFinite(r) && r > 0) setCardRatios(previous => (previous[card.key] === r ? previous : { ...previous, [card.key]: r })); }} /> : card.previewImage ? <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} onLoad={event => { const img = event.currentTarget; if (img.naturalWidth > 0 && img.naturalHeight > 0) { const r = img.naturalWidth / img.naturalHeight; if (Number.isFinite(r) && r > 0) setCardRatios(previous => (previous[card.key] === r ? previous : { ...previous, [card.key]: r })); } }} /></button> : (
+                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} onImageLoad={(width, height) => updateImageRatio(card.key, width, height)} /> : card.previewImage ? <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} onLoad={event => updateImageRatio(card.key, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} /></button> : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
                       {card.kind === 'catalog' ? <Tag className="h-8 w-8" /> : <UserRound className="h-8 w-8" />}
                       <span className="mt-2 text-meta">暂无封面</span>
@@ -424,30 +424,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   useRestoreListAnchor(scrollRef, returnTargetId, `${visibleCards.length}:${isLoading ? 1 : 0}`);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'characters');
 
-  // 目录预取：前 40 个角色提前查候选并固定缩略图缓存，不改写私人封面。
-  // getCoverSet 合并相同请求并限流，正常结果缓存 14 天，空候选仅短期缓存。
-  const coverPrewarmedRef = useRef(new Set<string>());
-  useEffect(() => {
-    if (gachaCards || tab === 'custom' || showFavOnly) return;
-    const targets = visibleCards
-      .filter(card => card.kind === 'catalog' && card.tagName && !coverPrewarmedRef.current.has(card.key))
-      .slice(0, 40);
-    if (!targets.length) return;
-    for (const card of targets) {
-      coverPrewarmedRef.current.add(card.key);
-      // 上方 filter 已保证 catalog 卡片带有 tagName
-      void danbooruService.getCoverSet(card.tagName!, 'character').then(set => {
-        const src = set.representative?.sampleUrl || set.candidates?.[0]?.sampleUrl;
-        if (!src) return;
-        fetch('/api/media/prewarm', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ sources: [src], pin: true }),
-        }).catch(() => {});
-      }).catch(() => {});
-    }
-  }, [gachaCards, showFavOnly, tab, visibleCards]);
-
   const toggleFavorite = (card: CharacterCard) => {
     const wasFavorite = favorites.has(card.key);
     setFavorites(previous => {
@@ -656,6 +632,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       <div ref={scrollRef} onScroll={onScrollRestore} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
         {imageDisplay.layout === 'masonry' ? (
           <ShortestColumnMasonry<CharacterCard>
+            stableColumns
             items={visibleCards}
             columns={gridColumns}
             getItemKey={(card: CharacterCard) => card.key}

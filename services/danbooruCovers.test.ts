@@ -14,6 +14,37 @@ const settle = async <T,>(promise: Promise<T>) => { await vi.runAllTimersAsync()
 beforeEach(() => { vi.resetModules(); apiGet.mockReset(); localStorage.clear(); vi.useFakeTimers(); });
 afterEach(() => vi.useRealTimers());
 
+it('普通排序短缓存复用，最新更快到期，随机不复用且独立取消', async () => {
+  const { danbooruService } = await import('./danbooruService');
+  apiGet.mockResolvedValue(result([post(1, 'synthetic')]));
+  await danbooruService.search({ query: 'order:score' }); await danbooruService.search({ query: 'order:score' });
+  expect(apiGet).toHaveBeenCalledTimes(1);
+  await danbooruService.search({ query: 'order:id_desc' });
+  await vi.advanceTimersByTimeAsync(15_001);
+  await danbooruService.search({ query: 'order:id_desc' }); expect(apiGet).toHaveBeenCalledTimes(3);
+  await danbooruService.search({ query: 'order:score' }); expect(apiGet).toHaveBeenCalledTimes(3);
+  await Promise.all([danbooruService.search({ query: 'order:random' }), danbooruService.search({ query: 'order:random' })]);
+  expect(apiGet).toHaveBeenCalledTimes(5);
+});
+
+it('并发槽满时取消排队封面，不阻塞后续有效请求', async () => {
+  const { danbooruService } = await import('./danbooruService');
+  let release!: () => void; const blocked = new Promise<void>(resolve => { release = resolve; });
+  apiGet.mockImplementation(async path => {
+    await blocked;
+    const tag = new URL(path, 'http://localhost').searchParams.get('tags')!.split(' ')[0];
+    return result([post(1, tag)]);
+  });
+  const controllers = Array.from({ length: 7 }, () => new AbortController());
+  const requests = controllers.map((controller, i) => danbooruService.getCoverSet(`queue_${i}`, 'artist', { signal: controller.signal }).catch(error => error));
+  await vi.advanceTimersByTimeAsync(400); expect(apiGet).toHaveBeenCalledTimes(5);
+  controllers[5].abort(); release(); await vi.runAllTimersAsync();
+  const values = await Promise.all(requests);
+  expect(values[5].name).toBe('AbortError'); expect(values[6].representative.id).toBe(1);
+  expect(apiGet).toHaveBeenCalledTimes(6);
+  expect(apiGet.mock.calls.some(([path]) => path.includes('queue_5'))).toBe(false);
+});
+
 describe.each(['artist', 'character'] as const)('%s 可用封面查找', kind => {
   it('首批无权限图片后继续读取，找到精确 Tag 的可用封面', async () => {
     apiGet.mockResolvedValueOnce(result([], true)).mockResolvedValueOnce(result([], true))

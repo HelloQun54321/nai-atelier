@@ -1,3 +1,79 @@
+import { createResponseMemoryCache, danbooruResponseTtl } from './media-memory-cache.mjs';
+test('预热真实来源绑定、尺寸档位、优先级与共享取消租约', async () => {
+  const received = [], originals = [];
+  const cache = { has: () => false, isPinned: () => false, get: async (source, variant, load, options) => {
+    received.push([source, variant, options.priority]); await load();
+  } };
+  const warmer = createThumbnailPreWarmer({ cache, loadOriginal: async source => { originals.push(source); }, concurrency: 1 });
+  warmer.enqueue(['background'], { variant: 'thumb-640', owner: 'a', generation: 1 });
+  warmer.enqueue(['shared'], { owner: 'a', generation: 1 });
+  warmer.enqueue(['shared'], { owner: 'b', generation: 1 });
+  warmer.enqueue(['urgent'], { variant: 'thumb-960', owner: 'b', generation: 1, priority: 1 });
+  warmer.cancel('a', 1);
+  assert.equal(warmer.enqueue(['late'], { owner: 'a', generation: 1 }), 0);
+  assert.equal(warmer.enqueue(['new'], { variant: 'thumb-480', owner: 'a', generation: 2 }), 1);
+  warmer.cancel('a', 1); // 迟到的旧取消不能撤销新代。
+  for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(originals, ['urgent', 'shared', 'new']);
+  assert.deepEqual(received, [['urgent', 'thumb-960', 1], ['shared', 'thumb-320', 2], ['new', 'thumb-480', 2]]);
+});
+
+test('预热同来源不同档位分别生成，队列有界且取消未启动任务', async () => {
+  const called = [];
+  let release;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const cache = { has: () => false, get: async (source, variant, load) => { called.push([source, variant]); await blocked; await load(); } };
+  const warmer = createThumbnailPreWarmer({ cache, loadOriginal: async source => assert.ok(source), concurrency: 1, maxPending: 2 });
+  warmer.enqueue(['a'], { owner: 'view', generation: 1 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(warmer.enqueue(['a', 'b', 'c'], { variant: 'thumb-640', owner: 'view', generation: 1 }), 2);
+  warmer.cancel('view', 1); assert.equal(warmer.pendingCount, 0);
+  release(); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(called, [['a', 'thumb-320']]);
+});
+
+test('内存缓存合并同请求、复用相邻缩略档位来源，TTL 与 LRU／字节上限生效', async () => {
+  let time = 0, calls = 0;
+  const cache = createResponseMemoryCache({ maxEntries: 2, maxBytes: 6, now: () => time });
+  const load = async () => { calls++; return { status: 200, buffer: Buffer.from('abc') }; };
+  await Promise.all([cache.get('source', load, 100), cache.get('source', load, 100)]);
+  await cache.get('source', load, 100); assert.equal(calls, 1);
+  await cache.get('b', load, 100); await cache.get('source', load, 100); await cache.get('c', load, 100);
+  assert.equal(cache.size, 2); assert.equal(cache.bytes, 6);
+  await cache.get('b', load, 100); assert.equal(calls, 4);
+  time = 101; await cache.get('b', load, 100); assert.equal(calls, 5);
+  await cache.get('huge', async () => ({ status: 200, buffer: Buffer.alloc(7) }), 100);
+  assert.equal(cache.bytes, 6);
+});
+
+test('失败／限流不缓存，随机查询不合并、不复用；默认与排序查询 TTL 分开', async () => {
+  const cache = createResponseMemoryCache(); let calls = 0;
+  const failed = async () => { calls++; return { status: 429, body: Buffer.from('busy') }; };
+  await cache.get('failed', failed, 100); await cache.get('failed', failed, 100); assert.equal(calls, 2);
+  await assert.rejects(cache.get('throw', async () => { throw Error('offline'); }, 100), /offline/);
+  await cache.get('throw', async () => ({ status: 200, body: Buffer.from('ok') }), 100);
+  const random = new URL('https://danbooru.donmai.us/posts.json?tags=order:random');
+  assert.equal(danbooruResponseTtl(random), 0);
+  await Promise.all([cache.get('random', failed, 0), cache.get('random', failed, 0)]); assert.equal(calls, 4);
+  assert.equal(danbooruResponseTtl(new URL('https://danbooru.donmai.us/posts.json')), 15_000);
+  assert.equal(danbooruResponseTtl(new URL('https://danbooru.donmai.us/posts.json?tags=order:score')), 120_000);
+});
+
+test('Danbooru 网关复用已授权响应，缓存命中仍必须鉴权，非 JSON 不写缓存', async () => {
+  const url = new URL('http://localhost/__internal/danbooru-fetch?url=' + encodeURIComponent('https://danbooru.donmai.us/posts.json?tags=order:score'));
+  const req = { method: 'GET', socket: { remoteAddress: '127.0.0.1' }, headers: { 'x-nai-internal-secret': 'synthetic-secret' } };
+  let status, calls = 0;
+  const res = { writeHead(code) { status = code; }, end() {} };
+  const cache = createResponseMemoryCache();
+  const remote = async () => { calls++; return new Response('[{"id":1}]', { headers: { 'content-type': 'application/json' } }); };
+  await handleDanbooruRemoteRequest(req, res, url, 'synthetic-secret', remote, cache);
+  await handleDanbooruRemoteRequest(req, res, url, 'synthetic-secret', remote, cache);
+  assert.equal(status, 200); assert.equal(calls, 1);
+  await handleDanbooruRemoteRequest({ ...req, headers: {} }, res, url, 'synthetic-secret', remote, cache); assert.equal(status, 404);
+  url.searchParams.set('url', 'https://danbooru.donmai.us/posts.json?tags=bad');
+  await handleDanbooruRemoteRequest(req, res, url, 'synthetic-secret', async () => new Response('html'), cache); assert.equal(status, 502);
+  await handleDanbooruRemoteRequest(req, res, url, 'synthetic-secret', remote, cache); assert.equal(status, 200); assert.equal(calls, 2);
+});
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHmac } from 'node:crypto';

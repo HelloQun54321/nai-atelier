@@ -1,4 +1,5 @@
 import { api } from './api';
+import { createDanbooruRequestPool } from './danbooruRequests';
 import { normalizeTagQuery, searchTagDictionary } from './tagDictionary';
 import { countDanbooruQueryTerms, DANBOORU_RATIO_QUERIES, splitDanbooruQuery, validateDanbooruQuery } from './danbooruQuery';
 
@@ -58,16 +59,34 @@ export interface DanbooruCoverSet {
 
 type StoredCover = DanbooruCoverSet & { updatedAt: number };
 let coverCache: Record<string, StoredCover> | null = null;
-const coverRequests = new Map<string, Promise<DanbooruCoverSet>>();
+const coverRequest = createDanbooruRequestPool<DanbooruCoverSet>();
+const searchRequest = createDanbooruRequestPool<DanbooruSearchResult>();
+let randomRequestId = 0;
 let coverInFlight = 0;
 const coverWaiters: Array<() => void> = [];
 let nextCoverRequestAt = 0;
 let coverStartQueue = Promise.resolve();
 
-const scheduleCoverRequest = <T>(request: () => Promise<T>): Promise<T> => {
+const scheduleCoverRequest = <T>(request: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
   const acquire = async () => {
-    while (coverInFlight >= COVER_REQUEST_CONCURRENCY) {
-      await new Promise<void>(resolve => coverWaiters.push(resolve));
+    try {
+      while (coverInFlight >= COVER_REQUEST_CONCURRENCY) {
+        await new Promise<void>((resolve, reject) => {
+          const wake = () => { signal?.removeEventListener('abort', abort); resolve(); };
+          const abort = () => {
+            const index = coverWaiters.indexOf(wake);
+            if (index >= 0) coverWaiters.splice(index, 1);
+            reject(new DOMException('Aborted', 'AbortError'));
+          };
+          signal?.throwIfAborted();
+          coverWaiters.push(wake);
+          signal?.addEventListener('abort', abort, { once: true });
+        });
+      }
+      signal?.throwIfAborted();
+    } catch (error) {
+      if (coverInFlight < COVER_REQUEST_CONCURRENCY) coverWaiters.shift()?.();
+      throw error;
     }
     coverInFlight++;
     const start = coverStartQueue.then(async () => {
@@ -81,7 +100,7 @@ const scheduleCoverRequest = <T>(request: () => Promise<T>): Promise<T> => {
     await start;
   };
   return acquire().then(() =>
-    request().catch(error => {
+    Promise.resolve().then(() => { signal?.throwIfAborted(); return request(); }).catch(error => {
       if (/429/.test(String((error as Error)?.message || error))) {
         nextCoverRequestAt = Math.max(nextCoverRequestAt, Date.now() + 2000);
       }
@@ -193,12 +212,16 @@ export const buildDanbooruFilterQuery = (options: DanbooruFilterOptions = {}): s
   return query;
 };
 
-const search = (options: { query?: string; page?: number; limit?: number } = {}): Promise<DanbooruSearchResult> => {
+const search = (options: { query?: string; page?: number; limit?: number; signal?: AbortSignal } = {}): Promise<DanbooruSearchResult> => {
   const params = new URLSearchParams();
   if (options.query) params.set('tags', options.query);
   params.set('page', String(Math.max(1, options.page || 1)));
   params.set('limit', String(Math.min(200, Math.max(1, options.limit || 40))));
-  return api.get(`/danbooru/posts?${params.toString()}`, { cache: 'no-store' });
+  const random = /(?:^|\s)order:random(?:\s|$)/.test(options.query || '');
+  const ttl = random ? 0 : /(?:^|\s)order:id_desc(?:\s|$)/.test(options.query || '') || !/order:|explore:/.test(options.query || '') ? 15_000 : 120_000;
+  const path = `/danbooru/posts?${params.toString()}`;
+  return searchRequest(random ? `${path}#${++randomRequestId}` : path,
+    signal => api.get(path, { cache: 'no-store', signal }), result => result.items.length ? ttl : Math.min(ttl, 15_000), options.signal);
 };
 
 const CHARACTER_COVER_EXCLUDED_TAGS = new Set([
@@ -307,7 +330,8 @@ const chooseCover = (items: DanbooruPost[], tag: string, kind: 'artist' | 'chara
   return candidates.sort((left, right) => representativeScore(right) - representativeScore(left))[0] || exact[0] || null;
 };
 
-const getCoverSet = (tag: string, kind: 'artist' | 'character'): Promise<DanbooruCoverSet> => {
+const getCoverSet = (tag: string, kind: 'artist' | 'character', options: { signal?: AbortSignal } = {}): Promise<DanbooruCoverSet> => {
+  if (options.signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
   const normalizedTag = tag.trim().toLowerCase().replaceAll(' ', '_');
   if (!normalizedTag) return Promise.resolve({ representative: null, candidates: [], hasMore: false });
   const key = `${kind}:${normalizedTag}`;
@@ -315,20 +339,17 @@ const getCoverSet = (tag: string, kind: 'artist' | 'character'): Promise<Danboor
   if (cached && Date.now() - cached.updatedAt < (cached.candidates?.length ? COVER_CACHE_TTL : COVER_EMPTY_CACHE_TTL)) {
     return Promise.resolve({ representative: cached.representative || null, candidates: cached.candidates || [], hasMore: Boolean(cached.hasMore), nextPage: cached.nextPage || 1 });
   }
-  const pending = coverRequests.get(key);
-  if (pending) return pending;
-
   // 排除已被上游禁用的作品；评级／权限限制仍由官方决定，不构造隐藏图片地址。
   const query = `${normalizedTag} order:score -status:banned`;
-  const request = (async () => {
-      let result = await scheduleCoverRequest(() => search({ query, limit: kind === 'character' ? 60 : 20 }));
+  return coverRequest(key, async signal => {
+      let result = await scheduleCoverRequest(() => search({ query, limit: kind === 'character' ? 60 : 20, signal }), signal);
       let candidatePosts = candidatePostsFor(result.items, normalizedTag, kind);
       let sourcePage = 1;
       let fullSourcePage = false;
       // 首批热门作品可能全无图片权限。只对空候选向后查有限页，不镜像整个目录。
       while (!candidatePosts.length && result.hasMore && sourcePage <= COVER_EMPTY_PAGE_LOOKAHEAD) {
         const page = sourcePage;
-        result = await scheduleCoverRequest(() => search({ query, page, limit: COVER_SOURCE_PAGE_SIZE }));
+        result = await scheduleCoverRequest(() => search({ query, page, limit: COVER_SOURCE_PAGE_SIZE, signal }), signal);
         candidatePosts = candidatePostsFor(result.items, normalizedTag, kind);
         fullSourcePage = true;
         if (!candidatePosts.length) sourcePage++;
@@ -349,17 +370,14 @@ const getCoverSet = (tag: string, kind: 'artist' | 'character'): Promise<Danboor
       readCoverCache()[key] = { ...coverSet, updatedAt: Date.now() };
       persistCoverCache();
       return coverSet;
-    })()
-    .finally(() => coverRequests.delete(key));
-  coverRequests.set(key, request);
-  return request;
+    }, 0, options.signal);
 };
 
 /** Returns one source page of every eligible exact-tag result, ordered by score. */
-const getCoverCandidatePage = async (tag: string, kind: 'artist' | 'character', page: number) => {
+const getCoverCandidatePage = async (tag: string, kind: 'artist' | 'character', page: number, options: { signal?: AbortSignal } = {}) => {
   const normalizedTag = tag.trim().toLowerCase().replaceAll(' ', '_');
   if (!normalizedTag) return { candidates: [], hasMore: false };
-  const result = await scheduleCoverRequest(() => search({ query: `${normalizedTag} order:score -status:banned`, page, limit: COVER_SOURCE_PAGE_SIZE }));
+  const result = await scheduleCoverRequest(() => search({ query: `${normalizedTag} order:score -status:banned`, page, limit: COVER_SOURCE_PAGE_SIZE, signal: options.signal }), options.signal);
   return {
     candidates: candidatePostsFor(result.items, normalizedTag, kind)
       .sort((left, right) => right.score - left.score)
