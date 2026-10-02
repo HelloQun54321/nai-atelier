@@ -207,6 +207,38 @@ it('自定义角色保留创建入口，画师选择仍能送往实验室', asyn
   expect(generateImage).not.toHaveBeenCalled();
 });
 
+it.each([1280, 390])('宽度 %s 角色大图、手机详情与新建窗口覆盖侧栏，关闭不改资料', async width => {
+  vi.stubGlobal('innerWidth', width);
+  const onCreate = vi.fn(), onSelect = vi.fn(), onDelete = vi.fn(), onUpdateChain = vi.fn();
+  const view = render(<div className="agent-stage safe-mode dark">
+    <aside className="relative z-40">侧边栏</aside>
+    <main className="isolate overflow-hidden"><CharacterLibrary chains={[{ ...custom, previewImage: '/synthetic.png' }]}
+      onCreate={onCreate} onSelect={onSelect} onDelete={onDelete} onUpdateChain={onUpdateChain} onNavigateToPlayground={vi.fn()} notify={vi.fn()} /></main>
+  </div>);
+  const cover = view.container.querySelector<HTMLButtonElement>(`[data-return-item-id="${custom.id}"] button.h-full`)!;
+  fireEvent.click(cover);
+  const dialogs = screen.getAllByRole('dialog', { name: custom.name });
+  expect(dialogs).toHaveLength(2);
+  for (const dialog of dialogs) {
+    expect(dialog.parentElement).toBe(view.container.firstElementChild);
+    expect(dialog.closest('main')).toBeNull();
+    expect(dialog.closest('.safe-mode.dark')).toBe(view.container.firstElementChild);
+  }
+  const desktop = dialogs.find(dialog => dialog.classList.contains('md:flex'))!;
+  expect(desktop.classList.contains('hidden')).toBe(true);
+  expect(desktop.classList.contains('z-[1500]')).toBe(true);
+  expect(dialogs.find(dialog => dialog.classList.contains('mobile-detail'))?.classList.contains('md:hidden')).toBe(true);
+  fireEvent.click(desktop);
+  expect(screen.queryByRole('dialog', { name: custom.name })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '新建自定义角色' }));
+  const create = screen.getByRole('dialog', { name: '新建自定义还原角色' });
+  expect(create.closest('.fixed')?.parentElement).toBe(view.container.firstElementChild);
+  expect(create.closest('main')).toBeNull();
+  fireEvent.click(within(create).getByRole('button', { name: '取消' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  for (const action of [onCreate, onSelect, onDelete, onUpdateChain]) expect(action).not.toHaveBeenCalled();
+});
+
 it('角色送往独立槽位时默认 AI 构图，目录不强制站位', async () => {
   const view = renderLibrary('character');
   fireEvent.click(await screen.findByTestId(`cover-${fixtures.characters[0].name}`));

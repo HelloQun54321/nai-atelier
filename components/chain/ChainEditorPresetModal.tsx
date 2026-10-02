@@ -1,4 +1,5 @@
 import React from 'react';
+import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { Info } from 'lucide-react';
 import { PromptChain } from '../../types';
 import { LabPresetImportOptions } from '../../services/labModeTools';
@@ -64,10 +65,10 @@ export const ChainEditorPresetModal: React.FC<ChainEditorPresetModalProps> = ({
     }, [showImportPreset, importCandidate, setImportCandidate, setShowImportPreset]);
 
     return (
-    <>
+    <ImagePreviewPortal>
         {/* Import Preset List Modal */}
         {showImportPreset && !importCandidate && (
-            <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 p-2 backdrop-blur-sm md:p-4" onMouseDown={e => { if (e.target === e.currentTarget) setShowImportPreset(false); }}>
+            <div role="dialog" aria-modal="true" aria-label="引用预设" className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 p-2 backdrop-blur-sm md:p-4" onMouseDown={e => { if (e.target === e.currentTarget) setShowImportPreset(false); }}>
                 <div className="flex max-h-[90dvh] w-full max-w-4xl flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900 md:max-h-[85vh] md:max-w-5xl lg:max-w-6xl">
                     <div className="relative flex flex-shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 p-3 dark:border-gray-800 md:justify-between md:gap-4 md:p-4">
                         <h3 className="pr-10 font-bold dark:text-white md:pr-0">引用预设</h3>
@@ -216,7 +217,7 @@ export const ChainEditorPresetModal: React.FC<ChainEditorPresetModalProps> = ({
 
         {/* Import Detail/Confirm Modal */}
         {importCandidate && (
-            <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onMouseDown={e => { if (e.target === e.currentTarget) setImportCandidate(null); }}>
+            <div role="dialog" aria-modal="true" aria-label="确认导入预设" className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onMouseDown={e => { if (e.target === e.currentTarget) setImportCandidate(null); }}>
                 <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-sm shadow-2xl border border-gray-200 dark:border-gray-800">
                     <div className="p-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 rounded-t-2xl">
                         <h3 className="font-bold text-gray-900 dark:text-white truncate" title={importCandidate.name}>
@@ -303,6 +304,6 @@ export const ChainEditorPresetModal: React.FC<ChainEditorPresetModalProps> = ({
                 </div>
             </div>
         )}
-    </>
+    </ImagePreviewPortal>
     );
 };

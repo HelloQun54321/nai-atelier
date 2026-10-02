@@ -89,7 +89,6 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     const isPlayground = chainId === 'playground';
     const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
     const closeMobileActions = () => setMobileActionsOpen(false);
-    const ActionLayer = isPlayground ? React.Fragment : ImagePreviewPortal;
     const saveAnchorRef = useRef<HTMLDivElement>(null);
     const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
     const [saveActionsOpen, setSaveActionsOpen] = useState(false);
@@ -163,10 +162,10 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
         <input type="file" ref={importInputRef} className="hidden" accept="image/png,application/json,.json" onChange={handleImportImage} />
         {saveActionsOpen && canSaveActiveModeToLibrary && isOwner && !isPlayground && <>
             {isMobile
-                ? <ActionLayer><MobileBottomSheet open title={`保存${entityLabel}`} onClose={closeSaveActions}>{renderSaveOptions()}</MobileBottomSheet></ActionLayer>
+                ? <ImagePreviewPortal><MobileBottomSheet open title={`保存${entityLabel}`} onClose={closeSaveActions}>{renderSaveOptions()}</MobileBottomSheet></ImagePreviewPortal>
                 : <AnchoredToolbarPopover anchorRef={saveAnchorRef} title={`保存${entityLabel}`} width={280} onClose={closeSaveActions}>{renderSaveOptions()}</AnchoredToolbarPopover>}
         </>}
-        <ActionLayer><MobileBottomSheet open={mobileActionsOpen} title="更多操作" onClose={closeMobileActions}>
+        <ImagePreviewPortal><MobileBottomSheet open={mobileActionsOpen} title="更多操作" onClose={closeMobileActions}>
             <div className="flex flex-col gap-1">
                 {canEdit && <MobileActionRow icon={<FileDown className="h-4 w-4" />} label="导入图片或 JSON 配置" onClick={() => { closeMobileActions(); importInputRef.current?.click(); }} />}
                 {canEdit && <MobileActionRow icon={<Quote className="h-4 w-4" />} label="引用预设" onClick={() => { closeMobileActions(); setShowImportPreset(true); }} />}
@@ -185,7 +184,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                 {canEdit && <MobileActionRow icon={<RotateCcw className="h-4 w-4" />} label="重置当前模式" tone="danger" onClick={() => { closeMobileActions(); handleReset(); }} />}
                 {canSaveActiveModeToLibrary && isPlayground && <MobileActionRow icon={<Save className="h-4 w-4" />} label="保存到库" tone="primary" disabled={isUploading} onClick={() => { closeMobileActions(); handleFork(); }} />}
             </div>
-        </MobileBottomSheet></ActionLayer>
+        </MobileBottomSheet></ImagePreviewPortal>
         </>
     );
 };

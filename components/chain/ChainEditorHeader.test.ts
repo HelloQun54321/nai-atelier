@@ -49,8 +49,12 @@ const renderHeader = (props: Partial<Parameters<typeof ChainEditorHeader>[0]> = 
   notify: vi.fn(),
   ...props,
   });
-  const view = render(element);
-  return { ...view, rerenderHeader: (next: Partial<Parameters<typeof ChainEditorHeader>[0]>) => view.rerender(React.createElement(ChainEditorHeader, { ...element.props, ...next })) };
+  const shell = (content: React.ReactNode) => React.createElement('div', { className: 'agent-stage safe-mode dark' },
+    React.createElement('aside', { className: 'relative z-40' }, '侧边栏'),
+    React.createElement('main', { className: 'isolate overflow-hidden' }, content),
+  );
+  const view = render(shell(element));
+  return { ...view, rerenderHeader: (next: Partial<Parameters<typeof ChainEditorHeader>[0]>) => view.rerender(shell(React.createElement(ChainEditorHeader, { ...element.props, ...next }))) };
 };
 
 describe('ChainEditorHeader 工具栏', () => {
@@ -73,6 +77,9 @@ describe('ChainEditorHeader 工具栏', () => {
 
     fireEvent.click(getByRole('button', { name: '更多操作' }));
     const dialog = getByRole('dialog', { name: '更多操作' });
+    expect(dialog.closest('main')).toBeNull();
+    expect(dialog.closest('.mobile-layer')?.parentElement).toBe(dialog.closest('.agent-stage'));
+    expect(dialog.closest('.safe-mode.dark')).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: '导入图片或 JSON 配置' })).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: '引用预设' })).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: '图片反推 Tag' })).toBeTruthy();

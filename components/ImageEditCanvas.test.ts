@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ImageEditCanvas } from './ImageEditCanvas';
+
+afterEach(cleanup);
 
 describe('ImageEditCanvas', () => {
   it('为安全模式标记编辑底图并保留编辑画布交互容器', () => {
@@ -80,11 +82,42 @@ describe('ImageEditCanvas', () => {
     expect(container.textContent).toContain('适应');
 
     fireEvent.click(fullscreenBtn);
-    expect(container.textContent).toContain('全屏大画板精修');
-    expect(container.textContent).toContain('完成 (Esc)');
+    expect(screen.getByRole('dialog', { name: '全屏大画板精修' }).textContent).toContain('完成 (Esc)');
+    expect(container.textContent).not.toContain('全屏大画板精修');
 
-    const exitBtn = container.querySelector('button[title="退出全屏精修"]') as HTMLButtonElement;
+    const exitBtn = screen.getByTitle('退出全屏精修');
     fireEvent.click(exitBtn);
     expect(container.textContent).not.toContain('全屏大画板精修');
+  });
+
+  it('全屏往返保留三个画布节点、引用和缩放事件，卸载移除根层内容', () => {
+    const refs = [React.createRef<HTMLCanvasElement>(), React.createRef<HTMLCanvasElement>(), React.createRef<HTMLCanvasElement>()];
+    const view = render(React.createElement('div', { className: 'agent-stage safe-mode dark' },
+      React.createElement('aside', { className: 'relative z-40' }, '侧边栏'),
+      React.createElement('main', { className: 'isolate overflow-hidden' }, React.createElement(ImageEditCanvas, {
+        imageCanvasRef: refs[0], maskCanvasRef: refs[1], overlayCanvasRef: refs[2], width: 832, height: 1216,
+        focusedRect: null, focused: false, isLoading: false, onPointerDown: vi.fn(), onPointerMove: vi.fn(), onPointerUp: vi.fn(),
+      })),
+    ));
+    const canvases = refs.map(ref => ref.current);
+    const stage = view.container.firstElementChild;
+    for (let i = 0; i < 2; i++) {
+      fireEvent.click(screen.getByTitle('展开全屏大画板'));
+      const dialog = screen.getByRole('dialog', { name: '全屏大画板精修' });
+      expect(dialog.closest('main')).toBeNull();
+      expect(dialog.parentElement?.parentElement).toBe(stage);
+      expect(dialog.closest('.safe-mode.dark')).toBe(stage);
+      expect(dialog.classList.contains('z-[1250]')).toBe(true);
+      expect(refs.map(ref => ref.current)).toEqual(canvases);
+      fireEvent.wheel(dialog.querySelector('.overflow-auto')!, { ctrlKey: true, deltaY: -1 });
+      expect(dialog.textContent).toContain(i === 0 ? '125%' : '150%');
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(refs.map(ref => ref.current)).toEqual(canvases);
+      expect(canvases[0]?.closest('main')).toBeTruthy();
+    }
+    fireEvent.click(screen.getByTitle('展开全屏大画板'));
+    view.unmount();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(refs.every(ref => ref.current === null)).toBe(true);
   });
 });

@@ -6,6 +6,7 @@ import { GenHistory } from './GenHistory';
 import { localHistory } from '../services/localHistory';
 import { copySharedImage, downloadSharedImage, setCleanSharedImages } from '../services/imageSharing';
 import type { LocalGenItem } from '../types';
+import { db } from '../services/dbService';
 
 const { confirmAction } = vi.hoisted(() => ({ confirmAction: vi.fn(async () => false) }));
 vi.mock('./ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
@@ -13,7 +14,9 @@ vi.mock('../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabl
 vi.mock('../services/localHistory', () => ({ localHistory: {
     prepare: vi.fn(async () => 0), subscribe: () => () => {},
     getPage: vi.fn(), setFavorite: vi.fn(async () => 1), delete: vi.fn(),
+    countOlderThan: vi.fn(async () => 0), getCount: vi.fn(async () => 2), deleteOlderThan: vi.fn(), keepOnly: vi.fn(),
 } }));
+vi.mock('../services/dbService', () => ({ db: { saveInspiration: vi.fn(async () => {}) } }));
 vi.mock('../services/imageSharing', async importOriginal => ({
     ...await importOriginal<typeof import('../services/imageSharing')>(),
     copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}),
@@ -51,12 +54,39 @@ afterEach(() => {
 const setup = async (width = 1280) => {
     vi.stubGlobal('innerWidth', width);
     const notify = vi.fn();
-    const result = render(<GenHistory currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} chains={[]} notify={notify} />);
+    const result = render(<div className="agent-stage safe-mode dark"><aside className="relative z-40">侧边栏</aside><main className="isolate overflow-hidden"><GenHistory currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} chains={[]} notify={notify} /></main></div>);
     await waitFor(() => expect(result.container.querySelectorAll('.mobile-gallery-item').length).toBe(2));
     return { ...result, notify, cards: Array.from(result.container.querySelectorAll<HTMLElement>('.mobile-gallery-item')) };
 };
 
 describe('历史缩略图就地操作', () => {
+    it.each([1280, 390])('宽度 %s 清理确认脱离工作区，取消不删除历史', async width => {
+        const { container } = await setup(width);
+        fireEvent.click(screen.getByRole('button', { name: '管理' }));
+        fireEvent.click(screen.getByRole('button', { name: width === 1280 ? '按时间清理历史…' : '删除指定天数以前的历史' }));
+        const dialog = screen.getByRole('dialog', { name: '确认清理历史' });
+        expect(dialog.parentElement).toBe(container.firstElementChild);
+        expect(dialog.closest('main')).toBeNull();
+        expect(dialog.closest('.safe-mode.dark')).toBe(container.firstElementChild);
+        fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
+        expect(screen.queryByRole('dialog', { name: '确认清理历史' })).toBeNull();
+        expect(localHistory.deleteOlderThan).not.toHaveBeenCalled();
+        expect(localHistory.keepOnly).not.toHaveBeenCalled();
+    });
+
+    it('加入灵感后的提示挂到根层，关闭提示不重复保存', async () => {
+        const { container, cards } = await setup();
+        fireEvent.click(cards[0]);
+        fireEvent.change(screen.getByPlaceholderText('为这张图取个标题...'), { target: { value: '合成标题' } });
+        fireEvent.click(screen.getByRole('button', { name: '加入' }));
+        const dialog = await screen.findByRole('dialog', { name: '已加入灵感库' });
+        expect(dialog.parentElement).toBe(container.firstElementChild);
+        expect(dialog.closest('main')).toBeNull();
+        fireEvent.click(within(dialog).getByRole('button', { name: '确定' }));
+        expect(screen.queryByRole('dialog', { name: '已加入灵感库' })).toBeNull();
+        expect(db.saveInspiration).toHaveBeenCalledOnce();
+    });
+
     it.each([1280, 390])('宽度 %s 删除在左上，右上依次收藏、下载、复制，所有按钮无文字', async width => {
         const { cards } = await setup(width);
         const card = within(cards[0]);

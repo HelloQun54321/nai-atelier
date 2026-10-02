@@ -13,6 +13,7 @@ import {
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileDetailView } from './MobileUI';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry } from './ShortestColumnMasonry';
 import { Check, ChevronDown, Dice5, LoaderCircle, Plus, Tag, UserRound } from 'lucide-react';
@@ -682,7 +683,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
       <TagSelectionBar count={selectedCards.length} unit="个角色" onClear={clearSelection} onCopy={copyAllSelected} onImport={importAllSelected} />
 
-       {lightbox?.previewImage && (
+       <ImagePreviewPortal>{lightbox?.previewImage && (
          <div role="dialog" aria-modal="true" aria-label={lightbox.name} className="ui-backdrop-enter fixed inset-0 z-[1500] hidden items-center justify-center bg-black/90 p-4 backdrop-blur-sm md:flex" onClick={() => setLightbox(null)}>
           <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" onClick={event => event.stopPropagation()} data-safe-mode-ignore="true" />
           <div className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded bg-black/65 px-4 py-2 text-center text-sm text-white">{lightbox.name}{lightbox.tagName ? ` · ${lightbox.tagName}` : ''}</div>
@@ -704,9 +705,9 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              {lightbox.kind === 'custom' && <button onClick={() => void deleteCustom(lightbox)} className="mobile-touch mt-2 w-full rounded-xl bg-red-50 font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">删除这个自定义角色</button>}
            </div>
          </div>}
-       </MobileDetailView>
+       </MobileDetailView></ImagePreviewPortal>
 
-      {showCreate && (
+      {showCreate && (<ImagePreviewPortal>
         <div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setShowCreate(false)}>
           <div
             ref={createDialogRef}
@@ -723,7 +724,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             <div className="mt-5 flex justify-end gap-2"><button onClick={() => setShowCreate(false)} className="rounded px-4 py-2 text-sm text-gray-500">取消</button><button onClick={submitCreate} disabled={!newName.trim()} className="rounded bg-indigo-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">创建并编辑</button></div>
           </div>
         </div>
-      )}
+      </ImagePreviewPortal>)}
     </div>
   );
 };

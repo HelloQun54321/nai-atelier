@@ -11,6 +11,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { BackButton, CloseButton, PageSpinner } from './DesignSystem';
 import { useModalA11y } from './useModalA11y';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
 
 interface VibeManagerProps {
   params: NAIParams;
@@ -324,7 +325,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
         </div>
       </div>
 
-      {open && <div
+      {open && <ImagePreviewPortal><div
         className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 p-0 backdrop-blur-sm md:p-6"
         onClick={event => { if (event.target === event.currentTarget) closeLayer(); }}
       >
@@ -390,7 +391,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
             </main>
           </>}
         </div>
-      </div>}
+      </div></ImagePreviewPortal>}
     </>
   );
 };

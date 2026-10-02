@@ -1,5 +1,24 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Maximize2, Minimize2, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { createPortal } from 'react-dom';
+
+/** 移动同一个挂载容器，切换全屏时保留底图、蒙版像素和画布事件。 */
+const CanvasLayer: React.FC<React.PropsWithChildren<{ fullscreen: boolean }>> = ({ fullscreen, children }) => {
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [host] = useState(() => {
+    const element = document.createElement('div');
+    element.className = 'contents';
+    return element;
+  });
+  useLayoutEffect(() => {
+    const target = fullscreen
+      ? document.querySelector<HTMLElement>('.agent-stage') || document.body
+      : anchorRef.current;
+    target?.appendChild(host);
+    return () => host.remove();
+  }, [fullscreen, host]);
+  return <><div ref={anchorRef} className="contents" />{createPortal(children, host)}</>;
+};
 
 export interface ImageEditCanvasProps {
   imageCanvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -188,10 +207,14 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
     : { aspectRatio: `${Math.max(1, width)} / ${Math.max(1, height)}` };
 
   return (
+    <CanvasLayer fullscreen={isFullscreen}>
     <div
+      role={isFullscreen ? 'dialog' : undefined}
+      aria-modal={isFullscreen ? true : undefined}
+      aria-label={isFullscreen ? '全屏大画板精修' : undefined}
       className={
         isFullscreen
-          ? 'fixed inset-0 z-[950] flex flex-col bg-gray-950/95 p-4 backdrop-blur-md sm:p-6 select-none'
+          ? 'fixed inset-0 z-[1250] flex flex-col bg-gray-950/95 p-4 backdrop-blur-md sm:p-6 select-none'
           : 'relative flex flex-1 flex-col min-h-0 w-full'
       }
     >
@@ -325,5 +348,6 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
         {!width && <div className="absolute inset-x-6 bottom-6 rounded-lg border border-dashed border-gray-300 bg-white/90 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-400">请先生成图片、选择历史图片或导入 PNG、JPEG、WebP 底图</div>}
       </div>
     </div>
+    </CanvasLayer>
   );
 };

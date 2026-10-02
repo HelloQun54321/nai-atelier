@@ -5,6 +5,7 @@ import { localHistory } from '../services/localHistory';
 import { LocalGenItem } from '../types';
 import { SmartImage } from './SmartImage';
 import { useModalA11y } from './useModalA11y';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
 
 interface HistoryImagePickerProps {
   open: boolean;
@@ -88,6 +89,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
   if (!open) return null;
 
   return (
+    <ImagePreviewPortal>
     <div
       ref={dialogRef}
       className="fixed inset-0 z-[1250] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-6"
@@ -150,5 +152,6 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
         </footer>
       </section>
     </div>
+    </ImagePreviewPortal>
   );
 };

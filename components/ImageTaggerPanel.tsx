@@ -168,7 +168,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
 
   if (!open) return null;
 
-  return <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={contextual ? '识别图片 Tag' : '图片反推 Tag'} className={`fixed inset-0 ${contextual ? 'z-[2000]' : 'z-[1250]'} flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5`} onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+  return <ImagePreviewPortal><div ref={dialogRef} role="dialog" aria-modal="true" aria-label={contextual ? '识别图片 Tag' : '图片反推 Tag'} className={`fixed inset-0 ${contextual ? 'z-[2000]' : 'z-[1250]'} flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5`} onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
     <div className="flex max-h-[94dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl dark:bg-gray-950 md:rounded-2xl">
       <header className="flex h-14 flex-none items-center justify-between border-b border-gray-200 px-4 dark:border-gray-800">
         <div><h2 className="text-sm font-black">{contextual ? '识别图片 Tag' : '图片反推 Danbooru Tag'}</h2><p className="text-micro text-gray-500">{selectedModel?.label || 'WD Tagger V3'} · 图片只在你的电脑上处理</p></div>
@@ -244,7 +244,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
       </div>
       <footer className="flex flex-none items-center justify-between gap-3 border-t border-gray-200 p-3 dark:border-gray-800"><p className="hidden text-micro text-gray-500 sm:block">模型文件保存在本地缓存，首次加载后可完全离线运行。</p><div className="ml-auto flex items-center gap-2"><button type="button" disabled={!selected.size || busy} onClick={sendToLab} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-40">送往实验室</button><button type="button" disabled={!selected.size || busy} onClick={insert} className="mobile-touch rounded-xl bg-violet-600 px-5 text-sm font-bold text-white disabled:opacity-40">{(actionLabel ?? '追加 {count} 个 Tag 到全局提示词').replace('{count}', String(selected.size))}</button></div></footer>
     </div>
-  </div>;
+  </div></ImagePreviewPortal>;
 };
 
 interface ImageTaggerActionProps {

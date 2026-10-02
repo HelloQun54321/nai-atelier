@@ -7,6 +7,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { SegmentedControl, BackButton, CloseButton, PageSpinner } from './DesignSystem';
 import { useModalA11y } from './useModalA11y';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
 
 interface Props {
   params: NAIParams;
@@ -206,7 +207,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
       </button>
     </div>
 
-    {open && <div
+    {open && <ImagePreviewPortal><div
       className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 p-0 backdrop-blur-sm md:p-6"
       onClick={event => { if (event.target === event.currentTarget) closeLayer(); }}
     >
@@ -283,6 +284,6 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
           </main>
         </>}
       </div>
-    </div>}
+    </div></ImagePreviewPortal>}
   </>;
 };

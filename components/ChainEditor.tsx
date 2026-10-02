@@ -1952,7 +1952,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         notify(`${label}已复制`);
     };
 
-    const TaggerLayer = chain.id === 'playground' ? React.Fragment : ImagePreviewPortal;
     return (
         <div
             className="chain-editor-workspace flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 transition-colors relative"
@@ -2017,7 +2016,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次 Agent 修改'); } }}
                 tagAssistEnabled={tagAssistEnabled}
             />
-            <TaggerLayer><ImageTaggerPanel
+            <ImageTaggerPanel
                 contextual={chain.id !== 'playground'}
                 open={taggerOpen}
                 onClose={() => setTaggerOpen(false)}
@@ -2033,7 +2032,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     }
                     notify(`已追加 ${tags.split(',').length} 个识别 Tag`);
                 }}
-            /></TaggerLayer>
+            />
             {activeGenerationMode === 'text-to-image' ? <>
             <nav className="grid h-10 grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
                 {([['global', '全局'], ['character', '角色'], ['params', '参数']] as const).map(([value, label]) => <button key={value} onClick={() => setMobileEditorTab(value)} className={`relative min-w-0 text-sm font-bold ${mobileEditorTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>{label}{mobileEditorTab === value && <span className="absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-indigo-500" />}</button>)}

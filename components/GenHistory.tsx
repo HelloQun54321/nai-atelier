@@ -1223,8 +1223,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             )}
 
             {/* Clean Modal */}
-            {showCleanModal && (
-                <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            {showCleanModal && (<ImagePreviewPortal>
+                <div role="dialog" aria-modal="true" aria-label="确认清理历史" className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200 dark:border-gray-800">
                         <h3 className="mb-4 flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white"><AlertTriangle className="h-5 w-5 text-amber-500" />确认清理</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
@@ -1294,11 +1294,11 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                         </div>
                     </div>
                 </div>
-            )}
+            </ImagePreviewPortal>)}
 
             {/* Success Modal */}
-            {showSuccessModal && (
-                <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            {showSuccessModal && (<ImagePreviewPortal>
+                <div role="dialog" aria-modal="true" aria-label="已加入灵感库" className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col items-center text-center animate-bounce-in">
                         <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-500 rounded-full flex items-center justify-center text-3xl mb-4">
                             ✨
@@ -1315,7 +1315,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                         </button>
                     </div>
                 </div>
-            )}
+            </ImagePreviewPortal>)}
         </div>
     );
 };
