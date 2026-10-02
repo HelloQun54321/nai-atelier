@@ -1,0 +1,207 @@
+// @vitest-environment jsdom
+import React from 'react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import type { AitagWorkSummary } from '../services/aitagService';
+import type { User } from '../types';
+
+const mocks = vi.hoisted(() => ({
+  search: vi.fn(), searchCache: vi.fn(), getWork: vi.fn(), getMonths: vi.fn(), getCacheStatus: vi.fn(), setFavorite: vi.fn(),
+  masonry: vi.fn(),
+}));
+vi.mock('../services/aitagService', async original => ({
+  ...await original<typeof import('../services/aitagService')>(),
+  aitagService: { ...mocks },
+}));
+vi.mock('./ShortestColumnMasonry', () => ({
+  useMasonryColumnCount: () => 3,
+  ShortestColumnMasonry: (props: { items: AitagWorkSummary[]; renderItem: (work: AitagWorkSummary) => React.ReactNode }) => {
+    mocks.masonry(props);
+    return <div>{props.items.map(props.renderItem)}</div>;
+  },
+}));
+vi.mock('./SmartImage', async () => {
+  const { createContext } = await import('react');
+  return {
+    ImageActivityContext: createContext(true),
+    SmartImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} />,
+    OriginalImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} />,
+  };
+});
+vi.mock('./ImageTaggerPanel', () => ({ ImageTaggerAction: () => null }));
+vi.mock('./ImagePreviewPortal', () => ({ ImagePreviewPortal: ({ children }: { children: React.ReactNode }) => children }));
+
+const works: AitagWorkSummary[] = [1, 2].map(id => ({
+  id, title: `合成作品 ${id}`, AI_type: 'NAI', image_count: 2, hasFullyCachedImages: true, hasCachedDetail: true,
+  localFirstImageUrl: `/synthetic/${id}.png`,
+  firstImage: { id, work_id: id, author_id: 1, image_type: 'nai', file_name: `${id}.png`, local_image_url: `/synthetic/${id}.png`, model: id === 1 ? 'NovelAI Diffusion V4.5' : 'NovelAI Diffusion V5', prompt_text: 'synthetic prompt' },
+}));
+const callbacks = new Set<() => void>();
+const tops: Record<number, number> = { 1: 1800, 2: 2500 };
+const rect = (top: number, height: number) => ({ top, height, bottom: top + height, left: 0, right: 800, width: 800 } as DOMRect);
+
+beforeEach(() => {
+  vi.resetModules(); vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear(); callbacks.clear();
+  document.documentElement.className = ''; delete document.documentElement.dataset.safeMode;
+  tops[1] = 1800; tops[2] = 2500;
+  mocks.search.mockImplementation(async options => ({ items: options.page === 1 ? works : [], total: 2, page: options.page, page_size: 60 }));
+  mocks.searchCache.mockImplementation(mocks.search);
+  mocks.getMonths.mockResolvedValue({ months: [] });
+  mocks.getCacheStatus.mockResolvedValue({ total: 2 });
+  mocks.setFavorite.mockResolvedValue({});
+  mocks.getWork.mockImplementation(async id => ({ work: works.find(work => work.id === id), images: [works[id - 1].firstImage] }));
+  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: () => void) { callbacks.add(callback); }
+    observe() {} unobserve() {} disconnect() { callbacks.delete(this.callback); }
+  });
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(4000);
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const id = Number(this.dataset.galleryWorkId);
+    return id ? rect(100 + tops[id] - (this.closest('main')?.scrollTop ?? 0), 300) : rect(100, 600);
+  });
+});
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.documentElement.className = ''; delete document.documentElement.dataset.safeMode; });
+const setup = async (layout = 'masonry') => {
+  localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout }));
+  const { AitagGallery } = await import('./AitagGallery');
+  const { ImageActivityContext } = await import('./SmartImage');
+  const notify = vi.fn();
+  const draw = (active: boolean) => <ImageActivityContext.Provider value={active}><AitagGallery active={active} currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={vi.fn()} onCreateArtistChain={vi.fn()} /></ImageActivityContext.Provider>;
+  const view = render(draw(true));
+  await screen.findByRole('button', { name: '查看作品 合成作品 1' });
+  return { ...view, draw, notify, main: view.container.querySelector('main')! };
+};
+const card = (id: number) => screen.getByRole('button', { name: `查看作品 合成作品 ${id}` });
+const selected = (id: number) => expect(card(id).getAttribute('aria-pressed')).toBe('true');
+const noSelection = () => works.forEach(work => {
+  expect(card(work.id).getAttribute('aria-pressed')).toBe('false');
+  expect(card(work.id).className).not.toContain('brightness-');
+});
+
+it.each(['masonry', 'portrait', 'square'])('%s 布局中选中正常亮度、其余压暗，主题与安全模式保留原规则', async layout => {
+  const { main } = await setup(layout);
+  fireEvent.click(card(1));
+  await waitFor(() => selected(1));
+  expect(main.scrollTop).toBe(1650);
+  expect(card(1).className).toContain('ring-2');
+  expect(card(1).className).not.toContain('brightness-');
+  expect(card(2).className).toContain('brightness-[.7]');
+  expect(card(1).getAttribute('data-safe-mode-work')).toBe('true');
+  document.documentElement.classList.add('dark'); document.documentElement.dataset.safeMode = 'true';
+  fireEvent.click(card(2));
+  selected(2);
+  expect(main.scrollTop).toBe(2350);
+  expect(card(1).className).toContain('brightness-[.7]');
+  expect(card(2).className).not.toContain('brightness-');
+  if (layout === 'masonry') expect(mocks.masonry.mock.lastCall?.[0].stableColumns).toBe(true);
+});
+
+it('再次点击或使用 Enter／空格取消，❌ 也取消且关闭重排不跳离原作品', async () => {
+  const { main } = await setup();
+  fireEvent.click(card(1));
+  await waitFor(() => expect(mocks.getWork).toHaveBeenCalledTimes(1));
+  fireEvent.click(card(1));
+  noSelection();
+  fireEvent.keyDown(card(1), { key: 'Enter' }); selected(1);
+  fireEvent.keyDown(card(1), { key: ' ' }); noSelection();
+  fireEvent.click(card(1)); selected(1);
+  fireEvent.scroll(main);
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  noSelection();
+  tops[1] += 400;
+  act(() => callbacks.forEach(callback => callback()));
+  expect(main.scrollTop).toBe(2050);
+  expect(main.className).toContain('block');
+});
+
+it('收藏和收藏按钮键盘事件不切换焦点，也不关闭选中详情', async () => {
+  await setup();
+  fireEvent.click(card(1)); selected(1);
+  const favorite = within(card(2)).getByRole('button', { name: '收藏' });
+  fireEvent.keyDown(favorite, { key: 'Enter' }); selected(1);
+  fireEvent.click(favorite);
+  await waitFor(() => expect(mocks.setFavorite).toHaveBeenCalledWith(2, true, expect.any(Object)));
+  selected(1);
+  fireEvent.click(within(card(1)).getByRole('button', { name: '收藏' }));
+  selected(1);
+});
+
+it('切换作品分别恢复详情滚动，再次打开同一作品仍从上次阅读处继续', async () => {
+  const { container } = await setup();
+  fireEvent.click(card(1));
+  await waitFor(() => expect(mocks.getWork).toHaveBeenCalledTimes(1));
+  const body = container.querySelector('aside > div')!;
+  body.scrollTop = 760; fireEvent.scroll(body);
+  fireEvent.click(card(2));
+  expect(body.scrollTop).toBe(0);
+  body.scrollTop = 420; fireEvent.scroll(body);
+  fireEvent.click(card(1));
+  expect(body.scrollTop).toBe(760);
+  fireEvent.click(card(1)); noSelection();
+  fireEvent.click(card(1)); selected(1);
+  expect(body.scrollTop).toBe(760);
+});
+
+it('切换页面后选择、暗态、卡片定位和详情内部滚动一起恢复', async () => {
+  const { main, draw, rerender, container } = await setup();
+  fireEvent.click(card(1));
+  await waitFor(() => expect(mocks.getWork).toHaveBeenCalledTimes(1));
+  const body = container.querySelector('aside > div')!;
+  body.scrollTop = 820; fireEvent.scroll(body); fireEvent.scroll(main);
+  rerender(draw(false));
+  main.scrollTop = 0; body.scrollTop = 0;
+  fireEvent.scroll(main); fireEvent.scroll(body);
+  tops[1] += 200;
+  rerender(draw(true));
+  selected(1);
+  expect(card(2).className).toContain('brightness-[.7]');
+  expect(main.scrollTop).toBe(1850);
+  expect(body.scrollTop).toBe(820);
+});
+
+it('模型筛选移走当前作品时清除详情与暗态，搜索也不会留下旧选择', async () => {
+  await setup();
+  fireEvent.click(card(1)); selected(1);
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  const models = screen.getAllByLabelText('模型版本（已加载条目）')[0];
+  const next = Array.from((models as HTMLSelectElement).options).find(option => option.textContent?.includes('V5'))!;
+  fireEvent.change(models, { target: { value: next.value } });
+  expect(screen.queryByRole('button', { name: '查看作品 合成作品 1' })).toBeNull();
+  expect(card(2).className).not.toContain('brightness-');
+  expect(document.querySelector('aside')!.className).toContain('aitag-detail-panel--closed');
+  fireEvent.change(models, { target: { value: '' } });
+  fireEvent.click(card(1)); selected(1);
+  const input = screen.getByPlaceholderText('作品、作者、标题或标签，回车检索');
+  fireEvent.keyDown(input, { key: 'Enter' });
+  await waitFor(noSelection);
+});
+
+it('窄屏返回取消详情，离开 AITag 后返回事件不清掉保留的作品选择', async () => {
+  vi.mocked(window.matchMedia).mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() } as unknown as MediaQueryList);
+  vi.spyOn(window.history, 'back').mockImplementation(() => {});
+  const { draw, rerender } = await setup();
+  fireEvent.click(card(1)); selected(1);
+  expect(window.history.state.__naiMobileLayer).toContain('aitag-detail-');
+  rerender(draw(false));
+  fireEvent(window, new PopStateEvent('popstate'));
+  selected(1);
+  rerender(draw(true));
+  fireEvent(window, new PopStateEvent('popstate'));
+  noSelection();
+  expect(document.querySelector('aside')!.className).toContain('aitag-detail-panel--closed');
+  window.history.replaceState({}, '');
+});
+
+it('详情请求尚未完成时取消，迟到结果不会重开详情或恢复暗态', async () => {
+  let resolve!: (value: unknown) => void;
+  mocks.getWork.mockImplementation(() => new Promise(done => { resolve = done; }));
+  await setup();
+  fireEvent.click(card(1)); selected(1);
+  fireEvent.click(card(1)); noSelection();
+  await act(async () => resolve({ work: works[0], images: [works[0].firstImage] }));
+  noSelection();
+  expect(document.querySelector('aside')!.className).toContain('aitag-detail-panel--closed');
+});

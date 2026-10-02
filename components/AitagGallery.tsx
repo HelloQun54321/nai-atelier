@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AitagCacheStatus,
   AitagImage,
@@ -26,6 +26,7 @@ import { ExternalLink, Filter, FlaskConical, Package, Star } from 'lucide-react'
 import { FavoriteButton, IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
+import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
@@ -299,13 +300,21 @@ const defaultParams: NAIParams = {
 export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser, notify, onNavigateToPlayground, onCreateArtistChain, onRefreshInspiration }) => {
   const imageDisplay = useMobileImageDisplayPreferences();
   const mainScrollRef = useRef<HTMLElement | null>(null);
+  const galleryContentRef = useRef<HTMLDivElement>(null);
+  const detailScrollRef = useRef<HTMLDivElement>(null);
   const hasLoadedRef = useRef(aitagPageCache.hasLoaded);
   const cancelPageInputRef = useRef(false);
   const cacheStatusRefreshTimerRef = useRef<number | null>(null);
   const [items, setItems] = useState<AitagWorkSummary[]>(() => aitagPageCache.items);
   const [details, setDetails] = useState<Record<number, AitagWorkDetail>>(() => aitagPageCache.details);
   const [selectedId, setSelectedId] = useState<number | null>(() => aitagPageCache.selectedId);
-  const onMainScrollRestore = useKeepAliveScrollRestore(mainScrollRef, 'aitag', { trigger: selectedId });
+  const selectionAnchor = useGallerySelectionAnchor(mainScrollRef, galleryContentRef, selectedId, active);
+  const onMainScrollRestore = useKeepAliveScrollRestore(mainScrollRef, 'aitag', { skipRestore: selectionAnchor.hasAnchor });
+  // 换作品从对应作品的详情位置起步；切页返回则保留同一作品的位置。
+  useLayoutEffect(() => {
+    if (detailScrollRef.current) detailScrollRef.current.scrollTop = 0;
+  }, [selectedId]);
+  const onDetailScrollRestore = useKeepAliveScrollRestore(detailScrollRef, `aitag-detail-${selectedId}`, { skipRestore: selectedId === null });
   const [q, setQ] = useState(() => aitagPageCache.q);
   const [prompt, setPrompt] = useState(() => aitagPageCache.prompt);
   const [sort, setSort] = useState<AitagSort>(() => aitagPageCache.sort);
@@ -328,7 +337,12 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
 
   const selectedDetail = selectedId ? details[selectedId] : null;
   const selectedWork = selectedDetail?.work || items.find(item => item.id === selectedId) || null;
-  const closeMobileDetail = useMobileHistoryLayer(Boolean(selectedWork), () => setSelectedId(null), 'aitag-detail');
+  const closeDetail = () => {
+    selectionAnchor.preserveOnClose();
+    aitagPageCache = { ...aitagPageCache, selectedId: null };
+    setSelectedId(null);
+  };
+  const closeMobileDetail = useMobileHistoryLayer(active && Boolean(selectedWork), closeDetail, 'aitag-detail');
 
   // 模型版本筛选：与「收藏」一致，作用于已加载/已缓存的条目（按首图元数据判断）。
   const [modelFilter, setModelFilter] = useState('');
@@ -343,6 +357,14 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const visibleItems = modelFilter
     ? items.filter(work => getWorkModelLabel(work) === modelFilter)
     : items;
+  // 筛选或取消收藏移走当前作品时，不留下找不到目标的暗态与详情。
+  useEffect(() => {
+    if (!isLoading && selectedId !== null && !visibleItems.some(work => work.id === selectedId)) {
+      selectionAnchor.clearAnchor();
+      aitagPageCache = { ...aitagPageCache, selectedId: null };
+      setSelectedId(null);
+    }
+  });
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasNextPage = page < totalPages;
 
@@ -387,15 +409,19 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       <div
         key={work.id}
         data-safe-mode-work="true"
+        data-gallery-work-id={work.id}
         role="button"
+        aria-pressed={isSelected}
+        aria-label={`查看作品 ${work.title || `#${work.id}`}`}
         tabIndex={0}
         onClick={() => loadDetail(work)}
         onKeyDown={e => {
-          if (e.key === 'Enter') {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
             loadDetail(work);
           }
         }}
-        className={`mobile-gallery-item group relative text-left rounded-lg overflow-hidden border transition-colors flex flex-col ${cardTone.card} ${
+        className={`mobile-gallery-item group relative text-left rounded-lg overflow-hidden border transition-[filter,box-shadow,border-color] duration-150 flex flex-col ${cardTone.card} ${selectedId !== null && !isSelected ? 'brightness-[.7]' : ''} ${
           isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/30' : cardTone.border
         }`}
       >
@@ -465,6 +491,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   }, [page, isPageInputOpen]);
 
   const resetScrollPositions = () => {
+    selectionAnchor.clearAnchor();
     if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0;
     onMainScrollRestore();
   };
@@ -1061,6 +1088,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     setIsPageInputOpen(false);
     setPageInputValue(String(nextPage));
     if (nextPage !== page) {
+      selectionAnchor.clearAnchor();
+      aitagPageCache = { ...aitagPageCache, selectedId: null };
+      setSelectedId(null);
       loadWorks(nextPage, { resetScroll: true });
     }
   };
@@ -1106,6 +1136,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   };
 
   const loadDetail = async (work: AitagWorkSummary) => {
+    if (work.id === selectedId) {
+      closeMobileDetail();
+      return;
+    }
     aitagPageCache = { ...aitagPageCache, selectedId: work.id };
     setSelectedId(work.id);
     if (details[work.id] && !details[work.id].isPreviewOnly) return;
@@ -1242,7 +1276,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selectedWork ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main
           ref={mainScrollRef}
-          onScroll={onMainScrollRestore}
+          onScroll={() => { selectionAnchor.onScroll(); onMainScrollRestore(); }}
+          style={{ overflowAnchor: 'none' }}
           className={`${selectedWork ? 'hidden lg:block' : 'block'} min-h-0 overflow-y-auto p-4 md:p-6`}
         >
           {error && (
@@ -1255,6 +1290,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             </div>
           )}
 
+          <div ref={galleryContentRef} className={isLoading || visibleItems.length === 0 ? 'h-full' : undefined}>
           {isLoading ? (
             <div className="h-full flex items-center justify-center text-gray-400">
               <div className="text-sm">加载 aitag 数据中...</div>
@@ -1271,6 +1307,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                 getItemKey={work => String(work.id)}
                 estimateItemHeight={estimateAitagCardHeight}
                 renderItem={renderAitagCard}
+                stableColumns
               />
             ) : (
             <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-aitag-grid`} style={mobileGalleryStyle(imageDisplay)}>
@@ -1278,6 +1315,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             </div>
             )
           )}
+          </div>
 
           <div className="flex flex-col items-center gap-2 py-6">
             <div ref={appendSentinelRef} className="h-1 w-full" aria-hidden="true" />
@@ -1345,7 +1383,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           sensitiveTitle
           subInfo={selectedWork ? `#${selectedWork.id} · ${getAitagType(selectedWork)}` : undefined}
           onBack={closeMobileDetail}
-          onClose={() => setSelectedId(null)}
+          onClose={closeMobileDetail}
+          bodyRef={detailScrollRef}
+          onBodyScroll={onDetailScrollRestore}
         >
           {!selectedWork ? (
             <div className="h-full flex items-center justify-center text-sm text-gray-400 text-center px-6">

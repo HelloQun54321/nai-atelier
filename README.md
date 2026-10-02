@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.15.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.16.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -642,6 +642,8 @@ Vibe／角色参考管理共用资料库／归档工具栏，按实际窗口宽�
 - 单独搜索 NovelAI 元数据中的 Prompt
 - 浏览最新作品或月榜
 - 选择当前月份、历史月份和更早目录
+
+点击作品查看详情时，当前卡片保持正常亮度并突出边框，其余作品适度变暗且仍可直接切换。打开详情与布局重排时自动将作品置于列表可视区域中央；主动滚动后保留移动后的位置，不强制拉回。再次点击当前卡片或关闭详情即可取消效果，列表变宽时保留原作品的屏幕高度。切到实验室等页面再回来，恢复选中作品、视觉效果与详情阅读位置；筛选移走当前作品时自动清除选择，首尾作品的定位遵循可滚动范围。
 
 #### 本地索引与离线缓存
 
