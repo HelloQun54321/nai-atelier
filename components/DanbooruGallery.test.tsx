@@ -5,6 +5,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DanbooruGallery } from './DanbooruGallery';
 import { danbooruService, resolveDanbooruQuery, type DanbooruPost } from '../services/danbooruService';
 import type { User } from '../types';
+import { db } from '../services/dbService';
+import { api } from '../services/api';
+import { importDanbooruCoverAsDataUrl } from '../services/danbooruCoverImport';
+import { IMPORT_SESSION_KEY } from '../services/metadataService';
 
 vi.mock('../services/danbooruService', async original => ({
   ...await original<typeof import('../services/danbooruService')>(),
@@ -15,7 +19,9 @@ vi.mock('./ShortestColumnMasonry', () => ({
   ShortestColumnMasonry: ({ items, renderItem }: { items: DanbooruPost[]; renderItem: (post: DanbooruPost) => React.ReactNode }) => <div>{items.map(renderItem)}</div>,
 }));
 vi.mock('../services/galleryHistoryService', () => ({ galleryHistoryService: { recordView: vi.fn(), getHistory: () => [] } }));
-vi.mock('./ImageTaggerPanel', () => ({ ImageTaggerAction: () => null }));
+vi.mock('../services/dbService', () => ({ db: { getInspirationsBySource: vi.fn(async () => []), updateInspiration: vi.fn() } }));
+vi.mock('../services/api', () => ({ api: { post: vi.fn() } }));
+vi.mock('../services/danbooruCoverImport', () => ({ importDanbooruCoverAsDataUrl: vi.fn() }));
 
 const observers: Array<(entries: Array<{ isIntersecting: boolean }>) => void> = [];
 const search = vi.mocked(danbooruService.search);
@@ -26,6 +32,7 @@ const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = n
 
 beforeEach(() => {
   localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks(); observers.length = 0;
+  vi.mocked(db.getInspirationsBySource).mockResolvedValue([]);
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
   vi.stubGlobal('IntersectionObserver', class {
@@ -45,6 +52,30 @@ const setup = async () => {
 const openFilters = () => fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
 const changeFilter = (name: string, value: string) => fireEvent.change(screen.getByRole('combobox', { name }), { target: { value } });
 const submit = (value: string) => { const input = screen.getByRole('searchbox', { name: '搜索 Danbooru' }); fireEvent.change(input, { target: { value } }); fireEvent.submit(input.closest('form')!); };
+it('详情主操作是图片反推，原站复制／使用独立，保存实际图片及原站标注', async () => {
+  search.mockImplementation(async options => result(options?.query, [post]));
+  vi.mocked(importDanbooruCoverAsDataUrl).mockResolvedValue('data:image/png;base64,c3ludGhldGlj');
+  vi.mocked(api.post).mockImplementation(async (_path, body) => ({ item: body }));
+  await setup(); fireEvent.click(screen.getByRole('button', { name: /synthetic artist/ }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '图片反推' }).hasAttribute('disabled')).toBe(false));
+  expect(screen.queryByRole('button', { name: '更多' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '导入实验室' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '原站 Tag 送往实验室' }));
+  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ prompt: 'solo', mode: 'append-prompt' });
+  fireEvent.click(screen.getByRole('button', { name: '加入灵感库' }));
+  await waitFor(() => expect(api.post).toHaveBeenCalledWith('/inspirations', expect.objectContaining({ imageUrl: 'data:image/png;base64,c3ludGhldGlj', prompt: 'solo', analysis: { externalSourceTags: ['synthetic_artist', 'solo'], externalSourcePage: 0 } })));
+});
+it('同一作品更新已存反推，不重复下载或创建，保留原分类与备注', async () => {
+  search.mockImplementation(async options => result(options?.query, [post]));
+  const stored = { id: 'saved', userId: 'synthetic', title: 'keep title', imageUrl: '/api/assets/saved', prompt: 'blue hair', notes: 'keep notes', boardId: 'keep board', createdAt: 1, analysis: { extra: 'keep', imageTagger: { prompt: 'blue hair', createdAt: 1, result: { model: 'test', threshold: 0.35, characterThreshold: 0.85, rating: null, tags: [], character: [], general: [] } } } };
+  vi.mocked(db.getInspirationsBySource).mockResolvedValue([stored]);
+  await setup(); fireEvent.click(screen.getByRole('button', { name: /synthetic artist/ }));
+  await screen.findByRole('textbox', { name: '反推 Tag' });
+  fireEvent.change(screen.getByRole('textbox', { name: '反推 Tag' }), { target: { value: 'edited hair' } });
+  fireEvent.click(screen.getByRole('button', { name: '更新灵感库' }));
+  await waitFor(() => expect(db.updateInspiration).toHaveBeenCalledWith('saved', { prompt: 'edited hair', analysis: { extra: 'keep', externalSourcePage: 0, externalSourceTags: ['synthetic_artist', 'solo'], imageTagger: { ...stored.analysis.imageTagger, prompt: 'edited hair' } } }));
+  expect(importDanbooruCoverAsDataUrl).not.toHaveBeenCalled(); expect(api.post).not.toHaveBeenCalled();
+});
 it('切换查询中止旧预取，迟到预取不再发起图片预热', async () => {
   const pending = deferred<ReturnType<typeof result>>();
   search.mockImplementation(async options => options?.page === 2 ? pending.promise : result(options?.query, [], 1, !options?.query?.includes('new')));

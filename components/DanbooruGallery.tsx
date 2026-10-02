@@ -1,5 +1,5 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, ExternalLink, FlaskConical, Heart, RefreshCw, Search } from 'lucide-react';
+import { ExternalLink, RefreshCw, Search } from 'lucide-react';
 import {
   DanbooruPost,
   DanbooruTagCategory,
@@ -10,14 +10,17 @@ import {
   buildDanbooruFilterQuery,
 } from '../services/danbooruService';
 import { db } from '../services/dbService';
+import { api } from '../services/api';
+import { importDanbooruCoverAsDataUrl } from '../services/danbooruCoverImport';
+import { copyTagText as copyText, externalImageAnalysis, type ExternalImageTags } from '../services/externalImageTags';
 import { createUuid } from '../services/id';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
-import { NAIParams, User } from '../types';
+import { Inspiration, NAIParams, User } from '../types';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
 import { EmptyState, PageSpinner, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
-import { ImageTaggerAction } from './ImageTaggerPanel';
+import { ExternalImageTools } from './ExternalImageTools';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
@@ -68,16 +71,6 @@ const formatCount = (value: number) => new Intl.NumberFormat('zh-CN', {
   maximumFractionDigits: 1,
 }).format(value);
 
-const copyText = async (value: string) => {
-  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value);
-  const textarea = document.createElement('textarea');
-  textarea.value = value;
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand('copy');
-  textarea.remove();
-};
-
 type DanbooruSort = 'rank' | 'score' | 'favcount' | 'latest';
 type DanbooruRating = 'all' | 'g' | 's' | 'q' | 'e';
 type DanbooruRatio = 'all' | 'portrait' | 'landscape' | 'square';
@@ -99,7 +92,6 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [pageInput, setPageInput] = useState('');
   const loadedRef = useRef(false);
@@ -382,51 +374,42 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     );
   };
 
-  const importToPlayground = (post: DanbooruPost) => {
-    const prompt = danbooruPromptTags(post);
+  const importToPlayground = (prompt: string) => {
     const pending: PendingImportData = { prompt, negativePrompt: '', params: defaultParams, mode: 'append-prompt' };
     sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(pending));
-    notify('Danbooru Tag 已送往实验室');
+    notify('所选 Tag 已追加到实验室');
     onNavigateToPlayground();
   };
 
-  const saveToInspiration = async (post: DanbooruPost) => {
-    if (saving) return;
-    setSaving(true);
-    try {
-      const character = post.tags.character[0]?.replaceAll('_', ' ');
-      const artist = post.tags.artist[0]?.replaceAll('_', ' ');
-      await db.saveInspiration({
-        id: createUuid(),
-        userId: currentUser.id,
-        username: currentUser.username,
-        title: character || artist || `Danbooru #${post.id}`,
-        imageUrl: post.sampleUrl,
-        prompt: danbooruPromptTags(post),
-        tags: ['Danbooru', ...post.tags.character.slice(0, 3), ...post.tags.artist.slice(0, 2)],
-        sourceType: 'danbooru',
-        sourceId: String(post.id),
-        sourceUrl: post.postUrl,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-      onRefreshInspiration?.();
-      notify('已加入灵感库');
-    } catch (saveError) {
-      notify(saveError instanceof Error ? saveError.message : '保存失败', 'error');
-    } finally {
-      setSaving(false);
+  const saveToInspiration = async (post: DanbooruPost, reverse?: ExternalImageTags, existing?: Inspiration): Promise<Inspiration> => {
+    const analysis = externalImageAnalysis(danbooruAllTags(post), 0, reverse, existing);
+    if (existing) {
+      const updates = { analysis, ...(reverse ? { prompt: reverse.prompt } : {}) };
+      await db.updateInspiration(existing.id, updates);
+      onRefreshInspiration?.(); notify('已更新灵感库，原站与反推 Tag 分别保留');
+      return { ...existing, ...updates };
     }
-  };
-
-  const copyPrompt = async (post: DanbooruPost) => {
-    await copyText(danbooruPromptTags(post));
-    notify('已复制适合生图的 Tag');
-  };
-
-  const copyAll = async (post: DanbooruPost) => {
-    await copyText(danbooruAllTags(post).join(', '));
-    notify('已复制全部 Danbooru Tag');
+    const character = post.tags.character[0]?.replaceAll('_', ' ');
+    const artist = post.tags.artist[0]?.replaceAll('_', ' ');
+    const imageUrl = await importDanbooruCoverAsDataUrl(post.sampleUrl);
+    const response = await api.post('/inspirations', {
+      id: createUuid(),
+      userId: currentUser.id,
+      username: currentUser.username,
+      title: character || artist || `Danbooru #${post.id}`,
+      imageUrl,
+      prompt: reverse?.prompt ?? danbooruPromptTags(post),
+      analysis,
+      tags: ['Danbooru', ...post.tags.character.slice(0, 3), ...post.tags.artist.slice(0, 2)],
+      sourceType: 'danbooru',
+      sourceId: String(post.id),
+      sourceUrl: post.postUrl,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    onRefreshInspiration?.();
+    notify('已加入灵感库');
+    return response.item;
   };
 
   const submitPageJump = (event?: FormEvent) => {
@@ -651,20 +634,15 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             <DetailImageStage>
               <OriginalImage src={selected.sampleUrl} alt={`Danbooru #${selected.id}`} className="max-h-[62vh] w-full object-contain" />
             </DetailImageStage>
-            <div className="grid grid-cols-2 gap-2">
-              <ToolbarButton tone="primary" onClick={() => importToPlayground(selected)}><FlaskConical />导入实验室</ToolbarButton>
-              <ToolbarButton disabled={saving} onClick={() => void saveToInspiration(selected)}><Heart />{saving ? '保存中…' : '加入灵感库'}</ToolbarButton>
-              <ToolbarButton onClick={() => void copyPrompt(selected)}><Copy />复制生图 Tag</ToolbarButton>
-              <ToolbarLink href={selected.postUrl} target="_blank" rel="noreferrer"><ExternalLink />查看原帖</ToolbarLink>
-            </div>
-            <div className="flex items-center gap-2">
-              <ImageTaggerAction notify={notify} imageUrl={buildMediaUrl(selected.sampleUrl, 'original')} actionLabel="复制 {count} 个 Tag" placement="more" />
-            </div>
-            <button type="button" onClick={() => void copyAll(selected)} className="text-xs font-bold text-indigo-600 hover:text-indigo-500 dark:text-indigo-300">复制包含元数据的全部 Tag</button>
-            {(Object.keys(categoryLabels) as DanbooruTagCategory[]).map(category => selected.tags[category].length > 0 && <section key={category}>
+            <ExternalImageTools key={`danbooru:${selected.id}`} source="danbooru" sourceId={String(selected.id)} imageUrl={buildMediaUrl(selected.sampleUrl, 'original')}
+              sourcePrompt={danbooruPromptTags(selected)} sourceCopy={danbooruAllTags(selected).join(', ')} onImport={importToPlayground} onSave={(reverse, existing) => saveToInspiration(selected, reverse, existing)} notify={notify}
+              sourceActions={<ToolbarLink href={selected.postUrl} target="_blank" rel="noreferrer"><ExternalLink />查看原帖</ToolbarLink>}
+              sourceTags={<>
+                {(Object.keys(categoryLabels) as DanbooruTagCategory[]).map(category => selected.tags[category].length > 0 && <section key={category}>
               <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-black text-gray-700 dark:text-gray-200">{categoryLabels[category]} · {selected.tags[category].length}</h3><button type="button" onClick={() => void copyText(selected.tags[category].join(', ')).then(() => notify(`已复制${categoryLabels[category]} Tag`))} className="text-micro text-gray-500 hover:text-indigo-500">复制</button></div>
               <TagChipGroup chips={selected.tags[category].map(tag => ({ label: tag.replaceAll('_', ' '), onClick: () => { setInput(tag); void handleApplyFilter({ inputVal: tag }); } }))} />
-            </section>)}
+                </section>)}
+              </>} />
           </div> : <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">选择一张作品后查看图片、Tag 和导入操作。</div>}
         </DetailSidePanel>
       </div>

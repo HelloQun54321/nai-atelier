@@ -21,7 +21,8 @@ import { createUuid } from '../../services/id';
 import { characterReferenceService } from '../../services/characterReferenceService';
 import { vibeService } from '../../services/vibeService';
 import { inspirationSimilarity, normalizeInspirationTags, sourceLabel } from '../../services/inspirationUtils';
-import { CloseButton } from '../DesignSystem';
+import { CloseButton, ToolbarButton } from '../DesignSystem';
+import { copyTagText, readExternalImageTags } from '../../services/externalImageTags';
 import { OriginalImage, SmartImage } from '../SmartImage';
 import { ParamsViewer } from '../ParamsViewer';
 import { ImageShareActions } from '../ImageShareActions';
@@ -64,6 +65,8 @@ export const InspirationDetail: React.FC<Props> = ({
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const editable = canEditItem(item, currentUser);
+  const reverseTags = readExternalImageTags(draft);
+  const sourceTags = Array.isArray(draft.analysis?.externalSourceTags) ? draft.analysis.externalSourceTags.filter((tag): tag is string => typeof tag === 'string') : [];
 
   useEffect(() => {
     setDraft(item);
@@ -435,6 +438,11 @@ export const InspirationDetail: React.FC<Props> = ({
                 )}
               </div>
             </div>
+
+            {(sourceTags.length > 0 || reverseTags) && <section className="space-y-3 rounded-xl border border-gray-200 p-3 dark:border-gray-800">
+              {sourceTags.length > 0 && <details><summary className="cursor-pointer text-xs font-bold">{draft.sourceType === 'danbooru' ? 'Danbooru 原站 Tag' : 'Pixiv 原站标签'} · {sourceTags.length}</summary><p className="my-2 break-words font-mono text-xs text-gray-500">{sourceTags.join(', ')}</p><ToolbarButton onClick={() => void copyTagText(sourceTags.join(', ')).then(() => notify('已复制原站标签'), () => notify('复制失败', 'error'))}><Copy />复制原站标签</ToolbarButton></details>}
+              {reverseTags && <details><summary className="cursor-pointer text-xs font-bold">反推 Tag · 模型预测</summary><p className="my-2 break-words font-mono text-xs text-gray-500">{reverseTags.prompt}</p><ToolbarButton disabled={!reverseTags.prompt.trim()} onClick={() => void copyTagText(reverseTags.prompt).then(() => notify('已复制反推 Tag'), () => notify('复制失败', 'error'))}><Copy />复制反推 Tag</ToolbarButton></details>}
+            </section>}
 
             {/* 整理备注（有内容展示便签，无内容一行占位） */}
             <div>

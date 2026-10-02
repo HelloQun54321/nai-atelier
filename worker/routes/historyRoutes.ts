@@ -767,7 +767,12 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
   }
 
   if (path === '/api/inspirations' && method === 'GET') {
-    const result = await db.prepare('SELECT * FROM inspirations ORDER BY is_pinned DESC, created_at DESC').all<any>();
+    const sourceType = url.searchParams.get('sourceType');
+    const sourceId = url.searchParams.get('sourceId');
+    if ((url.searchParams.has('sourceType') || url.searchParams.has('sourceId')) && (!['pixiv', 'danbooru'].includes(sourceType || '') || !sourceId || sourceId.length > 100)) return error('无效的图片来源', 400);
+    const result = sourceType && sourceId
+      ? await db.prepare('SELECT * FROM inspirations WHERE user_id = ? AND source_type = ? AND source_id = ? ORDER BY is_pinned DESC, created_at DESC').bind(currentUser.id, sourceType, sourceId).all<any>()
+      : await db.prepare('SELECT * FROM inspirations ORDER BY is_pinned DESC, created_at DESC').all<any>();
     return json(result.results.map(mapInspirationRow));
   }
   if (path === '/api/inspirations' && method === 'POST') {

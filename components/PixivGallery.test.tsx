@@ -1,0 +1,40 @@
+// @vitest-environment jsdom
+import React from 'react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { PixivGallery } from './PixivGallery';
+import { pixivService, importPixivImageAsFile, type PixivIllust } from '../services/pixivService';
+import { db } from '../services/dbService';
+import { api } from '../services/api';
+import type { User } from '../types';
+vi.mock('../services/pixivService', async original => ({ ...await original<typeof import('../services/pixivService')>(), pixivService: { status: vi.fn(), feed: vi.fn(), getRelated: vi.fn(async () => ({ items: [] })) }, importPixivImageAsFile: vi.fn() }));
+vi.mock('../services/dbService', () => ({ db: { getInspirationsBySource: vi.fn(), updateInspiration: vi.fn() } }));
+vi.mock('../services/api', () => ({ api: { uploadFile: vi.fn(), post: vi.fn() } }));
+vi.mock('../services/galleryHistoryService', () => ({ galleryHistoryService: { recordView: vi.fn(), getHistory: () => [] } }));
+vi.mock('./ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 3, ShortestColumnMasonry: ({ items, renderItem }: { items: PixivIllust[]; renderItem: (item: PixivIllust) => React.ReactNode }) => <div>{items.map(renderItem)}</div> }));
+const illust: PixivIllust = { id: '100', title: 'synthetic artwork', type: 'illust', caption: '', restrict: 0, xRestrict: 0, tags: ['原站标签'], pageCount: 2, width: 800, height: 1200, totalBookmarks: 10, totalViews: 20, createDate: '', user: { id: '10', name: 'artist', account: '' }, urls: { thumb: '', medium: '', large: '', original: 'https://i.pximg.net/p0.png' }, metaPages: ['https://i.pximg.net/p0.png', 'https://i.pximg.net/p1.png'] };
+beforeEach(() => {
+  vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
+  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener() {}, removeEventListener() {} })));
+  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
+  vi.mocked(pixivService.status).mockResolvedValue({ connected: true });
+  vi.mocked(pixivService.feed).mockImplementation(async mode => ({ mode, items: mode === 'related' ? [] : [illust], nextCursor: null, nextUrl: null, fetchedAt: Date.now() }));
+  vi.mocked(db.getInspirationsBySource).mockResolvedValue([]);
+  vi.mocked(importPixivImageAsFile).mockResolvedValue(new File(['synthetic'], 'image.png', { type: 'image/png' }));
+  vi.mocked(api.uploadFile).mockResolvedValue({ url: '/api/assets/uploaded' });
+  vi.mocked(api.post).mockImplementation(async (_path, body) => ({ item: body }));
+});
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it('Pixiv 当前页保存原图与原站标签，不把原站标签假装成生图提示词，主操作直接反推', async () => {
+  render(<PixivGallery active currentUser={{ id: 'owner', username: 'test' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: /synthetic artwork.*artist/ }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '图片反推' }).hasAttribute('disabled')).toBe(false));
+  expect(screen.queryByRole('button', { name: '导入实验室' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '更多' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '加入灵感库' }).hasAttribute('disabled')).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: '加入灵感库' }));
+  await waitFor(() => expect(api.post).toHaveBeenCalledWith('/inspirations', expect.objectContaining({ prompt: '', imageUrl: '/api/assets/uploaded', title: 'synthetic artwork · 第 2 页', analysis: { externalSourceTags: ['原站标签'], externalSourcePage: 1 }, sourceId: '100' })));
+  expect(importPixivImageAsFile).toHaveBeenCalledWith('https://i.pximg.net/p1.png');
+});

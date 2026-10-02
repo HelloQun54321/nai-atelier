@@ -1,13 +1,11 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Bookmark,
   Calendar,
   CircleUserRound,
   Clock,
   ExternalLink,
   Filter,
   Flame,
-  FlaskConical,
   Heart,
   KeyRound,
   LogIn,
@@ -21,11 +19,12 @@ import { db } from '../services/dbService';
 import { createUuid } from '../services/id';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
-import { NAIParams, User } from '../types';
+import { Inspiration, NAIParams, User } from '../types';
+import { externalImageAnalysis, type ExternalImageTags } from '../services/externalImageTags';
 import { EmptyState, FilterPill, MediaCardShell, PageSpinner, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
-import { ImageTaggerAction } from './ImageTaggerPanel';
+import { ExternalImageTools } from './ExternalImageTools';
 import { ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { SmartImage } from './SmartImage';
@@ -125,7 +124,6 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   const [userContext, setUserContext] = useState<{ id: string; name: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [bookmarking, setBookmarking] = useState(false);
   const [relatedItems, setRelatedItems] = useState<PixivIllust[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(false);
@@ -626,47 +624,48 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     }
   };
 
-  const importToPlayground = (illust: PixivIllust) => {
+  const importToPlayground = (prompt: string) => {
     const pending: PendingImportData = {
-      prompt: illust.tags.join(', '),
+      prompt,
       negativePrompt: '',
       params: defaultParams,
       mode: 'append-prompt',
     };
     sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(pending));
-    notify('Pixiv Tag 已送往实验室');
+    notify('反推 Tag 已追加到实验室');
     onNavigateToPlayground();
   };
 
-  const saveToInspiration = async (illust: PixivIllust) => {
-    if (saving) return;
-    setSaving(true);
-    try {
-      const pageUrl = getPixivCurrentPageUrl(illust, selectedPage);
-      // 经 /api/upload 转存为 R2 资产 URL：避免多 MB base64 dataURL 直接入库并随灵感缓存常驻内存
-      const imageFile = await importPixivImageAsFile(pageUrl);
-      const uploaded = await api.uploadFile(imageFile, 'inspirations');
-      await db.saveInspiration({
-        id: createUuid(),
-        userId: currentUser.id,
-        username: currentUser.username,
-        title: illust.title || `Pixiv #${illust.id}`,
-        imageUrl: uploaded.url,
-        prompt: illust.tags.join(', '),
-        tags: ['Pixiv', ...illust.tags.slice(0, 8)],
-        sourceType: 'pixiv',
-        sourceId: illust.id,
-        sourceUrl: pixivArtworkUrl(illust),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-      onRefreshInspiration?.();
-      notify('已加入灵感库');
-    } catch (saveError) {
-      notify(saveError instanceof Error ? saveError.message : '保存失败', 'error');
-    } finally {
-      setSaving(false);
+  const saveToInspiration = async (illust: PixivIllust, page: number, reverse?: ExternalImageTags, existing?: Inspiration): Promise<Inspiration> => {
+    const analysis = externalImageAnalysis(illust.tags, page, reverse, existing);
+    if (existing) {
+      const updates = { analysis, ...(reverse ? { prompt: reverse.prompt } : {}) };
+      await db.updateInspiration(existing.id, updates);
+      onRefreshInspiration?.(); notify('已更新灵感库，原站与反推 Tag 分别保留');
+      return { ...existing, ...updates };
     }
+    const pageUrl = getPixivCurrentPageUrl(illust, page);
+    // 经 /api/upload 转存为 R2 资产 URL：避免多 MB base64 dataURL 直接入库并随灵感缓存常驻内存
+    const imageFile = await importPixivImageAsFile(pageUrl);
+    const uploaded = await api.uploadFile(imageFile, 'inspirations');
+    const response = await api.post('/inspirations', {
+      id: createUuid(),
+      userId: currentUser.id,
+      username: currentUser.username,
+      title: `${illust.title || `Pixiv #${illust.id}`}${pixivPageCount(illust) > 1 ? ` · 第 ${page + 1} 页` : ''}`,
+      imageUrl: uploaded.url,
+      prompt: reverse?.prompt ?? '',
+      analysis,
+      tags: ['Pixiv', ...illust.tags.slice(0, 8)],
+      sourceType: 'pixiv',
+      sourceId: illust.id,
+      sourceUrl: pixivArtworkUrl(illust),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    onRefreshInspiration?.();
+    notify('已加入灵感库');
+    return response.item;
   };
 
   const currentPageCount = selected ? pixivPageCount(selected) : 1;
@@ -1122,10 +1121,11 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 <span>浏览 {formatCount(selected.totalViews)}</span>
                 <span className="font-semibold text-indigo-600 dark:text-indigo-400">{selected.user.name}</span>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <ToolbarButton tone="primary" onClick={() => importToPlayground(selected)}>
-                  <FlaskConical />导入实验室
-                </ToolbarButton>
+              <ExternalImageTools key={`pixiv:${selected.id}:${selectedPage}`} source="pixiv" sourceId={selected.id} page={selectedPage} imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')}
+                sourcePrompt={selected.tags.join(', ')} onImport={importToPlayground} onSave={(reverse, existing) => saveToInspiration(selected, selectedPage, reverse, existing)} notify={notify}
+                sourceActions={<>
+                <ToolbarLink href={pixivArtworkUrl(selected)} target="_blank" rel="noreferrer"><ExternalLink />查看原帖</ToolbarLink>
+                <ToolbarButton onClick={() => openAuthorWorks(selected.user.id, selected.user.name)}><CircleUserRound />作者全集</ToolbarButton>
                 <ToolbarButton
                   tone={selected.isBookmarked ? 'favorite' : undefined}
                   disabled={bookmarking}
@@ -1134,22 +1134,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                   <Heart className={selected.isBookmarked ? 'fill-rose-500 text-rose-500' : ''} />
                   {bookmarking ? '同步中…' : selected.isBookmarked ? '已收藏到Pixiv' : '收藏到Pixiv'}
                 </ToolbarButton>
-                <ToolbarButton disabled={saving} onClick={() => void saveToInspiration(selected)}>
-                  <Bookmark />{saving ? '保存中…' : '加入灵感库'}
-                </ToolbarButton>
-                <ToolbarButton onClick={() => openAuthorWorks(selected.user.id, selected.user.name)}>
-                  <CircleUserRound />作者全集
-                </ToolbarButton>
-                <ToolbarLink href={pixivArtworkUrl(selected)} target="_blank" rel="noreferrer" className="col-span-2">
-                  <ExternalLink />在 Pixiv 查看原帖
-                </ToolbarLink>
-              </div>
-              <div className="flex items-center gap-2">
-                <ImageTaggerAction notify={notify} imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} actionLabel="复制 {count} 个 Tag" text label="识别当前页 Tag" />
-              </div>
-              {selected.tags.length > 0 && (
-                <section>
-                  <h3 className="mb-2 text-xs font-black text-gray-700 dark:text-gray-200">Tag · {selected.tags.length}</h3>
+                </>}
+                sourceTags={selected.tags.length > 0 ? (
                   <TagChipGroup
                     chips={selected.tags.map(tag => ({
                       label: tag,
@@ -1159,8 +1145,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                       },
                     }))}
                   />
-                </section>
-              )}
+              ) : null} />
 
               {/* 相关作品推荐（看了又看） */}
               <section className="border-t border-gray-200 pt-3 dark:border-gray-800">

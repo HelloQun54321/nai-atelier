@@ -82,6 +82,19 @@ const mockItem: Inspiration = {
 };
 
 describe('InspirationDetail 全新重构界面走查', () => {
+  it('外部作品原站与反推标签分别可查和复制，分类标签保持原样', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn(async () => {}) } });
+    const reverse = { prompt: 'blue hair', createdAt: 1, result: { model: 'test', tags: [], general: [], character: [], rating: null } };
+    const item = { ...mockItem, sourceType: 'pixiv' as const, analysis: { externalSourceTags: ['原站标签'], externalSourcePage: 1, imageTagger: reverse } };
+    render(React.createElement(InspirationDetail, { item, items: [item], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() }));
+    expect(screen.getByText('Pixiv 原站标签 · 1')).toBeTruthy();
+    expect(screen.getByText('反推 Tag · 模型预测')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '复制原站标签', hidden: true }));
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith('原站标签'));
+    fireEvent.click(screen.getByRole('button', { name: '复制反推 Tag', hidden: true }));
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith('blue hair'));
+    expect(screen.getByText('#夏日')).toBeTruthy(); expect(screen.queryByText('#blue hair')).toBeNull();
+  });
   it('默认进入清爽浏览态，具备独立复制、顶栏画板快速切换与极简双核 Footer', () => {
     const notify = vi.fn();
     render(

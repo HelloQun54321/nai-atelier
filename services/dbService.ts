@@ -85,6 +85,10 @@ class DBService {
     return await api.get('/inspirations');
   }
 
+  async getInspirationsBySource(sourceType: 'danbooru' | 'pixiv', sourceId: string): Promise<Inspiration[]> {
+    return await api.get(`/inspirations?${new URLSearchParams({ sourceType, sourceId })}`);
+  }
+
   async getInspirationBoards(): Promise<InspirationBoard[]> {
     const result = await api.get('/inspiration-boards');
     return result.items || [];

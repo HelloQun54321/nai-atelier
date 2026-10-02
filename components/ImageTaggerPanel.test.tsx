@@ -46,17 +46,16 @@ describe('图片识别入口与当前图片衔接', () => {
     expect(screen.getByRole('button', { name: '追加 0 个 Tag 到全局提示词' })).toBeTruthy();
   });
 
-  it('从图片更多菜单打开，识别绑定图片并仅追加勾选结果', async () => {
+  it('图片识别直接可达，不单独藏进更多，绑定图片并仅追加勾选结果', async () => {
     const onInsert = vi.fn();
-    render(<div className="agent-stage"><ImageTaggerAction placement="more" imageUrl="/api/media/test-original.png" onInsert={onInsert} notify={vi.fn()} /></div>);
-    expect(screen.queryByRole('button', { name: '识别图片 Tag' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '更多' }));
+    render(<div className="agent-stage"><ImageTaggerAction text imageUrl="/api/media/test-original.png" onInsert={onInsert} notify={vi.fn()} /></div>);
+    expect(screen.queryByRole('button', { name: '更多' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '识别图片 Tag' }));
     expect(screen.queryByRole('dialog', { name: '图片工具' })).toBeNull();
     const panel = screen.getByRole('dialog', { name: '识别图片 Tag' });
     expect(panel.closest('.agent-stage')).toBeTruthy();
     await waitFor(() => expect(screen.getByRole('button', { name: '追加 2 个 Tag 到全局提示词' }).hasAttribute('disabled')).toBe(false));
-    expect(fetch).toHaveBeenCalledWith('/api/media/test-original.png');
+    expect(fetch).toHaveBeenCalledWith('/api/media/test-original.png', { signal: expect.any(AbortSignal) });
     expect(imageTaggerService.tagFile).toHaveBeenCalledWith(expect.objectContaining({ type: 'image/png' }), { threshold: 0.35, characterThreshold: 0.85 });
     fireEvent.click(screen.getByRole('button', { name: /long hair/ }));
     fireEvent.click(screen.getByRole('button', { name: '追加 1 个 Tag 到全局提示词' }));

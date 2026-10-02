@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ImagePlus, LoaderCircle, MoreHorizontal, SlidersHorizontal, X } from 'lucide-react';
+import { Check, ImagePlus, LoaderCircle, SlidersHorizontal, X } from 'lucide-react';
 import { ImageTaggerResult, imageTaggerService } from '../services/imageTaggerService';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
 import { IconButton, ToolbarButton } from './DesignSystem';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
-import { ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { MobileIconButton } from './MobileUI';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { taggerProgressText, useImageTaggerStatus } from './useImageTaggerStatus';
@@ -20,6 +19,12 @@ interface ImageTaggerPanelProps {
   actionLabel?: string;
   /** 打开面板时自动加载该图片（网络图直接反推，无需先下载到本地）。 */
   imageUrl?: string;
+  initialResult?: ImageTaggerResult;
+  initialTags?: string;
+  /** 图库保留本次勾选结果，复制、关闭或跳转均不丢失。 */
+  onResult?: (result: ImageTaggerResult, tags: string) => void;
+  onSendToLab?: (tags: string) => void;
+  lockImage?: boolean;
 }
 
 const percent = (value: number) => `${Math.round(value * 100)}%`;
@@ -36,12 +41,17 @@ const TAGGER_DEFAULT_PARAMS: PendingImportData['params'] = {
   ucPreset: 4,
 };
 
-export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClose, onInsert, notify, actionLabel, imageUrl, contextual = false }) => {
+export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClose, onInsert, notify, actionLabel, imageUrl, contextual = false, initialResult, initialTags, onResult, onSendToLab, lockImage = false }) => {
   const inputRef = useRef<HTMLInputElement>(null);
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
-  const [result, setResult] = useState<ImageTaggerResult | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [result, setResult] = useState<ImageTaggerResult | null>(initialResult || null);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(initialResult?.tags.filter(tag => initialTags === undefined || initialTags.split(',').map(value => value.trim()).includes(tag.name.replaceAll('_', ' '))).map(tag => tag.name)));
+  const initialSelection = useRef(selected);
+  const resultCallback = useRef(onResult);
+  resultCallback.current = onResult;
   const [threshold, setThreshold] = useState(0.35);
   const [characterThreshold, setCharacterThreshold] = useState(0.85);
   const { status: modelStatus, error: modelStatusError } = useImageTaggerStatus(open);
@@ -59,8 +69,12 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
     setThreshold(selectedModel?.threshold ?? 0.35);
     setCharacterThreshold(selectedModel?.characterThreshold ?? 0.85);
     setThresholdModel(modelStatus.model);
-    setResult(null); setSelected(new Set());
-  }, [open, modelStatus, selectedModel, thresholdModel]);
+    if (!initialResult) { setResult(null); setSelected(new Set()); }
+  }, [open, modelStatus, selectedModel, thresholdModel, initialResult]);
+
+  useEffect(() => {
+    if (result && !(result === initialResult && selected === initialSelection.current)) resultCallback.current?.(result, result.tags.filter(tag => selected.has(tag.name)).map(tag => tag.name.replaceAll('_', ' ')).join(', '));
+  }, [result, selected, initialResult]);
 
   useEffect(() => {
     if (!open) return;
@@ -78,12 +92,12 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
   useEffect(() => {
     if (!open || !imageUrl || !modelReady) return;
     let active = true;
+    const controller = new AbortController();
     const load = async () => {
       setBusy(true);
-      setResult(null);
-      setSelected(new Set());
+      if (!initialResult) { setResult(null); setSelected(new Set()); }
       try {
-        const response = await fetch(imageUrl);
+        const response = await fetch(imageUrl, { signal: controller.signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const blob = await response.blob();
         if (!active) return;
@@ -95,6 +109,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
         const nextFile = new File([blob], 'tagger-image', { type: blob.type });
         setFile(nextFile);
         setPreview(URL.createObjectURL(blob));
+        if (initialResult) return;
         const next = await imageTaggerService.tagFile(nextFile, modelOptions);
         if (!active) return;
         setResult(next);
@@ -106,7 +121,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
       }
     };
     void load();
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
     // 面板重新打开同一 URL 时无需重复识别；imageUrl 变化才重新加载。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, imageUrl, modelReady, thresholdModel]);
@@ -117,12 +132,13 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
     setResult(null);
     try {
       const next = await imageTaggerService.tagFile(nextFile, modelOptions);
+      if (!mounted.current) return;
       setResult(next);
       setSelected(new Set(next.tags.map(item => item.name)));
     } catch (error) {
-      notify(error instanceof Error ? error.message : '图片反推 Tag 失败', 'error');
+      if (mounted.current) notify(error instanceof Error ? error.message : '图片反推 Tag 失败', 'error');
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
@@ -157,6 +173,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
     if (!selected.size) return;
     const tags = visibleTags.filter(item => selected.has(item.name)).map(item => item.name.replaceAll('_', ' ')).join(', ');
     try {
+      if (onSendToLab) { onSendToLab(tags); onClose(); return; }
       const pending: PendingImportData = { prompt: tags, negativePrompt: '', params: { ...TAGGER_DEFAULT_PARAMS }, mode: 'append-prompt' };
       sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(pending));
       onClose();
@@ -178,7 +195,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
         <section className="space-y-4 border-b border-gray-200 p-4 dark:border-gray-800 md:overflow-y-auto md:border-b-0 md:border-r">
           <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => chooseFile(event.target.files?.[0])} />
           {modelStatusError && <p role="alert" className="text-xs text-red-600 dark:text-red-300">{modelStatusError}</p>}
-          <button type="button" disabled={busy || !modelReady} onClick={() => inputRef.current?.click()} className="relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-gray-400 hover:border-violet-400 dark:border-gray-800 dark:bg-gray-900">
+          <button type="button" disabled={busy || !modelReady || lockImage} onClick={() => inputRef.current?.click()} className="relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-gray-400 hover:border-violet-400 dark:border-gray-800 dark:bg-gray-900">
             {preview ? <img src={preview} alt="待识别图片" className="h-full w-full object-contain" /> : <span className="flex flex-col items-center gap-2 text-xs"><ImagePlus className="h-8 w-8" />选择图片</span>}
             {busy && <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 px-6 text-center text-xs text-white"><LoaderCircle className="h-7 w-7 animate-spin" />{selectedModel && !selectedModel.downloaded ? taggerProgressText(selectedModel) : '正在本地识别图片…'}{selectedModel && ['downloading', 'verifying'].includes(selectedModel.stage) && <progress aria-label="模型下载进度" max={selectedModel.totalBytes} value={selectedModel.receivedBytes} className="h-1.5 w-full accent-white" />}</span>}
           </button>
@@ -242,13 +259,15 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
           </div>}
         </section>
       </div>
-      <footer className="operation-footer flex flex-none items-center justify-between gap-3 border-t border-gray-200 p-3 dark:border-gray-800"><p className="hidden text-micro text-gray-500 sm:block">模型文件保存在本地缓存，首次加载后可完全离线运行。</p><div className="ml-auto flex items-center gap-2"><button type="button" disabled={!selected.size || busy} onClick={sendToLab} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-40">送往实验室</button><button type="button" disabled={!selected.size || busy} onClick={insert} className="mobile-touch rounded-xl bg-violet-600 px-5 text-sm font-bold text-white disabled:opacity-40">{(actionLabel ?? '追加 {count} 个 Tag 到全局提示词').replace('{count}', String(selected.size))}</button></div></footer>
+      <footer className="operation-footer flex flex-none items-center justify-end gap-2 border-t border-gray-200 p-3 dark:border-gray-800">
+        <ToolbarButton disabled={!selected.size || busy} onClick={insert} className="mobile-touch">{(actionLabel ?? '追加 {count} 个 Tag 到全局提示词').replace('{count}', String(selected.size))}</ToolbarButton>
+        <ToolbarButton tone="primary" disabled={!selected.size || busy} onClick={sendToLab} className="mobile-touch">送往实验室</ToolbarButton>
+      </footer>
     </div>
   </div></ImagePreviewPortal>;
 };
 
 interface ImageTaggerActionProps {
-  placement?: 'direct' | 'more';
   text?: boolean;
   label?: string;
   notify: (message: string, type?: 'success' | 'error') => void;
@@ -262,7 +281,7 @@ interface ImageTaggerActionProps {
 }
 
 /** 资料图片的上下文识别入口；不再作为列表顶栏的通用工具。 */
-export const ImageTaggerAction: React.FC<ImageTaggerActionProps> = ({ notify, onInsert, actionLabel, className = '', imageUrl, placement = 'direct', text = false, label = '识别图片 Tag' }) => {
+export const ImageTaggerAction: React.FC<ImageTaggerActionProps> = ({ notify, onInsert, actionLabel, className = '', imageUrl, text = false, label = '识别图片 Tag' }) => {
   const [open, setOpen] = useState(false);
   const handleInsert = onInsert ?? ((tags: string) => {
     void navigator.clipboard.writeText(tags).then(
@@ -271,7 +290,7 @@ export const ImageTaggerAction: React.FC<ImageTaggerActionProps> = ({ notify, on
     );
   });
   return <>
-    {placement === 'more' ? <ToolbarPopover label="更多" title="图片工具" icon={<MoreHorizontal />} width={280}>{close => <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); setOpen(true); }}><ImagePlus />{label}</button>}</ToolbarPopover> : text ? <ToolbarButton onClick={() => setOpen(true)} className={`mobile-touch ${className}`}><ImagePlus />{label}</ToolbarButton> : <>
+    {text ? <ToolbarButton onClick={() => setOpen(true)} className={`mobile-touch ${className}`}><ImagePlus />{label}</ToolbarButton> : <>
       <IconButton label={label} onClick={() => setOpen(true)} className={`max-md:hidden ${className}`}><ImagePlus className="h-4 w-4" /></IconButton>
       <MobileIconButton label={label} onClick={() => setOpen(true)} className={`border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden ${className}`}><ImagePlus className="h-5 w-5" /></MobileIconButton>
     </>}

@@ -40,6 +40,30 @@ beforeEach(() => {
 });
 afterAll(() => sqlite.close());
 
+it('外部图片反推结果沿用灵感持久化，按精确来源和所有者恢复，两类 Tag 与页码分离', async () => {
+  const requestInspiration = async (suffix = '', body?: unknown) => {
+    const request = new Request(`http://localhost/api/inspirations${suffix}`, { method: body === undefined ? 'GET' : 'POST', ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    return (await handleHistoryRoute({ request, url: new URL(request.url), path: '/api/inspirations', method: request.method, db, currentUser: { id: 'owner', username: 'test', role: 'admin' }, env: { BUCKET: bucket } } as unknown as RouteContext))!;
+  };
+  sqlite.exec('DELETE FROM inspirations');
+  const analysis = { externalSourceTags: ['原站标签'], externalSourcePage: 1, imageTagger: { result: { model: 'test', tags: [] }, prompt: 'blue hair', createdAt: 1 } };
+  for (const [id, sourceType, sourceId] of [['p', 'pixiv', '100'], ['d', 'danbooru', '100'], ['other', 'pixiv', '101']]) {
+    expect((await requestInspiration('', { id, sourceType, sourceId, imageUrl: '/api/assets/test', prompt: 'blue hair', analysis })).status).toBe(200);
+  }
+  sqlite.prepare('UPDATE inspirations SET user_id = ? WHERE id = ?').run('other-owner', 'other');
+  for (const [sourceType, expected] of [['pixiv', 'p'], ['danbooru', 'd']]) {
+    const found = await (await requestInspiration(`?sourceType=${sourceType}&sourceId=100`)).json();
+    expect(found.map((item: { id: string }) => item.id)).toEqual([expected]);
+    expect(found[0]).toMatchObject({ prompt: 'blue hair', analysis });
+  }
+  expect(await (await requestInspiration('?sourceType=pixiv&sourceId=101')).json()).toEqual([]);
+  expect(await (await requestInspiration('?sourceType=pixiv&sourceId=100%27%20OR%201%3D1')).json()).toEqual([]);
+  expect((await requestInspiration('?sourceType=unknown&sourceId=100')).status).toBe(400);
+  expect((await requestInspiration('?sourceType=pixiv')).status).toBe(400);
+  expect((await requestInspiration('?sourceType=&sourceId=')).status).toBe(400);
+  expect(bucket.put).not.toHaveBeenCalled();
+});
+
 describe('历史浏览查询（隔离 SQLite，无真实资产）', () => {
   it.each(['newest', 'oldest', 'favorite', 'random'] as const)('%s 的完整索引与浏览器兼容读取一致且稳定', async sort => {
     const query = { sort, seed: 'stable', favoriteOnly: sort === 'favorite' };
