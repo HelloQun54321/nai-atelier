@@ -154,7 +154,7 @@ describe('历史缩略图就地操作', () => {
         fireEvent.click(screen.getByRole('button', { name: '批量选择图片' }));
         expect(within(cards[0]).queryAllByRole('button')).toHaveLength(0);
         fireEvent.click(cards[0]);
-        expect(screen.getByText(/多选模式 · 已选 1 张/)).toBeTruthy();
+        expect(within(screen.getByRole('banner')).getByText(/多选模式 · 已选 1 张/)).toBeTruthy();
         expect(screen.queryByText('图片详情')).toBeNull();
         expect(copySharedImage).not.toHaveBeenCalled();
         expect(downloadSharedImage).not.toHaveBeenCalled();

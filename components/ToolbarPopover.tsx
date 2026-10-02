@@ -17,7 +17,7 @@ export function getToolbarPopoverPosition(anchor: { left: number; width: number;
 
 const PopoverSurface: React.FC<{ title: string; position: ReturnType<typeof getToolbarPopoverPosition>; children: React.ReactNode }> = ({ title, position, children }) => {
   const panelRef = useModalA11y<HTMLDivElement>(true);
-  return <div ref={panelRef} role="dialog" aria-modal="true" aria-label={title} style={position} className="fixed z-[1801] -translate-x-1/2 overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-800 dark:bg-gray-900">{children}</div>;
+  return <div ref={panelRef} role="dialog" aria-modal="true" aria-label={title} style={position} className="appearance-panel fixed z-[1801] -translate-x-1/2 overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-800 dark:bg-gray-900">{children}</div>;
 };
 
 /** 桌面弹层以按钮为中心，并脱离工作区裁切和隔离层。 */

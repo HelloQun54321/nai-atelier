@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, Heart, Inbox, LoaderCircle, Search, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Heart, Inbox, LoaderCircle, Search, X } from 'lucide-react';
 export { UNTESTED_CHAIN_TAG, isUntestedChain } from '../services/chainStatus';
 
 /** 弹层/面板右上角的关闭钮：复用 IconButton 的中性色阶与圆角。 */
@@ -138,22 +138,42 @@ export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> 
   );
 };
 
+/** 按钮与选择器共用外观；尺寸、字号和圆角由全局主题变量控制。 */
+export const TOOLBAR_CONTROL_CLASS = 'inline-flex h-10 flex-none items-center justify-center gap-2 rounded-xl border text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0';
+const TOOLBAR_NEUTRAL_CLASS = 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800';
+
 export const ToolbarButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   tone?: 'neutral' | 'primary' | 'danger' | 'favorite';
-}> = ({ tone = 'neutral', className = '', children, ...props }) => {
+  active?: boolean;
+}> = ({ tone = 'neutral', active = false, className = '', children, ...props }) => {
   const toneClass = tone === 'primary'
     ? 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500 dark:border-indigo-500/40 dark:bg-indigo-600/90 dark:hover:bg-indigo-500'
     : tone === 'favorite'
       ? 'border-rose-500 bg-rose-500 text-white hover:bg-rose-400 dark:border-rose-500 dark:bg-rose-500 dark:text-white'
     : tone === 'danger'
       ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300'
-      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800';
+      : active
+        ? 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/60'
+        : TOOLBAR_NEUTRAL_CLASS;
   return (
-    <button type="button" className={`inline-flex h-10 flex-none items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 ${toneClass} ${className}`} {...props}>
+    <button type="button" className={`${TOOLBAR_CONTROL_CLASS} px-3 ${toneClass} ${className}`} {...props}>
       {children}
     </button>
   );
 };
+
+/** 保留原生选择器键盘行为，用共用按钮外观与图标替代系统下拉外观。 */
+export const ToolbarSelect: React.FC<React.SelectHTMLAttributes<HTMLSelectElement> & {
+  label: string;
+  icon?: React.ReactNode;
+  containerClassName?: string;
+}> = ({ label, icon, containerClassName = '', className = '', children, ...props }) => (
+  <span className={`relative inline-flex flex-none ${containerClassName}`}>
+    {icon && <span aria-hidden="true" className="toolbar-select-icon pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 dark:text-gray-300 [&>svg]:h-4 [&>svg]:w-4">{icon}</span>}
+    <select aria-label={label} title={label} className={`${TOOLBAR_CONTROL_CLASS} ${TOOLBAR_NEUTRAL_CLASS} w-full appearance-none ${icon ? 'pl-9' : 'pl-3'} pr-9 ${className}`} {...props}>{children}</select>
+    <ChevronDown aria-hidden="true" className="toolbar-select-chevron pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600 dark:text-gray-300" />
+  </span>
+);
 
 export const ToolbarLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement> & {
   tone?: 'neutral' | 'primary';

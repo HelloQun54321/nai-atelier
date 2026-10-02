@@ -71,7 +71,7 @@ export const MobileBottomSheet: React.FC<{
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="mobile-sheet"
+        className="mobile-sheet appearance-panel"
         onPointerDown={event => { dragStart.current = event.clientY; }}
         onPointerUp={event => {
           if (dragStart.current !== null && event.clientY - dragStart.current > 90) requestClose();

@@ -155,7 +155,7 @@ export const HistoryImageViewer: React.FC<Props> = props => {
 
   return <ImagePreviewPortal>
     <div className="history-viewer-layer" onClick={onClose}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="历史图片查看器" className={`history-viewer ${props.detailsOpen ? 'history-viewer--details' : ''}`} onClick={event => event.stopPropagation()}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="历史图片查看器" className={`history-viewer appearance-panel ${props.detailsOpen ? 'history-viewer--details' : ''}`} onClick={event => event.stopPropagation()}>
         <header className="history-viewer-header">
           <button type="button" className="history-viewer-button history-viewer-return" aria-label="返回历史列表" onClick={onClose}><ArrowLeft /></button>
           <div className="history-viewer-caption"><span>{new Date(item.createdAt).toLocaleString('zh-CN')}</span><small>{getNaiModelDisplayLabel(item.params?.model)} · {natural.width} × {natural.height}{item.sourceChainName ? ` · ${item.sourceChainName}` : ''}</small></div>

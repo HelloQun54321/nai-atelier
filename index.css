@@ -402,7 +402,9 @@ html[data-design-theme='nai-atelier'].dark .media-card:hover {
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.45), 0 12px 32px rgb(0 0 0 / 0.25);
 }
 
-html[data-design-theme='nai-atelier'] .settings-dialog {
+html[data-design-theme='nai-atelier'] .settings-dialog,
+html[data-design-theme='nai-atelier'] .operation-dialog,
+html[data-design-theme='nai-atelier'] .appearance-panel {
   background-color: var(--nai-panel-surface) !important;
   border-color: var(--nai-panel-border) !important;
   box-shadow: var(--nai-panel-shadow);
@@ -426,7 +428,9 @@ html[data-surfaces='translucent'].dark {
 
 html[data-surfaces='translucent'] .app-sidebar,
 html[data-surfaces='translucent'] .settings-dialog,
-html[data-surfaces='translucent'] .settings-navigation {
+html[data-surfaces='translucent'] .settings-navigation,
+html[data-surfaces='translucent'] .operation-dialog,
+html[data-surfaces='translucent'] .appearance-panel {
   backdrop-filter: blur(22px) saturate(130%);
 }
 
@@ -889,7 +893,7 @@ body,
   .mobile-toolbar { display: flex; align-items: center; gap: .5rem; padding: .625rem .75rem; }
   .mobile-safe-bottom { padding-bottom: max(.75rem, env(safe-area-inset-bottom)); }
   .mobile-layer { position: fixed; inset: 0; z-index: 1100; background: rgb(0 0 0 / .5); backdrop-filter: blur(2px); animation: ui-fade-in 140ms ease-out; }
-  .mobile-sheet { position: absolute; inset-inline: 0; bottom: 0; display: flex; max-height: min(82dvh, 44rem); flex-direction: column; overflow: hidden; border-radius: 1.5rem 1.5rem 0 0; background: white; box-shadow: 0 -16px 40px rgb(0 0 0 / .25); animation: ui-sheet-in 180ms cubic-bezier(.2,.8,.2,1); }
+  .mobile-sheet { position: absolute; inset-inline: 0; bottom: 0; display: flex; max-height: min(82dvh, 44rem); flex-direction: column; overflow: hidden; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; background: white; box-shadow: 0 -16px 40px rgb(0 0 0 / .25); animation: ui-sheet-in 180ms cubic-bezier(.2,.8,.2,1); }
   .dark .mobile-sheet { background: rgb(17 24 39); }
   .mobile-detail { position: fixed; inset: 0; z-index: 1050; display: flex; height: 100dvh; flex-direction: column; overflow: hidden; background: rgb(249 250 251); animation: mobile-detail-in 160ms cubic-bezier(.2,.8,.2,1); }
   @keyframes mobile-detail-in { from { opacity: 0; transform: translateX(10px); } }

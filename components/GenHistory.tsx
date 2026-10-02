@@ -1094,57 +1094,14 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                         <span className="flex-1 whitespace-nowrap text-sm font-semibold md:hidden">已选 {selectedIds.size} 张</span>
                         <ToolbarButton onClick={exitSelectionMode} className="md:hidden">完成</ToolbarButton>
                         <div className="history-selection-actions hidden flex-1 md:flex">
-                            <span className="mr-auto flex-none text-xs font-bold text-indigo-800 dark:text-indigo-200">
-                                多选模式 · 已选 <span className="font-extrabold text-indigo-600 dark:text-indigo-400">{selectedIds.size}</span> 张
-                            </span>
-                            <div className="flex flex-none items-center gap-1.5">
-                                <button
-                                    type="button"
-                                    onClick={selectCurrentPage}
-                                    className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:text-indigo-200 dark:hover:bg-indigo-900/50"
-                                >
-                                    全选本页
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={invertCurrentPageSelection}
-                                    className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:text-indigo-200 dark:hover:bg-indigo-900/50"
-                                >
-                                    反选本页
-                                </button>
-                                <div className="mx-1 h-3.5 w-px bg-indigo-200 dark:bg-indigo-800/60" />
-                                <button
-                                    type="button"
-                                    onClick={() => void handleBulkFavorite(true)}
-                                    disabled={!selectedIds.size || selectionFavoritePending}
-                                    className="rounded-xl bg-rose-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-rose-400 disabled:opacity-40"
-                                >
-                                    收藏选中
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => void handleBulkFavorite(false)}
-                                    disabled={!selectedIds.size || selectionFavoritePending}
-                                    className="rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40 dark:border-rose-900/40 dark:bg-gray-900 dark:text-rose-300 dark:hover:bg-rose-950/40"
-                                >
-                                    取消收藏
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => void handleBulkDelete()}
-                                    disabled={!selectedIds.size}
-                                    className="rounded-xl bg-red-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-red-500 disabled:opacity-40"
-                                >
-                                    删除选中
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={exitSelectionMode}
-                                    className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                                >
-                                    退出多选
-                                </button>
-                            </div>
+                            <span className="mr-auto flex-none text-xs font-semibold text-gray-600 dark:text-gray-300">多选模式 · 已选 {selectedIds.size} 张</span>
+                            <ToolbarButton onClick={selectCurrentPage}>全选本页</ToolbarButton>
+                            <ToolbarButton onClick={invertCurrentPageSelection}>反选本页</ToolbarButton>
+                            <span aria-hidden="true" className="history-toolbar-divider" />
+                            <ToolbarButton tone="favorite" onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending}>收藏选中</ToolbarButton>
+                            <ToolbarButton onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending}>取消收藏</ToolbarButton>
+                            <ToolbarButton tone="danger" onClick={() => void handleBulkDelete()} disabled={!selectedIds.size}>删除选中</ToolbarButton>
+                            <ToolbarButton onClick={exitSelectionMode}>退出多选</ToolbarButton>
                         </div>
                     </> : <>
                         <HistoryBrowseControls query={browseQuery} options={browseOptions} mobile={isMobileViewport} onApply={applyBrowseQuery} />
@@ -1154,7 +1111,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                             <div ref={managementAnchorRef} className="relative">
                                 <ToolbarButton aria-label={newImageCount ? `管理，新增 ${newImageCount} 张图片` : '管理'} title={migrationProgress ? migrationProgress.total > 0 ? `正在迁移浏览器历史 ${migrationProgress.current}/${migrationProgress.total}，请勿关闭页面…` : '正在检查浏览器历史…' : '历史管理'} className="history-management-button relative" onClick={() => setShowCleanMenu(value => !value)} disabled={migrationProgress !== null}>
                                     {migrationProgress ? <span role="status" aria-label="历史迁移进度"><LoaderCircle className="animate-spin" /></span> : <ListChecks />}<span className="history-management-label">管理</span><ChevronDown className="history-management-chevron" />
-                                    {newImageCount > 0 && <span aria-hidden="true" className="history-new-image-badge">+{newImageCount > 99 ? '99+' : newImageCount}</span>}
+                                    {newImageCount > 0 && <span aria-hidden="true" className="history-new-image-badge">{newImageCount > 99 ? '99+' : '+' + newImageCount}</span>}
                                 </ToolbarButton>
                                 {showCleanMenu && !isMobileViewport && (
                                     <AnchoredToolbarPopover anchorRef={managementAnchorRef} title="历史管理" width={256} onClose={() => setShowCleanMenu(false)}>

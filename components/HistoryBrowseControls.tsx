@@ -1,9 +1,9 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { CalendarDays, ChevronDown, Heart, Shuffle, SlidersHorizontal } from 'lucide-react';
+import { ArrowDownUp, CalendarDays, ChevronDown, Heart, Shuffle, SlidersHorizontal } from 'lucide-react';
 import { HISTORY_SORT_LABELS, type HistoryBrowseOrder, type HistoryBrowseQuery, type HistorySort } from '../services/historyBrowse';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
 import { createUuid } from '../services/id';
-import { ToolbarButton } from './DesignSystem';
+import { ToolbarButton, ToolbarSelect } from './DesignSystem';
 import { MobileBottomSheet } from './MobileUI';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { AnchoredToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
@@ -16,6 +16,7 @@ interface Props {
   onApply: (query: HistoryBrowseQuery) => void;
 }
 type Panel = 'date' | 'more' | null;
+const isCompactToolbar = (width: number) => width < 43.75 * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16);
 const dateValue = (value?: number) => {
   if (value === undefined) return '';
   const date = new Date(value);
@@ -42,7 +43,7 @@ const getDateLabel = (query: HistoryBrowseQuery) => {
 /** 范围在前、浏览方式在后；只有窄工作区才把日期收回更多筛选。 */
 export const HistoryBrowseControls: React.FC<Props> = ({ query, options, mobile, onApply }) => {
   const [panel, setPanel] = useState<Panel>(null);
-  const [compact, setCompact] = useState(() => window.innerWidth < 700);
+  const [compact, setCompact] = useState(() => isCompactToolbar(window.innerWidth));
   const [draft, setDraft] = useState({ search: query.search || '', model: query.model || '', operation: query.operation || '', source: query.source || '' });
   const [dates, setDates] = useState({ from: '', to: '' });
   const [error, setError] = useState('');
@@ -53,8 +54,10 @@ export const HistoryBrowseControls: React.FC<Props> = ({ query, options, mobile,
     const shell = controls.current?.closest('.history-toolbar-shell') || controls.current;
     if (!shell) return;
     let previousCompact: boolean | undefined;
+    let measuredWidth = shell.getBoundingClientRect().width || window.innerWidth;
     const update = (width: number) => {
-      const next = width < 700;
+      measuredWidth = width;
+      const next = isCompactToolbar(width);
       setCompact(previous => previous === next ? previous : next);
       // 收纳形态变化时取消未应用草稿，避免隐藏日期后悄悄丢弃或应用它。
       if (previousCompact !== undefined && previousCompact !== next) setPanel(null);
@@ -66,8 +69,10 @@ export const HistoryBrowseControls: React.FC<Props> = ({ query, options, mobile,
       update(entries[0]?.contentRect.width || shell.getBoundingClientRect().width || window.innerWidth);
     });
     observer?.observe(shell);
+    const themeObserver = new MutationObserver(() => update(shell.getBoundingClientRect().width || measuredWidth));
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-font-scale', 'data-density', 'style'] });
     window.addEventListener('resize', measure);
-    return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
+    return () => { observer?.disconnect(); themeObserver.disconnect(); window.removeEventListener('resize', measure); };
   }, []);
   const start = (next: Exclude<Panel, null>) => {
     setDraft({ search: query.search || '', model: query.model || '', operation: query.operation || '', source: query.source || '' });
@@ -132,16 +137,16 @@ export const HistoryBrowseControls: React.FC<Props> = ({ query, options, mobile,
       onApply({ ...query, favoriteOnly, sort: !favoriteOnly && query.sort === 'favorite' ? 'newest' : query.sort });
     }}><Heart className={query.favoriteOnly ? 'fill-current' : ''} /><span className="history-button-label">只看收藏</span></ToolbarButton>
     <div ref={moreAnchor}>
-      <ToolbarButton aria-label={`更多筛选${moreCount ? ` ${moreCount}` : ''}`} aria-expanded={panel === 'more'} aria-haspopup="dialog" title={`更多筛选${compact ? ` · ${getDateLabel(query)}` : ''}`} onClick={() => start('more')} className={`history-more-button ${moreCount ? '!border-indigo-300 !text-indigo-600 dark:!text-indigo-300' : ''}`}>
+      <ToolbarButton aria-label={`更多筛选${moreCount ? ` ${moreCount}` : ''}`} aria-expanded={panel === 'more'} aria-haspopup="dialog" title={`更多筛选${compact ? ` · ${getDateLabel(query)}` : ''}`} onClick={() => start('more')} active={moreCount > 0} className="history-more-button">
         <SlidersHorizontal /><span className="history-more-label">更多筛选</span>{moreCount > 0 && <span className="history-more-count text-xs tabular-nums">{moreCount}</span>}<ChevronDown className="history-more-chevron" />
       </ToolbarButton>
     </div>
     <span aria-hidden="true" className="history-toolbar-divider" />
-    <select aria-label="历史排序" title="历史排序" value={chronologicalSort} className="history-sort-select" onChange={event => onApply({ ...query, sort: event.target.value as HistorySort, seed: undefined })}>
+    <ToolbarSelect label="历史排序" icon={<ArrowDownUp />} value={chronologicalSort} containerClassName="history-sort-control" onChange={event => onApply({ ...query, sort: event.target.value as HistorySort, seed: undefined })}>
       <option value="newest">{HISTORY_SORT_LABELS.newest}</option><option value="oldest">{HISTORY_SORT_LABELS.oldest}</option>
       {query.favoriteOnly && <option value="favorite">{HISTORY_SORT_LABELS.favorite}</option>}
       {query.sort === 'random' && <option value="random" disabled>随机顺序</option>}
-    </select>
+    </ToolbarSelect>
     <ToolbarButton aria-label={query.sort === 'random' ? '重新洗牌' : '随机浏览'} title={query.sort === 'random' ? '重新洗牌' : '随机浏览'} className="history-icon-compact history-random-button" onClick={() => onApply({ ...query, sort: 'random', seed: createUuid() })}><Shuffle /><span className="history-button-label">{query.sort === 'random' ? '重新洗牌' : '随机浏览'}</span></ToolbarButton>
     {panel && !mobile && <AnchoredToolbarPopover anchorRef={panel === 'date' ? dateAnchor : moreAnchor} title={title} width={380} onClose={() => setPanel(null)}>{form}</AnchoredToolbarPopover>}
     {mobile && <ImagePreviewPortal><MobileBottomSheet open={panel !== null} title={title} onClose={() => setPanel(null)}>{form}</MobileBottomSheet></ImagePreviewPortal>}

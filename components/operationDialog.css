@@ -8,19 +8,19 @@
   max-height: none;
   min-height: 0;
   flex-shrink: 0;
-  border-radius: 16px;
+  border-radius: var(--radius-2xl);
   overflow: hidden;
   container-type: inline-size;
   container-name: operation;
 }
 .operation-dialog [hidden] { display: none !important; }
-.operation-dialog button.mobile-touch { min-height: 36px; }
-.operation-header { height: 56px; min-height: 56px; padding-block: 0; }
-.operation-toolbar { min-height: 48px; padding-block: 6px; }
+.operation-dialog button.mobile-touch { min-height: calc(var(--spacing) * 9); }
+.operation-header { height: var(--workspace-toolbar-height); min-height: var(--workspace-toolbar-height); padding-block: 0; }
+.operation-toolbar { min-height: calc(var(--spacing) * 12); padding-block: calc(var(--spacing) * 1.5); }
 .operation-toolbar input:not([type="file"]),
-.operation-toolbar button { min-height: 36px; }
-.operation-footer { min-height: 56px; padding: 10px 20px; }
-.operation-footer button { min-height: 36px; }
+.operation-toolbar button { min-height: calc(var(--spacing) * 9); }
+.operation-footer { min-height: var(--workspace-toolbar-height); padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 5); }
+.operation-footer button { min-height: calc(var(--spacing) * 9); }
 .manager-library { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .operation-dialog .workspace-manager-split { display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
 .operation-dialog .workspace-manager-list { container-type: inline-size; min-height: 0; }
@@ -57,7 +57,7 @@
   .operation-dialog.operation-dialog {
     width: calc(100vw - 24px);
     height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    border-radius: 12px;
+    border-radius: var(--radius-xl);
   }
   .operation-toolbar input:not([type="file"]), .operation-toolbar button,
   .operation-footer button, .operation-dialog button.mobile-touch { min-height: 44px; }
