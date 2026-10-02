@@ -5,6 +5,7 @@ import { json, error, clampInt, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, type D
 import { parseImageData, parseUploadedImage, exactArrayBuffer, ensureVibeSchema, ensureCharacterReferenceSchema } from './vibeRoutes';
 import { deleteR2File, processImageUpload } from './settingsRoutes';
 import { normalizeChainTags } from '../../services/chainTags';
+import { shuffleHistoryIds } from '../../services/historyBrowse';
 
 // 进程内标记：DDL 幂等但昂贵（1 CREATE TABLE + 16 ALTER + 3 INDEX），
 // 同一实例只在首个请求跑一次，不再每个灵感请求都重复约 20 条语句。
@@ -393,6 +394,63 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       return error('History edit mask not found', 404);
     }
 
+    // 浏览索引只返回 ID 与筛选选项；本次会话固定顺序，原图/参数仍按页读取。
+    if (path === '/api/local-history/browse' && method === 'GET') {
+      const where = ['user_id = ?'];
+      const values: (string | number)[] = [currentUser.id];
+      for (const [key, operator] of [['from', '>='], ['to', '<=']] as const) {
+        const timestamp = Number(url.searchParams.get(key));
+        if (Number.isFinite(timestamp) && timestamp > 0) { where.push(`created_at ${operator} ?`); values.push(timestamp); }
+      }
+      const favorite = url.searchParams.get('favorite') === '1';
+      if (favorite) where.push('COALESCE(is_favorite, 0) = 1');
+      const modelExpr = "CASE WHEN json_valid(params) THEN json_extract(params, '$.model') END";
+      const operationExpr = "COALESCE(CASE WHEN json_valid(params) THEN json_extract(params, '$._local_edit.operation') END, 'text-to-image')";
+      const model = url.searchParams.get('model');
+      const operation = url.searchParams.get('operation');
+      const source = url.searchParams.get('source');
+      if (model) { where.push(`${modelExpr} = ?`); values.push(model.slice(0, 200)); }
+      if (operation) { where.push(`${operationExpr} = ?`); values.push(operation.slice(0, 50)); }
+      if (source) { where.push("COALESCE(NULLIF(source_chain_id, ''), 'playground') = ?"); values.push(source.slice(0, 200)); }
+      const search = (url.searchParams.get('search') || '').trim().slice(0, 500);
+      if (search) {
+        const escaped = `%${search.replace(/[\\%_]/g, char => `\\${char}`)}%`;
+        where.push("(prompt LIKE ? ESCAPE '\\' OR negative_prompt LIKE ? ESCAPE '\\' OR source_chain_name LIKE ? ESCAPE '\\')");
+        values.push(escaped, escaped, escaped);
+      }
+      const sort = url.searchParams.get('sort');
+      const ordering = sort === 'oldest' ? 'created_at ASC, id ASC'
+        : sort === 'favorite' && favorite ? 'COALESCE(favorite_at, created_at) DESC, created_at DESC, id DESC'
+        : 'created_at DESC, id DESC';
+      const [rows, models, sources] = await Promise.all([
+        db.prepare(`SELECT id FROM local_generation_history WHERE ${where.join(' AND ')} ORDER BY ${ordering}`).bind(...values).all<{id: string}>(),
+        db.prepare(`SELECT DISTINCT ${modelExpr} AS model FROM local_generation_history WHERE user_id = ? ORDER BY model`).bind(currentUser.id).all<{model: string | null}>(),
+        db.prepare("SELECT COALESCE(NULLIF(source_chain_id, ''), 'playground') AS id, MAX(source_chain_name) AS name FROM local_generation_history WHERE user_id = ? GROUP BY COALESCE(NULLIF(source_chain_id, ''), 'playground') ORDER BY name").bind(currentUser.id).all<{id: string; name: string | null}>(),
+      ]);
+      const ids = rows.results.map(row => row.id);
+      return json({
+        ids: sort === 'random' ? shuffleHistoryIds(ids, (url.searchParams.get('seed') || '').slice(0, 200)) : ids,
+        models: models.results.map(row => row.model).filter(Boolean),
+        sources: sources.results.map(row => ({ id: row.id, name: row.name || (row.id === 'playground' ? '自由实验室' : '已移除的预设') })),
+      });
+    }
+
+    // POST 仅承载只读批量查询，绑定当前用户且最多一页，不读取或写入 R2。
+    if (path === '/api/local-history/browse-page' && method === 'POST') {
+      const body = await request.json() as { ids?: unknown };
+      if (!Array.isArray(body.ids) || body.ids.length > 100 || body.ids.some(id => typeof id !== 'string' || id.length > 200)) {
+        return error('Invalid history page IDs', 400);
+      }
+      const ids = [...new Set(body.ids as string[])];
+      if (!ids.length) return json({ items: [] });
+      const pages = await Promise.all([ids.slice(0, 99), ids.slice(99)].filter(page => page.length).map(page =>
+        db.prepare(`SELECT * FROM local_generation_history WHERE user_id = ? AND id IN (${page.map(() => '?').join(',')})`)
+          .bind(currentUser.id, ...page).all<any>(),
+      ));
+      const rows = new Map(pages.flatMap(result => result.results).map(row => [row.id, mapLocalHistoryRow(row)]));
+      return json({ items: ids.flatMap(id => rows.has(id) ? [rows.get(id)] : []) });
+    }
+
     if (path === '/api/local-history' && method === 'GET') {
       const sourceChainId = url.searchParams.get('sourceChainId');
       if (sourceChainId) {
@@ -420,7 +478,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         : null;
       const result = await db.prepare(`
         SELECT * FROM local_generation_history
-        WHERE user_id = ?${dateWhere}${favoriteWhere} ORDER BY created_at DESC LIMIT ? OFFSET ?
+        WHERE user_id = ?${dateWhere}${favoriteWhere} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?
       `).bind(currentUser.id, ...dateValues, pageSize, page * pageSize).all<any>();
       return json({ items: result.results.map(mapLocalHistoryRow), ...(includeCount ? { count: Number(count?.count || 0) } : {}) });
     }

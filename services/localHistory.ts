@@ -2,6 +2,7 @@
 import { ImageEditMetadata, LocalGenItem, NAIParams } from '../types';
 import { api } from './api';
 import { createUuid } from './id';
+import { buildBrowserHistoryOrder, historyBrowseParams, type HistoryBrowseOrder, type HistoryBrowseQuery } from './historyBrowse';
 
 const DB_NAME = 'NAI_History_DB';
 const STORE_NAME = 'generations';
@@ -57,10 +58,10 @@ export type LocalHistoryChange = {
     external?: boolean;
 };
 
-export interface LocalHistoryDateRange {
-    from?: number;
-    to?: number;
-    favoriteOnly?: boolean;
+export interface LocalHistoryDateRange extends HistoryBrowseQuery {
+    /** 本次浏览的轻量索引；生成/收藏变化不会静默改变浏览顺序。 */
+    orderIds?: string[];
+    browseKey?: string;
 }
 
 export interface LocalHistoryPage {
@@ -691,7 +692,39 @@ class LocalHistoryService {
      * @param pageSize 每页数量
      * @returns 当前页的记录数组
      */
+    async getBrowseOrder(query: HistoryBrowseQuery): Promise<HistoryBrowseOrder> {
+        if (await this.isRemoteEnabled()) {
+            return api.get(`/local-history/browse?${historyBrowseParams(query)}`, { cache: 'no-store' });
+        }
+        return buildBrowserHistoryOrder(await this.getBrowserPage(0, Number.MAX_SAFE_INTEGER), query);
+    }
+
     async getPage(page: number, pageSize: number, range?: LocalHistoryDateRange, includeCount = true): Promise<LocalHistoryPage> {
+        if (range?.orderIds) {
+            const ids = range.orderIds.slice(Math.max(0, page) * pageSize, (Math.max(0, page) + 1) * pageSize);
+            let items: LocalGenItem[] = [];
+            if (ids.length) {
+                if (await this.isRemoteEnabled()) {
+                    const result = await api.post('/local-history/browse-page', { ids });
+                    const rows = new Map<string, LocalGenItem>((result.items || []).map((item: LocalGenItem) => [item.id, item]));
+                    items = ids.flatMap(id => rows.has(id) ? [rows.get(id)!] : []);
+                } else {
+                    const database = await this.open();
+                    items = await new Promise((resolve, reject) => {
+                        const transaction = database.transaction([STORE_NAME], 'readonly');
+                        const store = transaction.objectStore(STORE_NAME);
+                        const found = new Map<string, LocalGenItem>();
+                        ids.forEach(id => {
+                            const request = store.get(id);
+                            request.onsuccess = () => { if (request.result) found.set(id, normalizeHistoryItem(request.result)); };
+                        });
+                        transaction.oncomplete = () => resolve(ids.flatMap(id => found.has(id) ? [found.get(id)!] : []));
+                        transaction.onerror = () => reject(transaction.error);
+                    });
+                }
+            }
+            return { items, ...(includeCount ? { count: range.orderIds.length } : {}) };
+        }
         if (await this.isRemoteEnabled()) {
             const params = new URLSearchParams({ page: String(Math.max(0, page)), pageSize: String(Math.max(1, pageSize)) });
             if (range?.from) params.set('from', String(range.from));
