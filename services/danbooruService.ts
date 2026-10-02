@@ -52,6 +52,8 @@ export interface DanbooruCoverSet {
   hasMore: boolean;
   /** 缓存首屏被截短时重读本页补齐，避免遗漏该页其余可用图片。 */
   nextPage?: number;
+  /** 本次首屏是否已查询最新作品兜底，避免图片失败后重复触发。 */
+  latestFallbackTried?: boolean;
 }
 
 type StoredCover = DanbooruCoverSet & { updatedAt: number };
@@ -213,7 +215,7 @@ const toCoverCandidate = (post: DanbooruPost): DanbooruCoverCandidate => ({
 
 // 经典立绘只影响代表图排序，不丢弃换装、多人或任何评级的精确匹配候选。
 const candidatePostsFor = (items: DanbooruPost[], normalizedTag: string, kind: 'artist' | 'character') =>
-  items.filter(post => post.tags[kind].some(value => value.toLowerCase() === normalizedTag));
+  items.filter(post => (post.sampleUrl || post.previewUrl) && post.tags[kind].some(value => value.toLowerCase() === normalizedTag));
 
 const getCharacterCandidates = (items: DanbooruPost[], normalizedTag: string) => {
   const exact = items.filter(post => post.tags.character.some(value => value.toLowerCase() === normalizedTag));
@@ -280,14 +282,29 @@ const chooseCover = (items: DanbooruPost[], tag: string, kind: 'artist' | 'chara
   return candidates.sort((left, right) => representativeScore(right) - representativeScore(left))[0] || exact[0] || null;
 };
 
+/** 高分候选耗尽时只查一页最新作品；不因连接失败或限流换查询继续请求。 */
+const getCoverFallback = async (tag: string, kind: 'artist' | 'character', options: { signal?: AbortSignal; priority?: () => number } = {}) => {
+  options.signal?.throwIfAborted();
+  const normalizedTag = tag.trim().toLowerCase().replaceAll(' ', '_');
+  if (!normalizedTag) return { representative: null, candidates: [] as DanbooruCoverCandidate[] };
+  const result = await search({ query: `${normalizedTag} order:id_desc -status:banned`, limit: COVER_SOURCE_PAGE_SIZE,
+    signal: options.signal, coverPriority: options.priority || (() => 0) });
+  const posts = candidatePostsFor(result.items, normalizedTag, kind);
+  const representative = chooseCover(posts, normalizedTag, kind);
+  const ranked = [...posts].sort((left, right) => right.score - left.score);
+  const ordered = representative ? [representative, ...ranked.filter(post => post.id !== representative.id)] : ranked;
+  return { representative: representative ? toCoverCandidate(representative) : null, candidates: ordered.map(toCoverCandidate) };
+};
+
 const getCoverSet = (tag: string, kind: 'artist' | 'character', options: { signal?: AbortSignal; priority?: () => number } = {}): Promise<DanbooruCoverSet> => {
   if (options.signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
   const normalizedTag = tag.trim().toLowerCase().replaceAll(' ', '_');
   if (!normalizedTag) return Promise.resolve({ representative: null, candidates: [], hasMore: false });
   const key = `${kind}:${normalizedTag}`;
   const cached = readCoverCache()[key];
-  if (cached && Date.now() - cached.updatedAt < (cached.candidates?.length ? COVER_CACHE_TTL : COVER_EMPTY_CACHE_TTL)) {
-    return Promise.resolve({ representative: cached.representative || null, candidates: cached.candidates || [], hasMore: Boolean(cached.hasMore), nextPage: cached.nextPage || 1 });
+  if (cached && (cached.candidates?.length || cached.latestFallbackTried === true)
+    && Date.now() - cached.updatedAt < (cached.candidates?.length ? COVER_CACHE_TTL : COVER_EMPTY_CACHE_TTL)) {
+    return Promise.resolve({ representative: cached.representative || null, candidates: cached.candidates || [], hasMore: Boolean(cached.hasMore), nextPage: cached.nextPage || 1, latestFallbackTried: cached.latestFallbackTried });
   }
   // 排除已被上游禁用的作品；评级／权限限制仍由官方决定，不构造隐藏图片地址。
   const query = `${normalizedTag} order:score -status:banned`;
@@ -305,18 +322,21 @@ const getCoverSet = (tag: string, kind: 'artist' | 'character', options: { signa
         fullSourcePage = true;
         if (!candidatePosts.length) sourcePage++;
       }
-      const representativePost = chooseCover(result.items, normalizedTag, kind);
+      const representativePost = chooseCover(candidatePosts, normalizedTag, kind);
       const rankedCandidates = [...candidatePosts].sort((left, right) => right.score - left.score);
       // 首屏缓存必须包含代表图，即使它的评分排在 24 名之后；其余候选仍按评分翻看。
       const orderedCandidates = representativePost
         ? [representativePost, ...rankedCandidates.filter(post => post.id !== representativePost.id)] : rankedCandidates;
       const truncated = candidatePosts.length > COVER_CACHE_CANDIDATE_LIMIT;
+      const latestFallbackTried = !candidatePosts.length;
+      const fallback = latestFallbackTried ? await getCoverFallback(normalizedTag, kind, { signal, priority: coverPriority }) : null;
       const coverSet: DanbooruCoverSet = {
-        representative: representativePost ? toCoverCandidate(representativePost) : null,
-        candidates: orderedCandidates.slice(0, COVER_CACHE_CANDIDATE_LIMIT).map(toCoverCandidate),
+        representative: fallback?.representative || (representativePost ? toCoverCandidate(representativePost) : null),
+        candidates: fallback ? fallback.candidates.slice(0, COVER_CACHE_CANDIDATE_LIMIT) : orderedCandidates.slice(0, COVER_CACHE_CANDIDATE_LIMIT).map(toCoverCandidate),
         hasMore: result.hasMore || truncated,
         // 小首屏尚未读完整的 200 条源页，或截短候选时，下次先补同一页。
         nextPage: fullSourcePage && candidatePosts.length && !truncated ? sourcePage + 1 : sourcePage,
+        latestFallbackTried,
       };
       readCoverCache()[key] = { ...coverSet, updatedAt: Date.now() };
       persistCoverCache();
@@ -339,4 +359,4 @@ const getCoverCandidatePage = async (tag: string, kind: 'artist' | 'character', 
 
 const getCover = async (tag: string, kind: 'artist' | 'character') => (await getCoverSet(tag, kind)).representative;
 
-export const danbooruService = { search, getCover, getCoverSet, getCoverCandidatePage };
+export const danbooruService = { search, getCover, getCoverSet, getCoverCandidatePage, getCoverFallback };

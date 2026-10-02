@@ -32,6 +32,51 @@ it('普通排序短缓存复用，最新更快到期，随机不复用且独立�
 
 
 describe.each(['artist', 'character'] as const)('%s 可用封面查找', kind => {
+  it('评分前查无图后只补查一次最新作品，保留评分分页游标并缓存结果', async () => {
+    apiGet.mockImplementation(async path => result(new URL(path, 'http://localhost').searchParams.get('tags')!.includes('order:id_desc') ? [post(2, 'synthetic')] : [], true));
+    const { danbooruService } = await import('./danbooruService');
+    const covers = await settle(danbooruService.getCoverSet('synthetic', kind));
+    expect(covers).toMatchObject({ representative: { id: 2 }, hasMore: true, nextPage: 4, latestFallbackTried: true });
+    expect(covers.candidates.map(item => item.id)).toEqual([2]);
+    expect(apiGet).toHaveBeenCalledTimes(5);
+    const latest = new URL(apiGet.mock.calls[4][0], 'http://localhost');
+    expect(latest.searchParams.get('tags')).toBe('synthetic order:id_desc -status:banned');
+    expect(latest.searchParams.get('page')).toBe('1');
+    expect(latest.searchParams.get('limit')).toBe('200');
+    await danbooruService.getCoverSet('synthetic', kind);
+    expect(apiGet).toHaveBeenCalledTimes(5);
+  });
+  it('最新兜底放宽展示偏好，仍要求精确 Tag 和公开图片地址，不限制评级', async () => {
+    const relaxed = { ...post(2, 'synthetic'), rating: 'e', tags: { ...post(2, 'synthetic').tags, general: ['photo', 'chibi', 'multiple_girls', 'alternate_costume'] } };
+    apiGet.mockResolvedValueOnce(result()).mockResolvedValueOnce(result([post(1, 'other'), relaxed, { ...post(3, 'synthetic'), sampleUrl: '', previewUrl: '' }]));
+    const { danbooruService } = await import('./danbooruService');
+    const covers = await settle(danbooruService.getCoverSet('synthetic', kind));
+    expect(covers.candidates.map(item => item.id)).toEqual([2]);
+    expect(apiGet).toHaveBeenCalledTimes(2);
+  });
+  it('旧空缓存补查兜底，已有封面缓存继续复用', async () => {
+    localStorage.setItem('nai_danbooru_cover_cache_v13', JSON.stringify({
+      [`${kind}:empty`]: { ...result(), representative: null, candidates: [], updatedAt: Date.now() },
+      [`${kind}:positive`]: { representative: post(9, 'positive'), candidates: [post(9, 'positive')], updatedAt: Date.now() },
+    }));
+    apiGet.mockResolvedValueOnce(result()).mockResolvedValueOnce(result([post(2, 'empty')]));
+    const { danbooruService } = await import('./danbooruService');
+    expect((await danbooruService.getCoverSet('positive', kind)).representative?.id).toBe(9);
+    expect(apiGet).not.toHaveBeenCalled();
+    expect((await settle(danbooruService.getCoverSet('empty', kind))).representative?.id).toBe(2);
+    expect(apiGet).toHaveBeenCalledTimes(2);
+  });
+  it('限流不触发其他排序查询，兜底请求失败也不缓存成空结果', async () => {
+    apiGet.mockRejectedValueOnce(new Error('Danbooru 429'));
+    const { danbooruService } = await import('./danbooruService');
+    await expect(danbooruService.getCoverSet('busy', kind)).rejects.toThrow('429');
+    expect(apiGet).toHaveBeenCalledTimes(1);
+    apiGet.mockResolvedValueOnce(result()).mockRejectedValueOnce(new Error('Danbooru 429'));
+    await expect(danbooruService.getCoverSet('empty', kind)).rejects.toThrow('429');
+    apiGet.mockResolvedValue(result([post(2, 'empty')]));
+    expect((await settle(danbooruService.getCoverSet('empty', kind))).representative?.id).toBe(2);
+    expect(apiGet.mock.calls.filter(([path]) => path.includes('order%3Aid_desc'))).toHaveLength(2);
+  });
   it('首批无权限图片后继续读取，找到精确 Tag 的可用封面', async () => {
     apiGet.mockResolvedValueOnce(result([], true)).mockResolvedValueOnce(result([], true))
       .mockResolvedValueOnce(result([post(2, 'synthetic')], false));
@@ -50,14 +95,14 @@ describe.each(['artist', 'character'] as const)('%s 可用封面查找', kind =>
     apiGet.mockResolvedValue(result([], true));
     const { danbooruService } = await import('./danbooruService');
     const empty = await settle(danbooruService.getCoverSet('synthetic', kind));
-    expect(apiGet).toHaveBeenCalledTimes(4);
+    expect(apiGet).toHaveBeenCalledTimes(5);
     expect(empty).toMatchObject({ candidates: [], nextPage: 4, hasMore: true });
     await danbooruService.getCoverSet('synthetic', kind);
-    expect(apiGet).toHaveBeenCalledTimes(4);
+    expect(apiGet).toHaveBeenCalledTimes(5);
     await vi.advanceTimersByTimeAsync(60_001);
     apiGet.mockResolvedValue(result([post(1, 'synthetic')], false));
     expect((await settle(danbooruService.getCoverSet('synthetic', kind))).candidates).toHaveLength(1);
-    expect(apiGet).toHaveBeenCalledTimes(5);
+    expect(apiGet).toHaveBeenCalledTimes(6);
   });
   it('首屏被压缩为 24 个候选时仍能补齐同页，不丢掉第 25 张', async () => {
     const items = Array.from({ length: 40 }, (_, index) => post(index + 1, 'synthetic'));

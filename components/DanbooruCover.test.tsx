@@ -6,10 +6,11 @@ import { DanbooruCover } from './DanbooruCover';
 import { danbooruService, type DanbooruCoverCandidate } from '../services/danbooruService';
 import { ImageActivityContext } from './SmartImage';
 
-vi.mock('../services/danbooruService', () => ({ danbooruService: { getCoverSet: vi.fn(), getCoverCandidatePage: vi.fn() } }));
+vi.mock('../services/danbooruService', () => ({ danbooruService: { getCoverSet: vi.fn(), getCoverCandidatePage: vi.fn(), getCoverFallback: vi.fn() } }));
 vi.mock('./SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: ({ src, alt, onError }: { src: string; alt: string; onError: () => void }) => <img src={src} alt={alt} onError={onError} /> }));
 const covers = vi.mocked(danbooruService.getCoverSet);
 const pages = vi.mocked(danbooruService.getCoverCandidatePage);
+const fallback = vi.mocked(danbooruService.getCoverFallback);
 const candidate = (id: number): DanbooruCoverCandidate => ({ id, score: 20, previewUrl: `https://cdn.donmai.us/preview/${id}.jpg`, sampleUrl: `https://cdn.donmai.us/sample/${id}.webp`, postUrl: '' });
 const set = (candidates = [candidate(1)], hasMore = false, nextPage = 1) => ({ candidates, representative: candidates[0] || null, hasMore, nextPage });
 const image = () => screen.getByRole('img') as HTMLImageElement;
@@ -41,6 +42,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
   covers.mockResolvedValue(set()); pages.mockResolvedValue({ candidates: [], hasMore: false });
+  fallback.mockResolvedValue({ representative: null, candidates: [] });
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
@@ -104,6 +106,95 @@ it('坏图后的自动补页最多三页，不进入无界请求循环', async (
   expect(await screen.findByText('封面图片加载失败')).toBeTruthy();
   expect(screen.getByRole('button', { name: '重试加载封面' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '继续查找封面' })).toBeTruthy();
+  expect(fallback).toHaveBeenCalledTimes(1);
+});
+
+it.each(['artist', 'character'] as const)('%s 的全部图片失效后补查最新作品，同一作品更新地址且不重复补查', async kind => {
+  const broken = { ...candidate(1), previewUrl: candidate(1).sampleUrl };
+  const fresh = { ...candidate(1), sampleUrl: 'https://cdn.donmai.us/sample/fresh.webp' };
+  covers.mockResolvedValue(set([broken]));
+  fallback.mockResolvedValue({ representative: fresh, candidates: [fresh, candidate(2)] });
+  render(<DanbooruCover tag="synthetic" kind={kind} alt="封面" />);
+  await waitFor(() => expect(image().src).toBe(broken.sampleUrl));
+  failImage(); await waitFor(() => expect(image().src).toBe(fresh.sampleUrl));
+  expect(pages).not.toHaveBeenCalled();
+  expect(fallback).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: '下一张' }));
+  expect(image().src).toBe(candidate(2).sampleUrl);
+  fireEvent.click(screen.getByRole('button', { name: '上一张' }));
+  expect(image().src).toBe(fresh.sampleUrl);
+  failImage(); expect(image().src).toBe(fresh.previewUrl);
+  failImage(); await waitFor(() => expect(image().src).toBe(candidate(2).sampleUrl));
+  failImage(); expect(image().src).toBe(candidate(2).previewUrl);
+  failImage(); expect(await screen.findByText('封面图片加载失败')).toBeTruthy();
+  expect(fallback).toHaveBeenCalledTimes(1);
+});
+
+it('图片失败的最新兜底不覆盖评分游标，继续翻图从第四评分页读取', async () => {
+  const broken = { ...candidate(1), previewUrl: candidate(1).sampleUrl };
+  covers.mockResolvedValue(set([broken], true));
+  pages.mockResolvedValue({ candidates: [], hasMore: true });
+  fallback.mockResolvedValue({ representative: candidate(2), candidates: [candidate(2)] });
+  render(<DanbooruCover tag="synthetic" kind="character" alt="封面" />);
+  await waitFor(() => expect(image().src).toBe(broken.sampleUrl));
+  failImage(); await waitFor(() => expect(image().src).toBe(candidate(2).sampleUrl));
+  expect(pages.mock.calls.map(call => call[2])).toEqual([1, 2, 3]);
+  pages.mockResolvedValue({ candidates: [candidate(3)], hasMore: false });
+  fireEvent.click(screen.getByRole('button', { name: '下一张' }));
+  await waitFor(() => expect(image().src).toBe(candidate(3).sampleUrl));
+  expect(pages.mock.calls[3][2]).toBe(4);
+  expect(fallback).toHaveBeenCalledTimes(1);
+});
+
+it('初次查找已兜底时不重复查询，评分补页遇到限流也不切换排序', async () => {
+  const broken = { ...candidate(1), previewUrl: candidate(1).sampleUrl };
+  covers.mockResolvedValue({ ...set([broken]), latestFallbackTried: true });
+  const { rerender } = render(<DanbooruCover tag="already" kind="character" alt="封面" />);
+  await waitFor(() => expect(image().src).toBe(broken.sampleUrl));
+  failImage(); expect(await screen.findByText('封面图片加载失败')).toBeTruthy();
+  expect(fallback).not.toHaveBeenCalled();
+  covers.mockResolvedValue(set([broken], true));
+  pages.mockRejectedValue(new Error('Danbooru 429'));
+  rerender(<DanbooruCover tag="busy" kind="character" alt="封面" />);
+  await waitFor(() => expect(image().src).toBe(broken.sampleUrl));
+  failImage(); expect(await screen.findByText('Danbooru 请求过于频繁，请稍后重试')).toBeTruthy();
+  expect(pages).toHaveBeenCalledTimes(1);
+  expect(fallback).not.toHaveBeenCalled();
+});
+
+it('更换 Tag 取消兜底请求，迟到的最新作品不能污染新卡片', async () => {
+  const broken = { ...candidate(1), previewUrl: candidate(1).sampleUrl };
+  covers.mockResolvedValueOnce(set([broken])).mockResolvedValueOnce(set([candidate(9)]));
+  let finish!: (result: { representative: DanbooruCoverCandidate; candidates: DanbooruCoverCandidate[] }) => void;
+  fallback.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  const { rerender } = render(<DanbooruCover tag="old" kind="artist" alt="封面" />);
+  await waitFor(() => expect(image().src).toBe(broken.sampleUrl));
+  failImage(); await waitFor(() => expect(fallback).toHaveBeenCalledTimes(1));
+  const signal = fallback.mock.calls[0][2]?.signal;
+  rerender(<DanbooruCover tag="new" kind="artist" alt="封面" />);
+  await waitFor(() => expect(image().src).toBe(candidate(9).sampleUrl));
+  expect(signal?.aborted).toBe(true);
+  await act(async () => finish({ representative: candidate(2), candidates: [candidate(2)] }));
+  expect(image().src).toBe(candidate(9).sampleUrl);
+});
+
+it('离开视图取消未完成兜底，回来继续查找而不永久标记为已查', async () => {
+  const broken = { ...candidate(1), previewUrl: candidate(1).sampleUrl };
+  covers.mockResolvedValue(set([broken]));
+  let finish!: (result: { representative: DanbooruCoverCandidate; candidates: DanbooruCoverCandidate[] }) => void;
+  fallback.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }))
+    .mockResolvedValue({ representative: candidate(3), candidates: [candidate(3)] });
+  const view = (active: boolean) => <ImageActivityContext.Provider value={active}><DanbooruCover tag="retained" kind="artist" alt="封面" /></ImageActivityContext.Provider>;
+  const { rerender } = render(view(true));
+  await waitFor(() => expect(image().src).toBe(broken.sampleUrl));
+  failImage(); await waitFor(() => expect(fallback).toHaveBeenCalledTimes(1));
+  const signal = fallback.mock.calls[0][2]?.signal;
+  rerender(view(false)); expect(signal?.aborted).toBe(true);
+  await act(async () => finish({ representative: candidate(2), candidates: [candidate(2)] }));
+  expect(screen.queryByRole('img')).toBeNull();
+  rerender(view(true)); await waitFor(() => expect(image().src).toBe(candidate(3).sampleUrl));
+  expect(fallback).toHaveBeenCalledTimes(2);
+  expect(covers).toHaveBeenCalledTimes(1);
 });
 
 it('连续请求失败显示连接错误，手动重试成功后恢复，不误报无封面', async () => {

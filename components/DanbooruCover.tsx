@@ -20,6 +20,9 @@ const firstCandidateIndex = (result: DanbooruCoverSet) => {
   return representativeIndex >= 0 ? representativeIndex : 0;
 };
 
+const lookupErrorMessage = (error: unknown) => error instanceof Error && /429/.test(error.message)
+  ? 'Danbooru 请求过于频繁，请稍后重试' : '暂时无法读取 Danbooru 封面，请重试';
+
 export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fixedSrc = '', onCandidateChange, onImageLoad }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const viewActive = useContext(ImageActivityContext);
@@ -40,6 +43,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
   const sessionRef = useRef(0);
   const loadingMoreRef = useRef(false);
   const automaticPagesLeft = useRef(3);
+  const latestFallbackTried = useRef(false);
   const loadedKey = useRef('');
 
   useEffect(() => {
@@ -81,6 +85,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
     setCoverSet(undefined); setCandidateIndex(fixedSrc ? null : 0);
     setNextSourcePage(1); setFailedSources(new Set()); setLookupError('');
     automaticPagesLeft.current = 3;
+    latestFallbackTried.current = false;
   }, [fixedSrc, kind, tag, retryToken]);
 
   useEffect(() => {
@@ -97,6 +102,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
         if (!active) return;
         loadedKey.current = key;
         setCoverSet(result);
+        latestFallbackTried.current = Boolean(result.latestFallbackTried);
         setNextSourcePage(result.nextPage || 1);
         setCandidateIndex(firstCandidateIndex(result));
       } catch {
@@ -108,6 +114,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
           if (active) {
             loadedKey.current = key;
             setCoverSet(result);
+            latestFallbackTried.current = Boolean(result.latestFallbackTried);
             setNextSourcePage(result.nextPage || 1);
             setCandidateIndex(firstCandidateIndex(result));
           }
@@ -115,8 +122,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
           if (active) {
             loadedKey.current = key;
             setCoverSet(null);
-            setLookupError(error instanceof Error && /429/.test(error.message)
-              ? 'Danbooru 请求过于频繁，请稍后重试' : '暂时无法读取 Danbooru 封面，请重试');
+            setLookupError(lookupErrorMessage(error));
           }
         }
       }
@@ -154,7 +160,9 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
     return () => { observer?.disconnect(); prewarm.current?.cancel(); };
   }, [activated, visible, viewActive, candidates, nextIndex]);
   const loadNextCandidatePage = async (automatic = false) => {
-    if (!coverSet?.hasMore || loadingMoreRef.current || (automatic && automaticPagesLeft.current <= 0)) return false;
+    if (!coverSet || loadingMoreRef.current
+      || (!automatic && !coverSet.hasMore)
+      || (automatic && latestFallbackTried.current && (!coverSet.hasMore || automaticPagesLeft.current <= 0))) return false;
     const session = sessionRef.current;
     loadingMoreRef.current = true;
     setIsLoadingMore(true);
@@ -184,9 +192,27 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
         }
       }
       setCoverSet(previous => previous ? { ...previous, hasMore, nextPage: page } : previous);
+      // 地址存在但所有图片均加载失败，也需要一次最新作品兜底；分页游标继续只属于评分查询。
+      if (automatic && !latestFallbackTried.current) {
+        const fallback = await danbooruService.getCoverFallback(tag, kind, {
+          signal: requestController.current?.signal, priority: () => viewportPriority.current,
+        });
+        if (sessionRef.current !== session) return false;
+        // 离开视图会取消查询；仅完成后记为已兜底，返回视图仍可接着查。
+        latestFallbackTried.current = true;
+        const usable = fallback.candidates.find(candidate => Boolean(sourceFor(candidate)));
+        setCoverSet(previous => {
+          if (!previous) return previous;
+          // 相同作品可能已替换图片地址；更新该候选而不重复追加 ID。
+          const merged = new Map(previous.candidates.map(candidate => [candidate.id, candidate]));
+          fallback.candidates.forEach(candidate => merged.set(candidate.id, candidate));
+          return { ...previous, candidates: [...merged.values()], latestFallbackTried: true };
+        });
+        return Boolean(usable);
+      }
       return false;
-    } catch {
-      if (sessionRef.current === session) setLookupError('暂时无法读取 Danbooru 封面');
+    } catch (error) {
+      if (sessionRef.current === session) setLookupError(lookupErrorMessage(error));
       return false;
     } finally {
       if (sessionRef.current === session) { loadingMoreRef.current = false; setIsLoadingMore(false); }
@@ -194,7 +220,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
   };
   // 当前大图失败先用同一作品的公开预览；也失败才换候选，已保存封面不被改写。
   useEffect(() => {
-    if (!coverSet || isSavedCover) return;
+    if (!activated || !viewActive || !coverSet || isSavedCover) return;
     if (candidateIndex === null || !displayedSrc) {
       const next = candidates.findIndex(candidate => Boolean(sourceFor(candidate)));
       if (next >= 0 && next !== candidateIndex) { setCandidateIndex(next); return; }
@@ -202,7 +228,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
     }
     // 候选或失败地址变化才推进，不因父页面回调变化重复请求。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coverSet, candidateIndex, displayedSrc, failedSources, isSavedCover, lookupError]);
+  }, [activated, viewActive, coverSet, candidateIndex, displayedSrc, failedSources, isSavedCover, lookupError]);
   const moveCandidate = (direction: -1 | 1) => {
     if (fixedSrc && !browseSaved && direction > 0) { setBrowseSaved(true); return; }
     if (direction < 0) {
