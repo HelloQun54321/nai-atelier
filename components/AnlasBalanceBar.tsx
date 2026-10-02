@@ -62,7 +62,7 @@ export const AnlasBalanceBar: React.FC<AnlasBalanceBarProps> = ({ collapsed = fa
         <span className={`flex shrink-0 items-center ${collapsed ? '' : 'gap-1.5'}`}>
           <span className="relative flex shrink-0 text-indigo-600 dark:text-indigo-300">
             <AccountIcon className={`${collapsed ? 'h-3.5 w-3.5' : 'h-4 w-4'} ${loading ? 'animate-spin' : ''}`} />
-            {error && <span title={balanceState} className="absolute -right-1 -top-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold leading-none text-white">!</span>}
+            {error && <span title={balanceState} className="absolute -right-1 -top-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-amber-500 text-tiny font-bold leading-none text-white">!</span>}
           </span>
           {!collapsed && <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Anlas</span>}
         </span>

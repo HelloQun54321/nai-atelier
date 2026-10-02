@@ -313,14 +313,18 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
 
 export const loadAppearancePreferences = (): AppearancePreferences => {
   let stored: unknown = {};
+  let hasStoredPreferences = false;
+  let legacyTheme: string | null = null;
   try {
-    stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    const serialized = localStorage.getItem(STORAGE_KEY);
+    hasStoredPreferences = Boolean(serialized);
+    legacyTheme = localStorage.getItem(LEGACY_THEME_KEY);
+    stored = JSON.parse(serialized || '{}');
   } catch {
-    // 损坏的本地偏好直接回退，不影响应用启动。
+    // 损坏或禁止读取的本地存储直接回退，初始化在错误边界挂载前也不能阻断启动。
   }
   const preferences = normalizeAppearancePreferences(stored);
-  const legacyTheme = localStorage.getItem(LEGACY_THEME_KEY);
-  if (!localStorage.getItem(STORAGE_KEY) && isOneOf(legacyTheme, ['light', 'dark', 'system'])) {
+  if (!hasStoredPreferences && isOneOf(legacyTheme, ['light', 'dark', 'system'])) {
     preferences.themeMode = legacyTheme;
   }
   return preferences;
@@ -350,3 +354,15 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences, i
   root.style.setProperty('--nai-accent', preferences.accentColor);
   root.style.colorScheme = isDark ? 'dark' : 'light';
 };
+
+/** App 挂载前和系统明暗变化时恢复外观，访问门禁与错误页也使用同一套偏好。 */
+export const restoreAppearancePreferences = () => {
+  const preferences = loadAppearancePreferences();
+  const isDark = preferences.themeMode === 'dark'
+    || (preferences.themeMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  applyAppearancePreferences(preferences, isDark);
+};
+
+/** JS 发起的滚动不会被 CSS 动画时长约束，显式遵循项目与系统的减少动画设置。 */
+export const appearanceScrollBehavior = (): ScrollBehavior => document.documentElement.dataset.motion === 'full'
+  && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto';

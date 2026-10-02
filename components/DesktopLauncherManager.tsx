@@ -78,7 +78,7 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
         <div>
           <h4 className="font-semibold text-gray-900 dark:text-white">Windows 桌面启动器</h4>
           <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
-            一键在系统桌面创建或更新启动脚本（<code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">NaiPromptManager.bat</code>）与专属图标快捷方式（<code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">NAI Atelier.lnk</code>），双击秒开并自动复用已有服务。
+            一键在系统桌面创建或更新启动脚本（<code className="font-mono text-meta bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">NaiPromptManager.bat</code>）与专属图标快捷方式（<code className="font-mono text-meta bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">NAI Atelier.lnk</code>），双击秒开并自动复用已有服务。
           </p>
         </div>
         <div className="flex items-center gap-1.5 flex-none">
@@ -99,7 +99,7 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
               <Info className="h-4 w-4 flex-none mt-0.5 text-amber-500" />
               <div className="space-y-1">
                 <p>桌面启动器主要针对 Windows 本地宿主机系统（当前环境：{status.platform}）。</p>
-                <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                <p className="text-meta text-amber-700 dark:text-amber-300">
                   您仍可以直接下载批处理脚本文件，或在 Windows 电脑端打开工坊进行一键快捷创建。
                 </p>
               </div>

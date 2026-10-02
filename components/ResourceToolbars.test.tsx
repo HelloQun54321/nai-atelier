@@ -19,7 +19,8 @@ vi.mock('../services/lowConsumption', async importOriginal => ({
 }));
 vi.mock('../services/localHistory', () => ({ localHistory: {
   prepare: vi.fn(async () => 0), subscribe: () => () => {},
-  getPage: vi.fn(async () => ({ items: [], total: 0 })),
+  getBrowseOrder: vi.fn(async () => ({ ids: [], models: [], sources: [] })),
+  getPage: vi.fn(async () => ({ items: [], count: 0, hasMore: false })),
 } }));
 vi.mock('../services/naiService', () => ({ generateImage: vi.fn() }));
 vi.mock('../services/tagDictionary', async importOriginal => ({
@@ -114,13 +115,13 @@ describe('资料目录工具栏行为', () => {
   it.each([1280, 390])('历史管理在宽度 %s 只打开对应形态，批量选择后关闭菜单', async width => {
     vi.stubGlobal('innerWidth', width);
     render(<GenHistory chains={[]} currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} notify={vi.fn()} />);
-    const trigger = width < 768 ? screen.getByRole('button', { name: '历史管理' }) : screen.getByRole('button', { name: '管理' });
+    const trigger = screen.getByRole('button', { name: '管理' });
     await waitFor(() => expect((trigger as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(trigger);
     const panel = screen.getByRole('dialog', { name: '历史管理' });
     expect(panel.classList.contains('mobile-sheet')).toBe(width < 768);
     fireEvent.click(within(panel).getByRole('button', { name: '批量选择图片' }));
     expect(screen.queryByRole('dialog', { name: '历史管理' })).toBeNull();
-    expect(screen.getByText(/多选模式 · 已选/)).toBeTruthy();
+    expect(within(screen.getByRole('banner')).getByText(/多选模式 · 已选/)).toBeTruthy();
   });
 });

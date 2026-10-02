@@ -215,13 +215,13 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
       aria-label={isFullscreen ? '全屏大画板精修' : undefined}
       className={
         isFullscreen
-          ? 'fixed inset-0 z-[1250] flex flex-col bg-gray-950/95 p-4 backdrop-blur-md sm:p-6 select-none'
+          ? 'fixed inset-0 z-[1250] flex flex-col bg-gray-50 p-4 dark:bg-gray-950 backdrop-blur-md sm:p-6 select-none'
           : 'relative flex flex-1 flex-col min-h-0 w-full'
       }
     >
       {/* 全屏顶栏 */}
       {isFullscreen && (
-        <div className="mb-3 flex items-center justify-between gap-3 text-white">
+        <div className="mb-3 flex items-center justify-between gap-3 text-gray-900 dark:text-gray-100">
           <div className="flex items-center gap-3">
             <span className="text-sm font-bold">全屏大画板精修</span>
             <span className="text-xs text-gray-400">{width} × {height} 像素</span>
@@ -231,7 +231,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
             <button
               type="button"
               onClick={() => setIsFullscreen(false)}
-              className="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
             >
               <X className="h-4 w-4" />
               <span>完成 (Esc)</span>

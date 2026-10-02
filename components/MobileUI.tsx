@@ -84,7 +84,7 @@ export const MobileBottomSheet: React.FC<{
           <MobileIconButton label="关闭" onClick={requestClose} className="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"><X className="h-5 w-5" /></MobileIconButton>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
-        {footer && <footer className="mobile-safe-bottom border-t border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">{footer}</footer>}
+        {footer && <footer className="appearance-surface mobile-safe-bottom border-t border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">{footer}</footer>}
       </section>
     </div>
   );
@@ -109,7 +109,7 @@ export const MobileDetailView: React.FC<{
   return (
     <section
       ref={dialogRef}
-      className="mobile-detail md:hidden"
+      className="mobile-detail appearance-surface md:hidden"
       role="dialog"
       aria-modal="true"
       aria-label={title}

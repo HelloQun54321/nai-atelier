@@ -576,7 +576,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
           id={listboxId}
           role="listbox"
           style={popupStyle}
-          className={`touch-pan-y overflow-y-auto rounded-xl border border-gray-200 bg-white select-none shadow-2xl dark:border-gray-800 dark:bg-gray-900 ${dropUp ? 'mb-1' : 'mt-1'}`}
+          className={`appearance-panel touch-pan-y overflow-y-auto rounded-xl border border-gray-200 bg-white select-none shadow-2xl dark:border-gray-800 dark:bg-gray-900 ${dropUp ? 'mb-1' : 'mt-1'}`}
         >
           {isLoading && suggestions.length === 0 ? (
             <div className="px-3 py-2 text-xs text-gray-400">正在加载 Tag…</div>

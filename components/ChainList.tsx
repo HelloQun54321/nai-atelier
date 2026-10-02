@@ -498,7 +498,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
               <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} title="筛选与排序" aria-label={`筛选${filterCount > 0 ? ` ${filterCount}` : ''}`} className={filtersActive ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-700 dark:!bg-indigo-950/40 dark:!text-indigo-300' : ''} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" /><span className="hidden xl:inline">筛选{filterCount > 0 ? ` ${filterCount}` : ''}</span></ToolbarButton>
               {showDesktopFilters && <ImagePreviewPortal>
                 <div className="fixed inset-0 z-[1000]" onClick={() => setShowDesktopFilters(false)} />
-                <div ref={filterPanelRef} role="dialog" aria-label="筛选与排序" style={{ left: filterPosition.left, top: filterPosition.top, marginLeft: filterPosition.offset }} className="fixed -translate-x-1/2 z-[1001] max-h-[calc(100dvh-7rem)] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-800 dark:bg-gray-900">{filterContent}</div>
+                <div ref={filterPanelRef} role="dialog" aria-label="筛选与排序" style={{ left: filterPosition.left, top: filterPosition.top, marginLeft: filterPosition.offset }} className="appearance-panel fixed -translate-x-1/2 z-[1001] max-h-[calc(100dvh-7rem)] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-800 dark:bg-gray-900">{filterContent}</div>
               </ImagePreviewPortal>}
             </div>
             {canSync && <div className="border-l border-gray-200 pl-2 dark:border-gray-700"><ToolbarButton onClick={syncSelection.open ? syncSelection.cancel : syncSelection.begin} disabled={syncSelection.busy && !syncSelection.open} title="挑选风格串、待同步与同步记录" aria-label={`智慧姬同步${syncSelection.savedCount > 0 ? ` ${syncSelection.savedCount}` : ''}`} aria-expanded={syncSelection.open}><Link2 className="h-4 w-4" /><span className="hidden xl:inline">智慧姬同步{syncSelection.savedCount > 0 ? ` ${syncSelection.savedCount}` : ''}</span></ToolbarButton></div>}
@@ -555,7 +555,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       {/* Simple Create Modal */}
       {isModalOpen && (
         <ImagePreviewPortal><div role="dialog" aria-modal="true" aria-label={createLabel} className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 md:p-8 w-full max-w-md border border-gray-200 dark:border-gray-700 shadow-2xl">
+          <div className="appearance-panel bg-white dark:bg-gray-800 rounded-xl p-6 md:p-8 w-full max-w-md border border-gray-200 dark:border-gray-700 shadow-2xl">
             <h2 className="mb-4 text-xl font-bold text-gray-900 dark:text-white">{createLabel}</h2>
             <div className="space-y-4">
               <div>

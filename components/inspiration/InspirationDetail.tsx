@@ -232,7 +232,7 @@ export const InspirationDetail: React.FC<Props> = ({
   return (
     <ImagePreviewPortal>
     <div className="ui-backdrop-enter fixed inset-0 z-[1500] flex items-center justify-center bg-black/80 p-0 backdrop-blur-sm md:p-6" onClick={closeLayer}>
-      <div data-safe-mode-work="true" className="ui-modal-enter flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-950 md:h-[92vh] md:rounded-2xl md:border md:border-gray-800 lg:flex-row" onClick={event => event.stopPropagation()}>
+      <div data-safe-mode-work="true" className="appearance-panel ui-modal-enter flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-950 md:h-[92vh] md:rounded-2xl md:border md:border-gray-800 lg:flex-row" onClick={event => event.stopPropagation()}>
         {/* 左侧大图展示舞台 */}
         <section className="relative flex min-h-[36vh] flex-1 items-center justify-center overflow-hidden bg-gray-100 dark:bg-black/60 lg:min-h-0">
           <OriginalImage src={draft.imageUrl} alt={draft.title} className="max-h-full max-w-full object-contain" data-safe-mode-ignore="true" />
@@ -562,7 +562,7 @@ export const InspirationDetail: React.FC<Props> = ({
                 {labMenuOpen && (
                   <>
                     <div className="fixed inset-0 z-20" onClick={() => setLabMenuOpen(false)} />
-                    <div className="absolute bottom-12 left-0 z-30 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                    <div className="appearance-panel absolute bottom-12 left-0 z-30 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                       <button
                         type="button"
                         disabled={Boolean(busy)}
@@ -621,7 +621,7 @@ export const InspirationDetail: React.FC<Props> = ({
                 {assetMenuOpen && (
                   <>
                     <div className="fixed inset-0 z-20" onClick={() => setAssetMenuOpen(false)} />
-                    <div className="absolute bottom-12 right-0 z-30 w-48 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                    <div className="appearance-panel absolute bottom-12 right-0 z-30 w-48 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                       <button
                         type="button"
                         disabled={!onCreateArtistChain || Boolean(busy)}

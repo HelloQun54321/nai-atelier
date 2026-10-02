@@ -13,7 +13,7 @@ interface TagSelectionBarProps {
 export const TagSelectionBar: React.FC<TagSelectionBarProps> = ({ count, unit, onClear, onCopy, onImport }) => {
   if (!count) return null;
   return <div className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4">
-    <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white/95 px-3 py-2.5 shadow-xl backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+    <div className="appearance-panel pointer-events-auto flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white/95 px-3 py-2.5 shadow-xl backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
       <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">已选 {count} {unit}</span>
       <div className="h-4 w-px bg-gray-200 dark:bg-gray-700" />
       <button type="button" onClick={onClear} className="mobile-touch rounded-xl px-2.5 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800">清空</button>

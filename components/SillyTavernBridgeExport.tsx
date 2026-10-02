@@ -297,11 +297,11 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
           </div>
 
           {/* 自动补全路径预览 */}
-          <div className="mt-3 flex items-start gap-1.5 border-t border-gray-200/70 pt-2.5 text-[11px] text-gray-500 dark:border-gray-700/70 dark:text-gray-400">
+          <div className="mt-3 flex items-start gap-1.5 border-t border-gray-200/70 pt-2.5 text-meta text-gray-500 dark:border-gray-700/70 dark:text-gray-400">
             <Info className="mt-0.5 h-3.5 w-3.5 flex-none text-indigo-500" />
             <div className="min-w-0 flex-1">
               <span>安装目标路径（自动补全）：</span>
-              <code className="mt-0.5 block truncate rounded bg-gray-200/70 px-1.5 py-0.5 font-mono text-[11px] text-gray-800 dark:bg-gray-700 dark:text-gray-200" title={currentTargetPath}>
+              <code className="mt-0.5 block truncate rounded bg-gray-200/70 px-1.5 py-0.5 font-mono text-meta text-gray-800 dark:bg-gray-700 dark:text-gray-200" title={currentTargetPath}>
                 {currentTargetPath}
               </code>
             </div>

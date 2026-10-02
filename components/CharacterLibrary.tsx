@@ -1,3 +1,4 @@
+import { appearanceScrollBehavior } from '../services/appearancePreferences';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NAIParams, PromptChain } from '../types';
 import { compilePrompt } from '../services/promptUtils';
@@ -587,7 +588,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       if (generation !== gachaGenerationRef.current) return;
       setGachaCards(cards);
       recentGachaRef.current = [...recentGachaRef.current, [...indices]].slice(-5);
-      scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollRef.current?.scrollTo({ top: 0, behavior: appearanceScrollBehavior() });
     } catch (error) {
       if (generation !== gachaGenerationRef.current) return;
       console.warn('Character gacha failed:', error);
@@ -700,7 +701,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              <div className="font-bold dark:text-white">{lightbox.name}</div>
              {lightbox.tagName && <div className="mt-1 break-all font-mono text-xs text-gray-500">{lightbox.tagName}</div>}
              <div className="mt-3 grid grid-cols-2 gap-2">
-               {lightbox.kind === 'custom' ? <button onClick={() => { const id = lightbox.chain!.id; setLightbox(null); onSelect(id); }} className="mobile-touch rounded-xl bg-gray-100 dark:bg-gray-700">编辑还原</button> : <a href={getDanbooruPostsUrl(lightbox.tagName || '')} target="_blank" rel="noreferrer" className="mobile-touch flex items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40">Danbooru</a>}
+               {lightbox.kind === 'custom' ? <button onClick={() => { const id = lightbox.chain!.id; setLightbox(null); onSelect(id); }} className="mobile-touch rounded-xl bg-gray-100 dark:bg-gray-700">编辑还原</button> : <a href={getDanbooruPostsUrl(lightbox.tagName || '')} target="_blank" rel="noreferrer" className="mobile-touch flex items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40">Danbooru</a>}
              </div>
              {lightbox.kind === 'custom' && <button onClick={() => void deleteCustom(lightbox)} className="mobile-touch mt-2 w-full rounded-xl bg-red-50 font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">删除这个自定义角色</button>}
            </div>
@@ -714,7 +715,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             role="dialog"
             aria-modal="true"
             aria-label="新建自定义还原角色"
-            className="ui-modal-enter w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-800 dark:bg-gray-900"
+            className="appearance-panel ui-modal-enter w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-800 dark:bg-gray-900"
             onClick={event => event.stopPropagation()}
           >
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">新建自定义还原角色</h2>

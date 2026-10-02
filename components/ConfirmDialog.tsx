@@ -76,7 +76,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                         aria-modal="true"
                         aria-labelledby="confirm-dialog-title"
                         aria-describedby="confirm-dialog-description"
-                        className="ui-sheet-enter mobile-safe-bottom w-full max-w-md rounded-t-3xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-800 dark:bg-gray-900 md:rounded-2xl md:p-6"
+                        className="appearance-panel ui-sheet-enter mobile-safe-bottom w-full max-w-md rounded-t-3xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-800 dark:bg-gray-900 md:rounded-2xl md:p-6"
                         onClick={event => event.stopPropagation()}
                     >
                         <div className="flex items-start gap-4">

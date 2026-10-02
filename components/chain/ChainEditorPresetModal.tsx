@@ -220,7 +220,7 @@ export const ChainEditorPresetModal: React.FC<ChainEditorPresetModalProps> = ({
         {/* Import Detail/Confirm Modal */}
         {importCandidate && (
             <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="确认导入预设" className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onMouseDown={e => { if (e.target === e.currentTarget) setImportCandidate(null); }}>
-                <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-sm shadow-2xl border border-gray-200 dark:border-gray-800">
+                <div className="appearance-panel bg-white dark:bg-gray-900 rounded-2xl w-full max-w-sm shadow-2xl border border-gray-200 dark:border-gray-800">
                     <div className="p-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 rounded-t-2xl">
                         <h3 className="font-bold text-gray-900 dark:text-white truncate" title={importCandidate.name}>
                             导入: {importCandidate.name}

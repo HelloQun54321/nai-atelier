@@ -9,6 +9,8 @@
   --workspace-toolbar-height: 56px;
   --workspace-control-radius: 0.75rem;
   --workspace-card-radius: 1rem;
+  --nai-scrollbar-size: 12px;
+  --nai-scrollbar-track: var(--nai-canvas);
 }
 
 .workspace-command-bar {
@@ -404,11 +406,15 @@ html[data-design-theme='nai-atelier'].dark .media-card:hover {
 
 html[data-design-theme='nai-atelier'] .settings-dialog,
 html[data-design-theme='nai-atelier'] .operation-dialog,
+html[data-design-theme='nai-atelier'] .appearance-surface,
 html[data-design-theme='nai-atelier'] .appearance-panel {
   background-color: var(--nai-panel-surface) !important;
   border-color: var(--nai-panel-border) !important;
-  box-shadow: var(--nai-panel-shadow);
 }
+
+html[data-design-theme='nai-atelier'] .settings-dialog,
+html[data-design-theme='nai-atelier'] .operation-dialog,
+html[data-design-theme='nai-atelier'] .appearance-panel { box-shadow: var(--nai-panel-shadow); }
 
 html[data-design-theme='nai-atelier'] .settings-navigation {
   background-color: color-mix(in srgb, var(--nai-sidebar-surface) 82%, var(--nai-canvas)) !important;
@@ -430,6 +436,10 @@ html[data-surfaces='translucent'] .app-sidebar,
 html[data-surfaces='translucent'] .settings-dialog,
 html[data-surfaces='translucent'] .settings-navigation,
 html[data-surfaces='translucent'] .operation-dialog,
+html[data-surfaces='translucent'] .appearance-surface,
+html[data-surfaces='translucent'] .mobile-page-header,
+html[data-surfaces='translucent'] .mobile-detail-header,
+html[data-surfaces='translucent'] .mobile-detail-footer,
 html[data-surfaces='translucent'] .appearance-panel {
   backdrop-filter: blur(22px) saturate(130%);
 }
@@ -473,6 +483,9 @@ html[data-corners='sharp'] {
   --workspace-control-radius: 0.35rem;
   --workspace-card-radius: 0.5rem;
 }
+
+/* Tailwind 的无后缀 rounded 默认写死 .25rem，显式绑定小圆角变量。 */
+.rounded { border-radius: var(--radius-sm); }
 
 html[data-font-scale='small'] { font-size: 15px; }
 html[data-font-scale='standard'] { font-size: 16px; }
@@ -726,7 +739,7 @@ body,
   height: var(--agent-mobile-height, 68dvh);
   width: 100%;
   border-top-width: 1px;
-  border-radius: 1.5rem 1.5rem 0 0;
+  border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
   contain: layout paint style;
   opacity: 1;
   transform: translate3d(0, 0, 0);
@@ -777,7 +790,7 @@ body,
   width: 2.75rem;
   height: 4px;
   border-radius: 999px;
-  background: rgb(156 163 175 / .75);
+  background: var(--color-gray-400);
 }
 
 .agent-resize-handle-desktop { display: none; }
@@ -819,7 +832,7 @@ body,
     background: transparent;
     transition: background 150ms ease;
   }
-  .agent-resize-handle-desktop:hover::after { background: rgb(139 92 246 / .75); }
+  .agent-resize-handle-desktop:hover::after { background: var(--color-indigo-500); }
 }
 
 @media (min-width: 1024px) {
@@ -852,26 +865,7 @@ body,
     min-height: 0;
   }
 
-  *::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  *::-webkit-scrollbar-track,
-  .dark *::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  *::-webkit-scrollbar-thumb,
-  .dark *::-webkit-scrollbar-thumb {
-    background: rgb(107 114 128 / .55);
-    border: 1px solid transparent;
-    border-radius: 999px;
-  }
-
-  .dark * {
-    scrollbar-color: rgb(107 114 128 / .55) transparent;
-  }
+  :root { --nai-scrollbar-size: 6px; --nai-scrollbar-track: transparent; --nai-scrollbar-border: 1px; }
 
   .mobile-touch {
     min-width: var(--mobile-touch);
@@ -881,27 +875,22 @@ body,
 
   .mobile-page-header {
     display: flex;
-    min-height: 3.5rem;
+    min-height: var(--workspace-toolbar-height);
     align-items: center;
-    gap: .75rem;
-    border-bottom: 1px solid rgb(229 231 235);
-    background: rgb(255 255 255 / .96);
-    padding: .5rem .75rem;
+    gap: calc(var(--spacing) * 3);
+    border-bottom: 1px solid var(--nai-panel-border);
+    background: var(--nai-toolbar-surface);
+    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
   }
 
-  .dark .mobile-page-header { border-color: rgb(55 65 81); background: rgb(31 41 55 / .96); }
-  .mobile-toolbar { display: flex; align-items: center; gap: .5rem; padding: .625rem .75rem; }
+  .mobile-toolbar { display: flex; align-items: center; gap: calc(var(--spacing) * 2); padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3); }
   .mobile-safe-bottom { padding-bottom: max(.75rem, env(safe-area-inset-bottom)); }
   .mobile-layer { position: fixed; inset: 0; z-index: 1100; background: rgb(0 0 0 / .5); backdrop-filter: blur(2px); animation: ui-fade-in 140ms ease-out; }
-  .mobile-sheet { position: absolute; inset-inline: 0; bottom: 0; display: flex; max-height: min(82dvh, 44rem); flex-direction: column; overflow: hidden; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; background: white; box-shadow: 0 -16px 40px rgb(0 0 0 / .25); animation: ui-sheet-in 180ms cubic-bezier(.2,.8,.2,1); }
-  .dark .mobile-sheet { background: rgb(17 24 39); }
-  .mobile-detail { position: fixed; inset: 0; z-index: 1050; display: flex; height: 100dvh; flex-direction: column; overflow: hidden; background: rgb(249 250 251); animation: mobile-detail-in 160ms cubic-bezier(.2,.8,.2,1); }
+  .mobile-sheet { position: absolute; inset-inline: 0; bottom: 0; display: flex; max-height: min(82dvh, 44rem); flex-direction: column; overflow: hidden; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; background: var(--nai-panel-surface); box-shadow: 0 -16px 40px rgb(0 0 0 / .25); animation: ui-sheet-in 180ms cubic-bezier(.2,.8,.2,1); }
+  .mobile-detail { position: fixed; inset: 0; z-index: 1050; display: flex; height: 100dvh; flex-direction: column; overflow: hidden; background: var(--nai-panel-surface); animation: mobile-detail-in 160ms cubic-bezier(.2,.8,.2,1); }
   @keyframes mobile-detail-in { from { opacity: 0; transform: translateX(10px); } }
-  .dark .mobile-detail { background: rgb(17 24 39); }
-  .mobile-detail-header { display: flex; min-height: calc(3.5rem + env(safe-area-inset-top)); align-items: center; gap: .375rem; border-bottom: 1px solid rgb(229 231 235); background: rgb(255 255 255 / .97); padding: env(safe-area-inset-top) .5rem 0; }
-  .dark .mobile-detail-header { border-color: rgb(55 65 81); background: rgb(3 7 18 / .97); }
-  .mobile-detail-footer { position: absolute; inset-inline: 0; bottom: 0; z-index: 2; display: flex; gap: .5rem; border-top: 1px solid rgb(229 231 235); background: rgb(255 255 255 / .97); padding: .625rem .75rem max(.625rem, env(safe-area-inset-bottom)); backdrop-filter: blur(12px); }
-  .dark .mobile-detail-footer { border-color: rgb(55 65 81); background: rgb(3 7 18 / .96); }
+  .mobile-detail-header { display: flex; min-height: calc(var(--workspace-toolbar-height) + env(safe-area-inset-top)); align-items: center; gap: calc(var(--spacing) * 1.5); border-bottom: 1px solid var(--nai-panel-border); background: var(--nai-toolbar-surface); padding: env(safe-area-inset-top) calc(var(--spacing) * 2) 0; }
+  .mobile-detail-footer { position: absolute; inset-inline: 0; bottom: 0; z-index: 2; display: flex; gap: calc(var(--spacing) * 2); border-top: 1px solid var(--nai-panel-border); background: var(--nai-toolbar-surface); padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3) max(calc(var(--spacing) * 2.5), env(safe-area-inset-bottom)); }
 }
 
 /*
@@ -967,43 +956,43 @@ html[data-motion='full'] .vip-username {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #9ca3af #f3f4f6;
+  scrollbar-color: var(--color-gray-400) var(--nai-scrollbar-track);
 }
 
 *::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  width: var(--nai-scrollbar-size);
+  height: var(--nai-scrollbar-size);
 }
 
 *::-webkit-scrollbar-track {
-  background: #f3f4f6;
+  background: var(--nai-scrollbar-track);
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #9ca3af;
-  border: 3px solid #f3f4f6;
+  background: var(--color-gray-400);
+  border: var(--nai-scrollbar-border, 3px) solid var(--nai-scrollbar-track);
   border-radius: 999px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
+  background: var(--color-gray-500);
 }
 
 .dark * {
-  scrollbar-color: #64748b #111827;
+  scrollbar-color: var(--color-gray-600) var(--nai-scrollbar-track);
 }
 
 .dark *::-webkit-scrollbar-track {
-  background: #111827;
+  background: var(--nai-scrollbar-track);
 }
 
 .dark *::-webkit-scrollbar-thumb {
-  background: #64748b;
-  border-color: #111827;
+  background: var(--color-gray-600);
+  border-color: var(--nai-scrollbar-track);
 }
 
 .dark *::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--color-gray-400);
 }
 
 .vip-badge {
@@ -1145,9 +1134,9 @@ html[data-motion='full'] .queue-status-spinner {
   justify-content: center;
   width: 18px;
   height: 18px;
-  font-size: 10px;
+  font-size: .625rem;
   background: linear-gradient(135deg, #1a1a2e, #16213e);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   margin-left: 4px;
   vertical-align: middle;
   border: 1px solid rgba(255, 215, 0, 0.5);
@@ -1158,11 +1147,11 @@ html[data-motion='full'] .queue-status-spinner {
   display: inline-flex;
   align-items: center;
   padding: 1px 6px;
-  font-size: 10px;
+  font-size: .625rem;
   font-weight: bold;
   background: linear-gradient(135deg, #ffd700, #ff8c00);
   color: #1a1a2e;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   margin-left: 4px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1199,7 +1188,7 @@ html[data-motion='full'] .queue-status-spinner {
   background-position: left center;
   background-repeat: no-repeat;
   background-size: min(9rem, 78%) .72em;
-  border-radius: .25rem;
+  border-radius: var(--radius-sm);
   user-select: none;
 }
 
@@ -1236,4 +1225,15 @@ html[data-motion='full'] .queue-status-spinner {
 @keyframes smart-image-shimmer-sweep {
   from { background-position: 220% 0; }
   to { background-position: -220% 0; }
+}
+
+/* 减少／关闭动效停止装饰性循环及卡片位移，功能性加载指示保持稳定速度。 */
+html[data-motion='reduced'] :is(.animate-pulse, .animate-bounce, .smart-image-shimmer),
+html[data-motion='off'] :is(.animate-pulse, .animate-bounce, .smart-image-shimmer) { animation: none !important; }
+html[data-motion='reduced'] .animate-spin { animation-duration: 1s !important; }
+html[data-motion='reduced'] .media-card:hover,
+html[data-motion='off'] .media-card:hover { transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  html[data-motion='full'] :is(.animate-pulse, .animate-bounce, .smart-image-shimmer) { animation: none !important; }
+  html[data-motion='full'] .animate-spin { animation-duration: 1s !important; }
 }

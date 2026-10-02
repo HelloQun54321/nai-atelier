@@ -1,3 +1,4 @@
+import { appearanceScrollBehavior } from '../services/appearancePreferences';
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Artist } from '../types';
@@ -504,7 +505,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
             if (generation !== gachaGenerationRef.current) return;
             setGachaArtists(artists);
             recentGachaIndicesRef.current = [...recentGachaIndicesRef.current, indices].slice(-5);
-            scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+            scrollContainerRef.current?.scrollTo({ top: 0, behavior: appearanceScrollBehavior() });
         } catch (error) {
             if (generation !== gachaGenerationRef.current) return;
             console.warn('Artist gacha failed:', error);
