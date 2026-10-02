@@ -2,9 +2,18 @@
 import React from 'react';
 import { act, cleanup, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { computeShortestColumnAssignment, ShortestColumnMasonry } from './ShortestColumnMasonry';
+import { computeShortestColumnAssignment, resolveMasonryColumnCount, ShortestColumnMasonry } from './ShortestColumnMasonry';
+import type { MobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useImageRatios } from './useImageRatios';
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it('两类目录桌面六列只覆盖桌面，手机列数与横屏仍遵循图片偏好', () => {
+  const preferences: MobileImageDisplayPreferences = { layout: 'masonry', columns: 'auto', desktopColumns: 'auto' };
+  expect(resolveMasonryColumnCount(preferences, 390, false, 6)).toBe(2);
+  expect(resolveMasonryColumnCount({ ...preferences, columns: 1 }, 390, false, 6)).toBe(1);
+  expect(resolveMasonryColumnCount({ ...preferences, columns: 3 }, 767, false, 6)).toBe(3);
+  expect(resolveMasonryColumnCount(preferences, 700, true, 6)).toBe(3);
+  expect(resolveMasonryColumnCount(preferences, 768, true, 6)).toBe(6);
+});
 it('真实瀑布流尺寸更新不重建旧卡片，重新排序按新顺序安排首列', () => {
   vi.stubGlobal('ResizeObserver', class {
     constructor(private callback: ResizeObserverCallback) {}

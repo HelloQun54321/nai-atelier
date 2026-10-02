@@ -146,3 +146,27 @@ it('更换 Tag 后，旧候选翻页的迟到结果和结束状态不能污染�
   await act(async () => finish({ candidates: [candidate(4)], hasMore: true }));
   expect(image().src).toBe(candidate(9).sampleUrl);
 });
+
+it('附近卡片进入屏幕后提级且不重启查询，只为可见卡片预热下一张', async () => {
+  const observers: Array<(entries: unknown[]) => void> = [];
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(callback: (entries: unknown[]) => void) { observers.push(callback); }
+    observe() {} disconnect() {}
+  });
+  covers.mockResolvedValue(set([candidate(1), candidate(2)]));
+  render(<DanbooruCover tag="nearby" kind="character" alt="封面" />);
+  expect(covers).not.toHaveBeenCalled();
+  act(() => observers[0]([{ isIntersecting: true }]));
+  await waitFor(() => expect(image().src).toBe(candidate(1).sampleUrl));
+  const options = covers.mock.calls[0][2]!;
+  expect(options.priority!()).toBeGreaterThanOrEqual(1000);
+  const queued = () => vi.mocked(fetch).mock.calls.map(call => JSON.parse(String(call[1]?.body))).filter(body => body.sources);
+  expect(queued()).toHaveLength(0);
+  act(() => observers[1]([{ isIntersecting: true }]));
+  expect(options.priority!()).toBe(0); expect(options.signal!.aborted).toBe(false);
+  expect(covers).toHaveBeenCalledTimes(1); expect(queued()).toHaveLength(1);
+  act(() => observers[1]([{ isIntersecting: false, boundingClientRect: { top: 950, bottom: 1200 }, rootBounds: { top: 0, bottom: 900 } }]));
+  expect(options.priority!()).toBe(1050); expect(options.signal!.aborted).toBe(false);
+  act(() => observers[0]([{ isIntersecting: false }]));
+  expect(options.signal!.aborted).toBe(true);
+});

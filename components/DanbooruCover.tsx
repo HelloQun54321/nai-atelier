@@ -28,6 +28,8 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
   const requestController = useRef<AbortController | null>(null);
   const [browseSaved, setBrowseSaved] = useState(false);
   const [activated, setActivated] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const viewportPriority = useRef(1000);
   const [coverSet, setCoverSet] = useState<DanbooruCoverSet | null | undefined>(undefined);
   const [candidateIndex, setCandidateIndex] = useState<number | null>(fixedSrc ? null : 0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -41,10 +43,11 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
   const loadedKey = useRef('');
 
   useEffect(() => {
-    if (!viewActive) { setActivated(false); return; }
+    if (!viewActive) { setActivated(false); setVisible(false); return; }
     const node = rootRef.current;
     if (!node || !('IntersectionObserver' in window)) {
       setActivated(true);
+      setVisible(true); viewportPriority.current = 0;
       return;
     }
     const root = (() => {
@@ -59,7 +62,17 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
       setActivated(Boolean(entries[0]?.isIntersecting));
     }, { root, rootMargin: `${Math.max(root?.clientHeight || window.innerHeight, 600)}px 0px` });
     observer.observe(node);
-    return () => observer.disconnect();
+    const visibleObserver = new IntersectionObserver(entries => {
+      const entry = entries[0];
+      const inView = Boolean(entry?.isIntersecting);
+      const rect = entry?.boundingClientRect;
+      const bounds = entry?.rootBounds;
+      viewportPriority.current = inView ? 0 : 1000 + Math.max(0,
+        (rect?.top || 0) - (bounds?.bottom || window.innerHeight), (bounds?.top || 0) - (rect?.bottom || 0));
+      setVisible(inView);
+    }, { root });
+    visibleObserver.observe(node);
+    return () => { observer.disconnect(); visibleObserver.disconnect(); };
   }, [tag, viewActive]);
 
   useEffect(() => { setBrowseSaved(false); }, [fixedSrc, tag]);
@@ -80,7 +93,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
     setIsLoadingMore(false); loadingMoreRef.current = false;
     const load = async () => {
       try {
-        const result = await danbooruService.getCoverSet(tag, kind, { signal: controller.signal });
+        const result = await danbooruService.getCoverSet(tag, kind, { signal: controller.signal, priority: () => viewportPriority.current });
         if (!active) return;
         loadedKey.current = key;
         setCoverSet(result);
@@ -91,7 +104,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
         await new Promise(resolve => window.setTimeout(resolve, 2000));
         if (!active) return;
         try {
-          const result = await danbooruService.getCoverSet(tag, kind, { signal: controller.signal });
+          const result = await danbooruService.getCoverSet(tag, kind, { signal: controller.signal, priority: () => viewportPriority.current });
           if (active) {
             loadedKey.current = key;
             setCoverSet(result);
@@ -125,7 +138,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
   useEffect(() => { onCandidateChange?.(currentCandidate && displayedSrc ? { ...currentCandidate, sampleUrl: displayedSrc } : null); }, [currentCandidate, displayedSrc, onCandidateChange]);
   // 当前图片走显示请求优先通道；仅在附近预热紧接着的一个候选，档位跟随卡片与屏幕倍率。
   useEffect(() => {
-    if (!activated || !viewActive || !rootRef.current || nextIndex < 0) return;
+    if (!activated || !visible || !viewActive || !rootRef.current || nextIndex < 0) return;
     const node = rootRef.current;
     let previousVariant = '';
     const warm = () => {
@@ -139,7 +152,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(warm);
     observer?.observe(node);
     return () => { observer?.disconnect(); prewarm.current?.cancel(); };
-  }, [activated, viewActive, candidates, nextIndex]);
+  }, [activated, visible, viewActive, candidates, nextIndex]);
   const loadNextCandidatePage = async (automatic = false) => {
     if (!coverSet?.hasMore || loadingMoreRef.current || (automatic && automaticPagesLeft.current <= 0)) return false;
     const session = sessionRef.current;
@@ -211,7 +224,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
   };
   return <div ref={rootRef} className="absolute inset-0">
     {displayedSrc ? <>
-      <SmartImage key={displayedSrc} src={displayedSrc} alt={alt} pin onError={() => { setFailedSources(previous => new Set(previous).add(displayedSrc)); if (displayedSrc === fixedSrc) setBrowseSaved(true); }} onLoad={event => {
+      <SmartImage key={displayedSrc} src={displayedSrc} alt={alt} pin eager={visible} onError={() => { setFailedSources(previous => new Set(previous).add(displayedSrc)); if (displayedSrc === fixedSrc) setBrowseSaved(true); }} onLoad={event => {
         const image = event.currentTarget;
         if (image.naturalWidth > 0 && image.naturalHeight > 0) {
           onImageLoad?.(image.naturalWidth, image.naturalHeight);

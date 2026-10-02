@@ -1,5 +1,6 @@
 import { api } from './api';
 import { createDanbooruRequestPool } from './danbooruRequests';
+import { requestCoverQuery } from './danbooruCoverTransport';
 import { normalizeTagQuery, searchTagDictionary } from './tagDictionary';
 import { countDanbooruQueryTerms, DANBOORU_RATIO_QUERIES, splitDanbooruQuery, validateDanbooruQuery } from './danbooruQuery';
 
@@ -34,10 +35,6 @@ const COVER_EMPTY_CACHE_TTL = 60_000;
 const COVER_SOURCE_PAGE_SIZE = 200;
 const COVER_EMPTY_PAGE_LOOKAHEAD = 3;
 const COVER_CACHE_LIMIT = 150;
-// 候选枚举最多 5 并发，串行安排启动时刻，避免多个等待者同时醒来形成请求突发。
-// 遭遇 429 时所有尚未启动的请求共同退避 2 秒。
-const COVER_REQUEST_CONCURRENCY = 5;
-const COVER_REQUEST_INTERVAL_MS = 60;
 // Keep the cached first screen compact. The cover component loads later pages on demand.
 const COVER_CACHE_CANDIDATE_LIMIT = 24;
 
@@ -62,55 +59,6 @@ let coverCache: Record<string, StoredCover> | null = null;
 const coverRequest = createDanbooruRequestPool<DanbooruCoverSet>();
 const searchRequest = createDanbooruRequestPool<DanbooruSearchResult>();
 let randomRequestId = 0;
-let coverInFlight = 0;
-const coverWaiters: Array<() => void> = [];
-let nextCoverRequestAt = 0;
-let coverStartQueue = Promise.resolve();
-
-const scheduleCoverRequest = <T>(request: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
-  const acquire = async () => {
-    try {
-      while (coverInFlight >= COVER_REQUEST_CONCURRENCY) {
-        await new Promise<void>((resolve, reject) => {
-          const wake = () => { signal?.removeEventListener('abort', abort); resolve(); };
-          const abort = () => {
-            const index = coverWaiters.indexOf(wake);
-            if (index >= 0) coverWaiters.splice(index, 1);
-            reject(new DOMException('Aborted', 'AbortError'));
-          };
-          signal?.throwIfAborted();
-          coverWaiters.push(wake);
-          signal?.addEventListener('abort', abort, { once: true });
-        });
-      }
-      signal?.throwIfAborted();
-    } catch (error) {
-      if (coverInFlight < COVER_REQUEST_CONCURRENCY) coverWaiters.shift()?.();
-      throw error;
-    }
-    coverInFlight++;
-    const start = coverStartQueue.then(async () => {
-      // 等待期间也可能收到 429，醒来后重新检查退避时间。
-      while (nextCoverRequestAt > Date.now()) {
-        await new Promise(resolve => window.setTimeout(resolve, nextCoverRequestAt - Date.now()));
-      }
-      nextCoverRequestAt = Date.now() + COVER_REQUEST_INTERVAL_MS;
-    });
-    coverStartQueue = start;
-    await start;
-  };
-  return acquire().then(() =>
-    Promise.resolve().then(() => { signal?.throwIfAborted(); return request(); }).catch(error => {
-      if (/429/.test(String((error as Error)?.message || error))) {
-        nextCoverRequestAt = Math.max(nextCoverRequestAt, Date.now() + 2000);
-      }
-      throw error;
-    }).finally(() => {
-      coverInFlight--;
-      coverWaiters.shift()?.();
-    })
-  );
-};
 
 const readCoverCache = () => {
   if (coverCache) return coverCache;
@@ -212,7 +160,7 @@ export const buildDanbooruFilterQuery = (options: DanbooruFilterOptions = {}): s
   return query;
 };
 
-const search = (options: { query?: string; page?: number; limit?: number; signal?: AbortSignal } = {}): Promise<DanbooruSearchResult> => {
+const search = (options: { query?: string; page?: number; limit?: number; signal?: AbortSignal; coverPriority?: () => number } = {}): Promise<DanbooruSearchResult> => {
   const params = new URLSearchParams();
   if (options.query) params.set('tags', options.query);
   params.set('page', String(Math.max(1, options.page || 1)));
@@ -221,7 +169,9 @@ const search = (options: { query?: string; page?: number; limit?: number; signal
   const ttl = random ? 0 : /(?:^|\s)order:id_desc(?:\s|$)/.test(options.query || '') || !/order:|explore:/.test(options.query || '') ? 15_000 : 120_000;
   const path = `/danbooru/posts?${params.toString()}`;
   return searchRequest(random ? `${path}#${++randomRequestId}` : path,
-    signal => api.get(path, { cache: 'no-store', signal }), result => result.items.length ? ttl : Math.min(ttl, 15_000), options.signal);
+    signal => options.coverPriority
+      ? requestCoverQuery({ query: options.query || '', page: Number(params.get('page')), limit: Number(params.get('limit')) }, signal, options.coverPriority)
+      : api.get(path, { cache: 'no-store', signal }), result => result.items.length ? ttl : Math.min(ttl, 15_000), options.signal);
 };
 
 const CHARACTER_COVER_EXCLUDED_TAGS = new Set([
@@ -330,7 +280,7 @@ const chooseCover = (items: DanbooruPost[], tag: string, kind: 'artist' | 'chara
   return candidates.sort((left, right) => representativeScore(right) - representativeScore(left))[0] || exact[0] || null;
 };
 
-const getCoverSet = (tag: string, kind: 'artist' | 'character', options: { signal?: AbortSignal } = {}): Promise<DanbooruCoverSet> => {
+const getCoverSet = (tag: string, kind: 'artist' | 'character', options: { signal?: AbortSignal; priority?: () => number } = {}): Promise<DanbooruCoverSet> => {
   if (options.signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
   const normalizedTag = tag.trim().toLowerCase().replaceAll(' ', '_');
   if (!normalizedTag) return Promise.resolve({ representative: null, candidates: [], hasMore: false });
@@ -342,14 +292,15 @@ const getCoverSet = (tag: string, kind: 'artist' | 'character', options: { signa
   // 排除已被上游禁用的作品；评级／权限限制仍由官方决定，不构造隐藏图片地址。
   const query = `${normalizedTag} order:score -status:banned`;
   return coverRequest(key, async signal => {
-      let result = await scheduleCoverRequest(() => search({ query, limit: kind === 'character' ? 60 : 20, signal }), signal);
+      const coverPriority = options.priority || (() => 0);
+      let result = await search({ query, limit: kind === 'character' ? 60 : 20, signal, coverPriority });
       let candidatePosts = candidatePostsFor(result.items, normalizedTag, kind);
       let sourcePage = 1;
       let fullSourcePage = false;
       // 首批热门作品可能全无图片权限。只对空候选向后查有限页，不镜像整个目录。
       while (!candidatePosts.length && result.hasMore && sourcePage <= COVER_EMPTY_PAGE_LOOKAHEAD) {
         const page = sourcePage;
-        result = await scheduleCoverRequest(() => search({ query, page, limit: COVER_SOURCE_PAGE_SIZE, signal }), signal);
+        result = await search({ query, page, limit: COVER_SOURCE_PAGE_SIZE, signal, coverPriority });
         candidatePosts = candidatePostsFor(result.items, normalizedTag, kind);
         fullSourcePage = true;
         if (!candidatePosts.length) sourcePage++;
@@ -377,7 +328,7 @@ const getCoverSet = (tag: string, kind: 'artist' | 'character', options: { signa
 const getCoverCandidatePage = async (tag: string, kind: 'artist' | 'character', page: number, options: { signal?: AbortSignal } = {}) => {
   const normalizedTag = tag.trim().toLowerCase().replaceAll(' ', '_');
   if (!normalizedTag) return { candidates: [], hasMore: false };
-  const result = await scheduleCoverRequest(() => search({ query: `${normalizedTag} order:score -status:banned`, page, limit: COVER_SOURCE_PAGE_SIZE, signal: options.signal }), options.signal);
+  const result = await search({ query: `${normalizedTag} order:score -status:banned`, page, limit: COVER_SOURCE_PAGE_SIZE, signal: options.signal, coverPriority: () => 0 });
   return {
     candidates: candidatePostsFor(result.items, normalizedTag, kind)
       .sort((left, right) => right.score - left.score)

@@ -1,10 +1,15 @@
-// Danbooru proxy/search routes.
-// Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
+// Danbooru 公开检索与目录封面批次流，共用候选规范化和官方权限边界。
 import { json, error, clampInt, type Env, type RouteContext } from './types';
 import { matchesDanbooruImageFilters, parseDanbooruExploreQuery, splitDanbooruQuery, validateDanbooruQuery } from '../../services/danbooruQuery';
 
 const DANBOORU_BASE_URL = 'https://danbooru.donmai.us';
 const DANBOORU_MAX_PAGE_SIZE = 200;
+// 官方 only 参数只传页面实际使用的字段，去掉重复总 Tag 字符串与无关审计字段。
+const DANBOORU_POST_FIELDS = [
+  'id', 'rating', 'score', 'fav_count', 'image_width', 'image_height', 'file_ext', 'source',
+  'preview_file_url', 'large_file_url', 'file_url', 'media_asset[variants]',
+  'tag_string_general', 'tag_string_artist', 'tag_string_copyright', 'tag_string_character', 'tag_string_meta',
+].join(',');
 
 function buildLocalDanbooruFetch(targetUrl: string, env?: Env) {
   if (!env?.DANBOORU_LOCAL_PROXY_URL) return { url: targetUrl, headers: {} as Record<string, string> };
@@ -18,10 +23,11 @@ function buildLocalDanbooruFetch(targetUrl: string, env?: Env) {
 
 // Danbooru 在负载高时会对重查询返回 500 time-out（官方文档亦有多项说明）；
 // 上游 500 time-out 自动重试，网络超时同样重试，避免瞬时负载造成偶发失败。
-async function fetchDanbooruJson(target: URL, env?: Env) {
+async function fetchDanbooruJson(target: URL, env?: Env, signal?: AbortSignal, background = false) {
   const maxAttempts = 3;
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    signal?.throwIfAborted();
     if (attempt > 0) { const { promise, resolve } = Promise.withResolvers<void>(); setTimeout(resolve, 1000 * attempt); await promise; }
     try {
       const localFetch = buildLocalDanbooruFetch(target.toString(), env);
@@ -30,8 +36,9 @@ async function fetchDanbooruJson(target: URL, env?: Env) {
           Accept: 'application/json',
           'User-Agent': 'NAI-Atelier/0.5 (+local personal use)',
           ...localFetch.headers,
+          ...(background && env?.DANBOORU_LOCAL_PROXY_URL ? { 'X-Nai-Danbooru-Prefetch': '1' } : {}),
         },
-        signal: AbortSignal.timeout(30_000),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
       });
       const text = await response.text();
       if (!response.ok) {
@@ -111,8 +118,76 @@ const normalizeDanbooruQuery = (value: string | null) => {
   return query;
 };
 
+// 同一 Worker 内所有批次共用启动时钟；屏幕内短突发错开，附近预取每秒一条。
+let coverStartQueue = Promise.resolve();
+let nextCoverStartAt = 0;
+const startCoverQuery = (signal: AbortSignal, background: boolean) => {
+  const start = coverStartQueue.then(async () => {
+    signal.throwIfAborted();
+    while (nextCoverStartAt > Date.now()) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, nextCoverStartAt - Date.now());
+        const abort = () => { clearTimeout(timer); reject(signal.reason); };
+        signal.addEventListener('abort', abort, { once: true });
+      });
+      signal.throwIfAborted();
+    }
+    nextCoverStartAt = Date.now() + (background ? 1000 : 150);
+  });
+  coverStartQueue = start.catch(() => {});
+  return start;
+};
+
 export async function handleDanbooruRoute(ctx: RouteContext): Promise<Response | null> {
   const { env, url, path, method } = ctx;
+
+  if (path === '/api/danbooru/covers' && method === 'POST') {
+    try {
+      const text = await ctx.request.text();
+      if (text.length > 8192) return error('封面查询过大', 400);
+      const body = JSON.parse(text);
+      if (!Array.isArray(body.requests) || !body.requests.length || body.requests.length > 4) return error('每批封面查询必须为 1～4 项', 400);
+      const urls = body.requests.map((item: any) => {
+        if (typeof item?.query !== 'string' || item.query.length > 500
+          || !Number.isInteger(item.page) || item.page < 1 || item.page > 1000
+          || !Number.isInteger(item.limit) || item.limit < 1 || item.limit > 200) throw new Error('无效的封面查询');
+        const query = normalizeDanbooruQuery(item.query);
+        const target = new URL('/api/danbooru/posts', url);
+        target.search = new URLSearchParams({ tags: query, page: String(item.page), limit: String(item.limit) }).toString();
+        return target;
+      });
+      const controller = new AbortController();
+      const signal = AbortSignal.any([ctx.request.signal, controller.signal]);
+      const encoder = new TextEncoder();
+      const emit = (output: ReadableStreamDefaultController<Uint8Array>, frame: string) => {
+        if (signal.aborted) return;
+        try { output.enqueue(encoder.encode(frame)); }
+        catch { controller.abort(); }
+      };
+      const stream = new ReadableStream<Uint8Array>({
+        start(output) {
+          emit(output, ': covers\n\n');
+          void Promise.all(urls.map(async (target: URL, index: number) => {
+            try {
+              // 本地网关在缓存之后统一控制真实联网；缓存命中不应等待上游启动间隔。
+              if (env.DANBOORU_LOCAL_PROXY_URL) signal.throwIfAborted();
+              else await startCoverQuery(signal, body.background === true);
+              const response = (await handleDanbooruRoute({ ...ctx, url: target, path: target.pathname, method: 'GET', request: new Request(target, { signal, headers: body.background === true ? { 'X-Nai-Cover-Background': '1' } : {} }) }))!;
+              const data = await response.json();
+              if (response.status === 429) nextCoverStartAt = Math.max(nextCoverStartAt, Date.now() + 2000);
+              emit(output, `event: result\ndata: ${JSON.stringify({ index, status: response.status, data })}\n\n`);
+            } catch (e) {
+              emit(output, `event: result\ndata: ${JSON.stringify({ index, status: 502, data: { error: e instanceof Error ? e.message : '封面查询失败' } })}\n\n`);
+            }
+          })).finally(() => {
+            if (!signal.aborted) { try { output.close(); } catch { controller.abort(); } }
+          });
+        },
+        cancel() { controller.abort(); },
+      });
+      return new Response(stream, { headers: { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' } });
+    } catch (e) { return error(e instanceof Error ? e.message : '无效的封面查询', 400); }
+  }
 
   if (path === '/api/danbooru/posts' && method === 'GET') {
     try {
@@ -134,8 +209,9 @@ export async function handleDanbooruRoute(ctx: RouteContext): Promise<Response |
       // 随机不翻页；普通搜索与排行榜都传入实际页码和页长。
       target.searchParams.set('page', isRandom ? '1' : String(page));
       target.searchParams.set('limit', String(limit));
+      target.searchParams.set('only', DANBOORU_POST_FIELDS);
 
-      const payload = await fetchDanbooruJson(target, env);
+      const payload = await fetchDanbooruJson(target, env, ctx.request?.signal, ctx.request?.headers.get('x-nai-cover-background') === '1');
       if (!Array.isArray(payload)) throw new Error('Danbooru 返回了无效的图片列表');
       const items = payload
         .map(normalizeDanbooruPost)

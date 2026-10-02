@@ -2,6 +2,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api, createSseParser, isQueueCancelledError, parseErrorResponse } from './api';
 
 describe('SSE parser', () => {
+  it('POST 流透传取消信号，保留已有逐帧解析', async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn().mockResolvedValue(new Response('event: result\ndata: {"index":0}\n\n'));
+    vi.stubGlobal('fetch', fetchMock);
+    const events: unknown[] = [];
+    await api.postSse('/danbooru/covers', {}, {}, event => events.push(event.data), { signal: controller.signal });
+    expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal);
+    expect(events).toEqual([{ index: 0 }]);
+    vi.unstubAllGlobals();
+  });
   it('parses events split across arbitrary network chunks', () => {
     const events: Array<{ event: string; data: unknown }> = [];
     const parser = createSseParser(event => events.push(event));

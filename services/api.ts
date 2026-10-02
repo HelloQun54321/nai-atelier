@@ -78,6 +78,11 @@ interface BinaryRequestOptions {
   budgetKeyHash?: string;
 }
 
+interface StreamRequestOptions extends BinaryRequestOptions {
+  /** 调用方离开当前视图时中止流传输。 */
+  signal?: AbortSignal;
+}
+
 interface BinaryResponseDetails {
   blob: Blob;
   estimatedCost?: number;
@@ -221,12 +226,13 @@ export const api = {
     data: unknown,
     headers: Record<string, string>,
     onEvent: (event: ParsedSseEvent) => void,
-    options: BinaryRequestOptions = {},
+    options: StreamRequestOptions = {},
   ): Promise<{ estimatedCost?: number }> => {
     const res = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
       headers: getHeaders({ Accept: 'text/event-stream', ...headers }),
       body: JSON.stringify(data),
+      signal: options.signal,
     });
     notifyLanAccessRequired(res);
     notifyQueueCleanupFailed(res, headers);
@@ -254,12 +260,17 @@ export const api = {
       }
       onEvent(event);
     });
-    while (true) {
-      const { done, value } = await reader.read();
-      parser.push(decoder.decode(value, { stream: !done }));
-      if (done) break;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        parser.push(decoder.decode(value, { stream: !done }));
+        if (done) break;
+      }
+      parser.finish();
+    } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
     }
-    parser.finish();
     return { ...(estimatedCost !== undefined ? { estimatedCost } : {}) };
   },
 

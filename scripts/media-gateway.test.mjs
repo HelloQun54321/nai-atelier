@@ -1,4 +1,44 @@
 import { createResponseMemoryCache, danbooruResponseTtl } from './media-memory-cache.mjs';
+test('公开封面磁盘命中不消耗联网预算，跨内存会话复用仍逐次鉴权', async () => {
+  const target = 'https://danbooru.donmai.us/posts.json?tags=synthetic+order:score+-status:banned';
+  const url = new URL(`http://localhost/__internal/danbooru-fetch?url=${encodeURIComponent(target)}`);
+  const req = { method: 'GET', socket: { remoteAddress: '127.0.0.1' }, headers: { 'x-nai-internal-secret': 'synthetic-secret' } };
+  const values = new Map(); let network = 0, budget = 0, status;
+  const res = { writeHead(code) { status = code; }, end() {} };
+  const disk = { get: async key => values.get(key), set: async (key, value) => { values.set(key, value); } };
+  const limiter = { run: async task => { budget++; return task(); }, observe() {} };
+  const remote = async () => { network++; return new Response('[{"id":1}]', { headers: { 'content-type': 'application/json' } }); };
+  await handleDanbooruRemoteRequest(req, res, url, 'synthetic-secret', remote, createResponseMemoryCache(), limiter, disk);
+  await handleDanbooruRemoteRequest(req, res, url, 'synthetic-secret', remote, createResponseMemoryCache(), limiter, disk);
+  assert.equal(network, 1); assert.equal(budget, 1); assert.equal(status, 200);
+  await handleDanbooruRemoteRequest({ ...req, headers: {} }, res, url, 'synthetic-secret', remote, createResponseMemoryCache(), limiter, disk);
+  assert.equal(status, 404); assert.equal(network, 1);
+});
+test('封面批次消费者断开后，网关关闭对应 Worker 流连接', async () => {
+  let release;
+  const disconnected = new Promise(resolve => { release = resolve; });
+  const worker = createServer((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+    res.write(': pending\n\n');
+    res.on('close', release);
+  });
+  await new Promise(resolve => worker.listen(0, '127.0.0.1', resolve));
+  const gateway = createServer((req, res) => proxyRequest(req, res, worker.address().port));
+  await new Promise(resolve => gateway.listen(0, '127.0.0.1', resolve));
+  try {
+    const response = await fetch(`http://127.0.0.1:${gateway.address().port}/api/danbooru/covers`, { method: 'POST', body: '{}' });
+    const reader = response.body.getReader();
+    assert.match(new TextDecoder().decode((await reader.read()).value), /pending/);
+    await reader.cancel();
+    let timeout;
+    try {
+      await Promise.race([disconnected, new Promise((_resolve, reject) => { timeout = setTimeout(() => reject(Error('Worker 流未关闭')), 2000); })]);
+    } finally { clearTimeout(timeout); }
+  } finally {
+    gateway.closeAllConnections(); worker.closeAllConnections();
+    await Promise.all([new Promise(resolve => gateway.close(resolve)), new Promise(resolve => worker.close(resolve))]);
+  }
+});
 test('预热真实来源绑定、尺寸档位、优先级与共享取消租约', async () => {
   const received = [], originals = [];
   const cache = { has: () => false, isPinned: () => false, get: async (source, variant, load, options) => {
@@ -75,6 +115,7 @@ test('Danbooru 网关复用已授权响应，缓存命中仍必须鉴权，非 J
   await handleDanbooruRemoteRequest(req, res, url, 'synthetic-secret', remote, cache); assert.equal(status, 200); assert.equal(calls, 2);
 });
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import test from 'node:test';
 import { createHmac } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
@@ -95,6 +136,7 @@ import {
   classifyAitagRemoteTarget,
   classifyDanbooruRemoteTarget,
   handleDanbooruRemoteRequest,
+  proxyRequest,
   estimateNovelAiGenerationCost,
   fetchAitagRemoteResponse,
   fetchNovelAiSubscription,

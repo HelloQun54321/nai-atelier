@@ -17,7 +17,7 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileDetailView } from './MobileUI';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
-import { ShortestColumnMasonry } from './ShortestColumnMasonry';
+import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { Check, ChevronDown, Dice5, LoaderCircle, Plus, Tag, UserRound } from 'lucide-react';
 import { ToolbarButton, ToolbarSearch, WorkspaceToolbar, EmptyState } from './DesignSystem';
 import { useModalA11y } from './useModalA11y';
@@ -185,7 +185,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   });
   const [gachaCards, setGachaCards] = useState<CharacterCard[] | null>(null);
   const [isGachaLoading, setIsGachaLoading] = useState(false);
-  const gridColumns = 6;
+  const gridColumns = useMasonryColumnCount(imageDisplay, 6);
   const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
   const [lightbox, setLightbox] = useState<CharacterCard | null>(null);
   const [showCreate, setShowCreate] = useState(false);

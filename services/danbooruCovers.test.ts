@@ -4,6 +4,9 @@ import type { DanbooruPost } from './danbooruService';
 
 const apiGet = vi.hoisted(() => vi.fn());
 vi.mock('./api', () => ({ api: { get: apiGet } }));
+// 此文件覆盖选图／候选／缓存；真实批次调度另由 danbooruCoverTransport.test 覆盖。
+vi.mock('./danbooruCoverTransport', () => ({ requestCoverQuery: (query: { query: string; page: number; limit: number }, signal: AbortSignal) =>
+  apiGet(`/danbooru/posts?${new URLSearchParams({ tags: query.query, page: String(query.page), limit: String(query.limit) })}`, { signal }) }));
 const post = (id: number, tag: string): DanbooruPost => ({
   id, rating: 'g', score: 100 - id, favCount: 1, width: 800, height: 1200, fileExt: 'png',
   previewUrl: `https://cdn.donmai.us/preview/${id}.jpg`, sampleUrl: `https://cdn.donmai.us/sample/${id}.webp`, sourceUrl: '', postUrl: '',
@@ -27,23 +30,6 @@ it('普通排序短缓存复用，最新更快到期，随机不复用且独立�
   expect(apiGet).toHaveBeenCalledTimes(5);
 });
 
-it('并发槽满时取消排队封面，不阻塞后续有效请求', async () => {
-  const { danbooruService } = await import('./danbooruService');
-  let release!: () => void; const blocked = new Promise<void>(resolve => { release = resolve; });
-  apiGet.mockImplementation(async path => {
-    await blocked;
-    const tag = new URL(path, 'http://localhost').searchParams.get('tags')!.split(' ')[0];
-    return result([post(1, tag)]);
-  });
-  const controllers = Array.from({ length: 7 }, () => new AbortController());
-  const requests = controllers.map((controller, i) => danbooruService.getCoverSet(`queue_${i}`, 'artist', { signal: controller.signal }).catch(error => error));
-  await vi.advanceTimersByTimeAsync(400); expect(apiGet).toHaveBeenCalledTimes(5);
-  controllers[5].abort(); release(); await vi.runAllTimersAsync();
-  const values = await Promise.all(requests);
-  expect(values[5].name).toBe('AbortError'); expect(values[6].representative.id).toBe(1);
-  expect(apiGet).toHaveBeenCalledTimes(6);
-  expect(apiGet.mock.calls.some(([path]) => path.includes('queue_5'))).toBe(false);
-});
 
 describe.each(['artist', 'character'] as const)('%s 可用封面查找', kind => {
   it('首批无权限图片后继续读取，找到精确 Tag 的可用封面', async () => {
@@ -170,28 +156,4 @@ it('只有照片可用时仍可显示，不增加无封面情况，画师候选�
   expect((await settle(danbooruService.getCoverSet('synthetic', 'character'))).candidates.map(item => item.id)).toEqual([1]);
   apiGet.mockResolvedValue(result([photo, post(2, 'synthetic')]));
   expect((await settle(danbooruService.getCoverSet('synthetic', 'artist'))).candidates.map(item => item.id)).toEqual([1, 2]);
-});
-
-it('并发封面请求逐一错开启动，不让同时醒来的等待者形成突发', async () => {
-  const starts: number[] = [];
-  apiGet.mockImplementation(async () => { starts.push(Date.now()); return result(); });
-  const { danbooruService } = await import('./danbooruService');
-  await settle(Promise.all(Array.from({ length: 9 }, (_, index) => danbooruService.getCoverSet(`synthetic_${index}`, 'artist'))));
-  expect(starts).toHaveLength(9);
-  expect(starts.slice(1).every((time, index) => time - starts[index] >= 60)).toBe(true);
-});
-
-it('429 后尚未启动的并发请求共同退避，失败不写入空封面缓存', async () => {
-  const starts: number[] = [];
-  apiGet.mockImplementation(async () => {
-    starts.push(Date.now());
-    if (starts.length === 1) throw new Error('Danbooru 429');
-    return result([post(1, 'synthetic_b')]);
-  });
-  const { danbooruService } = await import('./danbooruService');
-  const settled = Promise.allSettled([danbooruService.getCoverSet('synthetic_a', 'artist'), danbooruService.getCoverSet('synthetic_b', 'artist')]);
-  expect((await settle(settled))[0].status).toBe('rejected');
-  expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(2000);
-  apiGet.mockResolvedValue(result([post(2, 'synthetic_a')]));
-  expect((await settle(danbooruService.getCoverSet('synthetic_a', 'artist'))).candidates[0].id).toBe(2);
 });

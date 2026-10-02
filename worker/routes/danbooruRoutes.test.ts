@@ -17,9 +17,99 @@ const mockFetch = (payload: unknown) => {
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 };
-afterEach(() => vi.unstubAllGlobals());
+const batchHandler = async () => {
+  vi.resetModules();
+  const { handleDanbooruRoute: handle } = await import('./danbooruRoutes');
+  return async (requests: unknown[], background = false, env: Partial<Env> = {}) => {
+    const url = new URL('http://localhost/api/danbooru/covers');
+    const request = new Request(url, { method: 'POST', body: JSON.stringify({ requests, background }) });
+    return (await handle({ url, path: url.pathname, method: 'POST', request, env } as RouteContext))!;
+  };
+};
+const coverQuery = (query: string) => ({ query, page: 1, limit: 60 });
+
+describe('封面合并流', () => {
+  it('本地缓存可立即并行返回，实际联网预算交给网关；保留后台标记与取消信号', async () => {
+    vi.useFakeTimers(); const invokeBatch = await batchHandler();
+    const fetchMock = mockFetch([post()]);
+    const finished = (await invokeBatch(['a', 'b', 'c', 'd'].map(coverQuery), true, {
+      DANBOORU_LOCAL_PROXY_URL: 'http://127.0.0.1:3000/__internal/danbooru-fetch', LAN_ACCESS_SECRET: 'synthetic-secret',
+    })).text();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls.every(([, options]) => options.headers['X-Nai-Danbooru-Prefetch'] === '1' && options.signal instanceof AbortSignal)).toBe(true);
+    expect(await finished).toContain('"index":3');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('复用普通查询校验，超量或非法参数整批拒绝，不启动上游请求', async () => {
+    const fetchMock = mockFetch([]); const invokeBatch = await batchHandler();
+    for (const requests of [[], Array.from({ length: 5 }, () => coverQuery('solo')), [coverQuery('a b c')], [{ ...coverQuery('solo'), page: 0 }]]) {
+      expect((await invokeBatch(requests)).status).toBe(400);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('慢查询不阻挡其他结果，共用启动间隔且保留评级和公开地址规则', async () => {
+    vi.useFakeTimers(); const invokeBatch = await batchHandler();
+    let release!: () => void; const blocked = new Promise<void>(resolve => { release = resolve; });
+    const starts: number[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      starts.push(Date.now());
+      if (new URL(url).searchParams.get('tags') === 'slow') await blocked;
+      return new Response(JSON.stringify([post(1, { rating: 'e' })]));
+    }));
+    const response = await invokeBatch([coverQuery('slow'), coverQuery('fast')]);
+    expect(response.headers.get('Content-Type')).toContain('text/event-stream');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    const reader = response.body!.getReader(); await reader.read();
+    await vi.advanceTimersByTimeAsync(200);
+    const result = new TextDecoder().decode((await reader.read()).value);
+    expect(result).toContain('"index":1'); expect(result).toContain('"rating":"e"');
+    expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(150);
+    release(); await vi.runAllTimersAsync();
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain('"index":0');
+    expect((await reader.read()).done).toBe(true);
+  });
+  it('429 立即逐项反馈，共同延后尚未发出的查询，后台每秒最多启动一项', async () => {
+    vi.useFakeTimers(); const invokeBatch = await batchHandler();
+    const starts: number[] = [];
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      starts.push(Date.now());
+      return starts.length === 1 ? new Response('{"message":"rate limited"}', { status: 429 }) : new Response('[]');
+    }));
+    const response = await invokeBatch([coverQuery('first'), coverQuery('second')], true);
+    const finished = response.text();
+    await vi.advanceTimersByTimeAsync(1999); expect(starts).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1); expect(starts).toHaveLength(2);
+    expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(2000);
+    expect(await finished).toContain('"status":429');
+    const background = (await invokeBatch([coverQuery('a'), coverQuery('b')], true)).text();
+    await vi.runAllTimersAsync(); await background;
+    expect(starts[3] - starts[2]).toBeGreaterThanOrEqual(1000);
+  });
+  it('取消响应流会中止正在联网的查询，也撤销尚未开始的项', async () => {
+    vi.useFakeTimers(); const invokeBatch = await batchHandler();
+    let signal!: AbortSignal;
+    const fetchMock = vi.fn((_url: string, options: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      signal = options.signal!;
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const response = await invokeBatch([coverQuery('a'), coverQuery('b')]);
+    await vi.advanceTimersByTimeAsync(1);
+    await response.body!.cancel(); await vi.runAllTimersAsync();
+    expect(signal.aborted).toBe(true); expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('Danbooru 请求、筛选与分页', () => {
+  it('精简字段保留所有展示／选图字段和公开变体，不传重复总 Tag 字符串', async () => {
+    const fetchMock = mockFetch([post()]);
+    await invoke('synthetic');
+    const fields = new URL(fetchMock.mock.calls[0][0]).searchParams.get('only')!.split(',');
+    expect(fields).toEqual(expect.arrayContaining(['id', 'rating', 'score', 'fav_count', 'image_width', 'image_height', 'file_ext', 'source', 'preview_file_url', 'large_file_url', 'file_url', 'media_asset[variants]', 'tag_string_general', 'tag_string_artist', 'tag_string_copyright', 'tag_string_character', 'tag_string_meta']));
+    expect(fields).not.toContain('tag_string');
+  });
   it('不加 SFW 条件，四种评级的公开封面都返回', async () => {
     const fetchMock = mockFetch(['g', 's', 'q', 'e'].map((rating, index) => post(index + 1, { rating })));
     const query = 'synthetic order:score -status:banned';
@@ -46,6 +136,8 @@ describe('Danbooru 请求、筛选与分页', () => {
     const { body } = await invoke(`explore:popular_${scale}`, 3);
     const target = new URL(fetchMock.mock.calls[0][0]);
     expect(target.pathname).toBe('/explore/posts/popular.json');
+    expect(target.searchParams.get('only')).toContain('media_asset[variants]');
+    target.searchParams.delete('only');
     expect(Object.fromEntries(target.searchParams)).toEqual({ scale, page: '3', limit: '2' });
     expect(body).toMatchObject({ page: 3, limit: 2, hasMore: true });
     expect(body.items).toHaveLength(2);
@@ -58,6 +150,8 @@ describe('Danbooru 请求、筛选与分页', () => {
     expect(proxy.origin).toBe('http://127.0.0.1:3000');
     const target = new URL(proxy.searchParams.get('url')!);
     expect(target.pathname).toBe('/explore/posts/popular.json');
+    expect(target.searchParams.get('only')).toContain('media_asset[variants]');
+    target.searchParams.delete('only');
     expect(Object.fromEntries(target.searchParams)).toEqual({ scale: 'week', page: '2', limit: '40' });
     expect(options.headers['X-Nai-Internal-Secret']).toBe('synthetic-secret');
   });

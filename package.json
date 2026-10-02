@@ -1,13 +1,13 @@
 {
   "name": "nai-atelier",
   "private": true,
-  "version": "1.14.6",
+  "version": "1.14.7",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && npm run build:worker",
     "build:worker": "esbuild worker/index.ts --bundle --format=esm --outfile=dist/_worker.js --platform=browser",
-    "test:gateway": "node --test scripts/media-gateway.test.mjs scripts/image-tagger.test.mjs scripts/cloud-queue.test.mjs scripts/low-consumption.test.mjs scripts/nai-usage.test.mjs scripts/st-chatu8-bridge.test.mjs scripts/pixiv-local.test.mjs scripts/pixiv-web-login.test.mjs scripts/secret-scan.test.mjs scripts/local-backup.test.mjs scripts/desktop-launcher.test.mjs scripts/style-collector.test.mjs scripts/style-collector-window.test.mjs",
+    "test:gateway": "node --test scripts/media-gateway.test.mjs scripts/danbooru-loading.test.mjs scripts/image-tagger.test.mjs scripts/cloud-queue.test.mjs scripts/low-consumption.test.mjs scripts/nai-usage.test.mjs scripts/st-chatu8-bridge.test.mjs scripts/pixiv-local.test.mjs scripts/pixiv-web-login.test.mjs scripts/secret-scan.test.mjs scripts/local-backup.test.mjs scripts/desktop-launcher.test.mjs scripts/style-collector.test.mjs scripts/style-collector-window.test.mjs",
     "test:secrets": "node scripts/secret-scan.mjs",
     "lint": "eslint .",
     "test": "vitest run",

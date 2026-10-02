@@ -24,6 +24,7 @@ export const resolveMasonryColumnCount = (
   preferences: MobileImageDisplayPreferences,
   viewportWidth: number,
   isLandscape: boolean,
+  desktopOverride?: number,
 ): number => {
   const { columns, desktopColumns } = preferences;
   if (viewportWidth < 768) {
@@ -32,13 +33,14 @@ export const resolveMasonryColumnCount = (
     }
     return columns;
   }
+  if (desktopOverride !== undefined) return desktopOverride;
   if (viewportWidth < 1280) return desktopColumns === 'auto' ? 4 : desktopColumns;
   if (viewportWidth < 1600) return desktopColumns === 'auto' ? 5 : desktopColumns;
   return desktopColumns === 'auto' ? 6 : desktopColumns;
 };
 
 /** 响应窗口尺寸变化，返回当前请求的列数（尚未扣除卡片数量）。 */
-export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences): number => {
+export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences, desktopOverride?: number): number => {
   const [viewport, setViewport] = useState(() => ({
     width: typeof window === 'undefined' ? 0 : window.innerWidth,
     height: typeof window === 'undefined' ? 0 : window.innerHeight,
@@ -48,7 +50,7 @@ export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
   }, []);
-  return resolveMasonryColumnCount(preferences, viewport.width, viewport.width > viewport.height);
+  return resolveMasonryColumnCount(preferences, viewport.width, viewport.width > viewport.height, desktopOverride);
 };
 
 /**

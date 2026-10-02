@@ -22,6 +22,7 @@ import { localBackupService, saveBackupConfig, openInExplorer } from './local-ba
 import { getDesktopLauncherStatus, createDesktopLauncher, openDesktopFolder, generateLauncherBatContent } from './desktop-launcher.mjs';
 import { StyleCollector, collectorLocalRequest } from './style-collector.mjs';
 import { createResponseMemoryCache, danbooruResponseTtl } from './media-memory-cache.mjs';
+import { createDanbooruLimiter, createDanbooruDiskCache } from './danbooru-loading.mjs';
 
 const CACHE_VERSION = 'v1';
 const HISTORY_THUMBNAIL_CACHE_VERSION = 'v2';
@@ -2382,7 +2383,7 @@ const handleAitagRemoteRequest = async (req, res, url, lanSecret, remoteFetch) =
   }
 };
 
-export const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remoteFetch, responseCache) => {
+export const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remoteFetch, responseCache, limiter, diskCache) => {
   const suppliedSecret = String(req.headers['x-nai-internal-secret'] || '');
   const expected = Buffer.from(lanSecret);
   const supplied = Buffer.from(suppliedSecret);
@@ -2394,22 +2395,38 @@ export const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remo
   try {
     const target = new URL(url.searchParams.get('url') || '');
     if (!classifyDanbooruRemoteTarget(target.toString())) return sendJson(res, 400, { error: 'Invalid Danbooru target' });
-    const load = async () => {
-      const response = await remoteFetch(target, {
-        redirect: 'manual',
-        signal: AbortSignal.timeout(30_000),
-        headers: {
-          accept: 'application/json',
-          'user-agent': 'NAI-Atelier/0.5 (+local personal use)',
-        },
-      });
-      const contentType = response.headers.get('content-type') || '';
-      const body = await readLimitedResponse(response);
-      if (body.length > 16 * 1024 * 1024) throw new Error('Danbooru response is too large');
-      if (!contentType.toLowerCase().includes('json')) throw new Error('Danbooru returned a non-JSON response');
-      return { status: response.status, contentType, body };
+    const controller = new AbortController();
+    const onClose = () => { if (!res.writableFinished) controller.abort(); };
+    res.once?.('close', onClose);
+    const ttl = danbooruResponseTtl(target);
+    const load = async signal => {
+      const cached = ttl >= 3600_000 ? await diskCache?.get(target.toString()) : null;
+      signal?.throwIfAborted();
+      if (cached) return cached;
+      const fetchRemote = async () => {
+        const response = await remoteFetch(target, {
+          redirect: 'manual',
+          signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
+          headers: {
+            accept: 'application/json',
+            'user-agent': 'NAI-Atelier/0.5 (+local personal use)',
+          },
+        });
+        limiter?.observe(response.status, response.headers.get('retry-after'));
+        const contentType = response.headers.get('content-type') || '';
+        const body = await readLimitedResponse(response);
+        if (body.length > 16 * 1024 * 1024) throw new Error('Danbooru response is too large');
+        if (!contentType.toLowerCase().includes('json')) throw new Error('Danbooru returned a non-JSON response');
+        const result = { status: response.status, contentType, body };
+        if (!signal?.aborted) await diskCache?.set(target.toString(), result, ttl);
+        return result;
+      };
+      return limiter ? limiter.run(fetchRemote, signal, req.headers['x-nai-danbooru-prefetch'] === '1' ? 1 : 0, target.pathname.includes('/popular')) : fetchRemote();
     };
-    const result = responseCache ? await responseCache.get(target.toString(), load, danbooruResponseTtl(target)) : await load();
+    let result;
+    try { result = responseCache ? await responseCache.get(target.toString(), load, ttl, controller.signal) : await load(controller.signal); }
+    finally { res.removeListener?.('close', onClose); }
+    if (res.destroyed) return;
     res.writeHead(result.status, {
       'Content-Type': result.contentType,
       'Content-Length': result.body.length,
@@ -2418,7 +2435,9 @@ export const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remo
     });
     return res.end(result.body);
   } catch (error) {
-    return sendJson(res, error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 504 : 502, {
+    if (res.destroyed) return;
+    if (error.retryAfter) res.setHeader?.('Retry-After', String(error.retryAfter));
+    return sendJson(res, error.status === 429 ? 429 : error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 504 : 502, {
       error: `电脑无法连接 Danbooru：${error?.cause?.message || error?.message || '未知错误'}`,
     });
   }
@@ -2697,7 +2716,7 @@ class ThumbnailCache {
   }
 }
 
-const proxyRequest = (req, res, workerPort, extraHeaders = {}) => {
+export const proxyRequest = (req, res, workerPort, extraHeaders = {}) => {
   const headers = { ...req.headers };
   headers.host = getForwardHost(req);
   // The Worker uses this address for the LAN PIN rate limit.  Never retain a
@@ -2711,10 +2730,15 @@ const proxyRequest = (req, res, workerPort, extraHeaders = {}) => {
     upstreamRes.pipe(res);
   });
   upstream.on('error', error => {
+    if (res.destroyed) return;
     if (!res.headersSent) sendJson(res, 502, { error: `Local service unavailable: ${error.message}` });
     else res.destroy(error);
   });
   req.pipe(upstream);
+  // 封面批次已无人查看时关闭代理流，让 Worker 撤销剩余检索。
+  if (req.url?.split('?')[0] === '/api/danbooru/covers') res.once('close', () => {
+    if (!res.writableFinished) upstream.destroy();
+  });
 };
 
 export const handleCreativePresetsRequest = async (req, res, url, promptAgent) => {
@@ -2848,6 +2872,8 @@ const serveDistFile = async (req, res, url) => {
       try { const data = JSON.parse(value.body.toString('utf8')); return Array.isArray(data) && data.length > 0; } catch { return false; }
     },
   });
+  const danbooruLimiter = createDanbooruLimiter();
+  const danbooruDiskCache = createDanbooruDiskCache(join(process.cwd(), 'local-cache', 'danbooru-queries'));
   let collectorReset = Promise.resolve();
   const styleCollector = new StyleCollector({
     worker: async (action, body) => {
@@ -3474,7 +3500,7 @@ const serveDistFile = async (req, res, url) => {
       }
     }
     if (url.pathname === '/__internal/aitag-fetch') return handleAitagRemoteRequest(req, res, url, lanSecret, remoteFetch);
-    if (url.pathname === '/__internal/danbooru-fetch') return handleDanbooruRemoteRequest(req, res, url, lanSecret, remoteFetch, danbooruResponseCache);
+    if (url.pathname === '/__internal/danbooru-fetch') return handleDanbooruRemoteRequest(req, res, url, lanSecret, remoteFetch, danbooruResponseCache, danbooruLimiter, danbooruDiskCache);
     if (url.pathname === '/api/generate') {
       const { preferences } = await getCloudQueueScope(req);
       return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, preferences, remoteFetch);
