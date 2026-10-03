@@ -71,33 +71,11 @@ const TASK_EVENT_FLUSH_DELAY_MS = 500;
 const THINKING_LEVELS = new Set(AGENT_THINKING_LEVELS);
 const THINKING_SOURCES = new Set(['metadata', 'pi_catalog', 'official_docs', 'manual', 'fallback']);
 const BLOCKED_CUSTOM_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key']);
-// 破限提示词与预设实验室：9 个注入目标（顺序即展示顺序），与前端
-// services/promptAgent.ts 的 PromptAgentLabTarget 严格一致，无旧键别名。
-const CREATIVE_PRESET_TARGETS = ['system_head', 'system_middle', 'system_tail', 'context_head', 'context_depth', 'user_preamble', 'user_suffix', 'conversation_tail', 'assistant_prefill'];
-const CREATIVE_PRESET_TARGET_SET = new Set(CREATIVE_PRESET_TARGETS);
-const CREATIVE_PRESET_ROLES = new Set(['user', 'assistant']);
-const MAX_CUSTOM_CREATIVE_PRESETS = 20;
-const MAX_CREATIVE_PRESET_NAME_CHARS = 80;
-const MAX_CREATIVE_PRESET_DESCRIPTION_CHARS = 240;
-const MAX_CREATIVE_SLOT_CONTENT_CHARS = 16_000;
-const MAX_CREATIVE_PRESET_CONTENT_CHARS = 48_000;
-const MAX_CREATIVE_PRESET_SLOTS = 40;
-const MAX_CREATIVE_PRESET_REVISIONS = 20;
-const CREATIVE_BUILTIN_PRESET_ID = 'builtin-default';
-export const CREATIVE_PRESET_RESERVED_IDS = new Set([
-  CREATIVE_BUILTIN_PRESET_ID,
-  'active',
-  'import',
-  'export',
-  'inspect',
-]);
-// 预设修订/指纹的短 sha256 前缀长度（前端 formatPresetSessionLabel 展示 7 位）。
-const CREATIVE_HASH_PREFIX = 12;
-const shorthandHash = (value, length = CREATIVE_HASH_PREFIX) => createHash('sha256').update(String(value ?? '')).digest('hex').slice(0, length);
+const shorthandHash = (value, length = 12) => createHash('sha256').update(String(value ?? '')).digest('hex').slice(0, length);
 // Bump this whenever the built-in Agent instruction set changes. The UI exposes
 // only this version and a hash, never the instruction text itself, so a running
 // local backend can be verified without relying on a behavioral probe.
-const PROMPT_AGENT_POLICY_VERSION = '2026-10-03.2';
+const PROMPT_AGENT_POLICY_VERSION = '2026-10-04.1';
 let proxyRunCount = 0;
 let previousDispatcher = null;
 let sharedProxyDispatcher = null;
@@ -714,12 +692,6 @@ const baseSystemPrompt = `你是 NAI Atelier 的项目业务 Agent。你的职�
 10. Precise/角色参考每张每次生图增加 5 Anlas，当前与 Vibe Transfer 互斥；设置其中一项时必须关闭另一项。
 11. 必须严格区分三类正面提示词：basePrompt 只放画师名、媒介、渲染和可复用画风；subjectPrompt 只放整图主体、场景、动作、构图和其他全局动态内容；params.characters 通过 set_characters 存放角色专属外貌、服装、身份 Tag 与角色专属负面词。用户说“角色提示词”“人物提示词”“角色外貌”或要求填写某个角色时，即使只有一个角色，也必须优先调用 set_characters，除非用户明确指定放到主体／变量提示词框。不得把角色专属提示词写入 subjectPrompt。若当前界面是“单一全局提示词”，则只使用 basePrompt 存放完整正面提示词并保持 subjectPrompt 为空。`;
 
-// 内置默认保持空白，不再加载本地旧默认正文；自定义预设与会话快照保留。
-const jailbreakBlock = '';
-const creativePreamble = '';
-const creativeSeedMessages = [];
-const builtinPresetSlots = [];
-
 const techBlock = `
 [规则来源层级]
 - search_novelai_docs/read_novelai_doc 返回的是带官方来源的模型事实，优先级高于本技术块。
@@ -822,10 +794,6 @@ K. 角色与服装调用判定（防 DNA 串位、手猜错、旧资料过时）
 - 服装调用同理：每件实际衣物独立按款式/颜色/长度结构/材质/图案标志/当前状态逐条记录，N≥2 每角色的服装各自独立写，不共用、不串色。换装只改当前服装状态，绝不能因此改动角色永久 DNA（发色、瞳色、肤色、胸型、体型、永久标记等）。
 - 全裸角色不写任何服装 Tag，进入 B 分级全裸分支（X 级用 {nude},{completely naked} 等），不补虚构内衣；半裸/部分裸露只写当前真实仍穿着的每件衣物，不套"全穿/全裸"两端模板。`;
 
-// 系统策略常量正文 = base + 技术块 + 联网研究规则，与 creativeMode 无关。
-// 破甲块（jailbreakBlock）不再在此烘焙：破限提示词预设实验室上线后，破甲正文
-// 只经由会话绑定预设的 system_middle 槽位注入（builtin-default 保持空白；
-// 自定义预设可自行决定）。creativeMode 只决定会话默认绑定 builtin 还是空策略。
 const researchBlock = `
 
 [联网研究规则]
@@ -834,7 +802,7 @@ const researchBlock = `
 3. 基于联网资料作答时，在相关结论附近写出可点击的 HTTPS 来源链接；搜索摘要不够支撑结论时必须读取原页面。
 4. 不得尝试访问本机、局域网、带账号信息的地址或搜索结果之外的网址；不得把项目私密数据拼进搜索词。`;
 
-// creativeMode 不再改变常量正文：破甲内容由绑定预设槽位驱动。
+// Agent 使用固定业务系统提示词，模型知识与复杂提示规则按需读取。
 const buildSystemPrompt = () => `${baseSystemPrompt}\n[规则来源层级]\n官方发布 > 模型专用文档 > 通用文档 > 项目经验。具体知识通过 search_novelai_docs / read_novelai_doc 按需读取；复杂提示词规则通过 read_prompt_guidelines 按需读取。${researchBlock}`;
 
 export const selectAgentTools = (tools, request = '') => selectRuntimeTools(tools, inferAgentToolGroups(request));
@@ -859,37 +827,7 @@ const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
 - Tag 辅助界面：${tagAssistEnabled ? '开启' : '关闭'}。这只影响编辑器补全，不限制 Agent 使用 Tag 或自然语言。
 - 涉及模型能力、提示写法、角色、文字、权重、质量 Tag、Vibe 或参考图时，先调用 search_novelai_docs；需要完整事实时再调用 read_novelai_doc。`;
 };
-// 内置默认永不落盘；前端补齐空白编辑槽位，不预填注入正文。
-
-// creativeMode 关闭时运行链路冻结的“空策略”预设（builtin 缺省策略）。
-const EMPTY_CREATIVE_PRESET = Object.freeze({
-  id: 'builtin-default', name: '内置默认（未启用）', description: 'creativeMode 关闭时的空策略预设。', isBuiltin: true,
-  createdAt: 0, updatedAt: 0, slots: [],
-});
-
-
-const BUILTIN_CREATIVE_PRESET = Object.freeze({
-  id: CREATIVE_BUILTIN_PRESET_ID,
-  name: '内置默认',
-// [redacted]
-  isBuiltin: true,
-  createdAt: 0,
-  updatedAt: 0,
-  slots: Object.freeze(builtinPresetSlots),
-});
-
-// 兼容遗留展示（publicConfig.policyFingerprint / audit policy），基于常量正文 +
-// 前导话术的启发式指纹；会话级绑定改由 presetRevision 的 effectivePolicyFingerprint
-// 承担（revision 驱动，见 listSessions/getAuditLog）。
-const runtimePolicyInfo = creativeMode => {
-  const enabled = creativeMode !== false;
-  const systemPrompt = buildSystemPrompt();
-  return {
-    creativeMode: enabled,
-    fingerprint: shorthandHash(`${enabled ? 'creative' : 'standard'}\n${systemPrompt}\n${enabled ? creativePreamble : ''}`),
-    seedFingerprint: enabled ? shorthandHash(JSON.stringify(creativeSeedMessages)) : '',
-  };
-};
+const runtimePolicyInfo = () => ({ fingerprint: shorthandHash(buildSystemPrompt()) });
 
 const extractAssistantText = messages => {
   const assistant = [...messages].reverse().find(message => message?.role === 'assistant');
@@ -922,172 +860,8 @@ export const parseTranslationResponse = (raw, allowedTags) => {
   return resolved;
 };
 
-// ── 破限提示词与预设实验室：严格 normalize（400 中文错误，禁止 text() 截断）──
-
-const creativePresetContentCharCount = slots => (Array.isArray(slots) ? slots : []).reduce((sum, slot) => sum + String(slot?.content ?? '').length, 0);
-
-export const resolveCapabilities = (modelApi, reasoning, thinkingLevel, model) => {
-  // assistant_prefill / conversation_tail（同帧续写）仅当供应商 API 显式支持：
-  // Anthropic Messages 可注入 assistant 首帧；其余 openai 系/Google/mistral 等
-  // 无 assistant 起始帧能力，一律 false（保守默认）。自定义 provider 可显式声明。
-  const api = String(modelApi || model?.api || '').toLowerCase();
-  if (api === 'anthropic-messages') return { assistantPrefill: true, userConversationTail: false };
-  if (api === 'custom-anthropic') return { assistantPrefill: model?.assistantPrefill === true, userConversationTail: model?.userConversationTail === true };
-  return { assistantPrefill: false, userConversationTail: false };
-};
-
-export const getBuiltinDefaultPreset = (creativeMode = true) => {
-  if (creativeMode === false) return EMPTY_CREATIVE_PRESET;
-  // builtin-default 本体永不落盘、永不原地修改：每次取回全新副本，调用方
-  // 可安全改写副本而不影响单例（revision 快照依赖此语义）。
-  return {
-    ...BUILTIN_CREATIVE_PRESET,
-    slots: BUILTIN_CREATIVE_PRESET.slots.map(slot => ({ ...slot })),
-  };
-};
-
-// 计算预设可注入到指定能力模型的实际生效槽位（禁用槽剔除；注入段可能为空的
-// 槽位同样保留于装配，因此段文本可能为空）。返回值含每个 slot 的注入段落文本。
-export const computeEffectivePreset = (preset, capabilities) => {
-  if (!preset || !Array.isArray(preset.slots)) return { presetId: preset?.id || '', name: preset?.name || '', slots: [], textByTarget: {} };
-  const textByTarget = {};
-  const slots = preset.slots
-    .filter(slot => slot && slot.enabled !== false && CREATIVE_PRESET_TARGET_SET.has(slot.target))
-    .map(slot => {
-      const content = String(slot.content ?? '');
-      const text = slot.target === 'system_head' || slot.target === 'system_middle' || slot.target === 'system_tail'
-        ? `${content}\n\n`
-        : slot.target === 'user_preamble' || slot.target === 'user_suffix'
-          ? `${content}\n\n`
-          : content;
-      textByTarget[slot.target] = (textByTarget[slot.target] || '') + text;
-      return { ...slot, content };
-    });
-  return { presetId: preset.id, name: preset.name || '', slots, textByTarget };
-};
-
-// 会话级 policy fingerprint：capability 过滤后实际注入内容 + 系统常量哈希。
-// 同一预设对支持/不支持 prefill 的模型必然不同（assistant_prefill 段的差异）。
-export const computePolicyFingerprint = (preset, capabilities) => {
-  const effective = computeEffectivePreset(preset, capabilities);
-  const core = JSON.stringify({
-    presetId: preset?.id || '',
-    presetName: preset?.name || '',
-    slots: effective.slots.map(slot => ({ target: slot.target, role: slot.role || null, depth: slot.depth ?? null, enabled: slot.enabled !== false, content: String(slot.content ?? '') })),
-    capabilities,
-  });
-  return shorthandHash(core);
-};
-
-export const normalizeCreativeSlotItem = (raw, { isHeadSlot } = {}) => {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw Object.assign(new Error('槽位格式无效'), { status: 400 });
-  const id = typeof raw.id === 'string' && raw.id ? String(raw.id).slice(0, 80) : '';
-  const name = String(raw.name ?? '').slice(0, 80);
-  const target = CREATIVE_PRESET_TARGET_SET.has(raw.target) ? raw.target : '';
-  if (!target) throw Object.assign(new Error('槽位缺少有效的注入目标'), { status: 400 });
-  const enabled = raw.enabled !== false;
-  const content = String(raw.content ?? '');
-  const roleValue = raw.role ?? '';
-  const role = CREATIVE_PRESET_ROLES.has(roleValue) ? roleValue : undefined;
-  // 槽位允许的 role 必须与 target 一致；未知 role 一律视为无 role 并据此报错。
-  if (target === 'system_head' || target === 'system_middle' || target === 'system_tail' || target === 'user_preamble' || target === 'user_suffix') {
-    if (role !== undefined) throw Object.assign(new Error('system 与用户消息槽位不允许携带 role'), { status: 400 });
-  } else if (target === 'conversation_tail') {
-    if (role !== undefined && role !== 'user') throw Object.assign(new Error('会话尾部拦截槽位 role 固定为 user'), { status: 400 });
-  } else if (target === 'assistant_prefill') {
-    if (role !== undefined && role !== 'assistant') throw Object.assign(new Error('Assistant 预填槽位 role 固定为 assistant'), { status: 400 });
-  }
-  if (isHeadSlot) {
-    if (role === undefined) throw Object.assign(new Error('context_head 槽位必须显式标注 user 或 assistant role'), { status: 400 });
-    const pairId = String(raw.pairId ?? '').slice(0, 80);
-    return { id, name, target, enabled, content, role, pairId };
-  }
-  if (target === 'context_depth') {
-    const depthNumber = Number(raw.depth);
-    if (!Number.isInteger(depthNumber) || depthNumber < 1 || depthNumber > 100) throw Object.assign(new Error('上下文窗口深度必须是 ≥1 的整数'), { status: 400 });
-    return { id, name, target, enabled, content, role, depth: depthNumber };
-  }
-  if (target === 'conversation_tail' || target === 'assistant_prefill') return { id, name, target, enabled, content, role: target === 'conversation_tail' ? 'user' : 'assistant' };
-  return { id, name, target, enabled, content };
-};
-
-const creativeSlotId = slot => {
-  const stable = slot?.target && slot?.content !== undefined
-    ? shorthandHash(JSON.stringify({ target: slot.target, role: slot.role || '', depth: slot.depth ?? '', pairId: slot.pairId || '', content: String(slot.content || '').slice(0, 200) }), 10)
-    : '';
-  return stable || randomBytes(8).toString('hex');
-};
-
-const PRESET_SLOT_ITEM_KEYS = new Set(['id', 'name', 'target', 'enabled', 'content', 'role', 'depth', 'pairId']);
-const creativePresetStableJson = slots => JSON.stringify((Array.isArray(slots) ? slots : []).map(slot => ({
-  target: slot.target,
-  role: slot.role || '',
-  depth: slot.depth ?? '',
-  pairId: slot.pairId || '',
-  enabled: slot.enabled !== false,
-  content: String(slot.content ?? ''),
-})));
-
-export const normalizeCreativeSlots = (raw, { needUniqueIds = false } = {}) => {
-  if (raw === undefined || raw === null) return [];
-  if (!Array.isArray(raw)) throw Object.assign(new Error('slots 必须是数组'), { status: 400 });
-  if (raw.length > MAX_CREATIVE_PRESET_SLOTS) throw Object.assign(new Error(`单个预设最多 ${MAX_CREATIVE_PRESET_SLOTS} 个槽位`), { status: 400 });
-  const items = raw.map(item => normalizeCreativeSlotItem(item, { isHeadSlot: item?.target === 'context_head' }));
-  // context_head 成对约束：user|assistant 成对交替相邻（孤立单条/总数奇数或同
-  // role 相邻 → 400）。
-  const headItems = items.filter(item => item.target === 'context_head');
-  if (headItems.length) {
-    if (headItems.length % 2 !== 0) throw Object.assign(new Error('context_head 帧必须成对出现（user+assistant 相邻成对，不允许孤立单条）'), { status: 400 });
-    const roleFor = item => item.role;
-    let previousRole;
-    for (const item of headItems) {
-      const role = roleFor(item);
-      if (previousRole === role) throw Object.assign(new Error('context_head 中同一 role 的帧必须成对相邻出现（user 后接 assistant，反之亦然）'), { status: 400 });
-      previousRole = role;
-    }
-    if (headItems[0].role !== 'user') throw Object.assign(new Error('context_head 第一帧必须是 user'), { status: 400 });
-  }
-  const slots = items.map(item => {
-    const fixedRole = item.target === 'conversation_tail' ? 'user' : item.target === 'assistant_prefill' ? 'assistant' : item.role;
-    const slot = { ...item, ...(fixedRole ? { role: fixedRole } : {}) };
-    if (!needUniqueIds) return slot;
-    const id = slot.id || creativeSlotId(slot);
-    return { ...slot, id };
-  });
-  for (const slot of slots) {
-    if (String(slot.content || '').length > MAX_CREATIVE_SLOT_CONTENT_CHARS) throw Object.assign(new Error(`单个槽位正文不能超过 ${MAX_CREATIVE_SLOT_CONTENT_CHARS} 字`), { status: 400 });
-  }
-  const charTotal = creativePresetContentCharCount(slots);
-  if (charTotal > MAX_CREATIVE_PRESET_CONTENT_CHARS) throw Object.assign(new Error(`单个预设全部槽位正文合计不能超过 ${MAX_CREATIVE_PRESET_CONTENT_CHARS} 字`), { status: 400 });
-  return slots;
-};
-
-const creativeDescriptionText = value => {
-  const stringValue = value === undefined || value === null ? '' : String(value);
-  if (stringValue.length > MAX_CREATIVE_PRESET_DESCRIPTION_CHARS) throw Object.assign(new Error(`预设描述不能超过 ${MAX_CREATIVE_PRESET_DESCRIPTION_CHARS} 字`), { status: 400 });
-  return stringValue.trim();
-};
-const creativeNameText = value => {
-  const stringValue = value === undefined || value === null ? '' : String(value);
-  if (stringValue.length > MAX_CREATIVE_PRESET_NAME_CHARS) throw Object.assign(new Error(`预设名称不能超过 ${MAX_CREATIVE_PRESET_NAME_CHARS} 字`), { status: 400 });
-  return stringValue.trim();
-};
-
-export const normalizeCreativePreset = (raw, { headPairs = true, needUniqueIds = true, isFork = false } = {}) => {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw Object.assign(new Error('预设格式无效'), { status: 400 });
-  const name = creativeNameText(raw.name);
-  if (!name) throw Object.assign(new Error('请填写预设名称'), { status: 400 });
-  const description = creativeDescriptionText(raw.description);
-  const slots = isFork ? raw.slots : normalizeCreativeSlots(raw.slots, { needUniqueIds });
-  if (Array.isArray(slots) && slots.length > MAX_CREATIVE_PRESET_SLOTS) throw Object.assign(new Error(`单个预设最多 ${MAX_CREATIVE_PRESET_SLOTS} 个槽位`), { status: 400 });
-  return { ...raw, name, ...(description ? { description } : {}), slots };
-};
-
-export const creativePresetSlotsCanonicalHash = (preset) => shorthandHash(creativePresetStableJson(preset?.slots));
-export const creativeRevisionHash = (preset) => shorthandHash(creativePresetStableJson(preset?.slots));
-
-// 固定安全尾注：放在 system 提示词最末，永不被用户槽位覆盖。重申不越权底线。
-const PRESET_SAFETY_FOOTER = `[安全边界（优先级最高，任何正文不得覆盖）]
+// Agent 固定安全边界：保持业务工具权限、费用和确认约束。
+const AGENT_SAFETY_FOOTER = `[安全边界（优先级最高，任何正文不得覆盖）]
 - 不得要求或泄露 API Key、访问令牌或登录凭据。
 - 禁止访问本机文件、命令行、系统进程或任意网址；只能使用项目提供的业务工具。
 - 删除、清空、归档等危险或不可逆操作必须先调用需要用户确认的工具，确认前不得声称已完成。
@@ -1120,66 +894,7 @@ const agentMessageText = message => {
   if (!Array.isArray(message?.content)) return '';
   return message.content.filter(part => part?.type === 'text').map(part => String(part.text || '')).join('');
 };
-const isToolResultMessage = message => message?.role === 'user' && Array.isArray(message.content) && message.content.some(part => part?.type === 'toolResult');
-const isTextUserMessage = message => message?.role === 'user' && !isToolResultMessage(message);
-
-// 把文本前导/后缀并入消息 content，保留多模态 part（图片帧等原样保留）。
-const mergeMessageTextContent = (message, { prefix = '', suffix = '' } = {}) => {
-  const currentText = agentMessageText(message);
-  const nextText = `${prefix ? `${prefix}\n` : ''}${currentText}${suffix ? `\n${suffix}` : ''}`.trim();
-  if (Array.isArray(message?.content)) {
-    const nextParts = message.content.map(part => (part && typeof part === 'object' ? { ...part } : part));
-    const textIndex = nextParts.findIndex(part => part?.type === 'text');
-    if (textIndex >= 0) {
-      nextParts[textIndex] = { ...nextParts[textIndex], text: nextText };
-    } else {
-      nextParts.unshift({ type: 'text', text: nextText });
-    }
-    return { ...message, content: nextParts };
-  }
-  return { ...message, content: nextText };
-};
-
-// 过滤成对且正文非空的 context_head 槽位（防 Anthropic 空文本块 400）。
-const filterValidHeadSlotPairs = headSlots => {
-  const list = (Array.isArray(headSlots) ? headSlots : []).filter(slot => slot && slot.enabled !== false && slot.target === 'context_head');
-  if (!list.length) return [];
-  const byPairId = new Map();
-  const withoutPairId = [];
-  for (const slot of list) {
-    const pid = typeof slot.pairId === 'string' && slot.pairId ? slot.pairId : '';
-    if (pid) {
-      if (!byPairId.has(pid)) byPairId.set(pid, []);
-      byPairId.get(pid).push(slot);
-    } else {
-      withoutPairId.push(slot);
-    }
-  }
-  const validSlots = [];
-  for (const [, pair] of byPairId) {
-    if (pair.length === 2) {
-      const userSlot = pair.find(s => s.role === 'user');
-      const assistantSlot = pair.find(s => s.role === 'assistant');
-      if (userSlot && assistantSlot) {
-        if (String(userSlot.content || '').trim() !== '' && String(assistantSlot.content || '').trim() !== '') {
-          validSlots.push(userSlot, assistantSlot);
-        }
-      }
-    }
-  }
-  for (let i = 0; i < withoutPairId.length - 1; i += 2) {
-    const first = withoutPairId[i];
-    const second = withoutPairId[i + 1];
-    if (first.role === 'user' && second.role === 'assistant') {
-      if (String(first.content || '').trim() !== '' && String(second.content || '').trim() !== '') {
-        validSlots.push(first, second);
-      }
-    }
-  }
-  return validSlots;
-};
-
-// 装配预算：system + 全部注入 + 历史 + 当前 user + 工具 schema 之后必须
+// 装配预算：系统提示词 + 历史 + 当前用户消息 + 工具 schema 之后必须
 // ≤ contextWindow − outputReserve − protocolReserve。估算用 estimateContextTokens。
 const assembleBudget = (contextWindow, configuredOutput, systemTokens, toolSchemaTokens, cleanMessages) => {
   const outputReserve = Math.min(configuredOutput, Math.max(256, Math.floor(contextWindow * 0.2)));
@@ -1192,221 +907,29 @@ const assembleBudget = (contextWindow, configuredOutput, systemTokens, toolSchem
   return { outputReserve, protocolReserve, availableInput, conversationBudget, historyTokens, projectedBuffer };
 };
 
-// 计算 context_depth 锚点插入位：从尾向前数第 N 个完整 user turn，在该 turn
-// 的完整边界后插入（含该 turn 的 assistant(toolCall)→toolResult 整条工具链尾部）。
-// 绝不插在 assistant(toolCall)+toolResult 原子组内部；多轮工具调用同属一个
-// 最近完整 user turn，不累积。
-const findContextDepthAnchor = (messages, depth) => {
-  let userTurns = 0;
-  let anchorUserIndex = -1;
-  const warnings = [];
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (isToolResultMessage(message)) continue; // 属于前一 assistant(toolCall) 组，跳过
-    if (message?.role === 'assistant' && Array.isArray(message.content) && message.content.some(part => part?.type === 'toolCall')) continue; // 组内 assistant，跳过
-    if (isTextUserMessage(message)) {
-      userTurns += 1;
-      if (userTurns === depth) {
-        // 该 user turn 的文本消息 index；再向前走到该 turn 工具链尾部。
-        anchorUserIndex = index;
-        break;
-      }
-    }
-  }
-  if (anchorUserIndex >= 0) {
-    // 从 anchor user 之后开始：连续 toolCall/toolResult 属同一 turn，跳过至其末端。
-    let cursor = anchorUserIndex + 1;
-    while (cursor < messages.length) {
-      const message = messages[cursor];
-      const isToolAssistant = message?.role === 'assistant' && Array.isArray(message.content) && message.content.some(part => part?.type === 'toolCall');
-      if (!isToolResultMessage(message) && !isToolAssistant) break;
-      cursor += 1;
-    }
-    // 插入点 = 该 turn 工具链结束之后（若无工具链则紧邻 user 文本之后）。
-    return { anchorIndex: cursor - 1, userIndex: anchorUserIndex, depth, warnings };
-  }
-  warnings.push('未找到足够深的完整用户轮次，context_depth 锚点未插入');
-  return { anchorIndex: -1, userIndex: -1, depth, warnings };
-};
-
-// 按整对从尾部移除 head seeds，直到放得进预算（绝不拆散 user/assistant）。
-const fitHeadSeeds = (seedMessages, budget) => {
-  if (!seedMessages.length) return { seeds: [], removedPairs: 0 };
-  let used = estimateContextTokens(seedMessages);
-  let pairs = seedMessages.length / 2;
-  let removedPairs = 0;
-  while (pairs > 0 && used > budget) {
-    removedPairs += 1;
-    pairs -= 1;
-    const kept = seedMessages.slice(0, pairs * 2);
-    used = estimateContextTokens(kept);
-    if (pairs === 0) return { seeds: [], removedPairs };
-    if (used <= budget) return { seeds: kept, removedPairs };
-  }
-  return { seeds: used <= budget ? seedMessages : [], removedPairs: used <= budget ? 0 : removedPairs || Math.ceil(seedMessages.length / 2) };
-};
-
-export const assemblePromptContext = ({ creativeMode = true, revision = null, systemPolicy = '', runtimeContext = '', safetyFooter = PRESET_SAFETY_FOOTER, cleanMessages = [], modelApi = '', modelReasoning = false, thinkingLevel = 'off', toolDescriptors = [], hasVisionImages = false, model = null, outputLimit = 8192 }) => {
-  const capabilities = resolveCapabilities(modelApi, modelReasoning, thinkingLevel, model);
-  const preset = revision && typeof revision === 'object' ? revision : null;
-  const presetId = preset?.presetId || preset?.id || '';
-  const presetName = preset?.presetName || preset?.name || '';
-  const slots = (Array.isArray(preset?.slots) ? preset.slots : []).filter(slot => slot && slot.enabled !== false);
-  const effective = computeEffectivePreset({ id: presetId, name: presetName, slots }, capabilities);
-  const { textByTarget } = effective;
-  const depthSlot = slots.find(slot => slot.target === 'context_depth');
-  const contextDepth = Math.max(1, Math.floor(Number(depthSlot?.depth) || 0) || 1);
-
-  const warnings = [];
-  const sourceSegments = [];
-  const recordSegment = (label, target, content) => {
-    sourceSegments.push({ label, target, presetId, presetName, characterCount: String(content || '').length });
-  };
-  const headText = (textByTarget.system_head || '').trim();
-  const middleText = (textByTarget.system_middle || '').trim();
-  const tailText = (textByTarget.system_tail || '').trim();
-
-  // ── 系统提示词拼装（顺序固定，safetyFooter 恒在最后、不可被用户槽位覆盖）──
-  //   [system_head] baseSystemPrompt [system_middle] techBlock researchBlock
-  //   runtimeContext [system_tail] [safetyFooter]
-  // systemPolicy = `${baseSystemPrompt}\n${techBlock}\n${researchBlock}`（不含
-  // 破甲中段——中段现在来自绑定预设的 system_middle 槽位），因此在此按稳定标题
-  // 切出 base 与 tech+research，把 middle 槽位插回 base 之后、tech 之前。
-  const policyText = String(systemPolicy || '');
-  const techHeaderIndex = policyText.indexOf('[规则来源层级]');
-  const basePart = (techHeaderIndex >= 0 ? policyText.slice(0, techHeaderIndex) : policyText).replace(/\s+$/, '');
-  const techResearchPart = techHeaderIndex >= 0 ? policyText.slice(techHeaderIndex).trim() : '';
-  const runtimeText = String(runtimeContext || '').trim();
-  const systemParts = [];
-  if (headText) { recordSegment('system_head', 'system_head', headText); systemParts.push(headText); }
-  if (basePart) systemParts.push(basePart);
-  if (middleText) { recordSegment('system_middle', 'system_middle', middleText); systemParts.push(middleText); }
-  if (techResearchPart) systemParts.push(techResearchPart);
-  if (runtimeText) systemParts.push(runtimeText);
-  if (tailText) { recordSegment('system_tail', 'system_tail', tailText); systemParts.push(tailText); }
-  if (safetyFooter) systemParts.push(String(safetyFooter).trim());
-  const systemPrompt = systemParts.join('\n');
-  const toolTokens = estimateContextTokens(toolDescriptors || []);
+// 仅拼装固定业务规则与实时项目状态；用户消息、图片和工具链保持原样。
+export const assemblePromptContext = ({ systemPolicy = '', runtimeContext = '', cleanMessages = [], toolDescriptors = [], model = null, outputLimit = 8192 }) => {
+  const systemPrompt = [String(systemPolicy || '').trim(), String(runtimeContext || '').trim(), AGENT_SAFETY_FOOTER].filter(Boolean).join('\n');
+  const toolTokens = estimateContextTokens(toolDescriptors);
   const systemTokens = estimateContextTokens(systemPrompt);
   const contextWindow = Math.round(clamp(model?.contextWindow || 32_000, 1_024, 10_000_000, 32_000));
   const configuredOutput = Math.round(clamp(Math.min(model?.maxTokens || outputLimit, outputLimit), 256, contextWindow, Math.min(8192, contextWindow)));
-
-  // ── canonical 消息序列（全部深拷贝，零原地修改）──
   const working = cloneAgentMessages(cleanMessages);
-
-  // 2) context_depth：先从尾向前定位第 N 个完整 user turn（只数真实历史，
-  //    不含稍后注入的 seed 帧），在其边界后插锚点；若破坏交替则并入该 turn user 尾部。
-  const depthText = (textByTarget.context_depth || '').trim();
-  if (depthText) {
-    recordSegment('context_depth', 'context_depth', depthText);
-    const { anchorIndex, userIndex, warnings: depthWarnings } = findContextDepthAnchor(working, contextDepth);
-    warnings.push(...depthWarnings);
-    if (anchorIndex >= 0) {
-      const insertIndex = anchorIndex + 1;
-      const prevMessage = insertIndex > 0 ? working[insertIndex - 1] : null;
-      const nextMessage = insertIndex < working.length ? working[insertIndex] : null;
-      const wouldCauseConsecutiveUser = prevMessage?.role === 'user' || nextMessage?.role === 'user';
-      if (wouldCauseConsecutiveUser) {
-        warnings.push('context_depth：插入点会造成连续 user，文本已合并入锚点轮次用户消息');
-        const targetUserIndex = userIndex >= 0 ? userIndex : anchorIndex;
-        if (targetUserIndex >= 0 && targetUserIndex < working.length) {
-          working[targetUserIndex] = mergeMessageTextContent(working[targetUserIndex], { suffix: depthText });
-        }
-      } else {
-        working.splice(insertIndex, 0, { role: 'user', content: [{ type: 'text', text: depthText }], injected: true });
-      }
-    }
-  }
-
-  // 1) context_head：头部 seeds 整对前插；剔除空内容槽位，预算超限按整对从后移除，绝不拆散。
-  const headSlots = filterValidHeadSlotPairs(slots);
-  const seedMessages = headSlots.map(slot => ({ role: slot.role === 'assistant' ? 'assistant' : 'user', content: [{ type: 'text', text: String(slot.content || '') }], injected: true }));
-  const seedBudget = assembleBudget(contextWindow, configuredOutput, systemTokens, estimateContextTokens(toolDescriptors || []), working);
-  const { seeds, removedPairs } = fitHeadSeeds(seedMessages, seedBudget.conversationBudget);
-  if (seedMessages.length) {
-    if (removedPairs) warnings.push(`上下文头部消息超出预算，已按整对移除 ${removedPairs} 对 seed`);
-    if (seeds.length) {
-      recordSegment('context_head', 'context_head', seeds.map(message => agentMessageText(message)).join(''));
-      working.unshift(...seeds);
-    }
-  }
-
-  // 3) user_preamble / user_suffix：只改写最后一条真实 user 的文本副本，保留多模态 part。
-  const preambleText = (textByTarget.user_preamble || '').trim();
-  const suffixText = (textByTarget.user_suffix || '').trim();
-  let lastUserIndex = -1;
-  for (let index = working.length - 1; index >= 0; index -= 1) {
-    if (isTextUserMessage(working[index])) { lastUserIndex = index; break; }
-  }
-  if (lastUserIndex >= 0 && (preambleText || suffixText)) {
-    const targetMessage = working[lastUserIndex];
-    working[lastUserIndex] = mergeMessageTextContent(targetMessage, { prefix: preambleText, suffix: suffixText });
-    if (preambleText) recordSegment('user_preamble', 'user_preamble', preambleText);
-    if (suffixText) recordSegment('user_suffix', 'user_suffix', suffixText);
-  }
-
-  // 4) conversation_tail：末尾为 toolResult 时不附加（warning）；末尾为 user 且
-  //    adapter 不支持连续 user → 合并进该 user 文本尾部（warning）；否则独立追加。
-  const conversationTailText = (textByTarget.conversation_tail || '').trim();
-  if (conversationTailText) {
-    recordSegment('conversation_tail', 'conversation_tail', conversationTailText);
-    const tailIndex = working.length - 1;
-    const tailMessage = working[tailIndex];
-    if (isToolResultMessage(tailMessage)) warnings.push('conversation_tail：最后一条为工具结果，未附加（避免打断工具组）');
-    else if (isTextUserMessage(tailMessage) && capabilities.userConversationTail !== true) {
-      warnings.push('conversation_tail：当前模型不支持连续 user，文本已合并入当前用户消息');
-      working[tailIndex] = mergeMessageTextContent(tailMessage, { suffix: conversationTailText });
-    } else {
-      working.push({ role: 'user', content: [{ type: 'text', text: conversationTailText }], injected: true });
-    }
-  }
-
-  // 5) assistant_prefill：仅当最后一条是 user、thinkingLevel==='off'、capability 允许。
-  const prefillText = (textByTarget.assistant_prefill || '').trim();
-  if (prefillText) {
-    recordSegment('assistant_prefill', 'assistant_prefill', prefillText);
-    const lastIndex = working.length - 1;
-    const lastMessage = working[lastIndex];
-    if (!isTextUserMessage(lastMessage)) warnings.push('assistant_prefill：最后一条消息不是用户消息，已跳过');
-    else if (thinkingLevel !== 'off') warnings.push('assistant_prefill：思考模式开启时跳过（避免与推理首帧冲突）');
-    else if (capabilities.assistantPrefill !== true) warnings.push('assistant_prefill：当前模型 API 不支持 assistant 预填，已跳过');
-    else working.push({ role: 'assistant', content: [{ type: 'text', text: prefillText }], injected: true });
-  }
-
   const inputBudget = assembleBudget(contextWindow, configuredOutput, systemTokens, toolTokens, working);
   const canonicalMessages = trimContextMessages(working, inputBudget.conversationBudget);
-  if (canonicalMessages.length < working.length) warnings.push('旧历史已按完整用户轮次裁剪，保留本轮工具组');
-  if (systemTokens + toolTokens + estimateContextTokens(canonicalMessages) > inputBudget.availableInput) throw Object.assign(new Error(`当前提示词、工具或本轮内容超过 ${contextWindow} Token 模型预算，请缩短注入／输入或选择更大上下文模型`), { status: 400 });
-  const presetTokens = estimateContextTokens(slots);
-  const historyTokens = estimateContextTokens(cleanMessages);
-  const finalBudget = assembleBudget(contextWindow, configuredOutput, systemTokens, estimateContextTokens(toolDescriptors || []), canonicalMessages);
+  if (systemTokens + toolTokens + estimateContextTokens(canonicalMessages) > inputBudget.availableInput) throw Object.assign(new Error(`当前提示词、工具或本轮内容超过 ${contextWindow} Token 模型预算，请缩短输入或选择更大上下文模型`), { status: 400 });
+  const finalBudget = assembleBudget(contextWindow, configuredOutput, systemTokens, toolTokens, canonicalMessages);
   return {
-    systemPrompt,
-    canonicalMessages,
-    sourceSegments,
+    systemPrompt, canonicalMessages,
     tokenEstimate: {
       policyTokens: systemTokens,
-      draftTokens: 0,
-      historyTokens,
-      presetTokens,
+      historyTokens: estimateContextTokens(cleanMessages),
       totalTokens: systemTokens + toolTokens + estimateContextTokens(canonicalMessages),
-      contextWindow,
-      contextDepth,
-      projectedBuffer: finalBudget.projectedBuffer,
+      contextWindow, projectedBuffer: finalBudget.projectedBuffer,
     },
-    warnings,
-    hashes: {
-      policyFingerprint: computePolicyFingerprint({ id: presetId, name: presetName, slots }, capabilities),
-      presetRevisionHash: preset?.presetRevisionHash || creativeRevisionHash({ slots }),
-      systemPromptHash: shorthandHash(systemPrompt),
-    },
-    budget: {
-      contextWindow,
-      outputReserve: finalBudget.outputReserve,
-      protocolReserve: finalBudget.protocolReserve,
-      conversationTokenBudget: finalBudget.conversationBudget,
-      storedConversation: canonicalMessages,
-    },
+    warnings: canonicalMessages.length < working.length ? ['旧历史已按完整用户轮次裁剪，保留本轮工具组'] : [],
+    hashes: { systemPromptHash: shorthandHash(systemPrompt) },
+    budget: { contextWindow, outputReserve: finalBudget.outputReserve, protocolReserve: finalBudget.protocolReserve, conversationTokenBudget: finalBudget.conversationBudget, storedConversation: canonicalMessages },
   };
 };
 
@@ -1417,7 +940,7 @@ export class PromptAgentService {
     this.customProviders = new Map();
     this.sessionSummaries = new Map();
     // 测试隔离：传入 configFile 时该实例的会话/审计/任务/配置全部落在指定目录，
-    // 绝不触碰真实 local-data（构造缺省保持现有行为）。creative 写点共用同一
+    // 绝不触碰真实 local-data（构造缺省保持现有行为）。配置写入共用同一
     // 串行 promise 链（this.configWriteTail），避免并发请求互相覆盖。
     const isolatedRoot = String(configFile || '').trim();
     this.isolatedRoot = isolatedRoot || '';
@@ -1435,12 +958,11 @@ export class PromptAgentService {
       this.tagTranslationFileOverride = '';
     }
     this.configWriteTail = null;
-    this._creativePresetCustom = null;
     this.legacyEncryptionKey = createHash('sha256').update(`nai-prompt-agent|${lanSecret}`).digest();
     this.encryptionKey = this.legacyEncryptionKey;
     this.credentialKeyError = '';
     this.credentialWarning = '';
-    this.config = { version: PROMPT_AGENT_CONFIG_VERSION, provider: 'deepseek', model: this.defaultModelFor('deepseek'), encryptedKeys: {}, customProviders: [], creativeMode: true };
+    this.config = { version: PROMPT_AGENT_CONFIG_VERSION, provider: 'deepseek', model: this.defaultModelFor('deepseek'), encryptedKeys: {}, customProviders: [] };
     this.activeAgents = new Map();
     this.startingAgents = new Set();
     this.runs = new Map();
@@ -1470,20 +992,19 @@ export class PromptAgentService {
     if (!this.configTransaction) await atomicJsonWrite(this.configFilePath(), this.config);
   }
   installConfigTransactions() {
-    const names = ['setPermissionMode', 'saveCustomProvider', 'deleteCustomProvider', 'selectModel', 'loginProvider', 'logoutProvider', 'createCreativePreset', 'updateCreativePreset', 'deleteCreativePreset', 'setActiveCreativePreset', 'importCreativePresets'];
+    const names = ['setPermissionMode', 'saveCustomProvider', 'deleteCustomProvider', 'selectModel', 'loginProvider', 'logoutProvider'];
     for (const name of names) {
       this[name] = (...args) => {
         const next = (this.configWriteTail || Promise.resolve()).catch(() => {}).then(async () => {
           // 在隔离快照内修改，落盘成功后才发布；读请求始终看到最近成功配置。
           const staged = Object.assign(Object.create(Object.getPrototypeOf(this)), this, {
             config: structuredClone(this.config), customProviders: new Map(this.customProviders),
-            _creativePresetCustom: this._creativePresetCustom ? structuredClone(this._creativePresetCustom) : null,
             configTransaction: true, configWriteTail: null,
           });
           for (const method of names) delete staged[method];
           const result = await Object.getPrototypeOf(this)[name].apply(staged, args);
           await atomicJsonWrite(this.configFilePath(), staged.config);
-          for (const field of ['config', 'customProviders', '_creativePresetCustom', 'credentialWarning']) this[field] = staged[field];
+          for (const field of ['config', 'customProviders', 'credentialWarning']) this[field] = staged[field];
           return result;
         });
         this.configWriteTail = next;
@@ -1675,15 +1196,11 @@ export class PromptAgentService {
   publicSessionMeta(meta) {
     const provider = this.normalizeProvider(meta?.provider || this.publicConfig().provider);
     const model = text(meta?.model || this.publicConfig().model);
-    const revision = meta?.presetRevision;
-    const hasBoundPreset = Boolean(revision && (revision.presetName || revision.presetRevisionHash));
-    // 旧配置字段兼容读取，但不再参与运行或公开能力。
-    const { presetRevision: _presetRevision, visionProvider: _vp, visionModel: _vm, visionAvailable: _va, visionDedicated: _vd, visionMode: _vmo, ...publicMeta } = meta || {};
+    // 旧会话字段留在磁盘，仅从公开元数据与运行路径中排除，不迁移私人记录。
+    const retiredFields = new Set(['creativeMode', 'creativeModeLocked', 'presetRevision', 'presetName', 'presetRevisionHash', 'effectivePolicyFingerprint', 'policyFingerprint', 'visionProvider', 'visionModel', 'visionAvailable', 'visionDedicated', 'visionMode']);
+    const publicMeta = Object.fromEntries(Object.entries(meta || {}).filter(([key]) => !retiredFields.has(key)));
     return {
       ...publicMeta,
-      ...(hasBoundPreset && revision.presetName ? { presetName: revision.presetName } : {}),
-      ...(hasBoundPreset && revision.presetRevisionHash ? { presetRevisionHash: revision.presetRevisionHash } : {}),
-      ...(hasBoundPreset && revision.effectivePolicyFingerprint ? { effectivePolicyFingerprint: revision.effectivePolicyFingerprint } : {}),
       imageInput: Boolean(this.listModels(provider).find(item => item.id === model)?.imageInput),
     };
   }
@@ -1694,7 +1211,7 @@ export class PromptAgentService {
     const provider = configuredProviders.includes(requestedProvider) ? requestedProvider : configuredProviders[0] || requestedProvider;
     const models = this.listModels(provider);
     const model = models.some(item => item.id === this.config.model) ? this.config.model : this.defaultModelFor(provider);
-    const policy = runtimePolicyInfo(this.config.creativeMode);
+    const policy = runtimePolicyInfo();
     return {
       provider,
       model,
@@ -1708,7 +1225,6 @@ export class PromptAgentService {
       backendVersion: LOADED_VERSION,
       sourceVersion: sourceVersion(),
       restartRequired: LOADED_SOURCE !== sourceSignature() || LOADED_VERSION !== sourceVersion(),
-      creativeMode: policy.creativeMode,
       ...(this.credentialWarning ? { credentialWarning: this.credentialWarning } : {}),
     };
   }
@@ -2156,11 +1672,6 @@ export class PromptAgentService {
       });
     } catch { /* A session with no run yet has no audit file. */ }
     const session = await this.readSession(safeSessionId);
-    const creativeMode = typeof session.meta?.creativeMode === 'boolean' ? session.meta.creativeMode : this.config.creativeMode !== false;
-    const revision = session.meta?.presetRevision;
-    const revisionName = typeof revision?.presetName === 'string' ? revision.presetName : '';
-    const revisionHash = typeof revision?.presetRevisionHash === 'string' ? revision.presetRevisionHash : '';
-    const revisionFingerprint = typeof revision?.effectivePolicyFingerprint === 'string' ? revision.effectivePolicyFingerprint : '';
     return {
       schema: 'nai-prompt-agent-audit-export/v1',
       exportedAt: new Date().toISOString(),
@@ -2170,19 +1681,10 @@ export class PromptAgentService {
         provider: session.meta.provider,
         model: session.meta.model,
         thinkingLevel: session.meta.thinkingLevel,
-        creativeMode,
-        creativeModeLocked: session.meta.creativeModeLocked === true,
-        ...(revisionName ? { presetName: revisionName } : {}),
-        ...(revisionHash ? { presetRevisionHash: revisionHash } : {}),
-        ...(revisionFingerprint ? { effectivePolicyFingerprint: revisionFingerprint } : {}),
       } : { id: safeSessionId },
       policy: {
         version: PROMPT_AGENT_POLICY_VERSION,
-        // 展示路径 revision 驱动：不再按当前全局 active 重算 fingerprint。
-        ...(revisionHash ? { presetRevisionHash: revisionHash } : {}),
-        ...(revisionName ? { presetName: revisionName } : {}),
-        ...(revisionFingerprint ? { effectivePolicyFingerprint: revisionFingerprint } : {}),
-        creativeMode,
+        fingerprint: runtimePolicyInfo().fingerprint,
         runtimeStartedAt: this.runtimeStartedAt,
       },
       entries: compactAuditEntries(entries),
@@ -2301,20 +1803,13 @@ export class PromptAgentService {
     const title = text(input.title || '新对话').trim().slice(0, 60) || '新对话';
     const config = this.publicConfig();
     const modelInfo = this.listModels(config.provider).find(item => item.id === config.model);
-    const creativeMode = typeof input.creativeMode === 'boolean' ? input.creativeMode : this.config.creativeMode !== false;
     const meta = {
       id, title, createdAt: now, updatedAt: now,
       provider: config.provider, model: config.model,
       thinkingLevel: this.normalizeThinkingLevel(input.thinkingLevel, modelInfo),
-      creativeMode,
-      creativeModeLocked: false,
     };
-    // 会话级预设绑定：creativeMode=true 时对当前 active 预设生成不可变 revision；
-    // creativeMode=false 冻结空策略 revision。
-    const bound = await this.buildSessionPresetRevision(meta);
-    meta.presetRevision = bound;
     await this.writeSession(id, { version: 2, meta, messages: [] });
-    await this.appendAuditLog(id, { type: 'session_created', session: { ...meta, presetRevision: undefined } });
+    await this.appendAuditLog(id, { type: 'session_created', session: this.publicSessionMeta(meta) });
     return this.publicSessionMeta(meta);
   }
 
@@ -2338,23 +1833,11 @@ export class PromptAgentService {
           try { task = JSON.parse(await readFile(this.taskFile(value.meta.id), 'utf8')); } catch { /* No task yet. */ }
           const running = this.activeAgents.has(value.meta.id) || this.startingAgents.has(value.meta.id);
           const messageCount = value.messageCount;
-          const creativeMode = typeof value.meta.creativeMode === 'boolean' ? value.meta.creativeMode : this.config.creativeMode !== false;
-          // 展示一律读会话 revision（presetName/presetRevisionHash/effectivePolicyFingerprint），
-          // 禁止再按当前全局 active 重算 runtimePolicyInfo fingerprint。
-          const boundRevision = value.meta?.presetRevision;
-          const revisionPresetName = typeof boundRevision?.presetName === 'string' ? boundRevision.presetName : '';
-          const revisionHash = typeof boundRevision?.presetRevisionHash === 'string' ? boundRevision.presetRevisionHash : '';
-          const revisionFingerprint = typeof boundRevision?.effectivePolicyFingerprint === 'string' ? boundRevision.effectivePolicyFingerprint : '';
           items.push(this.publicSessionMeta({
             ...value.meta,
-            creativeMode,
-            creativeModeLocked: value.meta.creativeModeLocked === true || messageCount > 0,
             messageCount,
             running,
             taskStatus: running ? 'running' : task.status,
-            ...(revisionPresetName ? { presetName: revisionPresetName } : {}),
-            ...(revisionHash ? { presetRevisionHash: revisionHash } : {}),
-            ...(revisionFingerprint ? { effectivePolicyFingerprint: revisionFingerprint } : {}),
           }));
         }
       } catch { /* Ignore broken legacy files. */ }
@@ -2371,30 +1854,16 @@ export class PromptAgentService {
     const modelInfo = this.listModels(provider).find(item => item.id === model);
     const changesRuntime = patch.provider !== undefined || patch.model !== undefined || patch.thinkingLevel !== undefined;
     if (changesRuntime && (!modelInfo || !this.configuredProviderIds().includes(provider))) throw Object.assign(new Error('所选模型不可用或尚未登录'), { status: 400 });
-    const hasStarted = value.meta.creativeModeLocked === true || (Array.isArray(value.messages) && value.messages.some(message => message?.role === 'user'));
-    if (patch.creativeMode !== undefined && hasStarted) throw Object.assign(new Error('对话已经开始，破限模式不能再修改；请新建对话后选择'), { status: 409 });
-    const nextCreativeMode = typeof patch.creativeMode === 'boolean' ? patch.creativeMode : typeof value.meta.creativeMode === 'boolean' ? value.meta.creativeMode : this.config.creativeMode !== false;
     const nextMeta = {
       ...value.meta,
       ...(typeof patch.title === 'string' ? { title: text(patch.title).trim().slice(0, 60) || '未命名对话' } : {}),
       provider, model,
       thinkingLevel: changesRuntime ? this.normalizeThinkingLevel(patch.thinkingLevel ?? value.meta.thinkingLevel, modelInfo) : value.meta.thinkingLevel,
-      creativeMode: nextCreativeMode,
-      creativeModeLocked: hasStarted,
       updatedAt: Date.now(),
     };
-    // 已冻结的 presetRevision 一律保留（updateSession 不清除/不替换）；未开始的会话
-    // 若切换 creativeMode，则按新 creativeMode 重绑定 revision。
-    if (!nextMeta.presetRevision?.presetId) {
-      nextMeta.presetRevision = await this.buildSessionPresetRevision(nextMeta);
-    } else if (patch.creativeMode !== undefined && !hasStarted && nextMeta.presetRevision?.emptyPolicy !== true && nextCreativeMode === false) {
-      nextMeta.presetRevision = await this.buildSessionPresetRevision(nextMeta);
-    } else if (patch.creativeMode !== undefined && !hasStarted && nextMeta.presetRevision?.emptyPolicy === true && nextCreativeMode !== false) {
-      nextMeta.presetRevision = await this.buildSessionPresetRevision(nextMeta);
-    }
     value.meta = nextMeta;
     await this.writeSession(sessionId, value);
-    await this.appendAuditLog(sessionId, { type: 'session_updated', patch, session: { ...nextMeta, presetRevision: undefined } });
+    await this.appendAuditLog(sessionId, { type: 'session_updated', patch, session: this.publicSessionMeta(nextMeta) });
     return this.publicSessionMeta(nextMeta);
   }
 
@@ -2413,84 +1882,6 @@ export class PromptAgentService {
       const { visionUsage: _visionUsage, ...runtimeMessage } = message;
       return runtimeMessage.role === 'toolResult' ? { ...runtimeMessage, ...boundAgentToolResult(runtimeMessage) } : runtimeMessage;
     });
-  }
-
-  // 按当前 active 预设 + 会话 creativeMode 生成不可变预设修订快照（含完整 slots）。
-  // creativeMode=false → 冻结空策略 revision（presetRevisionHash=''）。
-  // effectivePolicyFingerprint 按会话自身模型 capability 计算（同一预设在不同
-  // 模型间的指纹不同），revision 一旦冻结不再随 active/预设变化。
-  async buildSessionPresetRevision(meta = {}) {
-    const creativeMode = typeof meta.creativeMode === 'boolean' ? meta.creativeMode : this.config.creativeMode !== false;
-    const now = Date.now();
-    if (!creativeMode) {
-      return {
-        presetId: CREATIVE_BUILTIN_PRESET_ID, presetName: '', presetRevisionHash: '', version: 0, createdAt: now,
-        effectivePolicyFingerprint: '', slots: [], emptyPolicy: true,
-      };
-    }
-    const activeId = (await this.loadCreativePresetCustom()).activeId;
-    const preset = await this.findCreativePreset(activeId);
-    const presetName = preset?.name || '';
-    const presetSlots = Array.isArray(preset?.slots) ? preset.slots : [];
-    const provider = this.normalizeProvider(meta?.provider || this.config.provider);
-    const modelInfo = this.listModels(provider).find(item => item.id === (meta?.model || this.config.model)) || {};
-    // publicModel 不携带 runtime 的 api/adapter 字段：从 Pi 运行时模型推导。
-    const modelApi = this.resolveModelApi(provider, modelInfo.id);
-    const modelReasoning = modelInfo.reasoning === true;
-    const capabilities = resolveCapabilities(modelApi, modelReasoning, 'off', modelInfo);
-    const effectiveFingerprint = computePolicyFingerprint({ id: activeId, name: presetName, slots: presetSlots }, capabilities);
-    return {
-      presetId: activeId, presetName,
-      presetRevisionHash: creativeRevisionHash({ slots: presetSlots }),
-      version: 1, createdAt: now,
-      effectivePolicyFingerprint: effectiveFingerprint, slots: presetSlots.map(slot => ({ ...slot })),
-    };
-  }
-
-  // 旧会话（有消息但无 presetRevision）惰性补齐：creativeMode=true 用 builtin-default
-  // 全量 slots 生成 revision 原子写回，不改动 messages；creativeMode=false 冻结空策略。
-  // 未开始会话（无 user 消息）按 createSession 逻辑绑定当前 active。
-  async ensureSessionPresetRevision(sessionId) {
-    const value = await this.readSession(sessionId);
-    if (!value?.meta?.id) return null;
-    if (value.meta.presetRevision?.presetId) return value.meta.presetRevision;
-    const meta = value.meta;
-    const creativeMode = typeof meta.creativeMode === 'boolean' ? meta.creativeMode : this.config.creativeMode !== false;
-    const hasUserMessage = (Array.isArray(value.messages) ? value.messages : []).some(message => message?.role === 'user');
-    if (hasUserMessage) {
-      // 有消息且缺 revision 的旧会话：一律用 builtin-default 补齐（历史行为默认破限），
-      // 不按当前全局 active（避免旧会话被新 active 悄悄改写）。
-      const preset = creativeMode ? await this.findCreativePreset(CREATIVE_BUILTIN_PRESET_ID) : null;
-      const now = Date.now();
-      const provider = this.normalizeProvider(meta?.provider || this.config.provider);
-      const modelInfo = this.listModels(provider).find(item => item.id === (meta?.model || this.config.model)) || {};
-      const modelApi = this.resolveModelApi(provider, modelInfo.id);
-      const capabilities = resolveCapabilities(modelApi, modelInfo.reasoning === true, 'off', modelInfo);
-      const revision = creativeMode && preset
-        ? {
-            presetId: CREATIVE_BUILTIN_PRESET_ID, presetName: preset.name || '',
-            presetRevisionHash: creativeRevisionHash({ slots: preset.slots || [] }),
-            version: 1, createdAt: now,
-            effectivePolicyFingerprint: computePolicyFingerprint({ id: CREATIVE_BUILTIN_PRESET_ID, name: preset.name || '', slots: preset.slots || [] }, capabilities),
-            slots: (preset.slots || []).map(slot => ({ ...slot })),
-          }
-        : {
-            presetId: CREATIVE_BUILTIN_PRESET_ID, presetName: '', presetRevisionHash: '', version: 0, createdAt: now,
-            effectivePolicyFingerprint: '', slots: [], emptyPolicy: true,
-          };
-      meta.presetRevision = revision;
-      await this.writeSession(sessionId, { ...value, meta: { ...meta, updatedAt: Date.now() } });
-      return revision;
-    }
-    const revision = await this.buildSessionPresetRevision(meta);
-    meta.presetRevision = revision;
-    await this.writeSession(sessionId, { ...value, meta: { ...meta, updatedAt: Date.now() } });
-    return revision;
-  }
-
-  async ensureSessionRevisionMeta(meta) {
-    if (meta?.presetRevision?.presetId) return meta;
-    return { ...meta, presetRevision: await this.buildSessionPresetRevision(meta) };
   }
 
   async setInitialSessionTitle(sessionId, userMessage) {
@@ -2524,14 +1915,12 @@ export class PromptAgentService {
     }));
     const meta = existing.meta?.id ? {
       ...existing.meta,
-      creativeModeLocked: existing.meta.creativeModeLocked === true || safeMessages.some(message => message?.role === 'user'),
       updatedAt: Date.now(),
     } : undefined;
     if (meta && (!meta.title || meta.title === '新对话')) {
       const firstUser = safeMessages.find(message => message?.role === 'user');
       const firstText = typeof firstUser?.content === 'string' ? firstUser.content : Array.isArray(firstUser?.content) ? firstUser.content.find(item => item?.type === 'text')?.text : '';
-      const originalText = firstText.startsWith(creativePreamble) ? firstText.slice(creativePreamble.length) : firstText;
-      if (originalText?.trim()) meta.title = originalText.trim().replace(/\s+/g, ' ').slice(0, 28);
+      if (firstText?.trim()) meta.title = firstText.trim().replace(/\s+/g, ' ').slice(0, 28);
     }
     await this.writeSession(sessionId, { version: meta ? 2 : 1, ...(meta ? { meta } : { updatedAt: Date.now() }), messages: safeMessages });
   }
@@ -3573,295 +2962,6 @@ export class PromptAgentService {
     } }));
   }
 
-  // ── 破限提示词与预设实验室：customPresets 配置扩展读写（单一串行写队列）──
-  async serializeCreativePresetConfig() { await this.persistConfig(); }
-
-  // 对外公共形状：{ id,name,description?,isBuiltin,createdAt,updatedAt,slots }，
-  // recentRevisions 只存在于 detail.revisions 中，绝不随 list/create/update 泄漏。
-  publicCreativePresetShape(preset) {
-    if (!preset) return null;
-    const { recentRevisions: _recentRevisions, ...rest } = preset;
-    return { ...rest, slots: (Array.isArray(preset.slots) ? preset.slots : []).map(slot => ({ ...slot })) };
-  }
-
-  async loadCreativePresetCustom() {
-    if (this._creativePresetCustom) return this._creativePresetCustom;
-    const config = this.config;
-    const presets = Array.isArray(config.customPresets) ? config.customPresets : [];
-    this._creativePresetCustom = {
-      presets: presets.map(preset => ({
-        ...preset,
-        slots: Array.isArray(preset.slots) ? preset.slots.map(slot => ({ ...slot })) : [],
-        recentRevisions: Array.isArray(preset.recentRevisions) ? preset.recentRevisions.slice(-MAX_CREATIVE_PRESET_REVISIONS) : [],
-      })),
-      activeId: typeof config.activeCreativePresetId === 'string' ? config.activeCreativePresetId : CREATIVE_BUILTIN_PRESET_ID,
-    };
-    return this._creativePresetCustom;
-  }
-
-  // list 合并：展示顺序 = 内置在前 + 自定义在后（按 updatedAt 倒序）。
-  async listCreativePresets() {
-    const custom = await this.loadCreativePresetCustom();
-    const builtin = getBuiltinDefaultPreset();
-    const sortedCustom = [...custom.presets].sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt));
-    const activeId = custom.activeId && this.presetExistsSync(custom.activeId) ? custom.activeId : CREATIVE_BUILTIN_PRESET_ID;
-    return { items: [this.publicCreativePresetShape(builtin), ...sortedCustom.map(preset => this.publicCreativePresetShape(preset))], activeCreativePresetId: activeId, warnings: [] };
-  }
-
-  presetExistsSync(presetId) {
-    if (presetId === CREATIVE_BUILTIN_PRESET_ID) return true;
-    return Array.isArray(this.config.customPresets) && this.config.customPresets.some(preset => preset.id === presetId);
-  }
-
-  async getCreativePreset(presetId) {
-    const preset = await this.findCreativePreset(presetId);
-    if (!preset) throw Object.assign(new Error('预设不存在'), { status: 404 });
-    return preset;
-  }
-
-  async findCreativePreset(presetId) {
-    const normalized = String(presetId || '').slice(0, 200);
-    if (normalized === CREATIVE_BUILTIN_PRESET_ID) return getBuiltinDefaultPreset();
-    const custom = await this.loadCreativePresetCustom();
-    const preset = custom.presets.find(item => item.id === normalized);
-    return preset ? JSON.parse(JSON.stringify(preset)) : null;
-  }
-
-  async createCreativePreset(input = {}) {
-    const name = creativeNameText(input.name);
-    if (!name) throw Object.assign(new Error('请填写预设名称'), { status: 400 });
-    const custom = await this.loadCreativePresetCustom();
-    const existing = custom.presets.find(preset => preset.name === name);
-    if (existing) throw Object.assign(new Error(`已存在同名预设「${name}」`), { status: 409 });
-    if (custom.presets.length >= MAX_CUSTOM_CREATIVE_PRESETS) throw Object.assign(new Error(`自定义预设最多 ${MAX_CUSTOM_CREATIVE_PRESETS} 个，请先删除不需要的预设`), { status: 400 });
-    const forkFromId = typeof input.forkFromId === 'string' && input.forkFromId ? String(input.forkFromId).slice(0, 200) : '';
-    if (forkFromId) {
-      const source = await this.findCreativePreset(forkFromId);
-      if (!source) throw Object.assign(new Error('找不到要复制的源预设'), { status: 404 });
-      const slotCount = Array.isArray(source.slots) ? source.slots.length : 0;
-      if (slotCount > MAX_CREATIVE_PRESET_SLOTS) throw Object.assign(new Error(`单个预设最多 ${MAX_CREATIVE_PRESET_SLOTS} 个槽位`), { status: 400 });
-      if (creativePresetContentCharCount(source.slots) > MAX_CREATIVE_PRESET_CONTENT_CHARS) throw Object.assign(new Error(`单个预设全部槽位正文合计不能超过 ${MAX_CREATIVE_PRESET_CONTENT_CHARS} 字`), { status: 400 });
-      const description = creativeDescriptionText(input.description);
-      const now = Date.now();
-      const rawId = typeof input.id === 'string' ? input.id.trim().slice(0, 200) : '';
-      const id = rawId && !CREATIVE_PRESET_RESERVED_IDS.has(rawId) && !custom.presets.some(p => p.id === rawId)
-        ? rawId
-        : `preset-${randomUUID()}`;
-      const preset = {
-        id, name, ...(description ? { description } : {}), isBuiltin: false,
-        createdAt: now, updatedAt: now,
-        slots: (source.slots || []).map((slot, index) => ({ ...slot, id: `slot-${randomBytes(4).toString('hex')}-${index}` })),
-        recentRevisions: [],
-      };
-      this.config.customPresets = [...(this.config.customPresets || []), preset];
-      this._creativePresetCustom = null;
-      await this.serializeCreativePresetConfig();
-      await this.appendAuditLog('playground', { type: 'creative_preset_created', presetId: preset.id, presetName: preset.name, forkFromId });
-      return this.publicCreativePresetShape(preset);
-    }
-    const normalized = normalizeCreativePreset(input, { isFork: false });
-    if (normalized.slots.length > MAX_CREATIVE_PRESET_SLOTS) throw Object.assign(new Error(`单个预设最多 ${MAX_CREATIVE_PRESET_SLOTS} 个槽位`), { status: 400 });
-    const description = creativeDescriptionText(input.description);
-    const now = Date.now();
-    const rawId = typeof input.id === 'string' ? input.id.trim().slice(0, 200) : '';
-    const id = rawId && !CREATIVE_PRESET_RESERVED_IDS.has(rawId) && !custom.presets.some(p => p.id === rawId)
-      ? rawId
-      : `preset-${randomUUID()}`;
-    const preset = {
-      id, name, ...(description ? { description } : {}), isBuiltin: false,
-      createdAt: now, updatedAt: now,
-      slots: normalizeCreativeSlots(input.slots, { needUniqueIds: true }),
-      recentRevisions: [],
-    };
-    this.config.customPresets = [...(this.config.customPresets || []), preset];
-    this._creativePresetCustom = null;
-    await this.serializeCreativePresetConfig();
-    await this.appendAuditLog('playground', { type: 'creative_preset_created', presetId: preset.id, presetName: preset.name });
-    return this.publicCreativePresetShape(preset);
-  }
-
-  async updateCreativePreset(presetId, patch = {}) {
-    if (String(presetId || '') === CREATIVE_BUILTIN_PRESET_ID) throw Object.assign(new Error('内置预设不可修改，请先复制为自定义预设'), { status: 403 });
-    const custom = await this.loadCreativePresetCustom();
-    const index = custom.presets.findIndex(preset => preset.id === String(presetId || ''));
-    if (index < 0) throw Object.assign(new Error('预设不存在'), { status: 404 });
-    const existing = custom.presets[index];
-    const name = patch.name === undefined ? existing.name : creativeNameText(patch.name);
-    if (!name) throw Object.assign(new Error('请填写预设名称'), { status: 400 });
-    if (patch.name !== undefined && custom.presets.some(preset => preset.id !== existing.id && preset.name === name)) throw Object.assign(new Error(`已存在同名预设「${name}」`), { status: 409 });
-    const description = patch.description === undefined ? existing.description : creativeDescriptionText(patch.description);
-    const now = Date.now();
-    const nextPreset = {
-      ...existing,
-      name, ...(description ? { description } : {}),
-      updatedAt: now,
-    };
-    const hadRevisionSource = (Array.isArray(existing.slots) && existing.slots.length > 0) || Array.isArray(patch.slots);
-    if (patch.slots !== undefined) {
-      const slots = normalizeCreativeSlots(patch.slots, { needUniqueIds: true });
-      nextPreset.slots = slots;
-    }
-    if (hadRevisionSource && (patch.slots !== undefined || patch.name !== undefined)) {
-      const previousSlots = Array.isArray(existing.slots) ? existing.slots : [];
-      const previousName = existing.name;
-      const revision = {
-        presetId: existing.id, presetName: previousName, revisionHash: creativeRevisionHash({ slots: previousSlots }),
-        version: (Array.isArray(existing.recentRevisions) ? existing.recentRevisions.length : 0) + 1, createdAt: now,
-        slots: previousSlots.map(slot => ({ ...slot })),
-      };
-      nextPreset.recentRevisions = [...(Array.isArray(existing.recentRevisions) ? existing.recentRevisions : []), revision].slice(-MAX_CREATIVE_PRESET_REVISIONS);
-    } else {
-      nextPreset.recentRevisions = existing.recentRevisions || [];
-    }
-    const nextCustom = custom.presets.map((preset, presetIndex) => (presetIndex === index ? nextPreset : preset));
-    this.config.customPresets = nextCustom;
-    this._creativePresetCustom = null;
-    await this.serializeCreativePresetConfig();
-    await this.appendAuditLog('playground', { type: 'creative_preset_updated', presetId: existing.id, presetName: name, revisionCount: (nextPreset.recentRevisions || []).length });
-    return this.publicCreativePresetShape(nextPreset);
-  }
-
-  async deleteCreativePreset(presetId) {
-    if (String(presetId || '') === CREATIVE_BUILTIN_PRESET_ID) throw Object.assign(new Error('内置预设不可删除'), { status: 403 });
-    const custom = await this.loadCreativePresetCustom();
-    const index = custom.presets.findIndex(preset => preset.id === String(presetId || ''));
-    if (index < 0) throw Object.assign(new Error('预设不存在'), { status: 404 });
-    const removed = custom.presets[index];
-    this.config.customPresets = custom.presets.filter(preset => preset.id !== removed.id);
-    if (this.config.activeCreativePresetId === removed.id) this.config.activeCreativePresetId = CREATIVE_BUILTIN_PRESET_ID;
-    this._creativePresetCustom = null;
-    await this.serializeCreativePresetConfig();
-    await this.appendAuditLog('playground', { type: 'creative_preset_deleted', presetId: removed.id, presetName: removed.name });
-    return { ok: true };
-  }
-
-  async setActiveCreativePreset(presetId) {
-    const normalized = presetId === null ? CREATIVE_BUILTIN_PRESET_ID : String(presetId || '');
-    if (normalized !== CREATIVE_BUILTIN_PRESET_ID && !(await this.findCreativePreset(normalized))) throw Object.assign(new Error('预设不存在'), { status: 404 });
-    const custom = await this.loadCreativePresetCustom();
-    custom.activeId = normalized;
-    this.config.activeCreativePresetId = normalized;
-    this._creativePresetCustom = null;
-    await this.serializeCreativePresetConfig();
-    const state = await this.listCreativePresets();
-    return state;
-  }
-
-  async getCreativePresetDetail(presetId) {
-    const preset = await this.getCreativePreset(presetId);
-    const custom = preset.isBuiltin ? { recentRevisions: [] } : await this.loadCreativePresetCustom();
-    const presetRecord = preset.isBuiltin ? null : custom.presets.find(item => item.id === preset.id);
-    return { ...this.publicCreativePresetShape(preset), revisions: preset.isBuiltin ? [] : (presetRecord?.recentRevisions || []).slice(-MAX_CREATIVE_PRESET_REVISIONS) };
-  }
-
-  async importCreativePresets(input = {}) {
-    if (String(input?.schema || '') !== 'creative-presets') throw Object.assign(new Error('导入文件 schema 不是 creative-presets'), { status: 400 });
-    const version = Number(input?.version);
-    if (!Number.isInteger(version) || version < 1 || version > 1) throw Object.assign(new Error('不支持的导入版本'), { status: 400 });
-    const sourcePresets = Array.isArray(input?.presets) ? input.presets : [];
-    const custom = await this.loadCreativePresetCustom();
-    const existingNames = new Set(custom.presets.map(preset => preset.name));
-    // builtin-default 与路由关键字为代码保留 id（永不落盘/防路由遮蔽）：外部导入一律视为冲突并重生成 id。
-    const reservedIds = new Set([...CREATIVE_PRESET_RESERVED_IDS, ...custom.presets.map(preset => preset.id)]);
-    const importedPresets = [];
-    const skipped = [];
-    for (const raw of sourcePresets) {
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { skipped.push('格式无效'); continue; }
-      let normalized;
-      try {
-        normalized = normalizeCreativePreset({ ...raw, isBuiltin: undefined }, { needUniqueIds: true });
-      } catch { skipped.push(String(raw.name || '未命名')); continue; }
-      let name = normalized.name;
-      if (existingNames.has(name)) name = `${name}（导入）`;
-      const rawId = typeof normalized.id === 'string' ? normalized.id.trim().slice(0, 200) : '';
-      const id = !rawId || reservedIds.has(rawId) ? `preset-${randomUUID()}` : rawId;
-      const now = Date.now();
-      const preset = {
-        id, name, ...(normalized.description ? { description: normalized.description } : {}),
-        isBuiltin: false, createdAt: now, updatedAt: now,
-        slots: normalized.slots.map(slot => ({ ...slot })),
-        recentRevisions: [],
-      };
-      importedPresets.push(preset);
-      existingNames.add(name);
-      reservedIds.add(id);
-    }
-    if (importedPresets.length) {
-      const remaining = MAX_CUSTOM_CREATIVE_PRESETS - custom.presets.length;
-      const accepted = importedPresets.slice(0, Math.max(0, remaining));
-      const overLimit = importedPresets.slice(Math.max(0, remaining)).map(preset => preset.name);
-      if (overLimit.length) skipped.push(...overLimit.map(name => `${name}（数量超限）`));
-      this.config.customPresets = [...(this.config.customPresets || []), ...accepted];
-      this._creativePresetCustom = null;
-      await this.serializeCreativePresetConfig();
-    }
-    return { ok: true, imported: importedPresets.slice(0, Math.max(0, MAX_CUSTOM_CREATIVE_PRESETS - custom.presets.length)).length, skipped, activeCreativePresetId: this.config.activeCreativePresetId || CREATIVE_BUILTIN_PRESET_ID };
-  }
-
-  async exportCreativePresets(ids = []) {
-    const requested = (Array.isArray(ids) ? ids : []).map(id => String(id).slice(0, 200));
-    let presets;
-    if (!requested.length) {
-      const all = await this.listCreativePresets();
-      presets = all.items.map(preset => JSON.parse(JSON.stringify({ ...preset, recentRevisions: undefined })));
-    } else {
-      presets = [];
-      for (const id of requested) {
-        const preset = await this.findCreativePreset(id);
-        if (preset) presets.push(JSON.parse(JSON.stringify({ ...preset, recentRevisions: undefined })));
-      }
-    }
-    return { schema: 'creative-presets', version: 1, exportedAt: Date.now(), presets };
-  }
-
-  async inspectCreativeContext(input = {}) {
-    // 纯估算：不调用模型、不执行工具、不读凭据/图片、不接受 activeTools。
-    const sessionId = typeof input.sessionId === 'string' ? String(input.sessionId).slice(0, 200) : '';
-    const config = this.publicConfig();
-    const stored = sessionId ? await this.readSession(sessionId) : { meta: {} };
-    const sessionCreativeMode = typeof stored.meta?.creativeMode === 'boolean' ? stored.meta.creativeMode : config.creativeMode !== false;
-    let preset;
-    if (input.presetId) {
-      preset = await this.findCreativePreset(String(input.presetId).slice(0, 200));
-      if (!preset) throw Object.assign(new Error('预设不存在'), { status: 404 });
-    } else if (sessionId && stored.meta?.presetRevision?.presetId) {
-      preset = stored.meta.presetRevision;
-    } else {
-      const activeId = (await this.loadCreativePresetCustom()).activeId;
-      preset = await this.findCreativePreset(activeId);
-    }
-    const provider = this.normalizeProvider(stored.meta?.provider || config.provider);
-    const modelId = stored.meta?.model || config.model;
-    const modelInfo = this.listModels(provider).find(item => item.id === modelId) || { id: modelId, contextWindow: 0, maxTokens: 0, reasoning: false };
-    const modelApi = this.resolveModelApi(provider, modelId);
-    const message = typeof input.message === 'string' ? String(input.message) : '';
-    const draft = sanitizeDraft(input.draft);
-    const capabilities = resolveCapabilities(modelApi, modelInfo.reasoning, this.normalizeThinkingLevel(stored.meta?.thinkingLevel, modelInfo), modelInfo);
-    const contextData = { clientSettings: typeof input.clientSettings === 'object' && input.clientSettings ? input.clientSettings : {} };
-    const runtimeContext = buildAgentRuntimeContext(draft, contextData.clientSettings);
-    const creativeMode = sessionCreativeMode;
-    const toolDescriptors = selectAgentTools(this.createTools(draft, contextData, () => {}, {}, modelInfo), message).map(tool => ({ name: tool.name, description: tool.description || '', parameters: tool.parameters }));
-    const result = assemblePromptContext({
-      creativeMode,
-      revision: preset,
-      systemPolicy: buildSystemPrompt(),
-      runtimeContext,
-      safetyFooter: PRESET_SAFETY_FOOTER,
-      cleanMessages: [],
-      modelApi,
-      modelReasoning: modelInfo.reasoning,
-      model: modelInfo,
-      thinkingLevel: this.normalizeThinkingLevel(stored.meta?.thinkingLevel, modelInfo),
-      toolDescriptors,
-      hasVisionImages: false,
-      estimateOnly: true,
-    });
-    const draftTokens = estimateContextTokens(JSON.stringify(draft)) + estimateContextTokens(message);
-    result.tokenEstimate.draftTokens = draftTokens;
-    result.tokenEstimate.totalTokens += draftTokens;
-    return { ok: true, ...result };
-  }
-
   async run(input, emit, signal, project = {}) {
     const sessionId = text(input?.sessionId || 'playground').slice(0, 200);
     const runId = randomUUID();
@@ -3947,7 +3047,6 @@ export class PromptAgentService {
     }
     this.runHistory.push(now);
     const thinkingLevel = this.normalizeThinkingLevel(storedSession.meta?.thinkingLevel, modelInfo);
-    const creativeMode = typeof storedSession.meta?.creativeMode === 'boolean' ? storedSession.meta.creativeMode : this.config.creativeMode !== false;
     const draft = sanitizeDraft(input?.draft);
     const contextData = {
       clientSettings: input?.context?.clientSettings && typeof input.context.clientSettings === 'object' ? input.context.clientSettings : {},
@@ -3955,35 +3054,15 @@ export class PromptAgentService {
     const policySystemPrompt = buildSystemPrompt();
     const runtimeContext = buildAgentRuntimeContext(draft, contextData.clientSettings);
     const activeSystemPrompt = `${policySystemPrompt}\n${runtimeContext}`;
-    // 会话绑定的不可变预设修订：新会话在 createSession 冻结；旧会话（无修订）
-    // 在启动前惰性补齐（atomic 写回，不改动 messages）。run 只读绑定 revision，
-    // 预设本体/active 的改删不影响已开始会话。
-    const boundPreset = await this.withSignal(this.ensureSessionPresetRevision(sessionId), combined);
-    const boundRevision = boundPreset || { presetId: '', presetName: '', presetRevisionHash: '', version: 0, createdAt: Date.now(), effectivePolicyFingerprint: '', slots: [] };
-    const revisionEffectiveCreativeMode = boundRevision.presetRevisionHash
-      ? !(boundRevision.emptyPolicy === true)
-      : creativeMode;
     const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
     let taskStatus = 'failed';
     const taskStartedAt = Date.now();
     try {
-      // 锁会话前重读：ensureSessionPresetRevision 可能刚写过 meta（补 revision），
-      // 用最新 meta 做 creativeModeLocked 锁写，避免覆盖刚冻结的 revision。
-      const sessionForLock = storedSession.meta?.presetRevision?.presetId
-        ? storedSession
-        : await this.readSession(sessionId);
-      if (sessionForLock.meta?.id && sessionForLock.meta.creativeModeLocked !== true) {
-        sessionForLock.meta = { ...sessionForLock.meta, creativeMode, creativeModeLocked: true, updatedAt: Date.now() };
-        await this.writeSession(sessionId, sessionForLock);
-      }
-      const modelApi = this.resolveModelApi(provider, modelId);
-      const capabilities = resolveCapabilities(modelApi, modelInfo.reasoning, thinkingLevel, modelInfo);
       audit('runtime_resolved', {
         provider,
         model: modelId,
         thinkingLevel,
-        policy: { version: PROMPT_AGENT_POLICY_VERSION, ...runtimePolicyInfo(creativeMode) },
-        boundPreset: { presetId: boundRevision.presetId || null, presetName: boundRevision.presetName || null, presetRevisionHash: boundRevision.presetRevisionHash || null },
+        policy: { version: PROMPT_AGENT_POLICY_VERSION, ...runtimePolicyInfo() },
         naiModel: getNovelAiModelProfile(draft.params.model),
         interface: {
           splitPromptFields: contextData.clientSettings.splitPromptFields !== false,
@@ -4023,23 +3102,15 @@ export class PromptAgentService {
         // 审计瘦身：storedConversation 只记录条数 + token 总量，不落消息正文。
         loadedMessages: { count: loadedMessages.length, totalTokens: estimateContextTokens(loadedMessages) },
       });
-      // 系统提示词由绑定 revision 装配（system_head/middle/tail 注入其中），
-      // transformContext 每轮从干净 state 重新装配 canonical 消息（发送即焚）。
+      // 每轮重算实时状态与上下文预算，保持原始消息和工具调用链。
       let latestAssembly;
       const initialAssembly = assemblePromptContext({
-        creativeMode: revisionEffectiveCreativeMode,
-        revision: boundRevision,
         systemPolicy: policySystemPrompt,
         runtimeContext,
-        safetyFooter: PRESET_SAFETY_FOOTER,
         cleanMessages: loadedMessages,
-        modelApi,
-        modelReasoning: modelInfo.reasoning,
         model: modelInfo,
         outputLimit: agentOutputLimit(thinkingLevel),
-        thinkingLevel,
         toolDescriptors: tools.map(tool => ({ name: tool.name, description: tool.description || '', parameters: tool.parameters })),
-        hasVisionImages: Boolean(input?.images?.length),
       });
       latestAssembly = initialAssembly;
       agent = new Agent({
@@ -4068,19 +3139,12 @@ export class PromptAgentService {
           for (const group of inferAgentToolGroups(users.at(-1) || '', users.at(-2) || '')) enabledGroups.add(group);
           tools = selectRuntimeTools(allTools, enabledGroups);
           const assembled = assemblePromptContext({
-            creativeMode: revisionEffectiveCreativeMode,
-            revision: boundRevision,
             systemPolicy: policySystemPrompt,
             runtimeContext: buildAgentRuntimeContext(draft, contextData.clientSettings),
-            safetyFooter: PRESET_SAFETY_FOOTER,
             cleanMessages: messages,
-            modelApi,
-            modelReasoning: modelInfo.reasoning,
             model: modelInfo,
             outputLimit: agentOutputLimit(thinkingLevel),
-            thinkingLevel,
             toolDescriptors: tools.map(tool => ({ name: tool.name, description: tool.description || '', parameters: tool.parameters })),
-            hasVisionImages: Boolean(input?.images?.length),
           });
           latestAssembly = assembled;
           audit('model_context', {
@@ -4092,16 +3156,8 @@ export class PromptAgentService {
             inputMessageCount: messages.length,
             // 审计瘦身：storedConversation 只记录条数与 token 总量，不落消息正文。
             storedConversation: { count: assembled.canonicalMessages.length, totalTokens: estimateContextTokens(assembled.canonicalMessages) },
-            injectedSeedCount: assembled.canonicalMessages.filter(item => item.injected === true).length,
             systemPromptLength: assembled.systemPrompt.length,
             systemPromptFingerprint: assembled.hashes.systemPromptHash,
-            systemPromptContainsRoll: assembled.systemPrompt.includes('{{roll'),
-            systemPromptRollCount: (assembled.systemPrompt.match(/\{\{roll/g) || []).length,
-            systemPromptStart: '', // 审计瘦身：不再记录提示词正文
-            systemPromptHasJailbreak: jailbreakBlock !== '' && assembled.systemPrompt.includes(jailbreakBlock),
-            presetRevisionHash: boundRevision.presetRevisionHash || '',
-            presetName: boundRevision.presetName || '',
-            effectivePolicyFingerprint: assembled.hashes.policyFingerprint,
           });
           return assembled.canonicalMessages;
         },
@@ -4144,8 +3200,6 @@ export class PromptAgentService {
           await agent.continue();
         } else {
           const images = sanitizeAgentImages(input?.images);
-          // §4：agent.prompt 接收纯净用户文本，破限前导不再预拼接；
-          // 注入只发生在 transformContext（revision 驱动，user_preamble 槽位）。
           const userMessageText = text(input?.message).slice(0, 8_000);
           const actualUserMessage = userMessageText;
           const promptImages = images;

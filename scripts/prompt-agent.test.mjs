@@ -14,6 +14,62 @@ const isolated = async fn => {
   try { await fn(service); }
   finally { for (const pending of service.pendingConfirmations.values()) clearTimeout(pending.timer); await rm(root, { recursive: true, force: true }); }
 };
+
+test('标准上下文忽略遗留注入参数，保留多模态消息和工具链且不修改输入', () => {
+  const messages = [
+    { role: 'user', content: [{ type: 'text', text: '原始要求' }, { type: 'image', data: 'YWJjZA==', mimeType: 'image/png' }] },
+    { role: 'assistant', content: [{ type: 'toolCall', id: 'call-1', name: 'get_local_time', arguments: {} }] },
+    { role: 'toolResult', toolCallId: 'call-1', toolName: 'get_local_time', content: [{ type: 'text', text: '时间回执' }] },
+  ];
+  const original = structuredClone(messages);
+  const revision = { presetId: 'old', presetName: '旧预设', slots: ['system_head', 'system_middle', 'system_tail', 'context_head', 'context_depth', 'user_preamble', 'user_suffix', 'conversation_tail', 'assistant_prefill'].map(target => ({ target, enabled: true, content: 'LEGACY_INJECTION', role: 'user', depth: 1 })) };
+  const result = assemblePromptContext({ systemPolicy: '原始业务规则', runtimeContext: '实时页面', cleanMessages: messages, creativeMode: true, revision });
+  assert.match(result.systemPrompt, /^原始业务规则\n实时页面\n/);
+  assert.match(result.systemPrompt, /安全边界/);
+  assert.equal(JSON.stringify(result).includes('LEGACY_INJECTION'), false);
+  assert.deepEqual(result.canonicalMessages, original);
+  result.canonicalMessages[1].content[0].arguments.changed = true;
+  assert.deepEqual(messages, original);
+});
+
+test('旧配置和会话快照不再影响实际模型请求、会话展示和模型切换', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', models: [{ id: 'a', imageInput: true }], select: true });
+  service.config.creativeMode = true;
+  service.config.activeCreativePresetId = 'legacy';
+  service.config.creativePresets = [{ id: 'legacy', slots: [{ target: 'system_head', enabled: true, content: 'LEGACY_INJECTION' }] }];
+  const fresh = await service.createSession({ creativeMode: true });
+  assert.equal('creativeMode' in fresh, false);
+  assert.equal('presetRevision' in (await service.readSession(fresh.id)).meta, false);
+  const stored = await service.readSession(fresh.id);
+  stored.meta.creativeMode = true;
+  stored.meta.creativeModeLocked = true;
+  stored.meta.presetRevision = { presetId: 'legacy', presetName: '旧预设', presetRevisionHash: 'old', slots: service.config.creativePresets[0].slots };
+  await service.writeSession(fresh.id, stored);
+  const previous = globalThis.fetch, requests = [];
+  globalThis.fetch = async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    const chunk = { id: 's', object: 'chat.completion.chunk', created: 1, model: 'a', choices: [{ index: 0, delta: { role: 'assistant', content: '原生回复' }, finish_reason: 'stop' }] };
+    return new Response('data: ' + JSON.stringify(chunk) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  };
+  try {
+    await service.run({ sessionId: fresh.id, message: '查看当前页面', images: [{ data: 'YWJjZA==', mimeType: 'image/png' }], draft: { params: {} } }, () => {});
+    assert.equal(requests.length, 1);
+    assert.equal(JSON.stringify(requests).includes('LEGACY_INJECTION'), false);
+    assert.equal(requests[0].messages.filter(message => message.role === 'user').length, 1);
+    assert.match(JSON.stringify(requests[0].messages), /查看当前页面/);
+    assert.match(JSON.stringify(requests[0].messages), /data:image\/png;base64,YWJjZA==/);
+    assert.ok(requests[0].tools.some(tool => tool.function.name === 'read_current_page'));
+    const listed = (await service.listSessions()).find(item => item.id === fresh.id);
+    assert.equal('creativeMode' in listed, false);
+    assert.equal('presetName' in listed, false);
+    assert.equal('creativeMode' in service.publicConfig(), false);
+    const updated = await service.updateSession(fresh.id, { thinkingLevel: 'off', creativeMode: true });
+    assert.equal('creativeMode' in updated, false);
+    const preserved = await service.readSession(fresh.id);
+    assert.deepEqual(preserved.meta.presetRevision, stored.meta.presetRevision);
+    assert.equal(preserved.messages[0].content[0].text, '查看当前页面');
+  } finally { globalThis.fetch = previous; }
+}));
 test('确认绑定完整后果，异步执行之前占用令牌', () => isolated(async service => {
   service.activeAgents.set('s', { agent: {}, emit() {} });
   const operation = { action: 'delete_chain', resourceId: 'chain-a', payload: {} };
@@ -103,7 +159,7 @@ test('空配置没有预设服务；旧连接统一编辑且保持 ID、Key 与�
   assert.deepEqual(service.listProviders(), []); assert.deepEqual(service.listCustomProviders(), []);
   await service.loginProvider('deepseek', { apiKey: 'synthetic-key' });
   const legacy = service.listCustomProviders()[0]; assert.equal(legacy.id, 'deepseek'); assert.equal(legacy.models.find(model => model.id === 'deepseek-v4-flash').imageInput, true);
-  const session = await service.createSession({ creativeMode: false });
+  const session = await service.createSession();
   await service.saveCustomProvider({ ...legacy, models: legacy.models, apiKey: '', select: true });
   assert.equal(service.getCredential('deepseek').key, 'synthetic-key'); assert.equal(service.listProviders().length, 1);
   assert.equal(service.listCustomProviders().length, 1); assert.equal(service.listAvailableModels().filter(model => model.id === 'deepseek-v4-flash').length, 1);
@@ -138,7 +194,7 @@ test('只在根地址列表 404 时补 /v1，401 不重试；Flash 图片与 low
     const found = await service.fetchCustomProviderModels({ ...customInput(), models: [], baseUrl: 'http://127.0.0.1:1234' });
     assert.equal(found.baseUrl, 'http://127.0.0.1:1234/v1'); assert.equal(paths.length, 2);
     await service.saveCustomProvider({ ...customInput(), baseUrl: found.baseUrl, models: found.models, apiKey: 'synthetic-key', select: true });
-    const session = await service.createSession({ creativeMode: false, thinkingLevel: 'low' });
+    const session = await service.createSession({ thinkingLevel: 'low' });
     await service.run({ sessionId: session.id, message: '看看图片', images: [{ data: 'YWJjZA==', mimeType: 'image/png' }], draft: { params: {} } }, () => {});
     assert.equal(bodies.length, 1); assert.equal(bodies[0].model, 'deepseek-flash'); assert.equal(bodies[0].reasoning_effort, 'low');
     assert.equal(bodies[0].thinking.type, 'enabled'); assert.match(JSON.stringify(bodies[0].messages), /data:image\/png;base64,YWJjZA==/);
@@ -204,7 +260,7 @@ test('思考能力保存后重载保持，切换模型与非法旧档位按当�
   const restored = new PromptAgentService({ lanSecret: 'synthetic', configFile: service.isolatedRoot }); await restored.init();
   assert.equal(await readFile(service.configFilePath(), 'utf8'), before);
   assert.deepEqual(restored.listAvailableModels()[0].thinkingLevels, ['low', 'high', 'xhigh']);
-  const session = await restored.createSession({ thinkingLevel: 'xhigh', creativeMode: false }); assert.equal(session.thinkingLevel, 'xhigh');
+  const session = await restored.createSession({ thinkingLevel: 'xhigh' }); assert.equal(session.thinkingLevel, 'xhigh');
   assert.equal((await restored.updateSession(session.id, { thinkingLevel: 'max' })).thinkingLevel, 'low');
   assert.equal((await restored.updateSession(session.id, { model: 'b' })).thinkingLevel, 'off');
 }));
@@ -227,7 +283,7 @@ test('设置和聊天读取同一能力，未知模型的兼容展示不会改�
 test('实际 Chat 请求使用保存的思考映射，关闭档位发送接口声明的 none', () => isolated(async service => {
   const model = detectModelCapabilities({ id: 'a', thinkingLevels: ['off', 'low', 'high', 'xhigh'], thinkingLevelMap: { xhigh: 'extreme' } });
   await service.saveCustomProvider({ ...customInput(), models: [model], select: true });
-  const session = await service.createSession({ thinkingLevel: 'xhigh', creativeMode: false });
+  const session = await service.createSession({ thinkingLevel: 'xhigh' });
   const previous = globalThis.fetch, requests = [];
   globalThis.fetch = async (_url, options) => {
     requests.push(JSON.parse(options.body));
@@ -425,7 +481,7 @@ test('工具按任务范围提供，保留核心创作和按需知识', () => is
 }));
 test('真实流适配器遵守输出预算，并持久化唯一终态与目标草稿', () => isolated(async service => {
   await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', contextWindow: 32768, maxTokens: 32000 }], apiKey: 'synthetic', select: true });
-  const session = await service.createSession({ creativeMode: false });
+  const session = await service.createSession();
   const previous = globalThis.fetch;
   const requests = [], events = [];
   globalThis.fetch = async (_url, options) => {
@@ -454,7 +510,7 @@ test('附件只调用当前模型，旧视觉配置不能为纯文本模型代�
     return new Response('data: ' + JSON.stringify(chunk) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
   };
   try {
-    const session = await service.createSession({ creativeMode: false });
+    const session = await service.createSession();
     await service.run({ sessionId: session.id, message: '看看图片', images: [{ data: 'YWJjZA==', mimeType: 'image/png' }], draft: { params: {} } }, () => {});
     assert.equal(requests.length, 1); assert.equal(requests[0].body.model, 'a');
     assert.match(JSON.stringify(requests[0].body.messages), /data:image\/png;base64,YWJjZA==/);
@@ -536,7 +592,7 @@ test('直接保存自动完成目录确认，完全访问可一步创建目录�
 }));
 test('真实 Pi 工具循环可以动态加载工具，日志只记录完整事件摘要', () => isolated(async service => {
   await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
-  const session = await service.createSession({ creativeMode: false }); const previous = globalThis.fetch;
+  const session = await service.createSession(); const previous = globalThis.fetch;
   const requests = [], audits = []; service.appendAuditLog = async (_session, entry) => { audits.push(entry); };
   globalThis.fetch = async (_url, options) => {
     requests.push(JSON.parse(options.body)); const step = requests.length;

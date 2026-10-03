@@ -784,6 +784,14 @@ test('media gateway Pixiv endpoints enforce allowlist, cursor and token privacy'
   const port = server.address().port;
   const base = `http://127.0.0.1:${port}`;
   try {
+    // 共用现有网关实例验证退役接口，防止旧客户端重新写入或激活注入配置。
+    for (const [method, suffix] of [['GET', ''], ['POST', ''], ['PUT', '/active'], ['POST', '/import'], ['GET', '/export'], ['POST', '/inspect'], ['DELETE', '/legacy']]) {
+      const retired = await fetch(`${base}/api/prompt-agent/creative-presets${suffix}`, {
+        method, ...(['POST', 'PUT'].includes(method) ? { headers: { 'content-type': 'application/json' }, body: '{}' } : {}),
+      });
+      assert.equal(retired.status, 404);
+      assert.equal((await retired.json()).error, 'Agent interface not found');
+    }
     let res = await fetch(`${base}/api/pixiv/status`);
     let body = await res.json();
     assert.equal(res.status, 200);

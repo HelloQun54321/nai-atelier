@@ -20,7 +20,6 @@ export interface PromptAgentConfig {
   configuredProviders: string[];
   policyVersion: string;
   policyFingerprint: string;
-  creativeMode: boolean;
   runtimeStartedAt: number;
   backendVersion?: string;
   sourceVersion?: string;
@@ -157,16 +156,7 @@ export interface PromptAgentSession {
   provider: string;
   model: string;
   thinkingLevel: PromptAgentThinkingLevel;
-  creativeMode: boolean;
   imageInput: boolean;
-  creativeModeLocked?: boolean;
-  policyFingerprint?: string;
-  /** Name of the bound preset (破限提示词预设) that was active when the session was created. */
-  presetName?: string;
-  /** Revision hash of the bound preset at session creation time. */
-  presetRevisionHash?: string;
-  /** Policy fingerprint of the session-bound preset (effective when bound). */
-  effectivePolicyFingerprint?: string;
   messageCount?: number;
   running?: boolean;
   taskStatus?: 'running' | 'completed' | 'failed' | 'aborted' | 'interrupted';
@@ -228,126 +218,6 @@ export interface PromptAgentTask {
   finalDraft?: PromptAgentDraft | null;
   events?: PromptAgentEvent[];
   pending?: Array<{ requestId: string; approved: boolean; expiresAt: number; operation: { action: string; resourceId: string; payload: Record<string, unknown> } }>;
-}
-
-// ── 破限提示词与预设实验室（9 槽注入契约）────────────────────────────
-// 9 个注入目标（target）固定、顺序稳定、跨组件一致，无旧键别名：
-//   system_head / system_middle / system_tail —— 系统提示词三段（无 role）
-//   context_head      —— 上下文头部帧（role: user|assistant，成对整体维护）
-//   context_depth     —— 上下文窗口深度（严格数值 depth）
-//   user_preamble     —— 用户消息前导帧
-//   user_suffix       —— 用户消息尾部拦截元素
-//   conversation_tail —— 会话尾部拦截（role 固定 user）
-//   assistant_prefill —— assistant 预填（role 固定 assistant）
-// 预设正文统一为 slots: PromptAgentInjectionItem[]。
-
-export type PromptAgentLabTarget =
-  | 'system_head'
-  | 'system_middle'
-  | 'system_tail'
-  | 'context_head'
-  | 'context_depth'
-  | 'user_preamble'
-  | 'user_suffix'
-  | 'conversation_tail'
-  | 'assistant_prefill';
-
-/** 注入项基底：id / name / target / enabled / content；槽位专用字段见下。 */
-export interface PromptAgentInjectionItem {
-  id: string;
-  name: string;
-  target: PromptAgentLabTarget;
-  enabled: boolean;
-  content: string;
-  /** context_head：user | assistant（同一对话帧成对出现，整体增删）；conversation_tail 固定 'user'；assistant_prefill 固定 'assistant'；系统/用户槽位无 role。 */
-  role?: 'user' | 'assistant';
-  /** context_depth：上下文窗口深度（严格数值）。 */
-  depth?: number;
-  /** context_head 成对分组键：同一对 user+assistant 共享同一 pairId，增删整体进行；无 pairId 时按相邻反 role 回退配对。 */
-  pairId?: string;
-}
-
-export interface PromptAgentCreativePreset {
-  id: string;
-  name: string;
-  description?: string;
-  isBuiltin: boolean;
-  createdAt: number;
-  updatedAt: number;
-  slots: PromptAgentInjectionItem[];
-}
-
-export interface PromptAgentCreativePresetState {
-  items: PromptAgentCreativePreset[];
-  activeCreativePresetId?: string;
-  warnings?: string[];
-}
-
-/** 预设修订快照：一次保存记录一份完整 slots 版本。 */
-export interface PromptAgentCreativePresetRevision {
-  presetId: string;
-  presetName: string;
-  revisionHash: string;
-  version: number;
-  createdAt: number;
-  slots: PromptAgentInjectionItem[];
-}
-
-export interface PromptAgentCreativePresetDetail extends PromptAgentCreativePreset {
-  revisions: PromptAgentCreativePresetRevision[];
-}
-
-export type PromptAgentMessageContentPart = { type: string; text?: string; [key: string]: unknown };
-
-/** 规范化上下文估算（Inspector）输出：完整规范化数据，而非仅数字。 */
-export interface PromptAgentCreativeInspectResult {
-  ok: boolean;
-  message?: string;
-  /** 拼装完成的完整系统提示词（9 槽注入后）。 */
-  systemPrompt?: string;
-  /** 规范化后的标准消息序列（role/content，含注入的 head/tail/prefill 帧）。 */
-  canonicalMessages?: Array<{ role: 'user' | 'assistant'; content: string | PromptAgentMessageContentPart[]; injected?: boolean }>;
-  /** 来源片段：每个注入项/历史段在拼装中的归属，便于溯源。 */
-  sourceSegments?: Array<{
-    label: string;
-    target?: PromptAgentLabTarget;
-    presetId?: string;
-    presetName?: string;
-    characterCount: number;
-  }>;
-  /** 令牌估算（服务端粒度）。 */
-  tokenEstimate?: {
-    policyTokens: number;
-    draftTokens: number;
-    historyTokens: number;
-    presetTokens: number;
-    totalTokens: number;
-    contextWindow: number;
-    contextDepth: number;
-    projectedBuffer: number;
-  };
-  warnings?: string[];
-  /** 本次估算输入/输出相关哈希（policy 指纹、拼装哈希等）。 */
-  hashes?: {
-    policyFingerprint?: string;
-    presetRevisionHash?: string;
-    systemPromptHash?: string;
-  };
-  /** 服务端上下文预算明细。 */
-  budget?: {
-    contextWindow: number;
-    outputReserve: number;
-    protocolReserve: number;
-    conversationTokenBudget: number;
-    storedConversation: Array<{ role: 'user' | 'assistant'; content: string | PromptAgentMessageContentPart[]; injected?: boolean }>;
-  };
-}
-
-export interface PromptAgentImportResult {
-  ok: boolean;
-  imported: number;
-  skipped: string[];
-  activeCreativePresetId?: string;
 }
 
 const readError = async (response: Response) => {
@@ -445,12 +315,12 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return (await response.json()).items || [];
   },
-  createSession: async (input: { title?: string; creativeMode?: boolean } = {}): Promise<PromptAgentSession> => {
+  createSession: async (input: { title?: string } = {}): Promise<PromptAgentSession> => {
     const response = await fetch('/api/prompt-agent/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
-  updateSession: async (sessionId: string, patch: Partial<Pick<PromptAgentSession, 'title' | 'provider' | 'model' | 'thinkingLevel' | 'creativeMode'>>): Promise<PromptAgentSession> => {
+  updateSession: async (sessionId: string, patch: Partial<Pick<PromptAgentSession, 'title' | 'provider' | 'model' | 'thinkingLevel'>>): Promise<PromptAgentSession> => {
     const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
     if (!response.ok) return readError(response) as never;
     return response.json();
@@ -536,53 +406,5 @@ export const promptAgentService = {
       await reader.cancel().catch(() => {});
       reader.releaseLock();
     }
-  },
-
-  // ── 破限提示词与预设实验室（9 槽注入契约）────────────────────────
-  getCreativePresets: async (): Promise<PromptAgentCreativePresetState> => {
-    const response = await fetch('/api/prompt-agent/creative-presets', { cache: 'no-store' });
-    if (!response.ok) return readError(response) as never;
-    return response.json();
-  },
-  createCreativePreset: async (input: { name: string; description?: string; forkFromId?: string; slots?: PromptAgentInjectionItem[] }): Promise<PromptAgentCreativePreset> => {
-    const response = await fetch('/api/prompt-agent/creative-presets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
-    if (!response.ok) return readError(response) as never;
-    return response.json();
-  },
-  updateCreativePreset: async (presetId: string, patch: { name?: string; slots?: PromptAgentInjectionItem[]; description?: string }): Promise<PromptAgentCreativePreset> => {
-    const response = await fetch(`/api/prompt-agent/creative-presets/${encodeURIComponent(presetId)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
-    if (!response.ok) return readError(response) as never;
-    return response.json();
-  },
-  deleteCreativePreset: async (presetId: string): Promise<{ ok: boolean }> => {
-    const response = await fetch(`/api/prompt-agent/creative-presets/${encodeURIComponent(presetId)}`, { method: 'DELETE' });
-    if (!response.ok) return readError(response) as never;
-    return response.json();
-  },
-  setActiveCreativePreset: async (presetId: string | null): Promise<PromptAgentCreativePresetState> => {
-    const response = await fetch('/api/prompt-agent/creative-presets/active', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: presetId }) });
-    if (!response.ok) return readError(response) as never;
-    return response.json();
-  },
-  getCreativePresetDetail: async (presetId: string): Promise<PromptAgentCreativePresetDetail> => {
-    const response = await fetch(`/api/prompt-agent/creative-presets/${encodeURIComponent(presetId)}?detail=1`, { cache: 'no-store' });
-    if (!response.ok) return readError(response) as never;
-    return response.json();
-  },
-  importCreativePresets: async (input: { schema: string; version: number; presets: PromptAgentCreativePreset[] }): Promise<PromptAgentImportResult> => {
-    const response = await fetch('/api/prompt-agent/creative-presets/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
-    if (!response.ok) return readError(response) as never;
-    return response.json();
-  },
-  exportCreativePresets: async (presetIds: string[] = []): Promise<{ schema: string; version: number; exportedAt: number; presets: PromptAgentCreativePreset[] }> => {
-    const query = presetIds.length ? `?${presetIds.map(id => `ids=${encodeURIComponent(id)}`).join('&')}` : '';
-    const response = await fetch(`/api/prompt-agent/creative-presets/export${query}`, { cache: 'no-store' });
-    if (!response.ok) return readError(response) as never;
-    return response.json();
-  },
-  inspectCreativeContext: async (input: { sessionId?: string; draft: PromptAgentDraft; message?: string; clientSettings?: Record<string, unknown>; presetId?: string }): Promise<PromptAgentCreativeInspectResult> => {
-    const response = await fetch('/api/prompt-agent/creative-presets/inspect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
-    if (!response.ok) return readError(response) as never;
-    return response.json();
   },
 };

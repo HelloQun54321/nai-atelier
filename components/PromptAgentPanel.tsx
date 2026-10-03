@@ -16,8 +16,7 @@ import { isTopmostModal } from './useModalA11y';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PromptAgentDraft, PromptAgentGenerationResult } from '../types';
-import { PromptAgentCreativePreset, PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, PromptAgentVisionUsage, agentRuntimeWarning, displayModelName, promptAgentService } from '../services/promptAgent';
-import { formatPresetSessionLabel } from './PromptAgentSettings';
+import { PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, PromptAgentVisionUsage, agentRuntimeWarning, displayModelName, promptAgentService } from '../services/promptAgent';
 import { vibeService } from '../services/vibeService';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -205,7 +204,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [modelChanging, setModelChanging] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const changeModelMenu = useCallback((open: boolean) => { setShowModelMenu(open); if (open) setShowMoreMenu(false); }, []);
-  const [creativePresets, setCreativePresets] = useState<PromptAgentCreativePreset[]>([]);
   const [queueMode, setQueueMode] = useState<'steer' | 'followUp'>('steer');
   const [busySessionAction, setBusySessionAction] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState('');
@@ -366,22 +364,12 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     if (next) setActiveSessionId(next);
   };
 
-  const loadCreativePresets = async () => {
-    try {
-      const state = await promptAgentService.getCreativePresets();
-      setCreativePresets(state.items || []);
-    } catch {
-      // 容错：预设读取失败不影响 Agent 主流程
-    }
-  };
-
   useEffect(() => {
     if (!props.open) return;
     setSessionInitError('');
     void Promise.all([
       refreshSessions(),
       promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); }),
-      loadCreativePresets(),
       promptAgentService.getConfig().then(config => setRuntimeWarning(agentRuntimeWarning(config))),
     ]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行'));
   }, [props.open]);
@@ -392,7 +380,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       void Promise.all([
         refreshSessions(activeSessionId),
         promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); }),
-        loadCreativePresets(),
         promptAgentService.getConfig().then(config => setRuntimeWarning(agentRuntimeWarning(config))),
       ]).catch(() => {});
     };
@@ -818,62 +805,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     ? activeSession?.thinkingLevel || 'off'
     : availableThinkingLevels.includes('medium') ? 'medium' : availableThinkingLevels[0] || 'off';
 
-  const updateCreativeMode = async (creativeMode: boolean) => {
-    if (!activeSession || running || activeSession.creativeModeLocked || activeSession.messageCount) return;
-    try {
-      const updated = await promptAgentService.updateSession(activeSession.id, { creativeMode });
-      setSessions(previous => previous.map(item => item.id === updated.id ? {
-        ...item,
-        ...updated,
-        ...(creativeMode === false ? { presetName: undefined, presetRevisionHash: undefined, effectivePolicyFingerprint: undefined } : {}),
-      } : item));
-    } catch (error) {
-      setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '切换注入模式失败' }]);
-    }
-  };
-
-  const selectSessionPreset = async (targetPresetId: string | 'off') => {
-    if (!activeSession || running || activeSession.creativeModeLocked || activeSession.messageCount) return;
-    try {
-      if (targetPresetId === 'off') {
-        const updated = await promptAgentService.updateSession(activeSession.id, { creativeMode: false });
-        setSessions(previous => previous.map(item => item.id === updated.id ? {
-          ...item,
-          ...updated,
-          presetName: undefined,
-          presetRevisionHash: undefined,
-          effectivePolicyFingerprint: undefined,
-        } : item));
-        return;
-      }
-      // 阶段三：切换预设只作用于当前这条新会话（方案 A）
-      const presetState = await promptAgentService.getCreativePresets();
-      const originalActive = presetState.activeCreativePresetId || null;
-      await promptAgentService.setActiveCreativePreset(targetPresetId);
-      try {
-        if (activeSession.creativeMode) {
-          await promptAgentService.updateSession(activeSession.id, { creativeMode: false });
-        }
-        const updated = await promptAgentService.updateSession(activeSession.id, { creativeMode: true });
-        setSessions(previous => previous.map(item => item.id === updated.id ? {
-          ...item,
-          ...updated,
-        } : item));
-      } finally {
-        await promptAgentService.setActiveCreativePreset(originalActive);
-      }
-    } catch (error) {
-      setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '切换注入预设失败' }]);
-    }
-  };
-
-  const defaultPresetId = creativePresets.find(p => p.isBuiltin)?.id || creativePresets[0]?.id || 'builtin-default';
-  const getSessionPresetValue = (session: PromptAgentSession | null) => {
-    if (!session || !session.creativeMode) return 'off';
-    if (!session.presetName) return defaultPresetId;
-    return creativePresets.find(p => p.name === session.presetName)?.id || defaultPresetId;
-  };
-
   const copyMessage = async (messageId: string, value: string) => {
     try {
       if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(value);
@@ -944,7 +875,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           {editingSessionId === session.id ? <form onSubmit={event => { event.preventDefault(); void saveSessionTitle(session); }} className="flex min-h-[4.75rem] items-center px-2 pr-12"><input autoFocus value={editingTitle} onChange={event => setEditingTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setEditingSessionId(''); }} onBlur={() => void saveSessionTitle(session)} className="h-9 min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-2 text-xs text-gray-800 outline-none dark:bg-gray-950 dark:text-gray-100" /></form> : <button type="button" disabled={running && session.id !== activeSessionId} onClick={() => { if (!running) { setActiveSessionId(session.id); setShowSessions(false); setSessionMenuId(''); } }} className="block min-h-[4.75rem] w-full py-2 pl-3 pr-12 text-left">
             <span className="block truncate text-sm font-bold text-gray-800 dark:text-gray-100">{session.title}</span>
             <span className="mt-0.5 block truncate text-micro text-gray-400">{displayModelName(session.model)} · {session.messageCount || 0} 轮 · {new Date(session.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-            <span className="mt-1 flex items-center gap-1.5 text-mini font-bold"><span className={`rounded-full px-1.5 py-0.5 ${session.creativeMode ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>注入{session.creativeMode ? '开' : '关'}</span>{(() => { const presetLabel = formatPresetSessionLabel(session); return presetLabel ? <span title={presetLabel} className="max-w-28 truncate rounded-full bg-violet-100 px-1.5 py-0.5 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">{presetLabel}</span> : null; })()}{session.running ? <span className="text-indigo-600">工作中</span> : session.taskStatus === 'interrupted' ? <span className="text-amber-600">上次中断</span> : session.taskStatus === 'failed' ? <span className="text-red-500">上次失败</span> : <span className="text-emerald-600">就绪</span>}</span>
+            <span className="mt-1 flex items-center gap-1.5 text-mini font-bold">{session.running ? <span className="text-indigo-600">工作中</span> : session.taskStatus === 'interrupted' ? <span className="text-amber-600">上次中断</span> : session.taskStatus === 'failed' ? <span className="text-red-500">上次失败</span> : <span className="text-emerald-600">就绪</span>}</span>
           </button>}
           <button type="button" data-session-menu onClick={() => setSessionMenuId(value => value === session.id ? '' : session.id)} className="mobile-touch absolute right-1 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 hover:bg-white/70 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="会话操作" title="会话操作"><MoreHorizontal className="h-4 w-4" /></button>
           {sessionMenuId === session.id && <div data-session-menu className="appearance-panel absolute right-1 top-[calc(50%+1.45rem)] z-30 w-28 overflow-hidden rounded-xl border border-gray-200 bg-white p-1 shadow-xl ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900">
@@ -985,24 +916,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 {activeSession?.title || '项目 Agent'}
               </h2>
             </div>
-            <div className="flex min-w-0 items-center gap-1.5 truncate text-micro text-gray-500">
-              {running ? (
-                <span className="truncate font-bold text-indigo-600 dark:text-indigo-400">
-                  {executionStatus}
-                </span>
-              ) : (
-                <>
-                  {activeSession?.creativeMode && (
-                    <span
-                      className="shrink-0 rounded bg-violet-100 px-1.5 py-0.5 text-mini font-bold text-violet-700 dark:bg-violet-950/60 dark:text-violet-300"
-                      title={formatPresetSessionLabel(activeSession) || (activeSession.presetName ? `注入预设：${activeSession.presetName}` : '注入模式已开启')}
-                    >
-                      注入
-                    </span>
-                  )}
-                </>
-              )}
-            </div>
+            {running && <div className="flex min-w-0 items-center gap-1.5 truncate text-micro text-gray-500"><span className="truncate font-bold text-indigo-600 dark:text-indigo-400">{executionStatus}</span></div>}
           </div>
 
           {/* 新增：“…” 更多菜单（收进：导出会话日志、清空当前对话） */}
@@ -1057,35 +971,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
         <div ref={scrollRef} onScroll={event => { const element = event.currentTarget; const next = element.scrollHeight - element.scrollTop - element.clientHeight < 80; followBottomRef.current = next; setFollowingBottom(next); }} className="relative flex-1 space-y-6 overflow-y-auto px-4 py-5 md:px-6">
-          {messages.length === 0 && <div className="my-8 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">告诉我你想在项目里做什么</h3><p className="mt-1 text-sm text-gray-500">{sessionReady ? '这是一条独立对话，可在项目的任何页面继续。' : sessionInitError || (modelsLoaded && !activeModel ? '接入后可以观察图片和调整当前草稿。' : '正在加载这条对话…')}</p>{!sessionReady && sessionInitError && <button type="button" onClick={() => { setSessionInitError(''); void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); })]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行')); }} className="mobile-touch mt-3 rounded-xl border border-indigo-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">重试</button>}{activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount && (
-            <div className="mx-auto mt-5 flex max-w-sm items-center justify-between gap-3 border-y border-gray-100 py-3 text-left dark:border-gray-800">
-              <div className="min-w-0 flex-1">
-                <b className="block text-xs font-bold text-gray-800 dark:text-gray-100">注入预设</b>
-                <span className="block text-micro text-gray-500">首条消息前可选，发送后锁定</span>
-              </div>
-              <select
-                aria-label="选择注入预设"
-                disabled={running}
-                value={getSessionPresetValue(activeSession)}
-                onChange={event => void selectSessionPreset(event.target.value)}
-                className="mobile-touch max-w-[11rem] rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-              >
-                <option value="off">关闭注入（普通模式）</option>
-                <optgroup label="内置预设">
-                  {creativePresets.filter(p => p.isBuiltin).map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </optgroup>
-                {creativePresets.some(p => !p.isBuiltin) && (
-                  <optgroup label="自定义预设">
-                    {creativePresets.filter(p => !p.isBuiltin).map(p => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-            </div>
-          )}<div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '看看我的本地图片目录'].map(value => <button key={value} type="button" disabled={!sessionReady} onClick={() => void run(value)} className="mobile-touch rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">{value}</button>)}</div></div>}
+          {messages.length === 0 && <div className="my-8 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">告诉我你想在项目里做什么</h3><p className="mt-1 text-sm text-gray-500">{sessionReady ? '这是一条独立对话，可在项目的任何页面继续。' : sessionInitError || (modelsLoaded && !activeModel ? '接入后可以观察图片和调整当前草稿。' : '正在加载这条对话…')}</p>{!sessionReady && sessionInitError && <button type="button" onClick={() => { setSessionInitError(''); void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); })]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行')); }} className="mobile-touch mt-3 rounded-xl border border-indigo-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">重试</button>}<div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '看看我的本地图片目录'].map(value => <button key={value} type="button" disabled={!sessionReady} onClick={() => void run(value)} className="mobile-touch rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">{value}</button>)}</div></div>}
           <AgentMessageList
             messages={messages}
             visibleMessageCount={visibleMessageCount}

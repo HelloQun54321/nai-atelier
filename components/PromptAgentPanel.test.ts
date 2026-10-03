@@ -27,8 +27,6 @@ const mockSession = {
   imageInput: false,
   messages: [],
   messageCount: 0,
-  creativeMode: false,
-  creativeModeLocked: false,
   running: false,
   createdAt: 1000,
   updatedAt: 1000,
@@ -50,20 +48,10 @@ const stubServices = (sessionOverrides: { imageInput?: boolean; [key: string]: u
         configuredProviders: ['deepseek'],
         policyVersion: '1.0',
         policyFingerprint: 'fp123',
-        creativeMode: false,
         runtimeStartedAt: 1000,
         permissionMode: 'standard',
         backendVersion: 'synthetic',
         sourceVersion: 'synthetic',
-      });
-    }
-    if (url.includes('/api/prompt-agent/creative-presets')) {
-      return responseFor({
-        items: [
-          { id: 'builtin-1', name: '内置默认', description: '系统内置', isBuiltin: true, createdAt: 1, updatedAt: 1, slots: [] },
-        ],
-        activeCreativePresetId: 'builtin-1',
-        warnings: [],
       });
     }
     if (url.includes('/api/prompt-agent/available-models')) {
@@ -338,9 +326,8 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     fireEvent.keyDown(box, { key: 'Enter' }); await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
   });
 
-  it('不再展示独立视觉服务，模型名和注入角标仍可读取', async () => {
+  it('保留模型名称，移除独立视觉服务与注入选择', async () => {
     stubServices({
-      creativeMode: false,
       model: 'deepseek-chat',
     });
     renderPanel(false);
@@ -357,7 +344,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(screen.queryByText(/识图/)).toBeNull();
   });
 
-  it('当开启注入时，顶栏副行仅以紧凑只读角标提示注入状态，不挤压模型名', async () => {
+  it('旧会话带有注入标记时，聊天顶栏和会话列表均不再显示或选择注入', async () => {
     stubServices({ creativeMode: true, presetName: '内置默认', model: 'deepseek-chat' });
     renderPanel(false);
 
@@ -366,9 +353,12 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     });
 
     expect(screen.queryByLabelText('选择本会话注入预设')).toBeNull();
-    const badge = screen.getByText('注入');
-    expect(badge).toBeTruthy();
-    expect(badge.className).toContain('shrink-0');
+    expect(screen.queryByText('注入')).toBeNull();
+    expect(screen.queryByLabelText('选择注入预设')).toBeNull();
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('creative-presets'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '会话列表' }));
+    expect(await screen.findByText('就绪')).toBeTruthy();
+    expect(screen.queryByText(/注入开|注入关|内置默认/)).toBeNull();
     expect(screen.getByText('deepseek-chat')).toBeTruthy();
   });
 });
