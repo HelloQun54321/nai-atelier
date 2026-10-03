@@ -74,3 +74,35 @@ test('分页不递归、拒绝伪图片、目录创建只在批准后执行', ()
   await assert.rejects(readFile(target), { code: 'ENOENT' });
   await store.grant(scope, target, 'write', true); assert.equal((await store.save(scope, target, 'new', png)).filename, 'new.png');
 }));
+
+test('创作文件上传引用校验内容与归属，目录递归保留相对路径', () => fixture(async ({ read, protectedRoot, store }) => {
+  await mkdir(join(read, 'nested')); await writeFile(join(read, 'nested', 'preset.json'), '{"name":"synthetic"}');
+  await writeFile(join(read, 'bad.json'), 'invalid');
+  await assert.rejects(store.registerFile(scope, join(read, 'bad.json')));
+  await rm(join(read, 'bad.json')); await writeFile(join(read, 'hidden.txt'), 'not an asset');
+  const files = await store.directoryFiles(scope, read); assert.equal(files.length, 2);
+  const listed = await store.list(scope, join(read, 'nested'), 0, 30, true); assert.equal(listed.items[0].name, 'preset.json'); assert.equal(listed.items[0].kind, 'creative-file');
+  assert.equal((await store.list(scope, join(read, 'nested'))).items.length, 0);
+  const json = files.find(item => item.name === 'preset.json'); assert.match(json.relativePath, /read\/nested\/preset.json$/);
+  const id = new URL(json.path, 'http://localhost').searchParams.get('id');
+  assert.deepEqual(JSON.parse((await store.asset(scope, id)).buffer.toString()), { name: 'synthetic' });
+  await assert.rejects(store.asset({ ...scope, keyHash: 'different' }, id), /不属于/);
+  await writeFile(join(protectedRoot, 'secret.json'), '{"synthetic":true}');
+  await assert.rejects(store.registerFile(scope, join(protectedRoot, 'secret.json')), /保护区/);
+}));
+test('实际导出支持 JSON、Vibe 和 ZIP，隔离归属与写权限且同名不覆盖', () => fixture(async ({ write, store, setMode }) => {
+  const bytes = Buffer.from('{"synthetic":true}');
+  const item = store.registerExport(scope, 'preset.json', bytes);
+  await assert.rejects(store.saveExport(scope, item.exportId, write), /写入权限/);
+  setMode('full'); await assert.rejects(store.saveExport({ ...scope, sessionId: 'other' }, item.exportId, write), /不属于/);
+  const first = await store.saveExport(scope, item.exportId, write, undefined, 'op');
+  assert.deepEqual(await readFile(first.path), bytes); assert.equal(first.filename, 'preset.json');
+  assert.deepEqual(await store.saveExport(scope, item.exportId, write, undefined, 'op'), first);
+  const second = await store.saveExport(scope, item.exportId, write); assert.equal(second.filename, 'preset (1).json');
+  for (const [name, data] of [['vibe.naiv4vibe', bytes], ['assets.zip', Buffer.from('PK-synthetic')]]) {
+    const ref = store.registerExport(scope, name, data); assert.equal((await store.saveExport(scope, ref.exportId, write)).filename, name);
+  }
+  assert.throws(() => store.registerExport(scope, 'arbitrary.txt', bytes), /仅支持/);
+  assert.throws(() => store.registerExport(scope, 'broken.zip', bytes), /仅支持/);
+  setMode('read_only'); await assert.rejects(store.saveExport(scope, item.exportId, write), /只读/);
+}));

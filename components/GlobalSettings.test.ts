@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_APPEARANCE_PREFERENCES, AppearancePreferences } from '../services/appearancePreferences';
 import { ConfirmDialogProvider } from './ConfirmDialog';
 import { GlobalSettings } from './GlobalSettings';
+import { readAgentPage } from '../services/agentWorkspace';
 import { getCleanSharedImages, IMAGE_SHARING_STORAGE_KEY } from '../services/imageSharing';
 import { readActiveNaiKey, REMEMBER_NAI_KEY_STORAGE_KEY, setActiveNaiKey } from '../services/naiKeyStorage';
 const lowMode = vi.hoisted(() => ({ enabled: false, save: vi.fn() }));
@@ -331,4 +332,14 @@ describe('GlobalSettings', () => {
     const resetBtn = screen.getByRole('button', { name: /全部推荐/ }) as HTMLButtonElement;
     expect(resetBtn.disabled).toBe(true);
   });
+it('Agent 能看到普通外观设置和关闭入口，NovelAI 密钥区域仍不可读取', async () => {
+  render(React.createElement(SettingsHarness, { initialSection: 'appearance' }));
+  const page = readAgentPage({ query: '关闭' }); expect(page.controls.some(item => item.actions.includes('click'))).toBe(true);
+  expect(readAgentPage().text).toContain('外观');
+  cleanup(); subscriptionFixture.expired = true;
+  render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+  await screen.findByText('测试过期订阅');
+  expect(JSON.stringify(readAgentPage())).not.toMatch(/pst-settings-expired|测试过期订阅/);
+});
+
 });

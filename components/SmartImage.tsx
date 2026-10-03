@@ -230,6 +230,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
       {activated && displaySrc && !failed && (
         <img
           src={displaySrc}
+          data-agent-original-src={getMobileOriginalUrl(src)}
           alt={alt}
           className={`${className} ${loaded ? 'opacity-100' : 'opacity-0'}`}
           onLoad={event => { setLoaded(true); onLoad?.(event); }}
@@ -280,6 +281,7 @@ export const OriginalImage: React.FC<OriginalImageProps> = ({ src, decoding = 'a
   return (
     <img
       src={displaySrc}
+      data-agent-original-src={gatewaySrc}
       decoding={decoding}
       onError={event => {
         if (displaySrc !== src) {

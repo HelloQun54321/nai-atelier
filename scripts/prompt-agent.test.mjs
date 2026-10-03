@@ -659,3 +659,91 @@ test('真实 Pi 工具循环可以动态加载工具，日志只记录完整事�
     assert.ok(JSON.stringify(requests[2]).length < 100000);
   } finally { globalThis.fetch = previous; }
 }));
+
+test('切换目标取消旧确认并保留未应用草稿，返回时手动变化优先', () => isolated(async service => {
+  const original = { basePrompt: 'page A', modules: [], params: { steps: 20 }, target: { chainId: 'a', mode: 'text-to-image', fingerprint: 'a-1' } };
+  const draft = { ...structuredClone(original), basePrompt: 'agent A' }, contextData = { clientSettings: { pageClientId: 'tab' } };
+  service.runs.set('retarget', { state: { status: 'running' }, contextData, draft, clientDraft: structuredClone(original) });
+  service.activeAgents.set('retarget', { agent: {}, emit() {} });
+  const confirmation = service.createConfirmation('retarget', { action: 'request_generation', payload: {} });
+  const next = { modules: [], params: { steps: 30 }, target: { chainId: 'b', mode: 'inpaint', fingerprint: 'b-1' } };
+  const sync = (before, value) => service.controlSession('retarget', 'ui_context', '', { clientId: 'tab', page: { title: '画布', snapshotId: 'p', capturedAt: Date.now() }, labRetarget: { targetBefore: before, draft: value } });
+  sync(original.target, next); assert.equal((await confirmation.promise).accepted, false);
+  assert.equal(draft.target.mode, 'inpaint'); assert.equal(draft.params.steps, 30); assert.equal(draft.basePrompt, undefined);
+  assert.throws(() => sync(original.target, original), /过期/);
+  sync(next.target, original); assert.equal(draft.basePrompt, 'agent A');
+  sync(original.target, next); sync(next.target, { ...original, basePrompt: 'manual A', target: { ...original.target, fingerprint: 'a-2' } });
+  assert.equal(draft.basePrompt, 'manual A');
+}));
+test('当前页原生识图遵循模型能力，拒绝经普通命令泄露图片负载', () => isolated(async service => {
+  let calls = 0;
+  const project = { requestUI: async operation => { calls++; assert.equal(operation.action, 'image'); return { title: '当前作品', snapshotId: 'p', controls: [], result: { image: { data: 'YWJjZA==', mimeType: 'image/jpeg' }, label: '合成图' } }; } };
+  const make = supported => service.createTools({ params: {} }, {}, () => {}, project, { imageInput: supported });
+  const find = (tools, name) => tools.find(item => item.name === name);
+  await assert.rejects(find(make(false), 'inspect_current_page_image').execute('t', { snapshotId: 'p', controlId: 'i' }), /不支持图片/); assert.equal(calls, 0);
+  const image = await find(make(true), 'inspect_current_page_image').execute('t', { snapshotId: 'p', controlId: 'i' });
+  assert.equal(image.content[1].type, 'image'); assert.equal(image.content[1].data, 'YWJjZA=='); assert.equal(calls, 1);
+  await assert.rejects(find(make(true), 'operate_current_page').execute('t', { action: 'command', command: 'inspect_edit_canvas', snapshotId: 'p' }), /请使用/);
+}));
+
+test('本地文件真正交付页面上传入口，失败和只读不冒称导入成功', () => isolated(async service => {
+  const root = await mkdtemp(join(tmpdir(), 'nai-attach-'));
+  try {
+    const path = join(root, 'synthetic.json'); await writeFile(path, '{"preset":"synthetic"}');
+    const requests = [], tools = service.createTools({ params: {} }, {}, () => {}, { agentSessionId: 's', keyHash: 'k', requestUI: async operation => { requests.push(operation); return { title: '导入', snapshotId: 'p-2', controls: [], result: { attached: ['synthetic.json'] } }; } });
+    const attach = tools.find(item => item.name === 'attach_local_files');
+    const receipt = JSON.parse((await attach.execute('t', { snapshotId: 'p-1', controlId: 'file', paths: [path] })).content[0].text);
+    assert.deepEqual(receipt.result.attached, ['synthetic.json']); assert.equal(receipt.saved, undefined);
+    const operation = requests[0]; assert.equal(operation.action, 'attach_files'); assert.equal(operation.snapshotId, 'p-1'); assert.equal(operation.files[0].name, 'synthetic.json');
+    const id = new URL(operation.files[0].path, 'http://localhost').searchParams.get('id');
+    assert.deepEqual(JSON.parse((await service.localImages.asset({sessionId:'s',keyHash:'k'},id)).buffer.toString()), {preset:'synthetic'});
+    service.config.permissionMode = 'read_only'; await assert.rejects(attach.execute('t', { snapshotId: 'p', controlId: 'file', paths: [path] }), /只读/); assert.equal(requests.length, 1);
+  } finally { await rm(root, {recursive:true,force:true}); }
+}));
+
+test('实际工具循环在切换作品、模式和生成模型后使用最新草稿与工具说明', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
+  const session = await service.createSession(), previous = globalThis.fetch, requests = [];
+  let reads = 0;
+  globalThis.fetch = async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    const delta = requests.length <= 2 ? { role: 'assistant', tool_calls: [{ index: 0, id: `state-${requests.length}`, type: 'function', function: { name: 'get_lab_state', arguments: '{}' } }] } : { role: 'assistant', content: '已读到新编辑目标' };
+    return new Response('data: ' + JSON.stringify({ id: 's', object: 'chat.completion.chunk', created: 1, model: 'a', choices: [{ index: 0, delta, finish_reason: requests.length <= 2 ? 'tool_calls' : 'stop' }] }) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  };
+  const before = { chainId: 'old', mode: 'text-to-image', fingerprint: 'old-1' };
+  try {
+    await service.run({ sessionId: session.id, message: '查看生图参数', draft: { params: { model: 'nai-diffusion-4-5-full', steps: 20 }, target: before }, context: { clientSettings: { pageClientId: 'tab' } } }, event => {
+      if (event.type !== 'ui_request') return;
+      reads++;
+      const claim = service.controlSession(session.id, 'ui_claim', '', { requestId: event.requestId, clientId: 'tab' });
+      if (reads === 2) service.controlSession(session.id, 'ui_context', '', { clientId: 'tab', page: { title: '局部重绘', snapshotId: 'new', capturedAt: 2 }, labRetarget: { targetBefore: before, draft: { modules: [], basePrompt: 'new page prompt', params: { model: 'nai-diffusion-5-full', steps: 30 }, target: { chainId: 'new', mode: 'inpaint', fingerprint: 'new-1' } } } });
+      service.controlSession(session.id, 'ui_result', '', { requestId: event.requestId, clientId: 'tab', claimId: claim.claimId, result: { title: reads === 1 ? '文生图' : '局部重绘', snapshotId: `p-${reads}`, capturedAt: reads, controls: [] } });
+    });
+    assert.equal(requests.length, 3);
+    const paramsDescription = index => requests[index].tools.find(tool => tool.function.name === 'set_generation_params').function.description;
+    assert.notEqual(paramsDescription(0), paramsDescription(1));
+    const toolResult = requests[2].messages.filter(message => message.role === 'tool').at(-1);
+    const state = JSON.parse(toolResult.content);
+    assert.equal(state.basePrompt, 'new page prompt');
+    assert.equal(state.params.model, 'nai-diffusion-5-full');
+    assert.equal(state.target.mode, 'inpaint');
+    assert.equal(state.params.steps, 30);
+  } finally { globalThis.fetch = previous; }
+}));
+
+test('页面导出按当前会话实际字节保存，不覆盖已有文件且拒绝缺失回执', () => isolated(async service => {
+  await service.setPermissionMode('full');
+  const directory = join(service.isolatedRoot, 'page-exports'), scope = { sessionId: 's', keyHash: 'k' }, buffer = Buffer.from('{"preset":"synthetic"}');
+  const asset = service.localImages.registerExport(scope, 'synthetic.json', buffer);
+  let delivered = true;
+  const tools = service.createTools({ params: {} }, {}, () => {}, { agentSessionId: 's', keyHash: 'k', requestUI: async operation => {
+    assert.equal(operation.action, 'export'); assert.equal(operation.sessionId, 's'); assert.equal(operation.exportId, 'browser-export');
+    return { title: '导出', result: delivered ? asset : {} };
+  } });
+  const save = tools.find(tool => tool.name === 'save_page_export_to_folder');
+  const first = JSON.parse((await save.execute('t', { exportId: 'browser-export', directory })).content[0].text);
+  assert.equal(first.saved, true); assert.deepEqual(await readFile(first.path), buffer);
+  const second = JSON.parse((await save.execute('t2', { exportId: 'browser-export', directory, filename: 'synthetic.json' })).content[0].text);
+  assert.notEqual(first.path, second.path); assert.deepEqual(await readFile(first.path), buffer);
+  delivered = false; await assert.rejects(save.execute('t3', { exportId: 'browser-export', directory }), /实际导出副本/);
+}));

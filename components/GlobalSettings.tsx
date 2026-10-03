@@ -638,7 +638,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
         role="dialog"
         aria-modal="true"
         aria-label="全局设置"
-        data-agent-private="true"
         data-agent-page-title={activeSectionMeta?.label || '全局设置'}
         className="settings-dialog ui-modal-enter operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
         onMouseDown={event => event.stopPropagation()}
@@ -732,7 +731,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
                 <input
                   type="file"
-                  ref={importFileRef}
+                  ref={importFileRef} aria-label="导入外观预设 JSON"
                   accept=".json,application/json"
                   onChange={handleImportPresets}
                   className="hidden"
@@ -822,7 +821,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     return (
                       <div
                         key={preset.id}
+                        role="button" aria-label={`应用外观预设：${preset.name}`} aria-pressed={isSelected} tabIndex={0}
                         onClick={() => !isEditing && applyPreset(preset)}
+                        onKeyDown={event => { if (event.target === event.currentTarget && !isEditing && ['Enter', ' '].includes(event.key)) { event.preventDefault(); applyPreset(preset); } }}
                         className={`atelier-theme-card group relative flex flex-col justify-between overflow-hidden rounded-2xl border p-3 text-left transition cursor-pointer ${
                           isSelected
                             ? 'border-indigo-500 bg-indigo-50/40 ring-2 ring-indigo-500/15 dark:border-indigo-500/80 dark:bg-indigo-950/20'
@@ -1098,7 +1099,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           <section id={`settings-novelai`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'novelai' ? 'hidden' : ''}`}>
             {activeSection === 'novelai' && <div>
             {/* 密钥保管箱：多把密钥 + 命名备注，点击使用即切换 */}
-            <div className="space-y-2">
+            <div data-agent-private="true" className="space-y-2">
               {keyVault.length === 0 && (
                 <p className="rounded-lg border border-dashed border-gray-300 px-3 py-4 text-center text-xs text-gray-500 dark:border-gray-600 dark:text-gray-400">还没有保存的密钥，在下方添加第一把。</p>
               )}
@@ -1154,7 +1155,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 );
               })}
             </div>
-            <div className="mt-3 space-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+            <div data-agent-private="true" className="mt-3 space-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
               <div className="text-xs font-bold text-gray-500 dark:text-gray-400">添加密钥</div>
               <input
                 value={newKeyName}

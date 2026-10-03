@@ -48,7 +48,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
     { action: 'download' as const, label: '下载', title: '下载图片', Icon: Download },
   ];
   const orderedActions = variant === 'card' ? [...actions].reverse() : actions;
-  return <div className={`flex flex-wrap ${variant === 'overlay' ? 'items-stretch' : 'items-center'} gap-2 ${className} ${variant === 'card' && busy ? '!opacity-100 !pointer-events-auto' : ''}`} onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()}>
+  return <div aria-busy={Boolean(busy)} className={`flex flex-wrap ${variant === 'overlay' ? 'items-stretch' : 'items-center'} gap-2 ${className} ${variant === 'card' && busy ? '!opacity-100 !pointer-events-auto' : ''}`} onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()}>
     {orderedActions.map(({ action, label, title, Icon }) => <button
       key={action} type="button" title={title} aria-label={label}
       disabled={Boolean(busy)} onClick={() => void perform(action)}

@@ -970,7 +970,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
 
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <input
-                  ref={folderInputRef}
+                  ref={folderInputRef} aria-label="导入图片文件夹"
                   type="file"
                   // @ts-expect-error webkitdirectory is standard for folder picker
                   webkitdirectory=""
@@ -980,7 +980,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                   onChange={handleFileInputChange}
                 />
                 <input
-                  ref={filesInputRef}
+                  ref={filesInputRef} aria-label="批量导入 PNG 图片"
                   type="file"
                   accept="image/png"
                   multiple
@@ -1103,7 +1103,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                 {detectedItems.map(item => (
                   <div
                     key={item.id}
-                    onClick={() => toggleSelectItem(item.id)}
+                    role="checkbox" aria-label={`导入条目：${item.name}`} aria-checked={item.selected} tabIndex={0} onClick={() => toggleSelectItem(item.id)}
                     className={`group relative flex flex-col rounded-xl border p-2.5 transition cursor-pointer select-none ${
                       item.selected
                         ? 'border-indigo-500 bg-indigo-50/30 dark:border-indigo-500/80 dark:bg-indigo-950/20 shadow-sm'
@@ -1416,7 +1416,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                   return (
                     <div
                       key={item.id}
-                      onClick={() => !isDeleting && toggleCleanupItemSelection(item.id)}
+                      role="checkbox" aria-label={`待清理文件：${item.name}`} aria-checked={isSelected} aria-disabled={isDeleting} tabIndex={0} onClick={() => !isDeleting && toggleCleanupItemSelection(item.id)}
                       className={`flex items-center justify-between gap-3 rounded-xl border p-2.5 transition cursor-pointer select-none ${
                         isSelected
                           ? 'border-rose-300 bg-rose-50/40 dark:border-rose-900/60 dark:bg-rose-950/20'
@@ -1489,7 +1489,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={executeDeleteJunkFiles}
+                    data-agent-action="business" onClick={executeDeleteJunkFiles}
                     disabled={isDeleting || selectedCleanupIds.size === 0}
                     className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-rose-500 disabled:opacity-40 transition active:scale-[0.98]"
                   >

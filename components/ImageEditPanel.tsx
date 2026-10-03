@@ -1,5 +1,5 @@
 import type { PromptAgentDraft, NAIParams } from '../types';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { ImageEditBaseImageSource, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem } from '../types';
 import { LabPageLayout } from '../services/appearancePreferences';
 import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, transformCharacterCoordinatesForImageRect, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions } from '../services/imageEdit';
@@ -9,6 +9,8 @@ import { getCopiedImageData, type ImageGenerationData } from '../services/imageC
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPreview } from './ImageEditPreview';
 import { useLowConsumption } from '../services/lowConsumption';
+import { useAgentCommand } from '../services/agentCommands';
+import { agentRect, paintAgentMask } from '../services/agentCanvas';
 
 export interface ImageEditRequest {
   operation: ImageEditOperation;
@@ -133,6 +135,9 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   onGenerateBarChange,
 }) => {
   const imageCanvasRef = useRef<HTMLCanvasElement>(null);
+  const agentScopeRef = useRef<HTMLDivElement>(null);
+  const agentCommandScope = useId();
+  const [agentCanvasRevision, setAgentCanvasRevision] = useState(0);
   const maskCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -153,6 +158,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const focusedRectRef = useRef<ImageEditPanelState['focusedRect']>(draft.focusedRect || null);
   const undoRef = useRef<MaskSnapshot[]>([]);
   const redoRef = useRef<MaskSnapshot[]>([]);
+  const pendingMaskRestoreRef = useRef<Promise<boolean>>(Promise.resolve(true));
   // 卸载时释放撤销/重做栈中残留的位图快照，避免组件销毁后 GPU 位图泄漏
   useEffect(() => {
     return () => {
@@ -257,32 +263,40 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     // 位图优先：已是解码后的像素快照，直接同步回贴，避免经 dataURL 二次解码
     const context = canvas.getContext('2d');
     if (item.bitmap && context) {
+      pendingMaskRestoreRef.current = Promise.resolve(true);
       context.clearRect(0, 0, canvas.width, canvas.height);
       context.drawImage(item.bitmap, 0, 0);
+      setAgentCanvasRevision(previous => previous + 1);
       focusedRectRef.current = item.rect;
       setState(previous => ({ ...previous, focusedRect: item.rect }));
       renderOverlay();
       return;
     }
     const image = new Image();
+    let complete!: (restored: boolean) => void;
+    pendingMaskRestoreRef.current = new Promise(resolve => { complete = resolve; });
     image.onload = () => {
-      if (restoreRevision !== maskRestoreRevisionRef.current) return;
+      if (restoreRevision !== maskRestoreRevisionRef.current) { complete(false); return; }
       const loadContext = canvas.getContext('2d');
-      if (!loadContext) return;
+      if (!loadContext) { complete(false); return; }
       loadContext.clearRect(0, 0, canvas.width, canvas.height);
       loadContext.drawImage(image, 0, 0);
+      setAgentCanvasRevision(previous => previous + 1);
       focusedRectRef.current = item.rect;
       setState(previous => ({ ...previous, focusedRect: item.rect }));
       renderOverlay();
+      complete(true);
     };
     // 快照 dataURL 解码失败：仅告警并保持当前画布原状（画布内容已是撤销前的状态，堆栈已出栈）
     image.onerror = () => {
+      complete(false);
       console.warn('蒙版快照解码失败，撤销/重做已跳过该步骤', item.rect);
     };
     image.src = item.data;
   };
 
   const resetMask = (width: number, height: number, clearHistory = true) => {
+    setAgentCanvasRevision(previous => previous + 1);
     const canvas = maskCanvasRef.current;
     if (!canvas) return;
     maskRestoreRevisionRef.current += 1;
@@ -521,11 +535,12 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   };
 
   const persistMask = () => {
+    setAgentCanvasRevision(previous => previous + 1);
     const canvas = maskCanvasRef.current;
     if (canvas) {
       const data = canvasToDataUrl(canvas);
       lastAppliedMaskRef.current = data;
-      onDraftChange({ maskData: data, focusedRect: focusedRectRef.current || undefined });
+      onDraftChange({ maskData: data, focusedRect: focusedRectRef.current || undefined }); window.dispatchEvent(new Event("nai-agent-capabilities-changed"));
     }
   };
 
@@ -967,6 +982,77 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     }
   };
 
+  const agentCanvasState = () => ({ operation, width: imageCanvasRef.current?.width || 0, height: imageCanvasRef.current?.height || 0, sourceSize, focused, focusedRect: focusedRectRef.current, strength, noise, expansion, appliedExpansion: draft.appliedExpansion, hasMask: Boolean(maskCanvasRef.current && maskHasInk(maskCanvasRef.current)), canGenerate, busy: isLoading || isImportingImage || isApplyingOutpaint, error });
+  const latestAgentCanvasState = useRef(agentCanvasState); latestAgentCanvasState.current = agentCanvasState;
+  const readCommittedCanvasState = async () => {
+    let previous = '', stableSince = Date.now(); const deadline = Date.now() + 5000;
+    // 等待父组件草稿与异步图片解码提交；仅等一帧仍可能读到旧的 busy／canGenerate。
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 40));
+      const current = latestAgentCanvasState.current(), signature = JSON.stringify(current);
+      if (signature !== previous) { previous = signature; stableSince = Date.now(); }
+      if (!current.busy && Date.now() - stableSince >= 80) return current;
+    }
+    throw new Error('画布状态仍未稳定，请重新读取实际结果');
+  };
+  useAgentCommand({ name: 'get_image_edit_state', label: '读取真实编辑画布', description: '读取底图实际像素尺寸、蒙版、Focused 选区和扩图状态。坐标以实际画布像素为准。', parameters: { type: 'object', properties: {} }, readOnly: true, scope: () => agentScopeRef.current, execute: agentCanvasState });
+  useAgentCommand({ name: 'inspect_edit_canvas', label: '观察当前底图', description: '通过图片观察工具把当前底图交给当前模型；不调用其他视觉模型。', parameters: { type: 'object', properties: {} }, readOnly: true, scope: () => agentScopeRef.current, execute: () => {
+    const source = imageCanvasRef.current;
+    if (!source || isLoading || !state.width) throw new Error('当前底图尚未准备好');
+    const canvas = document.createElement('canvas'), ratio = Math.min(1, 1280 / Math.max(source.width, source.height));
+    canvas.width = Math.round(source.width * ratio); canvas.height = Math.round(source.height * ratio);
+    canvas.getContext('2d')?.drawImage(source, 0, 0, canvas.width, canvas.height);
+    const data = canvas.toDataURL('image/jpeg', .8).split(',')[1];
+    if (!data || data.length > 1_500_000) throw new Error('画布过大，无法交给当前模型');
+    return { image: { data, mimeType: 'image/jpeg', width: source.width, height: source.height }, canvas: agentCanvasState() };
+  } });
+  useAgentCommand({ name: 'edit_image_canvas', label: '编辑蒙版与画布', description: '使用实际像素编辑当前模式。蒙版白色为重绘区域，保留其他像素和撤销记录；Focused 模式必须先设置选区。扩图先设置四边扩展，再应用。不会生成图片或扣费。', parameters: { type: 'object', required: ['operation'], properties: { operation: { enum: ['paint_rectangle', 'paint_ellipse', 'paint_polygon', 'brush_stroke', 'erase_rectangle', 'clear_mask', 'invert_mask', 'undo', 'redo', 'set_focused_rect', 'normalize', 'set_expansion', 'apply_expansion'] }, rect: { type: 'object', required: ['x', 'y', 'width', 'height'], properties: { x: { type: 'number' }, y: { type: 'number' }, width: { type: 'number' }, height: { type: 'number' } } }, points: { type: 'array', items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } } } }, brushSize: { type: 'number', minimum: 1, maximum: 256 }, erase: { type: 'boolean' }, expansion: { type: 'object', properties: { top: { type: 'number' }, right: { type: 'number' }, bottom: { type: 'number' }, left: { type: 'number' } } }, mode: { enum: ['contain', 'crop', 'stretch'] } } }, scope: () => agentScopeRef.current, execute: async args => {
+    const canvas = maskCanvasRef.current, image = imageCanvasRef.current;
+    if (!image || !state.width || isLoading || isImportingImage || isGenerating || isApplyingOutpaint) throw new Error('底图未准备好或当前正在执行，请等待真实画布');
+    if (safeMode) throw new Error('当前安全模式禁止编辑画布，请先由用户调整安全模式');
+    const action = String(args.operation);
+    if (action === 'normalize') {
+      if (!['contain', 'crop', 'stretch'].includes(String(args.mode))) throw new Error('请选择 contain、crop 或 stretch 规范化方式');
+      applyNormalization(args.mode as ImageEditNormalizationMode);
+    } else if (action === 'set_expansion') {
+      if (operation !== 'outpaint') throw new Error('当前不是扩图模式');
+      const value = args.expansion as ImageEditCanvasExpansion;
+      if (!value || !['top', 'right', 'bottom', 'left'].every(key => { const amount = value[key as keyof ImageEditCanvasExpansion]; return Number.isInteger(amount) && amount >= 0 && amount <= 4096 && amount % 64 === 0; })) throw new Error('四边扩展必须是 0～4096 的 64 倍数');
+      const message = validateImageEditDimensions(sourceSize.width + value.left + value.right, sourceSize.height + value.top + value.bottom); if (message) throw new Error(message);
+      setExpansion({ ...value }); onDraftChange({ expansion: { ...value } });
+      return { ...await readCommittedCanvasState(), expansion: value, applied: false };
+    } else if (action === 'apply_expansion') {
+      if (operation !== 'outpaint' || !pendingOutpaint) throw new Error('没有待应用的画布扩展');
+      await applyOutpaint();
+      if (image.width !== sourceSize.width + expansion.left + expansion.right || image.height !== sourceSize.height + expansion.top + expansion.bottom) throw new Error('扩图未完成，请核对页面错误');
+    } else {
+      if (operation === 'image-to-image' || !canvas || !maskEditable) throw new Error('当前模式没有可编辑蒙版；扩图手绘需先开启手动蒙版');
+      if (action === 'set_focused_rect') {
+        if (operation !== 'inpaint') throw new Error('选区仅用于局部重绘');
+        const rect = limitFocusedImageEditRect(image.width, image.height, agentRect(args.rect, image.width, image.height));
+        commitSnapshot(); setFocused(true); focusedRectRef.current = rect; focusedSelectionArmedRef.current = false;
+        setState(previous => ({ ...previous, focusedRect: rect })); onDraftChange({ focused: true, focusedRect: rect });
+        return { ...await readCommittedCanvasState(), focused: true, focusedRect: rect };
+      }
+      if (action === 'clear_mask') clearMask();
+      else if (action === 'invert_mask') invertMask();
+      else if (action === 'undo' || action === 'redo') {
+        if (!(action === 'undo' ? undoRef.current : redoRef.current).length) throw new Error(`没有可${action === 'undo' ? '撤销' : '重做'}的画布操作`);
+        if (action === 'undo') undo(); else redo();
+        if (!await pendingMaskRestoreRef.current) throw new Error('蒙版恢复未完成，请重新读取实际画布');
+      }
+      else {
+        if (focused && !focusedRectRef.current) throw new Error('Focused 重绘需要先设置实际选区');
+        const context = canvas.getContext('2d'); if (!context) throw new Error('蒙版画布不可用');
+        const original = context.getImageData(0, 0, canvas.width, canvas.height);
+        const painted = paintAgentMask(original.data, canvas.width, canvas.height, args, focused ? focusedRectRef.current : null);
+        commitSnapshot(); maskRestoreRevisionRef.current += 1; original.data.set(painted.data); context.putImageData(original, 0, 0); renderOverlay(); persistMask();
+        return { ...await readCommittedCanvasState(), changedPixels: painted.changedPixels };
+      }
+    }
+    return readCommittedCanvasState();
+  } });
+
   const mobileTabs = operation === 'image-to-image'
     ? ([['canvas', '底图'], ['prompt', '提示'], ['params', '参数']] as const)
     : operation === 'inpaint'
@@ -974,12 +1060,14 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     : ([['canvas', '画布'], ['prompt', '提示'], ['params', '参数']] as const);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div ref={agentScopeRef} data-agent-command-scope={agentCommandScope} data-agent-canvas-state={JSON.stringify({ operation, width: state.width, height: state.height, focusedRect: state.focusedRect, focused, revision: agentCanvasRevision, busy: isLoading || isImportingImage || isApplyingOutpaint, error })} aria-busy={isLoading || isImportingImage || isApplyingOutpaint} className="flex min-h-0 flex-1 flex-col">
       <nav className="grid h-10 flex-none grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
         {mobileTabs.map(([value, label]) => (
           <button
             key={value}
             type="button"
+            role="tab"
+            aria-selected={mobileTab === value}
             onClick={() => setMobileTab(value)}
             className={`relative min-w-0 text-sm font-bold ${mobileTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}
           >
@@ -1014,6 +1102,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           enforceFreeStepLimit={enforceFreeStepLimit}
           baseImagePreview={baseImage}
           canvasProps={{
+            agentCommandScope,
             imageCanvasRef,
             maskCanvasRef,
             overlayCanvasRef,

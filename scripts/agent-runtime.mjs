@@ -71,7 +71,7 @@ export const AGENT_TOOL_GROUPS = {
   library: ['get_project_overview', 'search_project_library', 'get_chain', 'get_inspiration', 'read_project_text', 'list_generation_history', 'inspect_generation_image', 'show_project_image', 'inspect_project_image', 'search_character_catalog', 'search_vibes', 'search_character_references', 'create_chain', 'update_chain', 'create_inspiration', 'update_inspiration', 'list_vibe_groups', 'search_aitag', 'get_aitag_work', 'import_aitag_image', 'create_character_reference_from_history', 'create_vibe_from_history', 'set_chain_cover_from_history', 'update_vibe', 'update_character_reference', 'save_vibe_group', 'request_vibe_encoding', 'manage_artist_favorite', 'navigate_view'],
   maintenance: ['get_project_settings', 'get_project_overview', 'request_delete_project_item', 'request_clear_history', 'request_cleanup_history', 'set_anlas_budget', 'set_cloud_queue', 'update_tag_dictionary', 'manage_aitag', 'set_client_preferences', 'request_clear_mobile_cache', 'navigate_view'],
   web: ['web_search', 'read_web_page'],
-  local_files: ['request_local_image_folder_access', 'list_local_images', 'show_local_image', 'inspect_local_image', 'save_project_image_to_folder', 'copy_local_image'],
+  local_files: ['request_local_image_folder_access', 'list_local_images', 'list_local_files', 'show_local_image', 'inspect_local_image', 'save_project_image_to_folder', 'copy_local_image', 'attach_local_files', 'save_page_export_to_folder'],
 };
 export const inferAgentToolGroups = (request = '', previous = '') => {
   const groups = new Set();
@@ -84,7 +84,7 @@ export const inferAgentToolGroups = (request = '', previous = '') => {
   return [...groups];
 };
 export const selectRuntimeTools = (tools, groups) => {
-  const names = new Set(['get_agent_capabilities', 'get_local_time', 'read_current_page', 'operate_current_page', 'enable_tool_group', 'get_lab_state', 'show_project_image']);
+  const names = new Set(['get_agent_capabilities', 'get_local_time', 'read_current_page', 'operate_current_page', 'inspect_current_page_image', 'enable_tool_group', 'get_lab_state', 'show_project_image']);
   for (const group of groups) for (const name of AGENT_TOOL_GROUPS[group] || []) names.add(name);
   return tools.filter(tool => names.has(tool.name));
 };

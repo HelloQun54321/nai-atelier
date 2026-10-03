@@ -819,7 +819,7 @@ const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
 - 页面已提交、优先于旧工作草稿的字段：${JSON.stringify(clientSettings.pageOverrides || [])}。以最新状态继续；业务工具修改的是本轮工作草稿，不得冒称已经显示在页面或完成生成。
 - 本轮工作草稿参数：${JSON.stringify(Object.fromEntries(Object.entries(draft?.params || {}).filter(([, value]) => typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string' && value.length < 500)))}。这是最新状态，先前工具回执可能已过期。
 - 编辑输入摘要：${JSON.stringify(draft?.editContext || null)}
-- 当前作品与模式：${JSON.stringify(draft?.target || { mode: 'text-to-image' })}。只能修改当前模式，禁止转到另一模式生成或替用户绘制蒙版。
+- 当前作品与模式：${JSON.stringify(draft?.target || { mode: 'text-to-image' })}。只能修改当前模式，切换作品或模式后先读取真实工作区并以新的 target 为准；可通过页面 commands 编辑蒙版、选区和扩图，坐标以实际画布像素为准。生成仍必须通过 request_generation 请求用户确认。
 - 当前 NovelAI 模型：${JSON.stringify(modelProfile.id)}（${modelProfile.label} / ${modelProfile.family}）
 - 官方提示能力：${modelProfile.officialPrompting}
 - 官方提示容量：${modelProfile.officialPromptCapacity}
@@ -1993,6 +1993,23 @@ export class PromptAgentService {
       const previous = run.contextData.clientSettings.currentPage;
       if (!previous || Number(page.capturedAt) >= Number(previous.capturedAt || 0)) run.contextData.clientSettings.currentPage = page;
       const sync = payload.labSync;
+      const retarget = payload.labRetarget;
+      if (retarget) {
+        const next = retarget.draft, before = retarget.targetBefore, current = run.clientDraft?.target;
+        if (!before || before.chainId !== current?.chainId || before.mode !== current?.mode || before.fingerprint !== current?.fingerprint) throw Object.assign(new Error('创作目标接续已过期，请重新读取'), { status: 409 });
+        if (!next?.target?.chainId || !['text-to-image', 'image-to-image', 'inpaint', 'outpaint'].includes(next.target.mode) || !next.params || !Array.isArray(next.modules) || JSON.stringify(next).length > 500_000) throw Object.assign(new Error('新的创作目标格式无效'), { status: 400 });
+        // 旧工作草稿仅暂存在任务内，返回原目标且手动草稿未变化时可继续。
+        run.suspendedDrafts ||= new Map();
+        run.suspendedDrafts.set(JSON.stringify([current.chainId, current.mode]), { client: structuredClone(run.clientDraft), draft: structuredClone(run.draft) });
+        while (run.suspendedDrafts.size > 8) run.suspendedDrafts.delete(run.suspendedDrafts.keys().next().value);
+        const saved = run.suspendedDrafts.get(JSON.stringify([next.target.chainId, next.target.mode]));
+        const restored = saved?.client?.target?.fingerprint === next.target.fingerprint ? saved.draft : next;
+        this.cancelPendingConfirmations(sessionId);
+        for (const key of ['basePrompt', 'subjectPrompt', 'negativePrompt', 'modules', 'params', 'editContext', 'target']) { if (key in restored) run.draft[key] = structuredClone(restored[key]); else delete run.draft[key]; }
+        run.draft.target = structuredClone(next.target); run.clientDraft = structuredClone(next);
+        run.contextData.clientSettings.pageOverrides = [];
+        run.contextData.clientSettings.targetChanged = { from: before, to: next.target };
+      }
       if (sync && run.draft?.target && sync.targetAfter?.chainId === run.draft.target.chainId && sync.targetAfter?.mode === run.draft.target.mode) {
         if (run.clientDraft.target?.fingerprint === sync.targetAfter.fingerprint) return { ok: true };
         if (run.clientDraft.target?.fingerprint !== sync.targetBefore?.fingerprint) throw Object.assign(new Error('页面草稿同步已过期，请重新读取实际状态'), { status: 409 });
@@ -2246,9 +2263,26 @@ export class PromptAgentService {
         execute: async (_id, args) => ({ content: jsonText(await this.localImages.list(localScope, args.directory, args.offset, args.limit)) }),
       },
       {
+        name: 'list_local_files', label: '浏览本地创作文件', description: '分页列出电脑目录内的图片、JSON、naiv4vibe 与子目录；不读取无关文本，不递归，每页最多 50 项。取得真实路径后可用 attach_local_files 接入当前上传入口。',
+        parameters: Type.Object({ directory: Type.String(), offset: Type.Optional(Type.Number()), limit: Type.Optional(Type.Number()) }),
+        execute: async (_id, args) => ({ content: jsonText(await this.localImages.list(localScope, args.directory, args.offset, args.limit, true)) }),
+      },
+      {
         name: 'show_local_image', label: '在聊天中展示本地图片', description: '把电脑图片直接贴在聊天中，无需目录确认；文字模型也可展示，展示不表示模型已观察。path 使用目录列表里的真实绝对路径。',
         parameters: Type.Object({ path: Type.String() }),
         execute: async (_id, args) => ({ content: jsonText({ displayImages: [await this.localImages.register(localScope, args.path)], modelHasSeenImage: false }) }),
+      },
+      {
+        name: 'attach_local_files', label: '把电脑文件接入当前上传入口', description: '读取电脑上的图片、JSON 创作配置或 naiv4vibe，并交给当前窗口实际文件上传控件。先读取页面取得 snapshotId/controlId；paths 为真实绝对路径，directory 用于文件夹批量导入。单次最多 200 个文件、总计 128 MB；每个文件最多 30 MB。是否导入成功以页面通知和实际资产为准。',
+        parameters: Type.Object({ snapshotId: Type.String(), controlId: Type.String(), paths: Type.Optional(Type.Array(Type.String(), { maxItems: 200 })), directory: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          if (!project?.requestUI) throw new Error('实时页面连接不可用');
+          if (Boolean(args.directory) === Boolean(args.paths?.length)) throw new Error('请提供文件路径列表或一个文件夹');
+          const files = args.directory ? await this.localImages.directoryFiles(localScope, args.directory) : await Promise.all(args.paths.map(path => this.localImages.registerFile(localScope, path)));
+          if (!files.length) throw new Error('没有可导入的创作文件');
+          const page = await project.requestUI({ action: 'attach_files', snapshotId: args.snapshotId, controlId: args.controlId, files, permissionMode: this.config.permissionMode });
+          return { content: jsonText(page) };
+        },
       },
       {
         name: 'inspect_local_image', label: '观察本地图片', description: '直接将电脑图片交给当前模型观察，不调用其他模型；仅在用户要求观察时使用，当前模型必须支持图片。',
@@ -2269,6 +2303,17 @@ export class PromptAgentService {
         },
       },
       {
+        name: 'save_page_export_to_folder', label: '保存实际页面导出文件', description: '把 Agent 已触发的页面导出保存到电脑指定目录。exportId 必须来自 read_current_page 的 exports 回执。支持图片、JSON、Vibe 和 ZIP，不覆盖已有文件；标准档首次目录写入需用户确认。只返回真实落盘路径，不把浏览器下载请求当成保存成功。',
+        parameters: Type.Object({ exportId: Type.String(), directory: Type.String(), filename: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          if (!project?.requestUI) throw new Error('实时页面连接不可用');
+          const directory = await writableLocalFolder(args.directory);
+          const page = await project.requestUI({ action: 'export', exportId: args.exportId, sessionId: localScope.sessionId, permissionMode: this.config.permissionMode });
+          if (!page.result?.exportId) throw new Error('没有收到实际导出副本');
+          return { content: jsonText(await this.localImages.saveExport(localScope, page.result.exportId, directory, args.filename, operationId(args))) };
+        },
+      },
+      {
         name: 'copy_local_image', label: '复制本地图片', description: '将电脑图片复制到目标目录；标准档自动请求首次写入确认，完全访问直接执行，可以创建不存在的目标目录。保留原图，不覆盖目标文件。',
         parameters: Type.Object({ path: Type.String(), directory: Type.String(), filename: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
@@ -2285,17 +2330,17 @@ export class PromptAgentService {
           return { content: jsonText({ computer, client, source: '电脑操作系统；client 为本次浏览器报告的时区。' }) };
         },
       },
-      ...createAgentPageTools(project, () => this.config.permissionMode),
+      ...createAgentPageTools(project, () => this.config.permissionMode, Boolean(modelInfo?.imageInput)),
       {
         name: 'get_agent_capabilities', label: '查询实际可用能力', description: '回答自己能做什么之前查询：返回当前模型识图能力、图片展示、项目工具分组与调用边界。', parameters: Type.Object({}),
         execute: async () => ({ content: jsonText({
           model: { imageInput: Boolean(modelInfo?.imageInput), imageInputStatus: modelInfo?.capabilityDetection?.imageInput === 'unknown' ? 'unknown' : modelInfo?.imageInput ? 'supported' : 'unsupported', separateVisionModel: false },
           localTime: true, displayProjectImages: Boolean(project?.requestJson), projectDataAvailable: Boolean(project?.requestJson),
-          livePage: { available: Boolean(project?.requestUI), readTool: 'read_current_page', operateTool: 'operate_current_page', scope: '发起任务的工坊浏览器标签页，不包含电脑其他应用' },
+          livePage: { available: Boolean(project?.requestUI), readTool: 'read_current_page', operateTool: 'operate_current_page', imageTool: 'inspect_current_page_image', actions: ['前景弹窗与菜单', '读写普通设置', '点击、填写、勾选、滚动、悬停', '标记区域的拖动与双击', '暂存原图并粘贴到上传入口', '读取全局通知和导出产物'], canvasCommands: ['get_image_edit_state', 'edit_image_canvas'], scope: '发起任务的工坊浏览器标签页，不包含电脑其他应用' },
           toolGroups: Object.keys(AGENT_TOOL_GROUPS), toolInventory: { total: project?.getToolInventory?.().length || new Set(Object.values(AGENT_TOOL_GROUPS).flat()).size, note: '具体工具随对应分组加载，不能把未加载工具说成没有能力' },
           permissionMode: this.publicConfig().permissionMode,
-          localImages: { available: true, actions: ['列出指定目录的图片与子目录', '在聊天中展示本地图片', '当前模型观察本地图片（需要图片输入）', '保存项目图片到指定目录', '复制本地图片'], writeAllowed: this.publicConfig().permissionMode !== 'read_only', writeFolderApproval: this.publicConfig().permissionMode === 'standard', timedExpiry: false },
-          limits: ['本地文件能力限于图片，不提供任意文本文件读写或系统命令；local-data 通过项目工具访问', '图片展示不等于模型已经看过图片', '生图、付费和危险操作仍需用户确认', '未加载的工具可通过 enable_tool_group 按需启用'],
+          localImages: { available: true, actions: ['列出指定目录的图片与子目录', '在聊天中展示本地图片', '当前模型观察本地图片（需要图片输入）', '保存项目图片到指定目录', '复制本地图片', '把本地图片、JSON、Vibe 或目录接入上传入口', '把实际图片、JSON、Vibe、ZIP 导出保存到指定目录'], writeAllowed: this.publicConfig().permissionMode !== 'read_only', writeFolderApproval: this.publicConfig().permissionMode === 'standard', timedExpiry: false },
+          limits: ['本地文件限于图片与创作导入导出，不提供任意文本文件读写或系统命令；local-data 通过项目工具访问', '图片展示不等于模型已经看过图片', '生图、付费和危险操作仍需用户确认', '未加载的工具可通过 enable_tool_group 按需启用'],
         }) }),
       },
       {
@@ -2975,7 +3020,7 @@ export class PromptAgentService {
         },
       },
     ].map(tool => ({ ...tool, execute: async (...args) => {
-      const readOnly = /^(get_|list_|search_|read_|inspect_|show_)/.test(tool.name) || ['enable_tool_group', 'navigate_view'].includes(tool.name) || tool.name === 'operate_current_page' && ['navigate', 'scroll', 'hover', 'press', 'click', 'wait'].includes(args[1]?.action) || tool.name === 'request_local_image_folder_access' && args[1]?.access === 'read';
+      const readOnly = /^(get_|list_|search_|read_|inspect_|show_)/.test(tool.name) || ['enable_tool_group', 'navigate_view'].includes(tool.name) || tool.name === 'operate_current_page' && ['navigate', 'scroll', 'hover', 'press', 'click', 'wait', 'command', 'copy_image', 'double_click'].includes(args[1]?.action) || tool.name === 'request_local_image_folder_access' && args[1]?.access === 'read';
       if (this.config.permissionMode === 'read_only' && !readOnly) throw new Error('当前为只读权限，不能修改项目、生成或保存图片；请由用户在权限菜单切换档位');
       const result = await tool.execute(...args);
       return isAgentPageTool(tool.name) ? result : boundAgentToolResult(result);
@@ -3102,7 +3147,7 @@ export class PromptAgentService {
       let agent;
       const enabledGroups = new Set(inferAgentToolGroups(requestUserText, (storedSession.messages || []).filter(message => message.role === 'user').slice(-1).map(agentMessageText).join(' ')));
       let tools = [];
-      const allTools = this.createTools(draft, contextData, taskEmit, {
+      const toolProject = {
         ...project,
         agentSessionId: sessionId,
         agentOperationScope: `${sessionId}/${(storedSession.messages || []).filter(message => message.role === 'user').length + (input?.mode === 'retry' ? 0 : 1)}`,
@@ -3115,7 +3160,9 @@ export class PromptAgentService {
           audit('tool_groups_enabled', { groups: [...enabledGroups], toolNames: tools.map(tool => tool.name) });
           return { enabledGroups: [...enabledGroups], toolNames: tools.map(tool => tool.name) };
         },
-      }, modelInfo);
+      };
+      const allTools = this.createTools(draft, contextData, taskEmit, toolProject, modelInfo);
+      let toolTarget = JSON.stringify([draft.target?.chainId, draft.target?.mode, draft.params.model]);
       tools = selectRuntimeTools(allTools, enabledGroups);
       const loadedMessages = await this.withSignal(this.loadMessages(sessionId), combined);
       audit('agent_initialized', {
@@ -3159,13 +3206,21 @@ export class PromptAgentService {
           if (contextData.clientSettings.pageClientId) {
             try {
               const page = await this.uiBridge.request(sessionId, { action: 'read', limit: 4 }, taskEmit, combined, 20_000, contextData.clientSettings.pageClientId);
-              contextData.clientSettings.currentPage = { view: page.view, title: page.title, snapshotId: page.snapshotId, capturedAt: page.capturedAt, foreground: page.foreground, busy: page.busy, text: String(page.text || '').slice(0, 1200) };
+              contextData.clientSettings.currentPage = { view: page.view, title: page.title, snapshotId: page.snapshotId, capturedAt: page.capturedAt, foreground: page.foreground, busy: page.busy, notifications: page.notifications, commands: page.commands, text: String(page.text || '').slice(0, 1200) };
             } catch (error) {
               combined.throwIfAborted();
               contextData.clientSettings.currentPage = { view: 'disconnected', title: '当前页面连接未响应；需要重新读取回执', capturedAt: Date.now(), error: text(error.message).slice(0, 200) };
             }
           }
           const users = messages.filter(message => message.role === 'user').slice(-2).map(agentMessageText);
+          const nextToolTarget = JSON.stringify([draft.target?.chainId, draft.target?.mode, draft.params.model]);
+          if (nextToolTarget !== toolTarget) {
+            // 执行器持有工具对象快照：保留对象与本轮搜索白名单，只更新依赖当前模型的说明。
+            // 所有执行函数读取同一个实时 draft，切换作品／模式不会沿用旧草稿。
+            const paramsTool = allTools.find(tool => tool.name === 'set_generation_params');
+            paramsTool.description = `调整当前 NovelAI ${getNovelAiModelProfile(draft.params?.model).label} 的尺寸、步数、引导、采样器和其他参数，只传需要修改的字段；模型能力以 get_lab_state 与官方知识工具为准。`;
+            toolTarget = nextToolTarget;
+          }
           for (const group of inferAgentToolGroups(users.at(-1) || '', users.at(-2) || '')) enabledGroups.add(group);
           tools = selectRuntimeTools(allTools, enabledGroups);
           const assembled = assemblePromptContext({

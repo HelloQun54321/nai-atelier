@@ -92,3 +92,13 @@ test('Token 摘要与旧日志导出剔除金额，原资料不变，NovelAI Anl
   assert.equal(JSON.stringify(result).includes('"cost"'), false); assert.equal(result[0].operation.estimatedCost, 20);
   assert.equal(original[0].usage.cost.total, 9);
 });
+
+test('大像素回执只允许观察操作，不能放宽普通控件回执', async () => {
+  const bridge = new AgentUiBridge(); let event;
+  const large = { title: '画布', snapshotId: 'p', controls: [], result: { image: { data: 'a'.repeat(100000), mimeType: 'image/jpeg' } } };
+  const pending = bridge.request('s', { action: 'image' }, value => { event = value; });
+  bridge.reply('s', { requestId: event.requestId, result: large }); assert.deepEqual(await pending, large);
+  const ordinary = bridge.request('s', { action: 'click' }, value => { event = value; });
+  assert.throws(() => bridge.reply('s', { requestId: event.requestId, result: large }), /无效/);
+  bridge.reply('s', { requestId: event.requestId, result: { title: '页面', snapshotId: 'p', controls: [] } }); await ordinary;
+});

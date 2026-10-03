@@ -164,7 +164,7 @@ export const HistoryImageViewer: React.FC<Props> = props => {
         </header>
         <div className="history-viewer-content">
           <div className="history-viewer-image-column">
-            <div ref={stageRef} className={`history-viewer-stage ${zoom > 1 ? 'history-viewer-stage--zoomed' : ''}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd} onDoubleClick={event => { if (!(event.target as HTMLElement).closest('button')) zoom === 1 ? zoomAt(1 / fit) : reset(); }}>
+            <div ref={stageRef} data-agent-interaction="pan" aria-label="历史图片平移与缩放" className={`history-viewer-stage ${zoom > 1 ? 'history-viewer-stage--zoomed' : ''}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd} onDoubleClick={event => { if (!(event.target as HTMLElement).closest('button')) zoom === 1 ? zoomAt(1 / fit) : reset(); }}>
               <OriginalImage key={`${item.id}:${retry}`} src={item.imageUrl} alt="历史生成图片预览" draggable={false} data-safe-mode-ignore="true" className="history-viewer-image" style={{ width, height, transform: `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }} onLoad={event => { const image = event.currentTarget; if (image.naturalWidth && image.naturalHeight) setNatural({ width: image.naturalWidth, height: image.naturalHeight }); }} onError={() => setImageFailed(true)} />
               {imageFailed && <button className="history-viewer-error" onClick={() => { setImageFailed(false); setRetry(value => value + 1); }}>原图加载失败 · 重试</button>}
               <div className="history-viewer-manage">

@@ -3182,12 +3182,20 @@ const serveDistFile = async (req, res, url) => {
           const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
           return sendJson(res, 200, await promptAgent.setPermissionMode(body.mode));
         }
-        if (url.pathname === '/api/prompt-agent/local-image') {
+        if (url.pathname === '/api/prompt-agent/local-image' || url.pathname === '/api/prompt-agent/local-file') {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
           const scope = await getCloudQueueScope(req);
           const image = await promptAgent.localImages.asset({ sessionId: url.searchParams.get('sessionId') || '', keyHash: scope.keyHash || '' }, url.searchParams.get('id') || '');
           res.writeHead(200, { 'Content-Type': image.mimeType, 'Content-Length': image.buffer.length, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
           return res.end(image.buffer);
+        }
+        if (url.pathname === '/api/prompt-agent/export') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const scope = await getCloudQueueScope(req);
+          const sessionId = decodeURIComponent(String(req.headers['x-agent-session'] || ''));
+          const filename = decodeURIComponent(String(req.headers['x-agent-filename'] || ''));
+          const buffer = await readRequestBody(req, 30 * 1024 * 1024);
+          return sendJson(res, 200, promptAgent.localImages.registerExport({ sessionId, keyHash: scope.keyHash || '' }, filename, buffer));
         }
         if (url.pathname === '/api/prompt-agent/tag-translations') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });

@@ -10,14 +10,14 @@ type PageClient = { clientId: string; baseline: PromptAgentDraft; getDraft: () =
 const clients = new Map<string, PageClient>();
 const executing = new Map<string, AbortController>();
 const handled = new Set<string>();
-const pageSummary = (page: AgentPageSnapshot) => ({ view: page.view, title: page.title, snapshotId: page.snapshotId, capturedAt: page.capturedAt, foreground: page.foreground, busy: page.busy, text: page.text.slice(0, 1200), controls: page.controls.slice(0, 4).map(({ id, label, role, checked, selected, expanded, pressed, disabled, value }) => ({ id, label, role, checked, selected, expanded, pressed, disabled, value: value?.slice(0, 240) })) });
+const pageSummary = (page: AgentPageSnapshot) => ({ view: page.view, title: page.title, snapshotId: page.snapshotId, capturedAt: page.capturedAt, foreground: page.foreground, busy: page.busy, notifications: page.notifications?.slice(-4).map(item => ({ ...item, text: item.text.slice(0, 400) })), commands: page.commands?.map(({ name, label, readOnly }) => ({ name, label, readOnly })), text: page.text.slice(0, 1200), controls: page.controls.slice(0, 4).map(({ id, label, context, role, checked, selected, expanded, pressed, disabled, value }) => ({ id, label, context, role, checked, selected, expanded, pressed, disabled, value: value?.slice(0, 240) })) });
 const stopClient = (sessionId: string) => { clients.get(sessionId)?.stop(); clients.delete(sessionId); if (!clients.size) clearAgentPageHover(); };
 const syncPage = async (sessionId: string) => {
   const client = clients.get(sessionId); if (!client) return;
   const current = client.getDraft(), changes = diffAgentClientDraft(client.baseline, current);
   const sameTarget = current.target && client.baseline.target && current.target.chainId === client.baseline.target.chainId && current.target.mode === client.baseline.target.mode;
-  await promptAgentService.pageControl(sessionId, 'ui_context', { clientId: client.clientId, page: pageSummary(readAgentPage({ limit: 4 })), ...(sameTarget && (changes.length || current.target?.fingerprint !== client.baseline.target?.fingerprint) ? { labSync: { targetBefore: client.baseline.target, targetAfter: current.target, changes } } : {}) });
-  if (sameTarget) client.baseline = structuredClone(current);
+  await promptAgentService.pageControl(sessionId, 'ui_context', { clientId: client.clientId, page: pageSummary(readAgentPage({ limit: 4 })), ...(!sameTarget && current.target && client.baseline.target ? { labRetarget: { targetBefore: client.baseline.target, draft: current } } : sameTarget && (changes.length || current.target?.fingerprint !== client.baseline.target?.fingerprint) ? { labSync: { targetBefore: client.baseline.target, targetAfter: current.target, changes } } : {}) });
+  if (current.target) client.baseline = structuredClone(current);
 };
 const enqueue = (sessionId: string, work: () => Promise<void>) => {
   const client = clients.get(sessionId);

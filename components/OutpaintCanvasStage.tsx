@@ -291,7 +291,7 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
 
             {/* 可拖拽的原图内框 */}
             <div
-              onPointerDown={handlePointerDown}
+              data-agent-interaction="drag" aria-label="扩图底图摆放" onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
               onPointerCancel={handlePointerUp}

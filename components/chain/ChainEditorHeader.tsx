@@ -159,7 +159,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                 </div>}
             </div>
         </header>
-        <input type="file" ref={importInputRef} className="hidden" accept="image/png,application/json,.json" onChange={handleImportImage} />
+        <input aria-label="导入 PNG 或 JSON 创作配置" type="file" ref={importInputRef} className="hidden" accept="image/png,application/json,.json" onChange={handleImportImage} />
         {saveActionsOpen && canSaveActiveModeToLibrary && isOwner && !isPlayground && <>
             {isMobile
                 ? <ImagePreviewPortal><MobileBottomSheet open title={`保存${entityLabel}`} onClose={closeSaveActions}>{renderSaveOptions()}</MobileBottomSheet></ImagePreviewPortal>

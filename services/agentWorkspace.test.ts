@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { clearAgentPageHover, observeAgentPage, operateAgentPage, readAgentPage } from './agentWorkspace';
+import { registerAgentCommand } from './agentCommands';
+import { promptAgentService } from './promptAgent';
 beforeEach(() => {
   document.body.innerHTML = '<main data-agent-view="history"><h1>最近作品</h1><div style="display:none">旧实验室</div><input aria-label="搜索作品" value="雨天"><button>打开图片</button><button>生成图片</button><input aria-label="API Key" value="synthetic-secret"><aside data-agent-surface>Agent 私人聊天</aside></main>';
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 0; });
@@ -156,4 +158,74 @@ it('横向滚动作用于实际滚动容器，原生按钮按回车只执行一�
   expect(scroller.scrollBy).toHaveBeenCalledWith({ left: 200, behavior: 'auto' }); expect(next.scroll.left).toBe(200);
   const click = vi.fn(); document.querySelector('button')!.onclick = click;
   const page = readAgentPage(); await operateAgentPage({ action: 'press', snapshotId: page.snapshotId, controlId: page.controls[0].id, key: 'Enter' }); expect(click).toHaveBeenCalledOnce();
+});
+it('查看生成历史和打开保存菜单不误当执行生图，普通保存有真实点击回执', async () => {
+  document.body.innerHTML = '<main data-agent-view="history"><button>查看生成于昨天的图片</button><button aria-haspopup="dialog">保存风格串</button><button>保存</button><button data-agent-action="business">生成</button></main>';
+  const page = readAgentPage();
+  expect(page.controls.slice(0, 3).every(control => control.actions.includes('click'))).toBe(true);
+  expect(page.controls[3].actions).toEqual([]);
+  const button = document.querySelectorAll('button')[2]; button.onclick = () => { button.textContent = '已保存'; };
+  const receipt = await operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: page.controls[2].id });
+  expect(receipt.controls[2].label).toBe('已保存');
+});
+it('泛称确认也不能代替用户批准，取消始终可以操作', () => {
+  document.body.innerHTML = '<div role="alertdialog" aria-label="费用确认"><button>继续</button><button data-agent-action="browse">取消</button></div>';
+  const page = readAgentPage(); expect(page.controls[0].actions).toEqual([]); expect(page.controls[1].actions).toContain('click');
+});
+it('前景详情回执包含全局失败提示，提示变化更新页面版本', () => {
+  document.body.innerHTML = '<main data-agent-view="aitag"><aside data-agent-page-scope="detail" data-agent-page-title="作品详情"><p>内容</p></aside></main><div role="alert" data-agent-notification="error">保存失败：合成错误</div>';
+  const page = readAgentPage(); expect(page.notifications).toEqual([{ type: 'error', text: '保存失败：合成错误' }]);
+  document.querySelector('[role="alert"]')!.textContent = '保存成功'; expect(readAgentPage().snapshotId).not.toBe(page.snapshotId);
+});
+it('相邻文字和对象名称使多个强度输入可区分，私密字段保持隐藏', () => {
+  document.body.innerHTML = '<main data-agent-view="playground"><div data-agent-object="参考 1：合成图"><div><span>保真</span><input type="number" value="1"/></div></div><input type="password" value="synthetic-secret"/><div data-agent-private><button>密钥管理</button></div></main>';
+  expect(readAgentPage().controls).toEqual([expect.objectContaining({ label: '保真', context: '参考 1：合成图', value: '1' })]);
+});
+it('实际上传入口提供格式与目录语义，读取失败不替换原文件', async () => {
+  document.body.innerHTML = '<main data-agent-view="playground"><input type="file" hidden aria-label="底图上传" accept="image/png"/><div hidden><input type="file" aria-label="旧页面上传"/></div></main>';
+  const page = readAgentPage(); expect(page.controls).toHaveLength(1);
+  expect(page.controls[0]).toMatchObject({ label: '底图上传', accept: 'image/png', actions: ['attach_files', 'paste_image'] });
+  vi.spyOn(promptAgentService, 'getLocalFile').mockRejectedValue(new Error('合成读取失败'));
+  vi.stubGlobal('DataTransfer', class { items = { add: vi.fn() }; });
+  await expect(operateAgentPage({ action: 'attach_files', snapshotId: page.snapshotId, controlId: page.controls[0].id, files: [{ path: '/api/prompt-agent/local-file?sessionId=synthetic&id=' + 'a'.repeat(32), name: 'base.png' }] })).rejects.toThrow('合成读取失败');
+  expect(document.querySelector('input')!.files?.length).toBe(0);
+});
+it('登记的操作只属于可见工作区，隐藏目标与只读修改均拒绝', async () => {
+  document.body.innerHTML = '<main data-agent-view="playground"><div id="canvas-scope"></div></main>';
+  const execute = vi.fn(async () => ({ width: 832, height: 1216, changedPixels: 42 }));
+  const release = registerAgentCommand({ name: 'edit_test_canvas', label: '合成画布', description: '审计', parameters: { type: 'object' }, scope: () => document.getElementById('canvas-scope'), execute });
+  try {
+    const page = readAgentPage(); expect(page.commands?.[0].name).toBe('edit_test_canvas');
+    await expect(operateAgentPage({ action: 'command', command: 'edit_test_canvas', snapshotId: page.snapshotId, permissionMode: 'read_only' })).rejects.toThrow('只读');
+    const result = await operateAgentPage({ action: 'command', command: 'edit_test_canvas', snapshotId: page.snapshotId, permissionMode: 'full' });
+    expect(result.result).toMatchObject({ changedPixels: 42 }); expect(execute).toHaveBeenCalledOnce();
+    document.getElementById('canvas-scope')!.hidden = true;
+    expect(readAgentPage().commands).toEqual([]);
+    await expect(operateAgentPage({ action: 'command', command: 'edit_test_canvas', snapshotId: readAgentPage().snapshotId })).rejects.toThrow('没有这个操作');
+  } finally { release(); }
+});
+
+it('其他弹窗打开时背景画布操作不可用，Agent 自己的选择卡不抢页面焦点', () => {
+  document.body.innerHTML = '<main data-agent-view="playground"><section id="canvas"></section></main>';
+  const stop = registerAgentCommand({ name: 'canvas_command', label: '画布', description: '', parameters: {}, scope: () => document.getElementById('canvas'), execute: () => ({}) });
+  try {
+    expect(readAgentPage().commands).toHaveLength(1);
+    const dialog = document.createElement('div'); dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-label', '设置'); document.body.append(dialog);
+    expect(readAgentPage().commands).toHaveLength(0); dialog.remove();
+    const card = document.createElement('div'); card.setAttribute('role', 'dialog'); card.dataset.agentSurface = 'true'; document.body.append(card);
+    expect(readAgentPage().view).toBe('playground'); expect(readAgentPage().commands).toHaveLength(1);
+  } finally { stop(); }
+});
+it('多条通知和长输入共存时回执仍低于桥接上限', () => {
+  document.body.innerHTML = '<main data-agent-view="history">' + Array.from({ length: 20 }, () => '<textarea aria-label="字段">' + 'a'.repeat(1800) + '</textarea>').join('') + '</main>' + Array.from({ length: 8 }, () => '<div role="status">' + 'n'.repeat(1200) + '</div>').join('');
+  const page = readAgentPage({ limit: 20 }); expect(JSON.stringify(page).length).toBeLessThan(50_000); expect(page.nextOffset).toBeDefined();
+});
+
+it('全屏画布保留所属命令，画布像素变化使旧回执失效', () => {
+  document.body.innerHTML = '<main data-agent-view="playground"><section id="canvas" data-agent-command-scope="canvas-a" data-agent-canvas-state="1"></section></main><div role="dialog" aria-label="大画板" data-agent-command-scope="canvas-a"></div>';
+  const stop = registerAgentCommand({ name: 'canvas_test', label: '画布', description: '', parameters: {}, scope: () => document.getElementById('canvas'), execute: () => ({}) });
+  try { const before = readAgentPage(); expect(before.title).toBe('大画板'); expect(before.commands).toHaveLength(1);
+    document.getElementById('canvas')!.dataset.agentCanvasState = '2'; expect(readAgentPage().snapshotId).not.toBe(before.snapshotId);
+    document.querySelector<HTMLElement>('[role="dialog"]')!.dataset.agentCommandScope = 'unrelated'; expect(readAgentPage().commands).toHaveLength(0);
+  } finally { stop(); }
 });

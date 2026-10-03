@@ -22,6 +22,7 @@ const CanvasLayer: React.FC<React.PropsWithChildren<{ fullscreen: boolean }>> = 
 };
 
 export interface ImageEditCanvasProps {
+  agentCommandScope?: string;
   imageCanvasRef: React.RefObject<HTMLCanvasElement | null>;
   maskCanvasRef: React.RefObject<HTMLCanvasElement | null>;
   overlayCanvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -41,6 +42,7 @@ export interface ImageEditCanvasProps {
 }
 
 export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
+  agentCommandScope,
   imageCanvasRef,
   maskCanvasRef,
   overlayCanvasRef,
@@ -211,6 +213,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
     <CanvasLayer fullscreen={isFullscreen}>
     <div
       role={isFullscreen ? 'dialog' : undefined}
+      data-agent-command-scope={isFullscreen ? agentCommandScope : undefined}
       aria-modal={isFullscreen ? true : undefined}
       aria-label={isFullscreen ? '全屏大画板精修' : undefined}
       className={

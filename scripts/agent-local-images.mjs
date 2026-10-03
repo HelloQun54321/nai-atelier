@@ -12,7 +12,7 @@ export const imageMime = buffer => buffer.subarray(0, 8).equals(Buffer.from([137
 /** 读取由权限档位控制，标准档目录写入需要确认；不提供任意文件或命令执行。 */
 export class AgentLocalImages {
   constructor({ protectedRoot = resolve('local-data'), getMode = () => 'standard' } = {}) {
-    this.protectedRoot = protectedRoot; this.getMode = getMode; this.grants = new Map(); this.images = new Map(); this.writes = new Map();
+    this.protectedRoot = protectedRoot; this.getMode = getMode; this.grants = new Map(); this.images = new Map(); this.writes = new Map(); this.exports = new Map();
   }
   prune() {
     for (const map of [this.grants, this.images, this.writes]) {
@@ -61,15 +61,16 @@ export class AgentLocalImages {
     if (!grant) throw Object.assign(new Error(`此目录尚未获得${access === 'read' ? '读取' : '写入'}权限，请先请求用户确认目录用途`), { status: 403 });
     return actual;
   }
-  async list(scope, directory, offset = 0, limit = 30) {
+  async list(scope, directory, offset = 0, limit = 30, creativeFiles = false) {
     const path = await this.authorized(scope, directory, 'read');
-    const entries = (await readdir(path, { withFileTypes: true })).filter(item => item.isDirectory() || item.isSymbolicLink() || /\.(png|jpe?g|webp|gif)$/i.test(item.name)).sort((a,b) => a.name.localeCompare(b.name));
+    const supported = name => /\.(png|jpe?g|webp|gif)$/i.test(name) || creativeFiles && /\.(json|naiv4vibe)$/i.test(name);
+    const entries = (await readdir(path, { withFileTypes: true })).filter(item => item.isDirectory() || item.isSymbolicLink() || supported(item.name)).sort((a,b) => a.name.localeCompare(b.name));
     offset = Math.max(0, Math.floor(Number(offset) || 0)); limit = Math.min(50, Math.max(1, Math.floor(Number(limit) || 30)));
     const items = [];
     for (const entry of entries.slice(offset, offset + limit)) {
       try {
         const actual = await this.authorized(scope, join(path, entry.name), 'read'); const info = await stat(actual);
-        if (info.isDirectory() || /\.(png|jpe?g|webp|gif)$/i.test(entry.name)) items.push({ name: entry.name, path: join(path, entry.name), kind: info.isDirectory() ? 'directory' : 'image', bytes: info.size, modifiedAt: info.mtime.toISOString() });
+        if (info.isDirectory() || supported(entry.name)) items.push({ name: entry.name, path: join(path, entry.name), kind: info.isDirectory() ? 'directory' : /\.(json|naiv4vibe)$/i.test(entry.name) ? 'creative-file' : 'image', bytes: info.size, modifiedAt: info.mtime.toISOString() });
       } catch { /* 越界软链接和不可访问项不向模型开放。 */ }
     }
     return { directory: path, items, total: entries.length, nextOffset: offset + limit < entries.length ? offset + limit : null, recursive: false };
@@ -94,15 +95,71 @@ export class AgentLocalImages {
     this.images.set(id, { ...scope, keyHash: scope.keyHash || '', path: image.path });
     return { kind: 'local', id, title: image.name, path: '/api/prompt-agent/local-image?sessionId=' + encodeURIComponent(scope.sessionId) + '&id=' + id, modelHasSeenImage: false };
   }
+  async readFile(scope, path) {
+    const actual = await this.authorized(scope, path, 'read');
+    if (/\.(?:png|jpe?g|webp|gif)$/i.test(actual)) return this.read(scope, actual);
+    if (!/\.(?:json|naiv4vibe)$/i.test(actual)) throw new Error('只接受图片、JSON 创作配置或 naiv4vibe 文件');
+    const file = await open(actual, 'r');
+    try {
+      const info = await file.stat(); if (!info.isFile() || info.size > MAX_BYTES) throw new Error('文件必须在 30 MB 以内');
+      const buffer = Buffer.alloc(info.size + 1); let bytesRead = 0;
+      while (bytesRead < buffer.length) { const chunk = await file.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead); if (!chunk.bytesRead) break; bytesRead += chunk.bytesRead; }
+      if (bytesRead > info.size) throw new Error('文件正在修改，请稍后重试');
+      const bytes = buffer.subarray(0, bytesRead); JSON.parse(bytes.toString('utf8'));
+      return { buffer: bytes, mimeType: 'application/json', name: basename(actual), path: actual };
+    } finally { await file.close(); }
+  }
+  async registerFile(scope, path, relativePath) {
+    const file = await this.readFile(scope, path), id = randomBytes(16).toString('hex'); this.prune();
+    this.images.set(id, { ...scope, keyHash: scope.keyHash || '', path: file.path, file: true });
+    return { path: '/api/prompt-agent/local-file?sessionId=' + encodeURIComponent(scope.sessionId) + '&id=' + id, name: file.name, ...(relativePath ? { relativePath } : {}) };
+  }
+  async directoryFiles(scope, directory) {
+    const root = await this.folder(directory), result = [];
+    const walk = async (path, depth) => {
+      if (depth > 8) throw new Error('文件夹层级超过 8 层，请选择更具体的目录');
+      for (const entry of await readdir(path, { withFileTypes: true })) {
+        const candidate = join(path, entry.name);
+        // 不跟随目录软链接，不进入项目保护区。
+        if (entry.isSymbolicLink()) continue;
+        await this.checkProtected(candidate);
+        if (entry.isDirectory()) await walk(candidate, depth + 1);
+        else if (/\.(png|jpe?g|webp|gif|json|naiv4vibe)$/i.test(entry.name)) {
+          if (result.length >= 200) throw new Error('单次最多 200 个创作文件，请选择更小的目录');
+          result.push(await this.registerFile(scope, candidate, relative(dirname(root), candidate).split(sep).join('/')));
+        }
+      }
+    };
+    await walk(root, 0); return result;
+  }
   async asset(scope, id) {
     this.prune(); const image = this.images.get(id);
     if (!image || image.sessionId !== scope.sessionId || image.keyHash !== (scope.keyHash || '')) throw Object.assign(new Error('该图片引用不属于当前会话或 Key，请重新展示图片'), { status: 403 });
-    return this.read(scope, image.path);
+    return image.file ? this.readFile(scope, image.path) : this.read(scope, image.path);
   }
-  async save(scope, directory, filename, buffer, operationId = '') {
-    const path = await this.authorized(scope, directory, 'write'); const mime = imageMime(buffer);
+  registerExport(scope, filename, buffer) {
+    if (!scope.sessionId || !filename || buffer.length > MAX_BYTES) throw new Error('导出文件无效或超过 30 MB');
+    const mimeType = this.exportMime(filename, buffer), id = randomBytes(16).toString('hex');
+    this.exports.set(id, { ...scope, keyHash: scope.keyHash || '', buffer, name: filename, mimeType });
+    while (this.exports.size > 4) this.exports.delete(this.exports.keys().next().value);
+    return { exportId: id, name: filename, bytes: buffer.length };
+  }
+  exportMime(filename, buffer) {
+    const image = imageMime(buffer); if (image) return image;
+    if (/\.zip$/i.test(filename) && buffer.subarray(0, 2).toString() === 'PK') return 'application/zip';
+    if (/\.(json|naiv4vibe)$/i.test(filename)) { JSON.parse(buffer.toString('utf8')); return 'application/json'; }
+    throw new Error('仅支持图片、JSON、Vibe 或 ZIP 创作导出');
+  }
+  async saveExport(scope, id, directory, filename, operationId) {
+    const item = this.exports.get(id);
+    if (!item || item.sessionId !== scope.sessionId || item.keyHash !== (scope.keyHash || '')) throw new Error('导出文件不属于当前会话或 Key，请重新导出');
+    return this.save(scope, directory, filename || item.name, item.buffer, operationId, item.mimeType);
+  }
+  async save(scope, directory, filename, buffer, operationId = '', exportMime = '') {
+    const path = await this.authorized(scope, directory, 'write'); const mime = exportMime || imageMime(buffer);
     if (!mime || buffer.length > MAX_BYTES) throw new Error('只允许保存 30 MB 以内的 PNG、JPEG、WebP 或 GIF 图片');
-    const suffix = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif' }[mime];
+    const suffix = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif', 'application/json': /\.naiv4vibe$/i.test(filename || '') ? '.naiv4vibe' : '.json', 'application/zip': '.zip' }[mime];
+    if (!suffix || exportMime && this.exportMime(filename || suffix, buffer) !== exportMime) throw new Error('导出格式无效');
     filename = String(filename || 'nai-image' + suffix).trim();
     if (filename.length > 180 || /[\\/:*?"<>|\u0000-\u001f]/.test(filename) || /[. ]$/.test(filename) || /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(filename) || filename.startsWith('.')) throw new Error('请使用普通图片文件名，不能包含目录、系统保留名称或特殊字符');
     const extension = extname(filename).toLowerCase();

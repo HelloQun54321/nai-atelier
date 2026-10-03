@@ -259,6 +259,17 @@ export const promptAgentService = {
     if (!response.ok) throw await parseErrorResponse(response);
     return response.blob();
   },
+  getLocalFile: async (path: string, signal?: AbortSignal): Promise<Blob> => {
+    if (!/^\/api\/prompt-agent\/local-(?:image|file)\?sessionId=[^&]+&id=[a-f0-9]{32}$/.test(path)) throw new Error('本地文件引用无效');
+    const response = await fetch(path, { headers: agentAuthHeaders(), cache: 'no-store', signal });
+    if (!response.ok) throw await parseErrorResponse(response);
+    return response.blob();
+  },
+  uploadExport: async (sessionId: string, name: string, blob: Blob, signal?: AbortSignal): Promise<{ exportId: string; name: string; bytes: number }> => {
+    const response = await fetch('/api/prompt-agent/export', { method: 'POST', signal, headers: { ...agentAuthHeaders(), 'Content-Type': blob.type || 'application/octet-stream', 'X-Agent-Session': encodeURIComponent(sessionId), 'X-Agent-Filename': encodeURIComponent(name) }, body: blob });
+    if (!response.ok) throw await parseErrorResponse(response);
+    return response.json();
+  },
   getConfig: async (): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/config', { cache: 'no-store' });
     if (!response.ok) return readError(response) as never;

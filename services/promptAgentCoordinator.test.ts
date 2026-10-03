@@ -91,3 +91,19 @@ it('工作期间页面与已提交参数持续同步，不靠聊天标题替模�
     expect(run.mock.calls[0][0].context.clientSettings?.pageClientId).toBe(getAgentPageClientId());
   } finally { release(); await pending; mock.mockRestore(); run.mockRestore(); document.body.innerHTML = ''; }
 });
+it('跨模式接续传递完整新目标，收到回执后才更新基线', async () => {
+  document.body.innerHTML = '<main data-agent-view="playground"><input aria-label="当前模式参数"/></main>';
+  let draft: PromptAgentDraft = { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: { steps: 20, width: 832, height: 1216, scale: 5, sampler: 'k_euler' }, target: { chainId: 'playground', mode: 'text-to-image', fingerprint: 'before' } };
+  let release!: () => void;
+  const control = vi.spyOn(promptAgentService, 'pageControl').mockResolvedValue({ ok: true });
+  const run = vi.spyOn(promptAgentService, 'run').mockImplementation(() => new Promise(resolve => { release = () => resolve(undefined); }));
+  const pending = promptAgentCoordinator.run({ sessionId: 'retarget', message: '接续', draft, context: {} }, () => {}, () => draft);
+  try {
+    draft = { ...draft, target: { ...draft.target!, mode: 'inpaint', fingerprint: 'next' } };
+    document.querySelector('input')!.dispatchEvent(new Event('change', { bubbles: true }));
+    await vi.waitFor(() => expect(control).toHaveBeenCalledWith('retarget', 'ui_context', expect.objectContaining({ labRetarget: { targetBefore: expect.objectContaining({ mode: 'text-to-image' }), draft } })));
+    draft = { ...draft, params: { ...draft.params, steps: 23 }, target: { ...draft.target!, fingerprint: 'edited' } };
+    document.querySelector('input')!.dispatchEvent(new Event('change', { bubbles: true }));
+    await vi.waitFor(() => expect(control).toHaveBeenCalledWith('retarget', 'ui_context', expect.objectContaining({ labSync: expect.objectContaining({ targetBefore: expect.objectContaining({ mode: 'inpaint', fingerprint: 'next' }) }) })));
+  } finally { release(); await pending; control.mockRestore(); run.mockRestore(); document.body.innerHTML = ''; }
+});

@@ -40,7 +40,8 @@ export class AgentUiBridge {
     if (payload.error) pending.finish(new Error(String(payload.error).slice(0, 500)));
     else {
       const result = payload.result;
-      if (!result || typeof result.title !== 'string' || typeof result.snapshotId !== 'string' || !Array.isArray(result.controls) || JSON.stringify(result).length > 50_000) throw Object.assign(new Error('页面回执格式无效'), { status: 400 });
+      const imageReply = pending.operation.action === 'image' || pending.operation.action === 'command' && pending.operation.command === 'inspect_edit_canvas';
+      if (!result || typeof result.title !== 'string' || typeof result.snapshotId !== 'string' || !Array.isArray(result.controls) || JSON.stringify(result).length > (imageReply ? 1_600_000 : 50_000)) throw Object.assign(new Error('页面回执格式无效'), { status: 400 });
       pending.finish(null, result);
     }
     return { ok: true };

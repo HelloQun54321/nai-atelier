@@ -560,7 +560,7 @@ export const InspirationDetail: React.FC<Props> = ({
                   type="button"
                   disabled={Boolean(busy)}
                   onClick={() => { setLabMenuOpen(!labMenuOpen); setAssetMenuOpen(false); }}
-                  aria-label="更多底图模式"
+                  aria-label="更多底图模式" aria-haspopup="menu" aria-expanded={labMenuOpen}
                   title="选择导入模式"
                   className="mobile-touch flex items-center justify-center px-2.5 text-white/80 hover:text-white hover:bg-black/15 border-l border-white/15 transition-colors rounded-r-xl sm:px-3"
                 >
@@ -570,7 +570,7 @@ export const InspirationDetail: React.FC<Props> = ({
                 {labMenuOpen && (
                   <>
                     <div className="fixed inset-0 z-20" onClick={() => setLabMenuOpen(false)} />
-                    <div className="appearance-panel absolute bottom-12 left-0 z-30 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                    <div role="menu" aria-label="选择底图模式" className="appearance-panel absolute bottom-12 left-0 z-30 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                       <button
                         type="button"
                         disabled={Boolean(busy)}
@@ -618,7 +618,7 @@ export const InspirationDetail: React.FC<Props> = ({
                 <button
                   type="button"
                   disabled={Boolean(busy)}
-                  onClick={() => { setAssetMenuOpen(!assetMenuOpen); setLabMenuOpen(false); }}
+                  aria-haspopup="menu" aria-expanded={assetMenuOpen} onClick={() => { setAssetMenuOpen(!assetMenuOpen); setLabMenuOpen(false); }}
                   className="mobile-touch flex h-10 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-2.5 text-xs font-bold text-gray-700 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-700 dark:hover:bg-gray-800/80 whitespace-nowrap transition-colors sm:px-3.5"
                 >
                   <Sparkles className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400" />
@@ -629,7 +629,7 @@ export const InspirationDetail: React.FC<Props> = ({
                 {assetMenuOpen && (
                   <>
                     <div className="fixed inset-0 z-20" onClick={() => setAssetMenuOpen(false)} />
-                    <div className="appearance-panel absolute bottom-12 right-0 z-30 w-48 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                    <div role="menu" aria-label="提取图片资产" className="appearance-panel absolute bottom-12 right-0 z-30 w-48 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                       <button
                         type="button"
                         disabled={!onCreateArtistChain || Boolean(busy)}

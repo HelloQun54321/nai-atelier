@@ -42,7 +42,7 @@ export const ImagePreviewActions: React.FC<Props> = ({
       {onSetCover && <button type="button" onClick={onSetCover} disabled={isUploading} className={`${IMAGE_PREVIEW_BUTTON_CLASS} bg-indigo-600/90 text-white hover:bg-indigo-600`}>{isUploading ? '上传中...' : '设为封面'}</button>}
     </div>}
     {onUploadCover && <div className={`absolute bottom-4 right-4 z-30 ${visibility}`} onClick={event => event.stopPropagation()}>
-      <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={onUploadCover} />
+      <input aria-label="上传作品封面" type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={onUploadCover} />
       <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className={`${IMAGE_PREVIEW_BUTTON_CLASS} bg-gray-800/80 text-white shadow-lg backdrop-blur hover:bg-gray-700`}>{isUploading ? '上传中...' : '手动上传'}</button>
     </div>}
   </>;

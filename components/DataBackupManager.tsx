@@ -426,7 +426,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                           <div className="flex items-center gap-1">
                             <button
                               type="button"
-                              onClick={() => void handleDeleteBackup(backup.name)}
+                              data-agent-action="business" onClick={() => void handleDeleteBackup(backup.name)}
                               disabled={deletingName === backup.name}
                               className="mobile-touch flex items-center gap-1 rounded-lg bg-rose-600 px-2.5 py-1 text-meta font-bold text-white transition hover:bg-rose-500 disabled:opacity-50"
                               title="确认永久删除此备份"

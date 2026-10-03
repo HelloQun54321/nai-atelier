@@ -164,7 +164,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                     {errorMsg && <div role="alert" className="mb-2 w-full max-w-sm rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center text-xs text-red-600 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{errorMsg}</div>}
                     {showQueueStatus && queueStatus && <InlineCloudQueueStatus className="mb-2 w-full max-w-xs flex-shrink-0" />}
                     {!(showQueueStatus && isCloudQueueTaskActive(queueStatus)) && <button
-                        onClick={handleGenerate}
+                        data-agent-action="business" onClick={handleGenerate}
                         disabled={isGenerating || generationDisabled}
                         className={`generation-action-button flex h-11 w-full max-w-xs items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${isGenerating ? 'generation-action-button--loading' : ''} ${hideGenerateButtonOnMobile ? 'hidden lg:flex' : ''}`}
                     >

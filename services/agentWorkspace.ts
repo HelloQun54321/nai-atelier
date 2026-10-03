@@ -1,3 +1,6 @@
+import { executeAgentCommand, getAgentCommands } from './agentCommands';
+import { promptAgentService } from './promptAgent';
+import { captureAgentExports, copyAgentImage, getAgentCopiedImage, getAgentExport, getAgentExports } from './agentTransfer';
 /** 工坊页面语义桥：按前景、状态和可验证结果协作，不把 DOM 点击当成任务完成。 */
 export interface AgentPageControl {
   id: string; role: string; label: string; actions: string[];
@@ -5,7 +8,10 @@ export interface AgentPageControl {
   checked?: boolean; selected?: boolean; expanded?: boolean; pressed?: boolean;
   disabled: boolean; readOnly: boolean; inViewport: boolean; blocked: boolean; focused: boolean;
   min?: string; max?: string; step?: string; maxLength?: number; multiple?: boolean;
+  accept?: string; directory?: boolean;
   options?: Array<{ value: string; label: string; disabled: boolean; selected: boolean }>;
+  context?: string;
+  image?: { src: string; width: number; height: number };
   optionTotal?: number; optionsOffset?: number; nextOptionsOffset?: number;
 }
 export interface AgentPageSnapshot {
@@ -13,19 +19,27 @@ export interface AgentPageSnapshot {
   controls: AgentPageControl[]; totalControls: number; offset: number; nextOffset?: number;
   textLength: number; textOffset: number; nextTextOffset?: number; busy: boolean;
   foreground: string; viewport: { width: number; height: number }; scroll: { top: number; left: number; height: number; clientHeight: number };
-  verification?: { action: string; status: 'changed' | 'unchanged' | 'matched'; message: string; control?: AgentPageControl };
+  verification?: { action: string; status: 'changed' | 'unchanged' | 'matched' | 'received'; message: string; control?: AgentPageControl };
+  notifications?: Array<{ type: string; text: string }>;
+  commands?: ReturnType<typeof getAgentCommands>;
+  result?: unknown;
+  exports?: ReturnType<typeof getAgentExports>;
 }
 export interface AgentPageReadOptions { query?: string; offset?: number; limit?: number; controlId?: string; valueOffset?: number; optionsOffset?: number; textOffset?: number; snapshotId?: string }
 export interface AgentPageExpectation { label?: string; text?: string; view?: string; value?: string; checked?: boolean; selected?: boolean; expanded?: boolean; pressed?: boolean }
 export interface AgentPageOperation extends AgentPageReadOptions {
-  action: 'read' | 'click' | 'fill' | 'select' | 'check' | 'navigate' | 'scroll' | 'press' | 'hover' | 'wait';
+  action: 'read' | 'click' | 'fill' | 'select' | 'check' | 'navigate' | 'scroll' | 'press' | 'hover' | 'wait' | 'command' | 'attach_files' | 'image' | 'drag' | 'double_click' | 'copy_image' | 'paste_image' | 'export';
   value?: string; values?: string[]; checked?: boolean; view?: string; key?: string; commit?: boolean;
   direction?: 'up' | 'down' | 'left' | 'right'; amount?: number; timeoutMs?: number; expect?: AgentPageExpectation;
   permissionMode?: 'read_only' | 'standard' | 'full';
+  command?: string; args?: Record<string, unknown>;
+  files?: Array<{ path: string; name: string; relativePath?: string }>;
+  delta?: { x: number; y: number };
+  exportId?: string; sessionId?: string;
 }
 const pages: Record<string, string> = { list: '风格串', characters: '角色库', library: '画师库', aitag: 'AITag', danbooru: 'Danbooru', pixiv: 'Pixiv', inspiration: '灵感库', history: '生成历史', playground: '生图实验室', edit: '风格串编辑器' };
 const privateSelector = '[data-agent-private],.agent-overlay,[data-agent-surface],script,style,[type="password"],[type="hidden"]';
-const controlSelector = 'button,input,textarea,select,summary,img,a[href],[role="button"],[role="checkbox"],[role="radio"],[role="switch"],[role="tab"],[role="option"],[role="menuitem"],[role="slider"],[contenteditable="true"]';
+const controlSelector = 'button,input,textarea,select,summary,img,a[href],[data-agent-interaction],[role="button"],[role="checkbox"],[role="radio"],[role="switch"],[role="tab"],[role="option"],[role="menuitem"],[role="slider"],[contenteditable="true"]';
 const bootId = Math.random().toString(36).slice(2, 10);
 let revision = 0, signature = '', lastRead: AgentPageSnapshot | null = null, serial = 0;
 const ids = new WeakMap<HTMLElement, string>();
@@ -43,7 +57,11 @@ const visible = (element: HTMLElement): boolean => {
   }
   return true;
 };
-const labelOf = (element: HTMLElement) => (element.getAttribute('aria-label') || element.getAttribute('title') || ('labels' in element ? Array.from((element as HTMLInputElement).labels || []).map(label => label.textContent).join(' ') : '') || element.getAttribute('placeholder') || element.getAttribute('alt') || element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+const labelOf = (element: HTMLElement) => {
+  const labelledBy = (element.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ').trim();
+  const adjacent = field(element) ? Array.from(element.parentElement?.children || []).filter(node => node !== element && node.matches('label,span,legend')).map(node => node.textContent).join(' ').trim() : '';
+  return (element.getAttribute('aria-label') || labelledBy || element.getAttribute('title') || ('labels' in element ? Array.from((element as HTMLInputElement).labels || []).map(label => label.textContent).join(' ') : '') || element.getAttribute('placeholder') || element.getAttribute('alt') || adjacent || element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+};
 const safeField = (element: HTMLElement) => !element.closest(privateSelector) && !/api\s*key|(?:^|[\s_-])key(?:$|[\s_-])|token|secret|password|密钥|密码|口令|令牌|凭据/i.test(`${labelOf(element)} ${element.getAttribute('name')} ${element.id}`);
 const disabled = (element: HTMLElement) => element.matches(':disabled') || ('disabled' in element && Boolean(element.disabled)) || Boolean(element.closest('[inert],[aria-disabled="true"]'));
 const roleOf = (element: HTMLElement) => element.getAttribute('role') || (element instanceof HTMLInputElement ? element.type === 'checkbox' || element.type === 'radio' ? element.type : element.type === 'range' ? 'slider' : 'input' : element.tagName.toLowerCase());
@@ -51,11 +69,13 @@ const safeClick = (element: HTMLElement) => {
   const role = roleOf(element);
   if (element.dataset.agentAction === 'business' || element.closest('[data-agent-action="business"]')) return false;
   if (['browse', 'select'].includes(element.dataset.agentAction || '')) return true;
+  if (element.closest('[role="alertdialog"]') && !/^(取消|关闭|返回|暂不|不|Cancel|Close)/i.test(labelOf(element))) return false;
   // 选项和标签页是选择行为；不能因“图生图”等名称把切换模式误当作执行生图。
   if (['tab', 'option'].includes(role)) return true;
-  if (/删除|清空|清理|移除|编码|下载|保存|导入|同步|授权|权限|付款|余额|生成|生图$|generate|delete|save|encode|download|login/i.test(labelOf(element))) return false;
+  // 打开菜单、保存资料和选择资产都是正常操作；实际收费执行由明确业务标记隔离。
+  if (!element.hasAttribute('aria-haspopup') && /^(?:生成(?:图片|\s*·|\s*$)|生图\s*$|开始编码|重新编码|付款|支付|generate\s*$)/i.test(labelOf(element))) return false;
   if (element instanceof HTMLAnchorElement) return element.origin === location.origin && element.target !== '_blank';
-  return element.dataset.agentSafe === 'true' || ['button', 'checkbox', 'radio', 'switch', 'menuitem', 'summary', 'img'].includes(role);
+  return element.dataset.agentSafe === 'true' || element instanceof HTMLButtonElement || ['button', 'checkbox', 'radio', 'switch', 'menuitem', 'summary', 'img'].includes(role);
 };
 const layerOf = (element: HTMLElement) => {
   let layer = 0;
@@ -105,16 +125,20 @@ const scrollContainer = (scope: HTMLElement | null | undefined) => {
 const capture = () => {
   styles = new WeakMap();
   const page = pageScope(), scope = page.scope;
-  const elements = scope ? Array.from(scope.querySelectorAll<HTMLElement>(controlSelector)).filter(element => visible(element) && safeField(element)) : [];
+  const elements = scope ? Array.from(scope.querySelectorAll<HTMLElement>(controlSelector)).filter(element => (visible(element) || element instanceof HTMLInputElement && element.type === 'file' && !!element.parentElement && visible(element.parentElement)) && safeField(element)) : [];
   const nextControls = new Map<string, HTMLElement>();
   const descriptors = elements.map(element => {
     let id = ids.get(element); if (!id) { id = `control-${++serial}`; ids.set(element, id); } nextControls.set(id, element);
     const role = roleOf(element), isDisabled = disabled(element), readOnly = 'readOnly' in element && Boolean(element.readOnly), box = bounds(element);
     const isSelect = element instanceof HTMLSelectElement, checkable = ['checkbox', 'radio', 'switch'].includes(role) || element.hasAttribute('aria-pressed');
     const editable = (field(element) && !['file', 'checkbox', 'radio', 'submit', 'button'].includes((element as HTMLInputElement).type) || element.isContentEditable) && !readOnly;
-    const actions = isDisabled ? [] : [...(!box.inViewport ? ['scroll'] : []), ...(box.inViewport && !box.blocked ? [...(editable ? [isSelect ? 'select' : 'fill'] : []), ...(checkable && safeClick(element) ? ['check'] : []), ...(safeClick(element) ? ['click', 'hover'] : []), ...(editable || safeClick(element) ? ['press'] : [])] : [])];
-    return { id, role, label: labelOf(element) || '未命名控件', value: rawValue(element), checked: checkedOf(element), selected: boolAttr(element, 'aria-selected'), expanded: element.tagName === 'SUMMARY' ? (element.parentElement as HTMLDetailsElement)?.open : boolAttr(element, 'aria-expanded'), pressed: boolAttr(element, 'aria-pressed'), disabled: isDisabled, readOnly, focused: document.activeElement === element, ...box, actions,
-      ...(element instanceof HTMLInputElement ? { min: element.min, max: element.max, step: element.step, maxLength: element.maxLength } : {}),
+    const fileInput = element instanceof HTMLInputElement && element.type === 'file';
+    const actions = isDisabled ? [] : fileInput ? ['attach_files', 'paste_image'] : [...(!box.inViewport ? ['scroll'] : []), ...(box.inViewport && !box.blocked ? [...(editable ? [isSelect ? 'select' : 'fill'] : []), ...(checkable && safeClick(element) ? ['check'] : []), ...(safeClick(element) ? ['click', 'hover'] : []), ...(editable || safeClick(element) ? ['press'] : []), ...(element instanceof HTMLImageElement ? ['image', 'copy_image'] : []), ...(element.dataset.agentInteraction ? ['drag', 'double_click'] : [])] : [])];
+    const owner = element.closest<HTMLElement>('[data-agent-object],article,fieldset');
+    const context = owner?.dataset.agentObject || owner?.querySelector('legend,h2,h3,h4')?.textContent?.trim();
+    const image = element instanceof HTMLImageElement && element.getAttribute('src') && !/api.?key|token|secret|password/i.test(element.src) ? { src: element.src.startsWith(location.origin + '/') ? element.src.slice(location.origin.length) : element.src, width: element.naturalWidth, height: element.naturalHeight } : undefined;
+    return { id, role, label: labelOf(element) || '未命名控件', context: context?.slice(0, 160), ...(image && !image.src.startsWith('data:') ? { image } : {}), value: rawValue(element), checked: checkedOf(element), selected: boolAttr(element, 'aria-selected'), expanded: element.tagName === 'SUMMARY' ? (element.parentElement as HTMLDetailsElement)?.open : boolAttr(element, 'aria-expanded'), pressed: boolAttr(element, 'aria-pressed'), disabled: isDisabled, readOnly, focused: document.activeElement === element, ...box, actions,
+      ...(element instanceof HTMLInputElement ? { min: element.min, max: element.max, step: element.step, maxLength: element.maxLength, ...(fileInput ? { accept: element.accept, multiple: element.multiple, directory: element.hasAttribute('webkitdirectory') } : {}) } : {}),
       ...(isSelect ? { multiple: element.multiple, options: Array.from(element.options).map(option => ({ value: option.value, label: option.label, disabled: option.disabled || (option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled), selected: option.selected })) } : {}) };
   }).sort((a, b) => Number(b.inViewport) - Number(a.inViewport));
   const parts: string[] = [];
@@ -123,11 +147,15 @@ const capture = () => {
     while ((node = walker.nextNode())) { const parent = node.parentElement; if (parent && !parent.closest(privateSelector) && visible(parent)) { const value = node.textContent?.replace(/\s+/g, ' ').trim(); if (value) parts.push(value); } }
   }
   const scroll = scrollContainer(scope), text = parts.join('\n');
-  const busy = Boolean(scope?.matches('[aria-busy="true"]') || scope?.querySelector('[aria-busy="true"]')) || Boolean(scope && /正在加载|加载中|Loading\.\.\./i.test(text.slice(0, 2000)));
-  const nextSignature = JSON.stringify([page.view, page.title, page.foreground, text, descriptors, scroll.scrollTop, scroll.scrollLeft]);
+  const busy = Boolean(scope?.matches('[aria-busy="true"]') || scope?.querySelector('[aria-busy="true"]')) || Boolean(scope && /正在加载|加载中|上传中|正在保存|正在导入|正在识别|Loading\.\.\./i.test(text.slice(0, 2000)));
+  const notifications = Array.from(document.querySelectorAll<HTMLElement>('[data-agent-notification],[role="status"],[role="alert"]')).filter(element => visible(element) && !element.closest(privateSelector)).map(element => ({ type: element.dataset.agentNotification || element.getAttribute('role') || 'status', text: (element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 1200) })).filter(item => item.text).slice(-8);
+  const commands = getAgentCommands(page.app, page.foreground ? page.scope : undefined);
+  const exports = getAgentExports();
+  const canvasStates = Array.from(page.app?.querySelectorAll<HTMLElement>('[data-agent-canvas-state]') || []).map(element => element.dataset.agentCanvasState);
+  const nextSignature = JSON.stringify([page.view, page.title, page.foreground, text, descriptors, commands, notifications, exports, canvasStates, scroll.scrollTop, scroll.scrollLeft]);
   if (nextSignature !== signature) { signature = nextSignature; revision++; }
   controls = nextControls;
-  return { ...page, snapshotId: `page-${bootId}-${revision}`, descriptors, text, busy, scroll };
+  return { ...page, snapshotId: `page-${bootId}-${revision}`, descriptors, text, busy, scroll, notifications, commands, exports };
 };
 export const getLastAgentPageRead = () => lastRead;
 export const getAgentPageClientId = () => {
@@ -139,6 +167,8 @@ export const readAgentPage = (options: AgentPageReadOptions = {}): AgentPageSnap
   const query = options.query?.toLowerCase() || '';
   const filtered = page.descriptors.filter(item => (!options.controlId || item.id === options.controlId) && (!query || `${item.label} ${item.role}`.toLowerCase().includes(query)));
   const offset = Math.max(0, Math.floor(options.offset || 0)), limit = Math.max(1, Math.min(20, Math.floor(options.limit || 12))), valueOffset = Math.max(0, Math.floor(options.valueOffset || 0)), optionsOffset = Math.max(0, Math.floor(options.optionsOffset || 0)), textOffset = Math.max(0, Math.floor(options.textOffset || 0));
+  // 给命令、全局通知和分页信息留出空间，回执整体不能超过桥接上限。
+  const budget = Math.min(36_000, 44_000 - JSON.stringify({ notifications: page.notifications, commands: page.commands, exports: page.exports }).length);
   const bounded: AgentPageControl[] = []; let size = 0;
   for (const item of filtered.slice(offset, offset + limit)) {
     const optionPage = item.options?.slice(optionsOffset, optionsOffset + 12);
@@ -146,11 +176,11 @@ export const readAgentPage = (options: AgentPageReadOptions = {}): AgentPageSnap
     while (optionPage && optionPage.length > 1 && JSON.stringify(control).length > 30_000) optionPage.pop();
     if (optionPage && item.options!.length > optionsOffset + optionPage.length) control.nextOptionsOffset = optionsOffset + optionPage.length;
     const length = JSON.stringify(control).length;
-    if (length > 36_000) throw new Error('控件内容过大，请使用对应业务工具读取');
-    if (bounded.length && size + length > 36_000) break;
+    if (length > budget) throw new Error('控件内容过大，请使用对应业务工具读取');
+    if (bounded.length && size + length > budget) break;
     bounded.push(control); size += length;
   }
-  const snapshot: AgentPageSnapshot = { snapshotId: page.snapshotId, view: page.view, title: page.title, foreground: page.foreground, capturedAt: Date.now(), busy: page.busy, text: page.text.slice(textOffset, textOffset + 2400), textLength: page.text.length, textOffset, ...(page.text.length > textOffset + 2400 ? { nextTextOffset: textOffset + 2400 } : {}), controls: bounded, totalControls: filtered.length, offset, ...(filtered.length > offset + bounded.length ? { nextOffset: offset + bounded.length } : {}), viewport: { width: innerWidth, height: innerHeight }, scroll: { top: page.scroll.scrollTop, left: page.scroll.scrollLeft, height: page.scroll.scrollHeight, clientHeight: page.scroll.clientHeight } };
+  const snapshot: AgentPageSnapshot = { snapshotId: page.snapshotId, view: page.view, title: page.title, foreground: page.foreground, capturedAt: Date.now(), busy: page.busy, notifications: page.notifications, commands: page.commands, exports: page.exports, text: page.text.slice(textOffset, textOffset + 2400), textLength: page.text.length, textOffset, ...(page.text.length > textOffset + 2400 ? { nextTextOffset: textOffset + 2400 } : {}), controls: bounded, totalControls: filtered.length, offset, ...(filtered.length > offset + bounded.length ? { nextOffset: offset + bounded.length } : {}), viewport: { width: innerWidth, height: innerHeight }, scroll: { top: page.scroll.scrollTop, left: page.scroll.scrollLeft, height: page.scroll.scrollHeight, clientHeight: page.scroll.clientHeight } };
   lastRead = snapshot; window.dispatchEvent(new CustomEvent('nai-agent-page-read', { detail: snapshot })); return snapshot;
 };
 /** 属性、焦点、滚动和内容变化都可被感知；Agent 自身不会造成读取循环。 */
@@ -158,13 +188,13 @@ export const observeAgentPage = (refresh: () => void) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const schedule = () => { if (!timer) timer = setTimeout(() => { timer = undefined; refresh(); }, 100); };
   const observer = new MutationObserver(records => { if (records.some(record => { const element = record.target instanceof HTMLElement ? record.target : record.target.parentElement; return element && !element.closest('.agent-overlay,[data-agent-surface]'); })) schedule(); });
-  observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-agent-view', 'data-agent-page-scope', 'data-agent-page-title', 'role', 'aria-label', 'aria-modal', 'aria-expanded', 'aria-checked', 'aria-selected', 'aria-pressed', 'aria-disabled', 'aria-busy', 'hidden', 'aria-hidden', 'style', 'class', 'open', 'disabled', 'checked', 'value'] });
+  observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-agent-command-scope', 'data-agent-canvas-state', 'data-agent-action', 'data-agent-interaction', 'data-agent-object', 'data-agent-view', 'data-agent-page-scope', 'data-agent-page-title', 'role', 'aria-label', 'aria-modal', 'aria-expanded', 'aria-checked', 'aria-selected', 'aria-pressed', 'aria-disabled', 'aria-busy', 'hidden', 'aria-hidden', 'style', 'class', 'open', 'disabled', 'checked', 'value'] });
   const input = (event: Event) => { if (event.target instanceof HTMLElement && !event.target.closest(privateSelector)) schedule(); };
   const pointer = (event: Event) => { if (event.isTrusted && hoveredGroup && event.target instanceof Node && !hoveredGroup.contains(event.target)) { clearAgentPageHover(); schedule(); } };
   for (const name of ['input', 'change', 'focusin', 'focusout', 'scroll']) document.addEventListener(name, input, true);
-  window.addEventListener('resize', schedule);
+  window.addEventListener('resize', schedule); window.addEventListener('nai-agent-capabilities-changed', schedule);
   document.addEventListener('pointermove', pointer, true);
-  return () => { observer.disconnect(); clearTimeout(timer); for (const name of ['input', 'change', 'focusin', 'focusout', 'scroll']) document.removeEventListener(name, input, true); window.removeEventListener('resize', schedule); document.removeEventListener('pointermove', pointer, true); };
+  return () => { observer.disconnect(); clearTimeout(timer); for (const name of ['input', 'change', 'focusin', 'focusout', 'scroll']) document.removeEventListener(name, input, true); window.removeEventListener('resize', schedule); window.removeEventListener('nai-agent-capabilities-changed', schedule); document.removeEventListener('pointermove', pointer, true); };
 };
 const pause = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
   const finish = () => { signal?.removeEventListener('abort', abort); resolve(); }, timer = setTimeout(finish, ms);
@@ -206,14 +236,70 @@ const writableValue = (element: HTMLElement, value: string) => {
   else throw new Error('该控件不是文本或数值输入');
   element.dispatchEvent(new Event('input', { bubbles: true })); element.dispatchEvent(new Event('change', { bubbles: true }));
 };
+const captureImage = async (image: HTMLImageElement) => {
+  if (!image.complete || !image.naturalWidth) throw new Error('当前图片尚未加载，请等待实际图片');
+  const canvas = document.createElement('canvas'), ratio = Math.min(1, 1280 / Math.max(image.naturalWidth, image.naturalHeight));
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * ratio)); canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
+  const context = canvas.getContext('2d'); if (!context) throw new Error('无法读取当前图片');
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  try {
+    const data = canvas.toDataURL('image/jpeg', .8).split(',')[1];
+    if (!data || data.length > 1_500_000) throw new Error('当前图片过大，请使用项目原图观察工具');
+    return { data, mimeType: 'image/jpeg', width: image.naturalWidth, height: image.naturalHeight, observedWidth: canvas.width, observedHeight: canvas.height };
+  } catch { throw new Error('当前图片无法读取像素；请等待原图缓存或先加入项目资料库'); }
+};
+const attachFiles = async (input: HTMLInputElement, files: NonNullable<AgentPageOperation['files']>, signal?: AbortSignal) => {
+  if (!files.length || files.length > 200 || !input.multiple && !input.webkitdirectory && files.length !== 1) throw new Error('文件数量不符合当前上传入口');
+  const transfer = new DataTransfer(); let total = 0;
+  // 全部读取与验证通过后才替换 FileList，错误不留下半套文件。
+  for (const item of files) {
+    if (!item.name || /[\\/\u0000-\u001f]/.test(item.name)) throw new Error('文件名无效');
+    const blob = await promptAgentService.getLocalFile(item.path, signal); total += blob.size;
+    if (total > 128 * 1024 * 1024) throw new Error('本次导入总量超过 128 MB，请分批导入');
+    const accept = input.accept.toLowerCase().split(',').map(value => value.trim()).filter(Boolean);
+    if (accept.length && !accept.some(value => value.startsWith('.') ? item.name.toLowerCase().endsWith(value) : value.endsWith('/*') ? blob.type.startsWith(value.slice(0, -1)) : blob.type === value)) throw new Error('文件格式不符合当前上传入口');
+    const file = new File([blob], item.name, { type: blob.type });
+    if (item.relativePath) {
+      if (item.relativePath.startsWith('/') || item.relativePath.split(/[\\/]/).some(part => part === '..')) throw new Error('文件相对路径无效');
+      Object.defineProperty(file, 'webkitRelativePath', { value: item.relativePath });
+    }
+    transfer.items.add(file);
+  }
+  signal?.throwIfAborted(); input.files = transfer.files;
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  return { attached: files.map(item => item.name), bytes: total, note: '文件已交给实际上传入口；请核对页面状态与通知，附加文件不等于导入成功' };
+};
+const dragControl = async (element: HTMLElement, delta: { x: number; y: number } | undefined, signal?: AbortSignal) => {
+  if (!delta || !Number.isFinite(delta.x) || !Number.isFinite(delta.y) || Math.abs(delta.x) > innerWidth * 2 || Math.abs(delta.y) > innerHeight * 2) throw new Error('请提供有效的像素拖动距离');
+  const rect = element.getBoundingClientRect(), start = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  const make = (type: string, x: number, y: number) => new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 987, pointerType: 'mouse', isPrimary: true, button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: x, clientY: y });
+  // DOM 合成指针没有浏览器捕获资格；只在本次拖动中接管捕获，仍走原组件处理函数。
+  const capture = element.setPointerCapture, release = element.releasePointerCapture;
+  element.setPointerCapture = () => {}; element.releasePointerCapture = () => {};
+  try {
+    element.dispatchEvent(make('pointerdown', start.x, start.y));
+    for (let step = 1; step <= 12; step++) { signal?.throwIfAborted(); element.dispatchEvent(make('pointermove', start.x + delta.x * step / 12, start.y + delta.y * step / 12)); await pause(16, signal); }
+    element.dispatchEvent(make('pointerup', start.x + delta.x, start.y + delta.y));
+  } finally { element.dispatchEvent(make('pointercancel', start.x + delta.x, start.y + delta.y)); element.setPointerCapture = capture; element.releasePointerCapture = release; }
+};
 export const operateAgentPage = async (operation: AgentPageOperation, signal?: AbortSignal): Promise<AgentPageSnapshot> => {
   signal?.throwIfAborted();
   if (operation.action === 'read') return readAgentPage(operation);
   const before = capture();
   const target = controls.get(operation.controlId || '');
-  if (operation.action !== 'navigate' && operation.action !== 'wait' && operation.snapshotId !== before.snapshotId) throw new Error('页面已变化，请重新读取后操作');
+  if (!['navigate', 'wait', 'export'].includes(operation.action) && operation.snapshotId !== before.snapshotId) throw new Error('页面已变化，请重新读取后操作');
   let expectation = operation.expect;
-  if (operation.action === 'navigate') {
+  let result: unknown;
+  const stopCapture = captureAgentExports();
+  try {
+  if (operation.action === 'export') {
+    if (!operation.sessionId || !operation.exportId) throw new Error('缺少实际导出或会话编号');
+    const item = getAgentExport(operation.exportId);
+    result = await promptAgentService.uploadExport(operation.sessionId, item.name, item.blob, signal);
+  } else if (operation.action === 'command') {
+    if (!operation.command) throw new Error('请指定当前工作区提供的操作');
+    result = await executeAgentCommand(before.app, operation.command, operation.args || {}, operation.permissionMode === 'read_only', signal, before.foreground ? before.scope : undefined);
+  } else if (operation.action === 'navigate') {
     if (!operation.view || !pages[operation.view] || operation.view === 'edit') throw new Error('请选择支持的项目页面');
     await new Promise<void>((resolve, reject) => {
       const finish = (error?: Error) => { clearTimeout(timer); signal?.removeEventListener('abort', abort); if (error) reject(error); else resolve(); };
@@ -230,8 +316,26 @@ export const operateAgentPage = async (operation: AgentPageOperation, signal?: A
     const element = controls.get(operation.controlId || ''), descriptor = before.descriptors.find(item => item.id === operation.controlId);
     const action = operation.action === 'fill' && element instanceof HTMLSelectElement ? 'select' : operation.action;
     if (!element?.isConnected || !descriptor?.actions.includes(action)) throw new Error('该控件不可操作、被遮挡或需使用业务工具；请重新读取');
-    if (operation.permissionMode === 'read_only' && !['scroll', 'hover'].includes(action) && !(action === 'click' && (['img', 'summary', 'tab'].includes(descriptor.role) || element.hasAttribute('aria-haspopup') || /打开|返回|查看|关闭|预览/.test(descriptor.label))) && !(action === 'press' && ['Escape', 'Tab', 'Shift+Tab', 'PageDown', 'PageUp'].includes(operation.key || ''))) throw new Error('当前为只读权限，不能填写或改变项目控件');
+    if (operation.permissionMode === 'read_only' && !['scroll', 'hover', 'image', 'copy_image'].includes(action) && !(action === 'click' && (['img', 'summary', 'tab'].includes(descriptor.role) || element.hasAttribute('aria-haspopup') || /打开|返回|查看|关闭|预览/.test(descriptor.label))) && !(action === 'press' && ['Escape', 'Tab', 'Shift+Tab', 'PageDown', 'PageUp'].includes(operation.key || ''))) throw new Error('当前为只读权限，不能填写或改变项目控件');
     if (action === 'scroll') element.scrollIntoView({ block: 'center', behavior: 'auto' });
+    else if (action === 'attach_files') {
+      if (!(element instanceof HTMLInputElement) || element.type !== 'file') throw new Error('目标不是文件上传入口');
+      result = await attachFiles(element, operation.files || [], signal);
+    } else if (action === 'copy_image') {
+      if (!(element instanceof HTMLImageElement)) throw new Error('目标不是当前图片');
+      result = await copyAgentImage(element, signal);
+    } else if (action === 'paste_image') {
+      if (!(element instanceof HTMLInputElement) || element.type !== 'file') throw new Error('请选择实际图片上传入口');
+      const item = getAgentCopiedImage(), accept = element.accept.split(',').map(value => value.trim());
+      if (element.accept && !accept.some(value => value === item.blob.type || value === 'image/*' || value.startsWith('.') && item.name.endsWith(value))) throw new Error('暂存图片不符合当前入口格式');
+      const transfer = new DataTransfer(); transfer.items.add(new File([item.blob], item.name, { type: item.blob.type }));
+      element.files = transfer.files; element.dispatchEvent(new Event('change', { bubbles: true }));
+      result = { pasted: item.label, bytes: item.blob.size, note: '原始图片已交给上传入口，请核对实际导入结果' };
+    } else if (action === 'image') {
+      if (!(element instanceof HTMLImageElement)) throw new Error('目标不是当前图片');
+      result = { image: await captureImage(element), label: descriptor.label };
+    } else if (action === 'drag') await dragControl(element, operation.delta, signal);
+    else if (action === 'double_click') element.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
     else if (action === 'click') element.click();
     else if (action === 'fill') {
       const value = String(operation.value ?? ''); if (value.length > 100_000) throw new Error('输入过长，请使用提示词业务工具');
@@ -271,7 +375,9 @@ export const operateAgentPage = async (operation: AgentPageOperation, signal?: A
   }
   const next = await waitForPage(before.snapshotId, { ...operation, expect: expectation }, signal, target);
   const snapshot = readAgentPage();
+  if (result !== undefined) snapshot.result = result;
   const targetControl = operation.controlId ? next.descriptors.find(item => item.id === operation.controlId) : undefined;
-  snapshot.verification = { action: operation.action, status: expectation ? 'matched' : next.snapshotId !== before.snapshotId ? 'changed' : 'unchanged', message: expectation ? '目标状态已确认' : next.snapshotId !== before.snapshotId ? '页面状态已变化；请根据新回执继续' : '未检测到变化；请读取或等待目标状态，不要重复切换按钮', ...(targetControl ? { control: { ...targetControl, value: targetControl.value?.slice(0, 1600), options: undefined } } : {}) };
+  snapshot.verification = { action: operation.action, status: expectation ? 'matched' : result !== undefined ? 'received' : next.snapshotId !== before.snapshotId ? 'changed' : 'unchanged', message: expectation ? '目标状态已确认' : result !== undefined ? '已取得操作结果，请核对 result 和页面通知；文件交付上传入口不等于完成导入' : next.snapshotId !== before.snapshotId ? '页面状态已变化；请根据新回执继续' : '未检测到变化；请读取或等待目标状态，不要重复切换按钮', ...(targetControl ? { control: { ...targetControl, value: targetControl.value?.slice(0, 1600), options: undefined } } : {}) };
   return snapshot;
+  } finally { stopCapture(); }
 };

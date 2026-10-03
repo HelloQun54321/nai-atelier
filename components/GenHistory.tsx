@@ -1360,7 +1360,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                 取消
                             </button>
                             <button
-                                onClick={handleCleanConfirm}
+                                data-agent-action="business" onClick={handleCleanConfirm}
                                 disabled={!Number.isFinite(cleanMode === 'days' ? cleanDays : cleanCount) || (cleanMode === 'days' ? cleanDays : cleanCount) < 1}
                                 className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                             >

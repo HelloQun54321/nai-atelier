@@ -637,9 +637,9 @@ describe('ImageEditPreview', () => {
       }));
 
       // 图生图：底图 / 提示 / 参数
-      expect(screen.getByRole('button', { name: '底图' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: '提示' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: '参数' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: '底图' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: '提示' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: '参数' })).toBeTruthy();
 
       // 切换到局部重绘：画板 / 提示 / 参数
       rerender(React.createElement(ImageEditPanel, {
@@ -662,9 +662,9 @@ describe('ImageEditPreview', () => {
         getDownloadFilename: () => 'test.png',
         tagAssistEnabled: false,
       }));
-      expect(screen.getByRole('button', { name: '画板' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: '提示' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: '参数' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: '画板' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: '提示' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: '参数' })).toBeTruthy();
 
       // 切换到扩图：画布 / 提示 / 参数
       rerender(React.createElement(ImageEditPanel, {
@@ -687,9 +687,9 @@ describe('ImageEditPreview', () => {
         getDownloadFilename: () => 'test.png',
         tagAssistEnabled: false,
       }));
-      expect(screen.getByRole('button', { name: '画布' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: '提示' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: '参数' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: '画布' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: '提示' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: '参数' })).toBeTruthy();
     });
 
     it('ImageEditControls 根据 mobileTab 属性精准应用响应式显示隐藏类名', () => {

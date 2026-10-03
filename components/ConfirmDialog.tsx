@@ -107,6 +107,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                             <button
                                 type="button"
                                 autoFocus
+                                data-agent-action="browse"
                                 onClick={() => closeDialog(false)}
                                 className="mobile-touch rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-750 dark:focus:ring-offset-gray-900"
                             >
@@ -114,6 +115,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                             </button>
                             <button
                                 type="button"
+                                data-agent-action="business"
                                 onClick={() => closeDialog(true)}
                                 className={`mobile-touch rounded-xl px-4 py-2 text-sm font-bold text-white shadow-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-850 ${isDanger
                                     ? 'bg-red-600 shadow-red-600/20 hover:bg-red-500 focus:ring-red-500'

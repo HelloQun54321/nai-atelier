@@ -3,6 +3,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InspirationGallery } from './InspirationGallery';
+import { readAgentPage } from '../services/agentWorkspace';
 import { Inspiration, User } from '../types';
 
 vi.mock('../services/dbService', () => ({
@@ -200,4 +201,12 @@ describe('InspirationGallery 来源筛选与未整理心智', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: '加入灵感库' })).toBeNull();
   });
+});
+
+it('实际新建灵感板窗口和颜色选择可被 Agent 读取', async () => {
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
+  fireEvent.click(await screen.findByRole('button', { name: /新建灵感板/ }));
+  const page = readAgentPage({ limit: 20 }); expect(page.title).toBe('新建灵感板');
+  expect(page.controls.some(item => item.label.includes('名称') || item.role === 'input')).toBe(true);
+  expect(page.controls.filter(item => item.pressed !== undefined)).not.toHaveLength(0);
 });
