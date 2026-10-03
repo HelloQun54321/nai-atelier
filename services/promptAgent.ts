@@ -60,6 +60,10 @@ export interface PromptAgentCustomModel {
   imageInput: boolean;
   contextWindow: number;
   maxTokens: number;
+  thinkingLevels?: PromptAgentThinkingLevel[];
+  thinkingLevelMap?: Partial<Record<PromptAgentThinkingLevel, string | null>>;
+  thinkingLevelsSource?: PromptAgentThinkingSource;
+  thinkingMode?: 'adaptive' | 'budget';
   cost?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } | null;
   capabilityDetection?: {
     imageInput: 'metadata' | 'pi_catalog' | 'model_name' | 'unknown' | 'manual';
@@ -113,12 +117,26 @@ export interface PromptAgentModel {
   maxTokens: number;
   /** 仅兼容旧配置，新接口不再提供价格。 */
   cost?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } | null;
-  /** Exact levels supported by this model according to Pi's model metadata. */
+  /** 接口声明、目录或人工设置的档位；兼容默认须单独标明。 */
   thinkingLevels: PromptAgentThinkingLevel[];
+  thinkingLevelsSource?: PromptAgentThinkingSource;
   current?: boolean;
 }
 
 export type PromptAgentThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type PromptAgentThinkingSource = 'metadata' | 'pi_catalog' | 'manual' | 'fallback';
+
+/** 获取列表刷新已添加模型的能力，人工纠正优先，也不自动加入其他模型。 */
+export const mergePromptAgentModelCapabilities = (current: PromptAgentCustomModel, discovered: PromptAgentCustomModel): PromptAgentCustomModel => ({
+  ...current,
+  ...(current.capabilityDetection?.imageInput === 'manual' || discovered.capabilityDetection?.imageInput === 'unknown' ? {} : { imageInput: discovered.imageInput }),
+  ...(current.capabilityDetection?.reasoning === 'manual' || discovered.capabilityDetection?.reasoning === 'unknown' ? {} : { reasoning: discovered.reasoning }),
+  capabilityDetection: {
+    imageInput: current.capabilityDetection?.imageInput === 'manual' ? 'manual' : discovered.capabilityDetection?.imageInput || 'unknown',
+    reasoning: current.capabilityDetection?.reasoning === 'manual' ? 'manual' : discovered.capabilityDetection?.reasoning || 'unknown',
+  },
+  ...(current.thinkingLevelsSource !== 'manual' && discovered.thinkingLevels?.length ? { thinkingLevels: discovered.thinkingLevels, thinkingLevelMap: discovered.thinkingLevelMap, thinkingLevelsSource: discovered.thinkingLevelsSource, thinkingMode: discovered.thinkingMode ?? current.thinkingMode } : {}),
+});
 
 export interface PromptAgentSession {
   id: string;

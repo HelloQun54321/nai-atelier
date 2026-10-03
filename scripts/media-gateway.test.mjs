@@ -116,7 +116,7 @@ test('Danbooru 网关复用已授权响应，缓存命中仍必须鉴权，非 J
 });
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { createHmac } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -175,9 +175,19 @@ import {
   selectThumbnailConcurrency,
   writeLanPin,
 } from './media-gateway.mjs';
-import { PromptAgentService, CREATIVE_PRESET_RESERVED_IDS, assemblePromptContext, calculateAgentContextBudget, cloneAgentMessages, computeEffectivePreset, computePolicyFingerprint, creativeRevisionHash, customProviderRuntime, detectModelCapabilities, estimateContextTokens, getBuiltinDefaultPreset, normalizeCreativePreset, normalizeCreativeSlots, parseTranslationResponse, parseWebSearchResponse, resolveCapabilities, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
+import { PromptAgentService as RuntimePromptAgentService, CREATIVE_PRESET_RESERVED_IDS, assemblePromptContext, calculateAgentContextBudget, cloneAgentMessages, computeEffectivePreset, computePolicyFingerprint, creativeRevisionHash, customProviderRuntime, detectModelCapabilities, estimateContextTokens, getBuiltinDefaultPreset, normalizeCreativePreset, normalizeCreativeSlots, parseTranslationResponse, parseWebSearchResponse, resolveCapabilities, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
 import { getNovelAiModelProfile, readNovelAiOfficialKnowledge, resolveNovelAiModelFamily, searchNovelAiOfficialKnowledge } from './novelai-agent-knowledge.mjs';
 import { readImageDimensions } from '../worker/imageDimensions.mjs';
+
+// 所有旧 Agent 用例也强制隔离；未调用 init 的登录步骤同样可能通过事务落盘。
+const gatewayAgentTestRoot = await mkdtemp(join(tmpdir(), 'nai-gateway-agent-'));
+let gatewayAgentInstance = 0;
+class PromptAgentService extends RuntimePromptAgentService {
+  constructor(options) {
+    super({ ...options, configFile: options.configFile || join(gatewayAgentTestRoot, String(++gatewayAgentInstance)) });
+  }
+}
+after(() => rm(gatewayAgentTestRoot, { recursive: true, force: true }));
 
 test('prompt agent official knowledge is model-aware and release-first', () => {
   assert.equal(resolveNovelAiModelFamily('nai-diffusion-5-full'), 'v5');
@@ -408,6 +418,9 @@ test('prompt agent keeps API keys encrypted and out of its public config', async
   const loginStep = await service.loginProvider('deepseek', { answers: [] });
   assert.equal(loginStep.complete, false);
   assert.equal(loginStep.prompt.type, 'secret');
+  const stored = JSON.parse(await readFile(service.configFilePath(), 'utf8'));
+  assert.deepEqual(stored.encryptedKeys, service.config.encryptedKeys);
+  assert.ok(service.configFilePath().startsWith(gatewayAgentTestRoot));
 });
 
 test('prompt agent exposes pi steering, follow-up, queue clearing and abort controls', () => {

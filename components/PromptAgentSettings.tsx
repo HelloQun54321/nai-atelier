@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AgentChatDisplayOptions } from './AgentChatPreferences';
 import { AgentPermissionSelect } from './AgentPermissionSelect';
 import { useAgentRuntimeRecheck } from './useAgentRuntimeRecheck';
+import { AGENT_THINKING_LEVELS, AGENT_THINKING_LABELS, createAgentThinkingMap } from '../services/agentThinking.mjs';
 import { ArrowLeft, Check, Copy, Download, FileUp, LogIn, Plus, Save, Settings2, Star, Trash2, Upload, X } from 'lucide-react';
-import { PromptAgentAuthPrompt, PromptAgentConfig, PromptAgentCreativeInspectResult, PromptAgentCreativePreset, PromptAgentCreativePresetRevision, PromptAgentCreativePresetState, PromptAgentCustomProvider, PromptAgentInjectionItem, PromptAgentLabTarget, PromptAgentModel, PromptAgentProvider, PromptAgentProbeResult, agentRuntimeWarning, displayModelName, formatModelOptionTitle, previewPromptAgentEndpoint, promptAgentService } from '../services/promptAgent';
+import { PromptAgentAuthPrompt, PromptAgentConfig, PromptAgentCreativeInspectResult, PromptAgentCreativePreset, PromptAgentCreativePresetRevision, PromptAgentCreativePresetState, PromptAgentCustomProvider, PromptAgentInjectionItem, PromptAgentLabTarget, PromptAgentModel, PromptAgentProvider, PromptAgentProbeResult, agentRuntimeWarning, displayModelName, formatModelOptionTitle, mergePromptAgentModelCapabilities, previewPromptAgentEndpoint, promptAgentService } from '../services/promptAgent';
 import { useConfirmDialog } from './ConfirmDialog';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
@@ -117,6 +118,7 @@ const fuzzyMatch = (value: string, query: string) => {
 };
 
 const capabilitySource = (source?: string) => ({ manual: '人工', metadata: '接口声明', pi_catalog: '模型目录', model_name: '名称推断', unknown: '未知' } as Record<string, string>)[source || 'unknown'] || '未知';
+const thinkingSource = (source?: string) => ({ manual: '手动设置', metadata: '接口声明', pi_catalog: '已知模型目录', fallback: '兼容选项，接口未声明' } as Record<string, string>)[source || 'fallback'] || '兼容选项，接口未声明';
 
 const formatContext = (value: number) => value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1000 ? `${Math.round(value / 1000)}K` : String(value || '—');
 
@@ -132,6 +134,17 @@ export const CustomProviderForm: React.FC<{
 }> = ({ value, onChange, busy, onTest, onFetch, onSave, result, discovered = [] }) => {
   const [modelSearch, setModelSearch] = useState('');
   const patchModel = (index: number, patch: Partial<PromptAgentCustomProvider['models'][number]>) => onChange({ ...value, models: value.models.map((model, modelIndex) => modelIndex === index ? { ...model, ...patch } : model) });
+  const changeModelId = (index: number, id: string) => {
+    const model = value.models[index];
+    const automaticThinking = model.thinkingLevelsSource === 'metadata' || model.thinkingLevelsSource === 'pi_catalog';
+    const automatic = (source?: string) => ['metadata', 'pi_catalog', 'model_name'].includes(source || '');
+    patchModel(index, { id,
+      ...(automaticThinking ? { thinkingLevels: undefined, thinkingLevelMap: undefined, thinkingLevelsSource: undefined, thinkingMode: undefined } : {}),
+      ...(automatic(model.capabilityDetection?.reasoning) ? { reasoning: false } : {}),
+      ...(automatic(model.capabilityDetection?.imageInput) ? { imageInput: false } : {}),
+      capabilityDetection: { imageInput: model.capabilityDetection?.imageInput === 'manual' ? 'manual' : 'unknown', reasoning: model.capabilityDetection?.reasoning === 'manual' ? 'manual' : 'unknown' },
+    });
+  };
   const headerEntries = Object.entries(value.headers || {});
   const patchHeader = (index: number, name: string, headerValue: string) => {
     const next = Object.fromEntries(headerEntries.map((entry, entryIndex) => entryIndex === index ? [name, headerValue] : entry).filter(([key]) => key.trim()));
@@ -165,10 +178,11 @@ export const CustomProviderForm: React.FC<{
           <button type="button" onClick={() => onChange({ ...value, models: [...value.models, { id: '', name: '', reasoning: false, imageInput: false, contextWindow: 128000, maxTokens: 16384 }] })} className="mobile-touch ml-auto shrink-0 rounded-xl bg-indigo-50 px-3 text-xs font-bold text-indigo-600 transition hover:bg-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950/70">＋ 添加模型</button>
         </div>
         <div className="space-y-3">{value.models.map((model, index) => <div key={index} className="rounded-2xl border border-gray-200 p-3 dark:border-gray-700">
-          <div className="flex gap-2"><input value={model.id} onChange={event => patchModel(index, { id: event.target.value })} placeholder="模型 ID，例如 deepseek-chat" className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-300 bg-gray-50 px-3 font-mono text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:focus:border-indigo-400" />{value.models.length > 1 && <button type="button" onClick={() => onChange({ ...value, models: value.models.filter((_, modelIndex) => modelIndex !== index) })} className="mobile-touch rounded-xl px-3 text-sm font-bold text-rose-500 hover:text-rose-600 dark:text-rose-400">删除</button>}</div>
+          <div className="flex gap-2"><input value={model.id} onChange={event => changeModelId(index, event.target.value)} placeholder="模型 ID，例如 deepseek-chat" className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-300 bg-gray-50 px-3 font-mono text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:focus:border-indigo-400" />{value.models.length > 1 && <button type="button" onClick={() => onChange({ ...value, models: value.models.filter((_, modelIndex) => modelIndex !== index) })} className="mobile-touch rounded-xl px-3 text-sm font-bold text-rose-500 hover:text-rose-600 dark:text-rose-400">删除</button>}</div>
           <details className="mt-2 text-xs text-gray-500"><summary className="mobile-touch cursor-pointer">模型能力</summary><input value={model.name || ''} onChange={event => patchModel(index, { name: event.target.value })} placeholder="显示名称（可选）" className="mobile-touch mt-2 w-full rounded-xl border border-gray-300 bg-gray-50 px-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:focus:border-indigo-400" />
           <div className="mt-2 grid grid-cols-2 gap-2"><label className="text-meta text-gray-500 dark:text-gray-400">上下文长度<input type="number" min="1024" value={model.contextWindow} onChange={event => patchModel(index, { contextWindow: Number(event.target.value) })} className="mobile-touch mt-1 w-full rounded-xl border border-gray-300 bg-gray-50 px-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:focus:border-indigo-400" /></label><label className="text-meta text-gray-500 dark:text-gray-400">最大输出<input type="number" min="256" value={model.maxTokens} onChange={event => patchModel(index, { maxTokens: Number(event.target.value) })} className="mobile-touch mt-1 w-full rounded-xl border border-gray-300 bg-gray-50 px-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:focus:border-indigo-400" /></label></div>
           <div className="mt-2 flex flex-wrap gap-4"><label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300"><input type="checkbox" checked={model.imageInput} onChange={event => patchModel(index, { imageInput: event.target.checked, capabilityDetection: { imageInput: 'manual', reasoning: model.capabilityDetection?.reasoning || 'unknown' } })}/>支持识图</label><label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300"><input type="checkbox" checked={model.reasoning} onChange={event => patchModel(index, { reasoning: event.target.checked, capabilityDetection: { imageInput: model.capabilityDetection?.imageInput || 'unknown', reasoning: 'manual' } })}/>支持推理</label></div>
+          {model.reasoning && <fieldset className="mt-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-950"><legend className="px-1 text-xs text-gray-600 dark:text-gray-300">支持的思考档位</legend><p className="mb-2 text-xs leading-5 text-gray-500">来源：{thinkingSource(model.thinkingLevelsSource)}。仅勾选接口支持的档位。</p><div className="grid grid-cols-3 gap-2 sm:grid-cols-4">{AGENT_THINKING_LEVELS.map(level => { const levels = model.thinkingLevels || ['off', 'minimal', 'low', 'medium', 'high']; return <label key={level} className="flex min-h-8 items-center gap-2 text-xs text-gray-600 dark:text-gray-300"><input type="checkbox" aria-label={`支持思考档位：${AGENT_THINKING_LABELS[level]} (${model.id || index + 1})`} checked={levels.includes(level)} disabled={busy} onChange={event => { const next = AGENT_THINKING_LEVELS.filter(item => item === level ? event.target.checked : levels.includes(item)); const mapping = { ...model.thinkingLevelMap }; if (mapping[level] === null && event.target.checked) delete mapping[level]; patchModel(index, { thinkingLevels: next, thinkingLevelMap: createAgentThinkingMap(next, mapping), thinkingLevelsSource: 'manual' }); }} />{AGENT_THINKING_LABELS[level]}</label>; })}</div>{model.thinkingLevels?.length === 0 && <p role="alert" className="mt-2 text-xs text-red-600">请至少选择一个档位；不使用推理可以关闭「支持推理」。</p>}</fieldset>}
           {model.capabilityDetection && <div className="mt-2 text-micro text-gray-400 dark:text-gray-500">能力来源：识图 {capabilitySource(model.capabilityDetection.imageInput)} · 推理 {capabilitySource(model.capabilityDetection.reasoning)}（仍可手动纠正）</div>}
           </details>
         </div>)}</div>
@@ -858,11 +872,14 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
   };
 
   const fetchCustom = async () => {
+    const snapshot = JSON.stringify(customDraft);
     setBusy(true);
     try {
       const result = await promptAgentService.fetchCustomProviderModels(customDraft);
+      if (JSON.stringify(customDraftRef.current) !== snapshot) return;
       setDiscoveredModels(result.models);
-      notify('模型列表已获取，请选择要加入的模型；能力标记可手动纠正');
+      setCustomDraft(previous => ({ ...previous, models: previous.models.map(model => { const discovered = result.models.find(item => item.id.toLowerCase() === model.id.toLowerCase()); return discovered ? mergePromptAgentModelCapabilities(model, discovered) : model; }) }));
+      notify('已刷新现有模型的能力，请选择要加入的其他模型；手动设置已保留');
     } catch (error) { notify(error instanceof Error ? error.message : '获取模型失败', 'error'); }
     finally { setBusy(false); }
   };

@@ -21,6 +21,14 @@ it('当前模型和强度直接可见，只展示本模型支持的思考档位'
   fireEvent.click(screen.getByRole('button', { name: '思考强度：高' }));
   await waitFor(() => expect(trigger.textContent).toContain('高')); expect(think).toHaveBeenCalledWith('high');
 });
+it('稀疏接口档位不补上其他强度，来源明确显示；未知能力标成兼容选项', () => {
+  const model = { ...first, thinkingLevels: ['low', 'high', 'xhigh'], thinkingLevelsSource: 'metadata' } as PromptAgentModel;
+  const view = render(<Control model={model} />); fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
+  expect(screen.getByRole('slider').getAttribute('max')).toBe('2'); expect(screen.queryByRole('button', { name: '思考强度：中' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '思考强度：关闭' })).toBeNull(); expect(screen.getByText('档位来自接口声明')).toBeTruthy();
+  view.unmount(); render(<Control />); fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
+  expect(screen.getByText(/接口未声明具体档位，当前为兼容选项/)).toBeTruthy();
+});
 it('滑动期间只预览，释放后保存最终强度，键盘亦可保存', async () => {
   const think = vi.fn(async () => {}); render(<Control think={think} />); fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
   const range = screen.getByRole('slider', { name: '思考强度' });

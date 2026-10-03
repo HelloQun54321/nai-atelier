@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PromptAgentService, assemblePromptContext, estimateContextTokens, selectAgentTools, sanitizeAgentImages } from './prompt-agent.mjs';
+import { PromptAgentService, assemblePromptContext, estimateContextTokens, selectAgentTools, sanitizeAgentImages, detectModelCapabilities, sanitizeCustomProvider, customProviderRuntime, createPromptAgentModelRuntime } from './prompt-agent.mjs';
+import { getSupportedThinkingLevels, InMemoryCredentialStore } from '@earendil-works/pi-ai';
+import { createAgentThinkingMap } from '../services/agentThinking.mjs';
 
 const isolated = async fn => {
   const root = await mkdtemp(join(tmpdir(), 'nai-agent-test-'));
@@ -56,12 +58,116 @@ test('工具历史按实际回执展示失败和中断', () => isolated(async se
 }));
 const customInput = (id = 'custom-synthetic-a') => ({ id, name: 'synthetic', baseUrl: 'http://127.0.0.1:1234/v1', models: [{ id: 'a' }, { id: 'b' }] });
 
+test('模型声明的稀疏思考档位贯通发现、配置与三种协议运行模型', () => {
+  const discovered = detectModelCapabilities({ id: 'synthetic-model', supported_reasoning_efforts: ['low', 'high', 'xhigh'], thinkingLevelMap: { low: 'basic', xhigh: 'extreme' } });
+  assert.equal(discovered.reasoning, true); assert.equal(discovered.thinkingLevelsSource, 'metadata');
+  assert.deepEqual(discovered.thinkingLevels, ['low', 'high', 'xhigh']);
+  for (const api of ['openai-completions', 'openai-responses', 'anthropic-messages']) {
+    const provider = sanitizeCustomProvider({ ...customInput(), api, models: [discovered] });
+    const runtime = customProviderRuntime(provider).getModels()[0];
+    assert.deepEqual(provider.models[0].thinkingLevels, discovered.thinkingLevels);
+    assert.deepEqual(getSupportedThinkingLevels(runtime), ['low', 'high', 'xhigh']);
+    assert.equal(runtime.thinkingLevelMap.low, 'basic'); assert.equal(runtime.thinkingLevelMap.xhigh, 'extreme');
+    assert.equal(runtime.thinkingLevelMap.off, null); assert.equal(runtime.thinkingLevelMap.medium, null); assert.equal(runtime.thinkingLevelMap.max, null);
+  }
+});
+test('档位别名与映射元数据保留实际参数；明确禁用的档位不会重新出现', () => {
+  const alias = detectModelCapabilities({ id: 'alias', parameters: { reasoning_effort: { enum: ['none', 'low', 'x-high', 'unknown'] } } });
+  assert.deepEqual(alias.thinkingLevels, ['off', 'low', 'xhigh']);
+  assert.equal(alias.thinkingLevelMap.off, 'none'); assert.equal(alias.thinkingLevelMap.xhigh, 'x-high');
+  const mapped = detectModelCapabilities({ id: 'map', thinking_level_map: { off: null, minimal: null, low: 'basic', medium: null, high: 'advanced', xhigh: 'extreme', max: null } });
+  assert.deepEqual(mapped.thinkingLevels, ['low', 'high', 'xhigh']);
+  assert.deepEqual(detectModelCapabilities({ id: 'sparse-map', thinkingLevelMap: { low: 'basic', high: 'advanced' } }).thinkingLevels, ['low', 'high']);
+  const metadataWins = detectModelCapabilities({ id: 'deepseek-v4-flash', thinkingLevels: ['low', 'high'], thinkingLevelMap: { high: null } });
+  assert.deepEqual(metadataWins.thinkingLevels, ['low']); assert.equal(metadataWins.thinkingLevelsSource, 'metadata');
+  assert.throws(() => sanitizeCustomProvider({ ...customInput(), models: [{ id: 'a', reasoning: true, thinkingLevels: [] }] }), /至少选择/);
+  assert.throws(() => sanitizeCustomProvider({ ...customInput(), models: [{ id: 'a', reasoning: true, thinkingLevels: ['high'], thinkingLevelMap: { high: null } }] }), /全部不可用/);
+});
+test('目录补齐和未知兼容档位只在运行时生成，旧配置不补写能力字段', () => {
+  const legacy = sanitizeCustomProvider({ ...customInput(), models: [{ id: 'a', reasoning: true }, { id: 'deepseek-v4-flash', reasoning: true }, { id: 'disabled', reasoning: false, thinkingLevels: ['high'] }] });
+  assert.equal('thinkingLevels' in legacy.models[0], false); assert.equal('thinkingLevels' in legacy.models[1], false);
+  const [unknown, catalog, disabled] = customProviderRuntime(legacy).getModels();
+  assert.equal(unknown.thinkingLevelsSource, 'fallback'); assert.deepEqual(getSupportedThinkingLevels(unknown), ['off', 'minimal', 'low', 'medium', 'high']);
+  assert.equal(unknown.thinkingLevelMap, undefined);
+  assert.equal(catalog.thinkingLevelsSource, 'pi_catalog'); assert.deepEqual(getSupportedThinkingLevels(catalog), ['off', 'high', 'max']);
+  assert.equal(catalog.compat.thinkingFormat, 'deepseek'); assert.deepEqual(getSupportedThinkingLevels(disabled), ['off']);
+});
+test('思考能力保存后重载保持，切换模型与非法旧档位按当前能力归一化', () => isolated(async service => {
+  await service.init();
+  const model = detectModelCapabilities({ id: 'a', thinkingLevels: ['low', 'high', 'xhigh'] });
+  await service.saveCustomProvider({ ...customInput(), models: [model, { id: 'b', reasoning: false }], select: true });
+  const before = await readFile(service.configFilePath(), 'utf8');
+  const restored = new PromptAgentService({ lanSecret: 'synthetic', configFile: service.isolatedRoot }); await restored.init();
+  assert.equal(await readFile(service.configFilePath(), 'utf8'), before);
+  assert.deepEqual(restored.listAvailableModels()[0].thinkingLevels, ['low', 'high', 'xhigh']);
+  const session = await restored.createSession({ thinkingLevel: 'xhigh', creativeMode: false }); assert.equal(session.thinkingLevel, 'xhigh');
+  assert.equal((await restored.updateSession(session.id, { thinkingLevel: 'max' })).thinkingLevel, 'low');
+  assert.equal((await restored.updateSession(session.id, { model: 'b' })).thinkingLevel, 'off');
+}));
+test('设置和聊天读取同一能力，未知模型的兼容展示不会改写旧关闭请求', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', reasoning: true }, { id: 'deepseek-v4-flash', reasoning: true }], select: true });
+  const shown = service.listCustomProviders()[0];
+  assert.deepEqual(shown.models.map(model => model.thinkingLevels), service.listAvailableModels().map(model => model.thinkingLevels));
+  assert.equal(shown.models[0].thinkingLevelsSource, 'fallback'); assert.equal(shown.models[1].thinkingLevelsSource, 'pi_catalog');
+  const saved = sanitizeCustomProvider(shown);
+  assert.equal('thinkingLevels' in saved.models[0], false);
+  assert.equal(customProviderRuntime(saved).getModels()[0].thinkingLevelMap, undefined);
+  assert.deepEqual(getSupportedThinkingLevels(customProviderRuntime(saved).getModels()[1]), ['off', 'high', 'max']);
+  await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', reasoning: false, thinkingLevels: ['high'], thinkingLevelsSource: 'manual' }, { id: 'b', reasoning: false, thinkingLevels: [], thinkingLevelMap: createAgentThinkingMap([]) }] });
+  const disabled = service.listCustomProviders()[0];
+  assert.deepEqual(service.listAvailableModels()[0].thinkingLevels, ['off']);
+  assert.deepEqual(disabled.models[0].thinkingLevels, ['high']);
+  assert.deepEqual(sanitizeCustomProvider(disabled).models[0].thinkingLevels, ['high']);
+  assert.equal('thinkingLevelMap' in service.config.customProviders[0].models[1], false);
+}));
+test('实际 Chat 请求使用保存的思考映射，关闭档位发送接口声明的 none', () => isolated(async service => {
+  const model = detectModelCapabilities({ id: 'a', thinkingLevels: ['off', 'low', 'high', 'xhigh'], thinkingLevelMap: { xhigh: 'extreme' } });
+  await service.saveCustomProvider({ ...customInput(), models: [model], select: true });
+  const session = await service.createSession({ thinkingLevel: 'xhigh', creativeMode: false });
+  const previous = globalThis.fetch, requests = [];
+  globalThis.fetch = async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    const chunk = { id: 'synthetic', object: 'chat.completion.chunk', created: 1, model: 'a', choices: [{ index: 0, delta: { role: 'assistant', content: '合成完成' }, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } };
+    return new Response('data: ' + JSON.stringify(chunk) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  };
+  try {
+    await service.run({ sessionId: session.id, message: '你好', draft: { params: {} } }, () => {});
+    assert.equal(requests[0].reasoning_effort, 'extreme'); assert.equal((await service.getTask(session.id)).status, 'completed');
+    await service.updateSession(session.id, { thinkingLevel: 'off' });
+    await service.run({ sessionId: session.id, message: '继续', draft: { params: {} } }, () => {});
+    assert.equal(requests[1].reasoning_effort, 'none'); assert.equal((await service.getTask(session.id)).status, 'completed');
+  } finally { globalThis.fetch = previous; }
+}));
+test('Responses 与 Anthropic 真实适配器构造请求时沿用思考映射，联网前截获', async () => {
+  const previous = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('测试禁止联网'); };
+  try {
+    for (const api of ['openai-responses', 'anthropic-messages']) {
+      const detected = detectModelCapabilities({ id: 'synthetic', supported_reasoning_efforts: ['low', 'high', 'xhigh'], thinkingLevelMap: { xhigh: 'extreme' } });
+      const provider = sanitizeCustomProvider({ ...customInput(), api, models: [detected] });
+      const credentials = new InMemoryCredentialStore(); await credentials.modify(provider.id, async () => ({ type: 'api_key', key: 'synthetic' }));
+      const runtime = createPromptAgentModelRuntime(credentials, [provider]); const model = runtime.getModel(provider.id, detected.id);
+      let payload;
+      const stream = runtime.streamSimple(model, { messages: [{ role: 'user', content: '合成请求', timestamp: 1 }] }, { reasoning: 'xhigh', onPayload: value => { payload = value; throw new Error('合成测试在发送前结束'); } });
+      for await (const _event of stream) { /* 消费适配器结束事件，不发出实际请求。 */ }
+      assert.ok(payload);
+      if (api === 'openai-responses') assert.equal(payload.reasoning.effort, 'extreme');
+      else { assert.equal(payload.thinking.type, 'adaptive'); assert.equal(payload.output_config.effort, 'extreme'); }
+    }
+  } finally { globalThis.fetch = previous; }
+});
+
 test('权限档位持久化、旧配置默认标准，非法档位和失败写入不发布', () => isolated(async service => {
   assert.equal(service.publicConfig().permissionMode, 'standard');
   await service.setPermissionMode('full');
   assert.equal(JSON.parse(await readFile(service.configFilePath(), 'utf8')).permissionMode, 'full');
   const restored = new PromptAgentService({ lanSecret: 'synthetic', configFile: service.isolatedRoot }); await restored.init();
   assert.equal(restored.publicConfig().permissionMode, 'full');
+  service.setCredential('deepseek', { type: 'api_key', key: 'synthetic-recovery-key' });
+  const snapshot = structuredClone(service.config);
+  await writeFile(service.configFilePath(), JSON.stringify({ encryptedKeys: {}, permissionMode: 'read_only' }));
+  await service.setPermissionMode('full');
+  assert.deepEqual(JSON.parse(await readFile(service.configFilePath(), 'utf8')), snapshot);
   await assert.rejects(service.setPermissionMode('unknown'), /无效/);
   service.activeAgents.set('running', {}); await assert.rejects(service.setPermissionMode('read_only'), /先停止/); service.activeAgents.clear();
   service.configFileOverride = join(service.isolatedRoot, 'blocked', 'config.json'); await writeFile(join(service.isolatedRoot, 'blocked'), 'synthetic');

@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom';
 import { ArrowLeft, Check, ChevronDown, ChevronRight, Loader2, Sparkles, X } from 'lucide-react';
 import { formatModelOptionTitle, type PromptAgentModel, type PromptAgentThinkingLevel } from '../services/promptAgent';
 import { useAgentPopoverPosition } from './useAgentPopoverPosition';
+import { AGENT_THINKING_LABELS } from '../services/agentThinking.mjs';
 
-export const agentThinkingLabels: Record<PromptAgentThinkingLevel, string> = { off: '关闭', minimal: '极少', low: '低', medium: '中', high: '高', xhigh: '极高', max: '最大' };
+export const agentThinkingLabels = AGENT_THINKING_LABELS;
 interface Props {
   models: PromptAgentModel[];
   activeModel?: PromptAgentModel;
@@ -78,6 +79,7 @@ export const AgentModelControl: React.FC<Props> = props => {
           <input type="range" aria-label="思考强度" aria-valuetext={agentThinkingLabels[draftLevel]} min={0} max={props.thinkingLevels.length - 1} step={1} value={Math.max(0, props.thinkingLevels.indexOf(draftLevel))} disabled={busy} onChange={event => setDraftLevel(props.thinkingLevels[Number(event.target.value)])} onPointerUp={() => thinking(draftLevel)} onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) thinking(draftLevel); }} className="block h-6 w-full cursor-pointer accent-indigo-600 disabled:opacity-50 dark:accent-indigo-400" />
           <div className="mt-2 grid gap-1" style={{ gridTemplateColumns: `repeat(${props.thinkingLevels.length}, minmax(0, 1fr))` }}>{props.thinkingLevels.map(level => <button key={level} type="button" disabled={busy} aria-label={`思考强度：${agentThinkingLabels[level]}`} aria-pressed={props.thinkingLevel === level} onClick={() => thinking(level)} className={`min-h-8 rounded-lg text-xs disabled:opacity-50 ${props.thinkingLevel === level ? 'bg-indigo-100 font-medium text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}>{agentThinkingLabels[level]}</button>)}</div>
         </div> : <p className="py-2 text-center text-xs text-gray-500 dark:text-gray-400">当前模型不提供可调思考强度</p>}
+        {props.activeModel?.reasoning && <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{({ metadata: '档位来自接口声明', pi_catalog: '档位来自已知模型目录', manual: '档位来自你的手动设置', fallback: '接口未声明具体档位，当前为兼容选项，可在模型服务中手动校正。' })[props.activeModel.thinkingLevelsSource || 'fallback']}</p>}
       </> : <>
         {props.models.length > 8 && <input aria-label="搜索模型" placeholder="搜索模型或服务…" value={query} onChange={event => setQuery(event.target.value)} className="mb-2 h-9 w-full rounded-lg border border-gray-200 bg-transparent px-2 text-xs text-gray-700 dark:border-gray-700 dark:text-gray-200" />}
         <div className="max-h-64 space-y-1 overflow-y-auto">

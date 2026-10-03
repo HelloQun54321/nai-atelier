@@ -5,6 +5,8 @@ import { InMemoryCredentialStore, Type, createModels, createProvider, getSupport
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy';
+import { OPENAI_MODELS } from '@earendil-works/pi-ai/providers/openai.models';
+import { ANTHROPIC_MODELS } from '@earendil-works/pi-ai/providers/anthropic.models';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'crypto';
 import { readFileSync } from 'node:fs';
 import { appendFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'fs/promises';
@@ -13,9 +15,10 @@ import { dirname, join } from 'path';
 import { getGlobalDispatcher, ProxyAgent, setGlobalDispatcher } from 'undici';
 import { getNovelAiModelProfile, readNovelAiOfficialKnowledge, searchNovelAiOfficialKnowledge } from './novelai-agent-knowledge.mjs';
 import { normalizeTransparentWeight, TRANSPARENT_WEIGHT_MIN, TRANSPARENT_WEIGHT_MAX } from '../services/transparentBackground.mjs';
+import { AGENT_THINKING_LEVELS, createAgentThinkingMap, normalizeAgentThinkingLevels, normalizeAgentThinkingMap } from '../services/agentThinking.mjs';
 
 const CONFIG_FILE = 'local-data/prompt-agent.json';
-const runtimeSourceFiles = ['prompt-agent.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs'];
+const runtimeSourceFiles = ['prompt-agent.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs', '../services/agentThinking.mjs'];
 const sourceSignature = () => createHash('sha256').update(runtimeSourceFiles.map(file => readFileSync(new URL(file, import.meta.url))).join('\n')).digest('hex');
 const sourceVersion = () => JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const LOADED_VERSION = sourceVersion();
@@ -56,7 +59,8 @@ const MAX_WEB_PAGE_CHARS = 24_000;
 const MAX_SAVED_MESSAGE_CHARS = 24_000;
 const MAX_TASK_EVENTS = 500;
 const TASK_EVENT_FLUSH_DELAY_MS = 500;
-const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+const THINKING_LEVELS = new Set(AGENT_THINKING_LEVELS);
+const THINKING_SOURCES = new Set(['metadata', 'pi_catalog', 'manual', 'fallback']);
 const BLOCKED_CUSTOM_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key']);
 // 破限提示词与预设实验室：9 个注入目标（顺序即展示顺序），与前端
 // services/promptAgent.ts 的 PromptAgentLabTarget 严格一致，无旧键别名。
@@ -288,7 +292,8 @@ const normalizeProvider = (value, registry = new Map()) => PROVIDER_CATALOG.has(
 const supportedThinkingLevelsFor = model => {
   // Pi owns the compatibility table. A public model has the precomputed list,
   // while a runtime model has Pi's reasoning / thinkingLevelMap metadata.
-  if (Array.isArray(model?.thinkingLevels)) return model.thinkingLevels.filter(level => THINKING_LEVELS.has(level));
+  if (model?.reasoning === false) return ['off'];
+  if (Array.isArray(model?.thinkingLevels)) return normalizeAgentThinkingLevels(model.thinkingLevels);
   return getSupportedThinkingLevels(model || {}).filter(level => THINKING_LEVELS.has(level));
 };
 const publicModel = (model, provider) => ({
@@ -301,11 +306,12 @@ const publicModel = (model, provider) => ({
   maxTokens: Number(model.maxTokens) || 0,
   ...(model.capabilityDetection ? { capabilityDetection: model.capabilityDetection } : {}),
   thinkingLevels: supportedThinkingLevelsFor(model),
+  thinkingLevelsSource: model.thinkingLevelsSource || (PROVIDER_CATALOG.has(provider) ? 'pi_catalog' : 'fallback'),
 });
 const listModels = (provider, registry = new Map()) => {
   const normalized = normalizeProvider(provider, registry);
   const custom = registry.get(normalized);
-  if (custom) return custom.models.map(model => publicModel(model, normalized));
+  if (custom) return custom.models.map(model => publicModel({ ...model, ...customThinkingMetadata(model) }, normalized));
   return PROVIDER_CATALOG.get(normalized)?.getModels().map(model => publicModel(model, normalized)) || [];
 };
 const resolveModelApi = (provider, modelId, registry = new Map()) => {
@@ -322,20 +328,27 @@ export const customProviderRuntime = custom => {
   const apiFactory = custom.api === 'anthropic-messages' ? anthropicMessagesApi
     : custom.api === 'openai-responses' ? openAIResponsesApi
       : openAICompletionsApi;
-  const models = custom.models.map(model => ({
-    id: model.id,
-    name: model.name || model.id,
-    api: custom.api,
-    provider: custom.id,
-    baseUrl: custom.baseUrl,
-    reasoning: model.reasoning === true,
-    input: model.imageInput === true ? ['text', 'image'] : ['text'],
-    // Pi 模型协议要求这个字段；不配置价格或输出费用记录。
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: model.contextWindow || 128_000,
-    maxTokens: model.maxTokens || 16_384,
-    ...(custom.headers && Object.keys(custom.headers).length ? { headers: custom.headers } : {}),
-  }));
+  const models = custom.models.map(model => {
+    const catalog = catalogCapability(model.id);
+    const compat = catalog?.api === custom.api || catalog?.api === 'openai-responses' && custom.api === 'openai-completions' ? { ...catalog.compat } : {};
+    if (custom.api === 'anthropic-messages' && model.thinkingMode) compat.forceAdaptiveThinking = model.thinkingMode === 'adaptive';
+    return {
+      id: model.id,
+      name: model.name || model.id,
+      api: custom.api,
+      provider: custom.id,
+      baseUrl: custom.baseUrl,
+      reasoning: model.reasoning === true,
+      input: model.imageInput === true ? ['text', 'image'] : ['text'],
+      // Pi 模型协议要求这个字段；不配置价格或输出费用记录。
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: model.contextWindow || 128_000,
+      maxTokens: model.maxTokens || 16_384,
+      ...customThinkingMetadata(model),
+      ...(Object.keys(compat).length ? { compat } : {}),
+      ...(custom.headers && Object.keys(custom.headers).length ? { headers: custom.headers } : {}),
+    };
+  });
   return createProvider({
     id: custom.id,
     name: custom.name,
@@ -376,13 +389,18 @@ export const sanitizeCustomProvider = raw => {
     if (seenModelIds.has(key)) return [];
     seenModelIds.add(key);
     const contextWindow = Math.round(clamp(item?.contextWindow, 1_024, 10_000_000, 128_000));
+    const disabledEmptyLevels = item?.reasoning === false && Array.isArray(item?.thinkingLevels) && item.thinkingLevels.length === 0;
+    const thinking = disabledEmptyLevels ? null : readThinkingMetadata(item, item?.thinkingLevelsSource || 'manual');
+    if (!disabledEmptyLevels && Array.isArray(item?.thinkingLevels) && !normalizeAgentThinkingLevels(item.thinkingLevels).length) throw Object.assign(new Error(`模型 ${id} 请至少选择一个有效思考档位`), { status: 400 });
     return [{
       id,
       name: text(item?.name || id).trim().slice(0, 160) || id,
-      reasoning: item?.reasoning === true,
+      reasoning: typeof item?.reasoning === 'boolean' ? item.reasoning : Boolean(thinking?.thinkingLevels.some(level => level !== 'off')),
       imageInput: item?.imageInput === true,
       contextWindow,
       maxTokens: Math.round(clamp(item?.maxTokens, 256, contextWindow, Math.min(16_384, contextWindow))),
+      ...(thinking || {}),
+      ...(['adaptive', 'budget'].includes(item?.thinkingMode) ? { thinkingMode: item.thinkingMode } : {}),
       ...(item?.capabilityDetection && typeof item.capabilityDetection === 'object' ? { capabilityDetection: {
         imageInput: ['metadata', 'pi_catalog', 'model_name', 'unknown', 'manual'].includes(item.capabilityDetection.imageInput) ? item.capabilityDetection.imageInput : 'manual',
         reasoning: ['metadata', 'pi_catalog', 'model_name', 'unknown', 'manual'].includes(item.capabilityDetection.reasoning) ? item.capabilityDetection.reasoning : 'manual',
@@ -413,20 +431,52 @@ const getPromptAgentCapabilityIndex = () => {
   if (promptAgentCapabilityIndex) return promptAgentCapabilityIndex;
   const exact = new Map();
   const basename = new Map();
-  for (const provider of PROVIDER_CATALOG.keys()) {
-    for (const model of PROVIDER_CATALOG.get(provider).getModels()) {
-      const capability = publicModel(model, provider);
-      const id = String(model.id || '').toLowerCase();
-      if (!id) continue;
-      if (!exact.has(id)) exact.set(id, capability);
-      const tail = id.split('/').at(-1);
-      const matches = basename.get(tail) || [];
-      matches.push(capability);
-      basename.set(tail, matches);
-    }
+  const knownModels = [...[...PROVIDER_CATALOG.values()].flatMap(provider => provider.getModels()), ...Object.values(OPENAI_MODELS), ...Object.values(ANTHROPIC_MODELS)];
+  for (const model of knownModels) {
+    const capability = { ...publicModel({ ...model, thinkingLevelsSource: 'pi_catalog' }, model.provider), api: model.api, thinkingLevelMap: model.thinkingLevelMap, compat: model.compat };
+    const id = String(model.id || '').toLowerCase();
+    if (!id) continue;
+    if (!exact.has(id)) exact.set(id, capability);
+    const tail = id.split('/').at(-1);
+    const matches = basename.get(tail) || [];
+    matches.push(capability);
+    basename.set(tail, matches);
   }
   promptAgentCapabilityIndex = { exact, basename };
   return promptAgentCapabilityIndex;
+};
+
+const catalogCapability = id => {
+  const catalog = getPromptAgentCapabilityIndex(), normalized = String(id || '').toLowerCase();
+  const matches = catalog.basename.get(normalized.split('/').at(-1)) || [];
+  return catalog.exact.get(normalized) || (matches.length === 1 ? matches[0] : null);
+};
+const firstArray = (item, paths) => {
+  for (const path of paths) {
+    let value = item;
+    for (const key of path.split('.')) value = value && typeof value === 'object' ? value[key] : undefined;
+    if (Array.isArray(value) && normalizeAgentThinkingLevels(value).length) return value;
+  }
+};
+const readThinkingMetadata = (item, source = 'metadata') => {
+  // 兼容列表只是展示候选，不升级成接口声明，也不改变旧请求关闭推理的方式。
+  if (source === 'fallback') return null;
+  const advertised = firstArray(item, ['thinkingLevels', 'thinking_levels', 'supported_thinking_levels', 'reasoning_efforts', 'supported_reasoning_efforts', 'capabilities.thinking_levels', 'capabilities.reasoning_efforts', 'capabilities.supported_reasoning_efforts', 'parameters.reasoning_effort.enum', 'parameters.reasoning.effort.enum']);
+  const mapping = normalizeAgentThinkingMap(item?.thinkingLevelMap || item?.thinking_level_map || item?.capabilities?.thinking_level_map);
+  if (!advertised && !Object.keys(mapping).length) return null;
+  const mappedLevels = AGENT_THINKING_LEVELS.filter(level => typeof mapping[level] === 'string');
+  const levels = advertised ? normalizeAgentThinkingLevels(advertised).filter(level => mapping[level] !== null) : mappedLevels.length ? mappedLevels : getSupportedThinkingLevels({ reasoning: true, thinkingLevelMap: mapping });
+  if (!levels.length) throw Object.assign(new Error('模型声明的思考档位全部不可用，请检查档位与映射'), { status: 400 });
+  return { thinkingLevels: levels, thinkingLevelMap: createAgentThinkingMap(levels, mapping, advertised), thinkingLevelsSource: THINKING_SOURCES.has(source) ? source : 'metadata' };
+};
+/** 旧配置只在读取时补能力，不为补字段迁移或改写私人配置。 */
+const customThinkingMetadata = model => {
+  const declared = readThinkingMetadata(model, model.thinkingLevelsSource || 'manual');
+  if (model.reasoning !== true) return { thinkingLevels: ['off'], thinkingLevelsSource: declared?.thinkingLevelsSource || 'fallback' };
+  if (declared) return declared;
+  const catalog = catalogCapability(model.id);
+  if (catalog?.reasoning) return { thinkingLevels: catalog.thinkingLevels, thinkingLevelMap: createAgentThinkingMap(catalog.thinkingLevels, catalog.thinkingLevelMap), thinkingLevelsSource: 'pi_catalog' };
+  return { thinkingLevels: getSupportedThinkingLevels(model), thinkingLevelsSource: 'fallback' };
 };
 
 const firstBoolean = (value, paths) => {
@@ -458,9 +508,10 @@ export const detectModelCapabilities = raw => {
   const id = text(item.id || item.model).trim().slice(0, 160);
   if (!id) return null;
   const normalizedId = id.toLowerCase();
-  const catalog = getPromptAgentCapabilityIndex();
-  const tailMatches = catalog.basename.get(normalizedId.split('/').at(-1)) || [];
-  const catalogModel = catalog.exact.get(normalizedId) || (tailMatches.length === 1 ? tailMatches[0] : null);
+  const catalogModel = catalogCapability(normalizedId);
+  const thinking = readThinkingMetadata(item);
+  const declaredEfforts = firstArray(item, ['reasoning_efforts', 'supported_reasoning_efforts', 'capabilities.reasoning_efforts', 'capabilities.supported_reasoning_efforts', 'parameters.reasoning_effort.enum', 'parameters.reasoning.effort.enum']);
+  const thinkingMode = item.thinkingMode || item.thinking_mode || item.capabilities?.thinking_mode || (typeof item.compat?.forceAdaptiveThinking === 'boolean' ? item.compat.forceAdaptiveThinking ? 'adaptive' : 'budget' : declaredEfforts || catalogModel?.compat?.forceAdaptiveThinking === true ? 'adaptive' : undefined);
   const modalityTokens = modelModalityTokens(item);
   const metadataVision = firstBoolean(item, ['imageInput', 'image_input', 'supports_vision', 'vision', 'capabilities.vision', 'capabilities.image_input', 'features.vision']);
   const metadataReasoning = firstBoolean(item, ['reasoning', 'supports_reasoning', 'reasoning_supported', 'capabilities.reasoning', 'features.reasoning', 'supports_thinking']);
@@ -468,7 +519,7 @@ export const detectModelCapabilities = raw => {
   const nameVision = /(?:^|[-_/.])(vision|vl|omni|multimodal)(?:$|[-_/.])|llava|pixtral/i.test(normalizedId);
   const nameReasoning = /(?:^|[-_/.])(reasoning|thinking|qwq)(?:$|[-_/.])|(?:^|[-_/.])o[1-9](?:$|[-_/.])|deepseek[-_/]?r1/i.test(normalizedId);
   const imageInput = metadataVision ?? visionByModality ?? catalogModel?.imageInput ?? nameVision;
-  const reasoning = metadataReasoning ?? catalogModel?.reasoning ?? nameReasoning;
+  const reasoning = metadataReasoning ?? (thinking ? thinking.thinkingLevels.some(level => level !== 'off') : undefined) ?? catalogModel?.reasoning ?? nameReasoning;
   const contextWindow = firstNumber(item, ['contextWindow', 'context_window', 'context_length', 'max_context_length', 'limits.context', 'capabilities.context_window']) || catalogModel?.contextWindow || 128_000;
   const maxTokens = firstNumber(item, ['maxTokens', 'max_output_tokens', 'max_completion_tokens', 'output_token_limit', 'limits.output', 'capabilities.max_output_tokens']) || catalogModel?.maxTokens || 16_384;
   const normalizedContextWindow = Math.round(clamp(contextWindow, 1_024, 10_000_000, 128_000));
@@ -479,9 +530,11 @@ export const detectModelCapabilities = raw => {
     imageInput: Boolean(imageInput),
     contextWindow: normalizedContextWindow,
     maxTokens: Math.round(clamp(maxTokens, 256, normalizedContextWindow, Math.min(16_384, normalizedContextWindow))),
+    ...(thinking || (catalogModel?.reasoning ? { thinkingLevels: catalogModel.thinkingLevels, thinkingLevelMap: createAgentThinkingMap(catalogModel.thinkingLevels, catalogModel.thinkingLevelMap), thinkingLevelsSource: 'pi_catalog' } : {})),
+    ...(['adaptive', 'budget'].includes(thinkingMode) ? { thinkingMode } : {}),
     capabilityDetection: {
       imageInput: metadataVision !== undefined || visionByModality !== undefined ? 'metadata' : catalogModel ? 'pi_catalog' : nameVision ? 'model_name' : 'unknown',
-      reasoning: metadataReasoning !== undefined ? 'metadata' : catalogModel ? 'pi_catalog' : nameReasoning ? 'model_name' : 'unknown',
+      reasoning: metadataReasoning !== undefined || thinking ? 'metadata' : catalogModel ? 'pi_catalog' : nameReasoning ? 'model_name' : 'unknown',
     },
   };
 };
@@ -1779,7 +1832,7 @@ export class PromptAgentService {
   }
 
   listCustomProviders() {
-    return [...this.customProviders.values()].map(provider => ({ ...provider, configured: Boolean(this.getCredential(provider.id)) }));
+    return [...this.customProviders.values()].map(provider => ({ ...provider, models: provider.models.map(model => ({ ...model, ...(model.reasoning === false && model.thinkingLevels?.length ? {} : customThinkingMetadata(model)) })), configured: Boolean(this.getCredential(provider.id)) }));
   }
 
   async saveCustomProvider(input) {
