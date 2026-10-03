@@ -4,8 +4,13 @@ import { ArrowLeft, Check, ChevronDown, ChevronRight, Loader2, Sparkles, X } fro
 import { formatModelOptionTitle, type PromptAgentModel, type PromptAgentThinkingLevel } from '../services/promptAgent';
 import { useAgentPopoverPosition } from './useAgentPopoverPosition';
 import { AGENT_THINKING_LABELS } from '../services/agentThinking.mjs';
+import './AgentModelControl.css';
 
 export const agentThinkingLabels = AGENT_THINKING_LABELS;
+const thinkingPixels = [
+  [9, 66, 3], [17, 30, 2], [25, 76, 4], [33, 42, 2], [42, 20, 3], [49, 66, 2],
+  [58, 38, 4], [66, 78, 2], [73, 26, 3], [81, 59, 2], [89, 40, 4], [94, 74, 2],
+];
 interface Props {
   models: PromptAgentModel[];
   activeModel?: PromptAgentModel;
@@ -76,10 +81,12 @@ export const AgentModelControl: React.FC<Props> = props => {
       {actualView === 'thinking' ? <>
         <button type="button" data-model-trigger disabled={busy} onClick={() => setView('models')} className="mx-auto mb-3 flex max-w-full items-center gap-1 text-xs text-gray-500 dark:text-gray-400"><span className="truncate">{name}</span><ChevronRight className="h-3.5 w-3.5 shrink-0" /></button>
         {canThink ? <div className="rounded-xl bg-gray-50 px-3 py-3 dark:bg-gray-950">
-          <input type="range" aria-label="思考强度" aria-valuetext={agentThinkingLabels[draftLevel]} min={0} max={props.thinkingLevels.length - 1} step={1} value={Math.max(0, props.thinkingLevels.indexOf(draftLevel))} disabled={busy} onChange={event => setDraftLevel(props.thinkingLevels[Number(event.target.value)])} onPointerUp={() => thinking(draftLevel)} onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) thinking(draftLevel); }} className="block h-6 w-full cursor-pointer accent-indigo-600 disabled:opacity-50 dark:accent-indigo-400" />
+          <div className="agent-thinking-slider" style={{ '--agent-thinking-ratio': Math.max(0, props.thinkingLevels.indexOf(draftLevel)) / (props.thinkingLevels.length - 1) } as React.CSSProperties}>
+            <div aria-hidden="true" className="agent-thinking-track"><div className="agent-thinking-fill">{thinkingPixels.map(([x, y, size], index) => <span key={index} className="agent-thinking-pixel" style={{ left: `${x}%`, top: `${y}%`, width: size, height: size, animationDelay: `${-index * 0.47}s`, animationDuration: `${3.4 + index % 4 * 0.6}s` }} />)}</div>{props.thinkingLevels.map((level, index) => <span key={level} className="agent-thinking-step" style={{ left: `calc(22px + (100% - 44px) * ${index / (props.thinkingLevels.length - 1)})` }} />)}</div>
+            <input type="range" aria-label="思考强度" aria-valuetext={agentThinkingLabels[draftLevel]} min={0} max={props.thinkingLevels.length - 1} step={1} value={Math.max(0, props.thinkingLevels.indexOf(draftLevel))} disabled={busy} onChange={event => setDraftLevel(props.thinkingLevels[Number(event.target.value)])} onPointerUp={() => thinking(draftLevel)} onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) thinking(draftLevel); }} className="agent-thinking-range" />
+          </div>
           <div className="mt-2 grid gap-1" style={{ gridTemplateColumns: `repeat(${props.thinkingLevels.length}, minmax(0, 1fr))` }}>{props.thinkingLevels.map(level => <button key={level} type="button" disabled={busy} aria-label={`思考强度：${agentThinkingLabels[level]}`} aria-pressed={props.thinkingLevel === level} onClick={() => thinking(level)} className={`min-h-8 rounded-lg text-xs disabled:opacity-50 ${props.thinkingLevel === level ? 'bg-indigo-100 font-medium text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}>{agentThinkingLabels[level]}</button>)}</div>
         </div> : <p className="py-2 text-center text-xs text-gray-500 dark:text-gray-400">当前模型不提供可调思考强度</p>}
-        {props.activeModel?.reasoning && <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{({ metadata: '档位来自接口声明', pi_catalog: '档位来自已知模型目录', manual: '档位来自你的手动设置', fallback: '接口未声明具体档位，当前为兼容选项，可在模型服务中手动校正。' })[props.activeModel.thinkingLevelsSource || 'fallback']}</p>}
       </> : <>
         {props.models.length > 8 && <input aria-label="搜索模型" placeholder="搜索模型或服务…" value={query} onChange={event => setQuery(event.target.value)} className="mb-2 h-9 w-full rounded-lg border border-gray-200 bg-transparent px-2 text-xs text-gray-700 dark:border-gray-700 dark:text-gray-200" />}
         <div className="max-h-64 space-y-1 overflow-y-auto">
@@ -91,7 +98,7 @@ export const AgentModelControl: React.FC<Props> = props => {
       </>}
       {error && <p role="alert" className="mt-3 break-words text-xs text-red-600 dark:text-red-400">{error}</p>}
       {busy && <p role="status" className="mt-2 text-xs text-gray-500">正在保存…</p>}
-      <button type="button" data-configure onClick={() => { close(); props.onConfigure(); }} className="mt-3 w-full border-t border-gray-100 pt-3 text-left text-xs text-gray-500 hover:text-gray-800 dark:border-gray-800 dark:text-gray-400 dark:hover:text-gray-200">配置模型服务 →</button>
+      {actualView === 'models' && <button type="button" data-configure disabled={busy} onClick={() => { close(); props.onConfigure(); }} className="mt-3 w-full border-t border-gray-100 pt-3 text-left text-xs text-gray-500 hover:text-gray-800 disabled:opacity-50 dark:border-gray-800 dark:text-gray-400 dark:hover:text-gray-200">配置模型服务 →</button>}
     </div>, document.body)}
   </div>;
 };

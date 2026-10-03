@@ -11,6 +11,7 @@ it('接口档位在表单中精确显示，人工调整只改变所选档位并�
   let current: PromptAgentCustomProvider;
   const Controlled = () => { const [value, setValue] = useState<PromptAgentCustomProvider>({ name: '合成接口', baseUrl: 'http://localhost/v1', api: 'openai-completions', models: [exactModel] }); current = value; return <CustomProviderForm value={value} onChange={setValue} busy={false} onTest={() => {}} onFetch={() => {}} onSave={() => {}} />; };
   render(<Controlled />);
+  expect(screen.getByText('来源：接口声明。仅勾选接口支持的档位。')).toBeTruthy();
   expect((screen.getByLabelText('支持思考档位：极高 (synthetic)') as HTMLInputElement).checked).toBe(true);
   expect((screen.getByLabelText('支持思考档位：中 (synthetic)') as HTMLInputElement).checked).toBe(false);
   expect((screen.getByLabelText('支持思考档位：关闭 (synthetic)') as HTMLInputElement).checked).toBe(false);

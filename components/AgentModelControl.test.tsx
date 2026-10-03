@@ -9,9 +9,9 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const first = { id: 'vendor/synthetic-model', provider: 'first', providerName: '合成服务甲', reasoning: true, thinkingLevels: ['off', 'low', 'high'], imageInput: true } as PromptAgentModel;
 const second = { ...first, provider: 'second', providerName: '合成服务乙', reasoning: false, thinkingLevels: ['off'], imageInput: false } as PromptAgentModel;
 const defaults = { choose: vi.fn(async (_model: PromptAgentModel) => {}), think: vi.fn(async (_level: PromptAgentThinkingLevel) => {}) };
-const Control = ({ disabled = false, choose = defaults.choose, think = defaults.think, model = first }: { disabled?: boolean; choose?: (model: PromptAgentModel) => Promise<void>; think?: (level: PromptAgentThinkingLevel) => Promise<void>; model?: PromptAgentModel }) => {
+const Control = ({ disabled = false, choose = defaults.choose, think = defaults.think, model = first, configure = () => {} }: { disabled?: boolean; choose?: (model: PromptAgentModel) => Promise<void>; think?: (level: PromptAgentThinkingLevel) => Promise<void>; model?: PromptAgentModel; configure?: () => void }) => {
   const [open, setOpen] = useState(false), [selected, setSelected] = useState(model), [level, setLevel] = useState<PromptAgentThinkingLevel>('low');
-  return <AgentModelControl models={[first, second]} activeModel={selected} thinkingLevels={selected.thinkingLevels} thinkingLevel={selected.thinkingLevels.includes(level) ? level : 'off'} disabled={disabled} open={open} onOpenChange={setOpen} onModelChange={async next => { await choose(next); setSelected(next); }} onThinkingChange={async next => { await think(next); setLevel(next); }} onBusyChange={() => {}} onConfigure={() => {}} />;
+  return <AgentModelControl models={[first, second]} activeModel={selected} thinkingLevels={selected.thinkingLevels} thinkingLevel={selected.thinkingLevels.includes(level) ? level : 'off'} disabled={disabled} open={open} onOpenChange={setOpen} onModelChange={async next => { await choose(next); setSelected(next); }} onThinkingChange={async next => { await think(next); setLevel(next); }} onBusyChange={() => {}} onConfigure={configure} />;
 };
 it('当前模型和强度直接可见，只展示本模型支持的思考档位', async () => {
   const think = vi.fn(async () => {}); render(<Control think={think} />);
@@ -21,13 +21,30 @@ it('当前模型和强度直接可见，只展示本模型支持的思考档位'
   fireEvent.click(screen.getByRole('button', { name: '思考强度：高' }));
   await waitFor(() => expect(trigger.textContent).toContain('高')); expect(think).toHaveBeenCalledWith('high');
 });
-it('稀疏接口档位不补上其他强度，来源明确显示；未知能力标成兼容选项', () => {
+it('稀疏接口档位不补上其他强度，强度面板不占用来源说明和配置入口的空间', () => {
   const model = { ...first, thinkingLevels: ['low', 'high', 'xhigh'], thinkingLevelsSource: 'metadata' } as PromptAgentModel;
   const view = render(<Control model={model} />); fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
   expect(screen.getByRole('slider').getAttribute('max')).toBe('2'); expect(screen.queryByRole('button', { name: '思考强度：中' })).toBeNull();
-  expect(screen.queryByRole('button', { name: '思考强度：关闭' })).toBeNull(); expect(screen.getByText('档位来自接口声明')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '思考强度：关闭' })).toBeNull(); expect(screen.queryByText('档位来自接口声明')).toBeNull();
+  expect(screen.queryByRole('button', { name: '配置模型服务 →' })).toBeNull();
   view.unmount(); render(<Control />); fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
-  expect(screen.getByText(/接口未声明具体档位，当前为兼容选项/)).toBeTruthy();
+  expect(screen.queryByText(/接口未声明具体档位/)).toBeNull();
+});
+it('配置入口只在选择模型页出现，返回强度页隐藏；未接入模型仍可配置', () => {
+  const configure = vi.fn(); const view = render(<Control configure={configure} />);
+  fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
+  fireEvent.click(screen.getByRole('button', { name: 'synthetic-model (合成服务甲)' }));
+  expect(screen.getByRole('button', { name: '配置模型服务 →' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '选择模型' }));
+  expect(screen.queryByRole('button', { name: '配置模型服务 →' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'synthetic-model (合成服务甲)' }));
+  fireEvent.click(screen.getByRole('button', { name: '配置模型服务 →' }));
+  expect(configure).toHaveBeenCalledTimes(1); expect(screen.queryByRole('dialog')).toBeNull();
+  view.unmount();
+  render(<AgentModelControl models={[]} thinkingLevels={['off']} thinkingLevel="off" open disabled={false} onOpenChange={() => {}} onModelChange={async () => {}} onThinkingChange={async () => {}} onBusyChange={() => {}} onConfigure={configure} />);
+  expect(screen.getByText('尚未接入模型服务')).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: '配置模型服务 →' }));
+  fireEvent.click(screen.getByRole('button', { name: '配置模型服务 →' })); expect(configure).toHaveBeenCalledTimes(2);
 });
 it('滑动期间只预览，释放后保存最终强度，键盘亦可保存', async () => {
   const think = vi.fn(async () => {}); render(<Control think={think} />); fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
