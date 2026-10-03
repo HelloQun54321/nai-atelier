@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PromptAgentPanel } from './PromptAgentPanel';
 import { ConfirmDialogProvider } from './ConfirmDialog';
@@ -23,6 +23,8 @@ const mockSession = {
   title: '新对话',
   model: 'deepseek-chat',
   provider: 'deepseek',
+  thinkingLevel: 'off' as const,
+  imageInput: false,
   messages: [],
   messageCount: 0,
   creativeMode: false,
@@ -248,7 +250,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(screen.getByRole('button', { name: '更多会话操作' }).parentElement!.textContent).not.toBe(before);
   });
 
-  it('顶栏纯图标按钮（返回、会话列表、模型设置、更多）具有统一的 h-9 w-9 尺寸规范，且彻底移除全屏按钮', async () => {
+  it('顶栏保留会话操作，模型入口移到发送键旁且不再重复展示', async () => {
     stubServices();
     renderPanel(false);
 
@@ -261,14 +263,51 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     const modelBtn = screen.getByRole('button', { name: '模型与思考设置' });
     const moreBtn = screen.getByRole('button', { name: '更多会话操作' });
 
-    for (const btn of [backBtn, listBtn, modelBtn, moreBtn]) {
+    for (const btn of [backBtn, listBtn, moreBtn]) {
       expect(btn.className).toContain('h-9');
       expect(btn.className).toContain('w-9');
       expect(btn.className).not.toContain('px-2');
     }
+    expect(modelBtn.closest('header')).toBeNull();
+    expect(modelBtn.parentElement?.nextElementSibling).toBe(screen.getByRole('button', { name: '执行' }));
+    expect(modelBtn.textContent).toContain('deepseek-chat');
 
     // 根本不需要 agent 全屏，全屏按钮已彻底移除
     expect(screen.queryByRole('button', { name: /全屏/ })).toBeNull();
+  });
+
+  it('当前模型失效时，发送区仍可选择可用模型恢复对话', async () => {
+    stubServices({ model: 'unavailable-model' });
+    const update = vi.spyOn(promptAgentService, 'updateSession').mockResolvedValue(mockSession);
+    renderPanel();
+    await waitFor(() => expect((screen.getByRole('button', { name: '模型与思考设置' }) as HTMLButtonElement).disabled).toBe(false));
+    const trigger = screen.getByRole('button', { name: '模型与思考设置' });
+    expect((screen.getByRole('textbox', { name: '任务要求' }) as HTMLTextAreaElement).disabled).toBe(true);
+    fireEvent.click(trigger); fireEvent.click(await screen.findByRole('button', { name: '选择模型：deepseek-chat' }));
+    await waitFor(() => expect((screen.getByRole('textbox', { name: '任务要求' }) as HTMLTextAreaElement).disabled).toBe(false));
+    expect(update).toHaveBeenCalledWith('session-1', { provider: 'deepseek', model: 'deepseek-chat' });
+  });
+
+  it('思考设置保存期间阻止按钮与 Enter 发送，保存后使用新设置继续对话', async () => {
+    stubServices({ thinkingLevel: 'low' });
+    vi.spyOn(promptAgentService, 'getAvailableModels').mockResolvedValue([
+      { id: 'deepseek-chat', name: 'DeepSeek-V3', provider: 'deepseek', providerName: 'DeepSeek', reasoning: true, imageInput: false, contextWindow: 64000, maxTokens: 8192, thinkingLevels: ['off', 'low', 'high'] },
+    ]);
+    let saved!: (session: Awaited<ReturnType<typeof promptAgentService.updateSession>>) => void;
+    const update = vi.spyOn(promptAgentService, 'updateSession').mockImplementation(() => new Promise(resolve => { saved = resolve; }));
+    const run = vi.spyOn(promptAgentService, 'run').mockResolvedValue(undefined);
+    renderPanel(); const box = screen.getByRole('textbox', { name: '任务要求' });
+    await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(box, { target: { value: '继续这个任务' } });
+    fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '思考强度：高' }));
+    const send = screen.getByRole('button', { name: '执行' }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true); fireEvent.click(send); fireEvent.keyDown(box, { key: 'Enter' });
+    expect(run).not.toHaveBeenCalled(); expect((box as HTMLTextAreaElement).value).toBe('继续这个任务');
+    await act(async () => { saved({ ...mockSession, thinkingLevel: 'high' }); });
+    expect(update).toHaveBeenCalledWith('session-1', { thinkingLevel: 'high' });
+    expect(send.disabled).toBe(false); expect(screen.getByRole('button', { name: '模型与思考设置' }).textContent).toContain('高');
+    fireEvent.keyDown(box, { key: 'Enter' }); await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
   });
 
   it('不再展示独立视觉服务，模型名和注入角标仍可读取', async () => {

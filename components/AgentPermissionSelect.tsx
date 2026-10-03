@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useAgentPopoverPosition } from './useAgentPopoverPosition';
 import { Check, ChevronDown, Eye, Loader2, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { promptAgentService, type AgentPermissionMode } from '../services/promptAgent';
 
@@ -15,9 +16,9 @@ export const AgentPermissionSelect: React.FC<{ disabled?: boolean }> = ({ disabl
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState('');
   const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState<React.CSSProperties>();
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  const position = useAgentPopoverPosition(open, trigger, menu);
   const mounted = useRef(false);
   const saving = useRef(false);
   const requestSequence = useRef(0);
@@ -56,24 +57,6 @@ export const AgentPermissionSelect: React.FC<{ disabled?: boolean }> = ({ disabl
     };
   }, [load]);
   useEffect(() => { if (disabled || !available) setOpen(false); }, [disabled, available]);
-  useLayoutEffect(() => {
-    if (!open) { setPosition(undefined); return; }
-    const place = () => {
-      const anchor = trigger.current?.getBoundingClientRect();
-      if (!anchor) return;
-      const width = Math.min(360, window.innerWidth - 16);
-      const above = anchor.top - 16, below = window.innerHeight - anchor.bottom - 16;
-      const upward = above >= below;
-      const maxHeight = Math.max(80, upward ? above : below);
-      const height = Math.min(menu.current?.scrollHeight || 320, maxHeight);
-      setPosition({ position: 'fixed', width, maxHeight, left: Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8)), top: upward ? anchor.top - height - 8 : anchor.bottom + 8 });
-    };
-    place();
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);
-    if (menu.current) observer?.observe(menu.current);
-    window.addEventListener('resize', place); window.addEventListener('scroll', place, true);
-    return () => { observer?.disconnect(); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
-  }, [open]);
   useEffect(() => {
     if (open && positioned) menu.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
   }, [open, positioned]);

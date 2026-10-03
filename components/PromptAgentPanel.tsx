@@ -4,22 +4,23 @@ import { prepareAgentAttachment } from '../services/agentAttachments';
 import { agentDraftChangedFields, promptAgentCoordinator } from '../services/promptAgentCoordinator';
 import { AgentChatDisplayOptions, AgentDisclosure, useAgentDisplayPreferences } from './AgentChatPreferences';
 import { AgentPermissionSelect } from './AgentPermissionSelect';
+import { AgentModelControl } from './AgentModelControl';
 import { useAgentRuntimeRecheck } from './useAgentRuntimeRecheck';
 import type { AgentDisplayPreferences } from '../services/agentDisplayPreferences';
 import type { PromptAgentEvent, PromptAgentTask } from '../services/promptAgent';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 import { isTopmostModal } from './useModalA11y';
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PromptAgentDraft, PromptAgentGenerationResult } from '../types';
-import { PromptAgentCreativePreset, PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, PromptAgentVisionUsage, agentRuntimeWarning, displayModelName, formatModelOptionTitle, promptAgentService } from '../services/promptAgent';
+import { PromptAgentCreativePreset, PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, PromptAgentVisionUsage, agentRuntimeWarning, displayModelName, promptAgentService } from '../services/promptAgent';
 import { formatPresetSessionLabel } from './PromptAgentSettings';
 import { vibeService } from '../services/vibeService';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
 import { getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { clearMobileThumbnailCache, getMobileCacheStats, setMobileCacheLimitMb } from '../services/mobileImageCache';
-import { ArrowDown, ArrowUp, ArrowLeft, Bot, Check, ChevronDown, Copy, Download, Expand, ImagePlus, List, MoreHorizontal, Pencil, Plus, RotateCcw, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowLeft, Bot, Check, ChevronDown, Copy, Download, Expand, ImagePlus, List, MoreHorizontal, Pencil, Plus, RotateCcw, Square, Trash2, X } from 'lucide-react';
 
 interface PromptAgentPanelProps {
   open: boolean;
@@ -199,7 +200,9 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const attachmentLoadingRef = useRef(false);
   const [showSessions, setShowSessions] = useState(false);
   const [showModelMenu, setShowModelMenu] = useState(false);
+  const [modelChanging, setModelChanging] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const changeModelMenu = useCallback((open: boolean) => { setShowModelMenu(open); if (open) setShowMoreMenu(false); }, []);
   const [creativePresets, setCreativePresets] = useState<PromptAgentCreativePreset[]>([]);
   const [queueMode, setQueueMode] = useState<'steer' | 'followUp'>('steer');
   const [busySessionAction, setBusySessionAction] = useState(false);
@@ -229,7 +232,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   // 初始化失败提示：吞掉错误会让面板永远停在"正在加载对话"且无重试入口
   const [sessionInitError, setSessionInitError] = useState('');
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const modelMenuRef = useRef<HTMLDivElement | null>(null);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
   const pendingPanelWidthRef = useRef(panelWidth);
   const pendingMobileHeightRef = useRef(mobileHeight);
@@ -534,15 +536,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   }, [sessionMenuId]);
 
   useEffect(() => {
-    if (!showModelMenu) return;
-    const closeOnOutsidePointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Node && !modelMenuRef.current?.contains(event.target)) setShowModelMenu(false);
-    };
-    window.addEventListener('pointerdown', closeOnOutsidePointerDown);
-    return () => window.removeEventListener('pointerdown', closeOnOutsidePointerDown);
-  }, [showModelMenu]);
-
-  useEffect(() => {
     if (!showMoreMenu) return;
     const closeOnOutsidePointerDown = (event: PointerEvent) => {
       if (event.target instanceof Node && !moreMenuRef.current?.contains(event.target)) setShowMoreMenu(false);
@@ -633,9 +626,9 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   const run = async (suggestion?: string, mode: 'prompt' | 'retry' = 'prompt') => {
     const prompt = (suggestion ?? input).trim() || (attachments.length ? '请分析我附带的图片，并结合项目内容给出建议。' : '');
-    if (!sessionReady || attachmentLoadingRef.current || !activeSessionId || !activeSession || (mode === 'prompt' && !prompt)) return;
+    if (!sessionReady || modelChanging || attachmentLoadingRef.current || !activeSessionId || !activeSession || (mode === 'prompt' && !prompt)) return;
     if (mode === 'prompt' && !editingMessageId && attachments.length && !supportsImages) {
-      setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: '当前模型不支持图片输入，请在 Agent 设置中选择带“识图”标记的当前模型。' }]);
+      setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: '当前模型不支持图片输入，请在发送键旁选择支持图片的模型。' }]);
       return;
     }
     if (running && attachments.length) { setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: '运行中只支持文字补充，图片仍保留；请等完成后发送。' }]); return; }
@@ -796,7 +789,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     if (!activeSession || running) return;
     const updated = await promptAgentService.updateSession(activeSession.id, { provider: model.provider, model: model.id });
     setSessions(previous => previous.map(item => item.id === updated.id ? { ...item, ...updated } : item));
-    setShowModelMenu(false);
   };
 
   const updateThinkingLevel = async (thinkingLevel: PromptAgentThinkingLevel) => {
@@ -805,7 +797,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     setSessions(previous => previous.map(item => item.id === updated.id ? { ...item, ...updated } : item));
   };
 
-  const thinkingLevelLabels: Record<PromptAgentThinkingLevel, string> = { off: '不思考', minimal: '极少', low: '低', medium: '中', high: '高', xhigh: '极高', max: '最大' };
   const availableThinkingLevels = activeModel?.thinkingLevels?.length
     ? activeModel.thinkingLevels
     : activeModel?.reasoning ? ['off', 'minimal', 'low', 'medium', 'high'] as PromptAgentThinkingLevel[] : ['off'] as PromptAgentThinkingLevel[];
@@ -991,9 +982,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 </span>
               ) : (
                 <>
-                  <span className="truncate font-medium text-gray-600 dark:text-gray-300" title={activeSession?.model || ''}>
-                    {displayModelName(activeSession?.model) || '未选择模型'}
-                  </span>
                   {activeSession?.creativeMode && (
                     <span
                       className="shrink-0 rounded bg-violet-100 px-1.5 py-0.5 text-mini font-bold text-violet-700 dark:bg-violet-950/60 dark:text-violet-300"
@@ -1001,9 +989,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                     >
                       注入
                     </span>
-                  )}
-                  {activeSession?.thinkingLevel && activeSession.thinkingLevel !== 'off' && (
-                    <span className="hidden shrink-0 truncate md:inline"> · 思考:{thinkingLevelLabels[activeSession.thinkingLevel]}</span>
                   )}
                 </>
               )}
@@ -1025,16 +1010,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             </button>
           )}
 
-          {/* 模型与思考设置菜单 */}
-          <div ref={modelMenuRef} className="static flex items-center gap-1 md:relative">
-            <button type="button" onClick={() => setShowModelMenu(value => { const next = !value; if (next) setShowMoreMenu(false); return next; })} className={`mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 dark:text-gray-400 ${showModelMenu ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`} aria-label="模型与思考设置" title="模型与思考设置"><SlidersHorizontal className="h-5 w-5" /></button>
-            {showModelMenu && <div className="appearance-panel absolute inset-x-2 bottom-2 top-12 z-30 flex w-auto max-h-none flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 md:inset-x-auto md:bottom-auto md:right-0 md:top-11 md:max-h-[min(76vh,42rem)] md:w-[min(20rem,calc(100vw-1rem))]">
-              <div className="border-b border-gray-100 p-3 dark:border-gray-800"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-100">模型与思考</b><span className="mt-0.5 block truncate text-micro text-gray-400">{displayModelName(activeSession?.model) || '正在加载对话…'}</span></div><div className="flex items-center gap-1.5"><span className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-micro font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">最高：{thinkingLevelLabels[availableThinkingLevels.at(-1) || 'off']}</span><button type="button" onClick={() => setShowModelMenu(false)} className="mobile-touch flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200 md:hidden" aria-label="关闭模型菜单" title="关闭"><X className="h-4 w-4" /></button></div></div><label className="mt-3 flex items-center gap-2 text-meta text-gray-500"><span className="flex-1">思考等级</span><select aria-label="思考等级" disabled={!sessionReady || running || availableThinkingLevels.length <= 1} value={selectedThinkingLevel} onChange={event => void updateThinkingLevel(event.target.value as PromptAgentThinkingLevel)} className="h-9 min-w-24 rounded-lg border border-gray-200 bg-gray-50 px-2 text-xs font-bold text-gray-700 outline-none disabled:opacity-40 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">{availableThinkingLevels.map(level => <option key={level} value={level}>{thinkingLevelLabels[level]}</option>)}</select></label>{activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount && <div className="mt-3 border-t border-gray-100 pt-2.5 dark:border-gray-800"><div className="flex items-center justify-between gap-2"><span className="text-meta text-gray-600 dark:text-gray-300">注入预设</span><select aria-label="切换本对话注入模式" disabled={running} value={getSessionPresetValue(activeSession)} onChange={event => void selectSessionPreset(event.target.value)} className="h-8 max-w-[10rem] rounded-lg border border-gray-200 bg-gray-50 px-2 text-xs font-bold text-violet-700 outline-none dark:border-gray-700 dark:bg-gray-950 dark:text-violet-300"><option value="off">关闭注入</option><optgroup label="内置预设">{creativePresets.filter(p => p.isBuiltin).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>{creativePresets.some(p => !p.isBuiltin) && <optgroup label="自定义预设">{creativePresets.filter(p => !p.isBuiltin).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>}</select></div><span className="mt-1 block text-micro text-gray-400">仅对当前对话生效，首条消息后锁定</span></div>}{activeSession?.creativeModeLocked && <div className="mt-3 border-t border-gray-100 pt-2.5 text-micro text-gray-400 dark:border-gray-800">注入模式：<b className="text-gray-600 dark:text-gray-300">{activeSession.creativeMode ? (activeSession.presetName || '已开启') : '已关闭'}</b>（已随首条消息锁定）</div>}</div>
-              <div className="overflow-y-auto p-2"><button type="button" onClick={() => { setShowModelMenu(false); window.dispatchEvent(new CustomEvent('nai-open-global-settings', { detail: { section: 'agent' } })); }} className="mb-2 flex w-full items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-left text-xs font-bold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-300 dark:hover:bg-indigo-950/50"><span>配置模型服务</span><span aria-hidden="true">→</span></button>{models.map(model => <button key={`${model.provider}/${model.id}`} type="button" disabled={!sessionReady || running} onClick={() => void updateSessionModel(model)} className={`block w-full rounded-xl px-3 py-2 text-left disabled:cursor-not-allowed disabled:opacity-40 ${model.provider === activeSession?.provider && model.id === activeSession?.model ? 'bg-indigo-50 dark:bg-indigo-950/40' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}><b className="block truncate text-xs text-gray-800 dark:text-white">{formatModelOptionTitle(model, models)}</b><span className="block text-micro text-gray-400">{model.providerName || model.provider} · {model.reasoning ? `推理，最高 ${thinkingLevelLabels[model.thinkingLevels.at(-1) || 'off']}` : '普通'}{model.imageInput ? ' · 识图' : ''}</span></button>)}</div>
-              <div className="hidden border-t border-gray-100 p-3 md:block dark:border-gray-800"><div className="mb-2 text-micro font-bold text-gray-400">面板宽度</div><div className="grid grid-cols-3 gap-1">{[{ label: '窄', width: 440 }, { label: '标准', width: 540 }, { label: '宽', width: 680 }].map(item => <button key={item.width} type="button" onClick={() => choosePanelWidth(item.width)} className={`h-8 rounded-lg text-meta font-bold ${Math.abs(panelWidth - item.width) < 30 ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{item.label}</button>)}</div></div>
-            </div>}
-          </div>
-
           {/* 新增：“…” 更多菜单（收进：导出会话日志、清空当前对话） */}
           <div ref={moreMenuRef} className="relative flex items-center">
             <button
@@ -1048,7 +1023,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             </button>
             {showMoreMenu && (
               <div className="appearance-panel absolute right-0 top-11 z-30 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
-                <div className="border-b border-gray-100 p-3 dark:border-gray-800"><AgentChatDisplayOptions /></div>
+                <div className="border-b border-gray-100 p-3 dark:border-gray-800"><AgentChatDisplayOptions /></div><div className="hidden border-b border-gray-100 px-3 py-2 md:block dark:border-gray-800"><p className="mb-2 text-xs text-gray-500">面板宽度</p><div className="grid grid-cols-3 gap-1">{[{ label: '窄', width: 440 }, { label: '标准', width: 540 }, { label: '宽', width: 680 }].map(item => <button key={item.width} type="button" onClick={() => choosePanelWidth(item.width)} className={`min-h-8 rounded-lg text-xs ${Math.abs(panelWidth - item.width) < 30 ? 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}>{item.label}</button>)}</div></div>
                 <button
                   type="button"
                   onClick={() => {
@@ -1081,7 +1056,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-1 px-3 pb-2 text-micro text-gray-500 dark:text-gray-400">
           <span>{props.draft.target ? `当前目标：${props.draft.target.name || '未命名作品'} · ${{ 'text-to-image': '文生图', 'image-to-image': '图生图', inpaint: '局部重绘', outpaint: '扩图' }[props.draft.target.mode]}` : '当前目标：项目资料与设置'}</span>
-          {activeModel && <span>服务：{activeModel.providerName || activeModel.provider}</span>}
         </div>
       </header>
       {logExportError && <div role="status" className="absolute right-3 top-[calc(3.25rem+env(safe-area-inset-top))] z-40 max-w-[min(28rem,calc(100%-1.5rem))] rounded-lg bg-red-50 px-2 py-1 text-micro font-bold text-red-600 shadow dark:bg-red-950/80 dark:text-red-300">{logExportError}</div>}
@@ -1162,9 +1136,9 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           <div className="mt-1 flex min-w-0 items-center gap-2">
             <label title={!sessionReady ? '请配置或选择模型服务' : supportsImages ? '添加图片' : '当前模型不支持图片输入'} aria-disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} className={'flex h-9 w-9 flex-none items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 ' + (sessionReady && supportsImages && !running && attachments.length < 4 ? 'cursor-pointer hover:bg-gray-200/60 dark:hover:bg-gray-800' : 'cursor-not-allowed opacity-35')}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片附件" onChange={event => { void addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} /></label>
             <AgentPermissionSelect disabled={running} />
-            <span className="min-w-0 flex-1" />
+            <AgentModelControl key={activeSessionId} models={models} activeModel={activeModel} thinkingLevels={availableThinkingLevels} thinkingLevel={selectedThinkingLevel} open={showModelMenu} disabled={!props.open || running || !activeSessionId || !activeSession} onOpenChange={changeModelMenu} onModelChange={updateSessionModel} onThinkingChange={updateThinkingLevel} onBusyChange={setModelChanging} onConfigure={openAgentSettings} />
             {running && <button type="button" onClick={() => void stopTask()} className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900" aria-label="停止" title="停止任务；已完成的修改不会撤销"><Square className="h-3.5 w-3.5 fill-current" /></button>}
-            {(!running || input.trim() || attachments.length > 0) && <button type="button" onClick={() => void run()} disabled={!sessionReady || attachmentBusy || (!input.trim() && !attachments.length)} className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:bg-gray-100 dark:text-gray-900 dark:disabled:bg-gray-800 dark:disabled:text-gray-600" aria-label={!sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : running ? '追加要求' : editingMessageId ? '重新发送' : '执行'} title={running ? '追加要求' : '发送 · Enter；换行 · Shift+Enter'}><ArrowUp className="h-[18px] w-[18px]" /></button>}
+            {(!running || input.trim() || attachments.length > 0) && <button type="button" onClick={() => void run()} disabled={!sessionReady || modelChanging || attachmentBusy || (!input.trim() && !attachments.length)} className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:bg-gray-100 dark:text-gray-900 dark:disabled:bg-gray-800 dark:disabled:text-gray-600" aria-label={!sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : running ? '追加要求' : editingMessageId ? '重新发送' : '执行'} title={running ? '追加要求' : '发送 · Enter；换行 · Shift+Enter'}><ArrowUp className="h-[18px] w-[18px]" /></button>}
           </div>
         </div>
       </main>
