@@ -1,5 +1,6 @@
 import { AGENT_TOOL_GROUPS, agentOutputLimit, agentTokenUsage, boundAgentToolResult, compactAuditEntries, inferAgentToolGroups, isProjectImagePath, localTimeInfo, publicAgentToolContent, selectRuntimeTools } from './agent-runtime.mjs';
 import { AgentLocalImages } from './agent-local-images.mjs';
+import { agentConnectionEndpoint, normalizeAgentConnectionUrl } from '../services/agentConnection.mjs';
 import { Agent } from '@earendil-works/pi-agent-core';
 import { InMemoryCredentialStore, Type, createModels, createProvider, getSupportedThinkingLevels } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
@@ -18,7 +19,7 @@ import { normalizeTransparentWeight, TRANSPARENT_WEIGHT_MIN, TRANSPARENT_WEIGHT_
 import { AGENT_THINKING_LEVELS, createAgentThinkingMap, normalizeAgentThinkingLevels, normalizeAgentThinkingMap } from '../services/agentThinking.mjs';
 
 const CONFIG_FILE = 'local-data/prompt-agent.json';
-const runtimeSourceFiles = ['prompt-agent.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs', '../services/agentThinking.mjs'];
+const runtimeSourceFiles = ['prompt-agent.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs'];
 const sourceSignature = () => createHash('sha256').update(runtimeSourceFiles.map(file => readFileSync(new URL(file, import.meta.url))).join('\n')).digest('hex');
 const sourceVersion = () => JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const LOADED_VERSION = sourceVersion();
@@ -30,11 +31,18 @@ const AUDIT_LOG_DIR = 'local-data/prompt-agent-logs';
 const TAG_TRANSLATION_FILE = 'local-data/tag-translations.json';
 const TAG_ROOT = 'public/tag-data';
 
-const DEEPSEEK_MODELS = [
-  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', reasoning: true, input: ['text'], cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 }, contextWindow: 1_000_000, maxTokens: 384_000, compat: { supportsStore: false, supportsDeveloperRole: false, requiresReasoningContentOnAssistantMessages: true, thinkingFormat: 'deepseek' }, thinkingLevelMap: { minimal: null, low: null, medium: null, high: 'high', max: 'max' } },
-  { id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek V4 Flash Vision Exp', reasoning: true, input: ['text', 'image'], cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 }, contextWindow: 1_000_000, maxTokens: 384_000, compat: { supportsStore: false, supportsDeveloperRole: false, requiresReasoningContentOnAssistantMessages: true, thinkingFormat: 'deepseek' }, thinkingLevelMap: { minimal: null, low: 'low', medium: null, high: 'high', max: 'max' } },
-  { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', reasoning: true, input: ['text'], cost: { input: 0.435, output: 0.87, cacheRead: 0.003625, cacheWrite: 0 }, contextWindow: 1_000_000, maxTokens: 384_000, compat: { supportsStore: false, supportsDeveloperRole: false, requiresReasoningContentOnAssistantMessages: true, thinkingFormat: 'deepseek' }, thinkingLevelMap: { minimal: null, low: null, medium: null, high: 'high', max: 'max' } },
-].map(model => ({ ...model, api: 'openai-completions', provider: 'deepseek', baseUrl: 'https://api.deepseek.com' }));
+// 仅供已有 DeepSeek 连接兼容，不作为新连接的供应商预设。
+// 2026-10-04 核对官方 /models 与 vision 文档；旧 Flash 名仍映射到 V4.1 Flash。
+// https://api-docs.deepseek.com/api/list-models/ https://api-docs.deepseek.com/guides/vision/
+const DEEPSEEK_MODELS = ['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'deepseek-v4-pro'].map(id => ({
+  id, name: id === 'deepseek-v4-pro' ? 'DeepSeek V4 Pro' : 'DeepSeek V4.1 Flash', reasoning: true,
+  input: id === 'deepseek-v4-pro' ? ['text'] : ['text', 'image'], tools: true,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1_048_576, maxTokens: 393_216,
+  compat: { supportsStore: false, supportsDeveloperRole: false, requiresReasoningContentOnAssistantMessages: true, thinkingFormat: 'deepseek' },
+  thinkingLevelMap: { minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' },
+  thinkingLevelsSource: 'official_docs', capabilityDetection: { imageInput: 'official_docs', reasoning: 'official_docs', tools: 'official_docs' },
+  api: 'openai-completions', provider: 'deepseek', baseUrl: 'https://api.deepseek.com',
+}));
 const DEEPSEEK_PROVIDER = createProvider({
   id: 'deepseek',
   name: 'DeepSeek',
@@ -60,7 +68,7 @@ const MAX_SAVED_MESSAGE_CHARS = 24_000;
 const MAX_TASK_EVENTS = 500;
 const TASK_EVENT_FLUSH_DELAY_MS = 500;
 const THINKING_LEVELS = new Set(AGENT_THINKING_LEVELS);
-const THINKING_SOURCES = new Set(['metadata', 'pi_catalog', 'manual', 'fallback']);
+const THINKING_SOURCES = new Set(['metadata', 'pi_catalog', 'official_docs', 'manual', 'fallback']);
 const BLOCKED_CUSTOM_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key']);
 // 破限提示词与预设实验室：9 个注入目标（顺序即展示顺序），与前端
 // services/promptAgent.ts 的 PromptAgentLabTarget 严格一致，无旧键别名。
@@ -126,6 +134,9 @@ const jsonText = value => [{ type: 'text', text: JSON.stringify(value) }];
 const projectImagePath = (kind, base, id, item) => kind === 'chain' ? item.previewImage
   : kind === 'history' || kind === 'inspiration' ? item.imageUrl || `/api/${base}/${encodeURIComponent(id)}/image`
     : item.originalImageUrl || `/api/${base}/${encodeURIComponent(id)}/image`;
+const imageCapabilityError = model => model?.capabilityDetection?.imageInput === 'unknown'
+  ? '当前接口未声明图片输入能力，请在模型设置中确认；展示已有图片仍可用 show_project_image，无需识图'
+  : '当前模型不支持图片输入；展示已有图片仍可用 show_project_image，无需识图';
 const atomicJsonWrite = async (file, value) => {
   await mkdir(dirname(file), { recursive: true });
   const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
@@ -306,6 +317,7 @@ const publicModel = (model, provider) => ({
   provider,
   reasoning: Boolean(model.reasoning),
   imageInput: Array.isArray(model.input) ? model.input.includes('image') : model.imageInput === true,
+  ...(typeof model.tools === 'boolean' ? { tools: model.tools } : {}),
   contextWindow: Number(model.contextWindow) || 0,
   maxTokens: Number(model.maxTokens) || 0,
   ...(model.capabilityDetection ? { capabilityDetection: model.capabilityDetection } : {}),
@@ -315,7 +327,7 @@ const publicModel = (model, provider) => ({
 const listModels = (provider, registry = new Map()) => {
   const normalized = normalizeProvider(provider, registry);
   const custom = registry.get(normalized);
-  if (custom) return custom.models.map(model => publicModel({ ...model, ...customThinkingMetadata(model) }, normalized));
+  if (custom) return custom.models.map(model => { const resolved = resolveCustomModelCapabilities(model); return publicModel({ ...resolved, ...customThinkingMetadata(resolved) }, normalized); });
   return PROVIDER_CATALOG.get(normalized)?.getModels().map(model => publicModel(model, normalized)) || [];
 };
 const resolveModelApi = (provider, modelId, registry = new Map()) => {
@@ -332,7 +344,8 @@ export const customProviderRuntime = custom => {
   const apiFactory = custom.api === 'anthropic-messages' ? anthropicMessagesApi
     : custom.api === 'openai-responses' ? openAIResponsesApi
       : openAICompletionsApi;
-  const models = custom.models.map(model => {
+  const models = custom.models.map(stored => {
+    const model = resolveCustomModelCapabilities(stored);
     const catalog = catalogCapability(model.id);
     const compat = catalog?.api === custom.api || catalog?.api === 'openai-responses' && custom.api === 'openai-completions' ? { ...catalog.compat } : {};
     if (custom.api === 'anthropic-messages' && model.thinkingMode) compat.forceAdaptiveThinking = model.thinkingMode === 'adaptive';
@@ -374,10 +387,9 @@ export const createPromptAgentModelRuntime = (credentials, customProviders = [])
 };
 
 export const sanitizeCustomProvider = raw => {
-  const name = text(raw?.name).trim().slice(0, 80);
-  if (!name) throw Object.assign(new Error('请填写接口名称'), { status: 400 });
   let parsed;
-  try { parsed = new URL(text(raw?.baseUrl).trim()); } catch { throw Object.assign(new Error('Base URL 格式无效'), { status: 400 }); }
+  try { parsed = new URL(normalizeAgentConnectionUrl(text(raw?.baseUrl), raw?.api)); } catch { throw Object.assign(new Error('API 地址格式无效，请填写不含账号、查询参数的 HTTP/HTTPS 根地址或端点'), { status: 400 }); }
+  const name = text(raw?.name || parsed.hostname).trim().slice(0, 80);
   if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw Object.assign(new Error('Base URL 只允许不含账号密码的 HTTP/HTTPS 地址'), { status: 400 });
   if (parsed.protocol === 'http:' && !isLoopbackHostname(parsed.hostname)) throw Object.assign(new Error('为避免 API Key 被明文传输，HTTP 只允许 localhost、127.0.0.0/8 或 ::1；局域网和公网接口请使用 HTTPS'), { status: 400 });
   parsed.hash = '';
@@ -393,21 +405,28 @@ export const sanitizeCustomProvider = raw => {
     if (seenModelIds.has(key)) return [];
     seenModelIds.add(key);
     const contextWindow = Math.round(clamp(item?.contextWindow, 1_024, 10_000_000, 128_000));
+    const inferred = detectModelCapabilities({ id });
+    const automaticVision = item?.capabilityDetection?.imageInput === 'unknown' || typeof item?.imageInput !== 'boolean';
+    const automaticReasoning = item?.capabilityDetection?.reasoning === 'unknown' || typeof item?.reasoning !== 'boolean';
     const disabledEmptyLevels = item?.reasoning === false && Array.isArray(item?.thinkingLevels) && item.thinkingLevels.length === 0;
     const thinking = disabledEmptyLevels ? null : readThinkingMetadata(item, item?.thinkingLevelsSource || 'manual');
     if (!disabledEmptyLevels && Array.isArray(item?.thinkingLevels) && !normalizeAgentThinkingLevels(item.thinkingLevels).length) throw Object.assign(new Error(`模型 ${id} 请至少选择一个有效思考档位`), { status: 400 });
     return [{
       id,
       name: text(item?.name || id).trim().slice(0, 160) || id,
-      reasoning: typeof item?.reasoning === 'boolean' ? item.reasoning : Boolean(thinking?.thinkingLevels.some(level => level !== 'off')),
-      imageInput: item?.imageInput === true,
+      reasoning: automaticReasoning ? Boolean(thinking?.thinkingLevels.some(level => level !== 'off') || inferred?.reasoning) : item.reasoning,
+      imageInput: automaticVision ? Boolean(inferred?.imageInput) : item.imageInput,
+      ...(typeof item?.tools === 'boolean' ? { tools: item.tools } : {}),
       contextWindow,
       maxTokens: Math.round(clamp(item?.maxTokens, 256, contextWindow, Math.min(16_384, contextWindow))),
+      ...(THINKING_SOURCES.has(item?.contextWindowSource) ? { contextWindowSource: item.contextWindowSource } : {}),
+      ...(THINKING_SOURCES.has(item?.maxTokensSource) ? { maxTokensSource: item.maxTokensSource } : {}),
       ...(thinking || {}),
       ...(['adaptive', 'budget'].includes(item?.thinkingMode) ? { thinkingMode: item.thinkingMode } : {}),
       ...(item?.capabilityDetection && typeof item.capabilityDetection === 'object' ? { capabilityDetection: {
-        imageInput: ['metadata', 'pi_catalog', 'model_name', 'unknown', 'manual'].includes(item.capabilityDetection.imageInput) ? item.capabilityDetection.imageInput : 'manual',
-        reasoning: ['metadata', 'pi_catalog', 'model_name', 'unknown', 'manual'].includes(item.capabilityDetection.reasoning) ? item.capabilityDetection.reasoning : 'manual',
+        imageInput: automaticVision ? inferred?.capabilityDetection?.imageInput || 'unknown' : ['metadata', 'pi_catalog', 'official_docs', 'model_name', 'unknown', 'manual'].includes(item.capabilityDetection.imageInput) ? item.capabilityDetection.imageInput : 'manual',
+        reasoning: automaticReasoning ? inferred?.capabilityDetection?.reasoning || 'unknown' : ['metadata', 'pi_catalog', 'official_docs', 'model_name', 'unknown', 'manual'].includes(item.capabilityDetection.reasoning) ? item.capabilityDetection.reasoning : 'manual',
+        ...(item.capabilityDetection.tools ? { tools: ['metadata', 'pi_catalog', 'official_docs', 'unknown', 'manual'].includes(item.capabilityDetection.tools) ? item.capabilityDetection.tools : 'unknown' } : {}),
       } } : {}),
     }];
   });
@@ -422,7 +441,8 @@ export const sanitizeCustomProvider = raw => {
     const headerValue = String(rawValue ?? '').trim().slice(0, 1000);
     if (headerValue) headers[headerName] = headerValue;
   }
-  const id = /^custom-[a-z0-9-]{8,80}$/.test(String(raw?.id || '')) ? String(raw.id) : `custom-${randomUUID()}`;
+  // 保持旧连接 ID，让已有会话继续引用原连接；新连接只生成不透明 ID。
+  const id = /^custom-[a-z0-9-]{8,80}$/.test(String(raw?.id || '')) || PROVIDER_CATALOG.has(raw?.id) ? String(raw.id) : `custom-${randomUUID()}`;
   return { id, name, baseUrl: parsed.toString().replace(/\/$/, ''), api, models, headers };
 };
 const defaultModelFor = (provider, registry = new Map()) => {
@@ -437,7 +457,7 @@ const getPromptAgentCapabilityIndex = () => {
   const basename = new Map();
   const knownModels = [...[...PROVIDER_CATALOG.values()].flatMap(provider => provider.getModels()), ...Object.values(OPENAI_MODELS), ...Object.values(ANTHROPIC_MODELS)];
   for (const model of knownModels) {
-    const capability = { ...publicModel({ ...model, thinkingLevelsSource: 'pi_catalog' }, model.provider), api: model.api, thinkingLevelMap: model.thinkingLevelMap, compat: model.compat };
+    const capability = { ...publicModel({ ...model, thinkingLevelsSource: model.thinkingLevelsSource || 'pi_catalog' }, model.provider), api: model.api, thinkingLevelMap: model.thinkingLevelMap, compat: model.compat };
     const id = String(model.id || '').toLowerCase();
     if (!id) continue;
     if (!exact.has(id)) exact.set(id, capability);
@@ -465,7 +485,9 @@ const firstArray = (item, paths) => {
 const readThinkingMetadata = (item, source = 'metadata') => {
   // 兼容列表只是展示候选，不升级成接口声明，也不改变旧请求关闭推理的方式。
   if (source === 'fallback') return null;
-  const advertised = firstArray(item, ['thinkingLevels', 'thinking_levels', 'supported_thinking_levels', 'reasoning_efforts', 'supported_reasoning_efforts', 'capabilities.thinking_levels', 'capabilities.reasoning_efforts', 'capabilities.supported_reasoning_efforts', 'parameters.reasoning_effort.enum', 'parameters.reasoning.effort.enum']);
+  let advertised = firstArray(item, ['thinkingLevels', 'thinking_levels', 'supported_thinking_levels', 'effort.supported_levels', 'reasoning_efforts', 'supported_reasoning_efforts', 'capabilities.thinking_levels', 'capabilities.reasoning_efforts', 'capabilities.supported_reasoning_efforts', 'parameters.reasoning_effort.enum', 'parameters.reasoning.effort.enum']);
+  // 官方 effort 只列开启推理后的档位；DeepSeek 另支持关闭思考。
+  if (item?.effort?.supported_levels && /^deepseek-(?:flash|v4-flash(?:-vision-exp)?|v4-pro)$/.test(item.id || '')) advertised = ['off', ...(advertised || [])];
   const mapping = normalizeAgentThinkingMap(item?.thinkingLevelMap || item?.thinking_level_map || item?.capabilities?.thinking_level_map);
   if (!advertised && !Object.keys(mapping).length) return null;
   const mappedLevels = AGENT_THINKING_LEVELS.filter(level => typeof mapping[level] === 'string');
@@ -479,8 +501,19 @@ const customThinkingMetadata = model => {
   if (model.reasoning !== true) return { thinkingLevels: ['off'], thinkingLevelsSource: declared?.thinkingLevelsSource || 'fallback' };
   if (declared) return declared;
   const catalog = catalogCapability(model.id);
-  if (catalog?.reasoning) return { thinkingLevels: catalog.thinkingLevels, thinkingLevelMap: createAgentThinkingMap(catalog.thinkingLevels, catalog.thinkingLevelMap), thinkingLevelsSource: 'pi_catalog' };
+  if (catalog?.reasoning) return { thinkingLevels: catalog.thinkingLevels, thinkingLevelMap: createAgentThinkingMap(catalog.thinkingLevels, catalog.thinkingLevelMap), thinkingLevelsSource: catalog.thinkingLevelsSource || 'pi_catalog' };
   return { thinkingLevels: getSupportedThinkingLevels(model), thinkingLevelsSource: 'fallback' };
+};
+
+/** 自动目录能力在读取时跟随最新目录，接口声明与人工修正不变，也不补写旧配置。 */
+const resolveCustomModelCapabilities = model => {
+  const catalog = catalogCapability(model.id);
+  if (!catalog) return model;
+  const automatic = source => ['pi_catalog', 'official_docs'].includes(source);
+  return { ...model,
+    ...(automatic(model.capabilityDetection?.imageInput) ? { imageInput: catalog.imageInput, capabilityDetection: { ...model.capabilityDetection, imageInput: catalog.capabilityDetection?.imageInput || 'pi_catalog' } } : {}),
+    ...(automatic(model.thinkingLevelsSource) && model.capabilityDetection?.reasoning !== 'manual' ? { thinkingLevels: catalog.thinkingLevels, thinkingLevelMap: catalog.thinkingLevelMap, thinkingLevelsSource: catalog.thinkingLevelsSource } : {}),
+  };
 };
 
 const firstBoolean = (value, paths) => {
@@ -503,7 +536,7 @@ const firstNumber = (value, paths) => {
 };
 
 const modelModalityTokens = value => {
-  const fields = [value?.input, value?.modalities, value?.input_modalities, value?.supported_input_modalities, value?.architecture?.input_modalities, value?.capabilities?.input_modalities];
+  const fields = [value?.input, value?.modalities?.input, Array.isArray(value?.modalities) ? value.modalities : undefined, value?.input_modalities, value?.supported_input_modalities, value?.architecture?.input_modalities, value?.capabilities?.input_modalities, typeof value?.architecture?.modality === 'string' ? value.architecture.modality.split('->')[0].split('+') : undefined];
   return fields.flatMap(field => Array.isArray(field) ? field : typeof field === 'string' ? field.split(/[\s,|/]+/) : []).map(item => String(item).toLowerCase());
 };
 
@@ -519,26 +552,35 @@ export const detectModelCapabilities = raw => {
   const modalityTokens = modelModalityTokens(item);
   const metadataVision = firstBoolean(item, ['imageInput', 'image_input', 'supports_vision', 'vision', 'capabilities.vision', 'capabilities.image_input', 'features.vision']);
   const metadataReasoning = firstBoolean(item, ['reasoning', 'supports_reasoning', 'reasoning_supported', 'capabilities.reasoning', 'features.reasoning', 'supports_thinking']);
+  const metadataTools = firstBoolean(item, ['tools', 'supports_tools', 'supports_function_calling', 'tool_calling', 'capabilities.tools', 'capabilities.function_calling', 'features.tools']);
+  const parameters = Array.isArray(item.supported_parameters) ? item.supported_parameters : [];
+  const tools = metadataTools ?? (parameters.length ? parameters.includes('tools') : undefined) ?? catalogModel?.tools;
   const visionByModality = modalityTokens.length ? modalityTokens.some(value => ['image', 'images', 'vision', 'multimodal'].includes(value)) : undefined;
   const nameVision = /(?:^|[-_/.])(vision|vl|omni|multimodal)(?:$|[-_/.])|llava|pixtral/i.test(normalizedId);
   const nameReasoning = /(?:^|[-_/.])(reasoning|thinking|qwq)(?:$|[-_/.])|(?:^|[-_/.])o[1-9](?:$|[-_/.])|deepseek[-_/]?r1/i.test(normalizedId);
   const imageInput = metadataVision ?? visionByModality ?? catalogModel?.imageInput ?? nameVision;
-  const reasoning = metadataReasoning ?? (thinking ? thinking.thinkingLevels.some(level => level !== 'off') : undefined) ?? catalogModel?.reasoning ?? nameReasoning;
-  const contextWindow = firstNumber(item, ['contextWindow', 'context_window', 'context_length', 'max_context_length', 'limits.context', 'capabilities.context_window']) || catalogModel?.contextWindow || 128_000;
-  const maxTokens = firstNumber(item, ['maxTokens', 'max_output_tokens', 'max_completion_tokens', 'output_token_limit', 'limits.output', 'capabilities.max_output_tokens']) || catalogModel?.maxTokens || 16_384;
+  const reasoning = metadataReasoning ?? (thinking ? thinking.thinkingLevels.some(level => level !== 'off') : undefined) ?? (parameters.includes('reasoning') || parameters.includes('reasoning_effort') ? true : undefined) ?? catalogModel?.reasoning ?? nameReasoning;
+  const declaredContext = firstNumber(item, ['contextWindow', 'context_window', 'context_length', 'max_context_length', 'limits.context', 'capabilities.context_window']);
+  const declaredOutput = firstNumber(item, ['maxTokens', 'max_output_tokens', 'max_completion_tokens', 'output_token_limit', 'limits.output', 'capabilities.max_output_tokens', 'top_provider.max_completion_tokens']);
+  const contextWindow = declaredContext || catalogModel?.contextWindow || 128_000;
+  const maxTokens = declaredOutput || catalogModel?.maxTokens || 16_384;
   const normalizedContextWindow = Math.round(clamp(contextWindow, 1_024, 10_000_000, 128_000));
   return {
     id,
     name: text(item.display_name || item.name || catalogModel?.name || id).trim().slice(0, 160) || id,
     reasoning: Boolean(reasoning),
     imageInput: Boolean(imageInput),
+    ...(typeof tools === 'boolean' ? { tools } : {}),
     contextWindow: normalizedContextWindow,
     maxTokens: Math.round(clamp(maxTokens, 256, normalizedContextWindow, Math.min(16_384, normalizedContextWindow))),
-    ...(thinking || (catalogModel?.reasoning ? { thinkingLevels: catalogModel.thinkingLevels, thinkingLevelMap: createAgentThinkingMap(catalogModel.thinkingLevels, catalogModel.thinkingLevelMap), thinkingLevelsSource: 'pi_catalog' } : {})),
+    contextWindowSource: declaredContext ? 'metadata' : catalogModel ? catalogModel.thinkingLevelsSource || 'pi_catalog' : 'fallback',
+    maxTokensSource: declaredOutput ? 'metadata' : catalogModel ? catalogModel.thinkingLevelsSource || 'pi_catalog' : 'fallback',
+    ...(thinking || (catalogModel?.reasoning ? { thinkingLevels: catalogModel.thinkingLevels, thinkingLevelMap: createAgentThinkingMap(catalogModel.thinkingLevels, catalogModel.thinkingLevelMap), thinkingLevelsSource: catalogModel.thinkingLevelsSource || 'pi_catalog' } : {})),
     ...(['adaptive', 'budget'].includes(thinkingMode) ? { thinkingMode } : {}),
     capabilityDetection: {
-      imageInput: metadataVision !== undefined || visionByModality !== undefined ? 'metadata' : catalogModel ? 'pi_catalog' : nameVision ? 'model_name' : 'unknown',
-      reasoning: metadataReasoning !== undefined || thinking ? 'metadata' : catalogModel ? 'pi_catalog' : nameReasoning ? 'model_name' : 'unknown',
+      imageInput: metadataVision !== undefined || visionByModality !== undefined ? 'metadata' : catalogModel ? catalogModel.capabilityDetection?.imageInput || 'pi_catalog' : nameVision ? 'model_name' : 'unknown',
+      reasoning: metadataReasoning !== undefined || thinking || parameters.includes('reasoning') || parameters.includes('reasoning_effort') ? 'metadata' : catalogModel ? catalogModel.capabilityDetection?.reasoning || 'pi_catalog' : nameReasoning ? 'model_name' : 'unknown',
+      tools: metadataTools !== undefined || parameters.length ? 'metadata' : catalogModel?.tools !== undefined ? catalogModel.capabilityDetection?.tools || 'pi_catalog' : 'unknown',
     },
   };
 };
@@ -1684,7 +1726,7 @@ export class PromptAgentService {
     const configured = new Set(this.configuredProviderIds());
     const currentProvider = this.publicConfig().provider;
     const builtins = [...PROVIDER_CATALOG.values()]
-      .filter(provider => provider.auth?.apiKey || provider.auth?.oauth)
+      .filter(provider => configured.has(provider.id) && !this.customProviders.has(provider.id))
       .map(provider => ({
         id: provider.id,
         name: provider.name || provider.id,
@@ -1694,6 +1736,8 @@ export class PromptAgentService {
         current: currentProvider === provider.id && configured.has(provider.id),
         modelCount: this.listModels(provider.id).length,
         custom: false,
+        baseUrl: provider.baseUrl,
+        api: 'openai-completions',
       }));
     const customs = [...this.customProviders.values()].map(provider => ({
       id: provider.id,
@@ -1818,14 +1862,24 @@ export class PromptAgentService {
   }
 
   listCustomProviders() {
-    return [...this.customProviders.values()].map(provider => ({ ...provider, models: provider.models.map(model => ({ ...model, ...(model.reasoning === false && model.thinkingLevels?.length ? {} : customThinkingMetadata(model)) })), configured: Boolean(this.getCredential(provider.id)) }));
+    const saved = [...this.customProviders.values()].map(provider => ({ ...provider, models: provider.models.map(stored => { const model = resolveCustomModelCapabilities(stored); return { ...model, ...(model.reasoning === false && model.thinkingLevels?.length ? {} : customThinkingMetadata(model)) }; }), configured: Boolean(this.getCredential(provider.id)) }));
+    // 旧连接在同一编辑器中显示；只读取，不自动迁移或改写私人配置。
+    const legacy = [...PROVIDER_CATALOG.values()].filter(provider => this.getCredential(provider.id) && !this.customProviders.has(provider.id)).map(provider => ({ id: provider.id, name: provider.name, baseUrl: provider.baseUrl, api: 'openai-completions', models: this.listModels(provider.id), configured: true, headers: {} }));
+    return [...saved, ...legacy];
+  }
+
+  connectionKey(custom, input) {
+    if (typeof input?.apiKey === 'string' && input.apiKey.trim()) return input.apiKey.trim();
+    const previous = this.customProviders.get(custom.id) || PROVIDER_CATALOG.get(custom.id);
+    if (previous && new URL(previous.baseUrl).origin !== new URL(custom.baseUrl).origin) throw Object.assign(new Error('API 地址的域名已改变，请重新填写 Key，避免把原密钥发送到另一个服务'), { status: 400 });
+    return this.getCredential(custom.id)?.key || '';
   }
 
   async saveCustomProvider(input) {
     const custom = sanitizeCustomProvider(input);
+    const key = this.connectionKey(custom, input);
     this.customProviders.set(custom.id, custom);
     this.config.customProviders = [...this.customProviders.values()];
-    const key = typeof input?.apiKey === 'string' ? input.apiKey.trim() : '';
     const existing = this.getCredential(custom.id);
     if (key || !existing) this.setCredential(custom.id, { type: 'api_key', key });
     if (input?.select === true) {
@@ -1838,6 +1892,7 @@ export class PromptAgentService {
   }
 
   async deleteCustomProvider(providerId) {
+    if (!this.customProviders.has(providerId) && PROVIDER_CATALOG.has(providerId) && this.getCredential(providerId)) return this.logoutProvider(providerId);
     if (!this.customProviders.has(providerId)) throw Object.assign(new Error('自定义接口不存在'), { status: 404 });
     this.customProviders.delete(providerId);
     delete this.config.encryptedKeys[providerId];
@@ -1855,7 +1910,7 @@ export class PromptAgentService {
 
   async testCustomProvider(input) {
     const custom = sanitizeCustomProvider(withDiscoveryPlaceholder(input));
-    const key = typeof input?.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : this.getCredential(custom.id)?.key || '';
+    const key = this.connectionKey(custom, input);
     const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
     const startedAt = Date.now();
     const checks = { network: 'not_tested', auth: 'not_tested', protocol: 'not_tested', text: 'not_tested', tools: 'not_tested', image: 'not_tested' };
@@ -1927,14 +1982,21 @@ export class PromptAgentService {
 
   async fetchCustomProviderModels(input) {
     const custom = sanitizeCustomProvider(withDiscoveryPlaceholder(input));
-    const key = typeof input?.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : this.getCredential(custom.id)?.key || '';
+    const key = this.connectionKey(custom, input);
     const authHeaders = custom.api === 'anthropic-messages'
       ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
       : key ? { Authorization: `Bearer ${key}` } : {};
     const headers = { ...custom.headers, ...authHeaders };
     const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
     try {
-      const response = await fetch(`${custom.baseUrl}/models`, { headers, redirect: 'error', signal: AbortSignal.timeout(12_000) });
+      const signal = AbortSignal.timeout(12_000);
+      let baseUrl = custom.baseUrl;
+      let response = await fetch(agentConnectionEndpoint(baseUrl, custom.api, true), { headers, redirect: 'error', signal });
+      // 只在列表端点不存在时补常见 /v1；鉴权失败不能用重试掩盖。
+      if ([404, 405].includes(response.status) && custom.api !== 'anthropic-messages' && !/\/v\d+$/i.test(new URL(baseUrl).pathname)) {
+        baseUrl += '/v1';
+        response = await fetch(agentConnectionEndpoint(baseUrl, custom.api, true), { headers, redirect: 'error', signal });
+      }
       if (!response.ok) throw Object.assign(new Error(`接口返回 HTTP ${response.status}`), { status: 400 });
       const payload = await response.json().catch(() => null);
       const items = Array.isArray(payload?.data) ? payload.data
@@ -1943,7 +2005,7 @@ export class PromptAgentService {
             : [];
       const models = [...new Map(items.map(detectModelCapabilities).filter(Boolean).map(model => [model.id.toLowerCase(), model])).values()];
       if (!models.length) throw Object.assign(new Error('接口未返回任何模型 ID'), { status: 400 });
-      return { ok: true, models };
+      return { ok: true, models, baseUrl };
     } catch (error) {
       if (error?.status) throw error;
       throw Object.assign(new Error(`获取模型失败：${error instanceof Error ? error.message : '未知网络错误'}`), { status: 400 });
@@ -2769,7 +2831,7 @@ export class PromptAgentService {
         name: 'inspect_local_image', label: '观察本地图片', description: '直接将电脑图片交给当前模型观察，不调用其他模型；仅在用户要求观察时使用，当前模型必须支持图片。',
         parameters: Type.Object({ path: Type.String(), focus: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
-          if (!modelInfo?.imageInput) throw new Error('当前模型不支持图片输入；仍可用 show_local_image 展示，或切换支持图片的当前模型');
+          if (!modelInfo?.imageInput) throw new Error(imageCapabilityError(modelInfo));
           const image = await this.localImages.read(localScope, args.path); const display = await this.localImages.register(localScope, args.path);
           return { content: [...jsonText({ displayImages: [display], focus: text(args.focus).slice(0, 1000), modelHasSeenImage: true }), { type: 'image', data: image.buffer.toString('base64'), mimeType: image.mimeType }] };
         },
@@ -2803,7 +2865,7 @@ export class PromptAgentService {
       {
         name: 'get_agent_capabilities', label: '查询实际可用能力', description: '回答自己能做什么之前查询：返回当前模型识图能力、图片展示、项目工具分组与调用边界。', parameters: Type.Object({}),
         execute: async () => ({ content: jsonText({
-          model: { imageInput: Boolean(modelInfo?.imageInput), separateVisionModel: false },
+          model: { imageInput: Boolean(modelInfo?.imageInput), imageInputStatus: modelInfo?.capabilityDetection?.imageInput === 'unknown' ? 'unknown' : modelInfo?.imageInput ? 'supported' : 'unsupported', separateVisionModel: false },
           localTime: true, displayProjectImages: Boolean(project?.requestJson), projectDataAvailable: Boolean(project?.requestJson),
           toolGroups: Object.keys(AGENT_TOOL_GROUPS), toolInventory: { total: project?.getToolInventory?.().length || new Set(Object.values(AGENT_TOOL_GROUPS).flat()).size, note: '具体工具随对应分组加载，不能把未加载工具说成没有能力' },
           permissionMode: this.publicConfig().permissionMode,
@@ -2835,7 +2897,7 @@ export class PromptAgentService {
         name: 'inspect_project_image', label: '观察项目图片', description: '把已有历史、灵感、Vibe、参考图或风格串封面直接交给当前模型观察；需要当前模型支持图片，展示图片请用 show_project_image。',
         parameters: Type.Object({ kind: Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String(), focus: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
-          if (!modelInfo?.imageInput) throw new Error('当前模型不支持图片输入；仍可用 show_project_image 展示图片，或切换支持识图的模型');
+          if (!modelInfo?.imageInput) throw new Error(imageCapabilityError(modelInfo));
           const bases = { history: 'local-history', inspiration: 'inspirations', vibe: 'vibes', reference: 'character-references', chain: 'chains' };
           const base = bases[args.kind]; const id = text(args.id).trim().slice(0, 200);
           if (!base || !id) throw new Error('缺少有效的项目图片 ID');
@@ -3025,7 +3087,7 @@ export class PromptAgentService {
         name: 'inspect_generation_image', label: '查看历史原图', description: '读取指定历史项的真实原图和元数据并进行视觉分析。id必须来自list_generation_history；可用focus说明重点。',
         parameters: Type.Object({ id: Type.String(), focus: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
-          if (!modelInfo?.imageInput) throw new Error('当前模型不支持图片输入，请切换到带“识图”标记的模型');
+          if (!modelInfo?.imageInput) throw new Error(imageCapabilityError(modelInfo));
           let item;
           try { const direct = await readProject(`/api/local-history/${encodeURIComponent(args.id)}`); item = direct.item || direct; } catch {
             const history = listItems(await readProject('/api/local-history?page=0&pageSize=100'));
@@ -4063,7 +4125,7 @@ export class PromptAgentService {
           const userMessageText = text(input?.message).slice(0, 8_000);
           const actualUserMessage = userMessageText;
           const promptImages = images;
-          if (images.length && !modelInfo.imageInput) throw Object.assign(new Error('当前模型不支持图片输入，请切换到支持识图的模型；不会调用其他模型'), { status: 400 });
+          if (images.length && !modelInfo.imageInput) throw Object.assign(new Error(imageCapabilityError(modelInfo) + '；不会调用其他模型'), { status: 400 });
           await this.setInitialSessionTitle(sessionId, userMessageText);
           audit('prompt_submitted', {
             // 审计瘦身：不落 prompt 正文，只留 sha256 短 hash + 长度。

@@ -58,6 +58,70 @@ test('工具历史按实际回执展示失败和中断', () => isolated(async se
 }));
 const customInput = (id = 'custom-synthetic-a') => ({ id, name: 'synthetic', baseUrl: 'http://127.0.0.1:1234/v1', models: [{ id: 'a' }, { id: 'b' }] });
 
+test('官方 DeepSeek 元数据贯通图片、真实思考档位、窗口与输出；声明优先于目录', () => {
+  const raw = { id: 'deepseek-flash', name: 'DeepSeek-V4.1-Flash', context_window: 1048576, max_output_tokens: 393216, input_modalities: ['text', 'image'], output_modalities: ['text'], effort: { supported_levels: ['low', 'high', 'max'], default_level: 'high' }, capabilities: { tools: true } };
+  const model = detectModelCapabilities(raw);
+  assert.equal(model.imageInput, true); assert.equal(model.reasoning, true); assert.equal(model.tools, true);
+  assert.equal(model.contextWindow, 1048576); assert.equal(model.maxTokens, 393216);
+  assert.deepEqual(model.thinkingLevels, ['off', 'low', 'high', 'max']); assert.equal(model.thinkingLevelsSource, 'metadata');
+  assert.equal(model.capabilityDetection.imageInput, 'metadata'); assert.equal(model.capabilityDetection.reasoning, 'metadata');
+  assert.equal(detectModelCapabilities({ ...raw, input_modalities: ['text'], reasoning: false, tools: false }).imageInput, false);
+  assert.equal(detectModelCapabilities({ ...raw, reasoning: false }).reasoning, false);
+  for (const id of ['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp']) assert.equal(detectModelCapabilities(id).imageInput, true);
+  const unknown = detectModelCapabilities({ id: 'brand-new', output_modalities: ['image'] });
+  assert.equal(unknown.capabilityDetection.imageInput, 'unknown'); assert.equal(unknown.capabilityDetection.reasoning, 'unknown'); assert.equal(unknown.tools, undefined);
+  const router = detectModelCapabilities({ id: 'routed', architecture: { modality: 'text+image->text' }, supported_parameters: ['tools', 'reasoning'] });
+  assert.equal(router.imageInput, true); assert.equal(router.reasoning, true); assert.equal(router.tools, true);
+});
+
+test('空配置没有预设服务；旧连接统一编辑且保持 ID、Key 与会话引用', () => isolated(async service => {
+  assert.deepEqual(service.listProviders(), []); assert.deepEqual(service.listCustomProviders(), []);
+  await service.loginProvider('deepseek', { apiKey: 'synthetic-key' });
+  const legacy = service.listCustomProviders()[0]; assert.equal(legacy.id, 'deepseek'); assert.equal(legacy.models.find(model => model.id === 'deepseek-v4-flash').imageInput, true);
+  const session = await service.createSession({ creativeMode: false });
+  await service.saveCustomProvider({ ...legacy, models: legacy.models, apiKey: '', select: true });
+  assert.equal(service.getCredential('deepseek').key, 'synthetic-key'); assert.equal(service.listProviders().length, 1);
+  assert.equal(service.listCustomProviders().length, 1); assert.equal(service.listAvailableModels().filter(model => model.id === 'deepseek-v4-flash').length, 1);
+  assert.equal((await service.readSession(session.id)).meta.provider, 'deepseek');
+}));
+
+test('模型获取仅访问规范化列表端点，域名变化不复用旧密钥，迟到能力由前端忽略', () => isolated(async service => {
+  const previous = globalThis.fetch, requests = [];
+  globalThis.fetch = async (url, options) => { requests.push({ url, headers: options.headers }); return Response.json({ data: [{ id: 'a', input_modalities: ['text', 'image'], effort: { supported_levels: ['low', 'high'] } }] }); };
+  try {
+    await service.saveCustomProvider({ ...customInput(), name: '', apiKey: 'synthetic-key' });
+    for (const api of ['openai-completions', 'openai-responses', 'anthropic-messages']) {
+      const result = await service.fetchCustomProviderModels({ ...customInput(), name: '', api, baseUrl: 'http://127.0.0.1:1234/v1/' + (api === 'anthropic-messages' ? 'messages' : api === 'openai-responses' ? 'responses' : 'chat/completions') });
+      assert.equal(result.models[0].imageInput, true); assert.equal(requests.at(-1).url, 'http://127.0.0.1:1234/v1/models');
+    }
+    assert.equal(requests.length, 3);
+    await assert.rejects(service.fetchCustomProviderModels({ ...customInput(), baseUrl: 'https://other.example/v1' }), /域名已改变/);
+    await assert.rejects(service.saveCustomProvider({ ...customInput(), baseUrl: 'https://other.example/v1' }), /域名已改变/);
+    assert.equal(requests.length, 3); assert.equal(service.getCredential(customInput().id).key, 'synthetic-key');
+  } finally { globalThis.fetch = previous; }
+}));
+
+test('只在根地址列表 404 时补 /v1，401 不重试；Flash 图片与 low 强度进入同一模型请求', () => isolated(async service => {
+  const previous = globalThis.fetch, paths = [], bodies = [];
+  globalThis.fetch = async (url, options) => {
+    paths.push(String(url));
+    if (String(url).endsWith('/models')) return String(url).endsWith('/v1/models') ? Response.json({ data: [{ id: 'deepseek-flash', input_modalities: ['text', 'image'], effort: { supported_levels: ['low', 'high', 'max'] } }] }) : new Response('', { status: 404 });
+    bodies.push(JSON.parse(options.body));
+    return new Response('data: ' + JSON.stringify({ id: 's', object: 'chat.completion.chunk', created: 1, model: 'deepseek-flash', choices: [{ index: 0, delta: { role: 'assistant', content: '收到图片' }, finish_reason: 'stop' }] }) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  };
+  try {
+    const found = await service.fetchCustomProviderModels({ ...customInput(), models: [], baseUrl: 'http://127.0.0.1:1234' });
+    assert.equal(found.baseUrl, 'http://127.0.0.1:1234/v1'); assert.equal(paths.length, 2);
+    await service.saveCustomProvider({ ...customInput(), baseUrl: found.baseUrl, models: found.models, apiKey: 'synthetic-key', select: true });
+    const session = await service.createSession({ creativeMode: false, thinkingLevel: 'low' });
+    await service.run({ sessionId: session.id, message: '看看图片', images: [{ data: 'YWJjZA==', mimeType: 'image/png' }], draft: { params: {} } }, () => {});
+    assert.equal(bodies.length, 1); assert.equal(bodies[0].model, 'deepseek-flash'); assert.equal(bodies[0].reasoning_effort, 'low');
+    assert.equal(bodies[0].thinking.type, 'enabled'); assert.match(JSON.stringify(bodies[0].messages), /data:image\/png;base64,YWJjZA==/);
+    paths.length = 0; globalThis.fetch = async url => { paths.push(url); return new Response('', { status: 401 }); };
+    await assert.rejects(service.fetchCustomProviderModels({ ...customInput(), baseUrl: 'http://127.0.0.1:1234' }), /401/); assert.equal(paths.length, 1);
+  } finally { globalThis.fetch = previous; }
+}));
+
 test('模型声明的稀疏思考档位贯通发现、配置与三种协议运行模型', () => {
   const discovered = detectModelCapabilities({ id: 'synthetic-model', supported_reasoning_efforts: ['low', 'high', 'xhigh'], thinkingLevelMap: { low: 'basic', xhigh: 'extreme' } });
   assert.equal(discovered.reasoning, true); assert.equal(discovered.thinkingLevelsSource, 'metadata');
@@ -89,9 +153,24 @@ test('目录补齐和未知兼容档位只在运行时生成，旧配置不补�
   const [unknown, catalog, disabled] = customProviderRuntime(legacy).getModels();
   assert.equal(unknown.thinkingLevelsSource, 'fallback'); assert.deepEqual(getSupportedThinkingLevels(unknown), ['off', 'minimal', 'low', 'medium', 'high']);
   assert.equal(unknown.thinkingLevelMap, undefined);
-  assert.equal(catalog.thinkingLevelsSource, 'pi_catalog'); assert.deepEqual(getSupportedThinkingLevels(catalog), ['off', 'high', 'max']);
+  assert.equal(catalog.thinkingLevelsSource, 'official_docs'); assert.deepEqual(getSupportedThinkingLevels(catalog), ['off', 'low', 'high', 'max']);
   assert.equal(catalog.compat.thinkingFormat, 'deepseek'); assert.deepEqual(getSupportedThinkingLevels(disabled), ['off']);
 });
+test('旧自动目录随官方能力更新，人工和接口否定保持，读取不改写配置', () => isolated(async service => {
+  const stored = source => ({ id: 'deepseek-v4-flash', reasoning: true, imageInput: false, contextWindow: 1048576, maxTokens: 393216, thinkingLevels: ['off', 'high', 'max'], thinkingLevelsSource: source, capabilityDetection: { imageInput: source, reasoning: source } });
+  for (const source of ['pi_catalog', 'manual', 'metadata']) {
+    const provider = { ...customInput(), models: [stored(source)] };
+    service.customProviders.set(provider.id, provider);
+    const snapshot = JSON.stringify(provider);
+    const shown = service.listCustomProviders()[0].models[0];
+    const runtime = customProviderRuntime(provider).getModels()[0];
+    assert.equal(shown.imageInput, source === 'pi_catalog');
+    assert.deepEqual(runtime.input, source === 'pi_catalog' ? ['text', 'image'] : ['text']);
+    assert.deepEqual(shown.thinkingLevels, source === 'pi_catalog' ? ['off', 'low', 'high', 'max'] : ['off', 'high', 'max']);
+    assert.equal(JSON.stringify(provider), snapshot);
+  }
+}));
+
 test('思考能力保存后重载保持，切换模型与非法旧档位按当前能力归一化', () => isolated(async service => {
   await service.init();
   const model = detectModelCapabilities({ id: 'a', thinkingLevels: ['low', 'high', 'xhigh'] });
@@ -108,11 +187,11 @@ test('设置和聊天读取同一能力，未知模型的兼容展示不会改�
   await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', reasoning: true }, { id: 'deepseek-v4-flash', reasoning: true }], select: true });
   const shown = service.listCustomProviders()[0];
   assert.deepEqual(shown.models.map(model => model.thinkingLevels), service.listAvailableModels().map(model => model.thinkingLevels));
-  assert.equal(shown.models[0].thinkingLevelsSource, 'fallback'); assert.equal(shown.models[1].thinkingLevelsSource, 'pi_catalog');
+  assert.equal(shown.models[0].thinkingLevelsSource, 'fallback'); assert.equal(shown.models[1].thinkingLevelsSource, 'official_docs');
   const saved = sanitizeCustomProvider(shown);
   assert.equal('thinkingLevels' in saved.models[0], false);
   assert.equal(customProviderRuntime(saved).getModels()[0].thinkingLevelMap, undefined);
-  assert.deepEqual(getSupportedThinkingLevels(customProviderRuntime(saved).getModels()[1]), ['off', 'high', 'max']);
+  assert.deepEqual(getSupportedThinkingLevels(customProviderRuntime(saved).getModels()[1]), ['off', 'low', 'high', 'max']);
   await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', reasoning: false, thinkingLevels: ['high'], thinkingLevelsSource: 'manual' }, { id: 'b', reasoning: false, thinkingLevels: [], thinkingLevelMap: createAgentThinkingMap([]) }] });
   const disabled = service.listCustomProviders()[0];
   assert.deepEqual(service.listAvailableModels()[0].thinkingLevels, ['off']);

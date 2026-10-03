@@ -1,6 +1,7 @@
 import { PromptAgentAction, PromptAgentDraft } from '../types';
 import { parseErrorResponse } from './api';
 import { isAgentImagePath } from './agentMedia';
+import { agentConnectionEndpoint } from './agentConnection.mjs';
 
 
 const agentAuthHeaders = (): Record<string, string> => {
@@ -49,8 +50,7 @@ export interface PromptAgentProvider {
 
 export type PromptAgentCustomApi = 'openai-completions' | 'openai-responses' | 'anthropic-messages';
 export const previewPromptAgentEndpoint = (baseUrl: string, api: PromptAgentCustomApi): string => {
-  const suffix = api === 'anthropic-messages' ? '/v1/messages' : api === 'openai-responses' ? '/responses' : '/chat/completions';
-  try { const url = new URL(baseUrl); url.search = ''; url.hash = ''; return url.href.replace(/\/$/, '') + suffix; }
+  try { return agentConnectionEndpoint(baseUrl, api); }
   catch { return ''; }
 };
 export interface PromptAgentCustomModel {
@@ -58,16 +58,20 @@ export interface PromptAgentCustomModel {
   name?: string;
   reasoning: boolean;
   imageInput: boolean;
+  tools?: boolean;
   contextWindow: number;
   maxTokens: number;
+  contextWindowSource?: PromptAgentThinkingSource;
+  maxTokensSource?: PromptAgentThinkingSource;
   thinkingLevels?: PromptAgentThinkingLevel[];
   thinkingLevelMap?: Partial<Record<PromptAgentThinkingLevel, string | null>>;
   thinkingLevelsSource?: PromptAgentThinkingSource;
   thinkingMode?: 'adaptive' | 'budget';
   cost?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } | null;
   capabilityDetection?: {
-    imageInput: 'metadata' | 'pi_catalog' | 'model_name' | 'unknown' | 'manual';
-    reasoning: 'metadata' | 'pi_catalog' | 'model_name' | 'unknown' | 'manual';
+    imageInput: 'metadata' | 'pi_catalog' | 'official_docs' | 'model_name' | 'unknown' | 'manual';
+    reasoning: 'metadata' | 'pi_catalog' | 'official_docs' | 'model_name' | 'unknown' | 'manual';
+    tools?: 'metadata' | 'pi_catalog' | 'official_docs' | 'unknown' | 'manual';
   };
 }
 export interface PromptAgentCustomProvider {
@@ -113,6 +117,8 @@ export interface PromptAgentModel {
   providerName?: string;
   reasoning: boolean;
   imageInput: boolean;
+  tools?: boolean;
+  capabilityDetection?: PromptAgentCustomModel['capabilityDetection'];
   contextWindow: number;
   maxTokens: number;
   /** 仅兼容旧配置，新接口不再提供价格。 */
@@ -124,16 +130,20 @@ export interface PromptAgentModel {
 }
 
 export type PromptAgentThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-export type PromptAgentThinkingSource = 'metadata' | 'pi_catalog' | 'manual' | 'fallback';
+export type PromptAgentThinkingSource = 'metadata' | 'pi_catalog' | 'official_docs' | 'manual' | 'fallback';
 
 /** 获取列表刷新已添加模型的能力，人工纠正优先，也不自动加入其他模型。 */
 export const mergePromptAgentModelCapabilities = (current: PromptAgentCustomModel, discovered: PromptAgentCustomModel): PromptAgentCustomModel => ({
   ...current,
+  ...(current.contextWindowSource === 'manual' || discovered.contextWindowSource === 'fallback' ? {} : { contextWindow: discovered.contextWindow, contextWindowSource: discovered.contextWindowSource }),
+  ...(current.maxTokensSource === 'manual' || discovered.maxTokensSource === 'fallback' ? {} : { maxTokens: discovered.maxTokens, maxTokensSource: discovered.maxTokensSource }),
+  ...(current.capabilityDetection?.tools === 'manual' || discovered.capabilityDetection?.tools === 'unknown' ? {} : { tools: discovered.tools }),
   ...(current.capabilityDetection?.imageInput === 'manual' || discovered.capabilityDetection?.imageInput === 'unknown' ? {} : { imageInput: discovered.imageInput }),
   ...(current.capabilityDetection?.reasoning === 'manual' || discovered.capabilityDetection?.reasoning === 'unknown' ? {} : { reasoning: discovered.reasoning }),
   capabilityDetection: {
     imageInput: current.capabilityDetection?.imageInput === 'manual' ? 'manual' : discovered.capabilityDetection?.imageInput || 'unknown',
     reasoning: current.capabilityDetection?.reasoning === 'manual' ? 'manual' : discovered.capabilityDetection?.reasoning || 'unknown',
+    tools: current.capabilityDetection?.tools === 'manual' ? 'manual' : discovered.capabilityDetection?.tools || 'unknown',
   },
   ...(current.thinkingLevelsSource !== 'manual' && discovered.thinkingLevels?.length ? { thinkingLevels: discovered.thinkingLevels, thinkingLevelMap: discovered.thinkingLevelMap, thinkingLevelsSource: discovered.thinkingLevelsSource, thinkingMode: discovered.thinkingMode ?? current.thinkingMode } : {}),
 });
@@ -398,7 +408,7 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
-  fetchCustomProviderModels: async (input: PromptAgentCustomProvider): Promise<{ ok: boolean; models: PromptAgentCustomModel[] }> => {
+  fetchCustomProviderModels: async (input: PromptAgentCustomProvider): Promise<{ ok: boolean; models: PromptAgentCustomModel[]; baseUrl?: string }> => {
     const response = await fetch('/api/prompt-agent/custom-providers/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
     if (!response.ok) return readError(response) as never;
     return response.json();

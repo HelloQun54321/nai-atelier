@@ -244,11 +244,11 @@ test('prompt agent character slot data is retained so generation can report mode
 test('prompt agent discovers model capabilities from metadata, Pi catalog and conservative names', () => {
   const metadata = detectModelCapabilities({ id: 'vendor/model-x', display_name: 'Model X', input_modalities: ['text', 'image'], capabilities: { reasoning: true }, context_window: 262144, max_output_tokens: 32768 });
   assert.deepEqual({ imageInput: metadata.imageInput, reasoning: metadata.reasoning, contextWindow: metadata.contextWindow, maxTokens: metadata.maxTokens }, { imageInput: true, reasoning: true, contextWindow: 262144, maxTokens: 32768 });
-  assert.deepEqual(metadata.capabilityDetection, { imageInput: 'metadata', reasoning: 'metadata' });
+  assert.deepEqual(metadata.capabilityDetection, { imageInput: 'metadata', reasoning: 'metadata', tools: 'unknown' });
   const catalog = detectModelCapabilities('deepseek-v4-flash-vision-exp');
   assert.equal(catalog.imageInput, true);
   assert.equal(catalog.reasoning, true);
-  assert.equal(catalog.capabilityDetection.imageInput, 'pi_catalog');
+  assert.equal(catalog.capabilityDetection.imageInput, 'official_docs');
   const named = detectModelCapabilities('lab/deepseek-r1-vision');
   assert.equal(named.imageInput, true);
   assert.equal(named.reasoning, true);
@@ -264,9 +264,9 @@ test('prompt agent ignores legacy separate vision selection and reports the sele
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
   service.setCredential('deepseek', { type: 'api_key', key: 'synthetic' });
   service.config.visionMode = 'manual'; service.config.visionProvider = 'deepseek'; service.config.visionModel = 'deepseek-v4-flash-vision-exp';
-  assert.equal(service.publicConfig().imageInput, false);
+  assert.equal(service.publicConfig().imageInput, true);
   assert.equal('visionProvider' in service.publicConfig(), false);
-  assert.equal(service.publicSessionMeta({ id: 's', provider: 'deepseek', model: 'deepseek-v4-flash' }).imageInput, false);
+  assert.equal(service.publicSessionMeta({ id: 's', provider: 'deepseek', model: 'deepseek-v4-flash' }).imageInput, true);
   assert.equal(service.publicSessionMeta({ id: 's', provider: 'deepseek', model: 'deepseek-v4-flash-vision-exp' }).imageInput, true);
 });
 
@@ -319,9 +319,9 @@ test('prompt agent uses Pi-supported thinking levels and trims context at a real
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
   assert.equal(service.normalizeThinkingLevel('off', { reasoning: true }), 'off');
   assert.equal(service.normalizeThinkingLevel(undefined, { reasoning: true }), 'medium');
-  assert.equal(service.normalizeThinkingLevel(undefined, { thinkingLevels: ['off', 'high', 'max'] }), 'high');
-  assert.equal(service.normalizeThinkingLevel('low', { thinkingLevels: ['off', 'high', 'max'] }), 'high');
-  assert.deepEqual(service.getModels('deepseek').find(model => model.id === 'deepseek-v4-flash')?.thinkingLevels, ['off', 'high', 'max']);
+  assert.equal(service.normalizeThinkingLevel(undefined, { thinkingLevels: ['off', 'low', 'high', 'max'] }), 'low');
+  assert.equal(service.normalizeThinkingLevel('low', { thinkingLevels: ['off', 'low', 'high', 'max'] }), 'low');
+  assert.deepEqual(service.getModels('deepseek').find(model => model.id === 'deepseek-v4-flash')?.thinkingLevels, ['off', 'low', 'high', 'max']);
   assert.ok(estimateContextTokens('中文上下文') >= 5);
   const messages = [
     { role: 'user', content: 'old request' },
@@ -397,12 +397,13 @@ test('prompt agent keeps API keys encrypted and out of its public config', async
   assert.equal(service.listProviders().find(provider => provider.id === 'deepseek').configured, true);
   assert.equal(service.listAvailableModels().every(model => model.provider === 'deepseek'), true);
   assert.deepEqual(service.listAvailableModels().map(model => model.id), [
+    'deepseek-flash',
     'deepseek-v4-flash',
     'deepseek-v4-flash-vision-exp',
     'deepseek-v4-pro',
   ]);
   assert.equal(service.listAvailableModels().find(model => model.id === 'deepseek-v4-flash-vision-exp').imageInput, true);
-  assert.equal(service.publicConfig().imageInput, false);
+  assert.equal(service.publicConfig().imageInput, true);
   const runtime = service.publicConfig();
   assert.match(runtime.policyVersion, /^\d{4}-\d{2}-\d{2}\.\d+$/);
   assert.match(runtime.policyFingerprint, /^[a-f0-9]{12}$/);
