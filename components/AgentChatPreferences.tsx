@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getAgentDisplayPreferences, setAgentDisplayPreferences, type AgentDisplayPreferences } from '../services/agentDisplayPreferences';
 
 export const useAgentDisplayPreferences = () => {
@@ -40,4 +40,30 @@ export const AgentDisclosure: React.FC<{ title: React.ReactNode; label: string; 
     <summary aria-label={label} className={`cursor-pointer select-none text-xs leading-6 ${error ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>{title}</summary>
     {open && <div className="mt-1 border-l border-gray-200 pl-3 dark:border-gray-700">{children}</div>}
   </details>;
+};
+
+/** 当前输出跟随末尾；主动上翻暂停，回到末尾或重新展开后恢复。历史内容保持阅读位置。 */
+export const AgentLiveOutput: React.FC<{ text: string; live: boolean; label: string; className: string; as?: 'div' | 'pre' }> = ({ text, live, label, className, as: Element = 'div' }) => {
+  const viewportRef = useRef<HTMLElement | null>(null);
+  const followingRef = useRef(true);
+  useLayoutEffect(() => {
+    const element = viewportRef.current;
+    if (live && followingRef.current && element && !element.closest('details:not([open])')) element.scrollTop = element.scrollHeight;
+  }, [text, live]);
+  useEffect(() => {
+    const element = viewportRef.current;
+    const disclosure = element?.closest('details');
+    if (!element || !disclosure || !live) return;
+    const opened = () => {
+      if (!disclosure.open) return;
+      followingRef.current = true;
+      if (!element.closest('details:not([open])')) element.scrollTop = element.scrollHeight;
+    };
+    disclosure.addEventListener('toggle', opened);
+    return () => disclosure.removeEventListener('toggle', opened);
+  }, [live]);
+  return <Element ref={(element: HTMLDivElement | HTMLPreElement | null) => { viewportRef.current = element; }} aria-label={label} className={className} onScroll={event => {
+    const element = event.currentTarget;
+    followingRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 32;
+  }}>{text}</Element>;
 };

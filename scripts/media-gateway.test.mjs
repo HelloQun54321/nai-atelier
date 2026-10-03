@@ -420,7 +420,7 @@ test('prompt agent keeps API keys encrypted and out of its public config', async
   assert.ok(service.configFilePath().startsWith(gatewayAgentTestRoot));
 });
 
-test('prompt agent exposes pi steering, follow-up, queue clearing and abort controls', () => {
+test('prompt agent preserves abort and rejects retired steering and task queues', () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
   const calls = [];
   const events = [];
@@ -433,15 +433,10 @@ test('prompt agent exposes pi steering, follow-up, queue clearing and abort cont
       abort: () => calls.push(['abort']),
     },
   });
-  service.controlSession('session', 'steer', 'change direction');
-  service.controlSession('session', 'followUp', 'then summarize');
-  service.controlSession('session', 'clear');
+  for (const action of ['steer', 'followUp', 'clear']) assert.throws(() => service.controlSession('session', action, 'next task'), /未知的 Agent 控制操作/);
   service.controlSession('session', 'abort');
-  assert.equal(calls[0][0], 'steer');
-  assert.equal(calls[0][1].content, 'change direction');
-  assert.equal(calls[1][0], 'followUp');
-  assert.deepEqual(calls.slice(2), [['clear'], ['abort']]);
-  assert.deepEqual(events.map(event => event.action), ['steer', 'followUp']);
+  assert.deepEqual(calls, [['abort']]);
+  assert.deepEqual(events, []);
 });
 
 test('prompt agent exports ordered local audit records and redacts secrets', async () => {

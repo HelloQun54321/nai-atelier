@@ -2,7 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { AgentChatDisplayOptions, AgentGenerationOptions, AgentDisclosure, useAgentDisplayPreferences } from './AgentChatPreferences';
+import { AgentChatDisplayOptions, AgentGenerationOptions, AgentDisclosure, AgentLiveOutput, useAgentDisplayPreferences } from './AgentChatPreferences';
 import { AgentPermissionSelect } from './AgentPermissionSelect';
 import { getAgentDisplayPreferences } from '../services/agentDisplayPreferences';
 import { promptAgentService } from '../services/promptAgent';
@@ -39,6 +39,22 @@ it('手动展开不被后续流式内容刷新重置', async () => {
   details.open = true; fireEvent(details, new Event('toggle'));
   view.rerender(<Transcript text="追加合成思考" />);
   await waitFor(() => expect(details.open).toBe(true)); expect(screen.getByText('追加合成思考')).toBeTruthy();
+});
+it.each(['div', 'pre'] as const)('%s 实时输出持续跟随末尾，上翻暂停、回到底部及重新展开恢复', tag => {
+  const output = (text: string, live = true) => <details open><summary>过程</summary><AgentLiveOutput as={tag} text={text} live={live} label="实时输出" className="overflow-auto" /></details>;
+  const view = render(output('第一行'));
+  const element = screen.getByLabelText('实时输出');
+  Object.defineProperties(element, { scrollHeight: { value: 1000, configurable: true }, clientHeight: { value: 200, configurable: true }, scrollTop: { value: 0, writable: true, configurable: true } });
+  view.rerender(output('第一行\n最新一行')); expect(element.scrollTop).toBe(1000);
+  element.scrollTop = 100; fireEvent.scroll(element);
+  view.rerender(output('继续追加')); expect(element.scrollTop).toBe(100);
+  element.scrollTop = 800; fireEvent.scroll(element);
+  Object.defineProperty(element, 'scrollHeight', { value: 1300, configurable: true });
+  view.rerender(output('又一行输出')); expect(element.scrollTop).toBe(1300);
+  const details = element.closest('details')!; details.open = false; fireEvent(details, new Event('toggle'));
+  element.scrollTop = 50; view.rerender(output('折叠期间的输出')); expect(element.scrollTop).toBe(50);
+  details.open = true; fireEvent(details, new Event('toggle')); expect(element.scrollTop).toBe(1300);
+  element.scrollTop = 150; view.rerender(output('历史输出', false)); expect(element.scrollTop).toBe(150);
 });
 it('损坏的显示偏好退回折叠，保持开关可用', () => {
   localStorage.setItem('nai_agent_display', '{broken');

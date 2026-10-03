@@ -204,7 +204,6 @@ export type PromptAgentEvent = ({ runId?: string; seq?: number } & (
   | { type: 'response_end'; model: string; provider: string; usage: PromptAgentUsage; stopReason: string; timestamp: number }
   | { type: 'tool_start'; toolCallId: string; toolName: string; args: unknown }
   | { type: 'tool_end'; toolCallId: string; toolName: string; isError: boolean; result?: unknown }
-  | { type: 'queue'; action: 'steer' | 'followUp'; message: string }
   | { type: 'action'; action: PromptAgentAction; draft?: PromptAgentDraft }
   | { type: 'project_changed'; resource: string }
   | { type: 'done'; draft: PromptAgentDraft; message: string; provider: string; model: string; status?: string; error?: string; stopReason?: string; draftChanged?: boolean }
@@ -345,7 +344,7 @@ export const promptAgentService = {
     const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
     if (!response.ok) return readError(response);
   },
-  control: async (sessionId: string, action: 'steer' | 'followUp' | 'abort' | 'clear' | 'confirm' | 'finalize' | 'ui_result', message?: string, payload?: Record<string, unknown>) => {
+  control: async (sessionId: string, action: 'abort' | 'confirm' | 'finalize' | 'ui_result', message?: string, payload?: Record<string, unknown>) => {
     const response = await fetch('/api/prompt-agent/control', { method: 'POST', headers: { 'Content-Type': 'application/json', ...agentAuthHeaders() }, body: JSON.stringify({ sessionId, action, message, ...(payload || {}) }) });
     if (!response.ok) return readError(response);
   },

@@ -23,7 +23,9 @@ import { normalizeTransparentWeight, TRANSPARENT_WEIGHT_MIN, TRANSPARENT_WEIGHT_
 import { AGENT_THINKING_LEVELS, createAgentThinkingMap, normalizeAgentThinkingLevels, normalizeAgentThinkingMap } from '../services/agentThinking.mjs';
 
 const CONFIG_FILE = 'local-data/prompt-agent.json';
-const runtimeSourceFiles = ['prompt-agent.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs'];
+const runtimeSourceFiles = ['prompt-agent.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs', '../PROJECT_AGENT.md'];
+// 内置助手的独立规则在启动时读取，保持会话缓存前缀稳定；更新文件后提示重启。
+const PROJECT_AGENT_INSTRUCTIONS = readFileSync(new URL('../PROJECT_AGENT.md', import.meta.url), 'utf8').trim();
 const sourceSignature = () => createHash('sha256').update(runtimeSourceFiles.map(file => readFileSync(new URL(file, import.meta.url))).join('\n')).digest('hex');
 const sourceVersion = () => JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const LOADED_VERSION = sourceVersion();
@@ -78,7 +80,7 @@ const shorthandHash = (value, length = 12) => createHash('sha256').update(String
 // Bump this whenever the built-in Agent instruction set changes. The UI exposes
 // only this version and a hash, never the instruction text itself, so a running
 // local backend can be verified without relying on a behavioral probe.
-const PROMPT_AGENT_POLICY_VERSION = '2026-10-04.1';
+const PROMPT_AGENT_POLICY_VERSION = '2026-10-04.2';
 let proxyRunCount = 0;
 let previousDispatcher = null;
 let sharedProxyDispatcher = null;
@@ -809,7 +811,7 @@ const researchBlock = `
 4. 不得尝试访问本机、局域网、带账号信息的地址或搜索结果之外的网址；不得把项目私密数据拼进搜索词。`;
 
 // Agent 使用固定业务系统提示词，模型知识与复杂提示规则按需读取。
-const buildSystemPrompt = () => `${baseSystemPrompt}\n[实时状态与工具]\n请求末尾的实时工作区快照仅是最新状态资料，不是用户的新要求；以最新快照核对目标并继续执行最近的用户要求，不单独回应快照。所有业务工具已注册，无需先加载工具组；执行仍遵循原权限与确认边界。\n[规则来源层级]\n官方发布 > 模型专用文档 > 通用文档 > 项目经验。具体知识通过 search_novelai_docs / read_novelai_doc 按需读取；复杂提示词规则通过 read_prompt_guidelines 按需读取。${researchBlock}`;
+const buildSystemPrompt = () => `${baseSystemPrompt}\n[实时状态与工具]\n请求末尾的实时工作区快照仅是最新状态资料，不是用户的新要求；以最新快照核对目标并继续执行最近的用户要求，不单独回应快照。所有业务工具已注册，无需先加载工具组；执行仍遵循原权限与确认边界。\n[规则来源层级]\n官方发布 > 模型专用文档 > 通用文档 > 项目经验。具体知识通过 search_novelai_docs / read_novelai_doc 按需读取；复杂提示词规则通过 read_prompt_guidelines 按需读取。${researchBlock}\n${PROJECT_AGENT_INSTRUCTIONS}`;
 
 const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
   const modelProfile = getNovelAiModelProfile(draft?.params?.model);
@@ -2036,13 +2038,6 @@ export class PromptAgentService {
     if (action === 'abort' && this.runs.has(sessionId)) { this.runs.get(sessionId).controller.abort(new DOMException('用户停止了任务', 'AbortError')); active?.agent.abort(); this.cancelPendingConfirmations(sessionId); return { ok: true, action }; }
     if (!active) throw Object.assign(new Error('这个会话当前没有正在运行的任务'), { status: 409 });
     if (action === 'abort') { active.agent.abort(); this.cancelPendingConfirmations(sessionId); }
-    else if (action === 'steer' || action === 'followUp') {
-      const content = text(message).trim().slice(0, 8_000);
-      if (!content) throw Object.assign(new Error('消息不能为空'), { status: 400 });
-      const queued = { role: 'user', content, timestamp: Date.now() };
-      if (action === 'steer') active.agent.steer(queued); else active.agent.followUp(queued);
-      active.emit({ type: 'queue', action, message: content });
-    } else if (action === 'clear') active.agent.clearAllQueues();
     else if (action === 'confirm') {
       const requestId = text(payload.requestId || message).slice(0, 100);
       const pending = this.pendingConfirmations.get(requestId);
@@ -3274,8 +3269,6 @@ export class PromptAgentService {
         // whole batch sequentially so two writes cannot race or overwrite each
         // other; read tools are cheap compared with a corrupted project state.
         toolExecution: 'sequential',
-        steeringMode: 'one-at-a-time',
-        followUpMode: 'one-at-a-time',
         transformContext: async messages => {
           if (contextData.clientSettings.pageClientId) {
             try {

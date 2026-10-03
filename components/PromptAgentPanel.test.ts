@@ -149,6 +149,46 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull();
   });
 
+  it('执行中没有排队入口，Enter 保留下一条草稿，结束后由用户手动发送', async () => {
+    stubServices(); const control = vi.spyOn(promptAgentService, 'control').mockResolvedValue(undefined);
+    let finish!: () => void;
+    const run = vi.spyOn(promptAgentService, 'run').mockImplementationOnce(async (input, emit) => {
+      await new Promise<void>(resolve => { finish = resolve; });
+      emit({ type: 'done', status: 'completed', draft: input.draft, message: '完成', provider: 'deepseek', model: 'deepseek-chat' });
+    }).mockResolvedValue(undefined);
+    renderPanel(); const box = screen.getByRole('textbox', { name: '任务要求' }) as HTMLTextAreaElement;
+    await waitFor(() => expect(box.disabled).toBe(false));
+    fireEvent.change(box, { target: { value: '第一条' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(finish).toBeTypeOf('function'));
+    expect(screen.queryByLabelText('追加处理方式')).toBeNull(); expect(screen.queryByText('清空排队')).toBeNull();
+    fireEvent.change(box, { target: { value: '第二条草稿' } }); fireEvent.keyDown(box, { key: 'Enter' });
+    expect(box.value).toBe('第二条草稿'); expect(control).not.toHaveBeenCalled(); expect(run).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: '追加要求' })).toBeNull(); expect(screen.queryByRole('button', { name: '执行' })).toBeNull();
+    await act(async () => { finish(); });
+    expect(box.value).toBe('第二条草稿'); expect(run).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(2)); expect(run.mock.calls[1][0].message).toBe('第二条草稿');
+  });
+
+  it('默认展开的思考及打开的工具回执跟随最新内容，最新过程展开后聊天也定位末尾', async () => {
+    stubServices(); localStorage.setItem('nai_agent_display', JSON.stringify({ thinkingExpanded: true, toolsExpanded: true }));
+    let emit!: Parameters<typeof promptAgentService.run>[1], finish!: () => void;
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, onEvent) => { emit = onEvent; await new Promise<void>(resolve => { finish = resolve; }); });
+    renderPanel(); const box = screen.getByRole('textbox', { name: '任务要求' }); await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(box, { target: { value: '修改' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(emit).toBeTypeOf('function'));
+    act(() => { emit({ type: 'thinking_delta', delta: '开始思考' }); emit({ type: 'tool_start', toolCallId: 't', toolName: 'get_lab_state', args: {} }); });
+    const thinking = screen.getByLabelText('思考输出'); const receipt = screen.getByLabelText('工具回执');
+    const scroll = box.closest('main')!.querySelector('.space-y-6')!;
+    for (const element of [thinking, receipt, scroll]) Object.defineProperties(element, { scrollHeight: { value: 1400, configurable: true }, clientHeight: { value: 200, configurable: true }, scrollTop: { value: 0, writable: true, configurable: true } });
+    const details = receipt.closest('details')!; details.open = true; fireEvent(details, new Event('toggle'));
+    expect(receipt.scrollTop).toBe(1400); expect(scroll.scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ top: 1400 }));
+    thinking.scrollTop = 0; receipt.scrollTop = 0;
+    act(() => { emit({ type: 'thinking_delta', delta: '\n最新思考' }); emit({ type: 'tool_end', toolCallId: 't', toolName: 'get_lab_state', isError: false, result: { newest: '最新回执' } }); });
+    expect(thinking.scrollTop).toBe(1400); expect(receipt.scrollTop).toBe(1400);
+    await act(async () => { finish(); });
+  });
+
   it('没有模型时直接提供 API 接入入口，并阻止发起模型任务', async () => {
     stubServices(); vi.spyOn(promptAgentService, 'getAvailableModels').mockResolvedValue([]);
     const run = vi.spyOn(promptAgentService, 'run'); const open = vi.fn();

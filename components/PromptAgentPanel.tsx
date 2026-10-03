@@ -6,7 +6,7 @@ import { AgentProjectImage } from './AgentProjectImage';
 import { extractAgentMedia } from '../services/agentMedia';
 import { prepareAgentAttachment } from '../services/agentAttachments';
 import { promptAgentCoordinator } from '../services/promptAgentCoordinator';
-import { AgentChatDisplayOptions, AgentDisclosure, useAgentDisplayPreferences } from './AgentChatPreferences';
+import { AgentChatDisplayOptions, AgentDisclosure, AgentLiveOutput, useAgentDisplayPreferences } from './AgentChatPreferences';
 import { AgentPermissionSelect } from './AgentPermissionSelect';
 import { AgentModelControl } from './AgentModelControl';
 import { useAgentRuntimeRecheck } from './useAgentRuntimeRecheck';
@@ -40,11 +40,11 @@ interface PromptAgentPanelProps {
 }
 
 type ToolProgress = { id: string; name: string; state: 'running' | 'done' | 'error' | 'interrupted'; args?: unknown; result?: unknown };
-type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; visionUsage?: PromptAgentVisionUsage[]; stopReason?: string; timestamp?: number; queued?: 'steer' | 'followUp' };
+type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; visionUsage?: PromptAgentVisionUsage[]; stopReason?: string; timestamp?: number };
 type AgentAttachment = { data: string; mimeType: string; name: string };
 const toolLabels: Record<string, string> = {
   request_local_image_folder_access: '确认本地目录权限', list_local_images: '浏览本地图片', show_local_image: '展示本地图片', inspect_local_image: '观察本地图片', save_project_image_to_folder: '保存图片到电脑', copy_local_image: '复制本地图片',
-  get_local_time: '查询本机时间与时区', get_agent_capabilities: '查询实际可用能力', enable_tool_group: '加载相关工具', show_project_image: '展示项目图片', inspect_project_image: '观察项目图片',
+  get_local_time: '查询本机时间与时区', get_agent_capabilities: '查询实际可用能力', enable_tool_group: '查询工具分组', show_project_image: '展示项目图片', inspect_project_image: '观察项目图片',
   search_novelai_docs: '检索 NovelAI 官方知识', read_novelai_doc: '读取 NovelAI 官方知识',
   web_search: '联网搜索', read_web_page: '读取网页',
   get_lab_state: '读取实验室', search_tags: '搜索 Tag', search_character_catalog: '搜索角色 Tag', search_vibes: '搜索 Vibe', search_character_references: '搜索角色参考',
@@ -164,17 +164,16 @@ const AgentMessageList = React.memo(({
     {hiddenMessageCount > 0 && <button type="button" onClick={onLoadEarlier} className="mx-auto flex h-9 items-center rounded-full border border-gray-200 bg-white px-3 text-meta font-bold text-gray-500 shadow-sm hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">再显示前面的 {Math.min(60, hiddenMessageCount)} 条消息</button>}
     {visibleMessages.map((message, index) => <article key={message.id} className={`group min-w-0 text-sm leading-7 text-gray-800 [overflow-wrap:anywhere] dark:text-gray-100 ${message.role === 'user' ? 'ml-auto flex max-w-[90%] flex-col items-end' : ''}`}>
       <div className={message.role === 'user' ? 'w-fit max-w-full whitespace-pre-wrap rounded-2xl bg-gray-100 px-4 py-2.5 dark:bg-gray-800' : message.role === 'error' ? 'whitespace-pre-wrap rounded-xl bg-red-50 px-3 py-2 text-red-600 dark:bg-red-950/40 dark:text-red-300' : 'min-w-0'}>
-      {message.queued && <div className="mb-1 text-xs text-gray-500 dark:text-gray-400">{message.queued === 'steer' ? '转向要求 · 当前步骤后处理' : '后续任务 · 完成本轮后处理'}</div>}
-      {!!message.thinking && <AgentDisclosure title="思考过程" label="思考过程" defaultExpanded={displayPreferences.thinkingExpanded}><div className="max-h-64 overflow-y-auto whitespace-pre-wrap text-xs leading-6 text-gray-500 dark:text-gray-400">{message.thinking}</div></AgentDisclosure>}
+      {!!message.thinking && <AgentDisclosure title="思考过程" label="思考过程" defaultExpanded={displayPreferences.thinkingExpanded}><AgentLiveOutput text={message.thinking} live={running && index === visibleMessages.length - 1} label="思考输出" className="max-h-64 overflow-y-auto whitespace-pre-wrap text-xs leading-6 text-gray-500 dark:text-gray-400" /></AgentDisclosure>}
       {!!message.tools?.length && <AgentDisclosure title={`工具活动 · ${message.tools.length} 项${message.tools.some(tool => tool.state === 'error' || tool.state === 'interrupted') ? ' · 有未完成项' : message.tools.some(tool => tool.state === 'running') ? ' · 处理中' : ''}`} label="工具活动" defaultExpanded={displayPreferences.toolsExpanded} error={message.tools.some(tool => tool.state === 'error' || tool.state === 'interrupted')}>
-        <div className="space-y-1">{message.tools.map(tool => <details key={tool.id} className={`text-xs leading-6 ${tool.state === 'error' || tool.state === 'interrupted' ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}><summary className="cursor-pointer"><span className={tool.state === 'running' ? 'animate-pulse' : ''}>{tool.state === 'running' ? '处理中' : tool.state === 'error' ? '失败' : tool.state === 'interrupted' ? '未完成' : '完成'} · {toolLabels[tool.name] || tool.name}</span></summary><pre className="my-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-gray-50 p-2 text-micro leading-5 dark:bg-gray-900">{JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)}</pre></details>)}</div>
+        <div className="space-y-1">{message.tools.map(tool => <details key={tool.id} className={`text-xs leading-6 ${tool.state === 'error' || tool.state === 'interrupted' ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}><summary className="cursor-pointer"><span className={tool.state === 'running' ? 'animate-pulse' : ''}>{tool.state === 'running' ? '处理中' : tool.state === 'error' ? '失败' : tool.state === 'interrupted' ? '未完成' : '完成'} · {toolLabels[tool.name] || tool.name}</span></summary><AgentLiveOutput as="pre" text={JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)} live={running && index === visibleMessages.length - 1} label="工具回执" className="my-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-gray-50 p-2 text-micro leading-5 dark:bg-gray-900" /></details>)}</div>
       </AgentDisclosure>}
       {message.role === 'agent' ? <AgentMarkdown text={message.text || (running && index === visibleMessages.length - 1 && !message.tools?.length && !message.thinking ? '正在思考…' : '')} /> : message.text}
       {message.tools?.flatMap(tool => extractAgentMedia(tool.result)).filter((image, index, list) => list.findIndex(item => item.path === image.path) === index).slice(0, 4).map(image => <AgentProjectImage key={image.path} image={image} onReady={onMediaReady} />)}
       </div>
       {Boolean(message.text || message.model || message.usage || message.visionUsage?.length) && <div className="mt-1 flex min-w-0 items-center gap-0.5 text-xs text-gray-400">
         {!!message.text && <button type="button" onClick={() => onCopy(message)} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title={copiedMessageId === message.id ? '已复制' : '复制'} aria-label={copiedMessageId === message.id ? '已复制' : '复制'}>{copiedMessageId === message.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}</button>}
-        {message.role === 'user' && !running && !message.queued && <button type="button" onClick={() => onEdit(message)} aria-label="编辑重发" title="编辑重发" className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"><Pencil className="h-3.5 w-3.5" /></button>}
+        {message.role === 'user' && !running && <button type="button" onClick={() => onEdit(message)} aria-label="编辑重发" title="编辑重发" className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"><Pencil className="h-3.5 w-3.5" /></button>}
         {message.role === 'agent' && index === visibleMessages.length - 1 && !running && <button type="button" onClick={onRetry} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title="重新回答；已完成的资料修改不会撤回" aria-label="重新生成"><RotateCcw className="h-3.5 w-3.5" /></button>}
         {message.role === 'agent' && Boolean(message.model || message.usage || message.visionUsage?.length) && <AgentUsageDetails message={message} />}
       </div>}
@@ -205,7 +204,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [modelChanging, setModelChanging] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const changeModelMenu = useCallback((open: boolean) => { setShowModelMenu(open); if (open) setShowMoreMenu(false); }, []);
-  const [queueMode, setQueueMode] = useState<'steer' | 'followUp'>('steer');
   const [busySessionAction, setBusySessionAction] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState('');
   const [sessionMenuId, setSessionMenuId] = useState('');
@@ -418,10 +416,9 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           if (event.type === 'tool_start') return `\n▸ 开始：${event.toolName}`;
           if (event.type === 'tool_end') return `\n${event.isError ? '✕' : '✓'} 完成：${event.toolName}`;
           if (event.type === 'action') return `\n◆ 操作：${event.action.kind}`;
-          if (event.type === 'queue') return `\n↳ 已排队：${event.action}`;
           return '';
         }).join('').trim();
-        restored.push({ id: `task-replay-${activeSessionId}`, role: 'agent', text: `任务执行回放（${task.status === 'interrupted' ? '服务中断' : '仍在执行'}）\n\n${replayText || '没有可恢复的文本事件。'}\n\n你可以继续发送要求。` });
+        restored.push({ id: `task-replay-${activeSessionId}`, role: 'agent', text: `任务执行回放（${task.status === 'interrupted' ? '服务中断' : '仍在执行'}）\n\n${replayText || '没有可恢复的文本事件。'}\n\n${task.status === 'interrupted' ? '你可以继续发送要求。' : '当前任务结束或停止后，可发送下一条要求。'}` });
       }
       if (task.error) restored.push({ id: 'task-error-' + (task.runId || activeSessionId), role: 'error', text: task.error });
       loadedSessionIdRef.current = activeSessionId;
@@ -487,7 +484,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     // Do not consume the force flag while the old message list is being
     // cleared. The next render containing loaded history must still jump.
     if (force && messages.length > 0) forceBottomAfterLoadRef.current = false;
-  }, [messages, running, props.open]);
+  }, [messages, running, props.open, displayPreferences.thinkingExpanded, displayPreferences.toolsExpanded]);
 
   useLayoutEffect(() => {
     if (!props.open) return;
@@ -497,6 +494,18 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     const element = scrollRef.current;
     if (element) element.scrollTop = element.scrollHeight;
   }, [props.open, activeSessionId]);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!props.open || !element) return;
+    // toggle 不冒泡，使用原生捕获监听覆盖思考与嵌套工具详情。
+    const opened = (event: Event) => {
+      const target = event.target;
+      if (target instanceof HTMLDetailsElement && target.open && followBottomRef.current && target.closest('article') === element.querySelector('article:last-of-type')) element.scrollTo({ top: element.scrollHeight, behavior: 'auto' });
+    };
+    element.addEventListener('toggle', opened, true);
+    return () => element.removeEventListener('toggle', opened, true);
+  }, [props.open]);
 
   useEffect(() => {
     if (!props.open) return;
@@ -638,21 +647,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   };
 
   const run = async (suggestion?: string, mode: 'prompt' | 'retry' = 'prompt') => {
+    if (running) return;
     const prompt = (suggestion ?? input).trim() || (attachments.length ? '请分析我附带的图片，并结合项目内容给出建议。' : '');
     if (!sessionReady || modelChanging || attachmentLoadingRef.current || !activeSessionId || !activeSession || (mode === 'prompt' && !prompt)) return;
     if (mode === 'prompt' && !editingMessageId && attachments.length && !supportsImages) {
       setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: '当前模型不支持图片输入，请在发送键旁选择支持图片的模型。' }]);
-      return;
-    }
-    if (running && attachments.length) { setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: '运行中只支持文字补充，图片仍保留；请等完成后发送。' }]); return; }
-    if (running) {
-      try {
-        await promptAgentService.control(activeSessionId, queueMode, prompt);
-        setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'user', text: prompt, queued: queueMode }]);
-        setInput('');
-      } catch (error) {
-        setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '追加要求失败' }]);
-      }
       return;
     }
     let effectiveMode = mode;
@@ -1007,10 +1006,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         </div>
           <div onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void addAttachments(event.dataTransfer.files); } }} className="appearance-surface mx-3 mb-3 rounded-2xl border border-gray-200 bg-gray-50/60 p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] focus-within:border-gray-400 dark:border-gray-700 dark:bg-gray-900/80 dark:focus-within:border-gray-500 md:mx-5" aria-busy={!sessionReady}>
           {editingMessageId && !running && <div className="mb-2 flex items-center rounded-xl bg-amber-50 px-3 py-1.5 text-meta text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"><b>正在编辑旧消息</b><span className="ml-1">发送后会从这里重新执行，后面的旧回答将被替换。</span><span className="flex-1" /><button type="button" onClick={() => { setEditingMessageId(''); setInput(''); }} className="font-bold">取消</button></div>}
-          {running && <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-            <select aria-label="追加处理方式" value={queueMode} onChange={event => setQueueMode(event.target.value as 'steer' | 'followUp')} className="min-h-8 max-w-full rounded-lg border border-gray-200 bg-transparent px-2 text-xs dark:border-gray-700 dark:[color-scheme:dark]"><option value="steer">转向当前任务</option><option value="followUp">完成后继续</option></select>
-            <button type="button" onClick={() => void promptAgentService.control(activeSessionId, 'clear').catch(reportControlError)} className="min-h-8 rounded-lg px-2 hover:bg-gray-100 dark:hover:bg-gray-800" title="清空已排队的任务要求">清空排队</button>
-          </div>}
           {input.length >= 7000 && <p className="mb-2 text-micro text-gray-500">任务要求 {input.length} / 8000 字符，请分段发送。</p>}
           {attachmentBusy && <p role="status" className="mb-2 text-xs text-gray-500">正在处理图片副本…</p>}
           {attachmentError && <p role="alert" className="mb-2 text-xs text-red-600 dark:text-red-300">{attachmentError}</p>}
@@ -1032,13 +1027,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               ))}
             </div>
           )}
-          <textarea onPaste={event => { const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); void addAttachments(files); } }} maxLength={8000} aria-label="任务要求" ref={inputRef} value={input} disabled={!sessionReady} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void run(); } }} rows={1} placeholder={!sessionReady ? modelsLoaded ? '先接入或选择模型服务…' : '正在加载对话…' : running ? (queueMode === 'steer' ? '补充或纠正当前任务…' : '添加完成后继续处理的任务…') : editingMessageId ? '修改这条消息后重新发送…' : '输入要求，或粘贴图片…'} className="agent-composer-input min-h-12 w-full min-w-0 resize-none bg-transparent px-1 py-2 text-sm leading-6 text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-55 dark:text-gray-100 dark:placeholder:text-gray-500" />
+          <textarea onPaste={event => { const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); void addAttachments(files); } }} maxLength={8000} aria-label="任务要求" ref={inputRef} value={input} disabled={!sessionReady} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void run(); } }} rows={1} placeholder={!sessionReady ? modelsLoaded ? '先接入或选择模型服务…' : '正在加载对话…' : running ? '可以先写下一条，任务结束后发送…' : editingMessageId ? '修改这条消息后重新发送…' : '输入要求，或粘贴图片…'} className="agent-composer-input min-h-12 w-full min-w-0 resize-none bg-transparent px-1 py-2 text-sm leading-6 text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-55 dark:text-gray-100 dark:placeholder:text-gray-500" />
           <div className="mt-1 flex min-w-0 items-center gap-2">
             <label title={!sessionReady ? '请配置或选择模型服务' : supportsImages ? '添加图片' : '当前模型不支持图片输入'} aria-disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} className={'flex h-9 w-9 flex-none items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 ' + (sessionReady && supportsImages && !running && attachments.length < 4 ? 'cursor-pointer hover:bg-gray-200/60 dark:hover:bg-gray-800' : 'cursor-not-allowed opacity-35')}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片附件" onChange={event => { void addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} /></label>
             <AgentPermissionSelect disabled={running} />
             <AgentModelControl key={activeSessionId} models={models} activeModel={activeModel} thinkingLevels={availableThinkingLevels} thinkingLevel={selectedThinkingLevel} contextUsage={getAgentContextUsage(messages, activeModel)} open={showModelMenu} disabled={!props.open || running || !activeSessionId || !activeSession} onOpenChange={changeModelMenu} onModelChange={updateSessionModel} onThinkingChange={updateThinkingLevel} onBusyChange={setModelChanging} onConfigure={openAgentSettings} />
             {running && <button type="button" onClick={() => void stopTask()} className="agent-composer-action flex items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900" aria-label="停止" title="停止任务；已完成的修改不会撤销"><Square className="h-3.5 w-3.5 fill-current" /></button>}
-            {(!running || input.trim() || attachments.length > 0) && <button type="button" onClick={() => void run()} disabled={!sessionReady || modelChanging || attachmentBusy || (!input.trim() && !attachments.length)} className="agent-composer-action flex items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:bg-gray-100 dark:text-gray-900 dark:disabled:bg-gray-800 dark:disabled:text-gray-600" aria-label={!sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : running ? '追加要求' : editingMessageId ? '重新发送' : '执行'} title={running ? '追加要求' : '发送 · Enter；换行 · Shift+Enter'}><ArrowUp className="h-[18px] w-[18px]" /></button>}
+            {!running && <button type="button" onClick={() => void run()} disabled={!sessionReady || modelChanging || attachmentBusy || (!input.trim() && !attachments.length)} className="agent-composer-action flex items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:bg-gray-100 dark:text-gray-900 dark:disabled:bg-gray-800 dark:disabled:text-gray-600" aria-label={!sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : editingMessageId ? '重新发送' : '执行'} title="发送 · Enter；换行 · Shift+Enter"><ArrowUp className="h-[18px] w-[18px]" /></button>}
           </div>
         </div>
       </main>

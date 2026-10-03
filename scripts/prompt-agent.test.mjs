@@ -21,6 +21,20 @@ const syntheticAgentStream = (round, { input = 20000, output = 100 } = {}) => ne
   usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output },
 }) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
 
+test('独立 Agent 规则文件实际进入固定系统前缀，包含中文思考与真实回执约定', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
+  const session = await service.createSession(), previous = globalThis.fetch, requests = [];
+  globalThis.fetch = async (_url, options) => { requests.push(JSON.parse(options.body)); return syntheticAgentStream({ id: requests.length }); };
+  try {
+    await service.run({ sessionId: session.id, message: '你好', draft: { params: {} } }, () => {});
+    const instructions = (await readFile(new URL('../PROJECT_AGENT.md', import.meta.url), 'utf8')).trim();
+    assert.ok(requests[0].messages[0].content.includes(instructions));
+    assert.match(requests[0].messages[0].content, /思考／推理输出，必须全部使用简体中文/);
+    assert.match(requests[0].messages[0].content, /文件路径.*保留准确原文/);
+    assert.match(requests[0].messages[0].content, /只有用户明确拒绝确认或主动停止才描述为用户取消/);
+  } finally { globalThis.fetch = previous; }
+}));
+
 test('短句连续修改无需重新加载工具；原始会话与稳定前缀跨轮保留', () => isolated(async service => {
   await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
   const session = await service.createSession(), previous = globalThis.fetch, requests = [], events = [];
