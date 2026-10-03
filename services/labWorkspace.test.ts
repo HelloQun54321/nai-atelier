@@ -14,6 +14,19 @@ const params = {
 describe('lab workspace session', () => {
   beforeEach(() => sessionStorage.clear());
 
+  it('透明权重随草稿保存恢复，四模式独立，旧数据不强制覆盖原提示词权重', () => {
+    const fallback = createLabWorkspaceSession('original', '', '', params, {});
+    const session = createLabWorkspaceSession('transparent subject', '', '', { ...params, model: 'nai-diffusion-5-full', transparent: true, transparentWeight: 2.1 }, {});
+    session.edits.inpaint.params.transparentWeight = 1.6;
+    saveLabWorkspaceSession('alpha-weight', session);
+    const restored = loadLabWorkspaceSession('alpha-weight', fallback);
+    expect(restored.textToImage.params).toMatchObject({ transparent: true, transparentWeight: 2.1 });
+    expect(restored.edits.inpaint.params.transparentWeight).toBe(1.6);
+    expect(restored.edits.outpaint.params.transparentWeight).toBe(2.1);
+    expect(normalizeParams(params).transparentWeight).toBeUndefined();
+    expect(normalizeParams({ ...params, transparentWeight: 8 }).transparentWeight).toBe(3);
+  });
+
   it('四模式默认自动构图，旧角色启用语义兼容，停用／排序／自由坐标随草稿恢复', () => {
     const characters = [
       { id: 'b', prompt: 'second', negativePrompt: 'negative b', x: 0.223, y: 0.887, enabled: false },

@@ -23,7 +23,7 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
-import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildImageEditPresetPatch, canSaveLabModeToLibrary, LabPresetImportOptions } from '../services/labModeTools';
+import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildImageEditPresetPatch, canSaveLabModeToLibrary, LabPresetImportOptions, mergePresetSettings } from '../services/labModeTools';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { LabPageLayouts } from '../services/appearancePreferences';
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
@@ -977,19 +977,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
         // 5. Settings
         if (options.importSettings) {
-            setParams(prev => ({
-                ...prev,
-                steps: target.params?.steps ?? prev.steps,
-                scale: target.params?.scale ?? prev.scale,
-                sampler: target.params?.sampler ?? prev.sampler,
-                width: target.params?.width ?? prev.width,
-                height: target.params?.height ?? prev.height,
-                qualityToggle: target.params?.qualityToggle ?? prev.qualityToggle,
-                ucPreset: target.params?.ucPreset ?? prev.ucPreset,
-                cfgRescale: target.params?.cfgRescale ?? prev.cfgRescale,
-                variety: target.params?.variety ?? prev.variety,
-                useCoords: target.params?.useCoords ?? prev.useCoords
-            }));
+            setParams(prev => mergePresetSettings(prev, target.params, compilePrompt(target, target.variableValues?.subject || '')));
             setPresetSources(previous => ({ ...previous, settings: source }));
         }
 
@@ -2143,6 +2131,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         >
                         <ChainEditorParams
                             params={params}
+                            prompt={finalPrompt}
                             setParams={(nextParams) => { setParams(nextParams); markPresetSectionModified('settings'); }}
                             canEdit={canEdit}
                             markChange={markChange}

@@ -3,6 +3,8 @@ import { DEFAULT_NAI_MODEL, getRuntimeNaiModelInfo } from './naiModels';
 import { buildImageEditParameters, resolveImageEditModel, validateImageEditSampler } from './imageEdit';
 import { DEFAULT_NAI_RUNTIME, getNaiRuntimeModelCapability, NaiRuntimeConfig } from './naiRuntime';
 import { withGenerationCharacters } from './characterPrompts';
+import { joinNaiTextPrompt, splitNaiTextPrompt, withTransparentPromptTags } from './transparentBackground.mjs';
+export { withTransparentPromptTags } from './transparentBackground.mjs';
 
 export interface NaiPayloadOptions {
   stream?: boolean;
@@ -26,8 +28,6 @@ export interface NaiImageEditPayloadOptions {
   runtimeStreamSupported?: boolean;
 }
 
-const TRANSPARENT_PROMPT_TAGS = 'transparent background, has alpha';
-
 const LEGACY_QUALITY_DEFAULT = 'standard';
 const LEGACY_UC_IDS = ['heavy', 'light', 'furryFocus', 'humanFocus', 'none'];
 
@@ -36,7 +36,9 @@ const appendPromptPart = (prompt: string, part: string | undefined, position: 'p
   if (!value) return prompt;
   const source = String(prompt || '').trim();
   if (!source) return value;
-  return position === 'prefix' ? `${value}, ${source}` : `${source}, ${value}`;
+  if (position === 'prefix') return `${value}, ${source}`;
+  const { description, text } = splitNaiTextPrompt(source);
+  return joinNaiTextPrompt(description ? `${description}, ${value}` : value, text);
 };
 
 const resolvePresetId = (params: NAIParams, field: 'quality' | 'uc') => {
@@ -67,15 +69,6 @@ export const resolveNaiPromptPresets = (params: NAIParams, runtime: NaiRuntimeCo
   return { modelId, capability, qualityId, ucId, qualityPreset, ucPreset };
 };
 
-/** 只改实际请求，不污染用户在编辑器中保存的原始提示词。 */
-export const withTransparentPromptTags = (prompt: string): string => {
-  const hasTransparentBackground = /(?:^|,)\s*(?:[\d.]+::)?transparent background(?:::)?\s*(?:,|$)/i.test(prompt);
-  const hasAlpha = /(?:^|,)\s*has alpha\s*(?:,|$)/i.test(prompt);
-  if (hasTransparentBackground && hasAlpha) return prompt;
-  const missing = [!hasTransparentBackground ? 'transparent background' : '', !hasAlpha ? 'has alpha' : ''].filter(Boolean).join(', ');
-  return prompt.trim() ? `${prompt.trimEnd()}, ${missing}` : missing || TRANSPARENT_PROMPT_TAGS;
-};
-
 export const buildNaiGenerationPayload = (
   prompt: string,
   negative: string,
@@ -91,7 +84,7 @@ export const buildNaiGenerationPayload = (
   const presetState = resolveNaiPromptPresets(params, runtime);
   const useTransparent = params.transparent === true && modelInfo.supportsTransparentBackground === true;
 
-  let finalPrompt = useTransparent ? withTransparentPromptTags(prompt) : prompt;
+  let finalPrompt = useTransparent ? withTransparentPromptTags(prompt, params.transparentWeight) : prompt;
   if (presetState.qualityPreset) {
     finalPrompt = appendPromptPart(finalPrompt, presetState.qualityPreset.prefix, 'prefix');
     finalPrompt = appendPromptPart(finalPrompt, presetState.qualityPreset.suffix, 'suffix');

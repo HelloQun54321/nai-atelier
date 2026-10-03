@@ -275,6 +275,17 @@ describe('NovelAI Stealth PNG 元数据', () => {
     })).params.transparent).toBe(false);
   });
 
+  it('透明权重从最终 base_caption 或显式参数恢复，不继承旧草稿或画面文字的值', () => {
+    const original = { width: 832, height: 1216, steps: 23, scale: 7, sampler: 'k_euler_ancestral', transparentWeight: 2.8 };
+    const metadata = { prompt: '1girl, 1.5::transparent background::', tag_hint_transparent_background: true,
+      v4_prompt: { caption: { base_caption: '1girl, 2.1::transparent background::, very aesthetic, masterpiece, no text\nText: Hello', char_captions: [] } } };
+    expect(parseNovelAIMetadata(JSON.stringify(metadata), original).params).toMatchObject({ transparent: true, transparentWeight: 2.1 });
+    expect(parseNovelAIMetadata(JSON.stringify(metadata), original)).toMatchObject({ prompt: '1girl, 2.1::transparent background::\nText: Hello', params: { qualityToggle: true } });
+    expect(parseNovelAIMetadata(JSON.stringify({ ...metadata, transparentWeight: 1.8 }), original).params.transparentWeight).toBe(1.8);
+    expect(parseNovelAIMetadata(JSON.stringify({ prompt: '1girl, Text: 2.1::transparent background::', tag_hint_transparent_background: true }), original).params.transparentWeight).toBe(1);
+    expect(parseNovelAIMetadata(JSON.stringify({ prompt: 'scenery', straight_alpha: true }), original).params).toMatchObject({ transparent: false, transparentWeight: 1 });
+  });
+
   it('拒绝声明长度超过图片容量的载荷', async () => {
     const fixture = makeStealthRgba(new Uint8Array([1, 2, 3]), 8_000_000);
     expect(await extractNovelAiStealthMetadataFromRgba(fixture.rgba, fixture.width, fixture.height)).toBeNull();

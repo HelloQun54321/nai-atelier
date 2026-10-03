@@ -2,6 +2,7 @@ import { GenerationMode, ImageEditCanvasExpansion, ImageEditOperation, LabImageE
 import { normalizeMinimumContextArea } from './imageEdit';
 import { getDefaultStepsForModel } from './naiModels';
 import { clampCharacterCoordinate } from './characterPrompts';
+import { normalizeTransparentWeight } from './transparentBackground.mjs';
 
 const SESSION_PREFIX = 'nai-lab-workspace-v1:';
 const ASSET_DB_NAME = 'NAI_Lab_Workspace_DB';
@@ -34,6 +35,7 @@ export const normalizeParams = (params?: Partial<NAIParams> | null): NAIParams =
   return {
     ...LAB_DEFAULT_PARAMS,
     ...safe,
+    ...(safe.transparentWeight !== undefined ? { transparentWeight: normalizeTransparentWeight(safe.transparentWeight) } : {}),
     width: Number(safe.width) || LAB_DEFAULT_PARAMS.width,
     height: Number(safe.height) || LAB_DEFAULT_PARAMS.height,
     steps: Number(safe.steps) || LAB_DEFAULT_PARAMS.steps,

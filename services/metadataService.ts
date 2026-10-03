@@ -12,6 +12,7 @@
 import { NAIParams, CharacterParams, ImageEditMetadata } from '../types';
 import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
 import { createUuid } from './id';
+import { joinNaiTextPrompt, resolveTransparentWeight, splitNaiTextPrompt } from './transparentBackground.mjs';
 import { resolveNaiMetadataModel } from './naiModels';
 import { extractPngMetadata } from './pngMetadata.mjs';
 export { extractNovelAiMetadataFromPng, extractNovelAiStealthMetadataFromRgba } from './pngMetadata.mjs';
@@ -252,6 +253,8 @@ export const parseNovelAIMetadata = (
                     });
                 }
             }
+            // 使用最终 base_caption 恢复权重，不继承导入前草稿的旧值或 Text: 中的字面标签。
+            newParams.transparentWeight = resolveTransparentWeight(json.transparentWeight, prompt);
         } catch (e) {
             console.error('JSON 元数据解析失败，回退到原始字符串', e);
         }
@@ -298,9 +301,10 @@ export const parseNovelAIMetadata = (
     // ========== 后处理：隐式参数逆向反推 ==========
 
     // 1. Quality Tags 后缀侦测与剥离
-    if (prompt.endsWith(NAI_QUALITY_TAGS)) {
+    const promptParts = splitNaiTextPrompt(prompt);
+    if (promptParts.description.endsWith(NAI_QUALITY_TAGS)) {
         newParams.qualityToggle = true;
-        prompt = prompt.substring(0, prompt.length - NAI_QUALITY_TAGS.length);
+        prompt = joinNaiTextPrompt(promptParts.description.slice(0, -NAI_QUALITY_TAGS.length), promptParts.text);
     } else {
         newParams.qualityToggle = false;
     }

@@ -8,6 +8,35 @@ const baseParams = {
 };
 
 describe('NovelAI generation payload', () => {
+  it.each(['nai-diffusion-5-full', 'nai-diffusion-5-curated'])('%s 普通与流式将透明及质量标签放在 Text: 前，并发送同一权重', model => {
+    for (const stream of [false, true]) {
+      const prompt = '1girl, 0::transparent background::, Text: Hello\n\nWorld';
+      const payload = buildNaiGenerationPayload(prompt, '', { ...baseParams, model, transparent: true, transparentWeight: 2.1, qualityPresetId: 'standard' }, { stream });
+      expect(payload.input).toBe('1girl, 2.1::transparent background::, has alpha, very aesthetic, masterpiece, no text\nText: Hello\n\nWorld');
+      expect((payload.parameters.v4_prompt as any).caption.base_caption).toBe(payload.input);
+      expect((payload.parameters as Record<string, unknown>).tag_hint_transparent_background).toBe(true);
+      expect(payload.parameters.straight_alpha).toBe(true);
+      expect(payload.parameters.transparentWeight).toBeUndefined();
+      expect(prompt).toContain('0::transparent background::, Text:');
+    }
+  });
+
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 普通及流式编辑与文生图使用相同透明权重', operation => {
+    for (const stream of [false, true]) {
+      const payload = buildNaiImageEditPayload('1girl', '', { ...baseParams, transparent: true, transparentWeight: 1.8 }, {
+        operation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 0.8, noise: 0,
+        runtimeModels: ['nai-diffusion-5-full-inpainting'], stream,
+      });
+      expect(payload.input).toBe('1girl, 1.8::transparent background::, has alpha');
+      expect((payload.parameters as Record<string, unknown>).tag_hint_transparent_background).toBe(true);
+    }
+  });
+
+  it('透明关闭时独立权重不额外注入，质量后缀仍避开文字区', () => {
+    const payload = buildNaiGenerationPayload('1girl, Text: Hello', '', { ...baseParams, transparent: false, transparentWeight: 2.1, qualityPresetId: 'standard' });
+    expect(payload.input).toBe('1girl, very aesthetic, masterpiece, no text\nText: Hello');
+    expect(payload.parameters.tag_hint_transparent_background).toBeUndefined();
+  });
   it.each(['nai-diffusion-4-full', 'nai-diffusion-4-5-full', 'nai-diffusion-5-full'])('%s 普通与流式请求一起过滤角色并按模型定位', model => {
     const params = { ...baseParams, model, characters: [
       { id: 'b', prompt: 'second first', negativePrompt: 'negative b', x: 0.222, y: 0.887 },

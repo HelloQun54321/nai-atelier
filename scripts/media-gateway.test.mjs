@@ -634,7 +634,7 @@ test('prompt agent destructive tools only emit confirmation requests', async () 
 
 test('prompt agent keeps advanced generation fields when changing one parameter', async () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
-  const draft = { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: { model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', transparent: true, noiseSchedule: 'karras', sm: true, customAdvancedFlag: 7 } };
+  const draft = { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: { model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', transparent: true, transparentWeight: 2.1, noiseSchedule: 'karras', sm: true, customAdvancedFlag: 7 } };
   const tool = service.createTools(draft, { presets: [], vibes: [] }, () => {}).find(item => item.name === 'set_generation_params');
   await tool.execute('call', { steps: 32 });
   assert.equal(draft.params.steps, 32);
@@ -642,6 +642,10 @@ test('prompt agent keeps advanced generation fields when changing one parameter'
   assert.equal(draft.params.sm, true);
   assert.equal(draft.params.customAdvancedFlag, 7);
   assert.equal(draft.params.transparent, true);
+  assert.equal(draft.params.transparentWeight, 2.1);
+  assert.equal(tool.parameters.properties.transparentWeight.maximum, 3);
+  await tool.execute('weight', { transparentWeight: 9 });
+  assert.equal(draft.params.transparentWeight, 3);
 });
 
 test('prompt agent reads a complete chain and safely merges partial stored params', async () => {

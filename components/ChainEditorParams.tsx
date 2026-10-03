@@ -5,6 +5,7 @@ import { getNaiRuntimeModelCapability, useNaiRuntime } from '../services/naiRunt
 import { applyLowConsumptionParams, useLowConsumption } from '../services/lowConsumption';
 import { lowConsumptionStepLimit } from '../worker/lowConsumptionPolicy.mjs';
 import { getActiveCharacters } from '../services/characterPrompts';
+import { normalizeTransparentWeight, resolveTransparentWeight, TRANSPARENT_WEIGHT_MIN, TRANSPARENT_WEIGHT_MAX, TRANSPARENT_WEIGHT_STEP } from '../services/transparentBackground.mjs';
 import {
     BUILTIN_ASPECT_RATIOS,
     calculateDimensionsForRatio,
@@ -15,6 +16,7 @@ import {
 
 interface ChainEditorParamsProps {
     params: NAIParams;
+    prompt?: string;
     setParams: (p: NAIParams) => void;
     canEdit: boolean;
     markChange: () => void;
@@ -30,6 +32,7 @@ export { OPUS_FREE_PIXEL_LIMIT };
 
 export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
     params,
+    prompt = '',
     setParams,
     canEdit,
     markChange,
@@ -89,6 +92,13 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
 
     const resolvedModelId = params.model?.trim() || DEFAULT_NAI_MODEL;
     const currentModelInfo = getRuntimeNaiModelInfo(resolvedModelId, runtime);
+    const transparentWeight = resolveTransparentWeight(params.transparentWeight, prompt);
+    const [transparentWeightInput, setTransparentWeightInput] = useState<string | null>(null);
+    const updateTransparentWeight = (value: number) => {
+        if (!canEdit || !params.transparent) return;
+        setParams({ ...params, transparentWeight: normalizeTransparentWeight(value) });
+        markChange();
+    };
     const modelCapability = getNaiRuntimeModelCapability(runtime, resolvedModelId);
     const officialQualityOptions = modelCapability?.qualityPresets?.filter(item => item.id !== 'none') || [];
     const qualityOptions = [{ id: 'none', name: 'none' }, ...officialQualityOptions];
@@ -160,6 +170,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                         value={resolvedModelId}
                         onChange={(e) => {
                             const nextModelId = e.target.value;
+                            setTransparentWeightInput(null);
                             const nextModel = getRuntimeNaiModelInfo(nextModelId, runtime);
                             const nextSupportsVibes = mode === 'text-to-image' || mode === 'image-to-image'
                                 ? nextModel.supportsVibes
@@ -347,19 +358,40 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                 </div>
 
                 {currentModelInfo.supportsTransparentBackground && (
-                    <button
-                        type="button"
-                        disabled={!canEdit}
-                        aria-pressed={params.transparent === true}
-                        onClick={() => {
-                            setParams({ ...params, transparent: !params.transparent, alphaMode: 'straight' });
-                            markChange();
-                        }}
-                        className="col-span-full flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700"
-                    >
-                        <span className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-200">透明背景</b><span className="mt-0.5 block text-micro text-gray-400">生成透明背景 PNG 图片</span></span>
-                        <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${params.transparent ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${params.transparent ? 'translate-x-5' : ''}`} /></span>
-                    </button>
+                    <div className="col-span-full rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+                        <button
+                            type="button"
+                            aria-label="透明背景"
+                            disabled={!canEdit}
+                            aria-pressed={params.transparent === true}
+                            onClick={() => {
+                                setTransparentWeightInput(null);
+                                setParams({ ...params, transparent: !params.transparent, transparentWeight, alphaMode: 'straight' });
+                                markChange();
+                            }}
+                            className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-gray-800"
+                        >
+                            <span className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-200">透明背景</b><span className="mt-0.5 block text-micro text-gray-400">引导模型生成透明背景</span></span>
+                            <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${params.transparent ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${params.transparent ? 'translate-x-5' : ''}`} /></span>
+                        </button>
+                        {params.transparent && <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800">
+                            <div className="mb-1 flex items-center justify-between gap-3">
+                                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">透明权重</label>
+                                <input type="number" aria-label="透明权重数值" min={TRANSPARENT_WEIGHT_MIN} max={TRANSPARENT_WEIGHT_MAX} step={TRANSPARENT_WEIGHT_STEP}
+                                    disabled={!canEdit} value={transparentWeightInput ?? transparentWeight}
+                                    onChange={event => setTransparentWeightInput(event.target.value)}
+                                    onBlur={event => {
+                                        if (event.target.value !== '') updateTransparentWeight(Number(event.target.value));
+                                        setTransparentWeightInput(null);
+                                    }}
+                                    onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+                                    className="w-16 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-indigo-600 outline-none transition focus:border-indigo-500 focus:bg-white disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-400 dark:focus:border-indigo-400 dark:focus:bg-gray-900" />
+                            </div>
+                            <input type="range" aria-label="透明权重" min={TRANSPARENT_WEIGHT_MIN} max={TRANSPARENT_WEIGHT_MAX} step={TRANSPARENT_WEIGHT_STEP}
+                                disabled={!canEdit} value={transparentWeight} onChange={event => { setTransparentWeightInput(null); updateTransparentWeight(Number(event.target.value)); }}
+                                className="w-full cursor-pointer accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-50" />
+                        </div>}
+                    </div>
                 )}
 
                 {getActiveCharacters(params.characters).length > currentModelInfo.maxCharacters && (

@@ -11,6 +11,7 @@ import { isIP } from 'net';
 import { dirname, join } from 'path';
 import { getGlobalDispatcher, ProxyAgent, setGlobalDispatcher } from 'undici';
 import { getNovelAiModelProfile, readNovelAiOfficialKnowledge, searchNovelAiOfficialKnowledge } from './novelai-agent-knowledge.mjs';
+import { normalizeTransparentWeight, TRANSPARENT_WEIGHT_MIN, TRANSPARENT_WEIGHT_MAX } from '../services/transparentBackground.mjs';
 
 const CONFIG_FILE = 'local-data/prompt-agent.json';
 const CREDENTIAL_KEY_FILE = 'local-data/prompt-agent.key';
@@ -542,6 +543,7 @@ const sanitizeParams = raw => {
     variety: value.variety === true,
     cfgRescale: clamp(value.cfgRescale, 0, 1, 0),
     transparent: modelProfile.project.supportsAlphaTransparency === true && value.transparent === true,
+    ...(value.transparentWeight !== undefined ? { transparentWeight: normalizeTransparentWeight(value.transparentWeight) } : {}),
     alphaMode: value.alphaMode === 'premultiplied' ? 'premultiplied' : 'straight',
   };
   if (Number.isInteger(Number(value.seed)) && Number(value.seed) >= 0) params.seed = Number(value.seed);
@@ -3267,6 +3269,7 @@ export class PromptAgentService {
           sampler: Type.Optional(Type.String()), seed: Type.Optional(Type.Number()), qualityToggle: Type.Optional(Type.Boolean()), ucPreset: Type.Optional(Type.Number()), qualityPresetId: Type.Optional(Type.String()), ucPresetId: Type.Optional(Type.String()),
           useCoords: Type.Optional(Type.Boolean()), variety: Type.Optional(Type.Boolean()), cfgRescale: Type.Optional(Type.Number()),
           transparent: Type.Optional(Type.Boolean()),
+          transparentWeight: Type.Optional(Type.Number({ minimum: TRANSPARENT_WEIGHT_MIN, maximum: TRANSPARENT_WEIGHT_MAX })),
         }),
         execute: async (_id, args) => {
           draft.params = sanitizeParams({ ...draft.params, ...args });
@@ -3948,4 +3951,3 @@ export class PromptAgentService {
     }
   }
 }
-

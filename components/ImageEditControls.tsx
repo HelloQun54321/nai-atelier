@@ -379,7 +379,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
       </LabModuleSection>
 
       <LabModuleSection moduleId="params" label="参数设置" order={getModuleOrder(layout, 'params')} defaultCollapsed={isModuleCollapsed(layout, 'params')} className={mobileTab === 'params' ? 'block' : 'hidden lg:block'}>
-        <ChainEditorParams params={selectableParams} setParams={params => onDraftChange({ params })} canEdit={!isBusy} markChange={() => undefined} hideResolution mode={operation} forceEmptySeed={forceEmptySeed} enforceFreeStepLimit={enforceFreeStepLimit} />
+        <ChainEditorParams params={selectableParams} prompt={draft.prompt} setParams={params => onDraftChange({ params })} canEdit={!isBusy} markChange={() => undefined} hideResolution mode={operation} forceEmptySeed={forceEmptySeed} enforceFreeStepLimit={enforceFreeStepLimit} />
       </LabModuleSection>
 
       <LabModuleSection moduleId="editSettings" label="编辑参数" order={getModuleOrder(layout, 'editSettings')} defaultCollapsed={isModuleCollapsed(layout, 'editSettings')} className={mobileTab === 'params' ? 'block' : 'hidden lg:block'}>

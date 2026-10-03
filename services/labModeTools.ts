@@ -1,5 +1,6 @@
 import { GenerationMode, LabImageEditDraft, NAIParams, PromptChain } from '../types';
 import { compilePrompt, mergePromptFields } from './promptUtils';
+import { resolveTransparentWeight } from './transparentBackground.mjs';
 
 export interface LabPresetImportOptions {
   importBasePrompt: boolean;
@@ -34,7 +35,7 @@ export const buildImageEditMetadataPatch = (
   promptSource: 'custom',
 });
 
-const mergePresetSettings = (current: NAIParams, imported?: NAIParams): NAIParams => ({
+export const mergePresetSettings = (current: NAIParams, imported?: NAIParams, importedPrompt = ''): NAIParams => ({
   ...current,
   steps: imported?.steps ?? current.steps,
   scale: imported?.scale ?? current.scale,
@@ -46,6 +47,11 @@ const mergePresetSettings = (current: NAIParams, imported?: NAIParams): NAIParam
   cfgRescale: imported?.cfgRescale ?? current.cfgRescale,
   variety: imported?.variety ?? current.variety,
   useCoords: imported?.useCoords ?? current.useCoords,
+  transparent: imported?.transparent ?? current.transparent,
+  transparentWeight: imported?.transparentWeight !== undefined || imported?.transparent === true
+    ? resolveTransparentWeight(imported?.transparentWeight, importedPrompt)
+    : current.transparentWeight,
+  alphaMode: imported?.alphaMode ?? current.alphaMode,
 });
 
 /**
@@ -82,7 +88,7 @@ export const buildImageEditPresetPatch = (
   if (options.importNegative) patch.negativePrompt = target.negativePrompt || '';
 
   let nextParams = current.params;
-  if (options.importSettings) nextParams = mergePresetSettings(nextParams, target.params);
+  if (options.importSettings) nextParams = mergePresetSettings(nextParams, target.params, compilePrompt(target, target.variableValues?.subject || ''));
   if (options.importCharacters && target.params?.characters) {
     const characters = target.params.characters.map(character => ({ ...character, id: createId() }));
     nextParams = {

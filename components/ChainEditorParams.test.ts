@@ -3,6 +3,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChainEditorParams } from './ChainEditorParams';
+import type { NAIParams } from '../types';
 const lowMode = vi.hoisted(() => ({ enabled: false }));
 vi.mock('../services/lowConsumption', async importOriginal => ({
   ...await importOriginal<typeof import('../services/lowConsumption')>(), useLowConsumption: () => lowMode,
@@ -33,7 +34,7 @@ vi.mock('../services/naiModels', () => ({
   getRuntimeNaiModelInfo: (model: string) => ({
     label: model === 'nai-diffusion-5-full' ? 'V5 Full' : 'V4.5 Full',
     maxCharacters: 6,
-    supportsTransparentBackground: model === 'nai-diffusion-5-full',
+    supportsTransparentBackground: model.startsWith('nai-diffusion-5-'),
     supportsVibes: true,
     supportsCharacterReferences: true,
     supportsCharacterReferenceInpainting: true,
@@ -63,6 +64,66 @@ const renderParams = (props: Record<string, unknown> = {}) => render(React.creat
 afterEach(() => { cleanup(); lowMode.enabled = false; });
 
 describe('ChainEditorParams', () => {
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 的 V5 权重滑条与数值输入修改同一参数，开关保留权重', mode => {
+    const changed = vi.fn();
+    const Harness = () => {
+      const [value, setValue] = React.useState<NAIParams>({ ...params, model: 'nai-diffusion-5-full', transparent: true, transparentWeight: 1 });
+      return React.createElement(ChainEditorParams, { params: value, setParams: setValue, canEdit: true, markChange: changed, mode });
+    };
+    render(React.createElement(Harness));
+    const slider = () => screen.getByRole('slider', { name: '透明权重' }) as HTMLInputElement;
+    expect([slider().min, slider().max, slider().step, slider().value]).toEqual(['0.1', '3', '0.1', '1']);
+    fireEvent.change(slider(), { target: { value: '2.1' } });
+    expect((screen.getByRole('spinbutton', { name: '透明权重数值' }) as HTMLInputElement).value).toBe('2.1');
+    fireEvent.change(screen.getByRole('spinbutton', { name: '透明权重数值' }), { target: { value: '8' } });
+    fireEvent.blur(screen.getByRole('spinbutton', { name: '透明权重数值' }));
+    expect(slider().value).toBe('3');
+    fireEvent.click(screen.getByRole('button', { name: '透明背景' }));
+    expect(screen.queryByRole('slider', { name: '透明权重' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '透明背景' }));
+    expect(slider().value).toBe('3');
+    expect(changed).toHaveBeenCalledTimes(4);
+  });
+
+  it('精确输入保留临时 0 与空值，离开输入框再校验，可正常输入小于 1 的权重', () => {
+    const setParams = vi.fn();
+    renderParams({ params: { ...params, model: 'nai-diffusion-5-full', transparent: true, transparentWeight: 2.1 }, setParams });
+    const input = screen.getByRole('spinbutton', { name: '透明权重数值' }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '0' } });
+    expect(input.value).toBe('0');
+    expect(setParams).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: '0.5' } });
+    fireEvent.blur(input);
+    expect(setParams).toHaveBeenLastCalledWith(expect.objectContaining({ transparentWeight: 0.5 }));
+    setParams.mockClear();
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.blur(input);
+    expect(input.value).toBe('2.1');
+    expect(setParams).not.toHaveBeenCalled();
+  });
+
+  it.each(['nai-diffusion-5-full', 'nai-diffusion-5-curated'])('%s 恢复旧提示词权重，只读禁用输入，旧模型隐藏透明控件', model => {
+    const setParams = vi.fn();
+    const { rerender } = renderParams({ params: { ...params, model, transparent: true }, prompt: '1girl, 2.1::transparent background::', canEdit: false, setParams });
+    const slider = screen.getByRole('slider', { name: '透明权重' }) as HTMLInputElement;
+    expect(slider.value).toBe('2.1');
+    expect(slider.disabled).toBe(true);
+    expect((screen.getByRole('spinbutton', { name: '透明权重数值' }) as HTMLInputElement).disabled).toBe(true);
+    fireEvent.change(slider, { target: { value: '1.4' } });
+    expect(setParams).not.toHaveBeenCalled();
+    rerender(React.createElement(ChainEditorParams, { params: { ...params, transparent: true, transparentWeight: 2.1 }, setParams, canEdit: true, markChange: vi.fn() }));
+    expect(screen.queryByRole('button', { name: '透明背景' })).toBeNull();
+    expect(screen.queryByRole('slider', { name: '透明权重' })).toBeNull();
+  });
+
+  it('修改画幅和模型保留透明权重，旧模型仅关闭透明开关', () => {
+    const setParams = vi.fn();
+    renderParams({ params: { ...params, model: 'nai-diffusion-5-full', transparent: true, transparentWeight: 2.1 }, setParams });
+    fireEvent.change(screen.getByRole('combobox', { name: '图片画幅比例' }), { target: { value: '16:9' } });
+    expect(setParams).toHaveBeenLastCalledWith(expect.objectContaining({ width: 1344, height: 768, transparent: true, transparentWeight: 2.1 }));
+    fireEvent.change(screen.getByRole('combobox', { name: '生成模型' }), { target: { value: 'nai-diffusion-4-5-full' } });
+    expect(setParams).toHaveBeenLastCalledWith(expect.objectContaining({ transparent: false, transparentWeight: 2.1 }));
+  });
   it('角色上限只计启用且有正向词的角色，切换旧模型可停用多余项', () => {
     const characters = Array.from({ length: 7 }, (_, index) => ({ id: String(index), prompt: 'girl', x: 0.5, y: 0.5 }));
     const { rerender } = renderParams({ params: { ...params, characters } });

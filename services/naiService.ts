@@ -7,6 +7,7 @@ import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 import { hashNaiApiKey } from './anlasBudget';
 import { emitCloudQueueStatus, getCachedCloudQueuePreferences, getCloudQueuePreferences, watchCloudQueueTask } from './cloudQueue';
 import { buildNaiGenerationPayload } from './naiPayload';
+import { resolveTransparentWeight } from './transparentBackground.mjs';
 import { buildNaiImageEditPayload } from './naiPayload';
 import { getNaiRuntimeConfig } from './naiRuntime';
 import { composeImageEditResult, PreparedImageEdit, prepareImageEdit, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForOutpaint } from './imageEdit';
@@ -82,6 +83,7 @@ const blobFromDataUri = (uri: string): Blob => {
 export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams) => {
   const runtime = await getNaiRuntimeConfig();
   params = applyLowConsumptionParams(params, (await getLowConsumption(apiKey)).enabled, runtime);
+  if (params.transparent) params = { ...params, transparentWeight: resolveTransparentWeight(params.transparentWeight, prompt) };
   const payload = buildNaiGenerationPayload(prompt, negative, params, { runtime });
   const seed = typeof payload.parameters.seed === 'number' ? payload.parameters.seed : undefined;
   const modelInfo = validateGenerationCapabilities(params, runtime);
@@ -203,6 +205,7 @@ export const generateImageEdit = async (
 ) => {
   const runtime = await getNaiRuntimeConfig();
   params = applyLowConsumptionParams(params, (await getLowConsumption(apiKey)).enabled, runtime, edit.operation);
+  if (params.transparent) params = { ...params, transparentWeight: resolveTransparentWeight(params.transparentWeight, prompt) };
   const prepared = await prepareImageEdit(edit);
   const requestParams = buildImageEditRequestParams(params, prepared, edit.operation, edit.expansion);
   const payload = buildNaiImageEditPayload(prompt, negative, requestParams, {
@@ -277,6 +280,7 @@ export const generateImageStream = async (
 ) => {
   const runtime = await getNaiRuntimeConfig();
   params = applyLowConsumptionParams(params, (await getLowConsumption(apiKey)).enabled, runtime);
+  if (params.transparent) params = { ...params, transparentWeight: resolveTransparentWeight(params.transparentWeight, prompt) };
   const modelInfo = validateGenerationCapabilities(params, runtime);
   if (!modelInfo.supportsStreamedResponses && !runtimeStreamSupported) throw new Error(`NovelAI ${modelInfo.label} 暂不支持生成过程预览`);
   const payload = buildNaiGenerationPayload(prompt, negative, params, { stream: true, runtimeStreamSupported, runtime });
@@ -363,6 +367,7 @@ export const generateImageEditStream = async (
 ) => {
   const runtime = await getNaiRuntimeConfig();
   params = applyLowConsumptionParams(params, (await getLowConsumption(apiKey)).enabled, runtime, edit.operation);
+  if (params.transparent) params = { ...params, transparentWeight: resolveTransparentWeight(params.transparentWeight, prompt) };
   const prepared = await prepareImageEdit(edit);
   const requestParams = buildImageEditRequestParams(params, prepared, edit.operation, edit.expansion);
   const modelInfo = validateGenerationCapabilities(requestParams, runtime, edit.operation);

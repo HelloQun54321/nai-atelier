@@ -116,6 +116,8 @@ export interface NAIParams {
   cfgRescale?: number; // Prompt Guidance Rescale (0.0 - 1.0)
   /** 仅支持 Alpha 输出的模型生效；保存到风格串与生成历史。 */
   transparent?: boolean;
+  /** 透明背景标签权重，0.1～3.0；旧数据缺省普通权重或沿用已有加权标签。 */
+  transparentWeight?: number;
   /** Alpha 默认使用 Straight，适合网页、图像编辑与普通素材工作流。 */
   alphaMode?: 'straight' | 'premultiplied';
   vibes?: {

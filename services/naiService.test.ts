@@ -68,6 +68,22 @@ describe('编辑模式完整角色请求与历史坐标', () => {
   it.each([
     ['text-to-image', false], ['text-to-image', true], ['image-to-image', false], ['image-to-image', true],
     ['inpaint', false], ['inpaint', true], ['outpaint', false], ['outpaint', true],
+  ] as const)('%s（stream=%s）请求与返回的历史参数记录同一透明权重，旧草稿不变', async (operation, stream) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
+    const original: NAIParams = { ...params, model: 'nai-diffusion-5-full', transparent: true };
+    const prompt = '1girl, 2.1::transparent background::';
+    const edit = { operation: operation as ImageEditOperation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 0.8, noise: 0 };
+    const result = operation === 'text-to-image'
+      ? stream ? await generateImageStream('test-key', prompt, '', original) : await generateImage('test-key', prompt, '', original)
+      : stream ? await generateImageEditStream('test-key', prompt, '', original, edit) : await generateImageEdit('test-key', prompt, '', original, edit);
+    const payload = lastCharacterPayload(stream) as CharacterPayload & { input: string };
+    expect(payload.input).toBe('1girl, 2.1::transparent background::, has alpha');
+    expect(result.params.transparentWeight).toBe(2.1);
+    expect(original.transparentWeight).toBeUndefined();
+  });
+  it.each([
+    ['text-to-image', false], ['text-to-image', true], ['image-to-image', false], ['image-to-image', true],
+    ['inpaint', false], ['inpaint', true], ['outpaint', false], ['outpaint', true],
   ] as const)('%s（stream=%s）按有效角色校验上限，结果不保存空项与停用项，草稿不变', async (operation, stream) => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
     const original: NAIParams & { characters: CharacterParams[] } = { ...params, characters: [characters[0],

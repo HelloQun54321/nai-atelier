@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.16.2-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.17.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -283,6 +283,8 @@ flowchart LR
 | 多角色提示词上限 | 6 | 6 | 32 |
 | 自由角色定位 / 透明输出 | 不支持 | 不支持 | 支持 |
 | 项目默认步数 | 28 | 28 | 23（作者实测选择） |
+
+V5「透明背景」开启后可调透明权重：滑条与数值输入共用 `0.1～3.0` 范围、`0.1` 步进，默认 `1.0`，也可尝试[官方建议](https://docs.novelai.net/en/image/tags/#alpha-transparency-tags)的 `2.1`。旧提示词已有独立加权透明标签时恢复其值；调节只作用于实际请求，描述区使用一个对应权重的透明标签，不改编辑器原文字，也不将自动标签追加到 `Text:` 的画面文字区。四种实验室模式、预设引用、草稿、历史与图片参数导入共用该值；透明背景仍是模型引导，权重不保证每次都成功。
 
 Opus 限额旁的琥珀色同步提示表示官方规则同步异常，应检查提示再依赖估算；它与低额度的黄色预警含义不同。
 
