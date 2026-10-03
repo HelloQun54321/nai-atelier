@@ -142,7 +142,7 @@ export interface PromptAgentHistoryMessage {
   stopReason?: string;
   timestamp?: number;
   thinking?: string;
-  tools?: Array<{ id: string; name: string; args?: unknown; result?: unknown; state: 'running' | 'done' | 'error' }>;
+  tools?: Array<{ id: string; name: string; args?: unknown; result?: unknown; state: 'running' | 'done' | 'error' | 'interrupted' }>;
 }
 
 export type PromptAgentEvent =
@@ -437,28 +437,32 @@ export const promptAgentService = {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let terminal = false;
+    const dispatch = (line: string) => {
+      if (!line.trim()) return;
+      let event: PromptAgentEvent;
+      try { event = JSON.parse(line); }
+      catch { console.warn('[promptAgent] 跳过无法解析的事件行'); return; }
+      onEvent(event);
+      if (event.type === 'error') throw new Error(event.error || 'Agent 执行失败');
+      if (event.type === 'done') terminal = true;
+    };
+    try {
     while (true) {
       const { done, value } = await reader.read();
       buffer += decoder.decode(value, { stream: !done });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
       for (const line of lines) {
-        if (!line.trim()) continue;
-        // 逐行容错：单行坏 JSON 只跳过该行，不能因此中断整个 Agent 会话。
-        try {
-          onEvent(JSON.parse(line));
-        } catch {
-          console.warn('[promptAgent] 跳过无法解析的事件行', line.slice(0, 200));
-        }
+        dispatch(line);
       }
       if (done) break;
     }
-    if (buffer.trim()) {
-      try {
-        onEvent(JSON.parse(buffer));
-      } catch {
-        console.warn('[promptAgent] 跳过无法解析的尾部事件行', buffer.slice(0, 200));
-      }
+    dispatch(buffer);
+    if (!terminal) throw new Error('Agent 连接中断，尚未收到完成回执；可重新打开对话查看任务状态');
+    } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
     }
   },
 

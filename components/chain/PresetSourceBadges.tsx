@@ -44,7 +44,7 @@ interface PromptAgentOverlayControllerProps {
     apiKey: string;
     onRunStart: (snapshot: PromptAgentDraft) => void;
     onFinalDraft: (draft: PromptAgentDraft) => void;
-    onRequestGeneration: (draft: PromptAgentDraft, reason?: string) => Promise<boolean>;
+    onRequestGeneration: (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>) => Promise<boolean>;
     canUndo: boolean;
     onUndo: () => void;
     tagAssistEnabled: boolean;
@@ -88,9 +88,8 @@ export const PromptAgentOverlayController: React.FC<PromptAgentOverlayController
             apiKey={apiKey}
             onRunStart={onRunStart}
             onFinalDraft={onFinalDraft}
-            onRequestGeneration={async (nextDraft, reason) => {
-                const started = await onRequestGeneration(nextDraft, reason);
-                if (started) setOpen(false);
+            onRequestGeneration={async (nextDraft, reason, onApproved) => {
+                const started = await onRequestGeneration(nextDraft, reason, onApproved);
                 return started;
             }}
             canUndo={canUndo}

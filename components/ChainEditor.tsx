@@ -1615,7 +1615,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (cost > 0 && !await confirmAction({
             title: '确认生成图片',
             message: `当前参数预计消耗 ${cost} Anlas${params.characterReferences?.enabled && params.characterReferences.slots.length ? `\n其中角色参考：${params.characterReferences.slots.length} × 5 = ${params.characterReferences.slots.length * 5} Anlas` : ''}${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
-            confirmLabel: `消耗 ${cost} 点并生成`,
+            confirmLabel: cost > 0 ? `消耗 ${cost} 点并生成` : '确认生成一张',
         })) return false;
         return handleGenerateDraft();
     };
@@ -1816,7 +1816,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setHasChanges(true);
     };
 
-    const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string): Promise<boolean> => {
+    const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>): Promise<boolean> => {
         const freshSubscription = await refreshUsageIfStale();
         let lowEnabled: boolean;
         try { lowEnabled = (await getLowConsumption(apiKey)).enabled; }
@@ -1835,6 +1835,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 confirmLabel: '仍要生成',
                 tone: 'danger',
             })) return false;
+            await onApproved?.();
             return handleGenerateDraft(draft);
         }
         // 预算已用尽仍需扣费：红色警告（Agent 路径同样拦截）。
@@ -1845,13 +1846,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 confirmLabel: `仍要消耗 ${cost} 点生成`,
                 tone: 'danger',
             })) return false;
+            await onApproved?.();
             return handleGenerateDraft(draft);
         }
-        if (cost > 0 && !await confirmAction({
+        if (!await confirmAction({
             title: 'Agent 已准备好生图',
-            message: `${reason ? `${reason}\n\n` : ''}预计本次消耗 ${cost} Anlas。确认后才会提交给 NovelAI。${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
-            confirmLabel: `消耗 ${cost} 点并生成`,
+            message: `${reason ? `${reason}\n\n` : ''}预计本次${draftGenerationCostLabel}。确认后才会提交给 NovelAI。${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
+            confirmLabel: cost > 0 ? `消耗 ${cost} 点并生成` : '确认生成一张',
         })) return false;
+        await onApproved?.();
         return handleGenerateDraft(draft);
     };
 
@@ -1999,7 +2002,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     }
                     applyAgentDraft(draft);
                 }}
-                onRequestGeneration={(draft, reason) => requestAgentGeneration(draft, reason)}
+                onRequestGeneration={(draft, reason, onApproved) => requestAgentGeneration(draft, reason, onApproved)}
                 canUndo={Boolean(agentUndoSnapshot)}
                 onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次 Agent 修改'); } }}
                 tagAssistEnabled={tagAssistEnabled}

@@ -1974,8 +1974,12 @@ export class PromptAgentService {
     const requestId = text(input?.confirmationRequestId).slice(0, 100);
     const confirmation = this.pendingConfirmations.get(requestId);
     if (!confirmation || confirmation.sessionId !== text(input?.sessionId) || confirmation.approved !== true) throw Object.assign(new Error('危险操作缺少有效的 Agent 确认令牌'), { status: 403 });
-    const action = text(input?.action).slice(0, 80);
-    const resourceId = text(input?.resourceId).slice(0, 200);
+    const canonical = value => JSON.stringify(value, (_, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
+    if (confirmation.executing || confirmation.expiresAt <= Date.now() || canonical({ action: input?.action, resourceId: input?.resourceId || '', payload: input?.payload || {} }) !== canonical(confirmation.operation)) throw Object.assign(new Error('确认内容不匹配、已过期或已在执行'), { status: 409 });
+    confirmation.executing = true;
+    input = { ...input, ...structuredClone(confirmation.operation) };
+    const action = input.action;
+    const resourceId = input.resourceId;
     const encodedId = encodeURIComponent(resourceId);
     void this.appendAuditLog(input?.sessionId, { type: 'project_action_started', action, resourceId, payload: input?.payload || {} }).catch(() => {});
     try {
@@ -2464,6 +2468,7 @@ export class PromptAgentService {
     const allMessages = Array.isArray(value.messages) ? value.messages : [];
     const messages = trimStoredMessages(allMessages);
     const sourceOffset = Math.max(0, allMessages.length - messages.length);
+    const results = new Map(messages.filter(message => message?.role === 'toolResult').map(message => [message.toolCallId, message]));
     return messages.flatMap((message, index) => {
       if (message?.role !== 'user' && message?.role !== 'assistant') return [];
       const content = typeof message.content === 'string'
@@ -2472,7 +2477,10 @@ export class PromptAgentService {
           ? message.content.filter(item => item?.type === 'text').map(item => item.text).join('')
           : '';
       const thinking = Array.isArray(message.content) ? message.content.filter(item => item?.type === 'thinking').map(item => item.thinking).join('') : '';
-      const tools = Array.isArray(message.content) ? message.content.filter(item => item?.type === 'toolCall').map(item => ({ id: item.id, name: item.name, args: item.arguments, state: 'done' })) : [];
+      const tools = Array.isArray(message.content) ? message.content.filter(item => item?.type === 'toolCall').map(item => {
+        const result = results.get(item.id);
+        return { id: item.id, name: item.name, args: item.arguments, result: result?.content, state: result ? result.isError ? 'error' : 'done' : 'interrupted' };
+      }) : [];
       return (content.trim() || tools.length || thinking) ? [{
         id: `saved-${sourceOffset + index}`, role: message.role === 'user' ? 'user' : 'agent', text: content.trim(),
         ...(thinking ? { thinking } : {}), ...(tools.length ? { tools } : {}),
@@ -2500,7 +2508,7 @@ export class PromptAgentService {
   controlSession(sessionId, action, message = '', payload = {}) {
     const active = this.activeAgents.get(sessionId);
     if (!active) throw Object.assign(new Error('这个会话当前没有正在运行的任务'), { status: 409 });
-    if (action === 'abort') active.agent.abort();
+    if (action === 'abort') { active.agent.abort(); this.cancelPendingConfirmations(sessionId); }
     else if (action === 'steer' || action === 'followUp') {
       const content = text(message).trim().slice(0, 8_000);
       if (!content) throw Object.assign(new Error('消息不能为空'), { status: 400 });
@@ -2511,7 +2519,7 @@ export class PromptAgentService {
     else if (action === 'confirm') {
       const requestId = text(payload.requestId || message).slice(0, 100);
       const pending = this.pendingConfirmations.get(requestId);
-      if (!pending || pending.sessionId !== sessionId) throw Object.assign(new Error('确认请求已过期'), { status: 409 });
+      if (!pending || pending.sessionId !== sessionId || pending.expiresAt <= Date.now() || pending.approved || pending.executing) throw Object.assign(new Error('确认请求已过期或已被处理'), { status: 409 });
       if (payload.accepted === true) pending.approved = true;
       else {
         clearTimeout(pending.timer);
@@ -2521,7 +2529,7 @@ export class PromptAgentService {
     } else if (action === 'finalize') {
       const requestId = text(payload.requestId || message).slice(0, 100);
       const pending = this.pendingConfirmations.get(requestId);
-      if (!pending || pending.sessionId !== sessionId || pending.approved !== true) throw Object.assign(new Error('确认请求已过期'), { status: 409 });
+      if (!pending || pending.sessionId !== sessionId || pending.approved !== true || pending.executing || !['request_generation', 'encode_vibe', 'clear_mobile_cache'].includes(pending.operation?.action)) throw Object.assign(new Error('确认请求已过期或必须由项目执行接口完成'), { status: 409 });
       clearTimeout(pending.timer);
       this.pendingConfirmations.delete(requestId);
       pending.resolve({ accepted: payload.success === true, result: payload.result || {} });
@@ -2545,6 +2553,16 @@ export class PromptAgentService {
       this.pendingConfirmations.delete(requestId);
       pending.resolve({ accepted: false, result: {} });
     }
+  }
+
+  createConfirmation(sessionId, operation, timeout = 5 * 60 * 1000) {
+    const requestId = randomUUID();
+    const expiresAt = Date.now() + timeout;
+    const promise = new Promise(resolve => {
+      const timer = setTimeout(() => { this.pendingConfirmations.delete(requestId); resolve({ accepted: false, result: { reason: '确认超时' } }); }, timeout);
+      this.pendingConfirmations.set(requestId, { sessionId, operation: structuredClone(operation), expiresAt, resolve, timer });
+    });
+    return { requestId, promise };
   }
 
   async searchTags(rawQuery, limit = 16) {
@@ -2638,14 +2656,7 @@ export class PromptAgentService {
       return { detail, image, index, mimeType, imageData: `data:${mimeType};base64,${binary.buffer.toString('base64')}`, ...extractAitagPromptData(image) };
     };
     const pending = async (action, resourceId, title, consequence, payload = {}) => {
-      const requestId = randomUUID();
-      const confirmation = new Promise(resolve => {
-        const timer = setTimeout(() => {
-          this.pendingConfirmations.delete(requestId);
-          resolve({ accepted: false, result: {} });
-        }, 5 * 60 * 1000);
-        this.pendingConfirmations.set(requestId, { sessionId: project?.agentSessionId, resolve, timer });
-      });
+      const { requestId, promise: confirmation } = this.createConfirmation(project?.agentSessionId, { action, resourceId: resourceId || '', payload });
       emit({ type: 'action', action: { kind: 'request_project_action', patch: { action, resourceId, title, consequence, payload, requestId } } });
       const result = await confirmation;
       if (!result.accepted) throw new Error('用户取消了这项项目操作');
@@ -3326,11 +3337,7 @@ export class PromptAgentService {
         name: 'request_generation', label: '请求生成', description: '用户明确要求出图时调用。前端将显示费用与二次确认，工具本身不会直接扣费。',
         parameters: Type.Object({ reason: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
-          const requestId = randomUUID();
-          const confirmation = new Promise(resolve => {
-            const timer = setTimeout(() => { this.pendingConfirmations.delete(requestId); resolve({ accepted: false, result: {} }); }, 10 * 60 * 1000);
-            this.pendingConfirmations.set(requestId, { sessionId: project?.agentSessionId, resolve, timer });
-          });
+          const { requestId, promise: confirmation } = this.createConfirmation(project?.agentSessionId, { action: 'request_generation', resourceId: '', payload: { draft: structuredClone(draft) } });
           emit({ type: 'action', action: { kind: 'request_generation', patch: { reason: text(args.reason).slice(0, 300), requestId } }, draft: structuredClone(draft) });
           const result = await confirmation;
           if (!result.accepted) throw new Error('用户取消了生图请求');
@@ -3668,6 +3675,7 @@ export class PromptAgentService {
       throw Object.assign(new Error('Agent 请求过于频繁，请一分钟后再试'), { status: 429 });
     }
     this.startingAgents.add(sessionId);
+    try {
     const storedSession = await this.readSession(sessionId);
     const globalConfig = this.publicConfig();
     const provider = normalizeProvider(storedSession.meta?.provider || globalConfig.provider);
@@ -3943,11 +3951,12 @@ export class PromptAgentService {
     } finally {
       leaveOutboundProxy();
       await this.flushTaskEvents(sessionId).catch(() => {});
-      await atomicJsonWrite(this.taskFile(sessionId), { sessionId, status: taskStatus, updatedAt: Date.now() });
       this.cancelPendingConfirmations(sessionId);
       this.activeAgents.delete(sessionId);
       this.startingAgents.delete(sessionId);
+      await atomicJsonWrite(this.taskFile(sessionId), { sessionId, status: taskStatus, updatedAt: Date.now() });
       await this.flushAuditLog(sessionId);
     }
+    } finally { this.startingAgents.delete(sessionId); }
   }
 }
