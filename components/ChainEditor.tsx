@@ -2,7 +2,7 @@ import { agentDraftFingerprint } from '../services/promptAgentCoordinator';
 import { AgentDraftReview } from './AgentDraftReview';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { GenerationMode, ImageEditMetadata, ImageEditOperation, PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft, LabImageEditDraft, LabWorkspaceSession } from '../types';
+import { GenerationMode, ImageEditMetadata, ImageEditOperation, PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft, PromptAgentGenerationResult, LabImageEditDraft, LabWorkspaceSession } from '../types';
 import { compilePrompt, mergePromptFields } from '../services/promptUtils';
 import { generateImage, generateImageEdit, generateImageEditStream, generateImageStream } from '../services/naiService';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
@@ -239,6 +239,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [agentProposal, setAgentProposal] = useState<PromptAgentDraft | null>(null);
     const agentTargetRef = useRef<PromptAgentDraft['target']>(undefined);
     const agentEditGenerateRef = useRef<((draft: PromptAgentDraft, onApproved?: () => Promise<void>) => Promise<boolean>) | null>(null);
+    const agentGenerationReceiptRef = useRef<string | undefined>(undefined);
     const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<PromptAgentDraft | null>(null);
     const editorRevisionRef = useRef(0);
     const agentRunRevisionRef = useRef(0);
@@ -1535,6 +1536,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             // 用户在生成途中离开了编辑页：历史落库必须继续完成（产物不丢），UI 状态不再触碰。
             if (!mountedRef.current) {
                 await localHistory.add(result.blob, generationPrompt, finalParams, generationNegativePrompt, persistSource)
+                    .then(item => { if (override) agentGenerationReceiptRef.current = item.id; })
                     .catch((historyError: unknown) => console.error('离开后保存生成历史失败:', historyError));
                 checkAndRemoveUntestedTag();
                 return true;
@@ -1554,6 +1556,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
             try {
                 const historyItem = await localHistory.add(result.blob, generationPrompt, finalParams, generationNegativePrompt, persistSource);
+                if (override) agentGenerationReceiptRef.current = historyItem.id;
                 setPreviewHistory(prev => [historyItem, ...prev.filter(item => item.id !== historyItem.id)]);
                 setPreviewIndex(0);
                 setPreviewMode('history');
@@ -1763,7 +1766,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 editMask,
             });
             // 历史落库完成后才检查挂载态：产物不丢，UI 与工作区草稿仅在仍在编辑页时更新。
-            if (!mountedRef.current) return false;
+            if (options?.agent) agentGenerationReceiptRef.current = historyItem.id;
+            if (!mountedRef.current) return true;
             setPreviewHistory(previous => [historyItem, ...previous.filter(item => item.id !== historyItem.id)]);
             setPreviewIndex(0);
             setPreviewMode('history');
@@ -1826,13 +1830,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setHasChanges(true);
     };
 
-    const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>): Promise<boolean> => {
-        if (draft.target && (draft.target.chainId !== chain.id || draft.target.mode !== activeGenerationMode || draft.target.fingerprint !== currentAgentDraft().target?.fingerprint)) { notify('创作目标已变化，请先查看并应用草稿，再重新请求生成', 'error'); return false; }
-        const approve = async () => {
-            const target = agentTargetRef.current;
-            if (draft.target && (draft.target.chainId !== target?.chainId || draft.target.mode !== target?.mode || draft.target.fingerprint !== target?.fingerprint)) throw new Error('确认期间创作目标已变化，请重新提出请求');
-            await onApproved?.();
-        };
+    const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>): Promise<PromptAgentGenerationResult> => {
+        agentGenerationReceiptRef.current = undefined;
+        const execute = async (): Promise<boolean> => {
+            if (draft.target && (draft.target.chainId !== chain.id || draft.target.mode !== activeGenerationMode || draft.target.fingerprint !== currentAgentDraft().target?.fingerprint)) { notify('创作目标已变化，请先查看并应用草稿，再重新请求生成', 'error'); return false; }
+            const approve = async () => {
+                const target = agentTargetRef.current;
+                if (draft.target && (draft.target.chainId !== target?.chainId || draft.target.mode !== target?.mode || draft.target.fingerprint !== target?.fingerprint)) throw new Error('确认期间创作目标已变化，请重新提出请求');
+                await onApproved?.();
+            };
         if (activeGenerationMode !== 'text-to-image') {
             if (!agentEditGenerateRef.current) { notify('编辑画布尚未准备好', 'error'); return false; }
             return agentEditGenerateRef.current(draft, approve);
@@ -1876,6 +1882,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         })) return false;
         await approve();
         return handleGenerateDraft(draft);
+        };
+        const success = await execute();
+        return { success, historySaved: Boolean(agentGenerationReceiptRef.current), ...(agentGenerationReceiptRef.current ? { historyId: agentGenerationReceiptRef.current } : {}) };
     };
 
     const handleSavePreview = async () => {

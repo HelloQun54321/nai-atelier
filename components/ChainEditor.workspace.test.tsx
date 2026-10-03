@@ -339,7 +339,7 @@ it('生图确认期间手动修改使旧批准失效，不调用生成或批准�
   setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
   let release!: (value: boolean) => void;
   state.confirm.mockImplementationOnce(() => new Promise<boolean>(resolve => { release = resolve; }));
-  const approve = vi.fn(async () => {}); let task!: Promise<boolean>;
+  const approve = vi.fn(async () => {}); let task!: ReturnType<NonNullable<typeof state.agent>['onRequestGeneration']>;
   await act(async () => { task = state.agent!.onRequestGeneration(state.agent!.draft, 'synthetic', approve); });
   await waitFor(() => expect(release).toBeTypeOf('function'));
   fireEvent.change(textPrompt(), { target: { value: 'manual while confirming' } });

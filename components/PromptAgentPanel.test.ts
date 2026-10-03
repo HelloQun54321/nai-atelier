@@ -154,6 +154,14 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     fireEvent.change(chooser, { target: { files: [new File(['synthetic'], 'document.pdf', { type: 'application/pdf' })] } });
     expect((await screen.findByRole('alert')).textContent).toContain('document.pdf：仅支持');
   });
+  it('生成完成回执包含准确历史 ID，后续保存不猜最新图片', async () => {
+    stubServices(); const controls = vi.spyOn(promptAgentService, 'control').mockResolvedValue(undefined);
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, onEvent) => { onEvent({ type: 'action', action: { kind: 'request_generation', patch: { requestId: 'request-1' } } }); });
+    renderPanel(false, { onRequestGeneration: async (_draft: unknown, _reason: unknown, approve: () => Promise<void>) => { await approve(); return { success: true, historySaved: true, historyId: 'actual-image-id' }; } });
+    await waitFor(() => expect((screen.getByRole('textbox', { name: '任务要求' }) as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(screen.getByRole('textbox', { name: '任务要求' }), { target: { value: '生成后保存' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(controls).toHaveBeenCalledWith('session-1', 'finalize', 'request-1', expect.objectContaining({ success: true, result: { success: true, historySaved: true, historyId: 'actual-image-id' } })));
+  });
   it('重新回答保留尚未发送的输入草稿', async () => {
     stubServices();
     const run = vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, onEvent) => {

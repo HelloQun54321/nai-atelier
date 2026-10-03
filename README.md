@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.22.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.23.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -468,6 +468,10 @@ flowchart LR
 - **全链路资产盘活**：同一张灵感图可一键派生为风格串、角色参考图、永久 Vibe 编码，或设为现有预设封面；详情自动推荐提示词相近的灵感。
 
 ### ✦ 项目 Agent：业务联动多会话工作台
+
+Agent 可以读取**电脑上的图片目录**并把图片直接贴在聊天里，也可以把已有或刚生成且已保存到历史的图片写入指定目录。例如：`看看 D:\Pictures\参考图 里有什么图片`、`把这张图片贴出来`、`生成后保存到 D:\Pictures\作品`。首次使用目录时显示完整路径与读取／写入用途，确认后本次对话两小时内可继续访问；权限随 Key 切换或服务重启失效。子目录属于同次授权范围，目录列表分页且不递归扫描。保存保留原始图片字节，同名自动加编号；不存在的目标目录可以确认后创建。图片格式支持 PNG、JPEG、WebP、GIF，单张上限 30 MB。`local-data` 始终使用项目工具访问，不能开放磁盘权限。
+
+**展示与观察分开**：文字模型也能在聊天展示电脑及项目图片；观察图片直接使用当前支持图片输入的模型，不额外调用视觉模型。可询问 `你现在有什么能力`、`我的电脑和浏览器分别是什么时区`。新工具按需加载，长资料分段读取；生成回执提供准确历史 ID，保存失败不会说已落盘。聊天或设置出现后端未同步提示时，请重启电脑本地服务。诊断日志包含最近有限对话摘要、工具及运行版本，分享前可检查其中的私人文字与目录信息。
 
 内置 Agent 的前后端审查、现有 API 接入说明、已复现的流程缺陷与分阶段优化方案见 [Agent 审查与优化计划](./docs/AGENT_REVIEW_AND_PLAN.md)。该文档保留审查基线，并记录六阶段实施结果及验收边界。
 

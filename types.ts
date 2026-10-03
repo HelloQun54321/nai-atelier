@@ -209,6 +209,8 @@ export interface LabWorkspaceSession {
   updatedAt: number;
 }
 
+export interface PromptAgentGenerationResult { success: boolean; historyId?: string; historySaved: boolean }
+
 export interface PromptAgentDraft {
   target?: { chainId: string; name?: string; mode: 'text-to-image' | 'image-to-image' | 'inpaint' | 'outpaint'; fingerprint: string };
   editContext?: { baseImageAvailable: boolean; maskAvailable: boolean; strength: number; noise: number; focused: boolean };

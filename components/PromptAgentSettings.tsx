@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, Copy, Download, FileUp, LogIn, Plus, Save, Settings2, Star, Trash2, Upload, X } from 'lucide-react';
-import { PromptAgentAuthPrompt, PromptAgentConfig, PromptAgentCreativeInspectResult, PromptAgentCreativePreset, PromptAgentCreativePresetRevision, PromptAgentCreativePresetState, PromptAgentCustomProvider, PromptAgentInjectionItem, PromptAgentLabTarget, PromptAgentModel, PromptAgentProvider, PromptAgentProbeResult, displayModelName, formatModelOptionTitle, previewPromptAgentEndpoint, promptAgentService } from '../services/promptAgent';
+import { PromptAgentAuthPrompt, PromptAgentConfig, PromptAgentCreativeInspectResult, PromptAgentCreativePreset, PromptAgentCreativePresetRevision, PromptAgentCreativePresetState, PromptAgentCustomProvider, PromptAgentInjectionItem, PromptAgentLabTarget, PromptAgentModel, PromptAgentProvider, PromptAgentProbeResult, agentRuntimeWarning, displayModelName, formatModelOptionTitle, previewPromptAgentEndpoint, promptAgentService } from '../services/promptAgent';
 import { useConfirmDialog } from './ConfirmDialog';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
@@ -908,6 +908,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         <div className="mt-1.5 truncate text-base font-black text-gray-900 dark:text-white">{config?.configured ? displayModelName(currentModel?.name || config.model) : '尚未配置模型服务'}</div>
         {config?.configured && <div className="mt-1 text-xs text-gray-500">{(currentModel as { providerName?: string } | null)?.providerName || currentModel?.provider} · {config.configuredProviders.length} 个服务已配置</div>}
       </div>
+      {config && agentRuntimeWarning(config) && <div role="status" className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{agentRuntimeWarning(config)}</div>}
       {config?.credentialWarning && <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{config.credentialWarning}</div>}
 
       {/* 层级 2 - 注入预设专属卡片 */}

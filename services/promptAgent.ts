@@ -1,5 +1,6 @@
 import { PromptAgentAction, PromptAgentDraft } from '../types';
 import { parseErrorResponse } from './api';
+import { isAgentImagePath } from './agentMedia';
 
 
 const agentAuthHeaders = (): Record<string, string> => {
@@ -17,8 +18,17 @@ export interface PromptAgentConfig {
   policyFingerprint: string;
   creativeMode: boolean;
   runtimeStartedAt: number;
+  backendVersion?: string;
+  sourceVersion?: string;
+  restartRequired?: boolean;
   credentialWarning?: string;
 }
+
+export const agentRuntimeWarning = (config: PromptAgentConfig, frontendVersion = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : ''): string => {
+  if (!config.backendVersion) return 'Agent 后端仍是旧版，请重启电脑上的本地服务以加载新增能力。';
+  if (config.restartRequired || frontendVersion && config.backendVersion !== frontendVersion) return `Agent 后端 ${config.backendVersion} 与当前界面 ${frontendVersion || config.sourceVersion || '源码'} 未同步，请重启电脑上的本地服务。`;
+  return '';
+};
 
 export interface PromptAgentProvider {
   id: string;
@@ -328,6 +338,12 @@ export const formatModelOptionTitle = (
 };
 
 export const promptAgentService = {
+  getLocalImage: async (path: string, signal?: AbortSignal): Promise<Blob> => {
+    if (!path.startsWith('/api/prompt-agent/local-image?') || !isAgentImagePath(path)) throw new Error('本地图片引用无效');
+    const response = await fetch(path, { headers: agentAuthHeaders(), cache: 'no-store', signal });
+    if (!response.ok) throw await parseErrorResponse(response);
+    return response.blob();
+  },
   getConfig: async (): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/config', { cache: 'no-store' });
     if (!response.ok) return readError(response) as never;

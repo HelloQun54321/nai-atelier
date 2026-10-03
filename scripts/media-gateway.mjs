@@ -3230,6 +3230,13 @@ const serveDistFile = async (req, res, url) => {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
           return sendJson(res, 200, promptAgent.publicConfig());
         }
+        if (url.pathname === '/api/prompt-agent/local-image') {
+          if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+          const scope = await getCloudQueueScope(req);
+          const image = await promptAgent.localImages.asset({ sessionId: url.searchParams.get('sessionId') || '', keyHash: scope.keyHash || '' }, url.searchParams.get('id') || '');
+          res.writeHead(200, { 'Content-Type': image.mimeType, 'Content-Length': image.buffer.length, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
+          return res.end(image.buffer);
+        }
         if (url.pathname === '/api/prompt-agent/tag-translations') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
           const body = JSON.parse((await readRequestBody(req, 16 * 1024)).toString('utf8') || '{}');

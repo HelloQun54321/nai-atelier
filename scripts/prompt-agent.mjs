@@ -1,3 +1,5 @@
+import { AGENT_TOOL_GROUPS, agentOutputLimit, boundAgentToolResult, compactAuditEntries, inferAgentToolGroups, isProjectImagePath, localTimeInfo, publicAgentToolContent, selectRuntimeTools } from './agent-runtime.mjs';
+import { AgentLocalImages } from './agent-local-images.mjs';
 import { Agent } from '@earendil-works/pi-agent-core';
 import { InMemoryCredentialStore, Type, createModels, createProvider, getSupportedThinkingLevels } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
@@ -13,6 +15,11 @@ import { getNovelAiModelProfile, readNovelAiOfficialKnowledge, searchNovelAiOffi
 import { normalizeTransparentWeight, TRANSPARENT_WEIGHT_MIN, TRANSPARENT_WEIGHT_MAX } from '../services/transparentBackground.mjs';
 
 const CONFIG_FILE = 'local-data/prompt-agent.json';
+const runtimeSourceFiles = ['prompt-agent.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs'];
+const sourceSignature = () => createHash('sha256').update(runtimeSourceFiles.map(file => readFileSync(new URL(file, import.meta.url))).join('\n')).digest('hex');
+const sourceVersion = () => JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+const LOADED_VERSION = sourceVersion();
+const LOADED_SOURCE = sourceSignature();
 const CREDENTIAL_KEY_FILE = 'local-data/prompt-agent.key';
 const SESSION_DIR = 'local-data/prompt-agent-sessions';
 const TASK_DIR = 'local-data/prompt-agent-tasks';
@@ -77,7 +84,7 @@ const shorthandHash = (value, length = CREATIVE_HASH_PREFIX) => createHash('sha2
 // Bump this whenever the built-in Agent instruction set changes. The UI exposes
 // only this version and a hash, never the instruction text itself, so a running
 // local backend can be verified without relying on a behavioral probe.
-const PROMPT_AGENT_POLICY_VERSION = '2026-10-03.1';
+const PROMPT_AGENT_POLICY_VERSION = '2026-10-03.2';
 let proxyRunCount = 0;
 let previousDispatcher = null;
 let sharedProxyDispatcher = null;
@@ -602,8 +609,9 @@ const baseSystemPrompt = `你是 NAI Atelier 的项目业务 Agent。你的职�
 5. request_generation 只发出待确认请求，不能声称图片已经生成。
 6. 当用户要求参考上一张/最近一张生成图时，先调用 list_generation_history，再调用 inspect_generation_image。没有真正收到图片时不得声称看过图片。
 7. 删除、清空等危险操作只能调用请求确认工具；确认前不得声称已经完成。
-8. 不得要求或泄露 API Key，不得访问任意电脑文件、命令行、系统进程或任意网址。只能使用这里明确提供的项目业务工具。
-9. 优先执行工具。完成后只用简短中文总结实际读取、修改或待确认的事项，不复述整份实验室内容。
+8. 不得要求或泄露 API Key，不得执行命令行或操作系统进程。用户需要电脑图片时，加载 local_files：先请求具体目录的读/写权限，再列出、展示、观察或保存图片；不能访问未授权目录或 local-data 保护区。不得凭空声称保存成功，必须取得实际落盘收据。
+9. 问候和普通聊天直接简短回答，不要无故读取资料。用户询问能力时调用 get_agent_capabilities，查询时间/时区调用 get_local_time；展示已有图片调用 show_project_image，展示不要求模型识图。需要其他工具时调用 enable_tool_group，不能把未加载的工具误说成没有能力。
+10. 优先执行与当前要求相关的工具。完成后只用简短中文总结实际读取、修改或待确认的事项，不复述整份实验室内容。
 10. Precise/角色参考每张每次生图增加 5 Anlas，当前与 Vibe Transfer 互斥；设置其中一项时必须关闭另一项。
 11. 必须严格区分三类正面提示词：basePrompt 只放画师名、媒介、渲染和可复用画风；subjectPrompt 只放整图主体、场景、动作、构图和其他全局动态内容；params.characters 通过 set_characters 存放角色专属外貌、服装、身份 Tag 与角色专属负面词。用户说“角色提示词”“人物提示词”“角色外貌”或要求填写某个角色时，即使只有一个角色，也必须优先调用 set_characters，除非用户明确指定放到主体／变量提示词框。不得把角色专属提示词写入 subjectPrompt。若当前界面是“单一全局提示词”，则只使用 basePrompt 存放完整正面提示词并保持 subjectPrompt 为空。`;
 
@@ -739,11 +747,7 @@ const researchBlock = `
 // creativeMode 不再改变常量正文：破甲内容由绑定预设槽位驱动。
 const buildSystemPrompt = () => `${baseSystemPrompt}\n[规则来源层级]\n官方发布 > 模型专用文档 > 通用文档 > 项目经验。具体知识通过 search_novelai_docs / read_novelai_doc 按需读取；复杂提示词规则通过 read_prompt_guidelines 按需读取。${researchBlock}`;
 
-export const selectAgentTools = (tools, request = '') => {
-  const core = new Set(['get_lab_state', 'update_prompts', 'set_characters', 'set_generation_params', 'request_generation', 'search_tags', 'search_novelai_docs', 'read_novelai_doc', 'read_prompt_guidelines']);
-  const scope = /全部|所有功能|完整项目/.test(request) ? 'all' : /删除|清理|预算|队列|设置|缓存|词库/.test(request) ? 'maintenance' : /收藏|保存|资料|风格串|画师|灵感|历史|Vibe|参考|角色库|AITag|项目/i.test(request) ? 'library' : 'creative';
-  return tools.filter(tool => core.has(tool.name) || scope === 'all' || /搜索|联网|网页|核实|最新|search|web/i.test(request) && ['web_search', 'read_web_page'].includes(tool.name) || scope === 'library' && !/^(set_anlas_budget|set_cloud_queue|request_clear_history|request_cleanup_history|set_client_preferences|request_clear_mobile_cache|update_tag_dictionary)$/.test(tool.name) || scope === 'maintenance' && /^(get_project|set_anlas|set_cloud|set_client|request_|update_tag|navigate)/.test(tool.name) || /模块|Vibe|参考/i.test(request) && /^(set_prompt_modules|set_vibes|set_character_references|search_vibes|search_character_references)$/.test(tool.name));
-};
+export const selectAgentTools = (tools, request = '') => selectRuntimeTools(tools, inferAgentToolGroups(request));
 
 const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
   const modelProfile = getNovelAiModelProfile(draft?.params?.model);
@@ -1160,7 +1164,7 @@ const fitHeadSeeds = (seedMessages, budget) => {
   return { seeds: used <= budget ? seedMessages : [], removedPairs: used <= budget ? 0 : removedPairs || Math.ceil(seedMessages.length / 2) };
 };
 
-export const assemblePromptContext = ({ creativeMode = true, revision = null, systemPolicy = '', runtimeContext = '', safetyFooter = PRESET_SAFETY_FOOTER, cleanMessages = [], modelApi = '', modelReasoning = false, thinkingLevel = 'off', toolDescriptors = [], hasVisionImages = false, model = null }) => {
+export const assemblePromptContext = ({ creativeMode = true, revision = null, systemPolicy = '', runtimeContext = '', safetyFooter = PRESET_SAFETY_FOOTER, cleanMessages = [], modelApi = '', modelReasoning = false, thinkingLevel = 'off', toolDescriptors = [], hasVisionImages = false, model = null, outputLimit = 8192 }) => {
   const capabilities = resolveCapabilities(modelApi, modelReasoning, thinkingLevel, model);
   const preset = revision && typeof revision === 'object' ? revision : null;
   const presetId = preset?.presetId || preset?.id || '';
@@ -1203,7 +1207,7 @@ export const assemblePromptContext = ({ creativeMode = true, revision = null, sy
   const toolTokens = estimateContextTokens(toolDescriptors || []);
   const systemTokens = estimateContextTokens(systemPrompt);
   const contextWindow = Math.round(clamp(model?.contextWindow || 32_000, 1_024, 10_000_000, 32_000));
-  const configuredOutput = Math.round(clamp(Math.min(model?.maxTokens || 8192, 8192), 256, contextWindow, Math.min(8192, contextWindow)));
+  const configuredOutput = Math.round(clamp(Math.min(model?.maxTokens || outputLimit, outputLimit), 256, contextWindow, Math.min(8192, contextWindow)));
 
   // ── canonical 消息序列（全部深拷贝，零原地修改）──
   const working = cloneAgentMessages(cleanMessages);
@@ -1327,6 +1331,7 @@ export const assemblePromptContext = ({ creativeMode = true, revision = null, sy
 export class PromptAgentService {
   constructor({ lanSecret, outboundProxyUrl = '', configFile = '' }) {
     this.runtimeStartedAt = Date.now();
+    this.localImages = new AgentLocalImages();
     this.customProviders = new Map();
     this.sessionSummaries = new Map();
     // 测试隔离：传入 configFile 时该实例的会话/审计/任务/配置全部落在指定目录，
@@ -1616,6 +1621,9 @@ export class PromptAgentService {
       policyVersion: PROMPT_AGENT_POLICY_VERSION,
       policyFingerprint: policy.fingerprint,
       runtimeStartedAt: this.runtimeStartedAt,
+      backendVersion: LOADED_VERSION,
+      sourceVersion: sourceVersion(),
+      restartRequired: LOADED_SOURCE !== sourceSignature() || LOADED_VERSION !== sourceVersion(),
       creativeMode: policy.creativeMode,
       ...(this.credentialWarning ? { credentialWarning: this.credentialWarning } : {}),
     };
@@ -1923,7 +1931,9 @@ export class PromptAgentService {
     const encodedId = encodeURIComponent(resourceId);
     void this.appendAuditLog(input?.sessionId, { type: 'project_action_started', action, resourceId, payload: input?.payload || {} }).catch(() => {});
     try {
-      if (action === 'delete_chain' && resourceId) await project.requestJson(`/api/chains/${encodedId}`, { method: 'DELETE' });
+      let actionResult;
+      if (action === 'grant_local_image_folder') actionResult = await this.localImages.grant({ sessionId: confirmation.sessionId, keyHash: project.keyHash || '' }, input.payload.directory, input.payload.access, input.payload.create === true);
+      else if (action === 'delete_chain' && resourceId) await project.requestJson(`/api/chains/${encodedId}`, { method: 'DELETE' });
       else if (action === 'delete_inspiration' && resourceId) await project.requestJson(`/api/inspirations/${encodedId}`, { method: 'DELETE' });
       else if (action === 'delete_history' && resourceId) await project.requestJson(`/api/local-history/${encodedId}`, { method: 'DELETE' });
       else if (action === 'delete_vibe' && resourceId) await project.requestJson(`/api/vibes/${encodedId}/archive`, { method: 'POST', body: {} });
@@ -1958,9 +1968,9 @@ export class PromptAgentService {
       } else throw Object.assign(new Error('不允许执行这个项目操作'), { status: 400 });
       clearTimeout(confirmation.timer);
       this.pendingConfirmations.delete(requestId);
-      confirmation.resolve({ accepted: true, result: { action, resourceId } });
+      confirmation.resolve({ accepted: true, result: { action, resourceId, ...actionResult } });
       void this.appendAuditLog(input?.sessionId, { type: 'project_action_completed', action, resourceId, payload: input?.payload || {} }).catch(() => {});
-      return { ok: true, action, resourceId };
+      return { ok: true, action, resourceId, ...actionResult };
     } catch (error) {
       clearTimeout(confirmation.timer);
       this.pendingConfirmations.delete(requestId);
@@ -1997,7 +2007,7 @@ export class PromptAgentService {
       if (/^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[_-]?key|token|secret|password)$/i.test(key)) return '[redacted]';
       if (key === 'requestId') return '[redacted]';
       if (key === 'data' && typeof item === 'string' && item.length > 1024 && /^[A-Za-z0-9+/=]+$/.test(item)) return `[image/base64 omitted: ${item.length} chars]`;
-      return item;
+      return typeof item === 'string' ? item.replace(/(Bearer\s+)[^\s"']+/gi, '$1[redacted]').replace(/\bsk-[A-Za-z0-9_-]{12,}/g, '[redacted]') : item;
     }));
   }
 
@@ -2063,7 +2073,8 @@ export class PromptAgentService {
         creativeMode,
         runtimeStartedAt: this.runtimeStartedAt,
       },
-      entries,
+      entries: compactAuditEntries(entries),
+      conversation: (session.messages || []).filter(message => ['user', 'assistant'].includes(message.role)).slice(-40).map(message => ({ role: message.role, text: agentMessageText(message).slice(0, 2000).replace(/(Bearer\s+)[^\s"']+/gi, '$1[redacted]').replace(/\bsk-[A-Za-z0-9_-]{12,}/g, '[redacted]'), truncated: agentMessageText(message).length > 2000 })),
     };
   }
 
@@ -2288,7 +2299,7 @@ export class PromptAgentService {
     const value = await this.readSession(sessionId);
     return trimStoredMessages(value.messages).map(message => {
       const { visionUsage: _visionUsage, ...runtimeMessage } = message;
-      return runtimeMessage;
+      return runtimeMessage.role === 'toolResult' ? { ...runtimeMessage, ...boundAgentToolResult(runtimeMessage) } : runtimeMessage;
     });
   }
 
@@ -2438,7 +2449,7 @@ export class PromptAgentService {
       const thinking = Array.isArray(message.content) ? message.content.filter(item => item?.type === 'thinking').map(item => item.thinking).join('') : '';
       const tools = Array.isArray(message.content) ? message.content.filter(item => item?.type === 'toolCall').map(item => {
         const result = results.get(item.id);
-        return { id: item.id, name: item.name, args: item.arguments, result: result?.content, state: result ? result.isError ? 'error' : 'done' : 'interrupted' };
+        return { id: item.id, name: item.name, args: item.arguments, result: publicAgentToolContent(boundAgentToolResult(result || {}).content), state: result ? result.isError ? 'error' : 'done' : 'interrupted' };
       }) : [];
       return (content.trim() || tools.length || thinking) ? [{
         id: `saved-${sourceOffset + index}`, role: message.role === 'user' ? 'user' : 'agent', text: content.trim(),
@@ -2583,7 +2594,7 @@ export class PromptAgentService {
       .map(({ score, ...entry }) => entry);
   }
 
-  createTools(draft, contextData, emit, project, modelInfo) {
+  createTools(draft, contextData, emit, project = {}, modelInfo) {
     if (project?.signal) {
       const source = project;
       project = { ...source };
@@ -2662,7 +2673,131 @@ export class PromptAgentService {
       const canonical = JSON.stringify([project.agentOperationScope || project.agentSessionId, args], (_, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
       return `agent-${createHash('sha256').update(canonical).digest('hex')}`;
     };
+    const localScope = { sessionId: project.agentSessionId || '', keyHash: project.keyHash || '' };
+    const projectImage = async args => {
+      const bases = { history: 'local-history', inspiration: 'inspirations', vibe: 'vibes', reference: 'character-references', chain: 'chains' };
+      const id = text(args.id).trim().slice(0, 200); const base = bases[args.kind];
+      if (!base || !id || !project.requestBuffer) throw new Error('缺少有效的项目图片 ID 或图片服务');
+      const response = await readProject('/api/' + base + '/' + encodeURIComponent(id)); const item = response.item || response;
+      if (String(item?.id) !== id) throw new Error('项目图片不存在');
+      const path = args.kind === 'chain' ? item.previewImage : '/api/' + base + '/' + encodeURIComponent(id) + '/image';
+      if (!isProjectImagePath(path)) throw new Error('该项目资料没有可读取的图片');
+      return project.requestBuffer(path, MAX_AGENT_IMAGE_BYTES);
+    };
     return [
+      {
+        name: 'request_local_image_folder_access', label: '确认本地图片目录', description: '用户给出电脑绝对目录后，显示具体路径与读/写用途并请求一次确认。读取后可列出与展示目录及子目录的图片；写入后可保存图片，不覆盖文件。create=true 可在确认写入后创建不存在的目标目录。权限绑定本次对话与 Key，有效两小时。',
+        parameters: Type.Object({ directory: Type.String(), access: Type.Union([Type.Literal('read'), Type.Literal('write')]), create: Type.Optional(Type.Boolean()) }),
+        execute: async (_id, args) => {
+          const directory = await this.localImages.folder(args.directory, args.create === true && args.access === 'write');
+          return pending('grant_local_image_folder', '', args.access === 'write' ? '允许保存图片到这个文件夹？' : '允许读取这个文件夹里的图片？', `${directory}\n${args.access === 'write' ? '保存或复制图片；不覆盖原文件' : '列出目录、读取与展示 PNG/JPEG/WebP/GIF 图片'}，包含子目录；本次对话两小时有效。${args.create && args.access === 'write' ? '目标目录不存在时会创建。' : ''}`, { directory, access: args.access, create: args.create === true });
+        },
+      },
+      {
+        name: 'list_local_images', label: '浏览本地图片文件夹', description: '分页列出已获读取权限的电脑目录内的图片与子目录，单页最多 50 项，不递归扫描；nextOffset 非空时可继续下一页。',
+        parameters: Type.Object({ directory: Type.String(), offset: Type.Optional(Type.Number()), limit: Type.Optional(Type.Number()) }),
+        execute: async (_id, args) => ({ content: jsonText(await this.localImages.list(localScope, args.directory, args.offset, args.limit)) }),
+      },
+      {
+        name: 'show_local_image', label: '在聊天中展示本地图片', description: '把已获读取权限的电脑图片直接贴在聊天中；文字模型也可展示，展示不表示模型已观察。path 使用目录列表里的真实绝对路径。',
+        parameters: Type.Object({ path: Type.String() }),
+        execute: async (_id, args) => ({ content: jsonText({ displayImages: [await this.localImages.register(localScope, args.path)], modelHasSeenImage: false }) }),
+      },
+      {
+        name: 'inspect_local_image', label: '观察本地图片', description: '直接将已获读取权限的电脑图片交给当前模型观察，不调用其他模型；仅在用户要求观察时使用，当前模型必须支持图片。',
+        parameters: Type.Object({ path: Type.String(), focus: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          if (!modelInfo?.imageInput) throw new Error('当前模型不支持图片输入；仍可用 show_local_image 展示，或切换支持图片的当前模型');
+          const image = await this.localImages.read(localScope, args.path); const display = await this.localImages.register(localScope, args.path);
+          return { content: [...jsonText({ displayImages: [display], focus: text(args.focus).slice(0, 1000), modelHasSeenImage: true }), { type: 'image', data: image.buffer.toString('base64'), mimeType: image.mimeType }] };
+        },
+      },
+      {
+        name: 'save_project_image_to_folder', label: '保存图片到电脑文件夹', description: '将已存在的项目图片原始字节保存到已获写入权限的电脑目录，保留图片元数据；支持历史、灵感、Vibe、参考图、风格串封面。按实际格式命名，遇到同名文件自动加编号，成功后返回真实绝对路径。刚生成的图先取得已落盘历史 ID 再保存。',
+        parameters: Type.Object({ kind: Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String(), directory: Type.String(), filename: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          await this.localImages.authorized(localScope, args.directory, 'write');
+          const image = await projectImage(args);
+          return { content: jsonText(await this.localImages.save(localScope, args.directory, args.filename, image.buffer, operationId(args))) };
+        },
+      },
+      {
+        name: 'copy_local_image', label: '复制本地图片', description: '将已获读取权限的电脑图片复制到已获写入权限的目标目录，保留原图，不覆盖目标文件。',
+        parameters: Type.Object({ path: Type.String(), directory: Type.String(), filename: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          await this.localImages.authorized(localScope, args.directory, 'write'); const image = await this.localImages.read(localScope, args.path);
+          return { content: jsonText(await this.localImages.save(localScope, args.directory, args.filename || image.name, image.buffer, operationId(args))) };
+        },
+      },
+      {
+        name: 'get_local_time', label: '查询本机时间与时区', description: '读取工坊电脑的真实当前时间、IANA 时区和 UTC 偏移，同时返回本次浏览器报告的时区；手机与电脑可能不同。', parameters: Type.Object({}),
+        execute: async () => {
+          const now = new Date(); const computer = localTimeInfo(now);
+          let client = null;
+          try { if (contextData.clientSettings?.timeZone) client = localTimeInfo(now, String(contextData.clientSettings.timeZone)); } catch { /* 客户端时区无效时仍返回电脑时间。 */ }
+          return { content: jsonText({ computer, client, source: '电脑操作系统；client 为本次浏览器报告的时区。' }) };
+        },
+      },
+      {
+        name: 'get_agent_capabilities', label: '查询实际可用能力', description: '回答自己能做什么之前查询：返回当前模型识图能力、图片展示、项目工具分组与调用边界。', parameters: Type.Object({}),
+        execute: async () => ({ content: jsonText({
+          model: { imageInput: Boolean(modelInfo?.imageInput), separateVisionModel: false },
+          localTime: true, displayProjectImages: Boolean(project?.requestJson), projectDataAvailable: Boolean(project?.requestJson),
+          toolGroups: Object.keys(AGENT_TOOL_GROUPS), toolInventory: { total: project?.getToolInventory?.().length || new Set(Object.values(AGENT_TOOL_GROUPS).flat()).size, note: '具体工具随对应分组加载，不能把未加载工具说成没有能力' },
+          localImages: { available: true, actions: ['列出指定目录的图片与子目录', '在聊天中展示本地图片', '当前模型观察本地图片（需要图片输入）', '保存项目图片到指定目录', '复制本地图片'], requiresFolderApproval: true, permissionHours: 2 },
+          limits: ['只访问用户确认用途的图片目录；不提供任意文本文件读写或系统命令', '图片展示不等于模型已经看过图片', '生图、付费和危险操作仍需用户确认', '未加载的工具可通过 enable_tool_group 按需启用'],
+        }) }),
+      },
+      {
+        name: 'enable_tool_group', label: '加载相关工具', description: '按需加载 creative（实验室创作）、library（资料与图片）、maintenance（设置与清理）、web（联网）、local_files（电脑图片目录）工具，可同时选择多个组；加载不代表执行或批准。',
+        parameters: Type.Object({ groups: Type.Array(Type.Union(Object.keys(AGENT_TOOL_GROUPS).map(group => Type.Literal(group))), { minItems: 1, maxItems: 5 }) }),
+        execute: async (_id, args) => { if (!project?.enableToolGroup) throw new Error('当前运行不支持动态加载工具'); return { content: jsonText(project.enableToolGroup(args.groups)) }; },
+      },
+      {
+        name: 'show_project_image', label: '在聊天中展示图片', description: '将已经存在的项目图片直接展示在聊天中，无需模型识图。支持 history（历史）、inspiration（灵感）、vibe、reference（角色参考）、chain（风格串封面）；ID 来自项目检索，不能编造或传外部网址。',
+        parameters: Type.Object({ kind: Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String() }),
+        execute: async (_id, args) => {
+          const bases = { history: 'local-history', inspiration: 'inspirations', vibe: 'vibes', reference: 'character-references', chain: 'chains' };
+          const base = bases[args.kind]; const id = text(args.id).trim().slice(0, 200);
+          if (!base || !id) throw new Error('缺少有效的图片类型或项目 ID');
+          const response = await readProject('/api/' + base + '/' + encodeURIComponent(id));
+          const item = response.item || response;
+          if (!item?.id || String(item.id) !== id) throw new Error('项目图片不存在，请先检索对应资料');
+          const path = args.kind === 'chain' ? item.previewImage : '/api/' + base + '/' + encodeURIComponent(id) + '/image';
+          if (!isProjectImagePath(path)) throw new Error('该资料没有可展示的本地图片；请先在项目中保存图片');
+          return { content: jsonText({ displayImages: [{ kind: args.kind, id, title: text(item.name || item.title || item.sourceChainName || '项目图片').slice(0, 160), path }], shown: true, modelHasSeenImage: false }) };
+        },
+      },
+      {
+        name: 'inspect_project_image', label: '观察项目图片', description: '把已有历史、灵感、Vibe、参考图或风格串封面直接交给当前模型观察；需要当前模型支持图片，展示图片请用 show_project_image。',
+        parameters: Type.Object({ kind: Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String(), focus: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          if (!modelInfo?.imageInput) throw new Error('当前模型不支持图片输入；仍可用 show_project_image 展示图片，或切换支持识图的模型');
+          const bases = { history: 'local-history', inspiration: 'inspirations', vibe: 'vibes', reference: 'character-references', chain: 'chains' };
+          const base = bases[args.kind]; const id = text(args.id).trim().slice(0, 200);
+          if (!base || !id) throw new Error('缺少有效的项目图片 ID');
+          const response = await readProject('/api/' + base + '/' + encodeURIComponent(id)); const item = response.item || response;
+          if (!item?.id || String(item.id) !== id) throw new Error('项目图片不存在');
+          const path = args.kind === 'chain' ? item.previewImage : '/api/' + base + '/' + encodeURIComponent(id) + '/image';
+          if (!isProjectImagePath(path) || !project?.requestBuffer) throw new Error('该资料没有可读取的本地图片');
+          const image = await project.requestBuffer(path, MAX_AGENT_IMAGE_BYTES);
+          if (!image?.buffer?.length || !/^image\/(png|jpeg|webp|gif)$/.test(image.mimeType || '')) throw new Error('图片不存在或格式无效');
+          return { content: [ { type: 'text', text: JSON.stringify({ displayImages: [{ kind: args.kind, id, title: text(item.name || item.title || '项目图片').slice(0, 160), path }], focus: text(args.focus).slice(0, 1000), modelHasSeenImage: true }) }, { type: 'image', data: image.buffer.toString('base64'), mimeType: image.mimeType } ] };
+        },
+      },
+      {
+        name: 'read_project_text', label: '分段读取完整项目文字', description: '工具返回长文字摘要时，按 ID、字段和字符偏移分段读取原文。每段最多 3500 字符；nextOffset=null 才读完。修改长提示词前不要把摘要当作完整原文。',
+        parameters: Type.Object({ kind: Type.Union(['chain', 'inspiration', 'history'].map(kind => Type.Literal(kind))), id: Type.String(), field: Type.Union(['prompt', 'basePrompt', 'negativePrompt', 'description', 'notes'].map(field => Type.Literal(field))), offset: Type.Optional(Type.Number()) }),
+        execute: async (_id, args) => {
+          const base = { chain: 'chains', inspiration: 'inspirations', history: 'local-history' }[args.kind];
+          if (!base || !['prompt', 'basePrompt', 'negativePrompt', 'description', 'notes'].includes(args.field)) throw new Error('无效的资料类型或文字字段');
+          const response = await readProject('/api/' + base + '/' + encodeURIComponent(text(args.id).slice(0, 200))); const item = response.item || response;
+          if (String(item?.id) !== args.id) throw new Error('项目资料不存在');
+          const value = typeof item[args.field] === 'string' ? item[args.field] : typeof item.params?.[args.field] === 'string' ? item.params[args.field] : '';
+          const offset = Math.floor(clamp(args.offset, 0, value.length, 0));
+          return { content: jsonText({ id: item.id, field: args.field, offset, totalChars: value.length, text: value.slice(offset, offset + 3500), nextOffset: offset + 3500 < value.length ? offset + 3500 : null }) };
+        },
+      },
       {
         name: 'read_prompt_guidelines', label: '读取创作提示词规则', description: '按需读取工坊提示词的项目经验与字段规则，不冒充官方规则。query 可筛选相关段落。',
         parameters: Type.Object({ query: Type.Optional(Type.String()) }),
@@ -2817,7 +2952,7 @@ export class PromptAgentService {
             ? `sourceChainId=${encodeURIComponent(text(args.sourceChainId).slice(0, 200))}&limit=${limit}`
             : `page=0&pageSize=${limit}`;
           const result = listItems(await readProject(`/api/local-history?${query}`)).map(item => ({
-            id: item.id, prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params,
+            id: item.id, promptSummary: text(item.prompt).slice(0, 240), negativeSummary: text(item.negativePrompt).slice(0, 120), params: { model: item.params?.model, width: item.params?.width, height: item.params?.height, seed: item.params?.seed },
             sourceChainId: item.sourceChainId, sourceChainName: item.sourceChainName, sourceChainType: item.sourceChainType, createdAt: item.createdAt,
           }));
           return { content: jsonText(result), details: result };
@@ -3281,7 +3416,7 @@ export class PromptAgentService {
           return { content: jsonText({ ok: true, confirmed: true, result: result.result }), details: result.result };
         },
       },
-    ];
+    ].map(tool => ({ ...tool, execute: async (...args) => boundAgentToolResult(await tool.execute(...args)) }));
   }
 
   // ── 破限提示词与预设实验室：customPresets 配置扩展读写（单一串行写队列）──
@@ -3609,11 +3744,28 @@ export class PromptAgentService {
     const runState = { sessionId, runId, status: 'preparing', target: input?.draft?.target || null, startedAt: Date.now(), updatedAt: Date.now() };
     this.runs.set(sessionId, { controller, state: runState, keyHash: project.keyHash || '' });
     let sequence = 0;
+    let responseAudit = {};
+    const toolTimings = new Map();
     const taskEmit = event => {
       const scoped = { ...event, runId, seq: ++sequence };
       emit(scoped);
       void this.appendTaskEvent(sessionId, scoped).catch(() => {});
-      audit('agent_event', { eventType: event?.type || '' });
+      if (event.type === 'response_start') responseAudit = { startedAt: Date.now(), thinkingChunks: 0, thinkingChars: 0, textChunks: 0, textChars: 0 };
+      if (event.type === 'text_delta' || event.type === 'thinking_delta') {
+        const prefix = event.type === 'text_delta' ? 'text' : 'thinking';
+        responseAudit[prefix + 'Chunks'] = (responseAudit[prefix + 'Chunks'] || 0) + 1;
+        responseAudit[prefix + 'Chars'] = (responseAudit[prefix + 'Chars'] || 0) + String(event.delta || '').length;
+      } else if (event.type === 'response_end') {
+        audit('model_response', { ...responseAudit, elapsedMs: Date.now() - (responseAudit.startedAt || Date.now()), model: event.model, provider: event.provider, usage: event.usage, stopReason: event.stopReason });
+      } else if (event.type === 'tool_start') {
+        toolTimings.set(event.toolCallId, Date.now());
+        const args = JSON.stringify(event.args || {});
+        audit('tool_started', { toolName: event.toolName, toolCallId: event.toolCallId, args: { keys: Object.keys(event.args || {}), length: args.length, sha256: shorthandHash(args, 16) } });
+      } else if (event.type === 'tool_end') {
+        const resultText = (event.result?.content || []).filter(part => part.type === 'text').map(part => part.text).join('');
+        audit('tool_completed', { toolName: event.toolName, toolCallId: event.toolCallId, elapsedMs: Date.now() - (toolTimings.get(event.toolCallId) || Date.now()), isError: event.isError, resultChars: resultText.length, resultEstimatedTokens: estimateContextTokens(resultText), summarized: resultText.includes('_agentNotice'), ...(event.isError ? { error: resultText.slice(0, 300) } : {}) });
+        toolTimings.delete(event.toolCallId);
+      } else audit('agent_event', { eventType: event?.type || '' });
     };
     try {
     await this.flushTaskEvents(sessionId);
@@ -3693,12 +3845,23 @@ export class PromptAgentService {
       const modelRuntime = createPromptAgentModelRuntime(credentials, [...this.customProviders.values()]);
       const model = modelRuntime.getModel(provider, modelId);
       if (!model) throw new Error('无法加载所选模型');
-      const tools = selectAgentTools(this.createTools(draft, contextData, taskEmit, {
+      let agent;
+      const enabledGroups = new Set(inferAgentToolGroups(requestUserText, (storedSession.messages || []).filter(message => message.role === 'user').slice(-1).map(agentMessageText).join(' ')));
+      let tools = [];
+      const allTools = this.createTools(draft, contextData, taskEmit, {
         ...project,
         agentSessionId: sessionId,
         agentOperationScope: `${sessionId}/${(storedSession.messages || []).filter(message => message.role === 'user').length + (input?.mode === 'retry' ? 0 : 1)}`,
         signal: combined,
-      }, modelInfo), requestUserText + ' ' + (storedSession.messages || []).filter(message => message.role === 'user').slice(-2).map(agentMessageText).join(' '));
+        getToolInventory: () => allTools.map(tool => ({ name: tool.name, label: tool.label, enabled: tools.some(item => item.name === tool.name) })),
+        enableToolGroup: groups => {
+          for (const group of groups) if (AGENT_TOOL_GROUPS[group]) enabledGroups.add(group);
+          tools = selectRuntimeTools(allTools, enabledGroups);
+          audit('tool_groups_enabled', { groups: [...enabledGroups], toolNames: tools.map(tool => tool.name) });
+          return { enabledGroups: [...enabledGroups], toolNames: tools.map(tool => tool.name) };
+        },
+      }, modelInfo);
+      tools = selectRuntimeTools(allTools, enabledGroups);
       const loadedMessages = await this.withSignal(this.loadMessages(sessionId), combined);
       audit('agent_initialized', {
         toolNames: tools.map(tool => tool.name),
@@ -3718,20 +3881,23 @@ export class PromptAgentService {
         modelApi,
         modelReasoning: modelInfo.reasoning,
         model: modelInfo,
+        outputLimit: agentOutputLimit(thinkingLevel),
         thinkingLevel,
         toolDescriptors: tools.map(tool => ({ name: tool.name, description: tool.description || '', parameters: tool.parameters })),
         hasVisionImages: Boolean(input?.images?.length),
       });
       latestAssembly = initialAssembly;
-      const agent = new Agent({
+      agent = new Agent({
         initialState: {
           systemPrompt: initialAssembly.systemPrompt || activeSystemPrompt,
           model,
           thinkingLevel,
-          tools,
+          tools: allTools,
           messages: loadedMessages,
         },
-        streamFn: (model, context, options) => modelRuntime.streamSimple(model, { ...context, systemPrompt: latestAssembly.systemPrompt }, { ...options, maxTokens: latestAssembly.budget.outputReserve, signal: AbortSignal.any([combined, AbortSignal.timeout(180_000), ...(options?.signal ? [options.signal] : [])]) }),
+        // Pi 在一轮开始时快照执行器；保留静态注册表，发送与执行均使用当前启用范围。
+        streamFn: (model, context, options) => modelRuntime.streamSimple(model, { ...context, tools, systemPrompt: latestAssembly.systemPrompt }, { ...options, maxTokens: latestAssembly.budget.outputReserve, signal: AbortSignal.any([combined, AbortSignal.timeout(180_000), ...(options?.signal ? [options.signal] : [])]) }),
+        beforeToolCall: async ({ toolCall }) => tools.some(tool => tool.name === toolCall.name) ? undefined : { block: true, reason: '请先通过 enable_tool_group 加载该工具的分组，再调用工具' },
         sessionId: `nai-prompt-agent-${createHash('sha256').update(sessionId).digest('hex').slice(0, 20)}`,
         // Pi can execute independent read tools concurrently. Mutating tools still
         // remain ordered by the model's tool-call plan and all dangerous operations
@@ -3743,6 +3909,9 @@ export class PromptAgentService {
         steeringMode: 'one-at-a-time',
         followUpMode: 'one-at-a-time',
         transformContext: async messages => {
+          const users = messages.filter(message => message.role === 'user').slice(-2).map(agentMessageText);
+          for (const group of inferAgentToolGroups(users.at(-1) || '', users.at(-2) || '')) enabledGroups.add(group);
+          tools = selectRuntimeTools(allTools, enabledGroups);
           const assembled = assemblePromptContext({
             creativeMode: revisionEffectiveCreativeMode,
             revision: boundRevision,
@@ -3753,6 +3922,7 @@ export class PromptAgentService {
             modelApi,
             modelReasoning: modelInfo.reasoning,
             model: modelInfo,
+            outputLimit: agentOutputLimit(thinkingLevel),
             thinkingLevel,
             toolDescriptors: tools.map(tool => ({ name: tool.name, description: tool.description || '', parameters: tool.parameters })),
             hasVisionImages: Boolean(input?.images?.length),
@@ -3798,7 +3968,7 @@ export class PromptAgentService {
         if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'thinking_delta') taskEmit({ type: 'thinking_delta', delta: event.assistantMessageEvent.delta });
         if (event.type === 'message_end' && event.message?.role === 'assistant') taskEmit({ type: 'response_end', model: event.message.model, provider: event.message.provider, usage: { ...event.message.usage, cost: modelInfo.cost ? event.message.usage?.cost : null }, stopReason: event.message.stopReason, timestamp: event.message.timestamp });
         if (event.type === 'tool_execution_start') taskEmit({ type: 'tool_start', toolCallId: event.toolCallId, toolName: event.toolName, args: event.args });
-        if (event.type === 'tool_execution_end') taskEmit({ type: 'tool_end', toolCallId: event.toolCallId, toolName: event.toolName, isError: event.isError, result: event.result });
+        if (event.type === 'tool_execution_end') taskEmit({ type: 'tool_end', toolCallId: event.toolCallId, toolName: event.toolName, isError: event.isError, result: { ...event.result, content: publicAgentToolContent(event.result?.content) } });
       });
       this.activeAgents.set(sessionId, { agent, emit: taskEmit });
       this.startingAgents.delete(sessionId);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PromptAgentService, assemblePromptContext, estimateContextTokens, selectAgentTools, sanitizeAgentImages } from './prompt-agent.mjs';
@@ -214,5 +214,64 @@ test('附件只调用当前模型，旧视觉配置不能为纯文本模型代�
     await service.updateSession(session.id, { model: 'b' });
     await assert.rejects(() => service.run({ sessionId: session.id, message: '看看', images: [{ data: 'YWJjZA==', mimeType: 'image/png' }], draft: { params: {} } }, () => {}), /不会调用其他模型/);
     assert.equal(requests.length, 1);
+  } finally { globalThis.fetch = previous; }
+}));
+
+test('能力与时区查询、文字模型展示、长字段分段读取都有真实回执', () => isolated(async service => {
+  const project = { requestJson: async () => ({ id: 'a', prompt: '原文'.repeat(10000), title: '作品' }) };
+  const tools = service.createTools({ params: {} }, { clientSettings: { timeZone: 'Asia/Shanghai' } }, () => {}, project, { imageInput: false });
+  const call = async (name, args = {}) => (await tools.find(tool => tool.name === name).execute('t', args));
+  const time = JSON.parse((await call('get_local_time')).content[0].text); assert.equal(time.client.timeZone, 'Asia/Shanghai'); assert.ok(time.computer.utcTime);
+  const caps = JSON.parse((await call('get_agent_capabilities')).content[0].text); assert.equal(caps.localImages.available, true); assert.equal(caps.model.separateVisionModel, false);
+  const display = JSON.parse((await call('show_project_image', { kind: 'history', id: 'a' })).content[0].text);
+  assert.equal(display.displayImages[0].path, '/api/local-history/a/image'); assert.equal(display.modelHasSeenImage, false);
+  await assert.rejects(call('inspect_project_image', { kind: 'history', id: 'a' }), /当前模型不支持/);
+  const field = JSON.parse((await call('read_project_text', { kind: 'history', id: 'a', field: 'prompt', offset: 3500 })).content[0].text);
+  assert.equal(field.offset, 3500); assert.equal(field.nextOffset, 7000); assert.equal(field.totalChars, 20000); assert.equal(field.text, '原文'.repeat(10000).slice(3500, 7000));
+}));
+test('目录确认绑定真实路径，保存工具落盘后才返回成功', () => isolated(async service => {
+  const directory = join(service.isolatedRoot, 'images'); await mkdir(directory);
+  service.runs.set('s', { state: { runId: 'r' }, keyHash: 'key', controller: new AbortController() });
+  service.activeAgents.set('s', { agent: {}, emit() {} });
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCX0AAAAASUVORK5CYII=', 'base64');
+  const events = []; const project = { agentSessionId: 's', keyHash: 'key', requestJson: async () => ({ id: 'a' }), requestBuffer: async () => ({ buffer: png, mimeType: 'image/png' }) };
+  const tools = service.createTools({ params: {} }, {}, event => events.push(event), project, {});
+  const access = tools.find(tool => tool.name === 'request_local_image_folder_access');
+  const waiting = access.execute('t', { directory, access: 'write' }); await new Promise(resolve => setTimeout(resolve, 10));
+  const patch = events[0].action.patch;
+  assert.equal(patch.payload.directory, directory); assert.match(patch.consequence, /不覆盖/);
+  service.controlSession('s', 'confirm', '', { requestId: patch.requestId, accepted: true, keyHash: 'key' });
+  await assert.rejects(service.executeConfirmedProjectAction({ sessionId: 's', confirmationRequestId: patch.requestId, action: patch.action, payload: { ...patch.payload, directory: service.isolatedRoot } }, project), /不匹配/);
+  await service.executeConfirmedProjectAction({ sessionId: 's', confirmationRequestId: patch.requestId, action: patch.action, payload: patch.payload }, project); await waiting;
+  const result = await tools.find(tool => tool.name === 'save_project_image_to_folder').execute('t', { kind: 'history', id: 'a', directory, filename: 'saved.png' });
+  const receipt = JSON.parse(result.content[0].text); assert.equal(receipt.saved, true); assert.deepEqual(await readFile(receipt.path), png);
+  await service.localImages.grant({ sessionId: 's', keyHash: 'key' }, directory, 'read');
+  const shown = await tools.find(tool => tool.name === 'show_local_image').execute('t', { path: receipt.path });
+  assert.equal(JSON.parse(shown.content[0].text).displayImages[0].kind, 'local');
+  await writeFile(join(directory, 'fake.png'), 'invalid');
+  await assert.rejects(tools.find(tool => tool.name === 'show_local_image').execute('t', { path: join(directory, 'fake.png') }), /内容不是/);
+}));
+test('真实 Pi 工具循环可以动态加载工具，日志只记录完整事件摘要', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
+  const session = await service.createSession({ creativeMode: false }); const previous = globalThis.fetch;
+  const requests = [], audits = []; service.appendAuditLog = async (_session, entry) => { audits.push(entry); };
+  globalThis.fetch = async (_url, options) => {
+    requests.push(JSON.parse(options.body)); const step = requests.length;
+    const delta = step === 1 ? { role: 'assistant', tool_calls: [{ index: 0, id: 'load', type: 'function', function: { name: 'enable_tool_group', arguments: '{"groups":["library"]}' } }] }
+      : step === 2 ? { role: 'assistant', tool_calls: [{ index: 0, id: 'history', type: 'function', function: { name: 'list_generation_history', arguments: '{}' } }] }
+      : { role: 'assistant', content: '完成' };
+    const chunk = { id: 'synthetic', object: 'chat.completion.chunk', created: 1, model: 'a', choices: [{ index: 0, delta, finish_reason: step < 3 ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } };
+    return new Response('data: ' + JSON.stringify(chunk) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  };
+  let reads = 0;
+  try {
+    await service.run({ sessionId: session.id, message: '你好', draft: { params: {} } }, () => {}, undefined, { requestJson: async () => { reads++; return { items: [{ id: 'a', params: { prompt: 'x'.repeat(400000) } }] }; } });
+    assert.equal(requests.length, 3); assert.equal(reads, 1);
+    assert.equal(requests[0].tools.some(tool => tool.function.name === 'list_generation_history'), false);
+    assert.equal(requests[1].tools.some(tool => tool.function.name === 'list_generation_history'), true);
+    assert.equal(audits.filter(entry => entry.type === 'model_response').length, 3);
+    assert.equal(audits.filter(entry => entry.type === 'tool_completed').length, 2);
+    assert.equal(audits.some(entry => entry.type === 'agent_event' && entry.eventType === 'text_delta'), false);
+    assert.ok(JSON.stringify(requests[2]).length < 100000);
   } finally { globalThis.fetch = previous; }
 }));

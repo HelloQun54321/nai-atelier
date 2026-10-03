@@ -1,3 +1,5 @@
+import { AgentProjectImage } from './AgentProjectImage';
+import { extractAgentMedia } from '../services/agentMedia';
 import { prepareAgentAttachment } from '../services/agentAttachments';
 import { promptAgentCoordinator } from '../services/promptAgentCoordinator';
 import type { PromptAgentEvent, PromptAgentTask } from '../services/promptAgent';
@@ -5,8 +7,8 @@ import { appearanceScrollBehavior } from '../services/appearancePreferences';
 import { isTopmostModal } from './useModalA11y';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { PromptAgentDraft } from '../types';
-import { PromptAgentCreativePreset, PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, PromptAgentVisionUsage, displayModelName, formatModelOptionTitle, promptAgentService } from '../services/promptAgent';
+import { PromptAgentDraft, PromptAgentGenerationResult } from '../types';
+import { PromptAgentCreativePreset, PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, PromptAgentVisionUsage, agentRuntimeWarning, displayModelName, formatModelOptionTitle, promptAgentService } from '../services/promptAgent';
 import { formatPresetSessionLabel } from './PromptAgentSettings';
 import { vibeService } from '../services/vibeService';
 import { useMobileHistoryLayer } from './MobileUI';
@@ -22,7 +24,7 @@ interface PromptAgentPanelProps {
   apiKey: string;
   onRunStart: (snapshot: PromptAgentDraft) => void;
   onFinalDraft: (draft: PromptAgentDraft) => void;
-  onRequestGeneration: (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>) => Promise<boolean> | void;
+  onRequestGeneration: (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>) => Promise<boolean | PromptAgentGenerationResult> | void;
   onUndo: () => void;
   canUndo: boolean;
   tagAssistEnabled: boolean;
@@ -33,6 +35,8 @@ type ToolProgress = { id: string; name: string; state: 'running' | 'done' | 'err
 type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; visionUsage?: PromptAgentVisionUsage[]; stopReason?: string; timestamp?: number; queued?: 'steer' | 'followUp' };
 type AgentAttachment = { data: string; mimeType: string; name: string };
 const toolLabels: Record<string, string> = {
+  request_local_image_folder_access: '确认本地目录权限', list_local_images: '浏览本地图片', show_local_image: '展示本地图片', inspect_local_image: '观察本地图片', save_project_image_to_folder: '保存图片到电脑', copy_local_image: '复制本地图片',
+  get_local_time: '查询本机时间与时区', get_agent_capabilities: '查询实际可用能力', enable_tool_group: '加载相关工具', show_project_image: '展示项目图片', inspect_project_image: '观察项目图片',
   search_novelai_docs: '检索 NovelAI 官方知识', read_novelai_doc: '读取 NovelAI 官方知识',
   web_search: '联网搜索', read_web_page: '读取网页',
   get_lab_state: '读取实验室', search_tags: '搜索 Tag', search_character_catalog: '搜索角色 Tag', search_vibes: '搜索 Vibe', search_character_references: '搜索角色参考',
@@ -142,6 +146,7 @@ const AgentMessageList = React.memo(({
       {message.queued && <div className="mb-1 text-micro font-bold opacity-70">{message.queued === 'steer' ? '转向要求 · 当前步骤后处理' : '后续任务 · 完成本轮后处理'}</div>}
       {!!message.thinking && <details className="mb-2 rounded-xl bg-gray-50 px-3 py-1.5 dark:bg-gray-950"><summary className="cursor-pointer text-meta font-bold text-gray-500">思考过程 <span className="font-normal text-gray-400">· 点击展开</span></summary><div className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere] text-xs leading-5 text-gray-500">{message.thinking}</div></details>}
       {message.role === 'agent' ? <AgentMarkdown text={message.text || (running ? '正在思考…' : '')} /> : message.text}
+      {message.tools?.flatMap(tool => extractAgentMedia(tool.result)).filter((image, index, list) => list.findIndex(item => item.path === image.path) === index).slice(0, 4).map(image => <AgentProjectImage key={image.path} image={image} />)}
       {!!message.tools?.length && <div className="mt-2 space-y-1 border-t border-gray-100 pt-2 dark:border-gray-800">{message.tools.map(tool => <details key={tool.id} className={`rounded-lg px-2 py-1.5 text-micro ${tool.state === 'running' ? 'animate-pulse bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300' : (tool.state === 'error' || tool.state === 'interrupted') ? 'bg-red-50 text-red-600 dark:bg-red-950/50' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'}`}><summary className="cursor-pointer font-bold">{tool.state === 'running' ? '处理中' : tool.state === 'error' ? '失败' : tool.state === 'interrupted' ? '未完成' : '完成'} · {toolLabels[tool.name] || tool.name}<span className="ml-1 font-normal opacity-70">· 详情</span></summary><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all border-t border-current/10 pt-1 opacity-75">{JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)}</pre></details>)}</div>}
       {!!message.visionUsage?.length && <div className="mt-2 space-y-0.5 border-t border-violet-100 pt-1.5 text-micro text-violet-500 dark:border-violet-950 dark:text-violet-300">{message.visionUsage.map((item, usageIndex) => <div key={`${item.provider}/${item.model}/${usageIndex}`} className="truncate">视觉 {item.model} · {item.imageCount} 图{typeof item.usage?.totalTokens === 'number' ? ` · ${item.usage.totalTokens.toLocaleString()} tokens${item.usage.cost ? ` · $${item.usage.cost.total.toFixed(4)}` : ' · 费用未知'}` : ''}</div>)}</div>}
       <div className={`mt-1 flex min-w-0 items-center gap-1 border-t pt-1 text-micro ${message.role === 'user' ? 'border-white/20 text-white/70' : 'border-gray-100 text-gray-400 dark:border-gray-800'}`}>
@@ -171,6 +176,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [activeSessionId, setActiveSessionId] = useState('');
   const [models, setModels] = useState<PromptAgentModel[]>([]);
   const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [runtimeWarning, setRuntimeWarning] = useState('');
   const [attachmentError, setAttachmentError] = useState('');
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const attachmentLoadingRef = useRef(false);
@@ -345,6 +351,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       refreshSessions(),
       promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); }),
       loadCreativePresets(),
+      promptAgentService.getConfig().then(config => setRuntimeWarning(agentRuntimeWarning(config))),
     ]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行'));
   }, [props.open]);
 
@@ -355,6 +362,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         refreshSessions(activeSessionId),
         promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); }),
         loadCreativePresets(),
+        promptAgentService.getConfig().then(config => setRuntimeWarning(agentRuntimeWarning(config))),
       ]).catch(() => {});
     };
     window.addEventListener('nai-agent-runtime-changed', refreshRuntime);
@@ -558,10 +566,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             void (async () => {
               let approved = false;
               const isEncoding = patch.action === 'encode_vibe';
-              const accepted = await confirmAction({ title: patch.title, message: patch.consequence, confirmLabel: patch.action === 'clear_history' ? '永久清空' : isEncoding ? '消耗 2 Anlas 并生成' : '确认执行', ...(isEncoding ? {} : { tone: 'danger' as const }) });
+              const isLocalAccess = patch.action === 'grant_local_image_folder';
+              const accepted = await confirmAction({ title: patch.title, message: patch.consequence, confirmLabel: patch.action === 'clear_history' ? '永久清空' : isEncoding ? '消耗 2 Anlas 并生成' : isLocalAccess ? patch.payload?.access === 'write' ? '允许保存' : '允许读取' : '确认执行', ...(isEncoding || isLocalAccess ? {} : { tone: 'danger' as const }) });
               if (!accepted) {
                 await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false }).catch(() => {});
-                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: '已取消该项目操作，没有修改数据。' }]);
+                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: isLocalAccess ? '未开放该图片目录。' : '已取消该项目操作，没有修改数据。' }]);
                 return;
               }
               try {
@@ -576,8 +585,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                   await clearMobileThumbnailCache();
                   await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: true, result: { action: patch.action } });
                 } else await promptAgentService.executeProjectAction({ action: patch.action, resourceId: patch.resourceId, payload: patch.payload, sessionId: activeSessionId, confirmationRequestId: patch.requestId });
-                window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: patch }));
-                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: '已在你确认后完成该项目操作。' }]);
+                if (patch.action !== 'grant_local_image_folder') window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: patch }));
+                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: patch.action === 'grant_local_image_folder' ? `已允许本次对话${patch.payload?.access === 'write' ? '保存图片到' : '读取图片目录'}：${String(patch.payload?.directory || '')}。权限两小时有效。` : '已在你确认后完成该项目操作。' }]);
               } catch (error) {
                 if (approved) await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: false }).catch(() => {});
                 else await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false }).catch(() => {});
@@ -595,7 +604,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                   await promptAgentService.control(activeSessionId, 'confirm', requestId, { requestId, accepted: true });
                   approved = true;
                 });
-                await promptAgentService.control(activeSessionId, approved ? 'finalize' : 'confirm', requestId, { requestId, accepted: false, success: success === true });
+                const receipt = typeof success === 'object' ? success : { success: success === true, historySaved: false };
+                await promptAgentService.control(activeSessionId, approved ? 'finalize' : 'confirm', requestId, { requestId, accepted: false, success: receipt.success, result: receipt });
               } catch (error) {
                 await promptAgentService.control(activeSessionId, approved ? 'finalize' : 'confirm', requestId, { requestId, accepted: false, success: false }).catch(() => {});
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '生成失败' }]);
@@ -608,7 +618,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     const prompt = (suggestion ?? input).trim() || (attachments.length ? '请分析我附带的图片，并结合项目内容给出建议。' : '');
     if (!sessionReady || attachmentLoadingRef.current || !activeSessionId || !activeSession || (mode === 'prompt' && !prompt)) return;
     if (mode === 'prompt' && !editingMessageId && attachments.length && !supportsImages) {
-      setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: '没有可用的视觉模型，请先在 Agent 设置中选择带“识图”标记的模型。' }]);
+      setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: '当前模型不支持图片输入，请在 Agent 设置中选择带“识图”标记的当前模型。' }]);
       return;
     }
     if (running && attachments.length) { setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: '运行中只支持文字补充，图片仍保留；请等完成后发送。' }]); return; }
@@ -653,6 +663,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       await promptAgentCoordinator.run({ apiKey: props.apiKey, sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], draft: props.draft, context: { clientSettings: {
         themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true', safeModeStartup: localStorage.getItem('nai_safe_mode_startup') !== 'false',
         imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey), artistFavorites: Array.isArray(artistFavorites) ? artistFavorites.slice(0, 2000) : [],
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         tagAssistEnabled: props.tagAssistEnabled, splitPromptFields: props.splitPromptFields ?? false,
       } } }, event => {
         if (!uiActiveRef.current) return;
@@ -925,6 +936,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     </aside>
 
     <section className="relative flex min-w-0 flex-1 flex-col">
+      {runtimeWarning && <p role="status" className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">{runtimeWarning}</p>}
       {taskSnapshot.finalDraft && taskSnapshot.runId !== artifactDismissed && <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 p-2 text-xs dark:border-gray-800 dark:text-gray-300"><span className="min-w-0 flex-1">上次完成的草稿已保留。</span><button type="button" onClick={() => { if (taskSnapshot.finalDraft) props.onFinalDraft(taskSnapshot.finalDraft); setArtifactDismissed(taskSnapshot.runId || ''); }} className="mobile-touch rounded-lg px-2 text-indigo-600 dark:text-indigo-300">查看与恢复</button><button type="button" onClick={() => setArtifactDismissed(taskSnapshot.runId || '')} className="mobile-touch px-2">暂不应用</button></div>}
       {(taskSnapshot.pending || []).filter(item => !item.approved).map(item => <div key={item.requestId} className="flex flex-wrap items-center gap-2 border-b border-amber-200 p-2 text-xs dark:border-amber-900 dark:text-gray-300"><span className="min-w-0 flex-1">任务等待你确认：{item.operation.action}</span><button type="button" className="mobile-touch px-2 text-indigo-600 dark:text-indigo-300" onClick={() => handleConfirmedAction({ type: 'action', action: item.operation.action === 'request_generation' ? { kind: 'request_generation', patch: { requestId: item.requestId, reason: '接续上次请求' } } : { kind: 'request_project_action', patch: { ...item.operation, requestId: item.requestId, title: '接续项目操作？', consequence: JSON.stringify(item.operation) } }, draft: item.operation.payload.draft as PromptAgentDraft | undefined })}>查看并决定</button></div>)}
       {modelsLoaded && !activeModel && <div className="flex flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200"><span className="min-w-0 flex-1">{models.length ? '这条会话的模型已不可用，请选择已接入的模型。' : '先接入模型服务，再开始创作。可以直接填写模型 ID，无需获取模型列表。'}</span><button type="button" onClick={models.length ? () => setShowModelMenu(true) : openAgentSettings} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-white">{models.length ? '选择模型' : '接入 API'}</button></div>}
@@ -1175,7 +1187,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             </div>
           )}
           <div className="flex min-w-0 items-end gap-2">
-            <label title={!sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : supportsImages ? '添加图片' : '没有可用的视觉模型'} aria-disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} className={`mobile-touch flex h-11 w-11 flex-none items-center justify-center rounded-xl border border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400 ${sessionReady && supportsImages && !running && attachments.length < 4 ? 'cursor-pointer hover:border-indigo-400 hover:text-indigo-500' : 'cursor-not-allowed opacity-35'}`}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片附件" onChange={event => { void addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} /></label>
+            <label title={!sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : supportsImages ? '添加图片' : '当前模型不支持图片输入'} aria-disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} className={`mobile-touch flex h-11 w-11 flex-none items-center justify-center rounded-xl border border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400 ${sessionReady && supportsImages && !running && attachments.length < 4 ? 'cursor-pointer hover:border-indigo-400 hover:text-indigo-500' : 'cursor-not-allowed opacity-35'}`}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片附件" onChange={event => { void addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} /></label>
             <textarea onPaste={event => { const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); void addAttachments(files); } }} maxLength={8000} aria-label="任务要求" ref={inputRef} value={input} disabled={!sessionReady} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void run(); } }} rows={1} placeholder={!sessionReady ? modelsLoaded ? '先接入或选择模型服务…' : '正在加载对话…' : running ? (queueMode === 'steer' ? '补充或纠正当前任务…' : '添加完成后继续处理的任务…') : editingMessageId ? '修改这条消息后重新发送…' : ''} className="min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-gray-300 bg-gray-50 px-3 py-2.5 text-sm leading-5 text-gray-900 outline-none placeholder:text-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 disabled:cursor-wait disabled:opacity-55 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-600 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20" />
             {running && !input.trim() && !attachments.length ? (
               <button

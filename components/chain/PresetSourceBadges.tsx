@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Copy } from 'lucide-react';
-import type { PromptAgentDraft } from '../../types';
+import type { PromptAgentDraft, PromptAgentGenerationResult } from '../../types';
 
 const PromptAgentPanel = React.lazy(() => import('../PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
 
@@ -44,7 +44,7 @@ interface PromptAgentOverlayControllerProps {
     apiKey: string;
     onRunStart: (snapshot: PromptAgentDraft) => void;
     onFinalDraft: (draft: PromptAgentDraft) => void;
-    onRequestGeneration: (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>) => Promise<boolean>;
+    onRequestGeneration: (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>) => Promise<boolean | PromptAgentGenerationResult>;
     canUndo: boolean;
     onUndo: () => void;
     tagAssistEnabled: boolean;
