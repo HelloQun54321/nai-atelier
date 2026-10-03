@@ -209,7 +209,14 @@ export interface LabWorkspaceSession {
   updatedAt: number;
 }
 
-export interface PromptAgentGenerationResult { success: boolean; historyId?: string; historySaved: boolean }
+export interface PromptAgentGenerationResult {
+  success: boolean;
+  historyId?: string;
+  historySaved: boolean;
+  outcome?: 'succeeded' | 'cancelled' | 'blocked' | 'failed';
+  code?: string;
+  error?: string;
+}
 
 export interface PromptAgentDraft {
   target?: { chainId: string; name?: string; mode: 'text-to-image' | 'image-to-image' | 'inpaint' | 'outpaint'; fingerprint: string };

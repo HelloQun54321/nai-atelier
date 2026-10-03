@@ -1,4 +1,5 @@
 import { agentDraftFingerprint } from '../services/promptAgentCoordinator';
+import { agentOperationError, agentGenerationFailure, normalizeAgentGenerationResult } from '../services/agentOperation.mjs';
 import { AgentDraftReview } from './AgentDraftReview';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -1457,9 +1458,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             const message = '请先在“全局设置”中配置 NovelAI API Key';
             setErrorMsg(message);
             notify(message, 'error');
+            if (override) throw agentOperationError(message, 'missing_key');
             return false;
         }
-        if (generationInFlightRef.current) return false;
+        if (generationInFlightRef.current) {
+            if (override) throw agentOperationError('已有图片正在生成，请等待完成后再提出请求', 'generation_busy');
+            return false;
+        }
         generationInFlightRef.current = true;
         const generationPrompt = override ? compilePrompt({ basePrompt: override.basePrompt, modules: override.modules }, override.subjectPrompt) : finalPrompt;
         const generationNegativePrompt = override?.negativePrompt ?? negativePrompt;
@@ -1580,6 +1585,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             }
             // notify 是全局 toast：离开编辑页后仍应告知生成失败。
             notify(e.message, 'error');
+            if (override) throw agentOperationError(e.message || '图片生成失败', 'generation_failed', 'failed');
             return false;
         } finally {
             if (mountedRef.current) {
@@ -1638,17 +1644,21 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const handleImageEditGenerate = async (request: ImageEditRequest, options?: { params: NAIParams; onApproved?: () => Promise<void>; agent: true }): Promise<boolean> => {
+        const stop = (message: string, code: string, outcome: 'blocked' | 'failed' | 'cancelled' = 'blocked') => {
+            if (options?.agent) throw agentOperationError(message, code, outcome);
+            return false;
+        };
         if (!apiKey) {
             const message = '请先在“全局设置”中配置 NovelAI API Key';
             setErrorMsg(message);
             notify(message, 'error');
-            return false;
+            return stop(message, 'missing_key');
         }
         const freshSubscription = await refreshUsageIfStale();
         let editParamsSource: NAIParams;
         let lowEnabled: boolean;
         try { lowEnabled = (await getLowConsumption(apiKey)).enabled; editParamsSource = applyLowConsumptionParams(options?.params || activeEditDraft?.params || params, lowEnabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME, request.operation); }
-        catch (error) { notify(error instanceof Error ? error.message : '读取低消耗设置失败', 'error'); return false; }
+        catch (error) { const message = error instanceof Error ? error.message : '读取低消耗设置失败'; notify(message, 'error'); return stop(message, 'preflight_failed'); }
         let sourceWidth = request.canvasWidth;
         let sourceHeight = request.canvasHeight;
         try {
@@ -1660,7 +1670,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             const message = '无法读取图片编辑底图尺寸';
             setErrorMsg(message);
             notify(message, 'error');
-            return false;
+            return stop(message, 'invalid_base_image');
         }
         const editCost = estimateImageEditCost(editParamsSource, request.operation, request.strength, Boolean(request.focused), isActiveOpusSubscription(freshSubscription) ? freshSubscription!.tier : 0, opusUsageExhausted, {
             width: sourceWidth,
@@ -1670,11 +1680,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         });
         if (lowEnabled) {
             try { assertLowConsumptionEstimate(editParamsSource, request.operation, naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, editCost, Boolean(request.focused && request.focusedRect)); }
-            catch (error) { notify(error instanceof Error ? error.message : '低消耗检查失败', 'error'); return false; }
+            catch (error) { const message = error instanceof Error ? error.message : '低消耗检查失败'; notify(message, 'error'); return stop(message, 'low_consumption_blocked'); }
         }
         if (editCost > 0 && anlasBudget.remaining <= 0) {
-            if (!await confirmAction({ title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return false;
-        } else if ((editCost > 0 || options?.agent) && !await confirmAction({ title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。`, confirmLabel: `消耗 ${editCost} 点并生成` })) return false;
+            if (!await confirmAction({ title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
+        } else if ((editCost > 0 || options?.agent) && !await confirmAction({ title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。`, confirmLabel: `消耗 ${editCost} 点并生成` })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
 
         await options?.onApproved?.();
         await flushMaskSave(request.operation).catch(error => console.warn('生成前保存编辑蒙版失败:', error));
@@ -1801,7 +1811,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 // 离开编辑页后仍应告知编辑失败（全局 toast）。
                 notify(editError instanceof Error ? editError.message : '图片编辑失败', 'error');
             }
-            return false;
+            return stop(editError instanceof Error ? editError.message : '图片编辑失败', 'generation_failed', 'failed');
         } finally {
             if (mountedRef.current) {
                 setIsGenerating(false);
@@ -1833,25 +1843,26 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>): Promise<PromptAgentGenerationResult> => {
         agentGenerationReceiptRef.current = undefined;
         const execute = async (): Promise<boolean> => {
-            if (draft.target && (draft.target.chainId !== chain.id || draft.target.mode !== activeGenerationMode || draft.target.fingerprint !== currentAgentDraft().target?.fingerprint)) { notify('创作目标已变化，请先查看并应用草稿，再重新请求生成', 'error'); return false; }
+            const target = agentTargetRef.current;
+            if (draft.target && (draft.target.chainId !== target?.chainId || draft.target.mode !== target?.mode || draft.target.fingerprint !== target?.fingerprint)) throw agentOperationError('创作目标已变化，请先读取当前状态，再重新请求生成', 'target_changed');
             const approve = async () => {
                 const target = agentTargetRef.current;
-                if (draft.target && (draft.target.chainId !== target?.chainId || draft.target.mode !== target?.mode || draft.target.fingerprint !== target?.fingerprint)) throw new Error('确认期间创作目标已变化，请重新提出请求');
+                if (draft.target && (draft.target.chainId !== target?.chainId || draft.target.mode !== target?.mode || draft.target.fingerprint !== target?.fingerprint)) throw agentOperationError('确认期间创作目标已变化，请重新提出请求', 'target_changed');
                 await onApproved?.();
             };
         if (activeGenerationMode !== 'text-to-image') {
-            if (!agentEditGenerateRef.current) { notify('编辑画布尚未准备好', 'error'); return false; }
+            if (!agentEditGenerateRef.current) throw agentOperationError('编辑画布尚未准备好', 'canvas_not_ready');
             return agentEditGenerateRef.current(draft, approve);
         }
         const freshSubscription = await refreshUsageIfStale();
         let lowEnabled: boolean;
         try { lowEnabled = (await getLowConsumption(apiKey)).enabled; }
-        catch (error) { notify(error instanceof Error ? error.message : '读取低消耗设置失败', 'error'); return false; }
+        catch (error) { throw agentOperationError(error instanceof Error ? error.message : '读取低消耗设置失败', 'preflight_failed'); }
         const costParams = applyLowConsumptionParams(draft.params, lowEnabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME);
         const cost = estimateV45GenerationCost(costParams, isActiveOpusSubscription(freshSubscription), await usageForCostEstimate(costParams.model));
         if (lowEnabled) {
             try { assertLowConsumptionEstimate(costParams, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, cost); }
-            catch (error) { notify(error instanceof Error ? error.message : '低消耗检查失败', 'error'); return false; }
+            catch (error) { throw agentOperationError(error instanceof Error ? error.message : '低消耗检查失败', 'low_consumption_blocked'); }
         }
         const draftGenerationCostLabel = formatGenerationCostLabel(cost, draft.params.model);
         if (runtimeSyncUnhealthy && cost === 0) {
@@ -1860,7 +1871,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 message: `${reason ? `${reason}\n\n` : ''}${runtimeSyncWarning}。\n\n仍要按当前估算（${draftGenerationCostLabel}）继续生成吗？`,
                 confirmLabel: '仍要生成',
                 tone: 'danger',
-            })) return false;
+            })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
             await approve();
             return handleGenerateDraft(draft);
         }
@@ -1871,7 +1882,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 message: `${reason ? `${reason}\n\n` : ''}本地预算已扣到 0，本次生成仍需消耗 ${cost} Anlas（共享账号额度），继续将透支你手动设定的预算线。`,
                 confirmLabel: `仍要消耗 ${cost} 点生成`,
                 tone: 'danger',
-            })) return false;
+            })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
             await approve();
             return handleGenerateDraft(draft);
         }
@@ -1879,12 +1890,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             title: 'Agent 已准备好生图',
             message: `${reason ? `${reason}\n\n` : ''}预计本次${draftGenerationCostLabel}。确认后才会提交给 NovelAI。${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
             confirmLabel: cost > 0 ? `消耗 ${cost} 点并生成` : '确认生成一张',
-        })) return false;
+        })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
         await approve();
         return handleGenerateDraft(draft);
         };
-        const success = await execute();
-        return { success, historySaved: Boolean(agentGenerationReceiptRef.current), ...(agentGenerationReceiptRef.current ? { historyId: agentGenerationReceiptRef.current } : {}) };
+        try {
+            const success = await execute();
+            return normalizeAgentGenerationResult({ success, historySaved: Boolean(agentGenerationReceiptRef.current), ...(agentGenerationReceiptRef.current ? { historyId: agentGenerationReceiptRef.current } : {}) });
+        } catch (error) {
+            return agentGenerationFailure(error);
+        }
     };
 
     const handleSavePreview = async () => {

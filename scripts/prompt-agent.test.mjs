@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PromptAgentService, assemblePromptContext, estimateContextTokens, selectAgentTools, sanitizeAgentImages, detectModelCapabilities, sanitizeCustomProvider, customProviderRuntime, createPromptAgentModelRuntime } from './prompt-agent.mjs';
+import { PromptAgentService, assemblePromptContext, estimateContextTokens, sanitizeAgentImages, detectModelCapabilities, sanitizeCustomProvider, customProviderRuntime, createPromptAgentModelRuntime } from './prompt-agent.mjs';
 import { getSupportedThinkingLevels, InMemoryCredentialStore } from '@earendil-works/pi-ai';
 import { createAgentThinkingMap } from '../services/agentThinking.mjs';
 
@@ -20,6 +20,63 @@ const syntheticAgentStream = (round, { input = 20000, output = 100 } = {}) => ne
   choices: [{ index: 0, delta: { role: 'assistant', ...(round.tool ? { tool_calls: [{ index: 0, id: 'call-' + round.id, type: 'function', function: { name: round.tool, arguments: JSON.stringify(round.args || {}) } }] } : { content: round.text || '合成任务完成' }) }, finish_reason: round.tool ? 'tool_calls' : 'stop' }],
   usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output },
 }) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+
+test('短句连续修改无需重新加载工具；原始会话与稳定前缀跨轮保留', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
+  const session = await service.createSession(), previous = globalThis.fetch, requests = [], events = [];
+  const rounds = [{ tool: 'update_prompts', args: { basePrompt: 'white dress' } }, {}, { tool: 'set_characters', args: { characters: [{ prompt: 'standing' }] } }, {}];
+  globalThis.fetch = async (_url, options) => { requests.push(JSON.parse(options.body)); return syntheticAgentStream({ ...rounds[requests.length - 1], id: requests.length }); };
+  try {
+    const first = await service.run({ sessionId: session.id, message: '把衣服改成白色', draft: { params: {} } }, e => events.push(e));
+    await service.run({ sessionId: session.id, message: '换成站姿', draft: first.draft }, e => events.push(e));
+    assert.equal(events.some(e => e.type === 'tool_end' && e.isError), false);
+    assert.equal(requests.length, 4);
+    for (const request of requests) {
+      assert.equal(request.messages[0].content, requests[0].messages[0].content);
+      assert.deepEqual(request.tools, requests[0].tools);
+      assert.ok(request.tools.some(tool => tool.function.name === 'set_characters'));
+      assert.match(request.messages.at(-1).content, /实时工作区快照/);
+    }
+    const before = requests[1].messages.slice(1, -1);
+    assert.deepEqual(requests[2].messages.slice(1, 1 + before.length), before);
+    assert.equal(JSON.stringify((await service.readSession(session.id)).messages).includes('[实时工作区快照'), false);
+    await service.resetSession(session.id);
+    assert.equal((await service.readSession(session.id)).messages.length, 0);
+  } finally { globalThis.fetch = previous; }
+}));
+
+test('生成失败、检查拦截、超时与主动取消分别回传原因，日志保留脱敏回执', () => isolated(async service => {
+  const audits = []; service.appendAuditLog = async (_id, entry) => { audits.push(service.sanitizeAuditValue(entry)); };
+  service.activeAgents.set('s', { agent: {}, emit() {} });
+  for (const [approved, outcome, code, error] of [[false, 'blocked', 'target_changed', '目标已变化'], [true, 'failed', 'generation_failed', '接口失败 Bearer sensitive-secret'], [false, 'cancelled', 'user_cancelled', '用户取消了生图请求']]) {
+    const tools = service.createTools({ params: {} }, {}, event => {
+      if (event.action?.kind !== 'request_generation') return;
+      const requestId = event.action.patch.requestId;
+      if (approved) service.controlSession('s', 'confirm', '', { requestId, accepted: true });
+      service.controlSession('s', approved ? 'finalize' : 'confirm', '', { requestId, accepted: false, success: false, result: { success: false, historySaved: false, outcome, code, error } });
+    }, { agentSessionId: 's' });
+    await assert.rejects(tools.find(tool => tool.name === 'request_generation').execute('t', {}), e => e.message === error && e.code === code && e.outcome === outcome);
+    const audit = audits.filter(entry => entry.type === 'confirmation_outcome').at(-1);
+    assert.equal(audit.type, 'confirmation_outcome'); assert.equal(audit.accepted, approved); assert.equal(audit.receipt.outcome, outcome); assert.equal(audit.receipt.code, code);
+    assert.equal(JSON.stringify(audit).includes('sensitive-secret'), false);
+  }
+  const timeout = service.createConfirmation('s', { action: 'request_generation' }, 1);
+  assert.equal((await timeout.promise).result.code, 'confirmation_timeout');
+  assert.equal(audits.at(-1).receipt.outcome, 'blocked');
+}));
+
+test('只读权限在稳定工具注册表下仍拒绝修改，不能被工具可见性绕过', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
+  service.config.permissionMode = 'read_only';
+  const session = await service.createSession(), previous = globalThis.fetch, requests = [], events = [];
+  globalThis.fetch = async (_url, options) => { requests.push(JSON.parse(options.body)); return syntheticAgentStream({ id: requests.length, ...(requests.length === 1 ? { tool: 'update_prompts', args: { basePrompt: 'forbidden' } } : {}) }); };
+  try {
+    const result = await service.run({ sessionId: session.id, message: '把衣服改成白色', draft: { basePrompt: 'original', params: {} } }, e => events.push(e));
+    assert.equal(result.draft.basePrompt, 'original');
+    assert.equal(events.find(e => e.type === 'tool_end').isError, true);
+    assert.match(JSON.stringify(events.find(e => e.type === 'tool_end').result), /只读权限/);
+  } finally { globalThis.fetch = previous; }
+}));
 
 test('复用真实历史结构与全部参数，修改后进入原有生图确认闭环', () => isolated(async service => {
   const history = { id: 'real-history', basePrompt: 'artist style', subjectPrompt: 'garden', negativePrompt: '', modules: [{ id: 'm', name: '光照', content: 'soft light', isActive: true, position: 'pre' }], params: { model: 'nai-diffusion-5-full', prompt: 'artist style, soft light, garden', negativePrompt: '', width: 1216, height: 832, steps: 23, scale: 4.5, sampler: 'k_euler', seed: 678, qualityToggle: false, ucPreset: 0, transparent: true, variety: true, cfgRescale: 0.4, characters: [{ id: 'c', name: '蓝发', enabled: false, prompt: 'blue hair', negativePrompt: 'red hair', x: .2, y: .7 }], vibes: { enabled: false, slots: [] }, characterReferences: { enabled: false, slots: [] } } };
@@ -174,7 +231,9 @@ test('标准上下文忽略遗留注入参数，保留多模态消息和工具�
   const original = structuredClone(messages);
   const revision = { presetId: 'old', presetName: '旧预设', slots: ['system_head', 'system_middle', 'system_tail', 'context_head', 'context_depth', 'user_preamble', 'user_suffix', 'conversation_tail', 'assistant_prefill'].map(target => ({ target, enabled: true, content: 'LEGACY_INJECTION', role: 'user', depth: 1 })) };
   const result = assemblePromptContext({ systemPolicy: '原始业务规则', runtimeContext: '实时页面', cleanMessages: messages, creativeMode: true, revision });
-  assert.match(result.systemPrompt, /^原始业务规则\n实时页面\n/);
+  assert.match(result.systemPrompt, /^原始业务规则\n/);
+  assert.equal(result.systemPrompt.includes('实时页面'), false);
+  assert.match(result.requestMessages.at(-1).content, /实时页面/);
   assert.match(result.systemPrompt, /安全边界/);
   assert.equal(JSON.stringify(result).includes('LEGACY_INJECTION'), false);
   assert.deepEqual(result.canonicalMessages, original);
@@ -205,7 +264,8 @@ test('旧配置和会话快照不再影响实际模型请求、会话展示和�
     await service.run({ sessionId: fresh.id, message: '查看当前页面', images: [{ data: 'YWJjZA==', mimeType: 'image/png' }], draft: { params: {} } }, () => {});
     assert.equal(requests.length, 1);
     assert.equal(JSON.stringify(requests).includes('LEGACY_INJECTION'), false);
-    assert.equal(requests[0].messages.filter(message => message.role === 'user').length, 1);
+    assert.equal(requests[0].messages.filter(message => message.role === 'user').length, 2);
+    assert.equal(JSON.stringify((await service.readSession(fresh.id)).messages).includes('[实时工作区快照'), false);
     assert.match(JSON.stringify(requests[0].messages), /查看当前页面/);
     assert.match(JSON.stringify(requests[0].messages), /data:image\/png;base64,YWJjZA==/);
     assert.ok(requests[0].tools.some(tool => tool.function.name === 'read_current_page'));
@@ -246,7 +306,10 @@ test('生图批准、失败回执、拒绝和停止均结束等待', () => isola
       service.controlSession('s', 'confirm', '', { requestId, accepted: true });
       service.controlSession('s', 'finalize', '', { requestId, success: action === 'success' });
     }
-    assert.equal((await promise).accepted, action === 'success');
+    const receipt = await promise;
+    assert.equal(receipt.accepted, action === 'success' || action === 'failure');
+    assert.equal(receipt.result.success, action === 'success');
+    assert.equal(receipt.result.outcome, action === 'success' ? 'succeeded' : action === 'decline' ? 'cancelled' : action === 'abort' ? 'blocked' : 'failed');
     assert.equal(service.pendingConfirmations.size, 0);
   }
 }));
@@ -312,8 +375,9 @@ test('每轮真正模型请求前获取新页面和参数，不新增模型请�
       service.controlSession(session.id, 'ui_result', '', { requestId: event.requestId, clientId: 'tab-a', claimId: claim.claimId, result: { title: reads === 1 ? '风格串' : '生成历史', view: reads === 1 ? 'list' : 'history', snapshotId: `p-${reads}`, controls: [], capturedAt: reads } });
     });
     assert.equal(requests.length, 2); assert.equal(reads, 2);
-    assert.match(requests[0].messages[0].content, /当前可见页面：[^\n]*"title":"风格串"/); assert.match(requests[1].messages[0].content, /当前可见页面：[^\n]*"title":"生成历史"/);
-    assert.match(requests[1].messages[0].content, /本轮工作草稿参数：[^\n]*"steps":23/);
+    assert.equal(requests[0].messages[0].content, requests[1].messages[0].content);
+    assert.match(requests[0].messages.at(-1).content, /当前可见页面：[^\n]*"title":"风格串"/); assert.match(requests[1].messages.at(-1).content, /当前可见页面：[^\n]*"title":"生成历史"/);
+    assert.match(requests[1].messages.at(-1).content, /本轮工作草稿参数：[^\n]*"steps":23/);
   } finally { globalThis.fetch = previous; }
 }));
 
@@ -664,12 +728,12 @@ test('上下文取真实模型窗口，完整 schema 入账，超限不发送', 
   assert.throws(() => assemblePromptContext({ model: { contextWindow: 8192 }, systemPolicy: 'a'.repeat(50000) }), /超过/);
   assert.ok(estimateContextTokens([{ type: 'image', data: 'a'.repeat(1000000) }]) < 5000);
 });
-test('工具按任务范围提供，保留核心创作和按需知识', () => isolated(async service => {
+test('工具注册表同时提供创作、知识与项目能力，实际权限在执行时检查', () => isolated(async service => {
   const tools = service.createTools({ params: {} }, {}, () => {});
-  const names = selectAgentTools(tools, '修改提示词').map(tool => tool.name);
+  const names = tools.map(tool => tool.name);
   assert.ok(names.includes('read_prompt_guidelines'));
-  assert.ok(!names.includes('request_clear_history'));
-  assert.ok(selectAgentTools(tools, '清理历史').some(tool => tool.name === 'request_clear_history'));
+  assert.ok(names.includes('request_clear_history'));
+  assert.ok(names.includes('set_characters'));
 }));
 test('真实流适配器遵守输出预算，并持久化唯一终态与目标草稿', () => isolated(async service => {
   await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', contextWindow: 32768, maxTokens: 32000 }], apiKey: 'synthetic', select: true });
@@ -782,7 +846,7 @@ test('直接保存自动完成目录确认，完全访问可一步创建目录�
   const result = await save.execute('t2', { kind: 'history', id: 'a', directory: second, filename: 'full.png' });
   assert.equal(events.length, 1); assert.equal(JSON.parse(result.content[0].text).path, join(second, 'full.png')); assert.deepEqual(await readFile(join(second, 'full.png')), png);
 }));
-test('真实 Pi 工具循环可以动态加载工具，日志只记录完整事件摘要', () => isolated(async service => {
+test('真实 Pi 工具循环的注册表保持稳定，日志只记录完整事件摘要', () => isolated(async service => {
   await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
   const session = await service.createSession(); const previous = globalThis.fetch;
   const requests = [], audits = []; service.appendAuditLog = async (_session, entry) => { audits.push(entry); };
@@ -798,8 +862,9 @@ test('真实 Pi 工具循环可以动态加载工具，日志只记录完整事�
   try {
     await service.run({ sessionId: session.id, message: '你好', draft: { params: {} } }, () => {}, undefined, { requestJson: async () => { reads++; return { items: [{ id: 'a', params: { prompt: 'x'.repeat(400000) } }] }; } });
     assert.equal(requests.length, 3); assert.equal(reads, 1);
-    assert.equal(requests[0].tools.some(tool => tool.function.name === 'list_generation_history'), false);
+    assert.equal(requests[0].tools.some(tool => tool.function.name === 'list_generation_history'), true);
     assert.equal(requests[1].tools.some(tool => tool.function.name === 'list_generation_history'), true);
+    assert.deepEqual(requests[0].tools, requests[1].tools);
     assert.equal(audits.filter(entry => entry.type === 'model_response').length, 3);
     assert.equal(audits.filter(entry => entry.type === 'tool_completed').length, 2);
     assert.equal(JSON.stringify(audits).includes('"cost"'), false);
@@ -871,7 +936,9 @@ test('实际工具循环在切换作品、模式和生成模型后使用最新�
     });
     assert.equal(requests.length, 3);
     const paramsDescription = index => requests[index].tools.find(tool => tool.function.name === 'set_generation_params').function.description;
-    assert.notEqual(paramsDescription(0), paramsDescription(1));
+    assert.equal(paramsDescription(0), paramsDescription(1));
+    assert.equal(requests[0].messages[0].content, requests[1].messages[0].content);
+    assert.match(requests[1].messages.at(-1).content, /nai-diffusion-5-full/);
     const toolResult = requests[2].messages.filter(message => message.role === 'tool').at(-1);
     const state = JSON.parse(toolResult.content);
     assert.equal(state.basePrompt, 'new page prompt');

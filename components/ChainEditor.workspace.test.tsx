@@ -343,6 +343,27 @@ it('生图确认期间手动修改使旧批准失效，不调用生成或批准�
   await act(async () => { task = state.agent!.onRequestGeneration(state.agent!.draft, 'synthetic', approve); });
   await waitFor(() => expect(release).toBeTypeOf('function'));
   fireEvent.change(textPrompt(), { target: { value: 'manual while confirming' } });
-  await act(async () => { release(true); await expect(task).rejects.toThrow('确认期间创作目标已变化'); });
+  await act(async () => { release(true); await expect(task).resolves.toMatchObject({ success: false, outcome: 'blocked', code: 'target_changed', error: '确认期间创作目标已变化，请重新提出请求' }); });
   expect(approve).not.toHaveBeenCalled(); expect(state.generate).not.toHaveBeenCalled();
+});
+
+it.each([true, false])('生图确认接受=%s 时，用户取消与接口失败分别回执', async accepted => {
+  sessionStorage.setItem('nai_api_key', 'synthetic-key');
+  setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
+  state.confirm.mockResolvedValueOnce(accepted); state.generate.mockRejectedValueOnce(new Error('合成 API 失败'));
+  const approve = vi.fn(async () => {});
+  await act(async () => {
+    const result = await state.agent!.onRequestGeneration(state.agent!.draft, 'synthetic', approve);
+    expect(result).toMatchObject({ success: false, outcome: accepted ? 'failed' : 'cancelled', code: accepted ? 'generation_failed' : 'user_cancelled', error: accepted ? '合成 API 失败' : '用户取消了生图请求' });
+  });
+  expect(approve).toHaveBeenCalledTimes(accepted ? 1 : 0); expect(state.generate).toHaveBeenCalledTimes(accepted ? 1 : 0);
+});
+
+it('生成前草稿实际变化返回检查拦截，不弹确认、不伪报用户取消', async () => {
+  sessionStorage.setItem('nai_api_key', 'synthetic-key');
+  setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
+  const oldDraft = state.agent!.draft;
+  fireEvent.change(textPrompt(), { target: { value: 'manual' } });
+  await act(async () => { await expect(state.agent!.onRequestGeneration(oldDraft)).resolves.toMatchObject({ success: false, outcome: 'blocked', code: 'target_changed' }); });
+  expect(state.confirm).not.toHaveBeenCalled(); expect(state.generate).not.toHaveBeenCalled();
 });

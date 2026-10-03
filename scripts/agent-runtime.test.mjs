@@ -40,7 +40,7 @@ test('浏览器未回应、任务停止及发送失败都会释放页面等待�
   await assert.rejects(bridge.request('a', { action: 'read' }, () => { throw new Error('断开'); }), /断开/);
   assert.equal(bridge.pending.size, 0);
 });
-import { agentOutputLimit, agentTokenUsage, boundAgentToolResult, compactAuditEntries, compactAgentValue, inferAgentToolGroups, isProjectImagePath, localTimeInfo, selectRuntimeTools } from './agent-runtime.mjs';
+import { AGENT_TOOL_GROUPS, agentOutputLimit, agentTokenUsage, boundAgentToolResult, compactAuditEntries, compactAgentValue, isProjectImagePath, localTimeInfo } from './agent-runtime.mjs';
 import { agentStopInfo, createAgentRunBudget } from './agent-runtime.mjs';
 
 test('复现日志：重复上下文超过 64k 仍允许继续，保护仅计算新输出', () => {
@@ -95,16 +95,10 @@ test('长资料、编码与成组结果有界，明确省略且不修改源资�
   assert.deepEqual(source, snapshot);
   assert.deepEqual(compactAgentValue({ ok: true, id: 'receipt' }).value, { ok: true, id: 'receipt' });
 });
-test('工具范围支持复合任务、接续与按需加载，能力问答和问候保持轻量', () => {
-  assert.deepEqual(inferAgentToolGroups('你好'), []);
-  assert.deepEqual(inferAgentToolGroups('你有什么能力'), []);
-  assert.deepEqual(inferAgentToolGroups('全部改成蓝色'), []);
-  assert.deepEqual(inferAgentToolGroups('修改提示词并保存到资料库'), ['creative', 'library']);
-  assert.deepEqual(inferAgentToolGroups('继续', '查历史图片'), ['library']);
-  assert.ok(inferAgentToolGroups('把上一张图保存到 D:\\Pictures').includes('local_files'));
-  const tools = ['get_agent_capabilities', 'get_local_time', 'enable_tool_group', 'request_generation', 'request_clear_history'].map(name => ({ name }));
-  assert.equal(selectRuntimeTools(tools, []).some(tool => tool.name === 'request_clear_history'), false);
-  assert.equal(selectRuntimeTools(tools, ['creative']).some(tool => tool.name === 'request_generation'), true);
+test('工具分组只提供能力目录，思考输出预算保留原有边界', () => {
+  assert.ok(AGENT_TOOL_GROUPS.creative.includes('update_prompts'));
+  assert.ok(AGENT_TOOL_GROUPS.maintenance.includes('request_clear_history'));
+  assert.ok(AGENT_TOOL_GROUPS.local_files.includes('save_project_image_to_folder'));
   assert.equal(agentOutputLimit('off'), 2048); assert.equal(agentOutputLimit('medium'), 4096); assert.equal(agentOutputLimit('max'), 8192);
 });
 test('真实时区与夏令时偏移按日期计算', () => {

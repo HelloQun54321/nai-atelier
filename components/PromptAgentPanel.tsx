@@ -1,5 +1,6 @@
 import './AgentSurface.css';
 import { getLastAgentPageRead, observeAgentPage, readAgentPage, type AgentPageSnapshot } from '../services/agentWorkspace';
+import { normalizeAgentGenerationResult, agentGenerationFailure, agentOperationError } from '../services/agentOperation.mjs';
 import { getAgentContextUsage } from '../services/agentContextUsage';
 import { AgentProjectImage } from './AgentProjectImage';
 import { extractAgentMedia } from '../services/agentMedia';
@@ -247,6 +248,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [pageRead, setPageRead] = useState<AgentPageSnapshot | null>(getLastAgentPageRead);
   const currentDraftRef = useRef(props.draft);
   currentDraftRef.current = props.draft;
+  const currentPropsRef = useRef(props);
+  currentPropsRef.current = props;
   useEffect(() => {
     if (!props.open) return;
     const update = (event: Event) => setPageRead((event as CustomEvent<AgentPageSnapshot>).detail);
@@ -573,6 +576,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   const handleConfirmedAction = (event: Extract<PromptAgentEvent, { type: 'action' }>) => {
     const approvalKey = props.apiKey;
+    const assertApprovalTarget = () => {
+      if (approvalKey !== currentKeyRef.current) throw agentOperationError('当前 Key 已变化，请重新提出请求', 'key_changed');
+      if (!uiActiveRef.current) throw agentOperationError('当前页面或创作目标已变化，请重新提出请求', 'target_changed');
+    };
     if (event.action.kind === 'request_project_action') {
             const patch = event.action.patch;
             void (async () => {
@@ -586,7 +593,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 return;
               }
               try {
-                if (approvalKey !== currentKeyRef.current || !uiActiveRef.current) throw new Error('当前 Key 或页面已变化，请重新提出请求');
+                assertApprovalTarget();
                 await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: true });
                 approved = true;
                 if (patch.action === 'encode_vibe') {
@@ -600,8 +607,9 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 if (patch.action !== 'grant_local_image_folder') window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: patch }));
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: patch.action === 'grant_local_image_folder' ? `已允许本次对话${patch.payload?.access === 'write' ? '保存图片到' : '读取图片目录'}：${String(patch.payload?.directory || '')}。` : '已在你确认后完成该项目操作。' }]);
               } catch (error) {
-                if (approved) await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: false }).catch(() => {});
-                else await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false }).catch(() => {});
+                const result = agentGenerationFailure(error);
+                if (approved) await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: false, result }).catch(() => {});
+                else await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false, result }).catch(() => {});
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '项目操作失败' }]);
               }
             })();
@@ -611,15 +619,18 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               let approved = false;
               const requestId = generationAction.patch.requestId;
               try {
-                const success = await props.onRequestGeneration(event.draft || props.draft, generationAction.patch.reason, async () => {
-                  if (approvalKey !== currentKeyRef.current || !uiActiveRef.current) throw new Error('当前 Key 或创作目标已变化，请重新提出请求');
+                assertApprovalTarget();
+                // 流持续期间页面可切换模型／模式，回调必须读取最新编辑器，不能沿用发送时的闭包。
+                const success = await currentPropsRef.current.onRequestGeneration(event.draft || currentDraftRef.current, generationAction.patch.reason, async () => {
+                  assertApprovalTarget();
                   await promptAgentService.control(activeSessionId, 'confirm', requestId, { requestId, accepted: true });
                   approved = true;
                 });
-                const receipt = typeof success === 'object' ? success : { success: success === true, historySaved: false };
+                const receipt = normalizeAgentGenerationResult(success);
                 await promptAgentService.control(activeSessionId, approved ? 'finalize' : 'confirm', requestId, { requestId, accepted: false, success: receipt.success, result: receipt });
+                if (!receipt.success && receipt.outcome !== 'cancelled') setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: receipt.error || '生成失败' }]);
               } catch (error) {
-                await promptAgentService.control(activeSessionId, approved ? 'finalize' : 'confirm', requestId, { requestId, accepted: false, success: false }).catch(() => {});
+                await promptAgentService.control(activeSessionId, approved ? 'finalize' : 'confirm', requestId, { requestId, accepted: false, success: false, result: agentGenerationFailure(error) }).catch(() => {});
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '生成失败' }]);
               }
             })();
@@ -736,7 +747,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         if (event.type === 'done') {
           const completed = !event.status || event.status === 'completed';
           setTaskSnapshot(previous => ({ ...previous, status: event.status || 'completed', finalDraft: event.draft, error: event.error, stopReason: event.stopReason }));
-          if ((labChanged || event.draftChanged) && completed) props.onFinalDraft(event.draft, !displayPreferences.autoApplyDraft);
+          if ((labChanged || event.draftChanged) && completed) currentPropsRef.current.onFinalDraft(event.draft, !displayPreferences.autoApplyDraft);
           if (navigationTarget) {
             window.dispatchEvent(new CustomEvent('nai-agent-navigate', { detail: navigationTarget }));
             props.onClose();

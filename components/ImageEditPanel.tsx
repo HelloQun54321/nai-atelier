@@ -1,4 +1,5 @@
 import type { PromptAgentDraft, NAIParams } from '../types';
+import { agentOperationError } from '../services/agentOperation.mjs';
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { ImageEditBaseImageSource, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem } from '../types';
 import { LabPageLayout } from '../services/appearancePreferences';
@@ -927,33 +928,35 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   };
 
   const submit = async (override?: PromptAgentDraft, onApproved?: () => Promise<void>): Promise<boolean> => {
-    if (isApplyingOutpaint || applyingOutpaintRef.current || importingImageRef.current || isLoading) return false;
-    if (pendingOutpaint) { setError('画布扩展已调整，请先应用后再生成'); return false; }
-    if (inFlightRef.current || isGenerating) return false;
-    if (lowConsumption.enabled && operation !== 'inpaint') return false;
+    const stop = (message: string, code: string) => {
+      setError(message);
+      if (override) throw agentOperationError(message, code);
+      return false;
+    };
+    if (isApplyingOutpaint || applyingOutpaintRef.current || importingImageRef.current || isLoading) return stop('底图或画布正在加载，请等待完成后再生成', 'canvas_busy');
+    if (pendingOutpaint) return stop('画布扩展已调整，请先应用后再生成', 'outpaint_pending');
+    if (inFlightRef.current || isGenerating) return stop('已有图片正在生成，请等待完成', 'generation_busy');
+    if (lowConsumption.enabled && operation !== 'inpaint') return stop('低消耗模式不允许本次图片编辑，请先关闭低消耗模式', 'low_consumption_blocked');
+    if (!baseImage || !state.width || !state.height) return stop('请先选择或上传一张底图再生成', 'missing_base_image');
     const imageCanvas = imageCanvasRef.current;
     const maskCanvas = maskCanvasRef.current;
     // 图生图不渲染蒙版画布（maskCanvas 为 null），仅要求底图画布存在
-    if (!imageCanvas || (operation !== 'image-to-image' && !maskCanvas)) return false;
+    if (!imageCanvas || (operation !== 'image-to-image' && !maskCanvas)) return stop('编辑画布尚未准备好，请先选择底图', 'canvas_not_ready');
     // 画布存在但尚未载入底图（width=0）时给出明确提示，而不是静默失败
     if (!imageCanvas.width || !imageCanvas.height) {
-      setError('请先选择或上传一张底图再生成');
-      return false;
+      return stop('请先选择或上传一张底图再生成', 'missing_base_image');
     }
     const dimensionError = validateImageEditDimensions(imageCanvas.width, imageCanvas.height);
     if (dimensionError) {
-      setError(`请先处理底图尺寸：${dimensionError}`);
-      return false;
+      return stop(`请先处理底图尺寸：${dimensionError}`, 'invalid_dimensions');
     }
     if (operation === 'inpaint' && focused && (!state.focusedRect || state.focusedRect.width < 2 || state.focusedRect.height < 2)) {
-      setError('请先在画布上框选 Focused Inpainting 区域');
-      return false;
+      return stop('请先在画布上框选 Focused Inpainting 区域', 'missing_focused_region');
     }
     // 蒙版为空（未画任何笔迹/未应用画布扩展）时 infill/outpaint 语义上等于不重绘，
     // 但 NovelAI 仍会按编辑请求计费——拦截并提示，避免白耗 Anlas
     if (operation !== 'image-to-image' && !maskHasInk(maskCanvas!)) {
-      setError(operation === 'outpaint' ? '请先设置画布扩展并点击「应用画布扩展」，或手动绘制扩图蒙版' : '请先在蒙版上涂画需要重绘的区域');
-      return false;
+      return stop(operation === 'outpaint' ? '请先设置画布扩展并点击「应用画布扩展」，或手动绘制扩图蒙版' : '请先在蒙版上涂画需要重绘的区域', 'missing_mask');
     }
     setError(null);
     inFlightRef.current = true;

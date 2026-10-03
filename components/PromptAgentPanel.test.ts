@@ -66,8 +66,8 @@ const stubServices = (sessionOverrides: { imageInput?: boolean; [key: string]: u
   }));
 };
 
-const renderPanel = (canUndo = false, overrides = {}) => {
-  return render(
+const panelElement = (canUndo = false, overrides = {}) => {
+  return (
     React.createElement(
       ConfirmDialogProvider,
       null,
@@ -103,6 +103,7 @@ const renderPanel = (canUndo = false, overrides = {}) => {
     )
   );
 };
+const renderPanel = (canUndo = false, overrides = {}) => render(panelElement(canUndo, overrides));
 
 describe('PromptAgentPanel 顶栏前端布局规范', () => {
   beforeEach(() => {
@@ -212,7 +213,56 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     renderPanel(false, { onRequestGeneration: async (_draft: unknown, _reason: unknown, approve: () => Promise<void>) => { await approve(); return { success: true, historySaved: true, historyId: 'actual-image-id' }; } });
     await waitFor(() => expect((screen.getByRole('textbox', { name: '任务要求' }) as HTMLTextAreaElement).disabled).toBe(false));
     fireEvent.change(screen.getByRole('textbox', { name: '任务要求' }), { target: { value: '生成后保存' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
-    await waitFor(() => expect(controls).toHaveBeenCalledWith('session-1', 'finalize', 'request-1', expect.objectContaining({ success: true, result: { success: true, historySaved: true, historyId: 'actual-image-id' } })));
+    await waitFor(() => expect(controls).toHaveBeenCalledWith('session-1', 'finalize', 'request-1', expect.objectContaining({ success: true, result: expect.objectContaining({ success: true, historySaved: true, historyId: 'actual-image-id' }) })));
+  });
+
+  it('持续模型流切换模型后生成及最终应用调用最新编辑器回调', async () => {
+    stubServices();
+    const controls = vi.spyOn(promptAgentService, 'control').mockResolvedValue(undefined);
+    let emit!: Parameters<typeof promptAgentService.run>[1], finish!: () => void;
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, onEvent) => { emit = onEvent; await new Promise<void>(resolve => { finish = resolve; }); });
+    const oldGenerate = vi.fn(), oldApply = vi.fn(), latestApply = vi.fn();
+    const latestGenerate = vi.fn(async (_draft, _reason, approve) => { await approve(); return { success: true, historySaved: false }; });
+    const view = renderPanel(false, { onRequestGeneration: oldGenerate, onFinalDraft: oldApply });
+    const box = screen.getByRole('textbox', { name: '任务要求' }); await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(box, { target: { value: '改完后生成' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(emit).toBeTypeOf('function'));
+    const draft = { basePrompt: 'latest', subjectPrompt: '', negativePrompt: '', modules: [], params: { model: 'nai-diffusion-5-full' } as NAIParams };
+    view.rerender(panelElement(false, { draft, onRequestGeneration: latestGenerate, onFinalDraft: latestApply }));
+    act(() => { emit({ type: 'action', action: { kind: 'request_generation', patch: { requestId: 'latest' } }, draft }); });
+    await waitFor(() => expect(controls).toHaveBeenCalledWith('session-1', 'finalize', 'latest', expect.objectContaining({ success: true })));
+    expect(latestGenerate).toHaveBeenCalledWith(draft, undefined, expect.any(Function)); expect(oldGenerate).not.toHaveBeenCalled();
+    await act(async () => { emit({ type: 'done', draft, draftChanged: true, status: 'completed', message: '完成', provider: 'deepseek', model: 'deepseek-chat' }); finish(); });
+    expect(latestApply).toHaveBeenCalledWith(draft, false); expect(oldApply).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('批准=%s 的实际生成失败将具体回执传给后端并显示原因', async approved => {
+    stubServices(); const controls = vi.spyOn(promptAgentService, 'control').mockResolvedValue(undefined);
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, onEvent) => { onEvent({ type: 'action', action: { kind: 'request_generation', patch: { requestId: 'failed' } } }); });
+    const receipt = { success: false, historySaved: false, outcome: approved ? 'failed' : 'blocked', code: approved ? 'generation_failed' : 'target_changed', error: approved ? '合成接口失败' : '合成目标已变化' };
+    renderPanel(false, { onRequestGeneration: async (_draft: unknown, _reason: unknown, approve: () => Promise<void>) => { if (approved) await approve(); return receipt; } });
+    const box = screen.getByRole('textbox', { name: '任务要求' }); await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(box, { target: { value: '生成' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await screen.findByText(receipt.error);
+    expect(controls).toHaveBeenCalledWith('session-1', approved ? 'finalize' : 'confirm', 'failed', expect.objectContaining({ success: false, result: receipt }));
+    expect(screen.queryByText(/用户取消/)).toBeNull();
+  });
+  it('确认期间更换 Key 以明确拦截回执结束，不批准原 Key 的生成请求', async () => {
+    stubServices(); const controls = vi.spyOn(promptAgentService, 'control').mockResolvedValue(undefined);
+    let emit!: Parameters<typeof promptAgentService.run>[1], finish!: () => void, proceed!: () => void;
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, onEvent) => { emit = onEvent; await new Promise<void>(resolve => { finish = resolve; }); });
+    const generate = vi.fn(async (_draft, _reason, approve) => { await new Promise<void>(resolve => { proceed = resolve; }); await approve(); return true; });
+    const view = renderPanel(false, { apiKey: 'synthetic-key-a', onRequestGeneration: generate });
+    const box = screen.getByRole('textbox', { name: '任务要求' }); await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(box, { target: { value: '生成' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(emit).toBeTypeOf('function'));
+    act(() => { emit({ type: 'action', action: { kind: 'request_generation', patch: { requestId: 'key-change' } } }); });
+    await waitFor(() => expect(proceed).toBeTypeOf('function'));
+    view.rerender(panelElement(false, { apiKey: 'synthetic-key-b', onRequestGeneration: generate }));
+    await act(async () => { proceed(); });
+    await waitFor(() => expect(controls).toHaveBeenCalledWith('session-1', 'confirm', 'key-change', expect.objectContaining({ accepted: false, success: false, result: expect.objectContaining({ outcome: 'blocked', code: 'key_changed' }) })));
+    expect(controls.mock.calls.some(call => call[3]?.accepted === true)).toBe(false);
+    await act(async () => { finish(); });
   });
   it('重新回答保留尚未发送的输入草稿', async () => {
     stubServices();

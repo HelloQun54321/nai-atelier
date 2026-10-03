@@ -99,22 +99,6 @@ export const AGENT_TOOL_GROUPS = {
   web: ['web_search', 'read_web_page'],
   local_files: ['request_local_image_folder_access', 'list_local_images', 'list_local_files', 'show_local_image', 'inspect_local_image', 'save_project_image_to_folder', 'copy_local_image', 'attach_local_files', 'save_page_export_to_folder'],
 };
-export const inferAgentToolGroups = (request = '', previous = '') => {
-  const groups = new Set();
-  const combined = /继续|刚才|之前|那个|同样|接着|再来/.test(request) ? request + ' ' + previous : request;
-  if (/提示词|参数|生成|生图|出图|实验室|重绘|扩图|构图|复用|prompt|render|generate/i.test(combined)) groups.add('creative');
-  if (/图片|照片|看看|展示|贴图|收藏|保存|资料|风格串|画师|灵感|历史|Vibe|参考|角色|AITag|项目|image|history|library/i.test(combined)) groups.add('library');
-  if (/删除|清理|预算|队列|设置|缓存|词库|delete|settings/i.test(combined)) groups.add('maintenance');
-  if (/搜索|联网|网页|核实|最新|查资料|search|web/i.test(combined)) groups.add('web');
-  if (/文件夹|目录|磁盘|本地图片|本地文件|电脑.*图片|保存到(?!资料|灵感|历史|项目)|存到(?!资料|灵感|历史|项目)|桌面|folder|directory|[a-z]:[\\/]/i.test(combined)) groups.add('local_files');
-  return [...groups];
-};
-export const selectRuntimeTools = (tools, groups) => {
-  const names = new Set(['get_agent_capabilities', 'get_local_time', 'read_current_page', 'operate_current_page', 'inspect_current_page_image', 'enable_tool_group', 'get_lab_state', 'show_project_image']);
-  for (const group of groups) for (const name of AGENT_TOOL_GROUPS[group] || []) names.add(name);
-  return tools.filter(tool => names.has(tool.name));
-};
-
 export const localTimeInfo = (now = new Date(), timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone) => {
   const parts = new Intl.DateTimeFormat('sv-SE', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZoneName: 'longOffset' }).formatToParts(now);
   const fields = Object.fromEntries(parts.map(part => [part.type, part.value]));

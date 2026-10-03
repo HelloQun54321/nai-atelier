@@ -604,7 +604,7 @@ test('prompt agent destructive tools only emit confirmation requests', async () 
   assert.ok(request);
   clearTimeout(request.timer);
   service.pendingConfirmations.clear();
-  request.resolve({ accepted: false, result: {} });
+  request.resolve({ accepted: false, result: { success: false, outcome: 'cancelled', code: 'user_cancelled', error: '用户取消了这项操作' } });
   await assert.rejects(() => pending, /取消/);
   assert.equal(workerCalls, 0);
   assert.equal(events.at(-1).action.kind, 'request_project_action');

@@ -488,6 +488,19 @@ describe('ImageEditControls', () => {
   });
 });
 
+it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('Agent 的 %s 缺少画布时回传拦截原因，不被当作主动取消', async operation => {
+  lowMode.enabled = false;
+  const draft = createLabImageEditDraft(operation, 'synthetic', '', params);
+  const generate = vi.fn();
+  let request!: (draft: import('../types').PromptAgentDraft) => Promise<boolean>;
+  render(React.createElement(ImageEditPanel, { baseImage: null, previewImage: null, operation, draft,
+    layout: { order: ['prompt', 'baseImage', 'params', 'editSettings'], collapsed: {} }, generationCostLabel: () => '估算', apiKey: 'synthetic', notify: vi.fn(),
+    onPromptChange: vi.fn(), onNegativePromptChange: vi.fn(), onPromptSource: vi.fn(), onDraftChange: vi.fn(), onBaseImageChange: vi.fn(), onCanvasChange: vi.fn(),
+    onGenerate: generate, onAgentGenerateReady: value => { request = value; }, onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', tagAssistEnabled: false }));
+  await expect(request({ basePrompt: 'synthetic', subjectPrompt: '', negativePrompt: '', modules: [], params })).rejects.toMatchObject({ outcome: 'blocked', code: 'missing_base_image' });
+  expect(generate).not.toHaveBeenCalled();
+});
+
 describe('ImageEditPreview', () => {
   it('复用文生图规格的预览区域、下载按钮和生成按钮', () => {
     const { container } = render(React.createElement(ImageEditPreview, {

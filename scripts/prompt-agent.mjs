@@ -1,4 +1,5 @@
-import { AGENT_TOOL_GROUPS, agentOutputLimit, agentTokenUsage, agentStopInfo, createAgentRunBudget, boundAgentToolResult, compactAuditEntries, inferAgentToolGroups, isProjectImagePath, localTimeInfo, publicAgentToolContent, selectRuntimeTools } from './agent-runtime.mjs';
+import { AGENT_TOOL_GROUPS, agentOutputLimit, agentTokenUsage, agentStopInfo, createAgentRunBudget, boundAgentToolResult, compactAuditEntries, isProjectImagePath, localTimeInfo, publicAgentToolContent } from './agent-runtime.mjs';
+import { normalizeAgentGenerationResult, agentOperationError } from '../services/agentOperation.mjs';
 import { AgentLocalImages } from './agent-local-images.mjs';
 import { AgentUiBridge } from './agent-ui-bridge.mjs';
 import { createAgentPageTools, isAgentPageTool } from './agent-page-tools.mjs';
@@ -22,7 +23,7 @@ import { normalizeTransparentWeight, TRANSPARENT_WEIGHT_MIN, TRANSPARENT_WEIGHT_
 import { AGENT_THINKING_LEVELS, createAgentThinkingMap, normalizeAgentThinkingLevels, normalizeAgentThinkingMap } from '../services/agentThinking.mjs';
 
 const CONFIG_FILE = 'local-data/prompt-agent.json';
-const runtimeSourceFiles = ['prompt-agent.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs'];
+const runtimeSourceFiles = ['prompt-agent.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs'];
 const sourceSignature = () => createHash('sha256').update(runtimeSourceFiles.map(file => readFileSync(new URL(file, import.meta.url))).join('\n')).digest('hex');
 const sourceVersion = () => JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const LOADED_VERSION = sourceVersion();
@@ -691,8 +692,8 @@ const baseSystemPrompt = `你是 NAI Atelier 的项目业务 Agent。你的职�
 6. 当用户要求参考上一张/最近一张生成图时，先调用 list_generation_history，再调用 inspect_generation_image。没有真正收到图片时不得声称看过图片。
 6.1 用户要求复用历史配置时，调用 reuse_generation_history 一次带入完整文本、角色、模块及参数，再用业务工具只修改用户要求的字段；不要逐个点击页面搬运配置。历史记录、工作草稿与页面已应用状态必须区分。仅查看历史不能说已填入实验室。生成前读取 get_lab_state 核对，用户要求出图就调用 request_generation 等待确认与实际结果；查资料只补与本次修改相关的事实，已有事实不要重复读取。
 7. 删除、清空等危险操作只能调用请求确认工具；确认前不得声称已经完成。
-8. 不得要求或泄露 API Key，不得执行命令行或操作系统进程。用户需要电脑图片时加载 local_files。读取和展示图片无需目录租期；只读档不能修改项目或保存图片；标准档首次写入目录用 request_local_image_folder_access 确认；完全访问档可以按用户指令直接读写。local-data 保护区不能开放磁盘权限。不得凭空声称保存成功，必须取得实际落盘收据。
-9. 问候和普通聊天直接简短回答，不要无故读取资料。用户询问能力时调用 get_agent_capabilities，查询时间/时区调用 get_local_time；展示已有图片调用 show_project_image，展示不要求模型识图。需要其他工具时调用 enable_tool_group，不能把未加载的工具误说成没有能力。
+8. 不得要求或泄露 API Key，不得执行命令行或操作系统进程。用户需要电脑图片时直接使用本地文件工具。读取和展示图片无需目录租期；只读档不能修改项目或保存图片；标准档首次写入目录用 request_local_image_folder_access 确认；完全访问档可以按用户指令直接读写。local-data 保护区不能开放磁盘权限。不得凭空声称保存成功，必须取得实际落盘收据。
+9. 问候和普通聊天直接简短回答，不要无故读取资料。用户询问能力时调用 get_agent_capabilities，查询时间/时区调用 get_local_time；展示已有图片调用 show_project_image，展示不要求模型识图。全部工具已注册，可直接调用；enable_tool_group 仅用于查询分类目录。
 10. 优先执行与当前要求相关的工具。完成后只用简短中文总结实际读取、修改或待确认的事项，不复述整份实验室内容。
 10. Precise/角色参考每张每次生图增加 5 Anlas，当前与 Vibe Transfer 互斥；设置其中一项时必须关闭另一项。
 11. 必须严格区分三类正面提示词：basePrompt 只放画师名、媒介、渲染和可复用画风；subjectPrompt 只放整图主体、场景、动作、构图和其他全局动态内容；params.characters 通过 set_characters 存放角色专属外貌、服装、身份 Tag 与角色专属负面词。用户说“角色提示词”“人物提示词”“角色外貌”或要求填写某个角色时，即使只有一个角色，也必须优先调用 set_characters，除非用户明确指定放到主体／变量提示词框。不得把角色专属提示词写入 subjectPrompt。若当前界面是“单一全局提示词”，则只使用 basePrompt 存放完整正面提示词并保持 subjectPrompt 为空。`;
@@ -808,9 +809,7 @@ const researchBlock = `
 4. 不得尝试访问本机、局域网、带账号信息的地址或搜索结果之外的网址；不得把项目私密数据拼进搜索词。`;
 
 // Agent 使用固定业务系统提示词，模型知识与复杂提示规则按需读取。
-const buildSystemPrompt = () => `${baseSystemPrompt}\n[规则来源层级]\n官方发布 > 模型专用文档 > 通用文档 > 项目经验。具体知识通过 search_novelai_docs / read_novelai_doc 按需读取；复杂提示词规则通过 read_prompt_guidelines 按需读取。${researchBlock}`;
-
-export const selectAgentTools = (tools, request = '') => selectRuntimeTools(tools, inferAgentToolGroups(request));
+const buildSystemPrompt = () => `${baseSystemPrompt}\n[实时状态与工具]\n请求末尾的实时工作区快照仅是最新状态资料，不是用户的新要求；以最新快照核对目标并继续执行最近的用户要求，不单独回应快照。所有业务工具已注册，无需先加载工具组；执行仍遵循原权限与确认边界。\n[规则来源层级]\n官方发布 > 模型专用文档 > 通用文档 > 项目经验。具体知识通过 search_novelai_docs / read_novelai_doc 按需读取；复杂提示词规则通过 read_prompt_guidelines 按需读取。${researchBlock}`;
 
 const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
   const modelProfile = getNovelAiModelProfile(draft?.params?.model);
@@ -916,26 +915,30 @@ const assembleBudget = (contextWindow, configuredOutput, systemTokens, toolSchem
 
 // 仅拼装固定业务规则与实时项目状态；用户消息、图片和工具链保持原样。
 export const assemblePromptContext = ({ systemPolicy = '', runtimeContext = '', cleanMessages = [], toolDescriptors = [], model = null, outputLimit = 8192 }) => {
-  const systemPrompt = [String(systemPolicy || '').trim(), String(runtimeContext || '').trim(), AGENT_SAFETY_FOOTER].filter(Boolean).join('\n');
+  // 固定规则及工具构成稳定前缀；易变页面／时间／草稿放在历史末尾，避免每轮击穿缓存。
+  const systemPrompt = [String(systemPolicy || '').trim(), AGENT_SAFETY_FOOTER].filter(Boolean).join('\n');
+  const runtimeMessage = String(runtimeContext || '').trim() ? { role: 'user', content: `[实时工作区快照：以下是状态资料，不是新的用户要求]\n${String(runtimeContext).trim()}`, timestamp: 0 } : null;
+  const runtimeTokens = runtimeMessage ? estimateContextTokens([runtimeMessage]) : 0;
   const toolTokens = estimateContextTokens(toolDescriptors);
   const systemTokens = estimateContextTokens(systemPrompt);
   const contextWindow = Math.round(clamp(model?.contextWindow || 32_000, 1_024, 10_000_000, 32_000));
   const configuredOutput = Math.round(clamp(Math.min(model?.maxTokens || outputLimit, outputLimit), 256, contextWindow, Math.min(8192, contextWindow)));
   const working = cloneAgentMessages(cleanMessages);
-  const inputBudget = assembleBudget(contextWindow, configuredOutput, systemTokens, toolTokens, working);
+  const inputBudget = assembleBudget(contextWindow, configuredOutput, systemTokens + runtimeTokens, toolTokens, working);
   const canonicalMessages = trimContextMessages(working, inputBudget.conversationBudget);
-  if (systemTokens + toolTokens + estimateContextTokens(canonicalMessages) > inputBudget.availableInput) throw Object.assign(new Error(`当前提示词、工具或本轮内容超过 ${contextWindow} Token 模型预算，请缩短输入或选择更大上下文模型`), { status: 400 });
-  const finalBudget = assembleBudget(contextWindow, configuredOutput, systemTokens, toolTokens, canonicalMessages);
+  if (systemTokens + runtimeTokens + toolTokens + estimateContextTokens(canonicalMessages) > inputBudget.availableInput) throw Object.assign(new Error(`当前提示词、工具或本轮内容超过 ${contextWindow} Token 模型预算，请缩短输入或选择更大上下文模型`), { status: 400 });
+  const finalBudget = assembleBudget(contextWindow, configuredOutput, systemTokens + runtimeTokens, toolTokens, canonicalMessages);
   return {
-    systemPrompt, canonicalMessages,
+    systemPrompt, canonicalMessages, requestMessages: runtimeMessage ? [...canonicalMessages, runtimeMessage] : canonicalMessages,
     tokenEstimate: {
       policyTokens: systemTokens,
+      runtimeTokens,
       historyTokens: estimateContextTokens(cleanMessages),
-      totalTokens: systemTokens + toolTokens + estimateContextTokens(canonicalMessages),
+      totalTokens: systemTokens + runtimeTokens + toolTokens + estimateContextTokens(canonicalMessages),
       contextWindow, projectedBuffer: finalBudget.projectedBuffer,
     },
     warnings: canonicalMessages.length < working.length ? ['旧历史已按完整用户轮次裁剪，保留本轮工具组'] : [],
-    hashes: { systemPromptHash: shorthandHash(systemPrompt) },
+    hashes: { systemPromptHash: shorthandHash(systemPrompt), toolDefinitionsHash: shorthandHash(JSON.stringify(toolDescriptors)), runtimeContextHash: shorthandHash(String(runtimeContext)) },
     budget: { contextWindow, outputReserve: finalBudget.outputReserve, protocolReserve: finalBudget.protocolReserve, conversationTokenBudget: finalBudget.conversationBudget, storedConversation: canonicalMessages },
   };
 };
@@ -1609,7 +1612,7 @@ export class PromptAgentService {
     } catch (error) {
       clearTimeout(confirmation.timer);
       this.pendingConfirmations.delete(requestId);
-      confirmation.resolve({ accepted: false, result: {} });
+      confirmation.resolve({ accepted: true, result: { success: false, outcome: 'failed', code: 'project_action_failed', error: error instanceof Error ? error.message : '项目操作失败' } });
       void this.appendAuditLog(input?.sessionId, { type: 'project_action_failed', action, resourceId, error: error instanceof Error ? error.message : 'Unknown error' }).catch(() => {});
       throw error;
     }
@@ -2007,7 +2010,7 @@ export class PromptAgentService {
         while (run.suspendedDrafts.size > 8) run.suspendedDrafts.delete(run.suspendedDrafts.keys().next().value);
         const saved = run.suspendedDrafts.get(JSON.stringify([next.target.chainId, next.target.mode]));
         const restored = saved?.client?.target?.fingerprint === next.target.fingerprint ? saved.draft : next;
-        this.cancelPendingConfirmations(sessionId);
+        this.cancelPendingConfirmations(sessionId, { outcome: 'blocked', code: 'target_changed', error: '创作目标已变化，请读取当前目标后重新提出请求' });
         for (const key of ['basePrompt', 'subjectPrompt', 'negativePrompt', 'modules', 'params', 'editContext', 'target']) { if (key in restored) run.draft[key] = structuredClone(restored[key]); else delete run.draft[key]; }
         run.draft.target = structuredClone(next.target); run.clientDraft = structuredClone(next);
         run.contextData.clientSettings.pageOverrides = [];
@@ -2044,12 +2047,15 @@ export class PromptAgentService {
       const requestId = text(payload.requestId || message).slice(0, 100);
       const pending = this.pendingConfirmations.get(requestId);
       if (!pending || pending.sessionId !== sessionId || pending.expiresAt <= Date.now() || pending.approved || pending.executing) throw Object.assign(new Error('确认请求已过期或已被处理'), { status: 409 });
-      if (payload.accepted === true && pending.keyHash !== undefined && (payload.keyHash || '') !== pending.keyHash) { this.cancelPendingConfirmations(sessionId); throw Object.assign(new Error('NovelAI Key 已变化，请重新提出请求'), { status: 403 }); }
+      if (payload.accepted === true && pending.keyHash !== undefined && (payload.keyHash || '') !== pending.keyHash) { this.cancelPendingConfirmations(sessionId, { outcome: 'blocked', code: 'key_changed', error: 'NovelAI Key 已变化，请重新提出请求' }); throw Object.assign(new Error('NovelAI Key 已变化，请重新提出请求'), { status: 403 }); }
       if (payload.accepted === true) { pending.approved = true; const run = this.runs.get(sessionId); if (run) run.state.status = 'executing'; }
       else {
         clearTimeout(pending.timer);
         this.pendingConfirmations.delete(requestId);
-        pending.resolve({ accepted: false, result: {} });
+        const result = pending.operation.action === 'request_generation' && payload.result
+          ? normalizeAgentGenerationResult({ ...payload.result, success: false })
+          : { success: false, outcome: payload.result?.outcome || 'cancelled', code: payload.result?.code || 'user_cancelled', error: payload.result?.error || '用户取消了这项操作' };
+        pending.resolve({ accepted: false, result });
       }
     } else if (action === 'finalize') {
       const requestId = text(payload.requestId || message).slice(0, 100);
@@ -2057,7 +2063,9 @@ export class PromptAgentService {
       if (!pending || pending.sessionId !== sessionId || pending.approved !== true || pending.executing || !['request_generation', 'encode_vibe', 'clear_mobile_cache'].includes(pending.operation?.action)) throw Object.assign(new Error('确认请求已过期或必须由项目执行接口完成'), { status: 409 });
       clearTimeout(pending.timer);
       this.pendingConfirmations.delete(requestId);
-      pending.resolve({ accepted: payload.success === true, result: payload.result || {} });
+      const result = pending.operation.action === 'request_generation' ? normalizeAgentGenerationResult({ ...payload.result, success: payload.success === true }) : { ...payload.result, success: payload.success === true, outcome: payload.success === true ? 'succeeded' : 'failed', ...(payload.success === true ? {} : { error: payload.result?.error || '项目操作执行失败', code: payload.result?.code || 'project_action_failed' }) };
+      // 批准与业务成功是两个事实；执行失败不能伪装成用户拒绝。
+      pending.resolve({ accepted: true, result });
     }
     else throw Object.assign(new Error('未知的 Agent 控制操作'), { status: 400 });
     const controlMessage = text(message).trim().slice(0, 8_000);
@@ -2071,13 +2079,13 @@ export class PromptAgentService {
     return { ok: true, action };
   }
 
-  cancelPendingConfirmations(sessionId) {
+  cancelPendingConfirmations(sessionId, reason = { outcome: 'blocked', code: 'task_interrupted', error: '任务已结束或中断，本次操作未完成；请核对实际状态后继续' }) {
     this.uiBridge.cancel(sessionId);
     for (const [requestId, pending] of this.pendingConfirmations) {
       if (pending.sessionId !== sessionId) continue;
       clearTimeout(pending.timer);
       this.pendingConfirmations.delete(requestId);
-      pending.resolve({ accepted: false, result: {} });
+      pending.resolve({ accepted: false, result: { success: false, ...reason } });
     }
   }
 
@@ -2087,8 +2095,14 @@ export class PromptAgentService {
     const run = this.runs.get(sessionId);
     if (run) run.state.status = 'waiting_confirmation';
     const promise = new Promise(resolve => {
-      const timer = setTimeout(() => { this.pendingConfirmations.delete(requestId); resolve({ accepted: false, result: { reason: '确认超时' } }); }, timeout);
-      this.pendingConfirmations.set(requestId, { sessionId, runId: run?.state.runId, keyHash: run?.keyHash, operation: structuredClone(operation), expiresAt, resolve: result => { if (run) run.state.status = 'running'; resolve(result); }, timer });
+      const settle = result => {
+        if (run) run.state.status = 'running';
+        const receipt = result.result || {};
+        void this.appendAuditLog(sessionId, { type: 'confirmation_outcome', runId: run?.state.runId, action: operation.action, accepted: result.accepted, receipt: { success: receipt.success ?? result.accepted, outcome: receipt.outcome || (result.accepted ? 'succeeded' : 'blocked'), ...(receipt.code ? { code: text(receipt.code).slice(0, 60) } : {}), ...(receipt.error ? { error: text(receipt.error).slice(0, 500) } : {}), ...(receipt.historySaved !== undefined ? { historySaved: receipt.historySaved === true, historyId: text(receipt.historyId).slice(0, 200) } : {}) } }).catch(() => {});
+        resolve(result);
+      };
+      const timer = setTimeout(() => { this.pendingConfirmations.delete(requestId); settle({ accepted: false, result: { success: false, outcome: 'blocked', code: 'confirmation_timeout', error: '等待确认超时，本次操作未提交' } }); }, timeout);
+      this.pendingConfirmations.set(requestId, { sessionId, runId: run?.state.runId, keyHash: run?.keyHash, operation: structuredClone(operation), expiresAt, resolve: settle, timer });
     });
     return { requestId, promise };
   }
@@ -2194,7 +2208,7 @@ export class PromptAgentService {
       const { requestId, promise: confirmation } = this.createConfirmation(project?.agentSessionId, { action, resourceId: resourceId || '', payload });
       emit({ type: 'action', action: { kind: 'request_project_action', patch: { action, resourceId, title, consequence, payload, requestId } } });
       const result = await confirmation;
-      if (!result.accepted) throw new Error('用户取消了这项项目操作');
+      if (!result.accepted || result.result?.success === false) throw agentOperationError(result.result?.error || '项目操作未完成，请核对实际回执', result.result?.code || 'project_action_failed', result.result?.outcome || 'failed');
       return { content: jsonText({ ok: true, confirmed: true, action, result: result.result }), details: { action, confirmed: true, result: result.result } };
     };
     const changed = resource => emit({ type: 'project_changed', resource });
@@ -2341,14 +2355,14 @@ export class PromptAgentService {
           model: { imageInput: Boolean(modelInfo?.imageInput), imageInputStatus: modelInfo?.capabilityDetection?.imageInput === 'unknown' ? 'unknown' : modelInfo?.imageInput ? 'supported' : 'unsupported', separateVisionModel: false },
           localTime: true, displayProjectImages: Boolean(project?.requestJson), projectDataAvailable: Boolean(project?.requestJson),
           livePage: { available: Boolean(project?.requestUI), readTool: 'read_current_page', operateTool: 'operate_current_page', imageTool: 'inspect_current_page_image', actions: ['前景弹窗与菜单', '读写普通设置', '点击、填写、勾选、滚动、悬停', '标记区域的拖动与双击', '暂存原图并粘贴到上传入口', '读取全局通知和导出产物'], canvasCommands: ['get_image_edit_state', 'edit_image_canvas'], scope: '发起任务的工坊浏览器标签页，不包含电脑其他应用' },
-          toolGroups: Object.keys(AGENT_TOOL_GROUPS), toolInventory: { total: project?.getToolInventory?.().length || new Set(Object.values(AGENT_TOOL_GROUPS).flat()).size, note: '具体工具随对应分组加载，不能把未加载工具说成没有能力' },
+          toolGroups: Object.keys(AGENT_TOOL_GROUPS), toolInventory: { total: project?.getToolInventory?.().length || new Set(Object.values(AGENT_TOOL_GROUPS).flat()).size, note: '所有工具已注册，直接调用对应工具；分组仅用于查找，不是权限档位' },
           permissionMode: this.publicConfig().permissionMode,
           localImages: { available: true, actions: ['列出指定目录的图片与子目录', '在聊天中展示本地图片', '当前模型观察本地图片（需要图片输入）', '保存项目图片到指定目录', '复制本地图片', '把本地图片、JSON、Vibe 或目录接入上传入口', '把实际图片、JSON、Vibe、ZIP 导出保存到指定目录'], writeAllowed: this.publicConfig().permissionMode !== 'read_only', writeFolderApproval: this.publicConfig().permissionMode === 'standard', timedExpiry: false },
-          limits: ['本地文件限于图片与创作导入导出，不提供任意文本文件读写或系统命令；local-data 通过项目工具访问', '图片展示不等于模型已经看过图片', '生图、付费和危险操作仍需用户确认', '未加载的工具可通过 enable_tool_group 按需启用'],
+          limits: ['本地文件限于图片与创作导入导出，不提供任意文本文件读写或系统命令；local-data 通过项目工具访问', '图片展示不等于模型已经看过图片', '生图、付费和危险操作仍需用户确认'],
         }) }),
       },
       {
-        name: 'enable_tool_group', label: '加载相关工具', description: '按需加载 creative（实验室创作）、library（资料与图片）、maintenance（设置与清理）、web（联网）、local_files（电脑图片目录）工具，可同时选择多个组；加载不代表执行或批准。',
+        name: 'enable_tool_group', label: '查询工具分组', description: '兼容旧会话的工具组查询：creative（实验室创作）、library（资料与图片）、maintenance（设置与清理）、web（联网）、local_files（电脑图片目录）。所有工具已经注册，正常操作直接调用业务工具，无需先调用本工具；查询不代表执行或批准。',
         parameters: Type.Object({ groups: Type.Array(Type.Union(Object.keys(AGENT_TOOL_GROUPS).map(group => Type.Literal(group))), { minItems: 1, maxItems: 5 }) }),
         execute: async (_id, args) => { if (!project?.enableToolGroup) throw new Error('当前运行不支持动态加载工具'); return { content: jsonText(project.enableToolGroup(args.groups)) }; },
       },
@@ -2987,7 +3001,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'set_generation_params', label: '调整生成参数', description: `调整当前 NovelAI ${getNovelAiModelProfile(draft.params?.model).label} 的尺寸、步数、引导、采样器和其他参数，只传需要修改的字段；模型能力以 get_lab_state 与官方知识工具为准。`,
+        name: 'set_generation_params', label: '调整生成参数', description: '调整当前 NovelAI 的模型、尺寸、步数、引导、采样器和其他参数，只传需要修改的字段；当前模型及能力以实时工作区快照、get_lab_state 与官方知识工具为准。',
         parameters: Type.Object({
           model: Type.Optional(Type.String({ description: '真实历史或工坊模型清单中的模型 ID；不选择退役模型' })),
           width: Type.Optional(Type.Number()), height: Type.Optional(Type.Number()), steps: Type.Optional(Type.Number()), scale: Type.Optional(Type.Number()),
@@ -3057,7 +3071,7 @@ export class PromptAgentService {
           const { requestId, promise: confirmation } = this.createConfirmation(project?.agentSessionId, { action: 'request_generation', resourceId: '', payload: { draft: structuredClone(draft) } });
           emit({ type: 'action', action: { kind: 'request_generation', patch: { reason: text(args.reason).slice(0, 300), requestId } }, draft: structuredClone(draft) });
           const result = await confirmation;
-          if (!result.accepted) throw new Error('用户取消了生图请求');
+          if (!result.accepted || result.result?.success === false) throw agentOperationError(result.result?.error || '生图请求未完成，请核对实际回执', result.result?.code || 'generation_failed', result.result?.outcome || 'failed');
           const historyId = typeof result.result?.historyId === 'string' && result.result.historySaved === true ? result.result.historyId.slice(0, 200) : '';
           const displayImages = historyId && contextData.clientSettings?.autoShowGenerated !== false ? [{ kind: 'history', id: historyId, path: `/api/local-history/${encodeURIComponent(historyId)}/image`, title: '本次生成结果' }] : [];
           return { content: jsonText({ ok: true, confirmed: true, result: result.result, ...(displayImages.length ? { displayImages } : {}) }), details: result.result };
@@ -3174,7 +3188,6 @@ export class PromptAgentService {
     Object.assign(this.runs.get(sessionId), { contextData, draft, clientDraft });
     const policySystemPrompt = buildSystemPrompt();
     const runtimeContext = buildAgentRuntimeContext(draft, contextData.clientSettings);
-    const activeSystemPrompt = `${policySystemPrompt}\n${runtimeContext}`;
     const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
     let taskStatus = 'failed';
     const taskStartedAt = Date.now();
@@ -3200,7 +3213,7 @@ export class PromptAgentService {
       const model = modelRuntime.getModel(provider, modelId);
       if (!model) throw new Error('无法加载所选模型');
       let agent;
-      const enabledGroups = new Set(inferAgentToolGroups(requestUserText, (storedSession.messages || []).filter(message => message.role === 'user').slice(-1).map(agentMessageText).join(' ')));
+      const enabledGroups = new Set(Object.keys(AGENT_TOOL_GROUPS));
       let tools = [];
       const toolProject = {
         ...project,
@@ -3210,16 +3223,15 @@ export class PromptAgentService {
         requestUI: operation => this.uiBridge.request(sessionId, operation, taskEmit, combined, 20_000, text(contextData.clientSettings.pageClientId).slice(0, 100)),
         getClientDraft: () => this.runs.get(sessionId)?.clientDraft,
         getToolInventory: () => allTools.map(tool => ({ name: tool.name, label: tool.label, enabled: tools.some(item => item.name === tool.name) })),
-        enableToolGroup: groups => {
+        enableToolGroup: (groups, source = 'explicit') => {
           for (const group of groups) if (AGENT_TOOL_GROUPS[group]) enabledGroups.add(group);
-          tools = selectRuntimeTools(allTools, enabledGroups);
-          audit('tool_groups_enabled', { groups: [...enabledGroups], toolNames: tools.map(tool => tool.name) });
+          tools = allTools;
+          audit('tool_groups_enabled', { source, groups: [...enabledGroups], toolNames: tools.map(tool => tool.name) });
           return { enabledGroups: [...enabledGroups], toolNames: tools.map(tool => tool.name) };
         },
       };
       const allTools = this.createTools(draft, contextData, taskEmit, toolProject, modelInfo);
-      let toolTarget = JSON.stringify([draft.target?.chainId, draft.target?.mode, draft.params.model]);
-      tools = selectRuntimeTools(allTools, enabledGroups);
+      tools = allTools;
       const loadedMessages = await this.withSignal(this.loadMessages(sessionId), combined);
       audit('agent_initialized', {
         toolNames: tools.map(tool => tool.name),
@@ -3239,18 +3251,21 @@ export class PromptAgentService {
       latestAssembly = initialAssembly;
       agent = new Agent({
         initialState: {
-          systemPrompt: initialAssembly.systemPrompt || activeSystemPrompt,
+          systemPrompt: initialAssembly.systemPrompt,
           model,
           thinkingLevel,
           tools: allTools,
           messages: loadedMessages,
         },
-        // Pi 在一轮开始时快照执行器；保留静态注册表，发送与执行均使用当前启用范围。
+        // Pi 在一轮开始时快照执行器；发送与执行共享稳定注册表，避免工具分组切换击穿缓存。
         streamFn: (model, context, options) => {
           modelSignal = AbortSignal.any([combined, AbortSignal.timeout(180_000), ...(options?.signal ? [options.signal] : [])]);
-          return modelRuntime.streamSimple(model, { ...context, tools, systemPrompt: latestAssembly.systemPrompt }, { ...options, maxTokens: latestAssembly.budget.outputReserve, signal: modelSignal });
+          return modelRuntime.streamSimple(model, { ...context, tools, messages: latestAssembly.requestMessages, systemPrompt: latestAssembly.systemPrompt }, { ...options, maxTokens: latestAssembly.budget.outputReserve, signal: modelSignal });
         },
-        beforeToolCall: async ({ toolCall }) => tools.some(tool => tool.name === toolCall.name) ? undefined : { block: true, reason: '请先通过 enable_tool_group 加载该工具的分组，再调用工具' },
+        beforeToolCall: async ({ toolCall }) => {
+          if (tools.some(tool => tool.name === toolCall.name)) return;
+          return { block: true, reason: '不存在这个工具，请读取当前可用能力后再调用' };
+        },
         sessionId: `nai-prompt-agent-${createHash('sha256').update(sessionId).digest('hex').slice(0, 20)}`,
         // Pi can execute independent read tools concurrently. Mutating tools still
         // remain ordered by the model's tool-call plan and all dangerous operations
@@ -3271,17 +3286,6 @@ export class PromptAgentService {
               contextData.clientSettings.currentPage = { view: 'disconnected', title: '当前页面连接未响应；需要重新读取回执', capturedAt: Date.now(), error: text(error.message).slice(0, 200) };
             }
           }
-          const users = messages.filter(message => message.role === 'user').slice(-2).map(agentMessageText);
-          const nextToolTarget = JSON.stringify([draft.target?.chainId, draft.target?.mode, draft.params.model]);
-          if (nextToolTarget !== toolTarget) {
-            // 执行器持有工具对象快照：保留对象与本轮搜索白名单，只更新依赖当前模型的说明。
-            // 所有执行函数读取同一个实时 draft，切换作品／模式不会沿用旧草稿。
-            const paramsTool = allTools.find(tool => tool.name === 'set_generation_params');
-            paramsTool.description = `调整当前 NovelAI ${getNovelAiModelProfile(draft.params?.model).label} 的尺寸、步数、引导、采样器和其他参数，只传需要修改的字段；模型能力以 get_lab_state 与官方知识工具为准。`;
-            toolTarget = nextToolTarget;
-          }
-          for (const group of inferAgentToolGroups(users.at(-1) || '', users.at(-2) || '')) enabledGroups.add(group);
-          tools = selectRuntimeTools(allTools, enabledGroups);
           const assembled = assemblePromptContext({
             systemPolicy: policySystemPrompt,
             runtimeContext: buildAgentRuntimeContext(draft, contextData.clientSettings),
@@ -3296,12 +3300,15 @@ export class PromptAgentService {
             outputReserve: assembled.budget?.outputReserve,
             protocolReserve: assembled.budget?.protocolReserve,
             systemPromptTokenCount: assembled.tokenEstimate?.policyTokens,
+            runtimeContextTokenCount: assembled.tokenEstimate?.runtimeTokens,
             conversationTokenBudget: assembled.budget?.conversationTokenBudget,
             inputMessageCount: messages.length,
             // 审计瘦身：storedConversation 只记录条数与 token 总量，不落消息正文。
             storedConversation: { count: assembled.canonicalMessages.length, totalTokens: estimateContextTokens(assembled.canonicalMessages) },
             systemPromptLength: assembled.systemPrompt.length,
             systemPromptFingerprint: assembled.hashes.systemPromptHash,
+            toolDefinitionsFingerprint: assembled.hashes.toolDefinitionsHash,
+            runtimeContextFingerprint: assembled.hashes.runtimeContextHash,
           });
           return assembled.canonicalMessages;
         },
