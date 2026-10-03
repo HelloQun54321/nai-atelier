@@ -33,6 +33,11 @@ export interface PromptAgentProvider {
 }
 
 export type PromptAgentCustomApi = 'openai-completions' | 'openai-responses' | 'anthropic-messages';
+export const previewPromptAgentEndpoint = (baseUrl: string, api: PromptAgentCustomApi): string => {
+  const suffix = api === 'anthropic-messages' ? '/v1/messages' : api === 'openai-responses' ? '/responses' : '/chat/completions';
+  try { const url = new URL(baseUrl); url.search = ''; url.hash = ''; return url.href.replace(/\/$/, '') + suffix; }
+  catch { return ''; }
+};
 export interface PromptAgentCustomModel {
   id: string;
   name?: string;
@@ -40,6 +45,7 @@ export interface PromptAgentCustomModel {
   imageInput: boolean;
   contextWindow: number;
   maxTokens: number;
+  cost?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } | null;
   capabilityDetection?: {
     imageInput: 'metadata' | 'pi_catalog' | 'model_name' | 'unknown' | 'manual';
     reasoning: 'metadata' | 'pi_catalog' | 'model_name' | 'unknown' | 'manual';
@@ -54,6 +60,18 @@ export interface PromptAgentCustomProvider {
   headers?: Record<string, string>;
   configured?: boolean;
   models: PromptAgentCustomModel[];
+  select?: boolean;
+  testModel?: string;
+  testRole?: 'agent' | 'vision';
+  testImage?: boolean;
+}
+
+export interface PromptAgentProbeResult {
+  ok: boolean;
+  message: string;
+  model?: string;
+  elapsedMs?: number;
+  checks?: Record<string, string>;
 }
 
 export type PromptAgentAuthPrompt =
@@ -121,7 +139,7 @@ export interface PromptAgentUsage {
   cacheWrite: number;
   totalTokens: number;
   reasoning?: number;
-  cost: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+  cost: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number } | null;
 }
 
 export interface PromptAgentVisionUsage {
@@ -323,7 +341,7 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
-  testCustomProvider: async (input: PromptAgentCustomProvider): Promise<{ ok: boolean; message: string }> => {
+  testCustomProvider: async (input: PromptAgentCustomProvider): Promise<PromptAgentProbeResult> => {
     const response = await fetch('/api/prompt-agent/custom-providers/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
     if (!response.ok) return readError(response) as never;
     return response.json();

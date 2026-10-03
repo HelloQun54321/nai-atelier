@@ -20,7 +20,7 @@ const TASK_DIR = 'local-data/prompt-agent-tasks';
 const AUDIT_LOG_DIR = 'local-data/prompt-agent-logs';
 const TAG_TRANSLATION_FILE = 'local-data/tag-translations.json';
 const TAG_ROOT = 'public/tag-data';
-const CUSTOM_PROVIDERS = new Map();
+
 const DEEPSEEK_MODELS = [
   { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', reasoning: true, input: ['text'], cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 }, contextWindow: 1_000_000, maxTokens: 384_000, compat: { supportsStore: false, supportsDeveloperRole: false, requiresReasoningContentOnAssistantMessages: true, thinkingFormat: 'deepseek' }, thinkingLevelMap: { minimal: null, low: null, medium: null, high: 'high', max: 'max' } },
   { id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek V4 Flash Vision Exp', reasoning: true, input: ['text', 'image'], cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 }, contextWindow: 1_000_000, maxTokens: 384_000, compat: { supportsStore: false, supportsDeveloperRole: false, requiresReasoningContentOnAssistantMessages: true, thinkingFormat: 'deepseek' }, thinkingLevelMap: { minimal: null, low: 'low', medium: null, high: 'high', max: 'max' } },
@@ -316,7 +316,7 @@ const extractAitagPromptData = image => {
   return { prompt: text(prompt), negativePrompt: text(negativePrompt), params: parsed?.parameters && typeof parsed.parameters === 'object' ? parsed.parameters : undefined };
 };
 
-const normalizeProvider = value => PROVIDER_CATALOG.has(value) || CUSTOM_PROVIDERS.has(value) ? value : 'deepseek';
+const normalizeProvider = (value, registry = new Map()) => PROVIDER_CATALOG.has(value) || registry.has(value) ? value : 'deepseek';
 const supportedThinkingLevelsFor = model => {
   // Pi owns the compatibility table. A public model has the precomputed list,
   // while a runtime model has Pi's reasoning / thinkingLevelMap metadata.
@@ -332,17 +332,18 @@ const publicModel = (model, provider) => ({
   contextWindow: Number(model.contextWindow) || 0,
   maxTokens: Number(model.maxTokens) || 0,
   cost: model.cost || null,
+  ...(model.capabilityDetection ? { capabilityDetection: model.capabilityDetection } : {}),
   thinkingLevels: supportedThinkingLevelsFor(model),
 });
-const listModels = provider => {
-  const normalized = normalizeProvider(provider);
-  const custom = CUSTOM_PROVIDERS.get(normalized);
+const listModels = (provider, registry = new Map()) => {
+  const normalized = normalizeProvider(provider, registry);
+  const custom = registry.get(normalized);
   if (custom) return custom.models.map(model => publicModel(model, normalized));
   return PROVIDER_CATALOG.get(normalized)?.getModels().map(model => publicModel(model, normalized)) || [];
 };
-const resolveModelApi = (provider, modelId) => {
-  const normalized = normalizeProvider(provider);
-  const custom = CUSTOM_PROVIDERS.get(normalized);
+const resolveModelApi = (provider, modelId, registry = new Map()) => {
+  const normalized = normalizeProvider(provider, registry);
+  const custom = registry.get(normalized);
   if (custom?.api) return custom.api;
   if (PROVIDER_CATALOG.has(normalized)) {
     const model = PROVIDER_CATALOG.get(normalized)?.getModels().find(item => item.id === modelId);
@@ -373,14 +374,14 @@ export const customProviderRuntime = custom => {
     baseUrl: custom.baseUrl,
     auth: { apiKey: {
       name: `${custom.name} API Key`,
-      resolve: async ({ credential }) => ({ auth: credential?.key ? { apiKey: credential.key } : {} }),
+      resolve: async ({ credential }) => ({ auth: { apiKey: credential?.key || (isLoopbackHostname(new URL(custom.baseUrl).hostname) ? 'local-no-key' : '') } }),
     } },
     models,
     api: apiFactory(),
   });
 };
 
-export const createPromptAgentModelRuntime = (credentials, customProviders = [...CUSTOM_PROVIDERS.values()]) => {
+export const createPromptAgentModelRuntime = (credentials, customProviders = []) => {
   const runtime = createModels({ credentials });
   for (const provider of PROVIDER_CATALOG.values()) runtime.setProvider(provider);
   for (const provider of customProviders) runtime.setProvider(customProviderRuntime(provider));
@@ -414,13 +415,14 @@ export const sanitizeCustomProvider = raw => {
       imageInput: item?.imageInput === true,
       contextWindow,
       maxTokens: Math.round(clamp(item?.maxTokens, 256, contextWindow, Math.min(16_384, contextWindow))),
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      cost: item?.cost ? Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite'].map(key => [key, clamp(item.cost[key], 0, 10000, 0)])) : null,
       ...(item?.capabilityDetection && typeof item.capabilityDetection === 'object' ? { capabilityDetection: {
         imageInput: ['metadata', 'pi_catalog', 'model_name', 'unknown', 'manual'].includes(item.capabilityDetection.imageInput) ? item.capabilityDetection.imageInput : 'manual',
         reasoning: ['metadata', 'pi_catalog', 'model_name', 'unknown', 'manual'].includes(item.capabilityDetection.reasoning) ? item.capabilityDetection.reasoning : 'manual',
       } } : {}),
     }];
-  }).slice(0, 50);
+  });
+  if (models.length > 50) throw Object.assign(new Error('最多保存 50 个模型，请先选择需要使用的模型'), { status: 400 });
   if (!models.length) throw Object.assign(new Error('请至少添加一个模型 ID'), { status: 400 });
   const headers = {};
   for (const [rawName, rawValue] of Object.entries(raw?.headers && typeof raw.headers === 'object' ? raw.headers : {}).slice(0, 20)) {
@@ -434,8 +436,8 @@ export const sanitizeCustomProvider = raw => {
   const id = /^custom-[a-z0-9-]{8,80}$/.test(String(raw?.id || '')) ? String(raw.id) : `custom-${randomUUID()}`;
   return { id, name, baseUrl: parsed.toString().replace(/\/$/, ''), api, models, headers };
 };
-const defaultModelFor = provider => {
-  const models = listModels(provider);
+const defaultModelFor = (provider, registry = new Map()) => {
+  const models = listModels(provider, registry);
   return models.some(model => model.id === PREFERRED_MODELS[provider]) ? PREFERRED_MODELS[provider] : models[0]?.id || '';
 };
 
@@ -1350,6 +1352,7 @@ export const assemblePromptContext = ({ creativeMode = true, revision = null, sy
 export class PromptAgentService {
   constructor({ lanSecret, outboundProxyUrl = '', configFile = '' }) {
     this.runtimeStartedAt = Date.now();
+    this.customProviders = new Map();
     // 测试隔离：传入 configFile 时该实例的会话/审计/任务/配置全部落在指定目录，
     // 绝不触碰真实 local-data（构造缺省保持现有行为）。creative 写点共用同一
     // 串行 promise 链（this.configWriteTail），避免并发请求互相覆盖。
@@ -1374,7 +1377,7 @@ export class PromptAgentService {
     this.encryptionKey = this.legacyEncryptionKey;
     this.credentialKeyError = '';
     this.credentialWarning = '';
-    this.config = { version: PROMPT_AGENT_CONFIG_VERSION, provider: 'deepseek', model: defaultModelFor('deepseek'), visionProvider: '', visionModel: '', visionMode: 'auto', encryptedKeys: {}, customProviders: [], creativeMode: true };
+    this.config = { version: PROMPT_AGENT_CONFIG_VERSION, provider: 'deepseek', model: this.defaultModelFor('deepseek'), visionProvider: '', visionModel: '', visionMode: 'auto', encryptedKeys: {}, customProviders: [], creativeMode: true };
     this.activeAgents = new Map();
     this.startingAgents = new Set();
     this.pendingConfirmations = new Map();
@@ -1389,9 +1392,40 @@ export class PromptAgentService {
     this.characterSearchRecords = null;
     this.tagTranslations = {};
     this.translationTask = null;
+    this.installConfigTransactions();
   }
 
   configFilePath() { return this.configFileOverride || CONFIG_FILE; }
+  normalizeProvider(value) { return normalizeProvider(value, this.customProviders); }
+  listModels(value) { return listModels(value, this.customProviders); }
+  defaultModelFor(value) { return defaultModelFor(value, this.customProviders); }
+  resolveModelApi(provider, model) { return resolveModelApi(provider, model, this.customProviders); }
+  async persistConfig() {
+    this.config.version = PROMPT_AGENT_CONFIG_VERSION;
+    if (!this.configTransaction) await atomicJsonWrite(this.configFilePath(), this.config);
+  }
+  installConfigTransactions() {
+    const names = ['saveCustomProvider', 'deleteCustomProvider', 'selectModel', 'selectVisionModel', 'loginProvider', 'logoutProvider', 'createCreativePreset', 'updateCreativePreset', 'deleteCreativePreset', 'setActiveCreativePreset', 'importCreativePresets'];
+    for (const name of names) {
+      this[name] = (...args) => {
+        const next = (this.configWriteTail || Promise.resolve()).catch(() => {}).then(async () => {
+          // 在隔离快照内修改，落盘成功后才发布；读请求始终看到最近成功配置。
+          const staged = Object.assign(Object.create(Object.getPrototypeOf(this)), this, {
+            config: structuredClone(this.config), customProviders: new Map(this.customProviders),
+            _creativePresetCustom: this._creativePresetCustom ? structuredClone(this._creativePresetCustom) : null,
+            configTransaction: true, configWriteTail: null,
+          });
+          for (const method of names) delete staged[method];
+          const result = await Object.getPrototypeOf(this)[name].apply(staged, args);
+          await atomicJsonWrite(this.configFilePath(), staged.config);
+          for (const field of ['config', 'customProviders', '_creativePresetCustom', 'credentialWarning']) this[field] = staged[field];
+          return result;
+        });
+        this.configWriteTail = next;
+        return next;
+      };
+    }
+  }
   sessionDirPath() { return this.sessionDirOverride || SESSION_DIR; }
   taskDirPath() { return this.taskDirOverride || TASK_DIR; }
   auditDirPath() { return this.auditDirOverride || AUDIT_LOG_DIR; }
@@ -1419,21 +1453,21 @@ export class PromptAgentService {
       this.tagTranslations = stored?.items && typeof stored.items === 'object' ? stored.items : {};
     } catch { /* First use or damaged optional translation cache. */ }
     await this.initializeCredentialKey();
-    CUSTOM_PROVIDERS.clear();
+    this.customProviders.clear();
     for (const item of this.config.customProviders) {
       try {
         const custom = sanitizeCustomProvider(item);
-        CUSTOM_PROVIDERS.set(custom.id, custom);
+        this.customProviders.set(custom.id, custom);
       } catch { /* Ignore invalid legacy custom entries without affecting built-ins. */ }
     }
     const beforeNormalization = JSON.stringify(this.config);
-    const normalizedCustomProviders = [...CUSTOM_PROVIDERS.values()];
+    const normalizedCustomProviders = [...this.customProviders.values()];
     if (normalizedCustomProviders.length !== this.config.customProviders.length) configNeedsMigration = true;
     this.config.customProviders = normalizedCustomProviders;
     this.config.version = PROMPT_AGENT_CONFIG_VERSION;
     this.syncAutomaticVisionSelection();
     if (JSON.stringify(this.config) !== beforeNormalization) configNeedsMigration = true;
-    if (configNeedsMigration) await atomicJsonWrite(this.configFilePath(), this.config);
+    if (configNeedsMigration) await this.persistConfig();
   }
 
   lookupTagTranslations(rawTags) {
@@ -1456,11 +1490,11 @@ export class PromptAgentService {
 
     const task = (async () => {
       const config = this.publicConfig();
-      const provider = normalizeProvider(config.provider);
+      const provider = this.normalizeProvider(config.provider);
       const modelId = config.model;
       const storedCredential = this.getCredential(provider);
       if (!storedCredential) throw Object.assign(new Error('请先在设置中配置项目 Agent 的模型服务'), { status: 400 });
-      const modelInfo = listModels(provider).find(item => item.id === modelId);
+      const modelInfo = this.listModels(provider).find(item => item.id === modelId);
       if (!modelInfo) throw Object.assign(new Error('当前 Agent 模型不可用，请在设置中重新选择'), { status: 400 });
       const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
       try {
@@ -1469,8 +1503,8 @@ export class PromptAgentService {
           ...storedCredential,
           ...(this.outboundProxyUrl ? { env: { ...(storedCredential.env || {}), HTTPS_PROXY: this.outboundProxyUrl, HTTP_PROXY: this.outboundProxyUrl } } : {}),
         }));
-        const modelRuntime = createPromptAgentModelRuntime(credentials);
-        const customProvider = CUSTOM_PROVIDERS.get(provider);
+        const modelRuntime = createPromptAgentModelRuntime(credentials, [...this.customProviders.values()]);
+        const customProvider = this.customProviders.get(provider);
         if (customProvider) modelRuntime.setProvider(customProviderRuntime(customProvider));
         const model = modelRuntime.getModel(provider, modelId);
         if (!model) throw Object.assign(new Error('无法加载当前 Agent 模型'), { status: 400 });
@@ -1528,7 +1562,7 @@ export class PromptAgentService {
       this.encryptionKey = randomBytes(32);
       for (const [providerId, raw] of recovered) this.config.encryptedKeys[providerId] = this.encrypt(raw);
       await atomicJsonWrite(this.credentialKeyFilePath(), { version: 1, key: this.encryptionKey.toString('base64'), createdAt: Date.now() });
-      if (recovered.size) await atomicJsonWrite(this.configFilePath(), this.config);
+      if (recovered.size) await this.persistConfig();
       if (failed.length) this.credentialWarning = `有 ${failed.length} 个模型服务凭据无法从旧局域网密钥迁移，请重新登录这些服务。`;
     }
     this.refreshCredentialWarning();
@@ -1578,11 +1612,11 @@ export class PromptAgentService {
     const configured = new Set(this.configuredProviderIds());
     const resolve = (provider, model) => {
       if (!provider || !model || !configured.has(provider)) return null;
-      const info = listModels(provider).find(item => item.id === model && item.imageInput);
+      const info = this.listModels(provider).find(item => item.id === model && item.imageInput);
       return info ? { provider, model, info } : null;
     };
     const pickVision = provider => {
-      const models = listModels(provider).filter(item => item.imageInput);
+      const models = this.listModels(provider).filter(item => item.imageInput && !['model_name', 'unknown'].includes(item.capabilityDetection?.imageInput));
       const preferred = models.find(item => item.id === PREFERRED_MODELS[provider]);
       const info = preferred || models.sort((a, b) => Number(a.cost?.input || 0) - Number(b.cost?.input || 0) || Number(a.cost?.output || 0) - Number(b.cost?.output || 0))[0];
       return info ? { provider, model: info.id, info } : null;
@@ -1600,7 +1634,7 @@ export class PromptAgentService {
   hasValidManualVisionSelection() {
     if (this.config.visionMode !== 'manual') return false;
     if (!this.configuredProviderIds().includes(this.config.visionProvider)) return false;
-    return listModels(this.config.visionProvider).some(item => item.id === this.config.visionModel && item.imageInput);
+    return this.listModels(this.config.visionProvider).some(item => item.id === this.config.visionModel && item.imageInput);
   }
 
   syncAutomaticVisionSelection(mainProvider = this.config.provider, mainModel = this.config.model) {
@@ -1614,7 +1648,7 @@ export class PromptAgentService {
   }
 
   publicSessionMeta(meta) {
-    const provider = normalizeProvider(meta?.provider || this.publicConfig().provider);
+    const provider = this.normalizeProvider(meta?.provider || this.publicConfig().provider);
     const model = text(meta?.model || this.publicConfig().model);
     const vision = this.resolveVisionSelection(provider, model);
     const revision = meta?.presetRevision;
@@ -1635,10 +1669,10 @@ export class PromptAgentService {
 
   publicConfig() {
     const configuredProviders = this.configuredProviderIds();
-    const requestedProvider = normalizeProvider(this.config.provider);
+    const requestedProvider = this.normalizeProvider(this.config.provider);
     const provider = configuredProviders.includes(requestedProvider) ? requestedProvider : configuredProviders[0] || requestedProvider;
-    const models = listModels(provider);
-    const model = models.some(item => item.id === this.config.model) ? this.config.model : defaultModelFor(provider);
+    const models = this.listModels(provider);
+    const model = models.some(item => item.id === this.config.model) ? this.config.model : this.defaultModelFor(provider);
     const vision = this.resolveVisionSelection(provider, model);
     const policy = runtimePolicyInfo(this.config.creativeMode);
     return {
@@ -1661,7 +1695,7 @@ export class PromptAgentService {
   }
 
   configuredProviderIds() {
-    return Object.keys(this.config.encryptedKeys).filter(key => (PROVIDER_CATALOG.has(key) || CUSTOM_PROVIDERS.has(key)) && Boolean(this.getCredential(key)));
+    return Object.keys(this.config.encryptedKeys).filter(key => (PROVIDER_CATALOG.has(key) || this.customProviders.has(key)) && Boolean(this.getCredential(key)));
   }
 
   listProviders() {
@@ -1676,10 +1710,10 @@ export class PromptAgentService {
         authTypes: [provider.auth?.apiKey ? 'api_key' : null, provider.auth?.oauth ? 'oauth' : null].filter(Boolean),
         configured: configured.has(provider.id),
         current: currentProvider === provider.id && configured.has(provider.id),
-        modelCount: listModels(provider.id).length,
+        modelCount: this.listModels(provider.id).length,
         custom: false,
       }));
-    const customs = [...CUSTOM_PROVIDERS.values()].map(provider => ({
+    const customs = [...this.customProviders.values()].map(provider => ({
       id: provider.id,
       name: provider.name,
       authType: 'api_key',
@@ -1698,12 +1732,12 @@ export class PromptAgentService {
   listAvailableModels() {
     const current = this.publicConfig();
     const providerLabel = provider => {
-      const normalized = normalizeProvider(provider);
-      const custom = CUSTOM_PROVIDERS.get(normalized);
+      const normalized = this.normalizeProvider(provider);
+      const custom = this.customProviders.get(normalized);
       if (custom) return custom.name || normalized;
       return PROVIDER_CATALOG.get(normalized)?.name || normalized;
     };
-    return this.configuredProviderIds().flatMap(provider => listModels(provider).map(model => ({
+    return this.configuredProviderIds().flatMap(provider => this.listModels(provider).map(model => ({
       ...model,
       providerName: providerLabel(provider),
       current: provider === current.provider && model.id === current.model,
@@ -1735,8 +1769,8 @@ export class PromptAgentService {
           flow.complete = true;
           flow.credential = credential;
           this.setCredential(providerId, credential);
-          if (!this.configuredProviderIds().includes(this.config.provider)) { this.config.provider = providerId; this.config.model = defaultModelFor(providerId); }
-          await atomicJsonWrite(this.configFilePath(), this.config);
+          if (!this.configuredProviderIds().includes(this.config.provider)) { this.config.provider = providerId; this.config.model = this.defaultModelFor(providerId); }
+          await this.persistConfig();
           touch();
         }).catch(error => { flow.error = error; touch(); });
       }
@@ -1782,11 +1816,11 @@ export class PromptAgentService {
     this.setCredential(providerId, credential);
     if (!this.configuredProviderIds().includes(this.config.provider)) {
       this.config.provider = providerId;
-      this.config.model = defaultModelFor(providerId);
+      this.config.model = this.defaultModelFor(providerId);
     }
     this.syncAutomaticVisionSelection();
     this.config.version = PROMPT_AGENT_CONFIG_VERSION;
-    await atomicJsonWrite(this.configFilePath(), this.config);
+    await this.persistConfig();
     return { complete: true, provider: this.listProviders().find(item => item.id === providerId), selection: this.publicConfig(), events };
   }
 
@@ -1796,71 +1830,61 @@ export class PromptAgentService {
     if (this.config.provider === providerId) {
       const next = this.configuredProviderIds()[0] || 'deepseek';
       this.config.provider = next;
-      this.config.model = defaultModelFor(next);
+      this.config.model = this.defaultModelFor(next);
     }
     this.syncAutomaticVisionSelection();
     this.config.version = PROMPT_AGENT_CONFIG_VERSION;
-    await atomicJsonWrite(this.configFilePath(), this.config);
+    await this.persistConfig();
     return this.publicConfig();
   }
 
   listCustomProviders() {
-    return [...CUSTOM_PROVIDERS.values()].map(provider => ({ ...provider, configured: Boolean(this.getCredential(provider.id)) }));
+    return [...this.customProviders.values()].map(provider => ({ ...provider, configured: Boolean(this.getCredential(provider.id)) }));
   }
 
   async saveCustomProvider(input) {
     const custom = sanitizeCustomProvider(input);
-    CUSTOM_PROVIDERS.set(custom.id, custom);
-    this.config.customProviders = [...CUSTOM_PROVIDERS.values()];
+    this.customProviders.set(custom.id, custom);
+    this.config.customProviders = [...this.customProviders.values()];
     const key = typeof input?.apiKey === 'string' ? input.apiKey.trim() : '';
     const existing = this.getCredential(custom.id);
     if (key || !existing) this.setCredential(custom.id, { type: 'api_key', key });
-    if (input?.select !== false) {
+    if (input?.select === true) {
       this.config.provider = custom.id;
-      this.config.model = custom.models[0].id;
+      this.config.model = custom.models.some(model => model.id === this.config.model) ? this.config.model : custom.models[0].id;
     }
     this.syncAutomaticVisionSelection();
     this.config.version = PROMPT_AGENT_CONFIG_VERSION;
-    await atomicJsonWrite(this.configFilePath(), this.config);
+    await this.persistConfig();
     return { provider: this.listCustomProviders().find(item => item.id === custom.id), selection: this.publicConfig() };
   }
 
   async deleteCustomProvider(providerId) {
-    if (!CUSTOM_PROVIDERS.has(providerId)) throw Object.assign(new Error('自定义接口不存在'), { status: 404 });
-    CUSTOM_PROVIDERS.delete(providerId);
+    if (!this.customProviders.has(providerId)) throw Object.assign(new Error('自定义接口不存在'), { status: 404 });
+    this.customProviders.delete(providerId);
     delete this.config.encryptedKeys[providerId];
     this.refreshCredentialWarning();
-    this.config.customProviders = [...CUSTOM_PROVIDERS.values()];
+    this.config.customProviders = [...this.customProviders.values()];
     if (this.config.provider === providerId) {
       const next = this.configuredProviderIds()[0] || 'deepseek';
       this.config.provider = next;
-      this.config.model = defaultModelFor(next);
+      this.config.model = this.defaultModelFor(next);
     }
     this.syncAutomaticVisionSelection();
     this.config.version = PROMPT_AGENT_CONFIG_VERSION;
-    await atomicJsonWrite(this.configFilePath(), this.config);
+    await this.persistConfig();
     return this.publicConfig();
   }
 
   async testCustomProvider(input) {
     const custom = sanitizeCustomProvider(withDiscoveryPlaceholder(input));
     const key = typeof input?.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : this.getCredential(custom.id)?.key || '';
-    const authHeaders = custom.api === 'anthropic-messages'
-      ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
-      : key ? { Authorization: `Bearer ${key}` } : {};
-    const headers = { ...custom.headers, ...authHeaders };
     const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
+    const startedAt = Date.now();
+    const checks = { text: 'not_tested', tools: 'not_tested', image: 'not_tested' };
     try {
-      const response = await fetch(`${custom.baseUrl}/models`, { headers, redirect: 'error', signal: AbortSignal.timeout(12_000) });
-      if (!response.ok) throw Object.assign(new Error(`接口返回 HTTP ${response.status}`), { status: 400 });
-      const payload = await response.json().catch(() => null);
-      const items = Array.isArray(payload?.data) ? payload.data
-        : Array.isArray(payload?.models) ? payload.models
-          : Array.isArray(payload) ? payload
-            : [];
-      const discovered = [...new Map(items.map(detectModelCapabilities).filter(Boolean).map(model => [model.id.toLowerCase(), model])).values()];
-      const configuredCandidate = custom.models.find(model => model.id !== '__capability_discovery__');
-      const candidate = configuredCandidate || discovered[0];
+      const configuredCandidate = custom.models.find(model => model.id === input.testModel) || custom.models.find(model => model.id !== '__capability_discovery__');
+      const candidate = configuredCandidate || (await this.fetchCustomProviderModels(input)).models[0];
       if (!candidate) throw Object.assign(new Error('接口可访问，但没有返回可用于能力测试的模型 ID'), { status: 400 });
       const probeProvider = { ...custom, models: [{ ...candidate, cost: candidate.cost || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] };
       const credentials = new InMemoryCredentialStore();
@@ -1881,16 +1905,16 @@ export class PromptAgentService {
       };
       const probeAgent = new Agent({
         initialState: {
-          systemPrompt: '你正在执行一次最小化连接测试。必须调用 capability_probe 一次；不要解释，不要调用其他内容。若附带图片，它只是用来验证图片输入协议。',
+          systemPrompt: input.testRole === 'vision' ? '简短回复收到。' : '最小连接测试：必须调用 capability_probe 一次，随后简短回复收到。',
           model,
           thinkingLevel: 'off',
-          tools: [probeTool],
+          tools: input.testRole === 'vision' ? [] : [probeTool],
           messages: [],
         },
-        streamFn: modelRuntime.streamSimple.bind(modelRuntime),
+        streamFn: (model, context, options) => modelRuntime.streamSimple(model, context, { ...options, maxTokens: 512 }),
         sessionId: `nai-capability-probe-${randomUUID()}`,
       });
-      const probeImages = candidate.imageInput === true ? [{
+      const probeImages = input.testImage === true && candidate.imageInput === true ? [{
         type: 'image',
         mimeType: 'image/png',
         data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nH0AAAAASUVORK5CYII=',
@@ -1898,16 +1922,18 @@ export class PromptAgentService {
       let probeTimeout;
       try {
         await Promise.race([
-          probeAgent.prompt('现在调用 capability_probe，status 填 ok。', probeImages),
+          probeAgent.prompt(input.testRole === 'vision' ? '简短回复收到。' : '调用 capability_probe，status 填 ok，然后回复收到。', probeImages),
           new Promise((_, reject) => { probeTimeout = setTimeout(() => { probeAgent.abort(); reject(Object.assign(new Error('模型能力测试 20 秒超时'), { status: 400 })); }, 20_000); }),
         ]);
       } finally { clearTimeout(probeTimeout); }
       if (probeAgent.state.errorMessage) throw Object.assign(new Error(`模型推理失败：${probeAgent.state.errorMessage}`), { status: 400 });
-      if (!toolCalled) throw Object.assign(new Error('文本推理可用，但模型没有按要求调用工具；它不适合直接作为项目 Agent 主模型'), { status: 400 });
-      return { ok: true, message: `连接成功：${candidate.id} 已通过文本推理和工具调用测试${candidate.imageInput ? '，图片输入请求也已被接口接受' : ''}` };
+      checks.text = 'passed';
+      checks.tools = input.testRole === 'vision' ? 'not_tested' : toolCalled ? 'passed' : 'failed';
+      checks.image = probeImages.length ? 'accepted' : 'not_tested';
+      const ok = checks.tools !== 'failed';
+      return { ok, model: candidate.id, checks, elapsedMs: Date.now() - startedAt, message: ok ? '文本请求已通过；图片接受不代表识图准确度。' : '文本可用，但未调用工具；可用作视觉服务，主 Agent 需要支持工具。', usage: probeAgent.state.messages.filter(message => message.role === 'assistant').map(message => message.usage).filter(Boolean) };
     } catch (error) {
-      if (error?.status) throw error;
-      throw Object.assign(new Error(`连接失败：${error instanceof Error ? error.message : '未知网络错误'}`), { status: 400 });
+      return { ok: false, checks, elapsedMs: Date.now() - startedAt, message: '测试失败：' + (error instanceof Error ? error.message : '未知错误') + '。请检查地址、协议、模型 ID、Key 权限；429 请稍后重试。' };
     } finally { leaveOutboundProxy(); }
   }
 
@@ -1938,12 +1964,12 @@ export class PromptAgentService {
 
   async selectModel(providerId, modelId) {
     if (!this.configuredProviderIds().includes(providerId)) throw Object.assign(new Error('请先登录这个模型服务'), { status: 400 });
-    if (!listModels(providerId).some(model => model.id === modelId)) throw Object.assign(new Error('选择的模型不存在'), { status: 400 });
+    if (!this.listModels(providerId).some(model => model.id === modelId)) throw Object.assign(new Error('选择的模型不存在'), { status: 400 });
     this.config.provider = providerId;
     this.config.model = modelId;
     this.syncAutomaticVisionSelection(providerId, modelId);
     this.config.version = PROMPT_AGENT_CONFIG_VERSION;
-    await atomicJsonWrite(this.configFilePath(), this.config);
+    await this.persistConfig();
     return this.publicConfig();
   }
 
@@ -1952,22 +1978,22 @@ export class PromptAgentService {
       this.config.visionMode = 'auto';
       this.syncAutomaticVisionSelection();
       this.config.version = PROMPT_AGENT_CONFIG_VERSION;
-      await atomicJsonWrite(this.configFilePath(), this.config);
+      await this.persistConfig();
       return this.publicConfig();
     }
     if (!this.configuredProviderIds().includes(providerId)) throw Object.assign(new Error('请先登录这个视觉模型服务'), { status: 400 });
-    const model = listModels(providerId).find(item => item.id === modelId);
+    const model = this.listModels(providerId).find(item => item.id === modelId);
     if (!model) throw Object.assign(new Error('选择的视觉模型不存在'), { status: 400 });
     if (!model.imageInput) throw Object.assign(new Error('这个模型没有标记为支持图片输入'), { status: 400 });
     this.config.visionProvider = providerId;
     this.config.visionModel = modelId;
     this.config.visionMode = 'manual';
     this.config.version = PROMPT_AGENT_CONFIG_VERSION;
-    await atomicJsonWrite(this.configFilePath(), this.config);
+    await this.persistConfig();
     return this.publicConfig();
   }
 
-  getModels(provider) { return listModels(provider); }
+  getModels(provider) { return this.listModels(provider); }
 
   async executeConfirmedProjectAction(input, project) {
     if (!project?.requestJson) throw new Error('电脑项目数据服务不可用');
@@ -2226,7 +2252,7 @@ export class PromptAgentService {
     const id = `agent-${randomUUID()}`;
     const title = text(input.title || '新对话').trim().slice(0, 60) || '新对话';
     const config = this.publicConfig();
-    const modelInfo = listModels(config.provider).find(item => item.id === config.model);
+    const modelInfo = this.listModels(config.provider).find(item => item.id === config.model);
     const creativeMode = typeof input.creativeMode === 'boolean' ? input.creativeMode : this.config.creativeMode !== false;
     const meta = {
       id, title, createdAt: now, updatedAt: now,
@@ -2284,9 +2310,9 @@ export class PromptAgentService {
     if (this.activeAgents.has(sessionId) || this.startingAgents.has(sessionId)) throw Object.assign(new Error('Agent 启动或工作时不能修改当前会话'), { status: 409 });
     const value = await this.readSession(sessionId);
     if (!value?.meta?.id) throw Object.assign(new Error('对话不存在'), { status: 404 });
-    const provider = patch.provider ? normalizeProvider(patch.provider) : value.meta.provider;
+    const provider = patch.provider ? this.normalizeProvider(patch.provider) : value.meta.provider;
     const model = patch.model || value.meta.model;
-    const modelInfo = listModels(provider).find(item => item.id === model);
+    const modelInfo = this.listModels(provider).find(item => item.id === model);
     const changesRuntime = patch.provider !== undefined || patch.model !== undefined || patch.thinkingLevel !== undefined;
     if (changesRuntime && (!modelInfo || !this.configuredProviderIds().includes(provider))) throw Object.assign(new Error('所选模型不可用或尚未登录'), { status: 400 });
     const hasStarted = value.meta.creativeModeLocked === true || (Array.isArray(value.messages) && value.messages.some(message => message?.role === 'user'));
@@ -2350,10 +2376,10 @@ export class PromptAgentService {
     const preset = await this.findCreativePreset(activeId);
     const presetName = preset?.name || '';
     const presetSlots = Array.isArray(preset?.slots) ? preset.slots : [];
-    const provider = normalizeProvider(meta?.provider || this.config.provider);
-    const modelInfo = listModels(provider).find(item => item.id === (meta?.model || this.config.model)) || {};
+    const provider = this.normalizeProvider(meta?.provider || this.config.provider);
+    const modelInfo = this.listModels(provider).find(item => item.id === (meta?.model || this.config.model)) || {};
     // publicModel 不携带 runtime 的 api/adapter 字段：从 Pi 运行时模型推导。
-    const modelApi = resolveModelApi(provider, modelInfo.id);
+    const modelApi = this.resolveModelApi(provider, modelInfo.id);
     const modelReasoning = modelInfo.reasoning === true;
     const capabilities = resolveCapabilities(modelApi, modelReasoning, 'off', modelInfo);
     const effectiveFingerprint = computePolicyFingerprint({ id: activeId, name: presetName, slots: presetSlots }, capabilities);
@@ -2380,9 +2406,9 @@ export class PromptAgentService {
       // 不按当前全局 active（避免旧会话被新 active 悄悄改写）。
       const preset = creativeMode ? await this.findCreativePreset(CREATIVE_BUILTIN_PRESET_ID) : null;
       const now = Date.now();
-      const provider = normalizeProvider(meta?.provider || this.config.provider);
-      const modelInfo = listModels(provider).find(item => item.id === (meta?.model || this.config.model)) || {};
-      const modelApi = resolveModelApi(provider, modelInfo.id);
+      const provider = this.normalizeProvider(meta?.provider || this.config.provider);
+      const modelInfo = this.listModels(provider).find(item => item.id === (meta?.model || this.config.model)) || {};
+      const modelApi = this.resolveModelApi(provider, modelInfo.id);
       const capabilities = resolveCapabilities(modelApi, modelInfo.reasoning === true, 'off', modelInfo);
       const revision = creativeMode && preset
         ? {
@@ -3348,15 +3374,7 @@ export class PromptAgentService {
   }
 
   // ── 破限提示词与预设实验室：customPresets 配置扩展读写（单一串行写队列）──
-  async serializeCreativePresetConfig() {
-    const current = this.configWriteTail ? await this.configWriteTail.catch(() => {}) : null;
-    const task = Promise.resolve().then(async () => {
-      this.config.version = PROMPT_AGENT_CONFIG_VERSION;
-      await atomicJsonWrite(this.configFilePath(), this.config);
-    });
-    this.configWriteTail = task;
-    await task;
-  }
+  async serializeCreativePresetConfig() { await this.persistConfig(); }
 
   // 对外公共形状：{ id,name,description?,isBuiltin,createdAt,updatedAt,slots }，
   // recentRevisions 只存在于 detail.revisions 中，绝不随 list/create/update 泄漏。
@@ -3612,10 +3630,10 @@ export class PromptAgentService {
       const activeId = (await this.loadCreativePresetCustom()).activeId;
       preset = await this.findCreativePreset(activeId);
     }
-    const provider = normalizeProvider(stored.meta?.provider || config.provider);
+    const provider = this.normalizeProvider(stored.meta?.provider || config.provider);
     const modelId = stored.meta?.model || config.model;
-    const modelInfo = listModels(provider).find(item => item.id === modelId) || { id: modelId, contextWindow: 0, maxTokens: 0, reasoning: false };
-    const modelApi = resolveModelApi(provider, modelId);
+    const modelInfo = this.listModels(provider).find(item => item.id === modelId) || { id: modelId, contextWindow: 0, maxTokens: 0, reasoning: false };
+    const modelApi = this.resolveModelApi(provider, modelId);
     const message = typeof input.message === 'string' ? String(input.message) : '';
     const draft = sanitizeDraft(input.draft);
     const capabilities = resolveCapabilities(modelApi, modelInfo.reasoning, this.normalizeThinkingLevel(stored.meta?.thinkingLevel, modelInfo), modelInfo);
@@ -3678,7 +3696,7 @@ export class PromptAgentService {
     try {
     const storedSession = await this.readSession(sessionId);
     const globalConfig = this.publicConfig();
-    const provider = normalizeProvider(storedSession.meta?.provider || globalConfig.provider);
+    const provider = this.normalizeProvider(storedSession.meta?.provider || globalConfig.provider);
     const modelId = storedSession.meta?.model || globalConfig.model;
     const storedCredential = this.getCredential(provider);
     if (!storedCredential) {
@@ -3687,7 +3705,7 @@ export class PromptAgentService {
       audit('run_rejected', { reason: message, status: 400 });
       throw Object.assign(new Error(message), { status: 400 });
     }
-    const models = listModels(provider);
+    const models = this.listModels(provider);
     const modelInfo = models.find(item => item.id === modelId);
     if (!modelInfo) {
       this.startingAgents.delete(sessionId);
@@ -3726,7 +3744,7 @@ export class PromptAgentService {
         sessionForLock.meta = { ...sessionForLock.meta, creativeMode, creativeModeLocked: true, updatedAt: Date.now() };
         await this.writeSession(sessionId, sessionForLock);
       }
-      const modelApi = resolveModelApi(provider, modelId);
+      const modelApi = this.resolveModelApi(provider, modelId);
       const capabilities = resolveCapabilities(modelApi, modelInfo.reasoning, thinkingLevel, modelInfo);
       audit('runtime_resolved', {
         provider,
@@ -3787,7 +3805,7 @@ export class PromptAgentService {
           provider: visionSelection.provider,
           model: visionSelection.model,
           imageCount: images.length,
-          ...(assistant?.usage ? { usage: assistant.usage } : {}),
+          ...(assistant?.usage ? { usage: { ...assistant.usage, cost: visionSelection.info?.cost ? assistant.usage.cost : null } } : {}),
         };
         visionUsages.push(visionUsage);
         taskEmit({ type: 'vision_usage', ...visionUsage });
@@ -3879,7 +3897,7 @@ export class PromptAgentService {
         if (event.type === 'message_start' && event.message?.role === 'assistant') taskEmit({ type: 'response_start', id: `response-${event.message.timestamp || Date.now()}` });
         if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta') taskEmit({ type: 'text_delta', delta: event.assistantMessageEvent.delta });
         if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'thinking_delta') taskEmit({ type: 'thinking_delta', delta: event.assistantMessageEvent.delta });
-        if (event.type === 'message_end' && event.message?.role === 'assistant') taskEmit({ type: 'response_end', model: event.message.model, provider: event.message.provider, usage: event.message.usage, stopReason: event.message.stopReason, timestamp: event.message.timestamp });
+        if (event.type === 'message_end' && event.message?.role === 'assistant') taskEmit({ type: 'response_end', model: event.message.model, provider: event.message.provider, usage: { ...event.message.usage, cost: modelInfo.cost ? event.message.usage?.cost : null }, stopReason: event.message.stopReason, timestamp: event.message.timestamp });
         if (event.type === 'tool_execution_start') taskEmit({ type: 'tool_start', toolCallId: event.toolCallId, toolName: event.toolName, args: event.args });
         if (event.type === 'tool_execution_end') taskEmit({ type: 'tool_end', toolCallId: event.toolCallId, toolName: event.toolName, isError: event.isError, result: event.result });
       });
@@ -3933,6 +3951,7 @@ export class PromptAgentService {
       finally { signal?.removeEventListener('abort', abort); unsubscribe(); }
       const lastAssistant = [...agent.state.messages].reverse().find(message => message?.role === 'assistant');
       if (lastAssistant && visionUsages.length) lastAssistant.visionUsage = visionUsages;
+      for (const message of agent.state.messages) if (message.role === 'assistant' && message.usage && !modelInfo.cost) message.usage.cost = null;
       await this.saveMessages(sessionId, agent.state.messages);
       if (agent.state.errorMessage && lastAssistant?.stopReason !== 'aborted') {
         taskStatus = 'failed';

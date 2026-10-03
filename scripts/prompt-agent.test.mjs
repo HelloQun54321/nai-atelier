@@ -54,3 +54,35 @@ test('工具历史按实际回执展示失败和中断', () => isolated(async se
   ] });
   assert.deepEqual((await service.getSessionHistory('s'))[0].tools.map(item => item.state), ['error', 'interrupted']);
 }));
+const customInput = (id = 'custom-synthetic-a') => ({ id, name: 'synthetic', baseUrl: 'http://127.0.0.1:1234/v1', models: [{ id: 'a' }, { id: 'b' }] });
+test('服务实例注册表隔离，编辑保留默认模型，失败落盘不发布配置', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), select: true });
+  await service.selectModel('custom-synthetic-a', 'b');
+  await service.saveCustomProvider({ ...customInput(), name: 'edited' });
+  assert.equal(service.publicConfig().model, 'b');
+  const other = new PromptAgentService({ lanSecret: 'synthetic', configFile: join(service.isolatedRoot, 'other') });
+  assert.equal(other.listCustomProviders().length, 0);
+  service.configFileOverride = service.isolatedRoot; // 目录不可作为配置文件覆盖。
+  await assert.rejects(service.saveCustomProvider(customInput('custom-synthetic-b')));
+  assert.equal(service.listCustomProviders().length, 1);
+}));
+test('并发配置写入合并且未知模型价格不伪造免费', () => isolated(async service => {
+  await Promise.all([service.saveCustomProvider(customInput('custom-synthetic-a')), service.saveCustomProvider(customInput('custom-synthetic-b'))]);
+  assert.equal(service.listCustomProviders().length, 2);
+  assert.equal(service.listCustomProviders()[0].models[0].cost, null);
+}));
+test('手填模型功能测试不请求 models，视觉用途不要求工具', () => isolated(async service => {
+  const previous = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async url => {
+    urls.push(String(url));
+    return new Response(JSON.stringify({ error: { message: 'synthetic rejection' } }), { status: 401, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const result = await service.testCustomProvider({ ...customInput(), apiKey: 'synthetic', testRole: 'vision' });
+    assert.equal(result.ok, false);
+    assert.ok(urls.length > 0, result.message);
+    assert.ok(urls.every(url => !url.endsWith('/models')));
+    assert.equal(result.checks.tools, 'not_tested');
+  } finally { globalThis.fetch = previous; }
+}));
