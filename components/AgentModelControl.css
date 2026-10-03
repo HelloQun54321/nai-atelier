@@ -28,7 +28,6 @@
 .dark .agent-thinking-thumb { border-color: var(--color-gray-300, #d1d5db); box-shadow: 0 2px 6px rgb(0 0 0 / 35%); }
 .agent-context-ring circle { fill: none; stroke-width: 2; }
 .agent-context-ring { width: 24px; min-height: 36px; }
-.agent-context-tooltip { background: color-mix(in srgb, var(--color-gray-950, #0b0b0b) 96%, transparent); color: var(--color-gray-100, #fff); box-shadow: 0 8px 24px rgb(0 0 0 / 18%); backdrop-filter: blur(12px); }
 @media (max-width: 767px) { .agent-context-ring { min-height: 44px; } }
 .agent-context-ring-bed { stroke: currentColor; opacity: .2; }
 .agent-context-ring-value { stroke: currentColor; stroke-linecap: round; transform: rotate(-90deg); transform-origin: center; transition: stroke-dasharray 180ms ease; }

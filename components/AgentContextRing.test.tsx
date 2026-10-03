@@ -4,6 +4,19 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import { AgentContextRing } from './AgentContextRing';
 afterEach(cleanup);
+it('上下文浮层使用全局面板材质及明暗配色，缓存分隔线与次级文字同步适配', () => {
+  render(<AgentContextRing usage={{ used: 4000, limit: 10000, cacheHitRate: 50 }} />);
+  fireEvent.pointerEnter(screen.getByRole('meter'));
+  const tooltip = screen.getByRole('tooltip');
+  for (const style of ['appearance-panel', 'bg-white', 'dark:bg-gray-900', 'border-gray-200', 'dark:border-gray-700', 'text-gray-800', 'dark:text-gray-100', 'rounded-2xl']) expect(tooltip.classList.contains(style)).toBe(true);
+  for (const item of [screen.getByText('上下文窗口：'), screen.getByText('40% 已用'), screen.getByText('缓存命中率：50.0%')]) {
+    expect(item.classList.contains('text-gray-500')).toBe(true);
+    expect(item.classList.contains('dark:text-gray-400')).toBe(true);
+  }
+  const cache = screen.getByText('缓存命中率：50.0%');
+  expect(cache.classList.contains('border-gray-200')).toBe(true);
+  expect(cache.classList.contains('dark:border-gray-700')).toBe(true);
+});
 it('悬停展示紧凑上下文卡片及缓存命中率，离开隐藏', () => {
   render(<AgentContextRing usage={{ used: 160000, limit: 258000, cacheHitRate: 80 }} />);
   const ring = screen.getByRole('meter'); fireEvent.pointerEnter(ring);
