@@ -3296,11 +3296,27 @@ const serveDistFile = async (req, res, url) => {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
           return sendJson(res, 200, await promptAgent.getAuditLog(url.searchParams.get('sessionId') || ''));
         }
+        const setAgentQueuePreferences = cloudQueueScope => async next => {
+          if (!cloudQueueScope.keyHash) throw new Error('请先配置 NovelAI API Key，再修改该密钥的公共队列设置');
+          const serviceUrl = normalizeCloudQueueServiceUrl(next.serviceUrl ?? cloudQueueScope.preferences.serviceUrl, { allowEmpty: true });
+          if (next.enabled === true && !serviceUrl) throw new Error('请先填写公共队列服务地址');
+          const preferences = normalizeCloudQueuePreferences({
+            ...cloudQueueScope.preferences,
+            ...next,
+            serviceUrl,
+          });
+          cloudQueueStore.accounts[cloudQueueScope.keyHash] = preferences;
+          cloudQueueScope.preferences = preferences;
+          await saveCloudQueuePreferences(cloudQueueStore);
+          return { ...preferences };
+        };
         if (url.pathname === '/api/prompt-agent/project-action') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
           const body = JSON.parse((await readRequestBody(req, 32 * 1024)).toString('utf8') || '{}');
+          const cloudQueueScope = await getCloudQueueScope(req);
           return sendJson(res, 200, await promptAgent.executeConfirmedProjectAction(body, {
-            keyHash: (await getCloudQueueScope(req)).keyHash,
+            keyHash: cloudQueueScope.keyHash,
+            setQueuePreferences: setAgentQueuePreferences(cloudQueueScope),
             requestJson: (path, options) => requestWorkerJson(path, req, workerPort, options),
             tagDictionary: method => requestTagDictionaryControl(method),
           }));
@@ -3324,20 +3340,7 @@ const serveDistFile = async (req, res, url) => {
               keyHash: cloudQueueScope.keyHash,
               requestJson: (path, options) => requestWorkerJson(path, req, workerPort, options),
               getQueuePreferences: () => ({ ...cloudQueueScope.preferences }),
-              setQueuePreferences: async next => {
-                if (!cloudQueueScope.keyHash) throw new Error('请先配置 NovelAI API Key，再修改该密钥的公共队列设置');
-                const serviceUrl = normalizeCloudQueueServiceUrl(next.serviceUrl ?? cloudQueueScope.preferences.serviceUrl, { allowEmpty: true });
-                if (next.enabled === true && !serviceUrl) throw new Error('请先填写公共队列服务地址');
-                const preferences = normalizeCloudQueuePreferences({
-                  ...cloudQueueScope.preferences,
-                  ...next,
-                  serviceUrl,
-                });
-                cloudQueueStore.accounts[cloudQueueScope.keyHash] = preferences;
-                cloudQueueScope.preferences = preferences;
-                await saveCloudQueuePreferences(cloudQueueStore);
-                return { ...preferences };
-              },
+              setQueuePreferences: setAgentQueuePreferences(cloudQueueScope),
               tagDictionary: method => requestTagDictionaryControl(method),
               requestBuffer: async (path, maxBytes, signal) => {
                 const result = await requestWorkerBuffer(path, req, workerPort, signal);

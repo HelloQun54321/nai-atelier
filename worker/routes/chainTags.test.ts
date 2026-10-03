@@ -29,6 +29,29 @@ const fixture = (bucket?: R2Bucket, envOverrides: Partial<Env> = {}) => {
 };
 
 describe('风格串标签读写链路（隔离 SQLite）', () => {
+  it('Agent 检索在数据库分页，转义通配符并只返回有界摘要', async () => {
+    const f = fixture();
+    const insert = f.sqlite.prepare('INSERT INTO chains (id, name, base_prompt, updated_at) VALUES (?, ?, ?, ?)');
+    for (let i = 0; i < 205; i++) insert.run(String(i), `合成${i}`, 'long prompt '.repeat(3000), i);
+    insert.run('literal', '100%_match', 'private full prompt', 1000);
+    const first = await (await f.invoke('/api/agent/library?kind=chains&limit=20')).json() as any;
+    const second = await (await f.invoke('/api/agent/library?kind=chains&limit=20&page=1')).json() as any;
+    expect(first.chains).toHaveLength(20); expect(first.hasMore.chains).toBe(true);
+    expect(second.chains.some((item: any) => first.chains.some((previous: any) => item.id === previous.id))).toBe(false);
+    expect(JSON.stringify(first)).not.toContain('long prompt');
+    const literal = await (await f.invoke('/api/agent/library?kind=chains&q=100%25_')).json() as any;
+    expect(literal.chains.map((item: any) => item.id)).toEqual(['literal']);
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM chains').get()?.count).toBe(206);
+  });
+  it('同一 Agent 创建操作不重复落库，也不覆盖之后的手动修改', async () => {
+    const f = fixture(); const id = `agent-${'a'.repeat(64)}`;
+    await f.invoke('/api/chains', 'POST', { id, name: 'original' });
+    await f.invoke(`/api/chains/${id}`, 'PUT', { name: 'manual' });
+    const replay = await (await f.invoke('/api/chains', 'POST', { id, name: 'original' })).json() as any;
+    expect(replay).toEqual({ id, replayed: true });
+    expect(f.sqlite.prepare('SELECT name FROM chains WHERE id = ?').get(id)?.name).toBe('manual');
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM chains').get()?.count).toBe(1);
+  });
   it('旧列表、详情与 Agent 返回统一清除自动标签，读取不修改私人数据或排序时间', async () => {
     const f = fixture();
     const tags = ['aitag', 'NAI', 'Pixiv', '收集中', '待实测', '我的分类'];

@@ -263,26 +263,28 @@ export async function handleAgentRoute(ctx: RouteContext): Promise<Response | nu
 
   if (path === '/api/agent/library' && method === 'GET') {
       await ensureInspirationSchema(db);
-      const kind = new URL(request.url).searchParams.get('kind') || 'all';
-      const output: any = {};
+      const params = new URL(request.url).searchParams;
+      const kind = params.get('kind') || 'all';
+      if (!['all', 'chains', 'inspirations', 'artists'].includes(kind)) return error('资料类型无效', 400);
+      const limit = clampInt(params.get('limit'), 30, 1, 100);
+      const page = clampInt(params.get('page'), 0, 0, 100000);
+      const pattern = '%' + (params.get('q') || '').slice(0, 300).replace(/[\\%_]/g, value => '\\' + value) + '%';
+      const output: any = { page, limit, hasMore: {} };
+      // 查询只返回摘要；长 Prompt、参数和分析在详情接口按需读取。
       if (kind === 'all' || kind === 'chains') {
-          const rows = await db.prepare(`SELECT id, type, name, description, tags, base_prompt, negative_prompt, variable_values, created_at, updated_at FROM chains ORDER BY updated_at DESC`).all<any>();
-          output.chains = rows.results.map((item: any) => ({ ...item, tags: normalizeChainTags(parseStoredJson(item.tags, [])), variableValues: parseStoredJson(item.variable_values, {}), basePrompt: item.base_prompt, negativePrompt: item.negative_prompt, createdAt: item.created_at, updatedAt: item.updated_at }));
+          const rows = await db.prepare(`SELECT id, type, substr(name,1,160) AS name, substr(description,1,300) AS description, tags, updated_at FROM chains WHERE (name || ' ' || COALESCE(description,'') || ' ' || COALESCE(tags,'') || ' ' || COALESCE(base_prompt,'')) LIKE ? ESCAPE '\\' ORDER BY updated_at DESC, id LIMIT ? OFFSET ?`).bind(pattern, limit + 1, page * limit).all<any>();
+          output.hasMore.chains = rows.results.length > limit;
+          output.chains = rows.results.slice(0, limit).map((item: any) => ({ id: item.id, type: item.type, name: item.name, description: item.description, tags: normalizeChainTags(parseStoredJson(item.tags, [])).slice(0, 40), updatedAt: item.updated_at }));
       }
       if (kind === 'all' || kind === 'inspirations') {
-          const rows = await db.prepare(`SELECT id, title, prompt, negative_prompt, params, board_id, notes, tags, source_type, source_id, source_url, rating, is_pinned, archived, last_used_at, use_count, parent_id, analysis, created_at, updated_at FROM inspirations ORDER BY is_pinned DESC, created_at DESC`).all<any>();
-          output.inspirations = rows.results.map((item: any) => ({
-            id: item.id, title: item.title, prompt: item.prompt, negativePrompt: item.negative_prompt,
-            params: parseStoredJson(item.params, undefined), boardId: item.board_id, notes: item.notes || '',
-            tags: parseStoredJson(item.tags, []), sourceType: item.source_type, sourceId: item.source_id,
-            sourceUrl: item.source_url, rating: Number(item.rating || 0), isPinned: Number(item.is_pinned || 0) === 1,
-            archived: Number(item.archived || 0) === 1, lastUsedAt: item.last_used_at, useCount: Number(item.use_count || 0),
-            parentId: item.parent_id, analysis: parseStoredJson(item.analysis, {}), createdAt: item.created_at, updatedAt: item.updated_at,
-          }));
+          const rows = await db.prepare(`SELECT id, substr(title,1,160) AS title, substr(notes,1,300) AS notes, tags, rating, is_pinned, archived, updated_at FROM inspirations WHERE (title || ' ' || COALESCE(notes,'') || ' ' || COALESCE(tags,'') || ' ' || COALESCE(prompt,'')) LIKE ? ESCAPE '\\' ORDER BY is_pinned DESC, created_at DESC, id LIMIT ? OFFSET ?`).bind(pattern, limit + 1, page * limit).all<any>();
+          output.hasMore.inspirations = rows.results.length > limit;
+          output.inspirations = rows.results.slice(0, limit).map((item: any) => ({ id: item.id, title: item.title, notes: item.notes, tags: parseStoredJson(item.tags, []).slice(0, 40), rating: item.rating, isPinned: Boolean(item.is_pinned), archived: Boolean(item.archived), updatedAt: item.updated_at }));
       }
       if (kind === 'all' || kind === 'artists') {
-          const rows = await db.prepare(`SELECT id, name, benchmarks FROM artists ORDER BY name ASC`).all<any>();
-          output.artists = rows.results.map((item: any) => ({ id: item.id, name: item.name, benchmarks: parseStoredJson(item.benchmarks, []).length }));
+          const rows = await db.prepare(`SELECT id, substr(name,1,160) AS name FROM artists WHERE name LIKE ? ESCAPE '\\' ORDER BY name ASC, id LIMIT ? OFFSET ?`).bind(pattern, limit + 1, page * limit).all<any>();
+          output.hasMore.artists = rows.results.length > limit;
+          output.artists = rows.results.slice(0, limit);
       }
       return json(output);
   }
@@ -779,6 +781,10 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
     if (currentUser.role === 'guest') return error('Forbidden', 403);
     const body = await request.json() as any;
     const id = String(body.id || crypto.randomUUID());
+    if (/^agent-[a-f0-9]{64}$/.test(id)) {
+      const existing = await db.prepare('SELECT id, user_id FROM inspirations WHERE id = ?').bind(id).first<any>();
+      if (existing) return existing.user_id === currentUser.id ? json({ id, replayed: true }) : error('操作 ID 冲突', 409);
+    }
     const now = Number(body.createdAt || Date.now());
     let imageUrl = body.imageUrl || null;
     let imageKey: string | null = null;

@@ -68,6 +68,19 @@ export async function validateDownloadTarget(raw, lookupHost = lookup, publicLoo
   return { url, address: addresses[0] };
 }
 
+export function createPinnedPublicDispatcher(url, address, proxyUrl = '') {
+  const pinned = isIP(address.address) === 6 ? `[${address.address}]` : address.address;
+  return proxyUrl ? new ProxyAgent({ uri: proxyUrl, clientFactory(origin, options) {
+    const client = new Client(origin, options);
+    const connect = client.connect.bind(client);
+    // 代理 CONNECT 固定为已验证 IP，TLS 保留原域名。
+    client.connect = (opts, callback) => connect({ ...opts, path: `${pinned}:${url.port || (url.protocol === 'https:' ? 443 : 80)}` }, callback);
+    return client;
+  } }) : new Agent({ connect: { lookup(_host, opts, callback) {
+    if (opts.all) callback(null, [address]); else callback(null, address.address, address.family);
+  } } });
+}
+
 export async function downloadCollectorImage(raw, { signal, maxBytes = 12 * 1024 * 1024, proxyUrl = '', lookupHost = lookup, request = fetch, publicLookup = resolveCollectorPublicDns } = {}) {
   const timeout = AbortSignal.timeout(30_000);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -80,16 +93,7 @@ export async function downloadCollectorImage(raw, { signal, maxBytes = 12 * 1024
     try { target = await Promise.race([validateDownloadTarget(current, lookupHost, host => publicLookup(host, { signal: combined, proxyUrl })), canceled]); }
     finally { combined.removeEventListener('abort', abortDns); }
     const { url, address } = target;
-    const pinned = isIP(address.address) === 6 ? `[${address.address}]` : address.address;
-    const dispatcher = proxyUrl ? new ProxyAgent({ uri: proxyUrl, clientFactory(origin, options) {
-      const client = new Client(origin, options);
-      const connect = client.connect.bind(client);
-      // CONNECT 固定到已校验 IP，TLS 仍使用原图床域名；代理不能重新解析到内网。
-      client.connect = (opts, callback) => connect({ ...opts, path: `${pinned}:${url.port || (url.protocol === 'https:' ? 443 : 80)}` }, callback);
-      return client;
-    } }) : new Agent({ connect: { lookup(_host, opts, callback) {
-      if (opts.all) callback(null, [address]); else callback(null, address.address, address.family);
-    } } });
+    const dispatcher = createPinnedPublicDispatcher(url, address, proxyUrl);
     try {
       const response = await request(url, { dispatcher, signal: combined, redirect: 'manual', headers: { accept: 'image/*' } });
       if ([301, 302, 303, 307, 308].includes(response.status)) {

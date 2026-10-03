@@ -5,9 +5,8 @@ import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.l
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'crypto';
 import { readFileSync } from 'node:fs';
-import { appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from 'fs/promises';
-import { lookup } from 'dns/promises';
-import { isIP } from 'net';
+import { appendFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'fs/promises';
+import { validateAgentWebTarget, fetchAgentWebPage } from './agent-web.mjs';
 import { dirname, join } from 'path';
 import { getGlobalDispatcher, ProxyAgent, setGlobalDispatcher } from 'undici';
 import { getNovelAiModelProfile, readNovelAiOfficialKnowledge, searchNovelAiOfficialKnowledge } from './novelai-agent-knowledge.mjs';
@@ -46,7 +45,6 @@ const CATEGORY_LABELS = { 0: '普通', 1: '画师', 3: '作品', 4: '角色', 5:
 const MAX_SESSION_MESSAGES = 200;
 const MAX_PROJECT_LIST_ITEMS = 100;
 const MAX_AGENT_IMAGE_BYTES = 30 * 1024 * 1024;
-const MAX_WEB_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_WEB_PAGE_CHARS = 24_000;
 const MAX_SAVED_MESSAGE_CHARS = 24_000;
 const MAX_TASK_EVENTS = 500;
@@ -186,58 +184,7 @@ export const parseWebSearchResponse = (raw, provider = 'duckduckgo', limit = 8) 
   return output;
 };
 
-const isBlockedIpAddress = (address, allowProxySynthetic = false) => {
-  if (isIP(address) === 4) {
-    const parts = address.split('.').map(Number);
-    return parts[0] === 0 || parts[0] === 10 || parts[0] === 127 || parts[0] >= 224
-      || (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127)
-      || (parts[0] === 169 && parts[1] === 254)
-      || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
-      || (parts[0] === 192 && parts[1] === 0)
-      || (parts[0] === 192 && parts[1] === 168)
-      || (!allowProxySynthetic && parts[0] === 198 && (parts[1] === 18 || parts[1] === 19));
-  }
-  if (isIP(address) === 6) {
-    const normalized = address.toLowerCase();
-    return normalized === '::' || normalized === '::1' || normalized.startsWith('fc') || normalized.startsWith('fd')
-      || /^fe[89ab]/.test(normalized) || normalized.startsWith('2001:db8:')
-      || normalized.startsWith('::ffff:10.') || normalized.startsWith('::ffff:127.')
-      || normalized.startsWith('::ffff:169.254.') || normalized.startsWith('::ffff:192.168.')
-      || /^::ffff:172\.(1[6-9]|2\d|3[01])\./.test(normalized);
-  }
-  return true;
-};
-
-export const validatePublicWebUrl = async (raw, lookupHost = lookup) => {
-  let parsed;
-  try { parsed = new URL(String(raw || '')); } catch { throw new Error('网页地址格式无效'); }
-  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) throw new Error('只允许读取不含账号信息和自定义端口的 HTTPS 公网页面');
-  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
-  if (!hostname || hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local') || hostname.endsWith('.internal')) throw new Error('禁止读取本机或局域网地址');
-  const literalIp = Boolean(isIP(hostname));
-  const addresses = literalIp ? [{ address: hostname }] : await lookupHost(hostname, { all: true, verbatim: true });
-  if (!addresses.length || addresses.some(item => isBlockedIpAddress(item.address, !literalIp))) throw new Error('禁止读取本机、局域网或保留网段地址');
-  parsed.hash = '';
-  return parsed;
-};
-
-const readResponseText = async (response, maxBytes = MAX_WEB_RESPONSE_BYTES) => {
-  const declared = Number(response.headers.get('content-length'));
-  if (Number.isFinite(declared) && declared > maxBytes) throw new Error('网页内容过大');
-  if (!response.body) return '';
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let received = 0;
-  let output = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    received += value.byteLength;
-    if (received > maxBytes) { await reader.cancel(); throw new Error('网页内容超过读取上限'); }
-    output += decoder.decode(value, { stream: true });
-  }
-  return output + decoder.decode();
-};
+export const validatePublicWebUrl = async (raw, lookupHost, publicLookup) => (await validateAgentWebTarget(raw, lookupHost, publicLookup)).url;
 
 const isConversationUserMessage = message => {
   if (message?.role !== 'user') return false;
@@ -1371,6 +1318,7 @@ export class PromptAgentService {
   constructor({ lanSecret, outboundProxyUrl = '', configFile = '' }) {
     this.runtimeStartedAt = Date.now();
     this.customProviders = new Map();
+    this.sessionSummaries = new Map();
     // 测试隔离：传入 configFile 时该实例的会话/审计/任务/配置全部落在指定目录，
     // 绝不触碰真实 local-data（构造缺省保持现有行为）。creative 写点共用同一
     // 串行 promise 链（this.configWriteTail），避免并发请求互相覆盖。
@@ -2043,6 +1991,11 @@ export class PromptAgentService {
         const body = Number.isFinite(days) ? { days: Math.max(1, Math.floor(days)) } : Number.isFinite(keepCount) ? { keepCount: Math.max(0, Math.floor(keepCount)) } : null;
         if (!body) throw Object.assign(new Error('缺少有效的历史清理条件'), { status: 400 });
         await project.requestJson('/api/local-history/cleanup', { method: 'POST', body });
+      } else if (action === 'set_anlas_budget') {
+        await project.requestJson('/api/anlas-budget', { method: 'PUT', body: { remaining: input.payload.remaining } });
+      } else if (action === 'set_cloud_queue') {
+        if (!project.setQueuePreferences) throw new Error('电脑队列设置服务不可用');
+        await project.setQueuePreferences(input.payload);
       } else if (action === 'update_tag_dictionary') {
         if (!project.tagDictionary) throw new Error('Tag更新服务不可用');
         await project.tagDictionary(input?.payload?.checkOnly === true ? 'GET' : 'POST');
@@ -2055,8 +2008,7 @@ export class PromptAgentService {
         if (task === 'favorite' || task === 'unfavorite') {
           if (!Number.isFinite(workId)) throw new Error('收藏操作缺少AITag作品ID');
           await project.requestJson(`/api/aitag/work/${Math.floor(workId)}/favorite`, { method: 'POST', body: { favorite: task === 'favorite', sort, timeRange } });
-        } else if (!['index', 'pause', 'resume'].includes(task)) throw new Error('不允许执行这个 AITag 后台操作');
-        else await project.requestJson(`/api/aitag/cache/${task}`, { method: 'POST', body: { sort, timeRange, aiType: 'nai', targetPages: Math.floor(clamp(payload.targetPages, 1, 10_000, 100)) } });
+        } else throw new Error('Agent 不提供 AITag 机械索引任务');
       } else throw Object.assign(new Error('不允许执行这个项目操作'), { status: 400 });
       clearTimeout(confirmation.timer);
       this.pendingConfirmations.delete(requestId);
@@ -2271,6 +2223,7 @@ export class PromptAgentService {
 
   async writeSession(sessionId, value) {
     await atomicJsonWrite(this.sessionFile(sessionId), value);
+    this.sessionSummaries.delete(this.sessionFile(sessionId));
   }
 
   async createSession(input = {}) {
@@ -2302,12 +2255,20 @@ export class PromptAgentService {
     for (const file of files) {
       if (!file.endsWith('.json')) continue;
       try {
-        const value = JSON.parse(await readFile(join(this.sessionDirPath(), file), 'utf8'));
+        const path = join(this.sessionDirPath(), file);
+        const info = await stat(path);
+        let cached = this.sessionSummaries.get(path);
+        if (!cached || cached.stamp !== `${info.mtimeMs}/${info.size}`) {
+          const data = JSON.parse(await readFile(path, 'utf8'));
+          cached = { stamp: `${info.mtimeMs}/${info.size}`, value: { meta: data.meta, messageCount: (data.messages || []).filter(message => message.role === 'user').length } };
+          this.sessionSummaries.set(path, cached);
+        }
+        const value = cached.value;
         if (value?.meta?.id) {
           let task = {};
           try { task = JSON.parse(await readFile(this.taskFile(value.meta.id), 'utf8')); } catch { /* No task yet. */ }
           const running = this.activeAgents.has(value.meta.id) || this.startingAgents.has(value.meta.id);
-          const messageCount = Array.isArray(value.messages) ? value.messages.filter(message => message?.role === 'user').length : 0;
+          const messageCount = value.messageCount;
           const creativeMode = typeof value.meta.creativeMode === 'boolean' ? value.meta.creativeMode : this.config.creativeMode !== false;
           // 展示一律读会话 revision（presetName/presetRevisionHash/effectivePolicyFingerprint），
           // 禁止再按当前全局 active 重算 runtimePolicyInfo fingerprint。
@@ -2736,12 +2697,8 @@ export class PromptAgentService {
       let lastError;
       for (const provider of providers) {
         try {
-          const response = await fetch(provider.url, {
-            redirect: 'error', signal: project.signal ? AbortSignal.any([project.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
-            headers: { Accept: provider.id === 'bing' ? 'application/rss+xml, application/xml;q=0.9, text/xml;q=0.8' : 'text/html,application/xhtml+xml', 'User-Agent': 'NAI-Atelier-Agent/1.0' },
-          });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const results = parseWebSearchResponse(await readResponseText(response, 1024 * 1024), provider.id, limit);
+          const page = await fetchAgentWebPage(provider.url, { signal: project.signal, proxyUrl: this.outboundProxyUrl });
+          const results = parseWebSearchResponse(page.text, provider.id, limit);
           if (results.length) return { provider: provider.id, results };
           lastError = new Error(`${provider.id} 没有返回可解析结果`);
         } catch (error) { lastError = error; }
@@ -2749,27 +2706,15 @@ export class PromptAgentService {
       throw new Error(`网页搜索暂时不可用：${lastError instanceof Error ? lastError.message : '未知错误'}`);
     };
     const readPublicPage = async rawUrl => {
-      let current = await validatePublicWebUrl(rawUrl);
-      for (let redirect = 0; redirect <= 5; redirect += 1) {
-        const response = await fetch(current, {
-          redirect: 'manual', signal: AbortSignal.timeout(18_000),
-          headers: { Accept: 'text/html, text/plain, application/json, application/xml;q=0.8, text/xml;q=0.8', 'User-Agent': 'NAI-Atelier-Agent/1.0' },
-        });
-        if (response.status >= 300 && response.status < 400) {
-          const location = response.headers.get('location');
-          if (!location || redirect === 5) throw new Error('网页重定向次数过多或缺少目标地址');
-          current = await validatePublicWebUrl(new URL(location, current).toString());
-          continue;
-        }
-        if (!response.ok) throw new Error(`网页返回 HTTP ${response.status}`);
-        const contentType = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-        if (contentType && !contentType.startsWith('text/') && !['application/json', 'application/xml', 'application/xhtml+xml', 'application/rss+xml', 'application/atom+xml'].includes(contentType)) throw new Error(`不读取这种网页内容类型：${contentType}`);
-        const raw = await readResponseText(response);
-        const title = contentType.includes('html') || /<html[\s>]/i.test(raw) ? stripHtml(raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').slice(0, 300) : '';
-        const content = (contentType.includes('html') || /<html[\s>]/i.test(raw) ? stripHtml(raw) : raw.replace(/\s+/g, ' ').trim()).slice(0, MAX_WEB_PAGE_CHARS);
-        return { url: current.toString(), title, content, truncated: content.length >= MAX_WEB_PAGE_CHARS };
-      }
-      throw new Error('网页重定向失败');
+      const page = await fetchAgentWebPage(rawUrl, { signal: project.signal, proxyUrl: this.outboundProxyUrl });
+      const html = page.mimeType.includes("html");
+      const title = html ? stripHtml(page.text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').slice(0, 300) : '';
+      const content = (html ? stripHtml(page.text) : page.text.replace(/\s+/g, ' ').trim()).slice(0, MAX_WEB_PAGE_CHARS);
+      return { url: page.finalUrl, title, content, truncated: content.length >= MAX_WEB_PAGE_CHARS };
+    };
+    const operationId = args => {
+      const canonical = JSON.stringify([project.agentOperationScope || project.agentSessionId, args], (_, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
+      return `agent-${createHash('sha256').update(canonical).digest('hex')}`;
     };
     return [
       {
@@ -2891,25 +2836,11 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'search_project_library', label: '搜索项目资料', description: '搜索风格串、自定义角色、灵感和画师资料。kind可为all、chains、inspirations、artists。',
-        parameters: Type.Object({ query: Type.Optional(Type.String()), kind: Type.Optional(Type.String()), limit: Type.Optional(Type.Number()) }),
+        name: 'search_project_library', label: '搜索项目资料', description: '按关键词分页搜索风格串、自定义角色、灵感和画师摘要；需要完整内容时按返回 id 读取详情。page 从 0 开始。',
+        parameters: Type.Object({ query: Type.Optional(Type.String()), kind: Type.Optional(Type.String()), limit: Type.Optional(Type.Number()), page: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => {
-          const query = text(args.query).trim().toLowerCase();
-          const kind = ['chains', 'inspirations', 'artists'].includes(args.kind) ? args.kind : 'all';
-          const limit = clamp(args.limit, 1, MAX_PROJECT_LIST_ITEMS, 30);
-          const output = {};
-          if (kind === 'all' || kind === 'chains') {
-            const items = listItems((await readProject('/api/agent/library?kind=chains')).chains);
-            output.chains = items.map(compactChain).filter(item => !query || JSON.stringify([item.name, item.description, item.tags, item.basePrompt, item.variableValues]).toLowerCase().includes(query)).slice(0, limit);
-          }
-          if (kind === 'all' || kind === 'inspirations') {
-            const items = listItems((await readProject('/api/agent/library?kind=inspirations')).inspirations);
-            output.inspirations = items.map(compactInspiration).filter(item => !query || JSON.stringify([item.title, item.prompt, item.negativePrompt, item.notes, item.tags, item.sourceType]).toLowerCase().includes(query)).slice(0, limit);
-          }
-          if (kind === 'all' || kind === 'artists') {
-            const items = listItems((await readProject('/api/agent/library?kind=artists')).artists);
-            output.artists = items.filter(item => !query || JSON.stringify([item.name, item.benchmarks]).toLowerCase().includes(query)).slice(0, limit);
-          }
+          const params = new URLSearchParams({ q: text(args.query).trim().slice(0, 300), kind: ['chains', 'inspirations', 'artists'].includes(args.kind) ? args.kind : 'all', limit: String(Math.floor(clamp(args.limit, 1, MAX_PROJECT_LIST_ITEMS, 30))), page: String(Math.floor(clamp(args.page, 0, 100000, 0))) });
+          const output = await readProject(`/api/agent/library?${params}`);
           return { content: jsonText(output), details: output };
         },
       },
@@ -2919,6 +2850,15 @@ export class PromptAgentService {
         execute: async (_id, args) => {
           const value = await readProject(`/api/chains/${encodeURIComponent(text(args.id).slice(0, 200))}`);
           const result = compactChain(value.item || value);
+          return { content: jsonText(result), details: result };
+        },
+      },
+      {
+        name: 'get_inspiration', label: '读取完整灵感', description: '按搜索结果 id 读取单条灵感详情，包括完整提示词、参数和分析。',
+        parameters: Type.Object({ id: Type.String() }),
+        execute: async (_id, args) => {
+          const value = await readProject(`/api/inspirations/${encodeURIComponent(text(args.id).slice(0, 200))}`);
+          const result = compactInspiration(value.item || value);
           return { content: jsonText(result), details: result };
         },
       },
@@ -3048,7 +2988,7 @@ export class PromptAgentService {
         name: 'create_chain', label: '新建风格串或角色', description: '在项目中创建风格串或自定义角色。type为style或character。',
         parameters: Type.Object({ type: Type.Union([Type.Literal('style'), Type.Literal('character')]), name: Type.String(), description: Type.Optional(Type.String()), basePrompt: Type.Optional(Type.String()), subjectPrompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), modules: Type.Optional(Type.Array(Type.Object({ name: Type.String(), content: Type.String(), isActive: Type.Optional(Type.Boolean()), position: Type.Optional(Type.Union([Type.Literal('pre'), Type.Literal('post')])) }))), params: Type.Optional(Type.Any()) }),
         execute: async (_id, args) => {
-          const body = { type: args.type, name: text(args.name).slice(0, 160), description: text(args.description).slice(0, 1000), basePrompt: text(args.basePrompt), negativePrompt: text(args.negativePrompt), tags: (args.tags || []).slice(0, 40).map(value => text(value).slice(0, 80)), modules: Array.isArray(args.modules) ? sanitizeDraft({ modules: args.modules, params: {} }).modules : [], params: args.params && typeof args.params === 'object' ? sanitizeParams(args.params) : undefined, variableValues: { subject: text(args.subjectPrompt) } };
+          const body = { id: operationId(['create_chain', args]), type: args.type, name: text(args.name).slice(0, 160), description: text(args.description).slice(0, 1000), basePrompt: text(args.basePrompt), negativePrompt: text(args.negativePrompt), tags: (args.tags || []).slice(0, 40).map(value => text(value).slice(0, 80)), modules: Array.isArray(args.modules) ? sanitizeDraft({ modules: args.modules, params: {} }).modules : [], params: args.params && typeof args.params === 'object' ? sanitizeParams(args.params) : undefined, variableValues: { subject: text(args.subjectPrompt) } };
           const result = await readProject('/api/chains', { method: 'POST', body });
           changed('chains');
           return { content: jsonText({ ok: true, id: result.id, name: body.name }), details: result };
@@ -3085,7 +3025,7 @@ export class PromptAgentService {
           const now = Date.now();
           const item = await findHistory(args.historyId);
           if (!item) throw new Error('找不到用于灵感封面的历史图片');
-          const body = { id: randomBytes(16).toString('hex'), title: text(args.title).slice(0, 160), prompt: typeof args.prompt === 'string' ? text(args.prompt) : text(item.prompt), negativePrompt: typeof args.negativePrompt === 'string' ? text(args.negativePrompt) : text(item.negativePrompt), params: args.params && typeof args.params === 'object' ? args.params : item.params, boardId: text(args.boardId).slice(0, 200) || undefined, notes: text(args.notes), tags: Array.isArray(args.tags) ? args.tags.slice(0, 80).map(value => text(value).slice(0, 80)) : ['生成历史'], rating: Math.floor(clamp(args.rating, 0, 5, 0)), sourceType: 'history', sourceId: String(item.id), createdAt: now, updatedAt: now };
+          const body = { id: operationId(['create_inspiration', args]), title: text(args.title).slice(0, 160), prompt: typeof args.prompt === 'string' ? text(args.prompt) : text(item.prompt), negativePrompt: typeof args.negativePrompt === 'string' ? text(args.negativePrompt) : text(item.negativePrompt), params: args.params && typeof args.params === 'object' ? args.params : item.params, boardId: text(args.boardId).slice(0, 200) || undefined, notes: text(args.notes), tags: Array.isArray(args.tags) ? args.tags.slice(0, 80).map(value => text(value).slice(0, 80)) : ['生成历史'], rating: Math.floor(clamp(args.rating, 0, 5, 0)), sourceType: 'history', sourceId: String(item.id), createdAt: now, updatedAt: now };
           const result = await readProject('/api/inspirations', { method: 'POST', body });
           changed('inspirations');
           return { content: jsonText({ ok: true, id: result.id || body.id, title: body.title }), details: result };
@@ -3134,26 +3074,6 @@ export class PromptAgentService {
           const response = await readProject(`/api/aitag/work/${Math.floor(clamp(args.id, 1, Number.MAX_SAFE_INTEGER, 1))}`);
           const result = { work: response.work, images: (response.images || []).slice(0, 30).map(item => ({ id: item.id, model: item.model, generationType: item.generation_type || item.type, prompt: item.prompt_text, aiJson: item.ai_json })) };
           return { content: jsonText(result), details: result };
-        },
-      },
-      {
-        name: 'save_artist_profile', label: '保存画师资料', description: '新建画师资料，或按id修改已有资料的名称。新建时必须选择一条生成历史作为预览图；不会从任意网址下载图片。',
-        parameters: Type.Object({ id: Type.Optional(Type.String()), name: Type.String(), historyId: Type.Optional(Type.String()) }),
-        execute: async (_id, args) => {
-          const id = text(args.id || randomBytes(16).toString('hex')).slice(0, 200);
-          const existing = listItems(await readProject('/api/artists')).find(item => String(item.id) === id);
-          const body = { ...(existing || {}), id, name: text(args.name).trim().slice(0, 160) };
-          if (!body.name) throw new Error('画师名称不能为空');
-          if (!existing && !args.historyId) throw new Error('新建画师资料需要指定一张生成历史作为预览图');
-          if (args.historyId) {
-            const item = await findHistory(args.historyId);
-            if (!item) throw new Error('找不到用于画师资料的历史图片');
-            const image = await project.requestBuffer(`/api/local-history/${encodeURIComponent(item.id)}/image`, MAX_AGENT_IMAGE_BYTES);
-            body.imageUrl = `data:${image.mimeType || 'image/png'};base64,${image.buffer.toString('base64')}`;
-          }
-          await readProject('/api/artists', { method: 'POST', body });
-          changed('artists');
-          return { content: jsonText({ ok: true, id, name: body.name }), details: body };
         },
       },
       {
@@ -3246,7 +3166,10 @@ export class PromptAgentService {
         name: 'set_anlas_budget', label: '设置 Anlas 预算', description: '设置项目记录的可支配Anlas预算；这是本地预算，不会购买或消耗点数。',
         parameters: Type.Object({ remaining: Type.Number() }),
         execute: async (_id, args) => {
-          const result = await readProject('/api/anlas-budget', { method: 'PUT', body: { remaining: Math.max(0, Math.floor(clamp(args.remaining, 0, 1_000_000_000, 1666))) } });
+          const remaining = Math.max(0, Math.floor(clamp(args.remaining, 0, 1_000_000_000, 1666)));
+          const current = await readProject('/api/anlas-budget');
+          if (remaining > Number(current.remaining || 0)) return pending('set_anlas_budget', '', '提高 Anlas 预算？', `本地预算从 ${current.remaining || 0} 提高到 ${remaining}，这会放宽后续付费生成的预算约束。`, { remaining });
+          const result = await readProject('/api/anlas-budget', { method: 'PUT', body: { remaining } });
           changed('settings');
           return { content: jsonText(result), details: result };
         },
@@ -3257,7 +3180,9 @@ export class PromptAgentService {
         execute: async (_id, args) => {
           if (!project.setQueuePreferences) throw new Error('电脑队列设置服务不可用');
           const current = project.getQueuePreferences?.() || {};
-          const result = await project.setQueuePreferences({ ...current, ...(typeof args.enabled === 'boolean' ? { enabled: args.enabled } : {}), ...(typeof args.greeting === 'string' ? { greeting: text(args.greeting).trim().slice(0, 15) } : {}), ...(typeof args.showGreeting === 'boolean' ? { showGreeting: args.showGreeting } : {}) });
+          const next = { ...current, ...(typeof args.enabled === 'boolean' ? { enabled: args.enabled } : {}), ...(typeof args.greeting === 'string' ? { greeting: text(args.greeting).trim().slice(0, 15) } : {}), ...(typeof args.showGreeting === 'boolean' ? { showGreeting: args.showGreeting } : {}) };
+          if (current.enabled && next.enabled === false) return pending('set_cloud_queue', '', '关闭公共队列？', '后续生成将不再等待公共队列。', next);
+          const result = await project.setQueuePreferences(next);
           changed('settings');
           return { content: jsonText(result), details: result };
         },
@@ -3268,8 +3193,8 @@ export class PromptAgentService {
         execute: async (_id, args) => pending('update_tag_dictionary', '', args.checkOnly === true ? '检查 Tag 词库更新？' : '启动 Tag 词库更新？', args.checkOnly === true ? '只读取当前词库状态，不会下载文件。' : '电脑将后台检查并下载新的中英 Tag 词库。', { checkOnly: args.checkOnly === true }),
       },
       {
-        name: 'manage_aitag', label: '管理 AITag', description: '收藏/取消收藏AITag作品，查看、启动、暂停或继续本地索引缓存。',
-        parameters: Type.Object({ action: Type.Union([Type.Literal('favorite'), Type.Literal('unfavorite'), Type.Literal('status'), Type.Literal('index'), Type.Literal('pause'), Type.Literal('resume')]), workId: Type.Optional(Type.Number()), sort: Type.Optional(Type.Union([Type.Literal('new'), Type.Literal('monthly')])), timeRange: Type.Optional(Type.String()), targetPages: Type.Optional(Type.Number()) }),
+        name: 'manage_aitag', label: '管理 AITag', description: '收藏/取消收藏AITag作品或查看缓存状态；不提供机械索引任务。',
+        parameters: Type.Object({ action: Type.Union([Type.Literal('favorite'), Type.Literal('unfavorite'), Type.Literal('status')]), workId: Type.Optional(Type.Number()), sort: Type.Optional(Type.Union([Type.Literal('new'), Type.Literal('monthly')])), timeRange: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           const sort = args.sort === 'monthly' ? 'monthly' : 'new';
           const timeRange = text(args.timeRange || 'all').slice(0, 32);
@@ -3278,7 +3203,7 @@ export class PromptAgentService {
             if (!Number.isFinite(args.workId)) throw new Error('收藏操作缺少AITag作品ID');
             return pending('manage_aitag', '', args.action === 'favorite' ? '收藏 AITag 作品？' : '取消收藏 AITag 作品？', '将修改电脑上的 AITag 收藏状态。', { task: args.action, workId: Math.floor(args.workId), sort, timeRange });
           } else if (args.action === 'status') result = await readProject(`/api/aitag/cache/status?sort=${sort}&time_range=${encodeURIComponent(timeRange)}&aiType=nai`);
-          else return pending('manage_aitag', '', `执行 AITag ${args.action}？`, args.action === 'index' ? '将启动 NovelAI 作品的本地索引和缓存任务，可能持续较长时间并产生网络与磁盘负载。' : '将修改当前 AITag 后台任务状态。', { task: args.action, sort, timeRange, aiType: 'nai', targetPages: Math.floor(clamp(args.targetPages, 1, 10_000, 100)) });
+          else throw new Error('不支持这个 AITag 操作');
           if (args.action !== 'status') changed('aitag');
           return { content: jsonText(result), details: result };
         },
@@ -3875,6 +3800,7 @@ export class PromptAgentService {
       const tools = selectAgentTools(this.createTools(draft, contextData, taskEmit, {
         ...project,
         agentSessionId: sessionId,
+        agentOperationScope: `${sessionId}/${(storedSession.messages || []).filter(message => message.role === 'user').length + (input?.mode === 'retry' ? 0 : 1)}`,
         signal: combined,
         ...(analyzeImages ? { analyzeImages, visionModelLabel: `${visionSelection.provider}/${visionSelection.model}` } : {}),
       }, modelInfo), requestUserText + ' ' + (storedSession.messages || []).filter(message => message.role === 'user').slice(-2).map(agentMessageText).join(' '));
@@ -3961,7 +3887,13 @@ export class PromptAgentService {
         },
       });
       let turns = 0, totalTokens = 0;
+      let checkpoint = Promise.resolve();
       const unsubscribe = agent.subscribe(event => {
+        if (event.type === 'message_end') {
+          const snapshot = cloneAgentMessages(agent.state.messages);
+          // 沿用现有消息文件保存完成收据；进程中断后重试不会抹掉已完成写入。
+          checkpoint = checkpoint.then(() => this.saveMessages(sessionId, snapshot)).catch(error => audit('checkpoint_failed', { error: error.message }));
+        }
         if (event.type === 'message_end' && event.message?.role === 'assistant') {
           totalTokens += event.message.usage?.totalTokens || 0;
           if (++turns >= 16 || totalTokens >= 64000) { controller.abort(new Error('已达到单轮 16 次模型回复或 64k Token 上限，请分段继续')); }
@@ -4018,11 +3950,13 @@ export class PromptAgentService {
           await agent.prompt(actualUserMessage, promptImages);
         }
       } catch (error) {
+        await checkpoint;
+        await this.saveMessages(sessionId, agent.state.messages).catch(() => {});
         taskStatus = agent.signal?.aborted ? 'aborted' : 'failed';
         audit('run_failed', { status: taskStatus, error: error instanceof Error ? error.message : 'Unknown error' });
         throw error;
       }
-      finally { combined.removeEventListener('abort', abort); unsubscribe(); }
+      finally { combined.removeEventListener('abort', abort); unsubscribe(); await checkpoint; }
       const lastAssistant = [...agent.state.messages].reverse().find(message => message?.role === 'assistant');
       if (lastAssistant && visionUsages.length) lastAssistant.visionUsage = visionUsages;
       for (const message of agent.state.messages) if (message.role === 'assistant' && message.usage && !modelInfo.cost) message.usage.cost = null;

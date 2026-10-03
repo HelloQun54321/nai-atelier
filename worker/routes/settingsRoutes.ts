@@ -730,7 +730,11 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
   if (path === '/api/chains' && method === 'POST') {
     if (currentUser.role === 'guest') return error('Forbidden', 403);
     const body = await request.json() as any;
-    const id = crypto.randomUUID();
+    const id = /^agent-[a-f0-9]{64}$/.test(String(body.id || '')) ? String(body.id) : crypto.randomUUID();
+    if (id.startsWith('agent-')) {
+      const existing = await db.prepare('SELECT id, user_id FROM chains WHERE id = ?').bind(id).first<any>();
+      if (existing) return existing.user_id === currentUser.id ? json({ id, replayed: true }) : error('操作 ID 冲突', 409);
+    }
     const type = body.type || 'style'; // Default to style
     const guestHidden = body.guestHidden ? 1 : 0;
     const tags = JSON.stringify(normalizeChainTags(Array.isArray(body.tags)

@@ -289,9 +289,9 @@ test('prompt agent parses web results and blocks private web targets', async () 
   assert.deepEqual(parseWebSearchResponse(html), [{ title: 'Example docs', url: 'https://example.com/docs', snippet: 'Current documentation & examples.' }]);
   const publicUrl = await validatePublicWebUrl('https://example.com/page#part', async () => [{ address: '93.184.216.34', family: 4 }]);
   assert.equal(publicUrl.toString(), 'https://example.com/page');
-  assert.equal((await validatePublicWebUrl('https://example.com/proxied', async () => [{ address: '198.18.0.53', family: 4 }])).hostname, 'example.com');
+  assert.equal((await validatePublicWebUrl('https://example.com/proxied', async () => [{ address: '198.18.0.53', family: 4 }], async () => [{ address: '93.184.216.34', family: 4 }])).hostname, 'example.com');
   await assert.rejects(() => validatePublicWebUrl('https://198.18.0.53/page'), /保留网段/);
-  await assert.rejects(() => validatePublicWebUrl('https://router.local/page', async () => [{ address: '192.168.1.1', family: 4 }]), /局域网/);
+  await assert.rejects(() => validatePublicWebUrl('https://router.local/page', async () => [{ address: '192.168.1.1', family: 4 }]), /局域网|内网/);
   await assert.rejects(() => validatePublicWebUrl('https://example.com:8443/page', async () => [{ address: '93.184.216.34', family: 4 }]), /自定义端口/);
   const tools = new PromptAgentService({ lanSecret: 'test-lan-secret' }).createTools({}, {}, () => {});
   assert.ok(tools.some(tool => tool.name === 'web_search'));

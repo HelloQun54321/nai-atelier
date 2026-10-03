@@ -55,6 +55,28 @@ test('工具历史按实际回执展示失败和中断', () => isolated(async se
   assert.deepEqual((await service.getSessionHistory('s'))[0].tools.map(item => item.state), ['error', 'interrupted']);
 }));
 const customInput = (id = 'custom-synthetic-a') => ({ id, name: 'synthetic', baseUrl: 'http://127.0.0.1:1234/v1', models: [{ id: 'a' }, { id: 'b' }] });
+
+test('预算提升和关闭队列等待确认，重复创建使用稳定操作 ID', () => isolated(async service => {
+  service.activeAgents.set('s', { agent: {}, emit() {} });
+  const events = [], requests = [];
+  const project = { agentSessionId: 's', agentOperationScope: 's/1', requestJson: async (path, options) => { requests.push({ path, options }); return path === '/api/anlas-budget' ? { remaining: 10 } : { id: options?.body.id }; }, getQueuePreferences: () => ({ enabled: true }), setQueuePreferences: async () => { throw new Error('不能直接关闭'); } };
+  const tools = service.createTools({ params: {}, modules: [] }, {}, event => events.push(event), project, {});
+  assert.equal(tools.some(tool => tool.name === 'save_artist_profile'), false);
+  assert.equal(tools.find(tool => tool.name === 'manage_aitag').parameters.properties.action.anyOf.some(value => value.const === 'index'), false);
+  for (const [name, args] of [['set_anlas_budget', { remaining: 20 }], ['set_cloud_queue', { enabled: false }]]) {
+    const pending = tools.find(tool => tool.name === name).execute('t', args);
+    await new Promise(resolve => setImmediate(resolve));
+    const requestId = events.at(-1).action.patch.requestId;
+    service.controlSession('s', 'confirm', '', { requestId, accepted: false });
+    await assert.rejects(pending, /取消/);
+  }
+  assert.equal(requests.some(request => request.options?.method === 'PUT'), false);
+  const create = tools.find(tool => tool.name === 'create_chain');
+  await create.execute('a', { type: 'style', name: 'synthetic' });
+  await create.execute('b', { name: 'synthetic', type: 'style' });
+  const bodies = requests.filter(request => request.options?.method === 'POST').map(request => request.options.body);
+  assert.equal(bodies[0].id, bodies[1].id);
+}));
 test('服务实例注册表隔离，编辑保留默认模型，失败落盘不发布配置', () => isolated(async service => {
   await service.saveCustomProvider({ ...customInput(), select: true });
   await service.selectModel('custom-synthetic-a', 'b');
