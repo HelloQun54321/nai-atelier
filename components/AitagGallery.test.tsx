@@ -84,6 +84,18 @@ const noSelection = () => works.forEach(work => {
   expect(card(work.id).className).not.toContain('brightness-');
 });
 
+it('Agent 读取实际打开的 AITag 详情和作品编号，切换或关闭后同步更新', async () => {
+  const { container } = await setup(); container.dataset.agentView = 'aitag';
+  const { readAgentPage } = await import('../services/agentWorkspace');
+  expect(readAgentPage().title).toBe('AITag');
+  fireEvent.click(card(1)); await screen.findByText('synthetic prompt 1');
+  const detail = readAgentPage(); expect(detail.title).toBe('AITag · 作品详情：合成作品 1'); expect(detail.foreground).toBe('detail');
+  expect(detail.text).toContain('#1 · NAI'); expect(detail.text).toContain('synthetic prompt 1'); expect(detail.text).not.toContain('合成作品 2');
+  fireEvent.click(card(2)); await screen.findByText('synthetic prompt 2');
+  const next = readAgentPage(); expect(next.title).toBe('AITag · 作品详情：合成作品 2'); expect(next.snapshotId).not.toBe(detail.snapshotId); expect(next.text).not.toContain('synthetic prompt 1');
+  fireEvent.click(screen.getByRole('button', { name: '关闭' })); expect(readAgentPage().title).toBe('AITag'); expect(readAgentPage().foreground).toBe('');
+});
+
 it.each(['masonry', 'portrait', 'square'])('%s 布局中选中正常亮度、其余压暗，主题与安全模式保留原规则', async layout => {
   const { main } = await setup(layout);
   fireEvent.click(card(1));

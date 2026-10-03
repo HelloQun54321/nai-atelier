@@ -33,6 +33,9 @@ interface DetailSidePanelProps {
 export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, sensitiveTitle = false, subInfo, sourceUrl, onClose, onBack, bodyRef, onBodyScroll, children }) => (
   <aside
     data-safe-mode-work={sensitiveTitle ? 'true' : undefined}
+    data-agent-page-scope={open ? 'detail' : undefined}
+    data-agent-page-title={`作品详情：${title}`}
+    aria-hidden={!open}
     className={`aitag-detail-panel appearance-surface ${open ? 'aitag-detail-panel--open flex' : 'aitag-detail-panel--closed hidden'} fixed inset-0 z-[1100] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:static lg:z-auto lg:border-l`}
     aria-label={title}
   >

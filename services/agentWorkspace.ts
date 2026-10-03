@@ -64,13 +64,14 @@ const layerOf = (element: HTMLElement) => {
 };
 const pageScope = () => {
   const app = document.querySelector<HTMLElement>('[data-agent-view]');
-  const overlays = Array.from(document.querySelectorAll<HTMLElement>('[aria-modal="true"],[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]')).filter(element => visible(element) && !element.closest('.agent-overlay,[data-agent-surface]'));
+  // 桌面作品详情是侧栏，不是模态窗口；同样应作为当前阅读对象，避免列表吞掉详情。
+  const overlays = Array.from(document.querySelectorAll<HTMLElement>('[data-agent-page-scope="detail"],[aria-modal="true"],[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]')).filter(element => visible(element) && !element.closest('.agent-overlay,[data-agent-surface]'));
   const foreground = overlays.reduce<HTMLElement | undefined>((current, element) => !current || current.contains(element) || !element.contains(current) && layerOf(element) >= layerOf(current) ? element : current, undefined);
   const scope = foreground || app;
-  const view = foreground ? 'dialog' : app?.dataset.agentView || 'unknown';
-  const kind = foreground?.getAttribute('role') || '';
+  const kind = foreground?.dataset.agentPageScope === 'detail' ? 'detail' : foreground?.getAttribute('role') || '';
+  const view = foreground && kind !== 'detail' ? 'dialog' : app?.dataset.agentView || 'unknown';
   const title = foreground ? foreground.dataset.agentPageTitle || foreground.getAttribute('aria-label') || foreground.querySelector('h1,h2,h3')?.textContent || ({ listbox: '候选建议', menu: '操作菜单' }[kind] || '项目窗口') : pages[view] || '页面尚未就绪';
-  return { app, scope, view, title: title.trim().slice(0, 160), foreground: kind };
+  return { app, scope, view, title: `${kind === 'detail' ? `${pages[view] || '工坊'} · ` : ''}${title.trim()}`.slice(0, 160), foreground: kind };
 };
 const bounds = (element: HTMLElement) => {
   const rect = element.getBoundingClientRect();
@@ -157,7 +158,7 @@ export const observeAgentPage = (refresh: () => void) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const schedule = () => { if (!timer) timer = setTimeout(() => { timer = undefined; refresh(); }, 100); };
   const observer = new MutationObserver(records => { if (records.some(record => { const element = record.target instanceof HTMLElement ? record.target : record.target.parentElement; return element && !element.closest('.agent-overlay,[data-agent-surface]'); })) schedule(); });
-  observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-agent-view', 'data-agent-page-title', 'role', 'aria-modal', 'aria-expanded', 'aria-checked', 'aria-selected', 'aria-pressed', 'aria-disabled', 'aria-busy', 'hidden', 'aria-hidden', 'style', 'class', 'open', 'disabled', 'checked', 'value'] });
+  observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-agent-view', 'data-agent-page-scope', 'data-agent-page-title', 'role', 'aria-label', 'aria-modal', 'aria-expanded', 'aria-checked', 'aria-selected', 'aria-pressed', 'aria-disabled', 'aria-busy', 'hidden', 'aria-hidden', 'style', 'class', 'open', 'disabled', 'checked', 'value'] });
   const input = (event: Event) => { if (event.target instanceof HTMLElement && !event.target.closest(privateSelector)) schedule(); };
   const pointer = (event: Event) => { if (event.isTrusted && hoveredGroup && event.target instanceof Node && !hoveredGroup.contains(event.target)) { clearAgentPageHover(); schedule(); } };
   for (const name of ['input', 'change', 'focusin', 'focusout', 'scroll']) document.addEventListener(name, input, true);

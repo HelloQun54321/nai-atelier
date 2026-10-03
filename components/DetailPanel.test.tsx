@@ -3,6 +3,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { DetailSidePanel } from './DetailPanel';
+import { readAgentPage } from '../services/agentWorkspace';
 
 afterEach(cleanup);
 
@@ -36,4 +37,16 @@ it('未传来源的其他详情仍保留原正文和关闭行为，不出现空�
   expect(screen.queryByRole('link', { name: '查看原帖' })).toBeNull();
   expect(screen.getByText('已有详情')).toBeTruthy();
   expect(screen.getByRole('button', { name: '关闭' })).toBeTruthy();
+});
+
+it.each(['aitag', 'pixiv', 'danbooru'])('%s 的详情优先于长列表，换作品更新身份、关闭恢复列表', view => {
+  const draw = (open: boolean, title: string, id: number) => <main data-agent-view={view}><p>{'列表作品摘要 '.repeat(400)}</p><button>筛选</button><DetailSidePanel open={open} title={title} subInfo={`#${id} · 合成来源`} onClose={vi.fn()}><p>当前详情的完整提示词</p><button>查看当前图片</button></DetailSidePanel></main>;
+  const result = render(draw(false, '作品甲', 101));
+  const list = readAgentPage(); expect(list.foreground).toBe(''); expect(list.text).not.toContain('当前详情');
+  result.rerender(draw(true, '作品甲', 101));
+  const detail = readAgentPage(); expect(detail).toMatchObject({ view, foreground: 'detail' }); expect(detail.title).toContain('作品详情：作品甲');
+  expect(detail.text).toContain('#101'); expect(detail.text).toContain('当前详情的完整提示词'); expect(detail.text).not.toContain('列表作品摘要'); expect(detail.controls.some(item => item.label === '筛选')).toBe(false);
+  result.rerender(draw(true, '作品乙', 202));
+  const switched = readAgentPage(); expect(switched.snapshotId).not.toBe(detail.snapshotId); expect(switched.title).toContain('作品乙'); expect(switched.text).toContain('#202');
+  result.rerender(draw(false, '作品乙', 202)); expect(readAgentPage().foreground).toBe(''); expect(readAgentPage().text).toContain('列表作品摘要');
 });

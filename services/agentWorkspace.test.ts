@@ -27,6 +27,13 @@ it('前景窗口取代背景页面，私人设置只报告标题', () => {
   dialog.dataset.agentPrivate = 'true'; dialog.dataset.agentPageTitle = 'API 设置'; dialog.innerHTML = '<input value="synthetic-secret"><p>私人数据</p>';
   expect(readAgentPage()).toMatchObject({ title: 'API 设置', text: '', controls: [] });
 });
+it('详情中的菜单和确认仍优先，保活页里的旧详情不进入当前回执', () => {
+  document.body.innerHTML = '<main data-agent-view="aitag"><p>列表</p><aside data-agent-page-scope="detail" data-agent-page-title="作品详情：合成作品"><p>当前详情</p><section role="menu" aria-label="详情菜单"><button>查看参数</button></section></aside><div hidden><aside data-agent-page-scope="detail" data-agent-page-title="旧详情">旧作品</aside></div></main>';
+  expect(readAgentPage().title).toBe('详情菜单'); document.querySelector('[role="menu"]')!.remove();
+  expect(readAgentPage()).toMatchObject({ title: 'AITag · 作品详情：合成作品', foreground: 'detail', text: '当前详情' });
+  const modal = document.createElement('div'); modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-label', '确认窗口'); modal.style.zIndex = '2000'; document.body.append(modal);
+  expect(readAgentPage().title).toBe('确认窗口'); modal.remove(); expect(readAgentPage().title).toContain('合成作品');
+});
 it('页面切换等待 App 回执，返回切换后的真实页面', async () => {
   const listener = (event: Event) => { const detail = (event as CustomEvent).detail; document.querySelector<HTMLElement>('main')!.dataset.agentView = detail.view; detail.resolve(); };
   window.addEventListener('nai-agent-page-navigate', listener);
@@ -122,6 +129,15 @@ it('状态与滚动变化触发实时读取，Agent 自身不会形成循环', a
   const changed = vi.fn(), stop = observeAgentPage(changed);
   try { document.querySelector('button')!.setAttribute('aria-expanded', 'true'); await new Promise(resolve => setTimeout(resolve, 130)); expect(changed).toHaveBeenCalledTimes(1); document.querySelector('aside')!.textContent = 'Agent 新回复'; await new Promise(resolve => setTimeout(resolve, 130)); expect(changed).toHaveBeenCalledTimes(1); }
   finally { stop(); }
+});
+it('侧栏详情身份属性的变化触发实时刷新，不需再点一次读取', async () => {
+  const aside = document.createElement('aside'); aside.textContent = '作品详情'; document.querySelector('main')!.append(aside);
+  const refresh = vi.fn(), stop = observeAgentPage(refresh);
+  try {
+    aside.dataset.agentPageScope = 'detail'; aside.dataset.agentPageTitle = '作品详情：甲'; await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    aside.dataset.agentPageTitle = '作品详情：乙'; await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(2));
+    delete aside.dataset.agentPageScope; await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(3));
+  } finally { stop(); }
 });
 it('悬停展开现有卡片操作，换卡或结束后释放悬停状态', async () => {
   document.querySelector('main')!.innerHTML = '<style>.group .actions{opacity:0}[data-agent-hover] .actions{opacity:1}</style><div class="group"><button>打开第一张图片</button><button class="actions">查看详情</button></div><div class="group"><button>打开第二张图片</button></div>';

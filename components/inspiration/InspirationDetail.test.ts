@@ -6,6 +6,7 @@ import { setCleanSharedImages } from '../../services/imageSharing';
 import { InspirationDetail } from './InspirationDetail';
 import { Inspiration, InspirationBoard, User } from '../../types';
 import { db } from '../../services/dbService';
+import { readAgentPage } from '../../services/agentWorkspace';
 
 vi.mock('../../services/dbService', () => ({
   db: {
@@ -82,6 +83,15 @@ const mockItem: Inspiration = {
 };
 
 describe('InspirationDetail 全新重构界面走查', () => {
+  it('Agent 优先读取当前灵感详情身份，换作品更新、关闭后恢复列表', () => {
+    const draw = (item?: Inspiration) => React.createElement('main', { 'data-agent-view': 'inspiration' },
+      React.createElement('p', null, '灵感列表摘要 '.repeat(400)), item && React.createElement(InspirationDetail, { item, items: [item], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() }));
+    const view = render(draw(mockItem));
+    const first = readAgentPage(); expect(first).toMatchObject({ foreground: 'detail', view: 'inspiration' }); expect(first.title).toBe('灵感库 · 灵感详情：海边少女 · #insp-1'); expect(first.text).not.toContain('灵感列表摘要');
+    view.rerender(draw({ ...mockItem, id: 'insp-2', title: '合成夜景' }));
+    const next = readAgentPage(); expect(next.title).toBe('灵感库 · 灵感详情：合成夜景 · #insp-2'); expect(next.snapshotId).not.toBe(first.snapshotId);
+    view.rerender(draw()); expect(readAgentPage().title).toBe('灵感库'); expect(readAgentPage().text).toContain('灵感列表摘要');
+  });
   it('外部作品原站与反推标签分别可查和复制，分类标签保持原样', async () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn(async () => {}) } });
     const reverse = { prompt: 'blue hair', createdAt: 1, result: { model: 'test', tags: [], general: [], character: [], rating: null } };
