@@ -184,6 +184,16 @@ export const parseWebSearchResponse = (raw, provider = 'duckduckgo', limit = 8) 
   return output;
 };
 
+export const sanitizeAgentImages = input => {
+  if (input === undefined) return [];
+  if (!Array.isArray(input) || input.length > 4) throw Object.assign(new Error('最多发送 4 张图片'), { status: 400 });
+  return input.map(image => {
+    const data = String(image?.data || '').replace(/^data:[^;]+;base64,/, '');
+    const mimeType = String(image?.mimeType || '').split(';')[0].toLowerCase();
+    if (!/^image\/(png|jpeg|webp|gif)$/.test(mimeType) || data.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(data) || !data || Buffer.byteLength(data, 'base64') > 6 * 1024 * 1024) throw Object.assign(new Error('图片附件格式无效或超过单张 6 MB，请重新选择'), { status: 400 });
+    return { type: 'image', data, mimeType };
+  });
+};
 export const validatePublicWebUrl = async (raw, lookupHost, publicLookup) => (await validateAgentWebTarget(raw, lookupHost, publicLookup)).url;
 
 const isConversationUserMessage = message => {
@@ -529,7 +539,7 @@ const sanitizeParams = raw => {
 
 const sanitizeDraft = raw => ({
   ...(raw?.editContext ? { editContext: { baseImageAvailable: raw.editContext.baseImageAvailable === true, maskAvailable: raw.editContext.maskAvailable === true, strength: clamp(raw.editContext.strength, 0, 1, 1), noise: clamp(raw.editContext.noise, 0, 1, 0), focused: raw.editContext.focused === true } } : {}),
-  ...(raw?.target && typeof raw.target === 'object' ? { target: { chainId: text(raw.target.chainId).slice(0, 200), mode: ['text-to-image', 'image-to-image', 'inpaint', 'outpaint'].includes(raw.target.mode) ? raw.target.mode : 'text-to-image', fingerprint: text(raw.target.fingerprint).slice(0, 100) } } : {}),
+  ...(raw?.target && typeof raw.target === 'object' ? { target: { chainId: text(raw.target.chainId).slice(0, 200), name: text(raw.target.name).slice(0, 160), mode: ['text-to-image', 'image-to-image', 'inpaint', 'outpaint'].includes(raw.target.mode) ? raw.target.mode : 'text-to-image', fingerprint: text(raw.target.fingerprint).slice(0, 100) } } : {}),
   basePrompt: text(raw?.basePrompt),
   subjectPrompt: text(raw?.subjectPrompt),
   negativePrompt: text(raw?.negativePrompt),
@@ -1848,7 +1858,7 @@ export class PromptAgentService {
     const key = typeof input?.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : this.getCredential(custom.id)?.key || '';
     const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
     const startedAt = Date.now();
-    const checks = { text: 'not_tested', tools: 'not_tested', image: 'not_tested' };
+    const checks = { network: 'not_tested', auth: 'not_tested', protocol: 'not_tested', text: 'not_tested', tools: 'not_tested', image: 'not_tested' };
     try {
       const configuredCandidate = custom.models.find(model => model.id === input.testModel) || custom.models.find(model => model.id !== '__capability_discovery__');
       const candidate = configuredCandidate || (await this.fetchCustomProviderModels(input)).models[0];
@@ -1886,20 +1896,31 @@ export class PromptAgentService {
         mimeType: 'image/png',
         data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nH0AAAAASUVORK5CYII=',
       }] : [];
+      let probeTurns = 0, probeLimitReached = false;
+      const unsubscribe = probeAgent.subscribe(event => {
+        if (event.type === 'message_end' && event.message?.role === 'assistant' && ++probeTurns >= 2 && event.message.stopReason === 'toolUse') { probeLimitReached = true; probeAgent.abort(); }
+      });
       let probeTimeout;
       try {
         await Promise.race([
           probeAgent.prompt(input.testRole === 'vision' ? '简短回复收到。' : '调用 capability_probe，status 填 ok，然后回复收到。', probeImages),
           new Promise((_, reject) => { probeTimeout = setTimeout(() => { probeAgent.abort(); reject(Object.assign(new Error('模型能力测试 20 秒超时'), { status: 400 })); }, 20_000); }),
         ]);
-      } finally { clearTimeout(probeTimeout); }
-      if (probeAgent.state.errorMessage) throw Object.assign(new Error(`模型推理失败：${probeAgent.state.errorMessage}`), { status: 400 });
+      } catch (error) { if (!probeLimitReached || !toolCalled) throw error; }
+      finally { clearTimeout(probeTimeout); unsubscribe(); }
+      if (probeAgent.state.errorMessage && !probeLimitReached) throw Object.assign(new Error(`模型推理失败：${probeAgent.state.errorMessage}`), { status: 400 });
+      checks.network = 'passed'; checks.auth = 'passed'; checks.protocol = 'passed';
       checks.text = 'passed';
       checks.tools = input.testRole === 'vision' ? 'not_tested' : toolCalled ? 'passed' : 'failed';
       checks.image = probeImages.length ? 'accepted' : 'not_tested';
       const ok = checks.tools !== 'failed';
-      return { ok, model: candidate.id, checks, elapsedMs: Date.now() - startedAt, message: ok ? '文本请求已通过；图片接受不代表识图准确度。' : '文本可用，但未调用工具；可用作视觉服务，主 Agent 需要支持工具。', usage: probeAgent.state.messages.filter(message => message.role === 'assistant').map(message => message.usage).filter(Boolean) };
+      return { ok, model: candidate.id, checks, elapsedMs: Date.now() - startedAt, message: ok ? '文本请求已通过；图片接受不代表识图准确度。' : '文本可用，但未调用工具；可用作视觉服务，主 Agent 需要支持工具。', usage: probeAgent.state.messages.filter(message => message.role === 'assistant').map(message => message.usage && { ...message.usage, cost: candidate.cost ? message.usage.cost : null }).filter(Boolean) };
     } catch (error) {
+      const reason = error instanceof Error ? error.message : '';
+      checks.text = 'failed';
+      if (/401|403|unauthorized|authentication/i.test(reason)) { checks.network = 'passed'; checks.auth = 'failed'; }
+      else if (/400|404|405|422|JSON|parse|protocol/i.test(reason)) { checks.network = 'passed'; checks.protocol = 'failed'; }
+      else if (/fetch failed|ENOTFOUND|ECONN|timeout|超时/i.test(reason)) checks.network = 'failed';
       return { ok: false, checks, elapsedMs: Date.now() - startedAt, message: '测试失败：' + (error instanceof Error ? error.message : '未知错误') + '。请检查地址、协议、模型 ID、Key 权限；429 请稍后重试。' };
     } finally { leaveOutboundProxy(); }
   }
@@ -1967,7 +1988,7 @@ export class PromptAgentService {
     const requestId = text(input?.confirmationRequestId).slice(0, 100);
     const confirmation = this.pendingConfirmations.get(requestId);
     if (!confirmation || confirmation.sessionId !== text(input?.sessionId) || confirmation.approved !== true) throw Object.assign(new Error('危险操作缺少有效的 Agent 确认令牌'), { status: 403 });
-    if (confirmation.runId && confirmation.runId !== this.runs.get(confirmation.sessionId)?.state.runId || confirmation.keyHash && confirmation.keyHash !== project.keyHash) throw Object.assign(new Error('任务或 NovelAI Key 已变化，请重新提出请求'), { status: 403 });
+    if (confirmation.runId && confirmation.runId !== this.runs.get(confirmation.sessionId)?.state.runId || confirmation.keyHash !== undefined && confirmation.keyHash !== (project.keyHash || '')) throw Object.assign(new Error('任务或 NovelAI Key 已变化，请重新提出请求'), { status: 403 });
     const canonical = value => JSON.stringify(value, (_, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
     if (confirmation.executing || confirmation.expiresAt <= Date.now() || canonical({ action: input?.action, resourceId: input?.resourceId || '', payload: input?.payload || {} }) !== canonical(confirmation.operation)) throw Object.assign(new Error('确认内容不匹配、已过期或已在执行'), { status: 409 });
     confirmation.executing = true;
@@ -2534,7 +2555,7 @@ export class PromptAgentService {
       const requestId = text(payload.requestId || message).slice(0, 100);
       const pending = this.pendingConfirmations.get(requestId);
       if (!pending || pending.sessionId !== sessionId || pending.expiresAt <= Date.now() || pending.approved || pending.executing) throw Object.assign(new Error('确认请求已过期或已被处理'), { status: 409 });
-      if (payload.accepted === true && pending.keyHash && payload.keyHash !== pending.keyHash) { this.cancelPendingConfirmations(sessionId); throw Object.assign(new Error('NovelAI Key 已变化，请重新提出请求'), { status: 403 }); }
+      if (payload.accepted === true && pending.keyHash !== undefined && (payload.keyHash || '') !== pending.keyHash) { this.cancelPendingConfirmations(sessionId); throw Object.assign(new Error('NovelAI Key 已变化，请重新提出请求'), { status: 403 }); }
       if (payload.accepted === true) { pending.approved = true; const run = this.runs.get(sessionId); if (run) run.state.status = 'executing'; }
       else {
         clearTimeout(pending.timer);
@@ -3923,11 +3944,7 @@ export class PromptAgentService {
           audit('retry_continued', { lastUserMessageIndex: lastUser, lastUserMessageHash: shorthandHash(agentMessageText(agent.state.messages[lastUser]) || text(input?.message).slice(0, 8_000), 16) });
           await agent.continue();
         } else {
-          const images = Array.isArray(input?.images) ? input.images.slice(0, 4).flatMap(image => {
-            const data = String(image?.data || '').replace(/^data:[^;]+;base64,/, '');
-            const mimeType = String(image?.mimeType || 'image/png').split(';')[0];
-            return /^[A-Za-z0-9+/=]+$/.test(data) && /^image\/(?:png|jpeg|webp|gif)$/i.test(mimeType) && data.length <= 40 * 1024 * 1024 ? [{ type: 'image', data, mimeType }] : [];
-          }) : [];
+          const images = sanitizeAgentImages(input?.images);
           // §4：agent.prompt 接收纯净用户文本，破限前导不再预拼接；
           // 注入只发生在 transformContext（revision 驱动，user_preamble 槽位）。
           const userMessageText = text(input?.message).slice(0, 8_000);

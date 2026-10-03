@@ -1,3 +1,4 @@
+import { prepareAgentAttachment } from '../services/agentAttachments';
 import { promptAgentCoordinator } from '../services/promptAgentCoordinator';
 import type { PromptAgentEvent, PromptAgentTask } from '../services/promptAgent';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
@@ -142,9 +143,9 @@ const AgentMessageList = React.memo(({
       {!!message.thinking && <details className="mb-2 rounded-xl bg-gray-50 px-3 py-1.5 dark:bg-gray-950"><summary className="cursor-pointer text-meta font-bold text-gray-500">思考过程 <span className="font-normal text-gray-400">· 点击展开</span></summary><div className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere] text-xs leading-5 text-gray-500">{message.thinking}</div></details>}
       {message.role === 'agent' ? <AgentMarkdown text={message.text || (running ? '正在思考…' : '')} /> : message.text}
       {!!message.tools?.length && <div className="mt-2 space-y-1 border-t border-gray-100 pt-2 dark:border-gray-800">{message.tools.map(tool => <details key={tool.id} className={`rounded-lg px-2 py-1.5 text-micro ${tool.state === 'running' ? 'animate-pulse bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300' : (tool.state === 'error' || tool.state === 'interrupted') ? 'bg-red-50 text-red-600 dark:bg-red-950/50' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'}`}><summary className="cursor-pointer font-bold">{tool.state === 'running' ? '处理中' : tool.state === 'error' ? '失败' : tool.state === 'interrupted' ? '未完成' : '完成'} · {toolLabels[tool.name] || tool.name}<span className="ml-1 font-normal opacity-70">· 详情</span></summary><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all border-t border-current/10 pt-1 opacity-75">{JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)}</pre></details>)}</div>}
-      {!!message.visionUsage?.length && <div className="mt-2 space-y-0.5 border-t border-violet-100 pt-1.5 text-micro text-violet-500 dark:border-violet-950 dark:text-violet-300">{message.visionUsage.map((item, usageIndex) => <div key={`${item.provider}/${item.model}/${usageIndex}`} className="truncate">视觉 {item.model} · {item.imageCount} 图{typeof item.usage?.totalTokens === 'number' ? ` · ${item.usage.totalTokens.toLocaleString()} tokens${item.usage.cost?.total ? ` · $${item.usage.cost.total.toFixed(4)}` : ' · 费用未知'}` : ''}</div>)}</div>}
+      {!!message.visionUsage?.length && <div className="mt-2 space-y-0.5 border-t border-violet-100 pt-1.5 text-micro text-violet-500 dark:border-violet-950 dark:text-violet-300">{message.visionUsage.map((item, usageIndex) => <div key={`${item.provider}/${item.model}/${usageIndex}`} className="truncate">视觉 {item.model} · {item.imageCount} 图{typeof item.usage?.totalTokens === 'number' ? ` · ${item.usage.totalTokens.toLocaleString()} tokens${item.usage.cost ? ` · $${item.usage.cost.total.toFixed(4)}` : ' · 费用未知'}` : ''}</div>)}</div>}
       <div className={`mt-1 flex min-w-0 items-center gap-1 border-t pt-1 text-micro ${message.role === 'user' ? 'border-white/20 text-white/70' : 'border-gray-100 text-gray-400 dark:border-gray-800'}`}>
-        {message.role === 'agent' && <span className="min-w-0 flex-1 truncate pr-1">{message.model || ''}{message.usage && typeof message.usage.totalTokens === 'number' ? ` · ${message.usage.totalTokens.toLocaleString()} tokens${message.usage.cost?.total ? ` · $${message.usage.cost.total.toFixed(4)}` : ' · 费用未知'}` : ''}{message.stopReason && message.stopReason !== 'stop' ? ` · ${message.stopReason}` : ''}</span>}
+        {message.role === 'agent' && <span className="min-w-0 flex-1 truncate pr-1">{message.model || ''}{message.usage && typeof message.usage.totalTokens === 'number' ? ` · ${message.usage.totalTokens.toLocaleString()} tokens${message.usage.cost ? ` · $${message.usage.cost.total.toFixed(4)}` : ' · 费用未知'}` : ''}{message.stopReason && message.stopReason !== 'stop' ? ` · ${message.stopReason}` : ''}</span>}
         {message.role !== 'agent' && <span className="flex-1" />}
         <div className="flex flex-none items-center gap-0.5 whitespace-nowrap">
           <button type="button" onClick={() => onCopy(message)} className={`mobile-touch flex items-center justify-center rounded-lg font-bold transition-colors ${message.role === 'user' ? 'hover:bg-white/20' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`} title={copiedMessageId === message.id ? '已复制' : '复制'} aria-label={copiedMessageId === message.id ? '已复制' : '复制'}>
@@ -152,7 +153,7 @@ const AgentMessageList = React.memo(({
             <span className="ml-1 hidden md:inline">{copiedMessageId === message.id ? '已复制' : '复制'}</span>
           </button>
           {message.role === 'user' && !running && !message.queued && <button type="button" onClick={() => onEdit(message)} className="mobile-touch rounded-lg px-1.5 font-bold whitespace-nowrap hover:bg-white/20">编辑重发</button>}
-          {message.role === 'agent' && index === visibleMessages.length - 1 && !running && <button type="button" onClick={onRetry} className="mobile-touch flex items-center justify-center rounded-lg font-bold text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-950/40" title="重新生成" aria-label="重新生成"><RotateCcw className="h-3.5 w-3.5" /><span className="ml-1 hidden md:inline">重新生成</span></button>}
+          {message.role === 'agent' && index === visibleMessages.length - 1 && !running && <button type="button" onClick={onRetry} className="mobile-touch flex items-center justify-center rounded-lg font-bold text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-950/40" title="重新回答；已完成的资料修改不会撤回" aria-label="重新生成"><RotateCcw className="h-3.5 w-3.5" /><span className="ml-1 hidden md:inline">重新生成</span></button>}
         </div>
       </div>
     </div>)}
@@ -169,6 +170,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [sessions, setSessions] = useState<PromptAgentSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState('');
   const [models, setModels] = useState<PromptAgentModel[]>([]);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [attachmentError, setAttachmentError] = useState('');
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const attachmentLoadingRef = useRef(false);
   const [showSessions, setShowSessions] = useState(false);
   const [showModelMenu, setShowModelMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -225,7 +230,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     if (composerSessionRef.current === activeSessionId) return;
     composerSessionRef.current = activeSessionId; composerRestoringRef.current = true;
     const saved = promptAgentCoordinator.loadComposer(activeSessionId);
-    setInput(saved.text); setAttachments(saved.attachments); setEditingMessageId('');
+    setInput(saved.text); setAttachments(saved.attachments); setAttachmentError(''); setEditingMessageId('');
   }, [activeSessionId]);
   useEffect(() => { if (composerRestoringRef.current) { composerRestoringRef.current = false; return; } if (composerSessionRef.current === activeSessionId) promptAgentCoordinator.saveComposer(activeSessionId, input, attachments); }, [activeSessionId, input, attachments]);
   const closePanel = () => {
@@ -338,7 +343,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     setSessionInitError('');
     void Promise.all([
       refreshSessions(),
-      promptAgentService.getAvailableModels().then(setModels),
+      promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); }),
       loadCreativePresets(),
     ]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行'));
   }, [props.open]);
@@ -348,7 +353,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     const refreshRuntime = () => {
       void Promise.all([
         refreshSessions(activeSessionId),
-        promptAgentService.getAvailableModels().then(setModels),
+        promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); }),
         loadCreativePresets(),
       ]).catch(() => {});
     };
@@ -434,11 +439,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const activeSession = sessions.find(item => item.id === activeSessionId);
   const activeModel = models.find(item => item.provider === activeSession?.provider && item.id === activeSession?.model);
   const supportsImages = Boolean(activeModel?.imageInput || activeSession?.visionAvailable);
-  const sessionReady = Boolean(activeSessionId && activeSession);
+  const sessionReady = Boolean(activeSessionId && activeSession && activeModel);
   const runningTool = messages.slice().reverse().map(message => message.tools?.find(tool => tool.state === 'running')).find(Boolean);
   const executionStatus = running
-    ? runningTool ? `正在${toolLabels[runningTool.name] || runningTool.name}` : responseStartedRef.current ? '正在生成回复' : '正在准备任务'
-    : taskSnapshot.status === 'failed' ? '上次任务失败' : taskSnapshot.status === 'aborted' ? '已停止' : taskSnapshot.status === 'interrupted' ? '服务已中断' : !sessionReady ? '正在加载对话' : editingMessageId ? '正在编辑旧消息' : '准备就绪';
+    ? taskSnapshot.status === 'waiting_confirmation' ? '等待你确认' : taskSnapshot.status === 'executing' ? '正在执行已批准操作' : runningTool ? `正在${toolLabels[runningTool.name] || runningTool.name}` : responseStartedRef.current ? '正在生成回复' : '正在准备任务'
+    : taskSnapshot.status === 'failed' ? '上次任务失败' : taskSnapshot.status === 'aborted' ? '已停止' : taskSnapshot.status === 'interrupted' ? '服务已中断' : !sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : editingMessageId ? '正在编辑旧消息' : '准备就绪';
 
   useLayoutEffect(() => {
     if (!props.open) return;
@@ -551,16 +556,18 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     if (event.action.kind === 'request_project_action') {
             const patch = event.action.patch;
             void (async () => {
+              let approved = false;
               const isEncoding = patch.action === 'encode_vibe';
               const accepted = await confirmAction({ title: patch.title, message: patch.consequence, confirmLabel: patch.action === 'clear_history' ? '永久清空' : isEncoding ? '消耗 2 Anlas 并生成' : '确认执行', ...(isEncoding ? {} : { tone: 'danger' as const }) });
               if (!accepted) {
-                if (approvalKey !== currentKeyRef.current) throw new Error('NovelAI Key 已变化，请重新提出请求');
                 await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false }).catch(() => {});
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: '已取消该项目操作，没有修改数据。' }]);
                 return;
               }
               try {
+                if (approvalKey !== currentKeyRef.current || !uiActiveRef.current) throw new Error('当前 Key 或页面已变化，请重新提出请求');
                 await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: true });
+                approved = true;
                 if (patch.action === 'encode_vibe') {
                   if (!props.apiKey) throw new Error('请先在全局设置中填写 NovelAI API Key');
                   await vibeService.encode(patch.resourceId || '', Number(patch.payload?.informationExtracted ?? 1), props.apiKey);
@@ -572,7 +579,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: patch }));
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: '已在你确认后完成该项目操作。' }]);
               } catch (error) {
-                await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: false }).catch(() => {});
+                if (approved) await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: false }).catch(() => {});
+                else await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false }).catch(() => {});
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '项目操作失败' }]);
               }
             })();
@@ -598,8 +606,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   const run = async (suggestion?: string, mode: 'prompt' | 'retry' = 'prompt') => {
     const prompt = (suggestion ?? input).trim() || (attachments.length ? '请分析我附带的图片，并结合项目内容给出建议。' : '');
-    if (!activeSessionId || !activeSession || (mode === 'prompt' && !prompt)) return;
-    if (attachments.length && !supportsImages) {
+    if (!sessionReady || attachmentLoadingRef.current || !activeSessionId || !activeSession || (mode === 'prompt' && !prompt)) return;
+    if (mode === 'prompt' && !editingMessageId && attachments.length && !supportsImages) {
       setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: '没有可用的视觉模型，请先在 Agent 设置中选择带“识图”标记的模型。' }]);
       return;
     }
@@ -630,8 +638,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     setMessages(previous => [...(revisedMessages || previous), ...(effectiveMode === 'prompt' ? [{ id: crypto.randomUUID(), role: 'user' as const, text: prompt }] : []), { id: assistantId, role: 'agent', text: '' }]);
     currentAssistantIdRef.current = assistantId;
     responseStartedRef.current = false;
-    setInput('');
-    setAttachments([]);
+    if (effectiveMode === 'prompt') { setInput(''); setAttachments([]); }
+    else if (editingMessageId) setInput('');
     setRunning(true);
     const runSnapshot = structuredClone(props.draft);
     props.onRunStart(runSnapshot);
@@ -723,8 +731,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const reset = async () => {
     if (running || !activeSessionId || !activeSession) return;
     if (!await confirmAction({ title: '清空当前 Agent 对话？', message: '只会删除这条对话的聊天记录，不影响项目资料、图片或设置。', confirmLabel: '清空对话', tone: 'danger' })) return;
-    await promptAgentService.resetSession(activeSessionId);
-    setMessages([]);
+    try { await promptAgentService.resetSession(activeSessionId); setMessages([]); } catch (error) { reportControlError(error); }
   };
 
   const createSession = async () => {
@@ -857,28 +864,25 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     window.setTimeout(() => setCopiedMessageId(current => current === messageId ? '' : current), 1400);
   };
 
-  const addAttachments = (files: FileList | null) => {
-    if (!files) return;
-    let projectedBytes = attachments.reduce((sum, item) => sum + item.data.length, 0);
-    [...files].slice(0, 4 - attachments.length).forEach(file => {
-      if (!/^image\/(?:png|jpeg|webp|gif)$/i.test(file.type) || file.size > 6 * 1024 * 1024) return;
-      // Keep the encoded request below the gateway limit, not just the raw
-      // per-file limit. Base64 is larger than the original binary data.
-      if (projectedBytes + Math.ceil(file.size * 4 / 3) > 44 * 1024 * 1024) return;
-      projectedBytes += Math.ceil(file.size * 4 / 3);
-      const reader = new FileReader();
-      reader.onload = () => {
-        const value = String(reader.result || '');
-        const data = value.replace(/^data:[^;]+;base64,/, '');
-        setAttachments(previous => previous.length >= 4 ? previous : [...previous, { data, mimeType: file.type, name: file.name }]);
-      };
-      reader.readAsDataURL(file);
-    });
+  const reportControlError = (error: unknown) => setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '任务控制失败，请检查电脑连接后重试' }]);
+  const stopTask = async () => { try { await promptAgentService.control(activeSessionId, 'abort'); } catch (error) { reportControlError(error); } };
+  const openAgentSettings = () => window.dispatchEvent(new CustomEvent('nai-open-global-settings', { detail: { section: 'agent' } }));
+  const addAttachments = async (files: FileList | readonly File[] | null) => {
+    if (!files || attachmentLoadingRef.current || !sessionReady || running || !supportsImages) return;
+    const session = activeSessionId; const next = [...attachments]; const errors: string[] = [];
+    attachmentLoadingRef.current = true; setAttachmentBusy(true); setAttachmentError('');
+    try {
+      for (const file of Array.from(files)) {
+        if (next.length >= 4) { errors.push(`${file.name}：最多 4 张图片`); continue; }
+        try { next.push(await prepareAgentAttachment(file)); }
+        catch (error) { errors.push(`${file.name}：${error instanceof Error ? error.message : '图片处理失败'}`); }
+      }
+      if (composerSessionRef.current === session && uiActiveRef.current) { setAttachments(next); setAttachmentError(errors.join('；')); }
+    } finally { attachmentLoadingRef.current = false; setAttachmentBusy(false); }
   };
-
   messageActionsRef.current = {
     loadEarlier: () => setVisibleMessageCount(count => count + 60),
-    copy: message => { void copyMessage(message.id, message.text); },
+    copy: message => { void copyMessage(message.id, message.text).catch(reportControlError); },
     edit: message => { setEditingMessageId(message.id); setInput(message.text); },
     retry: () => { void run('', 'retry'); },
   };
@@ -924,6 +928,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     <section className="relative flex min-w-0 flex-1 flex-col">
       {taskSnapshot.finalDraft && taskSnapshot.runId !== artifactDismissed && <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 p-2 text-xs dark:border-gray-800 dark:text-gray-300"><span className="min-w-0 flex-1">上次完成的草稿已保留。</span><button type="button" onClick={() => { if (taskSnapshot.finalDraft) props.onFinalDraft(taskSnapshot.finalDraft); setArtifactDismissed(taskSnapshot.runId || ''); }} className="mobile-touch rounded-lg px-2 text-indigo-600 dark:text-indigo-300">查看与恢复</button><button type="button" onClick={() => setArtifactDismissed(taskSnapshot.runId || '')} className="mobile-touch px-2">暂不应用</button></div>}
       {(taskSnapshot.pending || []).filter(item => !item.approved).map(item => <div key={item.requestId} className="flex flex-wrap items-center gap-2 border-b border-amber-200 p-2 text-xs dark:border-amber-900 dark:text-gray-300"><span className="min-w-0 flex-1">任务等待你确认：{item.operation.action}</span><button type="button" className="mobile-touch px-2 text-indigo-600 dark:text-indigo-300" onClick={() => handleConfirmedAction({ type: 'action', action: item.operation.action === 'request_generation' ? { kind: 'request_generation', patch: { requestId: item.requestId, reason: '接续上次请求' } } : { kind: 'request_project_action', patch: { ...item.operation, requestId: item.requestId, title: '接续项目操作？', consequence: JSON.stringify(item.operation) } }, draft: item.operation.payload.draft as PromptAgentDraft | undefined })}>查看并决定</button></div>)}
+      {modelsLoaded && !activeModel && <div className="flex flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200"><span className="min-w-0 flex-1">{models.length ? '这条会话的模型已不可用，请选择已接入的模型。' : '先接入模型服务，再开始创作。可以直接填写模型 ID，无需获取模型列表。'}</span><button type="button" onClick={models.length ? () => setShowModelMenu(true) : openAgentSettings} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-white">{models.length ? '选择模型' : '接入 API'}</button></div>}
       {/* 顶栏与状态栏合流为单行（节省约 36px 空间） */}
       <header className="border-b border-gray-200 bg-white pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900">
         <div className="flex h-12 items-center gap-1 px-2 md:px-3">
@@ -938,7 +943,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                   running
                     ? 'animate-pulse bg-indigo-500'
                     : !sessionReady
-                      ? 'animate-pulse bg-gray-400'
+                      ? modelsLoaded ? 'bg-amber-500' : 'animate-pulse bg-gray-400'
                       : editingMessageId
                         ? 'bg-amber-500'
                         : 'bg-emerald-500'
@@ -1043,12 +1048,17 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             )}
           </div>
         </div>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 px-3 pb-2 text-micro text-gray-500 dark:text-gray-400">
+          <span>{props.draft.target ? `当前目标：${props.draft.target.name || '未命名作品'} · ${{ 'text-to-image': '文生图', 'image-to-image': '图生图', inpaint: '局部重绘', outpaint: '扩图' }[props.draft.target.mode]}` : '当前目标：项目资料与设置'}</span>
+          {activeModel && <span>服务：{activeModel.providerName || activeModel.provider}</span>}
+          {activeSession?.visionDedicated && <span>视觉：{activeSession.visionProvider}/{activeSession.visionModel} · 单独计费</span>}
+        </div>
       </header>
       {logExportError && <div role="status" className="absolute right-3 top-[calc(3.25rem+env(safe-area-inset-top))] z-40 max-w-[min(28rem,calc(100%-1.5rem))] rounded-lg bg-red-50 px-2 py-1 text-micro font-bold text-red-600 shadow dark:bg-red-950/80 dark:text-red-300">{logExportError}</div>}
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
         <div ref={scrollRef} onScroll={event => { const element = event.currentTarget; const next = element.scrollHeight - element.scrollTop - element.clientHeight < 80; followBottomRef.current = next; setFollowingBottom(next); }} className="relative flex-1 space-y-3 overflow-y-auto p-3 md:p-4">
-          {messages.length === 0 && <div className="mt-8 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">告诉我你想在项目里做什么</h3><p className="mt-1 text-sm text-gray-500">{sessionReady ? '这是一条独立对话，可在项目的任何页面继续。' : sessionInitError || '正在加载这条对话…'}</p>{!sessionReady && sessionInitError && <button type="button" onClick={() => { setSessionInitError(''); void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(setModels)]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行')); }} className="mobile-touch mt-3 rounded-xl border border-indigo-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">重试</button>}{activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount && (
+          {messages.length === 0 && <div className="mt-8 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">告诉我你想在项目里做什么</h3><p className="mt-1 text-sm text-gray-500">{sessionReady ? '这是一条独立对话，可在项目的任何页面继续。' : sessionInitError || (modelsLoaded && !activeModel ? '接入后可以观察图片和调整当前草稿。' : '正在加载这条对话…')}</p>{!sessionReady && sessionInitError && <button type="button" onClick={() => { setSessionInitError(''); void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); })]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行')); }} className="mobile-touch mt-3 rounded-xl border border-indigo-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">重试</button>}{activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount && (
             <div className="mx-auto mt-4 flex max-w-sm items-center justify-between gap-3 rounded-2xl border border-violet-200 bg-violet-50/50 p-3 text-left shadow-sm dark:border-violet-900/50 dark:bg-violet-950/20">
               <div className="min-w-0 flex-1">
                 <b className="block text-xs font-bold text-gray-800 dark:text-gray-100">注入预设</b>
@@ -1089,7 +1099,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           />
           {!followingBottom && <button type="button" onClick={() => { followBottomRef.current = true; setFollowingBottom(true); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: appearanceScrollBehavior() }); }} className="sticky bottom-2 mx-auto flex items-center gap-1 rounded-full bg-gray-900/90 px-3 py-1.5 text-xs font-bold text-white shadow-lg backdrop-blur-xs transition hover:scale-105 active:scale-95 dark:bg-white/90 dark:text-gray-900"><ArrowDown className="h-3.5 w-3.5" />回到底部</button>}
         </div>
-          <div className="border-t border-gray-200 bg-white p-2 pb-[max(.5rem,env(safe-area-inset-bottom))] dark:border-gray-800 dark:bg-gray-900 md:p-3" aria-busy={!sessionReady}>
+          <div onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void addAttachments(event.dataTransfer.files); } }} className="border-t border-gray-200 bg-white p-2 pb-[max(.5rem,env(safe-area-inset-bottom))] dark:border-gray-800 dark:bg-gray-900 md:p-3" aria-busy={!sessionReady}>
           {editingMessageId && !running && <div className="mb-2 flex items-center rounded-xl bg-amber-50 px-3 py-1.5 text-meta text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"><b>正在编辑旧消息</b><span className="ml-1">发送后会从这里重新执行，后面的旧回答将被替换。</span><span className="flex-1" /><button type="button" onClick={() => { setEditingMessageId(''); setInput(''); }} className="font-bold">取消</button></div>}
           {running && (
             <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 px-2.5 py-1.5 text-xs dark:border-indigo-950/60 dark:bg-indigo-950/30">
@@ -1126,7 +1136,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => void promptAgentService.control(activeSessionId, 'abort')}
+                  onClick={() => void stopTask()}
                   className="mobile-touch flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 text-micro font-bold text-rose-600 transition hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-900/60"
                   title="停止当前 Agent 任务"
                 >
@@ -1135,7 +1145,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => void promptAgentService.control(activeSessionId, 'clear')}
+                  onClick={() => void promptAgentService.control(activeSessionId, 'clear').catch(reportControlError)}
                   className="mobile-touch rounded px-1.5 py-0.5 text-micro font-bold text-gray-400 transition-colors hover:text-rose-600 dark:hover:text-rose-400"
                   title="清空已排队的任务要求"
                 >
@@ -1144,6 +1154,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               </div>
             </div>
           )}
+          {(editingMessageId || running) && <p className="mb-2 text-micro text-gray-500">停止或重新回答不会撤销已经完成的资料修改；实验室撤销只恢复草稿。</p>}
+          {input.length >= 7000 && <p className="mb-2 text-micro text-gray-500">任务要求 {input.length} / 8000 字符，请分段发送。</p>}
+          {attachmentBusy && <p role="status" className="mb-2 text-xs text-gray-500">正在处理图片副本…</p>}
+          {attachmentError && <p role="alert" className="mb-2 text-xs text-red-600 dark:text-red-300">{attachmentError}</p>}
+          {!!attachments.length && <p className="mb-2 text-micro text-gray-500">发送时交给 {activeSession?.visionDedicated ? `${activeSession.visionProvider}/${activeSession.visionModel}` : `${activeModel?.provider}/${activeModel?.id}`}；图片可能产生视觉模型费用。原文件保持不变。</p>}
           {!!attachments.length && (
             <div className="mb-2 flex flex-wrap gap-1.5">
               {attachments.map((attachment, index) => (
@@ -1162,12 +1177,12 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             </div>
           )}
           <div className="flex min-w-0 items-end gap-2">
-            <label title={!sessionReady ? '正在加载对话' : supportsImages ? '添加图片' : '没有可用的视觉模型'} aria-disabled={!sessionReady || running || attachments.length >= 4 || !supportsImages} className={`mobile-touch flex h-11 w-11 flex-none items-center justify-center rounded-xl border border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400 ${sessionReady && supportsImages && !running && attachments.length < 4 ? 'cursor-pointer hover:border-indigo-400 hover:text-indigo-500' : 'cursor-not-allowed opacity-35'}`}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片附件" onChange={event => { addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachments.length >= 4 || !supportsImages} /></label>
-            <textarea ref={inputRef} value={input} disabled={!sessionReady} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void run(); } }} rows={1} placeholder={!sessionReady ? '正在加载对话…' : running ? (queueMode === 'steer' ? '补充或纠正当前任务…' : '添加完成后继续处理的任务…') : editingMessageId ? '修改这条消息后重新发送…' : ''} className="min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-gray-300 bg-gray-50 px-3 py-2.5 text-sm leading-5 text-gray-900 outline-none placeholder:text-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 disabled:cursor-wait disabled:opacity-55 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-600 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20" />
+            <label title={!sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : supportsImages ? '添加图片' : '没有可用的视觉模型'} aria-disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} className={`mobile-touch flex h-11 w-11 flex-none items-center justify-center rounded-xl border border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400 ${sessionReady && supportsImages && !running && attachments.length < 4 ? 'cursor-pointer hover:border-indigo-400 hover:text-indigo-500' : 'cursor-not-allowed opacity-35'}`}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片附件" onChange={event => { void addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} /></label>
+            <textarea onPaste={event => { const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); void addAttachments(files); } }} maxLength={8000} aria-label="任务要求" ref={inputRef} value={input} disabled={!sessionReady} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void run(); } }} rows={1} placeholder={!sessionReady ? modelsLoaded ? '先接入或选择模型服务…' : '正在加载对话…' : running ? (queueMode === 'steer' ? '补充或纠正当前任务…' : '添加完成后继续处理的任务…') : editingMessageId ? '修改这条消息后重新发送…' : ''} className="min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-gray-300 bg-gray-50 px-3 py-2.5 text-sm leading-5 text-gray-900 outline-none placeholder:text-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 disabled:cursor-wait disabled:opacity-55 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-600 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20" />
             {running && !input.trim() && !attachments.length ? (
               <button
                 type="button"
-                onClick={() => void promptAgentService.control(activeSessionId, 'abort')}
+                onClick={() => void stopTask()}
                 className="mobile-touch flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-rose-600 p-0 text-white shadow-lg shadow-rose-600/20 transition hover:bg-rose-500 active:scale-95"
                 aria-label="停止"
                 title="停止当前 Agent 任务"
@@ -1178,10 +1193,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               <button
                 type="button"
                 onClick={() => void run()}
-                disabled={!sessionReady || (!input.trim() && !attachments.length)}
+                disabled={!sessionReady || attachmentBusy || (!input.trim() && !attachments.length)}
                 className="mobile-touch flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-indigo-600 p-0 text-white shadow-lg shadow-indigo-500/15 transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none dark:disabled:bg-gray-800 dark:disabled:text-gray-600"
-                aria-label={!sessionReady ? '正在加载对话' : running ? '追加要求' : editingMessageId ? '重新发送' : '执行'}
-                title={!sessionReady ? '正在加载对话' : running ? '追加要求' : editingMessageId ? '重新发送' : '执行'}
+                aria-label={!sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : running ? '追加要求' : editingMessageId ? '重新发送' : '执行'}
+                title={!sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : running ? '追加要求' : editingMessageId ? '重新发送' : '执行'}
               >
                 <Send className="h-[18px] w-[18px]" />
               </button>

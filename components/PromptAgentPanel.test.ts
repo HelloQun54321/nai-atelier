@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PromptAgentPanel } from './PromptAgentPanel';
 import { ConfirmDialogProvider } from './ConfirmDialog';
 import { NAIParams } from '../types';
+import { promptAgentService } from '../services/promptAgent';
 
 vi.mock('./MobileUI', () => ({
   useMobileHistoryLayer: (_open: boolean, onClose: () => void) => onClose,
@@ -76,7 +77,7 @@ const stubServices = (sessionOverrides = {}) => {
   }));
 };
 
-const renderPanel = (canUndo = false) => {
+const renderPanel = (canUndo = false, overrides = {}) => {
   return render(
     React.createElement(
       ConfirmDialogProvider,
@@ -108,6 +109,7 @@ const renderPanel = (canUndo = false) => {
         onUndo: () => {},
         canUndo,
         tagAssistEnabled: true,
+        ...overrides,
       })
     )
   );
@@ -122,6 +124,64 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+    vi.restoreAllMocks();
+    sessionStorage.clear(); localStorage.clear();
+  });
+
+  it('没有模型时直接提供 API 接入入口，并阻止发起模型任务', async () => {
+    stubServices(); vi.spyOn(promptAgentService, 'getAvailableModels').mockResolvedValue([]);
+    const run = vi.spyOn(promptAgentService, 'run'); const open = vi.fn();
+    window.addEventListener('nai-open-global-settings', open);
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: '接入 API' }));
+    expect(open.mock.calls[0][0].detail).toEqual({ section: 'agent' });
+    expect((screen.getByRole('textbox', { name: '任务要求' }) as HTMLTextAreaElement).disabled).toBe(true);
+    expect(run).not.toHaveBeenCalled(); window.removeEventListener('nai-open-global-settings', open);
+  });
+  it.each([true, false])('实际面板生成回调批准 %s 时发送正确确认与完成顺序', async accepted => {
+    stubServices(); const controls: Array<{ action: string; accepted?: boolean; success?: boolean }> = [];
+    vi.spyOn(promptAgentService, 'control').mockImplementation(async (_session, action, _message, payload) => { controls.push({ action, ...payload }); });
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, onEvent) => {
+      onEvent({ type: 'action', action: { kind: 'request_generation', patch: { requestId: 'request-1' } } });
+    });
+    renderPanel(false, { onRequestGeneration: async (_draft: unknown, _reason: unknown, approve: () => Promise<void>) => { if (accepted) await approve(); return accepted; } });
+    await waitFor(() => expect((screen.getByRole('textbox', { name: '任务要求' }) as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(screen.getByRole('textbox', { name: '任务要求' }), { target: { value: '生成一张' } });
+    fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(controls.length).toBe(accepted ? 2 : 1));
+    expect(controls.map(value => value.action)).toEqual(accepted ? ['confirm', 'finalize'] : ['confirm']);
+    expect(controls[0].accepted).toBe(accepted); if (accepted) expect(controls[1].success).toBe(true);
+  });
+  it('附件拒绝原因可见，格式错误不会消失在后台', async () => {
+    stubServices({ visionAvailable: true }); renderPanel();
+    const chooser = await screen.findByLabelText('选择图片附件');
+    await waitFor(() => expect((chooser as HTMLInputElement).disabled).toBe(false));
+    fireEvent.change(chooser, { target: { files: [new File(['synthetic'], 'document.pdf', { type: 'application/pdf' })] } });
+    expect((await screen.findByRole('alert')).textContent).toContain('document.pdf：仅支持');
+  });
+  it('重新回答保留尚未发送的输入草稿', async () => {
+    stubServices();
+    const run = vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, onEvent) => {
+      onEvent({ type: 'text_delta', delta: '合成回复' });
+      onEvent({ type: 'done', draft: input.draft, message: '合成回复', provider: 'deepseek', model: 'deepseek-chat' });
+    });
+    renderPanel();
+    const box = screen.getByRole('textbox', { name: '任务要求' });
+    await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(box, { target: { value: 'first' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    const retry = await screen.findByRole('button', { name: '重新生成' });
+    fireEvent.change(box, { target: { value: 'unsent next request' } }); fireEvent.click(retry);
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+    expect(run.mock.calls[1][0].mode).toBe('retry');
+    expect((box as HTMLTextAreaElement).value).toBe('unsent next request');
+  });
+  it('停止请求失败明确反馈，正在执行状态仍保留', async () => {
+    stubServices(); vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({ status: 'running' });
+    vi.spyOn(promptAgentService, 'control').mockRejectedValue(new Error('电脑连接中断，请重试停止'));
+    renderPanel();
+    const buttons = await screen.findAllByRole('button', { name: /停止/ }); fireEvent.click(buttons[0]);
+    expect(await screen.findByText('电脑连接中断，请重试停止')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /停止/ }).length).toBeGreaterThan(0);
   });
 
   it('其他操作窗口在前景时 Esc 保留后台 Agent 菜单状态', async () => {
@@ -162,12 +222,13 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(screen.queryByRole('button', { name: /全屏/ })).toBeNull();
   });
 
-  it('顶栏副行移除外置的注入选择下拉框与视觉搭配模型展示，模型名称完整舒展展示', async () => {
+  it('当前视觉服务与单独计费明确可见，模型名和注入角标仍可读取', async () => {
     stubServices({
       creativeMode: false,
       model: 'deepseek-chat',
       visionDedicated: true,
       visionModel: 'grok-4.6-vision',
+      visionProvider: 'synthetic-vision',
       visionAvailable: true,
     });
     renderPanel(false);
@@ -180,9 +241,8 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(screen.getByText('deepseek-chat')).toBeTruthy();
     expect(screen.queryByText('普通')).toBeNull();
 
-    // 不把视觉搭配模型显示在副行中，避免造成拥挤
-    expect(screen.queryByText(/grok-4.6-vision/)).toBeNull();
-    expect(screen.queryByText(/视觉/)).toBeNull();
+    // 费用与供应商在可换行的目标行明确展示
+    expect(screen.getByText(/视觉：synthetic-vision\/grok-4.6-vision · 单独计费/)).toBeTruthy();
     expect(screen.queryByText(/识图/)).toBeNull();
   });
 

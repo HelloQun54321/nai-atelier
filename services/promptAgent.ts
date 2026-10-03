@@ -78,6 +78,7 @@ export interface PromptAgentProbeResult {
   model?: string;
   elapsedMs?: number;
   checks?: Record<string, string>;
+  usage?: PromptAgentUsage[];
 }
 
 export type PromptAgentAuthPrompt =

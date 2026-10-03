@@ -333,3 +333,16 @@ it('手动修改冲突保留两份，选择字段后才应用', async () => {
   fireEvent.click(within(dialog).getByText('应用选中修改'));
   expect(textPrompt().value).toBe('Agent edit');
 });
+
+it('生图确认期间手动修改使旧批准失效，不调用生成或批准回调', async () => {
+  sessionStorage.setItem('nai_api_key', 'synthetic-key');
+  setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
+  let release!: (value: boolean) => void;
+  state.confirm.mockImplementationOnce(() => new Promise<boolean>(resolve => { release = resolve; }));
+  const approve = vi.fn(async () => {}); let task!: Promise<boolean>;
+  await act(async () => { task = state.agent!.onRequestGeneration(state.agent!.draft, 'synthetic', approve); });
+  await waitFor(() => expect(release).toBeTypeOf('function'));
+  fireEvent.change(textPrompt(), { target: { value: 'manual while confirming' } });
+  await act(async () => { release(true); await expect(task).rejects.toThrow('确认期间创作目标已变化'); });
+  expect(approve).not.toHaveBeenCalled(); expect(state.generate).not.toHaveBeenCalled();
+});

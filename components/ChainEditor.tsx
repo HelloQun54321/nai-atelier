@@ -237,6 +237,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [taggerOpen, setTaggerOpen] = useState(false);
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
     const [agentProposal, setAgentProposal] = useState<PromptAgentDraft | null>(null);
+    const agentTargetRef = useRef<PromptAgentDraft['target']>(undefined);
     const agentEditGenerateRef = useRef<((draft: PromptAgentDraft, onApproved?: () => Promise<void>) => Promise<boolean>) | null>(null);
     const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<PromptAgentDraft | null>(null);
     const editorRevisionRef = useRef(0);
@@ -1808,8 +1809,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const agentCanvasFingerprint = useMemo(() => agentDraftFingerprint({ base: imageEditBaseImage, mask: imageEditMaskData, draft: activeEditDraft && { ...activeEditDraft, params: undefined, prompt: undefined, negativePrompt: undefined } }), [imageEditBaseImage, imageEditMaskData, activeEditDraft]);
     const currentAgentDraft = (): PromptAgentDraft => {
         const content: PromptAgentDraft = activeEditDraft ? { editContext: { baseImageAvailable: Boolean(imageEditBaseImage), maskAvailable: Boolean(imageEditMaskData), strength: activeEditDraft.strength, noise: activeEditDraft.noise, focused: activeEditDraft.focused }, basePrompt: activeEditDraft.prompt, subjectPrompt: '', negativePrompt: activeEditDraft.negativePrompt, modules: [], params: activeEditDraft.params } : { basePrompt, subjectPrompt, negativePrompt, modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })), params };
-        return { ...content, target: { chainId: chain.id, mode: activeGenerationMode, fingerprint: agentDraftFingerprint({ content, canvas: activeEditDraft ? agentCanvasFingerprint : null }) } };
+        return { ...content, target: { chainId: chain.id, name: chain.name, mode: activeGenerationMode, fingerprint: agentDraftFingerprint({ content, canvas: activeEditDraft ? agentCanvasFingerprint : null }) } };
     };
+    agentTargetRef.current = currentAgentDraft().target;
     const applyAgentDraft = (draft: PromptAgentDraft) => {
         if (draft.target?.mode && draft.target.mode !== 'text-to-image') {
             updateEditDraft(draft.target.mode, { prompt: [draft.basePrompt, draft.subjectPrompt, ...draft.modules.filter(module => module.isActive).map(module => module.content)].filter(Boolean).join(', '), negativePrompt: draft.negativePrompt, params: draft.params, promptSource: 'custom' });
@@ -1826,9 +1828,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>): Promise<boolean> => {
         if (draft.target && (draft.target.chainId !== chain.id || draft.target.mode !== activeGenerationMode || draft.target.fingerprint !== currentAgentDraft().target?.fingerprint)) { notify('创作目标已变化，请先查看并应用草稿，再重新请求生成', 'error'); return false; }
+        const approve = async () => {
+            const target = agentTargetRef.current;
+            if (draft.target && (draft.target.chainId !== target?.chainId || draft.target.mode !== target?.mode || draft.target.fingerprint !== target?.fingerprint)) throw new Error('确认期间创作目标已变化，请重新提出请求');
+            await onApproved?.();
+        };
         if (activeGenerationMode !== 'text-to-image') {
             if (!agentEditGenerateRef.current) { notify('编辑画布尚未准备好', 'error'); return false; }
-            return agentEditGenerateRef.current(draft, onApproved);
+            return agentEditGenerateRef.current(draft, approve);
         }
         const freshSubscription = await refreshUsageIfStale();
         let lowEnabled: boolean;
@@ -1848,7 +1855,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 confirmLabel: '仍要生成',
                 tone: 'danger',
             })) return false;
-            await onApproved?.();
+            await approve();
             return handleGenerateDraft(draft);
         }
         // 预算已用尽仍需扣费：红色警告（Agent 路径同样拦截）。
@@ -1859,7 +1866,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 confirmLabel: `仍要消耗 ${cost} 点生成`,
                 tone: 'danger',
             })) return false;
-            await onApproved?.();
+            await approve();
             return handleGenerateDraft(draft);
         }
         if (!await confirmAction({
@@ -1867,7 +1874,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             message: `${reason ? `${reason}\n\n` : ''}预计本次${draftGenerationCostLabel}。确认后才会提交给 NovelAI。${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
             confirmLabel: cost > 0 ? `消耗 ${cost} 点并生成` : '确认生成一张',
         })) return false;
-        await onApproved?.();
+        await approve();
         return handleGenerateDraft(draft);
     };
 

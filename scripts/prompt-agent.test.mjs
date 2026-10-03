@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PromptAgentService, assemblePromptContext, estimateContextTokens, selectAgentTools } from './prompt-agent.mjs';
+import { PromptAgentService, assemblePromptContext, estimateContextTokens, selectAgentTools, sanitizeAgentImages } from './prompt-agent.mjs';
 
 const isolated = async fn => {
   const root = await mkdtemp(join(tmpdir(), 'nai-agent-test-'));
@@ -55,6 +55,33 @@ test('工具历史按实际回执展示失败和中断', () => isolated(async se
   assert.deepEqual((await service.getSessionHistory('s'))[0].tools.map(item => item.state), ['error', 'interrupted']);
 }));
 const customInput = (id = 'custom-synthetic-a') => ({ id, name: 'synthetic', baseUrl: 'http://127.0.0.1:1234/v1', models: [{ id: 'a' }, { id: 'b' }] });
+test('附件不静默截断或忽略，服务器和前端共享 4 张／6 MB 边界', () => {
+  const image = { data: 'YWJjZA==', mimeType: 'image/png' };
+  assert.equal(sanitizeAgentImages([image]).length, 1);
+  assert.throws(() => sanitizeAgentImages(Array(5).fill(image)), /4 张/);
+  assert.throws(() => sanitizeAgentImages([{ ...image, data: 'invalid base64' }]), /格式/);
+  assert.throws(() => sanitizeAgentImages([{ ...image, data: Buffer.alloc(6 * 1024 * 1024 + 1).toString('base64') }]), /6 MB/);
+});
+test('空 Key 任务也绑定 Key 状态，确认期间新增 Key 不能沿用旧批准', () => isolated(async service => {
+  service.runs.set('s', { state: { runId: 'r' }, keyHash: '', controller: new AbortController() });
+  service.activeAgents.set('s', { agent: {}, emit() {} });
+  const { requestId, promise } = service.createConfirmation('s', { action: 'set_anlas_budget', resourceId: '', payload: { remaining: 20 } });
+  assert.throws(() => service.controlSession('s', 'confirm', '', { requestId, accepted: true, keyHash: 'new-key-hash' }), /Key 已变化/);
+  assert.equal((await promise).accepted, false);
+}));
+test('连接测试反复调用工具时最多两次模型回复，未知价格仍返回 null', () => isolated(async service => {
+  const previous = globalThis.fetch; let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    const chunk = { id: 'probe', object: 'chat.completion.chunk', created: 1, model: 'a', choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: `tool-${calls}`, type: 'function', function: { name: 'capability_probe', arguments: '{"status":"ok"}' } }] }, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } };
+    return new Response('data: ' + JSON.stringify(chunk) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  };
+  try {
+    const result = await service.testCustomProvider({ ...customInput(), apiKey: 'synthetic', testModel: 'a' });
+    assert.equal(calls, 2); assert.equal(result.checks.tools, 'passed');
+    assert.ok(result.usage.every(usage => usage.cost === null));
+  } finally { globalThis.fetch = previous; }
+}));
 
 test('预算提升和关闭队列等待确认，重复创建使用稳定操作 ID', () => isolated(async service => {
   service.activeAgents.set('s', { agent: {}, emit() {} });

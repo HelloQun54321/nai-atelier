@@ -14,7 +14,7 @@ it('三种协议预览真实端点，保留自定义代理路径', () => {
 it('保存默认不选用，测试模型和图片用途显式选择，发现列表只加入选中项', () => {
   const model = { id: 'a', reasoning: false, imageInput: false, contextWindow: 8192, maxTokens: 1024, capabilityDetection: { imageInput: 'unknown' as const, reasoning: 'model_name' as const } };
   const change = vi.fn(), test = vi.fn(), save = vi.fn();
-  render(<CustomProviderForm value={{ name: 'test', baseUrl: 'http://localhost:1234/v1', api: 'openai-completions', models: [model] }} discovered={[{ ...model, id: 'b' }]} onChange={change} busy={false} onTest={test} onSave={save} onFetch={() => {}} result={{ ok: false, message: '模拟失败', checks: { text: 'not_tested' } }}/>);
+  render(<CustomProviderForm value={{ name: 'test', baseUrl: 'http://localhost:1234/v1', api: 'openai-completions', models: [model] }} discovered={[{ ...model, id: 'b' }]} onChange={change} busy={false} onTest={test} onSave={save} onFetch={() => {}} result={{ ok: false, message: '模拟失败', model: 'a', usage: [{ input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12, cost: null }], checks: { text: 'not_tested' } }}/>);
   const selection = screen.getByLabelText('保存后设为默认（已有对话保留自己的模型）') as HTMLInputElement;
   expect(selection.checked).toBe(false);
   expect((screen.getByLabelText('测试图片接受（需模型支持识图，可能另计费用）') as HTMLInputElement).checked).toBe(false);
@@ -23,5 +23,6 @@ it('保存默认不选用，测试模型和图片用途显式选择，发现列�
   fireEvent.click(screen.getByText('测试模型 · 可能收费')); expect(test).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByText('保存配置')); expect(save).toHaveBeenCalledOnce();
   expect(screen.getByRole('status').textContent).toContain('文本：未测');
+  expect(screen.getByRole('status').textContent).toContain('本次测试 a · 12 tokens · 费用未知');
   expect(screen.getByText(/能力来源/).textContent).toContain('识图 未知 · 推理 名称推断');
 });

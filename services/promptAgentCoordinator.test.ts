@@ -22,3 +22,9 @@ it('输入与图片按会话隔离，文字可以跨组件恢复', () => {
   expect(promptAgentCoordinator.loadComposer('b').attachments).toEqual([]);
   expect(agentDraftFingerprint({ prompt: 'a' })).not.toBe(agentDraftFingerprint({ prompt: 'b' }));
 });
+it('浏览器禁用草稿存储仍能继续输入，不抛异常阻断界面', () => {
+  const mock = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('quota'); });
+  expect(() => promptAgentCoordinator.saveComposer('quota', 'pending text', [])).not.toThrow();
+  expect(promptAgentCoordinator.loadComposer('quota').text).toBe('pending text');
+  mock.mockRestore();
+});

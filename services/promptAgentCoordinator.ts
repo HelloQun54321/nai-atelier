@@ -19,9 +19,13 @@ export const promptAgentCoordinator = {
     composers.set(sessionId, { text, attachments: attachments.slice(0, 4) });
     // 图片只留有限的标签页内缓存；文字承担浏览器草稿职责。
     while (composers.size > 8) composers.delete(composers.keys().next().value!);
-    sessionStorage.setItem(`nai-agent-composer-${sessionId}`, text.slice(0, 8000));
+    try { sessionStorage.setItem(`nai-agent-composer-${sessionId}`, text.slice(0, 8000)); } catch { /* 浏览器禁用存储或空间不足时继续保留内存草稿。 */ }
   },
-  loadComposer(sessionId: string) { return composers.get(sessionId) || { text: sessionStorage.getItem(`nai-agent-composer-${sessionId}`) || '', attachments: [] }; },
+  loadComposer(sessionId: string) {
+    const saved = composers.get(sessionId); if (saved) return saved;
+    let text = ''; try { text = sessionStorage.getItem(`nai-agent-composer-${sessionId}`) || ''; } catch { /* 浏览器存储不可用。 */ }
+    return { text, attachments: [] };
+  },
 };
 
 export const agentDraftFingerprint = (value: unknown) => {

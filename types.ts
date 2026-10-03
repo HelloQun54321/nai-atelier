@@ -210,7 +210,7 @@ export interface LabWorkspaceSession {
 }
 
 export interface PromptAgentDraft {
-  target?: { chainId: string; mode: 'text-to-image' | 'image-to-image' | 'inpaint' | 'outpaint'; fingerprint: string };
+  target?: { chainId: string; name?: string; mode: 'text-to-image' | 'image-to-image' | 'inpaint' | 'outpaint'; fingerprint: string };
   editContext?: { baseImageAvailable: boolean; maskAvailable: boolean; strength: number; noise: number; focused: boolean };
   basePrompt: string;
   subjectPrompt: string;
