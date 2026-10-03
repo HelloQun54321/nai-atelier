@@ -36,9 +36,12 @@ it('本地图片携带当前 Key，外部地址不会收到凭据', async () => 
 it('后端旧版本、未重启与已同步状态有准确提示', () => {
   const config = { backendVersion: 'synthetic-version' } as PromptAgentConfig;
   expect(agentRuntimeWarning(config, 'synthetic-version')).toBe('');
-  expect(agentRuntimeWarning({ ...config, restartRequired: true }, 'synthetic-version')).toContain('重启');
+  expect(agentRuntimeWarning({ ...config, restartRequired: true }, 'synthetic-version')).toContain('关闭原服务');
   expect(agentRuntimeWarning(config, 'next-version')).toContain('未同步');
   expect(agentRuntimeWarning({} as PromptAgentConfig, 'next-version')).toContain('旧版');
+  expect(agentRuntimeWarning({ ...config, sourceVersion: 'new-version' }, 'synthetic-version')).toContain('关闭原服务');
+  expect(agentRuntimeWarning({ ...config, sourceVersion: 'synthetic-version' }, 'old-page')).toContain('刷新页面');
+  expect(agentRuntimeWarning({ ...config, sourceVersion: 'synthetic-version' }, 'old-page')).not.toContain('关闭原服务');
 });
 it('权限切档发送规范参数，后端拒绝的原因可见', async () => {
   const request = vi.fn(async () => new Response(JSON.stringify({ permissionMode: 'full' }), { headers: { 'content-type': 'application/json' } })); vi.stubGlobal('fetch', request);

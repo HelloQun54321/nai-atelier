@@ -4,6 +4,7 @@ import { prepareAgentAttachment } from '../services/agentAttachments';
 import { agentDraftChangedFields, promptAgentCoordinator } from '../services/promptAgentCoordinator';
 import { AgentChatDisplayOptions, AgentDisclosure, useAgentDisplayPreferences } from './AgentChatPreferences';
 import { AgentPermissionSelect } from './AgentPermissionSelect';
+import { useAgentRuntimeRecheck } from './useAgentRuntimeRecheck';
 import type { AgentDisplayPreferences } from '../services/agentDisplayPreferences';
 import type { PromptAgentEvent, PromptAgentTask } from '../services/promptAgent';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
@@ -192,6 +193,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [models, setModels] = useState<PromptAgentModel[]>([]);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [runtimeWarning, setRuntimeWarning] = useState('');
+  useAgentRuntimeRecheck(config => setRuntimeWarning(agentRuntimeWarning(config)), props.open, Boolean(runtimeWarning));
   const [attachmentError, setAttachmentError] = useState('');
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const attachmentLoadingRef = useRef(false);

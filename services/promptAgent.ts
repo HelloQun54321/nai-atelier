@@ -28,8 +28,9 @@ export interface PromptAgentConfig {
 }
 
 export const agentRuntimeWarning = (config: PromptAgentConfig, frontendVersion = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : ''): string => {
-  if (!config.backendVersion) return 'Agent 后端仍是旧版，请重启电脑上的本地服务以加载新增能力。';
-  if (config.restartRequired || frontendVersion && config.backendVersion !== frontendVersion) return `Agent 后端 ${config.backendVersion} 与当前界面 ${frontendVersion || config.sourceVersion || '源码'} 未同步，请重启电脑上的本地服务。`;
+  if (!config.backendVersion) return '电脑上仍运行旧版 Agent 服务。再次打开启动器会复用旧进程；请关闭原服务窗口，再启动工坊。';
+  if (config.restartRequired || config.sourceVersion && config.backendVersion !== config.sourceVersion) return `Agent 服务 ${config.backendVersion} 尚未加载最新代码。请关闭原服务窗口，再启动工坊；只刷新页面不会更新后端。`;
+  if (frontendVersion && config.backendVersion !== frontendVersion) return `当前界面 ${frontendVersion} 与 Agent 服务 ${config.backendVersion} 未同步，请刷新页面以加载最新界面。`;
   return '';
 };
 

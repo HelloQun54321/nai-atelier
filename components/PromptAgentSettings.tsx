@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AgentChatDisplayOptions } from './AgentChatPreferences';
 import { AgentPermissionSelect } from './AgentPermissionSelect';
+import { useAgentRuntimeRecheck } from './useAgentRuntimeRecheck';
 import { ArrowLeft, Check, Copy, Download, FileUp, LogIn, Plus, Save, Settings2, Star, Trash2, Upload, X } from 'lucide-react';
 import { PromptAgentAuthPrompt, PromptAgentConfig, PromptAgentCreativeInspectResult, PromptAgentCreativePreset, PromptAgentCreativePresetRevision, PromptAgentCreativePresetState, PromptAgentCustomProvider, PromptAgentInjectionItem, PromptAgentLabTarget, PromptAgentModel, PromptAgentProvider, PromptAgentProbeResult, agentRuntimeWarning, displayModelName, formatModelOptionTitle, previewPromptAgentEndpoint, promptAgentService } from '../services/promptAgent';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -755,6 +756,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
   };
 
   useEffect(() => { void reload().catch(() => notify('读取 AI 模型服务失败', 'error')); }, []);
+  useAgentRuntimeRecheck(setConfig, true, Boolean(config && agentRuntimeWarning(config)));
 
   useEffect(() => {
     if (!connectMenuOpen) return;

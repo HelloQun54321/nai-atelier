@@ -50,6 +50,9 @@ const stubServices = (sessionOverrides: { imageInput?: boolean; [key: string]: u
         policyFingerprint: 'fp123',
         creativeMode: false,
         runtimeStartedAt: 1000,
+        permissionMode: 'standard',
+        backendVersion: 'synthetic',
+        sourceVersion: 'synthetic',
       });
     }
     if (url.includes('/api/prompt-agent/creative-presets')) {
