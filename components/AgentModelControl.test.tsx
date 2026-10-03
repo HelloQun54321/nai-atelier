@@ -108,20 +108,16 @@ it('有空间时卡片中心对准模型按钮，触发器尺寸改变后重新�
   expect(screen.getByRole('dialog').style.left).toBe('500px');
 });
 it('粒子密度与播放速率随强度增加，最高可用档位显示 Ultra 而不增加请求档位', async () => {
-  const updatePlaybackRate = vi.fn();
-  Object.defineProperty(HTMLElement.prototype, 'getAnimations', { configurable: true, value: () => [{ updatePlaybackRate }] });
-  try {
     const model = { ...first, thinkingLevels: ['low', 'high', 'xhigh'] } as PromptAgentModel;
     const think = vi.fn(async () => {}); render(<Control model={model} think={think} />);
     fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
     const slider = screen.getByRole('slider'); const flow = document.querySelector('.agent-thinking-particles')!;
-    expect(flow.getAttribute('data-particles')).toBe('5'); expect(updatePlaybackRate).toHaveBeenLastCalledWith(.65);
-    fireEvent.change(slider, { target: { value: '1' } }); expect(Number(flow.getAttribute('data-particles'))).toBeGreaterThan(5); expect(updatePlaybackRate.mock.calls.at(-1)?.[0]).toBeCloseTo(1.825);
-    fireEvent.change(slider, { target: { value: '2' } }); expect(flow.getAttribute('data-particles')).toBe('24'); expect(updatePlaybackRate).toHaveBeenLastCalledWith(3);
+    expect(flow.getAttribute('data-particles')).toBe('5'); expect(flow.getAttribute('data-speed')).toBe('12');
+    fireEvent.change(slider, { target: { value: '1' } }); expect(Number(flow.getAttribute('data-particles'))).toBeGreaterThan(5); expect(flow.getAttribute('data-speed')).toBe('32');
+    fireEvent.change(slider, { target: { value: '2' } }); expect(flow.getAttribute('data-particles')).toBe('24'); expect(flow.getAttribute('data-speed')).toBe('52');
     expect(screen.getByText('Ultra')).toBeTruthy(); expect(screen.getByRole('dialog').getAttribute('data-ultra')).toBe('true'); expect(think).not.toHaveBeenCalled();
     fireEvent.pointerUp(slider); await waitFor(() => expect(think).toHaveBeenCalledWith('xhigh'));
     expect(slider.getAttribute('aria-valuetext')).toBe('极高');
-  } finally { delete (HTMLElement.prototype as unknown as { getAnimations?: unknown }).getAnimations; }
 });
 it('保存中保留滑条与卡片结构，状态提示不撑高卡片且没有快速模式标记', async () => {
   let resolve!: () => void;
@@ -137,7 +133,7 @@ it('模型触发器无常驻底色，圆环显示真实比例；未知与超过�
   const base = { models: [first], activeModel: first, thinkingLevels: first.thinkingLevels, thinkingLevel: 'low' as const, open: false, disabled: false, onOpenChange: () => {}, onModelChange: async () => {}, onThinkingChange: async () => {}, onBusyChange: () => {}, onConfigure: () => {} };
   const view = render(<AgentModelControl {...base} contextUsage={{ used: 4000, limit: 10000 }} />);
   expect(screen.getByRole('meter').getAttribute('aria-valuenow')).toBe('40');
-  expect(screen.getByRole('meter').getAttribute('title')).toContain('4,000 / 10,000');
+  expect(screen.getByRole('meter').getAttribute('aria-valuetext')).toContain('4,000 / 10,000');
   expect(screen.getByRole('button', { name: '模型与思考设置' }).className).toContain('bg-transparent');
   expect(screen.getByRole('button', { name: '模型与思考设置' }).className).not.toContain('rounded-full');
   view.rerender(<AgentModelControl {...base} contextUsage={{ used: 12000, limit: 10000 }} />);

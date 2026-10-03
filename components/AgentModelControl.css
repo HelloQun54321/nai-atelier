@@ -1,4 +1,4 @@
-/* 只移动一个粒子合成层；强度变化不重启动画，也不改变卡片高度。 */
+/* 单一画布驱动随机粒子；强度变化保留位置，也不改变卡片高度。 */
 .agent-model-heading { display: grid; grid-template-columns: 28px minmax(0, 1fr) 28px; align-items: center; height: 28px; text-align: center; }
 .agent-model-heading > button { width: 28px; height: 28px; min-height: 28px; padding: 0; }
 .agent-model-name { min-height: 24px; margin-bottom: 4px; }
@@ -12,9 +12,7 @@
 .agent-thinking-fill { background: var(--nai-accent, #006fdf); clip-path: inset(0 calc(18px + (100% - 36px) * (1 - var(--agent-thinking-ratio))) 0 0); transition: clip-path 180ms cubic-bezier(.2, .8, .2, 1); }
 .agent-thinking-ultra-wash { position: absolute; inset: 0; background: linear-gradient(105deg, #3439db 0%, #8b45fa 48%, #c477ff 78%, #9955ff 100%); opacity: 0; transition: opacity 220ms ease; }
 .agent-model-popover[data-ultra='true'] .agent-thinking-ultra-wash { opacity: 1; }
-.agent-thinking-particles { position: absolute; inset: 0; }
-.agent-thinking-flow { position: absolute; inset: 0 auto 0 0; width: 200%; background-size: 50% 100%; background-repeat: repeat-x; opacity: .8; animation: agent-thinking-dust 16s linear infinite; will-change: transform; }
-.agent-thinking-flow-secondary { opacity: .55; animation-direction: reverse; }
+.agent-thinking-particles { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .agent-thinking-thumb { position: absolute; top: 4px; left: calc(18px + (100% - 36px) * var(--agent-thinking-ratio)); width: 36px; height: 36px; transform: translateX(-50%); border: 1px solid var(--color-gray-200, #e5e7eb); border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgb(15 23 42 / 18%); pointer-events: none; transition: left 180ms cubic-bezier(.2, .8, .2, 1); }
 .agent-thinking-slider[data-dragging='true'] .agent-thinking-fill, .agent-thinking-slider[data-dragging='true'] .agent-thinking-thumb { transition: none; }
 .agent-thinking-slider[data-empty='true'] .agent-thinking-fill { opacity: 0; }
@@ -28,9 +26,10 @@
 .dark .agent-thinking-bed { background: var(--color-gray-700, #374151); }
 .dark .agent-thinking-step { background: var(--color-gray-500, #6b7280); }
 .dark .agent-thinking-thumb { border-color: var(--color-gray-300, #d1d5db); box-shadow: 0 2px 6px rgb(0 0 0 / 35%); }
-@keyframes agent-thinking-dust { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-50%, 0, 0); } }
 .agent-context-ring circle { fill: none; stroke-width: 2; }
+.agent-context-ring { width: 24px; min-height: 36px; }
+.agent-context-tooltip { background: color-mix(in srgb, var(--color-gray-950, #0b0b0b) 96%, transparent); color: var(--color-gray-100, #fff); box-shadow: 0 8px 24px rgb(0 0 0 / 18%); backdrop-filter: blur(12px); }
+@media (max-width: 767px) { .agent-context-ring { min-height: 44px; } }
 .agent-context-ring-bed { stroke: currentColor; opacity: .2; }
 .agent-context-ring-value { stroke: currentColor; stroke-linecap: round; transform: rotate(-90deg); transform-origin: center; transition: stroke-dasharray 180ms ease; }
-html[data-motion='reduced'] .agent-thinking-flow, html[data-motion='off'] .agent-thinking-flow { animation: none !important; opacity: .5; }
-@media (prefers-reduced-motion: reduce) { .agent-thinking-flow { animation: none !important; opacity: .5; } .agent-thinking-fill, .agent-thinking-thumb, .agent-thinking-ultra-wash { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .agent-thinking-fill, .agent-thinking-thumb, .agent-thinking-ultra-wash { transition: none; } }

@@ -91,8 +91,10 @@ describe('全局外观覆盖审计', () => {
       return result;
     };
     expect(ruleDecls(modelRules, '.agent-thinking-fill').background).toBe('var(--nai-accent, #006fdf)');
-    expect(ruleDecls(modelRules, "html[data-motion='reduced'] .agent-thinking-flow").animation).toBe('none');
-    expect(ruleDecls(modelRules, "html[data-motion='off'] .agent-thinking-flow").animation).toBe('none');
+    const particleSource = readFileSync(resolve('components/AgentThinkingParticles.tsx'), 'utf8');
+    expect(particleSource).toContain("['off', 'reduced'].includes(document.documentElement.dataset.motion");
+    expect(particleSource).toContain("window.matchMedia('(prefers-reduced-motion: reduce)')");
+    expect(particleSource).toContain('if (!reduced()) frame = requestAnimationFrame(tick)');
     const action = ruleDecls(actionRules, '.agent-composer-action');
     expect(action.width).toBe(action.height); expect(action['min-width']).toBe(action['min-height']);
     expect(action['border-radius']).toBe('50%'); expect(action.flex).toBe('0 0 var(--agent-action-size)');

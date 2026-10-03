@@ -1,18 +1,15 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, Check, ChevronDown, ChevronRight, Loader2, X } from 'lucide-react';
 import { formatModelOptionTitle, type PromptAgentModel, type PromptAgentThinkingLevel } from '../services/promptAgent';
 import { useAgentPopoverPosition } from './useAgentPopoverPosition';
 import { AGENT_THINKING_LABELS } from '../services/agentThinking.mjs';
 import './AgentModelControl.css';
+import { AgentThinkingParticles } from './AgentThinkingParticles';
+import { AgentContextRing } from './AgentContextRing';
+import type { AgentContextUsage } from '../services/agentContextUsage';
 
 export const agentThinkingLabels = AGENT_THINKING_LABELS;
-// 稳定坐标让增减粒子时已有光点留在原位；整层播放无需逐粒子计时。
-const particles = Array.from({ length: 24 }, (_, index) => {
-  const random = (salt: number) => { const value = Math.sin((index + 1) * salt) * 43758.5453; return value - Math.floor(value); };
-  const x = random(12.9898) * 100, y = 14 + random(78.233) * 72, size = .7 + random(39.425) * 1.1;
-  return `radial-gradient(circle at ${x}% ${y}%, rgb(255 255 255 / ${.35 + random(53.11) * .55}) 0 ${size}px, transparent ${size + .8}px)`;
-});
 interface Props {
   models: PromptAgentModel[];
   activeModel?: PromptAgentModel;
@@ -25,7 +22,7 @@ interface Props {
   onThinkingChange: (level: PromptAgentThinkingLevel) => Promise<void>;
   onBusyChange: (busy: boolean) => void;
   onConfigure: () => void;
-  contextUsage?: { used: number; limit: number };
+  contextUsage?: AgentContextUsage;
 }
 
 export const AgentModelControl: React.FC<Props> = props => {
@@ -41,7 +38,6 @@ export const AgentModelControl: React.FC<Props> = props => {
   const pending = useRef(false);
   const mounted = useRef(true);
   const returnFocus = useRef(false);
-  const flow = useRef<HTMLDivElement>(null);
   const position = useAgentPopoverPosition(props.open, trigger, popover, 300, 'center');
   const positioned = position !== undefined;
   const name = props.activeModel ? formatModelOptionTitle(props.activeModel, props.models) : '选择模型';
@@ -50,13 +46,8 @@ export const AgentModelControl: React.FC<Props> = props => {
   const draftLevel = props.thinkingLevels[Math.min(lastPosition, Math.round(draftPosition))] || props.thinkingLevel;
   const intensity = lastPosition ? draftPosition / lastPosition : 0;
   const particleCount = draftLevel === 'off' ? 0 : 5 + Math.round((lastPosition ? Math.round(draftPosition) / lastPosition : 0) * 19);
-  const particleBackground = useMemo(() => [0, 1].map(layer => particles.slice(0, particleCount).filter((_, index) => index % 2 === layer).join(', ')), [particleCount]);
   const ultra = canThink && Math.round(draftPosition) === lastPosition && draftLevel !== 'off';
   const actualView = props.activeModel ? view : 'models';
-  useEffect(() => {
-    // 改播放速率而非动画时长，保留当前时间线，避免切档时光点跳回起点。
-    flow.current?.getAnimations?.({ subtree: true }).forEach((animation, index) => animation.updatePlaybackRate((.65 + intensity * 2.35) * (index === 0 ? 1 : .72)));
-  }, [intensity, props.open, actualView]);
   useEffect(() => { setDraftPosition(selectedPosition); setDragging(false); }, [selectedPosition, props.thinkingLevel, props.activeModel?.provider, props.activeModel?.id]);
   useEffect(() => { if (!props.open) { setView('thinking'); setQuery(''); setError(''); setDraftPosition(selectedPosition); setDragging(false); } }, [props.open, selectedPosition]);
   useEffect(() => { if (!props.open && !busy && !props.disabled && returnFocus.current) { returnFocus.current = false; trigger.current?.focus(); } }, [props.open, busy, props.disabled]);
@@ -91,12 +82,10 @@ export const AgentModelControl: React.FC<Props> = props => {
     const level = props.thinkingLevels[position];
     if (level) thinking(level);
   };
-  const usage = props.contextUsage;
-  const percent = usage ? Math.min(100, Math.max(0, usage.used / usage.limit * 100)) : undefined;
-  const contextTitle = usage ? `上下文已用 ${Math.round(percent!)}% · ${usage.used.toLocaleString()} / ${usage.limit.toLocaleString()} tokens（最近一次模型回复用量，含缓存与输出）` : '上下文使用情况：尚未收到当前模型的用量数据';
-  return <div className="min-w-0 flex-1">
-    <button ref={trigger} type="button" aria-label="模型与思考设置" aria-haspopup="dialog" aria-expanded={props.open} disabled={props.disabled || busy} title={props.disabled ? `${name} · 任务执行期间不能切换` : `${name}${canThink ? ` · 思考：${agentThinkingLabels[props.thinkingLevel]}` : ''}`} onClick={() => props.onOpenChange(!props.open)} className="ml-auto flex min-h-9 max-w-full items-center gap-1.5 rounded-lg bg-transparent px-1.5 text-xs text-gray-700 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50 dark:text-gray-200 dark:hover:text-white">
-      <span role={usage ? 'meter' : 'img'} aria-label={usage ? '上下文使用情况' : contextTitle} aria-valuemin={usage ? 0 : undefined} aria-valuemax={usage ? 100 : undefined} aria-valuenow={percent} aria-valuetext={contextTitle} title={contextTitle} className={`agent-context-ring shrink-0 ${percent !== undefined && percent >= 90 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}><svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4"><circle className="agent-context-ring-bed" cx="10" cy="10" r="7" /><circle className="agent-context-ring-value" cx="10" cy="10" r="7" pathLength="100" strokeDasharray={usage ? `${percent} 100` : '12 8'} /></svg></span><span className="min-w-0 truncate">{name}</span>{canThink && <span className="min-w-8 shrink-0 text-center text-gray-400 dark:text-gray-500">{agentThinkingLabels[props.thinkingLevel]}</span>}<ChevronDown className="h-3 w-3 shrink-0" />
+  return <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
+    <AgentContextRing usage={props.contextUsage} />
+    <button ref={trigger} type="button" aria-label="模型与思考设置" aria-haspopup="dialog" aria-expanded={props.open} disabled={props.disabled || busy} title={props.disabled ? `${name} · 任务执行期间不能切换` : `${name}${canThink ? ` · 思考：${agentThinkingLabels[props.thinkingLevel]}` : ''}`} onClick={() => props.onOpenChange(!props.open)} className="flex min-h-9 min-w-0 max-w-full items-center gap-1.5 rounded-lg bg-transparent px-1.5 text-xs text-gray-700 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50 dark:text-gray-200 dark:hover:text-white">
+      <span className="min-w-0 truncate">{name}</span>{canThink && <span className="min-w-8 shrink-0 text-center text-gray-400 dark:text-gray-500">{agentThinkingLabels[props.thinkingLevel]}</span>}<ChevronDown className="h-3 w-3 shrink-0" />
     </button>
     {props.open && createPortal(<div ref={popover} role="dialog" aria-label="模型与思考" data-ultra={ultra && actualView === 'thinking'} style={{ ...position, visibility: positioned ? 'visible' : 'hidden' }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }} className="appearance-panel agent-model-popover z-[1300] overflow-y-auto rounded-2xl border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-900">
       <div className="agent-model-heading">
@@ -108,7 +97,7 @@ export const AgentModelControl: React.FC<Props> = props => {
         <button type="button" data-model-trigger disabled={busy} onClick={() => setView('models')} className="agent-model-name mx-auto flex max-w-full items-center gap-1 text-xs text-gray-500 dark:text-gray-400"><span className="truncate">{name}</span><ChevronRight className="h-3.5 w-3.5 shrink-0" /></button>
         {canThink ? <div className="px-1 py-1">
           <div className="agent-thinking-slider" data-dragging={dragging} data-saving={busy} data-empty={draftPosition === 0 && draftLevel === 'off'} style={{ '--agent-thinking-ratio': draftPosition / lastPosition } as React.CSSProperties}>
-            <div aria-hidden="true" className="agent-thinking-track"><div className="agent-thinking-bed">{props.thinkingLevels.map((level, index) => <span key={level} className="agent-thinking-step" style={{ left: `calc(18px + (100% - 36px) * ${index / lastPosition})` }} />)}</div><div className="agent-thinking-fill"><div className="agent-thinking-ultra-wash" /><div ref={flow} className="agent-thinking-particles" data-particles={particleCount}>{particleBackground.map((backgroundImage, index) => <div key={index} className={`agent-thinking-flow${index ? ' agent-thinking-flow-secondary' : ''}`} style={{ backgroundImage }} />)}</div></div></div>
+            <div aria-hidden="true" className="agent-thinking-track"><div className="agent-thinking-bed">{props.thinkingLevels.map((level, index) => <span key={level} className="agent-thinking-step" style={{ left: `calc(18px + (100% - 36px) * ${index / lastPosition})` }} />)}</div><div className="agent-thinking-fill"><div className="agent-thinking-ultra-wash" /><AgentThinkingParticles count={particleCount} intensity={intensity} /></div></div>
             <div aria-hidden="true" className="agent-thinking-thumb" />
             <input type="range" aria-label="思考强度" aria-valuetext={agentThinkingLabels[draftLevel]} min={0} max={lastPosition} step="any" value={draftPosition} disabled={busy}
               onChange={event => setDraftPosition(Number(event.target.value))}
