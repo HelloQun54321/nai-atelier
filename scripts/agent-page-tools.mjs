@@ -9,7 +9,17 @@ export const isAgentPageTool = name => ['read_current_page', 'operate_current_pa
 export const createAgentPageTools = (project, permissionMode, imageInput = false) => {
   const request = async operation => {
     if (!project?.requestUI) throw new Error('实时页面连接不可用，不能把实验室草稿当成当前页面');
-    return result(await project.requestUI({ ...operation, permissionMode: permissionMode() }));
+    try { return result(await project.requestUI({ ...operation, permissionMode: permissionMode() })); }
+    catch (error) {
+      // 只处理执行前的版本拒绝；不重放点击、填写或任何可能已有副作用的操作。
+      if (!/^页面已变化，请重新读取后(?:继续|操作)$/.test(error.message) || project.signal?.aborted) throw error;
+      const page = await project.requestUI({ action: 'read', query: operation.query, limit: operation.limit || 20, permissionMode: permissionMode() });
+      return result({ ...page, recovery: {
+        operationOutcome: operation.action === 'read' ? 'read_refreshed' : 'not_executed',
+        paginationRestarted: operation.action === 'read',
+        message: operation.action === 'read' ? '页面已更新；以下为重新读取的当前第一页，旧分页游标已失效。' : '页面在操作前已变化，本次操作未执行；以下为最新页面，请核对目标控件后再操作。',
+      } });
+    }
   };
   const read = {
     query: Type.Optional(Type.String({ description: '按控件名称或类型查找，例如模型筛选' })), offset: Type.Optional(Type.Number()), limit: Type.Optional(Type.Number()),

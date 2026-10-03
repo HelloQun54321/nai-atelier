@@ -222,6 +222,7 @@ export interface PromptAgentDraft {
 }
 
 export type PromptAgentAction =
+  | { kind: 'reuse_history'; patch: { historyId: string } }
   | { kind: 'update_prompts'; patch: Partial<Pick<PromptAgentDraft, 'basePrompt' | 'subjectPrompt' | 'negativePrompt'>> }
   | { kind: 'set_modules'; patch: { modules: PromptModule[] } }
   | { kind: 'set_characters'; patch: { characters: CharacterParams[] } }

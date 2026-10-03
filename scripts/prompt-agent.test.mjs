@@ -15,6 +15,156 @@ const isolated = async fn => {
   finally { for (const pending of service.pendingConfirmations.values()) clearTimeout(pending.timer); await rm(root, { recursive: true, force: true }); }
 };
 
+const syntheticAgentStream = (round, { input = 20000, output = 100 } = {}) => new Response('data: ' + JSON.stringify({
+  id: 'synthetic', object: 'chat.completion.chunk', created: 1, model: 'a',
+  choices: [{ index: 0, delta: { role: 'assistant', ...(round.tool ? { tool_calls: [{ index: 0, id: 'call-' + round.id, type: 'function', function: { name: round.tool, arguments: JSON.stringify(round.args || {}) } }] } : { content: round.text || '合成任务完成' }) }, finish_reason: round.tool ? 'tool_calls' : 'stop' }],
+  usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output },
+}) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+
+test('复用真实历史结构与全部参数，修改后进入原有生图确认闭环', () => isolated(async service => {
+  const history = { id: 'real-history', basePrompt: 'artist style', subjectPrompt: 'garden', negativePrompt: '', modules: [{ id: 'm', name: '光照', content: 'soft light', isActive: true, position: 'pre' }], params: { model: 'nai-diffusion-5-full', prompt: 'artist style, soft light, garden', negativePrompt: '', width: 1216, height: 832, steps: 23, scale: 4.5, sampler: 'k_euler', seed: 678, qualityToggle: false, ucPreset: 0, transparent: true, variety: true, cfgRescale: 0.4, characters: [{ id: 'c', name: '蓝发', enabled: false, prompt: 'blue hair', negativePrompt: 'red hair', x: .2, y: .7 }], vibes: { enabled: false, slots: [] }, characterReferences: { enabled: false, slots: [] } } };
+  const original = structuredClone(history), events = [];
+  const draft = { basePrompt: 'old', subjectPrompt: '', negativePrompt: 'old negative', modules: [], params: { model: 'nai-diffusion-4-5-full' }, target: { chainId: 'playground', mode: 'text-to-image', fingerprint: 'p' } };
+  const page = structuredClone(draft), context = { clientSettings: { splitPromptFields: true } };
+  service.activeAgents.set('s', { agent: {}, emit() {} });
+  const tools = service.createTools(draft, context, event => {
+    events.push(event);
+    if (event.action?.kind === 'request_generation') {
+      const requestId = event.action.patch.requestId;
+      service.controlSession('s', 'confirm', '', { requestId, accepted: true });
+      service.controlSession('s', 'finalize', '', { requestId, success: true, result: { historySaved: true, historyId: 'new-history' } });
+    }
+  }, { agentSessionId: 's', requestJson: async path => path.includes('page=0') ? { items: [history] } : history, getClientDraft: () => page });
+  const call = (name, args = {}) => tools.find(tool => tool.name === name).execute('t', args);
+  const reuse = JSON.parse((await call('reuse_generation_history')).content[0].text);
+  assert.equal(reuse.historyId, history.id); assert.equal(reuse.staged, true);
+  assert.equal(draft.params.model, history.params.model); assert.equal(draft.params.seed, 678);
+  assert.deepEqual(draft.params.characters, history.params.characters); assert.deepEqual(draft.modules, history.modules);
+  assert.equal(draft.negativePrompt, ''); assert.equal(draft.target.fingerprint, 'p');
+  const state = JSON.parse((await call('get_lab_state')).content[0].text);
+  assert.equal(state.historicalReference.reused, true); assert.equal(state.pageState.model, 'nai-diffusion-4-5-full'); assert.ok(state.pendingFields.includes('params.model'));
+  await call('update_prompts', { subjectPrompt: 'forest' });
+  const unchanged = structuredClone(draft.params);
+  const generated = JSON.parse((await call('request_generation')).content[0].text);
+  assert.equal(generated.confirmed, true); assert.equal(generated.displayImages[0].id, 'new-history');
+  assert.deepEqual(draft.params, unchanged); assert.deepEqual(history, original);
+  assert.equal(events.find(e => e.action.kind === 'request_generation').draft.subjectPrompt, 'forest');
+  assert.equal(page.basePrompt, 'old');
+}));
+
+test('历史复用覆盖单输入框、编辑模式、无结构旧记录及只读权限', () => isolated(async service => {
+  const structured = { id: 'h', basePrompt: 'style', subjectPrompt: 'subject', modules: [{ content: 'pre', isActive: true, position: 'pre' }, { content: 'off', isActive: false }, { content: 'post', isActive: true }], params: { model: 'nai-diffusion-5-full', characters: [{ prompt: 'blue hair', negativePrompt: 'red hair' }] } };
+  for (const [splitPromptFields, mode] of [[false, 'text-to-image'], [true, 'inpaint'], [true, 'outpaint'], [true, 'image-to-image']]) {
+    const draft = { params: {}, target: { chainId: 'p', mode, fingerprint: 'p' }, editContext: { baseImageAvailable: true, maskAvailable: true, strength: .6 } };
+    const tools = service.createTools(draft, { clientSettings: { splitPromptFields } }, () => {}, { requestJson: async () => structured });
+    await tools.find(t => t.name === 'reuse_generation_history').execute('t', { historyId: 'h' });
+    assert.equal(draft.basePrompt, 'style, pre, subject, post'); assert.equal(draft.subjectPrompt, ''); assert.deepEqual(draft.modules, []);
+    assert.equal(draft.params.characters[0].negativePrompt, 'red hair'); assert.equal(draft.target.mode, mode); assert.equal(draft.editContext.baseImageAvailable, true);
+  }
+  const draft = { params: {}, modules: [] };
+  const tools = service.createTools(draft, {}, () => {}, { requestJson: async () => ({ id: 'old', prompt: 'whole prompt', negativePrompt: 'whole negative', params: { model: 'nai-diffusion-4-full', seed: 42 } }) });
+  const reuse = tools.find(t => t.name === 'reuse_generation_history'); await reuse.execute('t', { historyId: 'old' });
+  assert.equal(draft.basePrompt, 'whole prompt'); assert.equal(draft.negativePrompt, 'whole negative'); assert.equal(draft.params.seed, 42);
+  service.config.permissionMode = 'read_only'; const before = structuredClone(draft);
+  await assert.rejects(reuse.execute('t', {}), /只读/); assert.deepEqual(draft, before);
+}));
+
+test('历史读取只提供历史来源，复用遇到人工切换目标不覆盖新草稿', () => isolated(async service => {
+  const observed = { basePrompt: '', params: {}, modules: [] }, context = {};
+  const inspecting = service.createTools(observed, context, () => {}, { requestJson: async () => ({ id: 'seen-history', basePrompt: 'historic style', params: { model: 'nai-diffusion-5-full' } }), requestBuffer: async () => ({ buffer: Buffer.from('synthetic image'), mimeType: 'image/png' }) }, { imageInput: true });
+  const receipt = JSON.parse((await inspecting.find(t => t.name === 'inspect_generation_image').execute('t', { id: 'seen-history' })).content[0].text);
+  assert.equal(receipt.stateKind, 'generation_history'); assert.match(receipt.note, /不修改草稿/); assert.equal(context.clientSettings.historicalReference.reused, false); assert.equal(observed.basePrompt, '');
+  const draft = { basePrompt: '', params: {}, target: { chainId: 'a', mode: 'text-to-image', fingerprint: 'a' } };
+  const tools = service.createTools(draft, {}, () => {}, { requestJson: async () => { draft.target = { chainId: 'b', mode: 'text-to-image', fingerprint: 'b' }; draft.basePrompt = 'manual'; return { id: 'h', basePrompt: 'history', params: { model: 'nai-diffusion-5-full' } }; } });
+  await assert.rejects(tools.find(t => t.name === 'reuse_generation_history').execute('t', { historyId: 'h' }), /目标已变化/);
+  assert.equal(draft.basePrompt, 'manual'); assert.equal(draft.target.chainId, 'b');
+}));
+
+test('模型业务参数可直接切换现役模型，保留角色状态并拒绝退役模型', () => isolated(async service => {
+  const draft = { params: { model: 'nai-diffusion-4-5-full', characters: [{ id: 'c', name: '角色', enabled: false, prompt: 'blue hair', negativePrompt: 'red hair', x: .2, y: .3 }], seed: 789 } };
+  const tools = service.createTools(draft, {}, () => {});
+  const params = tools.find(t => t.name === 'set_generation_params');
+  await params.execute('t', { model: 'nai-diffusion-5-full' });
+  assert.equal(draft.params.model, 'nai-diffusion-5-full'); assert.equal(draft.params.seed, 789); assert.equal(draft.params.characters[0].enabled, false);
+  const before = structuredClone(draft);
+  await assert.rejects(params.execute('t', { model: 'nai-diffusion-3' }), /现役/); assert.deepEqual(draft, before);
+  await tools.find(t => t.name === 'set_characters').execute('t', { characters: before.params.characters });
+  assert.deepEqual(draft.params.characters, before.params.characters);
+}));
+
+test('五轮实际模型工具链输入累计超过 64k 仍完成写入', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true }); const session = await service.createSession();
+  const previous = globalThis.fetch; const events = []; let calls = 0;
+  globalThis.fetch = async () => { calls++; return syntheticAgentStream(calls < 4 ? { id: calls, tool: 'get_lab_state' } : calls === 4 ? { id: calls, tool: 'update_prompts', args: { basePrompt: 'synthetic style' } } : { text: '写入完成' }); };
+  try {
+    await service.run({ sessionId: session.id, message: '修改提示词', draft: { params: {} } }, e => events.push(e));
+    assert.equal(calls, 5); const done = events.find(e => e.type === 'done');
+    assert.equal(done.status, 'completed'); assert.equal(done.draft.basePrompt, 'synthetic style'); assert.equal(done.draftChanged, true);
+    assert.equal((await service.getTask(session.id)).error, undefined);
+  } finally { globalThis.fetch = previous; }
+}));
+
+test('真实 Pi 链路完成历史复用、角色修改、生成确认与图片回执', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true }); const session = await service.createSession();
+  const history = { id: 'source-history', basePrompt: 'style', subjectPrompt: 'garden', negativePrompt: 'blur', modules: [], params: { model: 'nai-diffusion-5-full', width: 1216, height: 832, steps: 23, scale: 4.5, sampler: 'k_euler', seed: 987, qualityToggle: false, ucPreset: 0, characters: [{ id: 'original', prompt: 'blue hair', negativePrompt: 'red hair', x: .3, y: .5 }] } };
+  const rounds = [
+    { tool: 'reuse_generation_history', args: { historyId: history.id } },
+    { tool: 'set_characters', args: { characters: [...history.params.characters, { prompt: 'brown hair', negativePrompt: '', x: .7, y: .5 }] } },
+    { tool: 'update_prompts', args: { subjectPrompt: 'forest' } },
+    { tool: 'get_lab_state' },
+    { tool: 'request_generation' },
+    { text: '已完成本次生成' },
+  ];
+  const previous = globalThis.fetch, events = []; let calls = 0;
+  globalThis.fetch = async () => syntheticAgentStream({ ...rounds[calls], id: ++calls });
+  try {
+    await service.run({ sessionId: session.id, message: '复用历史配置，新增角色并修改提示词，生成一张', draft: { params: {}, modules: [], target: { chainId: 'p', mode: 'text-to-image', fingerprint: 'p' } }, context: { clientSettings: { splitPromptFields: true } } }, event => {
+      events.push(event);
+      if (event.type === 'action' && event.action.kind === 'request_generation') {
+        const requestId = event.action.patch.requestId;
+        service.controlSession(session.id, 'confirm', '', { requestId, accepted: true });
+        service.controlSession(session.id, 'finalize', '', { requestId, success: true, result: { historySaved: true, historyId: 'actual-new-history' } });
+      }
+    }, undefined, { requestJson: async () => history });
+    assert.equal(calls, 6); assert.equal(events.filter(e => e.type === 'tool_end' && e.isError).length, 0);
+    const done = events.find(e => e.type === 'done'); assert.equal(done.status, 'completed');
+    assert.equal(done.draft.params.model, 'nai-diffusion-5-full'); assert.equal(done.draft.params.seed, 987); assert.equal(done.draft.params.width, 1216); assert.equal(done.draft.params.characters.length, 2);
+    assert.equal(done.draft.subjectPrompt, 'forest'); assert.equal(done.draft.negativePrompt, 'blur');
+    const generated = events.find(e => e.type === 'tool_end' && e.toolName === 'request_generation');
+    assert.equal(JSON.parse(generated.result.content[0].text).displayImages[0].id, 'actual-new-history');
+    assert.equal(events.some(e => e.type === 'tool_start' && e.toolName === 'operate_current_page'), false);
+  } finally { globalThis.fetch = previous; }
+}));
+
+test('自动循环上限给出原因并在任务回执持久化，不误报完成', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true }); const session = await service.createSession();
+  const previous = globalThis.fetch; const events = []; let calls = 0;
+  globalThis.fetch = async () => syntheticAgentStream({ id: ++calls, tool: 'get_lab_state' });
+  try {
+    await service.run({ sessionId: session.id, message: '检查参数', draft: { params: {} } }, e => events.push(e));
+    const done = events.find(e => e.type === 'done'), task = await service.getTask(session.id);
+    assert.equal(calls, 64); assert.equal(done.status, 'aborted'); assert.equal(done.stopReason, 'turn_limit'); assert.match(done.error, /连续执行上限/);
+    assert.equal(task.stopReason, 'turn_limit'); assert.equal(task.error, done.error); assert.equal(task.finalDraft, null);
+  } finally { globalThis.fetch = previous; }
+}));
+
+test('中止后暂存草稿可在同目标继续，人工修改后的新目标优先', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true }); const session = await service.createSession();
+  const previous = globalThis.fetch; const draft = { basePrompt: '', params: {}, target: { chainId: 'p', mode: 'text-to-image', fingerprint: 'p' } }; let calls = 0;
+  globalThis.fetch = async () => syntheticAgentStream(++calls === 1 ? { id: calls, tool: 'update_prompts', args: { basePrompt: 'retained style' } } : { text: '继续完成' });
+  try {
+    await service.run({ sessionId: session.id, message: '修改提示词', draft }, event => { if (event.type === 'tool_end') service.controlSession(session.id, 'abort'); });
+    const stopped = await service.getTask(session.id);
+    assert.equal(stopped.stopReason, 'user_stop'); assert.equal(stopped.finalDraft.basePrompt, 'retained style');
+    const events = []; await service.run({ sessionId: session.id, message: '继续', draft }, event => events.push(event));
+    assert.equal(events.find(e => e.type === 'done').draft.basePrompt, 'retained style'); assert.equal(events.find(e => e.type === 'done').draftChanged, true);
+    await writeFile(service.taskFile(session.id), JSON.stringify(stopped));
+    const changed = { ...draft, basePrompt: 'manual style', target: { ...draft.target, fingerprint: 'changed' } };
+    const result = await service.run({ sessionId: session.id, message: '继续', draft: changed }, () => {});
+    assert.equal(result.draft.basePrompt, 'manual style');
+  } finally { globalThis.fetch = previous; }
+}));
+
 test('标准上下文忽略遗留注入参数，保留多模态消息和工具链且不修改输入', () => {
   const messages = [
     { role: 'user', content: [{ type: 'text', text: '原始要求' }, { type: 'image', data: 'YWJjZA==', mimeType: 'image/png' }] },

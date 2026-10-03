@@ -41,6 +41,47 @@ test('浏览器未回应、任务停止及发送失败都会释放页面等待�
   assert.equal(bridge.pending.size, 0);
 });
 import { agentOutputLimit, agentTokenUsage, boundAgentToolResult, compactAuditEntries, compactAgentValue, inferAgentToolGroups, isProjectImagePath, localTimeInfo, selectRuntimeTools } from './agent-runtime.mjs';
+import { agentStopInfo, createAgentRunBudget } from './agent-runtime.mjs';
+
+test('复现日志：重复上下文超过 64k 仍允许继续，保护仅计算新输出', () => {
+  for (const totals of [[16051, 19008, 20647, 21721], [24351, 24742, 26137]]) {
+    const budget = createAgentRunBudget();
+    for (const totalTokens of totals) assert.equal(budget.observe({ content: [{ type: 'toolCall' }], usage: { input: totalTokens - 300, output: 300, totalTokens } }), null);
+  }
+  const turns = createAgentRunBudget({ maxTurns: 3 });
+  assert.equal(turns.observe({ content: [{ type: 'toolCall' }], usage: { output: 1 } }), null);
+  assert.equal(turns.observe({ stopReason: 'aborted' }), null);
+  assert.equal(turns.observe({ content: [{ type: 'toolCall' }] }), null);
+  const reason = turns.observe({ content: [{ type: 'toolCall' }] });
+  assert.equal(reason.code, 'turn_limit'); assert.match(agentStopInfo(reason).message, /继续/);
+  const output = createAgentRunBudget({ maxOutputTokens: 10 });
+  assert.equal(output.observe({ content: [{ type: 'toolCall' }], usage: { output: 9, reasoning: 9, input: 500000 } }), null);
+  assert.equal(output.observe({ content: [{ type: 'toolCall' }], usage: { output: 1 } }).code, 'output_limit');
+  assert.equal(createAgentRunBudget({ maxTurns: 1 }).observe({ content: [{ type: 'text', text: '完成' }] }), null);
+  assert.equal(agentStopInfo(new DOMException('', 'TimeoutError')).code, 'timeout');
+  assert.equal(agentStopInfo(new DOMException('用户停止了任务', 'AbortError')).code, 'user_stop');
+  assert.equal(agentStopInfo(new DOMException('', 'AbortError')).code, 'aborted');
+});
+
+test('页面过期直接返回新回执，分页归零且写入不自动重放', async () => {
+  const { createAgentPageTools } = await import('./agent-page-tools.mjs');
+  for (const action of ['read', 'click', 'fill', 'select']) {
+    const operations = [];
+    const tools = createAgentPageTools({ requestUI: async operation => {
+      operations.push(operation);
+      if (operations.length === 1) throw new Error(action === 'read' ? '页面已变化，请重新读取后继续' : '页面已变化，请重新读取后操作');
+      return { title: '新的筛选面板', snapshotId: 'new', controls: [{ id: 'new-model', label: '模型' }] };
+    } }, () => 'standard');
+    const tool = tools.find(item => item.name === (action === 'read' ? 'read_current_page' : 'operate_current_page'));
+    const page = JSON.parse((await tool.execute('t', { action, snapshotId: 'old', controlId: 'old-model', offset: 40, optionsOffset: 12, value: 'v5' })).content[0].text);
+    assert.equal(operations.length, 2); assert.equal(operations[1].action, 'read');
+    for (const key of ['snapshotId', 'controlId', 'offset', 'optionsOffset', 'value']) assert.equal(operations[1][key], undefined);
+    assert.equal(page.snapshotId, 'new'); assert.equal(page.recovery.operationOutcome, action === 'read' ? 'read_refreshed' : 'not_executed');
+  }
+  let calls = 0;
+  const tools = createAgentPageTools({ requestUI: async () => { calls++; throw new Error('当前页面未响应，结果未知'); } }, () => 'standard');
+  await assert.rejects(tools[1].execute('t', { action: 'click' }), /结果未知/); assert.equal(calls, 1);
+});
 
 test('长资料、编码与成组结果有界，明确省略且不修改源资料', () => {
   const source = { name: '项目', data: 'a'.repeat(500000), prompt: '构图，'.repeat(20000), items: Array.from({ length: 100 }, (_, id) => ({ id, notes: '画面 '.repeat(1000) })) };

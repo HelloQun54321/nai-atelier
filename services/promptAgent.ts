@@ -207,7 +207,7 @@ export type PromptAgentEvent = ({ runId?: string; seq?: number } & (
   | { type: 'queue'; action: 'steer' | 'followUp'; message: string }
   | { type: 'action'; action: PromptAgentAction; draft?: PromptAgentDraft }
   | { type: 'project_changed'; resource: string }
-  | { type: 'done'; draft: PromptAgentDraft; message: string; provider: string; model: string; status?: string }
+  | { type: 'done'; draft: PromptAgentDraft; message: string; provider: string; model: string; status?: string; error?: string; stopReason?: string; draftChanged?: boolean }
   | { type: 'error'; error: string }));
 
 export interface PromptAgentTask {
@@ -216,6 +216,7 @@ export interface PromptAgentTask {
   cursor?: number;
   reset?: boolean;
   error?: string;
+  stopReason?: string;
   target?: PromptAgentDraft['target'];
   finalDraft?: PromptAgentDraft | null;
   events?: PromptAgentEvent[];

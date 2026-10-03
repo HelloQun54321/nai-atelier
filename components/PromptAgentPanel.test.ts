@@ -252,6 +252,44 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     fireEvent.click(screen.getByRole('switch', { name: '默认展开工具' }));
     await waitFor(() => expect(screen.getByText('失败 · 查询本机时间与时区')).toBeTruthy());
   });
+  it('自动中止显示具体原因，不应用草稿也不补已完成文案', async () => {
+    stubServices(); const apply = vi.fn();
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, onEvent) => {
+      onEvent({ type: 'action', action: { kind: 'update_prompts', patch: { basePrompt: '未完成草稿' } } });
+      onEvent({ type: 'done', status: 'aborted', stopReason: 'turn_limit', error: '本次任务达到连续执行上限，可以继续。', draft: { ...input.draft, basePrompt: '未完成草稿' }, message: '', provider: 'deepseek', model: 'deepseek-chat' });
+    });
+    renderPanel(false, { onFinalDraft: apply });
+    const box = screen.getByRole('textbox', { name: '任务要求' }); await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(box, { target: { value: '修改提示词' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    expect(await screen.findByText('本次任务达到连续执行上限，可以继续。')).toBeTruthy();
+    expect(apply).not.toHaveBeenCalled(); expect(screen.queryByText('已完成。')).toBeNull();
+  });
+
+  it('重新打开会话仍显示停止原因，恢复草稿完成后进入正常应用', async () => {
+    stubServices();
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]);
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({ status: 'aborted', runId: 'stopped', error: '任务等待超时；工作草稿已保留。', stopReason: 'timeout' });
+    const apply = vi.fn();
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, onEvent) => {
+      onEvent({ type: 'done', status: 'completed', draftChanged: true, draft: { ...input.draft, basePrompt: '恢复的草稿' }, message: '接续完成', provider: 'deepseek', model: 'deepseek-chat' });
+    });
+    renderPanel(false, { onFinalDraft: apply });
+    expect(await screen.findByText('任务等待超时；工作草稿已保留。')).toBeTruthy();
+    const box = screen.getByRole('textbox', { name: '任务要求' });
+    fireEvent.change(box, { target: { value: '继续' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(apply).toHaveBeenCalled());
+    expect(apply.mock.calls[0][0].basePrompt).toBe('恢复的草稿');
+  });
+
+  it('任务轮询结束后加载历史不会抹掉自动停止原因', async () => {
+    stubServices(); vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]);
+    let reads = 0;
+    vi.spyOn(promptAgentService, 'getTask').mockImplementation(async () => ++reads <= 2 ? { status: 'running', runId: 'r' } : { status: 'aborted', runId: 'r', error: '自动执行达到上限，尚未完成。', stopReason: 'turn_limit' });
+    renderPanel();
+    expect(await screen.findByText('自动执行达到上限，尚未完成。', {}, { timeout: 3500 })).toBeTruthy();
+    expect(screen.queryByText('已完成。')).toBeNull();
+  });
+
   it('停止请求失败明确反馈，正在执行状态仍保留', async () => {
     stubServices(); vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({ status: 'running' });
     vi.spyOn(promptAgentService, 'control').mockRejectedValue(new Error('电脑连接中断，请重试停止'));

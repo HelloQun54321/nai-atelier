@@ -66,8 +66,34 @@ export const publicAgentToolContent = content => (content || []).map(part => par
 
 export const agentOutputLimit = (thinkingLevel = 'medium') => ['high', 'xhigh', 'max'].includes(thinkingLevel) ? 8192 : ['off', 'minimal', 'low'].includes(thinkingLevel) ? 2048 : 4096;
 
+/** 上下文容量由每次请求的装配器控制；循环保护只统计新输出，不重复累计历史输入。 */
+export const createAgentRunBudget = ({ maxTurns = 64, maxOutputTokens = 131_072 } = {}) => {
+  let turns = 0, outputTokens = 0;
+  return {
+    observe(message) {
+      if (message?.stopReason === 'aborted') return null;
+      turns++;
+      outputTokens += Math.max(0, Number(message?.usage?.output) || 0);
+      // 最终回复已完成时不把成功任务改成中止；限额约束的是继续执行。
+      if (!message?.content?.some(part => part.type === 'toolCall')) return null;
+      const code = turns >= maxTurns ? 'turn_limit' : outputTokens >= maxOutputTokens ? 'output_limit' : '';
+      if (!code) return null;
+      return Object.assign(new Error(code === 'turn_limit'
+        ? `本次任务已执行 ${turns} 轮模型回复，达到连续执行上限；可以发送“继续”接着处理。`
+        : '本次任务的新输出达到连续执行上限；可以发送“继续”接着处理。'), { name: 'AgentRunLimitError', code, turns, outputTokens });
+    },
+  };
+};
+
+export const agentStopInfo = reason => {
+  if (reason?.name === 'AgentRunLimitError') return { code: reason.code, message: reason.message };
+  if (reason?.name === 'TimeoutError') return { code: 'timeout', message: '本次任务等待超时，已停止；可以发送“继续”接着处理。' };
+  if (reason?.message === '用户停止了任务') return { code: 'user_stop', message: '任务已停止。' };
+  return { code: 'aborted', message: '任务已中断，尚未收到完整结果；请核对工具回执后继续。' };
+};
+
 export const AGENT_TOOL_GROUPS = {
-  creative: ['get_lab_state', 'update_prompts', 'set_characters', 'set_generation_params', 'request_generation', 'search_tags', 'search_novelai_docs', 'read_novelai_doc', 'read_prompt_guidelines', 'set_prompt_modules', 'set_vibes', 'set_character_references'],
+  creative: ['get_lab_state', 'reuse_generation_history', 'update_prompts', 'set_characters', 'set_generation_params', 'request_generation', 'search_tags', 'search_novelai_docs', 'read_novelai_doc', 'read_prompt_guidelines', 'set_prompt_modules', 'set_vibes', 'set_character_references'],
   library: ['get_project_overview', 'search_project_library', 'get_chain', 'get_inspiration', 'read_project_text', 'list_generation_history', 'inspect_generation_image', 'show_project_image', 'inspect_project_image', 'search_character_catalog', 'search_vibes', 'search_character_references', 'create_chain', 'update_chain', 'create_inspiration', 'update_inspiration', 'list_vibe_groups', 'search_aitag', 'get_aitag_work', 'import_aitag_image', 'create_character_reference_from_history', 'create_vibe_from_history', 'set_chain_cover_from_history', 'update_vibe', 'update_character_reference', 'save_vibe_group', 'request_vibe_encoding', 'manage_artist_favorite', 'navigate_view'],
   maintenance: ['get_project_settings', 'get_project_overview', 'request_delete_project_item', 'request_clear_history', 'request_cleanup_history', 'set_anlas_budget', 'set_cloud_queue', 'update_tag_dictionary', 'manage_aitag', 'set_client_preferences', 'request_clear_mobile_cache', 'navigate_view'],
   web: ['web_search', 'read_web_page'],
@@ -76,7 +102,7 @@ export const AGENT_TOOL_GROUPS = {
 export const inferAgentToolGroups = (request = '', previous = '') => {
   const groups = new Set();
   const combined = /继续|刚才|之前|那个|同样|接着|再来/.test(request) ? request + ' ' + previous : request;
-  if (/提示词|参数|生成|生图|出图|实验室|重绘|扩图|构图|prompt|render|generate/i.test(combined)) groups.add('creative');
+  if (/提示词|参数|生成|生图|出图|实验室|重绘|扩图|构图|复用|prompt|render|generate/i.test(combined)) groups.add('creative');
   if (/图片|照片|看看|展示|贴图|收藏|保存|资料|风格串|画师|灵感|历史|Vibe|参考|角色|AITag|项目|image|history|library/i.test(combined)) groups.add('library');
   if (/删除|清理|预算|队列|设置|缓存|词库|delete|settings/i.test(combined)) groups.add('maintenance');
   if (/搜索|联网|网页|核实|最新|查资料|search|web/i.test(combined)) groups.add('web');

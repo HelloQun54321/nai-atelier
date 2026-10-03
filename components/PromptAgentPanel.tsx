@@ -50,7 +50,7 @@ const toolLabels: Record<string, string> = {
   update_prompts: '修改全局提示词', set_prompt_modules: '整理提示词模块', set_characters: '设置角色专属提示词',
   set_generation_params: '调整参数', set_vibes: '设置 Vibe', set_character_references: '设置角色参考', request_generation: '准备生图',
   get_project_overview: '读取项目概况', search_project_library: '搜索项目资料', get_chain: '读取完整资料', list_generation_history: '读取生成历史',
-  inspect_generation_image: '查看历史原图', create_chain: '新建资料', update_chain: '更新资料',
+  inspect_generation_image: '查看历史原图', reuse_generation_history: '复用历史生成配置', create_chain: '新建资料', update_chain: '更新资料',
   create_inspiration: '保存灵感', update_inspiration: '更新灵感', list_vibe_groups: '读取 Vibe 组合', create_character_reference_from_history: '保存角色参考图', create_vibe_from_history: '从历史创建 Vibe', import_aitag_image: '导入 AITag 图片',
   request_delete_project_item: '准备删除', request_clear_history: '准备清空历史',
   search_aitag: '搜索 AITag', get_aitag_work: '读取 AITag 作品',
@@ -454,7 +454,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         else if (wasRunning && ['completed', 'failed', 'aborted', 'interrupted'].includes(String(task.status))) {
           setRunning(false);
           const history = await promptAgentService.getSession(activeSessionId).catch(() => []);
-          if (!disposed) setMessages(history.map(item => ({ ...item })));
+          if (!disposed) setMessages([...history.map(item => ({ ...item })), ...(task.error ? [{ id: 'task-error-' + (task.runId || activeSessionId), role: 'error' as const, text: task.error }] : [])]);
           void refreshSessions(activeSessionId);
         }
         wasRunning = isRunning;
@@ -663,6 +663,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     if (effectiveMode === 'prompt') { setInput(''); setAttachments([]); }
     else if (editingMessageId) setInput('');
     setRunning(true);
+    setTaskSnapshot({ status: 'preparing' });
     const runSnapshot = structuredClone(props.draft);
     props.onRunStart(runSnapshot);
     let labChanged = false;
@@ -733,13 +734,17 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         }
         if (event.type === 'error') throw new Error(event.error);
         if (event.type === 'done') {
-          setTaskSnapshot(previous => ({ ...previous, status: event.status || 'completed', finalDraft: event.status === 'aborted' ? null : event.draft }));
-          if (labChanged && event.status !== 'aborted') props.onFinalDraft(event.draft, !displayPreferences.autoApplyDraft);
+          const completed = !event.status || event.status === 'completed';
+          setTaskSnapshot(previous => ({ ...previous, status: event.status || 'completed', finalDraft: event.draft, error: event.error, stopReason: event.stopReason }));
+          if ((labChanged || event.draftChanged) && completed) props.onFinalDraft(event.draft, !displayPreferences.autoApplyDraft);
           if (navigationTarget) {
             window.dispatchEvent(new CustomEvent('nai-agent-navigate', { detail: navigationTarget }));
             props.onClose();
           }
-          if (!event.message) setMessages(previous => previous.map(item => item.id === responseId && !item.text ? { ...item, text: '已完成。' } : item));
+          if (!completed) {
+            const reason = event.error || (event.status === 'aborted' ? '任务已停止。' : '任务没有完成，请查看工具回执。');
+            setMessages(previous => [...previous, { id: 'task-error-' + (event.runId || activeSessionId), role: 'error', text: reason }]);
+          } else if (!event.message) setMessages(previous => previous.map(item => item.id === responseId && !item.text ? { ...item, text: labChanged ? (displayPreferences.autoApplyDraft ? '修改已提交；请核对实验室内容。' : '工作草稿已准备好，等待你查看并应用。') : '本轮处理已结束，请核对工具回执。' } : item));
         }
       }, () => currentDraftRef.current);
     } catch (error) {
