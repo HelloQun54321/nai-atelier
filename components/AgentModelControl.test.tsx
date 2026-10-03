@@ -18,7 +18,7 @@ it('当前模型和强度直接可见，只展示本模型支持的思考档位'
   const trigger = screen.getByRole('button', { name: '模型与思考设置' }); expect(trigger.textContent).toContain('synthetic-model (合成服务甲)低');
   fireEvent.click(trigger); const range = screen.getByRole('slider', { name: '思考强度' }); expect(range.getAttribute('max')).toBe('2'); expect(document.activeElement).toBe(range);
   expect(screen.queryByRole('button', { name: '思考强度：中' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '思考强度：高' }));
+  fireEvent.change(range, { target: { value: '2' } }); fireEvent.pointerUp(range);
   await waitFor(() => expect(trigger.textContent).toContain('高')); expect(think).toHaveBeenCalledWith('high');
 });
 it('稀疏接口档位不补上其他强度，强度面板不占用来源说明和配置入口的空间', () => {
@@ -26,6 +26,7 @@ it('稀疏接口档位不补上其他强度，强度面板不占用来源说明�
   const view = render(<Control model={model} />); fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
   expect(screen.getByRole('slider').getAttribute('max')).toBe('2'); expect(screen.queryByRole('button', { name: '思考强度：中' })).toBeNull();
   expect(screen.queryByRole('button', { name: '思考强度：关闭' })).toBeNull(); expect(screen.queryByText('档位来自接口声明')).toBeNull();
+  expect(screen.queryByRole('button', { name: '思考强度：低' })).toBeNull(); expect(screen.queryByRole('button', { name: '思考强度：高' })).toBeNull(); expect(screen.queryByRole('button', { name: '思考强度：极高' })).toBeNull();
   expect(screen.queryByRole('button', { name: '配置模型服务 →' })).toBeNull();
   view.unmount(); render(<Control />); fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
   expect(screen.queryByText(/接口未声明具体档位/)).toBeNull();
@@ -46,13 +47,23 @@ it('配置入口只在选择模型页出现，返回强度页隐藏；未接入�
   expect(document.activeElement).toBe(screen.getByRole('button', { name: '配置模型服务 →' }));
   fireEvent.click(screen.getByRole('button', { name: '配置模型服务 →' })); expect(configure).toHaveBeenCalledTimes(2);
 });
-it('滑动期间只预览，释放后保存最终强度，键盘亦可保存', async () => {
+it('拖动允许连续位置，释放吸附后只保存可用档位，键盘仍逐档调节', async () => {
   const think = vi.fn(async () => {}); render(<Control think={think} />); fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
   const range = screen.getByRole('slider', { name: '思考强度' });
-  fireEvent.change(range, { target: { value: '0' } }); fireEvent.change(range, { target: { value: '2' } }); expect(think).not.toHaveBeenCalled();
-  fireEvent.pointerUp(range); await waitFor(() => expect(think).toHaveBeenCalledWith('high')); expect(think).toHaveBeenCalledTimes(1);
+  fireEvent.pointerDown(range); fireEvent.change(range, { target: { value: '0.65' } }); expect((range as HTMLInputElement).value).toBe('0.65'); expect(range.getAttribute('aria-valuetext')).toBe('低');
+  fireEvent.change(range, { target: { value: '1.7' } }); expect((range as HTMLInputElement).value).toBe('1.7'); expect(think).not.toHaveBeenCalled();
+  fireEvent.pointerUp(range); await waitFor(() => expect(think).toHaveBeenCalledWith('high')); expect(think).toHaveBeenCalledTimes(1); expect((range as HTMLInputElement).value).toBe('2');
   await waitFor(() => expect((range as HTMLInputElement).disabled).toBe(false));
-  fireEvent.change(range, { target: { value: '0' } }); fireEvent.keyUp(range, { key: 'Home' }); await waitFor(() => expect(think).toHaveBeenLastCalledWith('off'));
+  fireEvent.keyDown(range, { key: 'Home' }); expect((range as HTMLInputElement).value).toBe('0'); fireEvent.keyUp(range, { key: 'Home' }); await waitFor(() => expect(think).toHaveBeenLastCalledWith('off'));
+  await waitFor(() => expect((range as HTMLInputElement).disabled).toBe(false)); fireEvent.keyDown(range, { key: 'ArrowRight' }); expect((range as HTMLInputElement).value).toBe('1'); fireEvent.keyUp(range, { key: 'ArrowRight' }); await waitFor(() => expect(think).toHaveBeenLastCalledWith('low'));
+});
+it('拖动取消恢复原档位，保存失败也回到原值', async () => {
+  const think = vi.fn(async () => { throw new Error('保存失败'); }); render(<Control think={think} />);
+  fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' })); const range = screen.getByRole('slider') as HTMLInputElement;
+  fireEvent.pointerDown(range); fireEvent.change(range, { target: { value: '1.85' } }); fireEvent.pointerCancel(range);
+  expect(range.value).toBe('1'); expect(think).not.toHaveBeenCalled();
+  fireEvent.pointerDown(range); fireEvent.change(range, { target: { value: '1.85' } }); fireEvent.pointerUp(range);
+  await screen.findByRole('alert'); expect(range.value).toBe('1'); expect(range.getAttribute('aria-valuetext')).toBe('低');
 });
 it('同名跨服务模型分别选择；保存失败保留原模型并显示原因', async () => {
   const choose = vi.fn(async () => { throw new Error('合成接口断连'); }); render(<Control choose={choose} />);

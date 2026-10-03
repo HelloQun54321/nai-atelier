@@ -1,16 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Loader2, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Loader2, Zap, X } from 'lucide-react';
 import { formatModelOptionTitle, type PromptAgentModel, type PromptAgentThinkingLevel } from '../services/promptAgent';
 import { useAgentPopoverPosition } from './useAgentPopoverPosition';
 import { AGENT_THINKING_LABELS } from '../services/agentThinking.mjs';
 import './AgentModelControl.css';
 
 export const agentThinkingLabels = AGENT_THINKING_LABELS;
-const thinkingPixels = [
-  [9, 66, 3], [17, 30, 2], [25, 76, 4], [33, 42, 2], [42, 20, 3], [49, 66, 2],
-  [58, 38, 4], [66, 78, 2], [73, 26, 3], [81, 59, 2], [89, 40, 4], [94, 74, 2],
-];
 interface Props {
   models: PromptAgentModel[];
   activeModel?: PromptAgentModel;
@@ -27,7 +23,9 @@ interface Props {
 
 export const AgentModelControl: React.FC<Props> = props => {
   const [view, setView] = useState<'thinking' | 'models'>('thinking');
-  const [draftLevel, setDraftLevel] = useState(props.thinkingLevel);
+  const selectedPosition = Math.max(0, props.thinkingLevels.indexOf(props.thinkingLevel));
+  const [draftPosition, setDraftPosition] = useState(selectedPosition);
+  const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -40,9 +38,11 @@ export const AgentModelControl: React.FC<Props> = props => {
   const positioned = position !== undefined;
   const name = props.activeModel ? formatModelOptionTitle(props.activeModel, props.models) : '选择模型';
   const canThink = Boolean(props.activeModel && props.thinkingLevels.length > 1);
+  const lastPosition = Math.max(0, props.thinkingLevels.length - 1);
+  const draftLevel = props.thinkingLevels[Math.min(lastPosition, Math.round(draftPosition))] || props.thinkingLevel;
   const actualView = props.activeModel ? view : 'models';
-  useEffect(() => { setDraftLevel(props.thinkingLevel); }, [props.thinkingLevel, props.activeModel?.provider, props.activeModel?.id]);
-  useEffect(() => { if (!props.open) { setView('thinking'); setQuery(''); setError(''); } }, [props.open]);
+  useEffect(() => { setDraftPosition(selectedPosition); setDragging(false); }, [selectedPosition, props.thinkingLevel, props.activeModel?.provider, props.activeModel?.id]);
+  useEffect(() => { if (!props.open) { setView('thinking'); setQuery(''); setError(''); setDraftPosition(selectedPosition); setDragging(false); } }, [props.open, selectedPosition]);
   useEffect(() => { if (!props.open && !busy && !props.disabled && returnFocus.current) { returnFocus.current = false; trigger.current?.focus(); } }, [props.open, busy, props.disabled]);
   useEffect(() => { if (props.disabled) props.onOpenChange(false); }, [props.disabled, props.onOpenChange]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; props.onBusyChange(false); }; }, [props.onBusyChange]);
@@ -62,30 +62,43 @@ export const AgentModelControl: React.FC<Props> = props => {
     if (pending.current || props.disabled) return;
     pending.current = true; setBusy(true); setError(''); props.onBusyChange(true);
     try { await action(); if (mounted.current && closeAfter) close(); }
-    catch (reason) { if (mounted.current) { setError(reason instanceof Error ? reason.message : '设置保存失败'); setDraftLevel(props.thinkingLevel); } }
+    catch (reason) { if (mounted.current) { setError(reason instanceof Error ? reason.message : '设置保存失败'); setDraftPosition(selectedPosition); } }
     finally { pending.current = false; if (mounted.current) { setBusy(false); props.onBusyChange(false); } }
   };
   const thinking = (level: PromptAgentThinkingLevel) => {
     if (level !== props.thinkingLevel && canThink) void save(() => props.onThinkingChange(level));
   };
+  // 拖动保留连续位置，释放或键盘确认后才吸附并保存模型支持的离散档位。
+  const commitPosition = (value: number) => {
+    const position = Math.max(0, Math.min(lastPosition, Math.round(value)));
+    setDragging(false); setDraftPosition(position);
+    const level = props.thinkingLevels[position];
+    if (level) thinking(level);
+  };
   return <div className="min-w-0 flex-1">
     <button ref={trigger} type="button" aria-label="模型与思考设置" aria-haspopup="dialog" aria-expanded={props.open} disabled={props.disabled || busy} title={props.disabled ? `${name} · 任务执行期间不能切换` : `${name}${canThink ? ` · 思考：${agentThinkingLabels[props.thinkingLevel]}` : ''}`} onClick={() => props.onOpenChange(!props.open)} className="ml-auto flex min-h-9 max-w-full items-center gap-1.5 rounded-full bg-gray-100 px-2.5 text-xs text-gray-700 hover:bg-gray-200 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
-      {busy ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 shrink-0" />}<span className="min-w-0 truncate">{name}</span>{canThink && <span className="shrink-0 text-gray-400 dark:text-gray-500">{agentThinkingLabels[props.thinkingLevel]}</span>}<ChevronDown className="h-3 w-3 shrink-0" />
+      {busy ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <Zap className="h-3.5 w-3.5 shrink-0" />}<span className="min-w-0 truncate">{name}</span>{canThink && <span className="shrink-0 text-gray-400 dark:text-gray-500">{agentThinkingLabels[props.thinkingLevel]}</span>}<ChevronDown className="h-3 w-3 shrink-0" />
     </button>
     {props.open && createPortal(<div ref={popover} role="dialog" aria-label="模型与思考" style={{ ...position, visibility: positioned ? 'visible' : 'hidden' }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }} className="z-[1300] overflow-y-auto rounded-2xl border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-900">
       <div className="mb-2 flex items-center justify-between gap-2">
-        {actualView === 'models' ? <button type="button" onClick={() => setView('thinking')} disabled={!props.activeModel} className="inline-flex min-h-8 items-center gap-1 text-xs text-gray-500 disabled:opacity-50 dark:text-gray-400"><ArrowLeft className="h-3.5 w-3.5" />选择模型</button> : <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />}
-        <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{actualView === 'thinking' ? canThink ? `思考 · ${agentThinkingLabels[draftLevel]}` : '模型设置' : ''}</span>
+        {actualView === 'models' ? <button type="button" onClick={() => setView('thinking')} disabled={!props.activeModel} className="inline-flex min-h-8 items-center gap-1 text-xs text-gray-500 disabled:opacity-50 dark:text-gray-400"><ArrowLeft className="h-3.5 w-3.5" />选择模型</button> : <Zap className="h-5 w-5 fill-blue-600 text-blue-600 dark:fill-blue-400 dark:text-blue-400" />}
+        <span className="text-base font-medium text-blue-600 dark:text-blue-400">{actualView === 'thinking' ? canThink ? agentThinkingLabels[draftLevel] : '模型设置' : ''}</span>
         <button type="button" aria-label="关闭模型菜单" onClick={close} className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button>
       </div>
       {actualView === 'thinking' ? <>
         <button type="button" data-model-trigger disabled={busy} onClick={() => setView('models')} className="mx-auto mb-3 flex max-w-full items-center gap-1 text-xs text-gray-500 dark:text-gray-400"><span className="truncate">{name}</span><ChevronRight className="h-3.5 w-3.5 shrink-0" /></button>
-        {canThink ? <div className="rounded-xl bg-gray-50 px-3 py-3 dark:bg-gray-950">
-          <div className="agent-thinking-slider" style={{ '--agent-thinking-ratio': Math.max(0, props.thinkingLevels.indexOf(draftLevel)) / (props.thinkingLevels.length - 1) } as React.CSSProperties}>
-            <div aria-hidden="true" className="agent-thinking-track"><div className="agent-thinking-fill">{thinkingPixels.map(([x, y, size], index) => <span key={index} className="agent-thinking-pixel" style={{ left: `${x}%`, top: `${y}%`, width: size, height: size, animationDelay: `${-index * 0.47}s`, animationDuration: `${3.4 + index % 4 * 0.6}s` }} />)}</div>{props.thinkingLevels.map((level, index) => <span key={level} className="agent-thinking-step" style={{ left: `calc(22px + (100% - 44px) * ${index / (props.thinkingLevels.length - 1)})` }} />)}</div>
-            <input type="range" aria-label="思考强度" aria-valuetext={agentThinkingLabels[draftLevel]} min={0} max={props.thinkingLevels.length - 1} step={1} value={Math.max(0, props.thinkingLevels.indexOf(draftLevel))} disabled={busy} onChange={event => setDraftLevel(props.thinkingLevels[Number(event.target.value)])} onPointerUp={() => thinking(draftLevel)} onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) thinking(draftLevel); }} className="agent-thinking-range" />
+        {canThink ? <div className="px-1 py-1">
+          <div className="agent-thinking-slider" data-dragging={dragging} data-saving={busy} data-empty={draftPosition === 0 && draftLevel === 'off'} style={{ '--agent-thinking-ratio': draftPosition / lastPosition } as React.CSSProperties}>
+            <div aria-hidden="true" className="agent-thinking-track"><div className="agent-thinking-bed">{props.thinkingLevels.map((level, index) => <span key={level} className="agent-thinking-step" style={{ left: `calc(22px + (100% - 44px) * ${index / lastPosition})` }} />)}</div><div className="agent-thinking-fill"><div className="agent-thinking-flow" /></div></div>
+            <div aria-hidden="true" className="agent-thinking-thumb" />
+            <input type="range" aria-label="思考强度" aria-valuetext={agentThinkingLabels[draftLevel]} min={0} max={lastPosition} step="any" value={draftPosition} disabled={busy}
+              onChange={event => setDraftPosition(Number(event.target.value))}
+              onPointerDown={event => { setDragging(true); event.currentTarget.setPointerCapture?.(event.pointerId); }}
+              onPointerUp={event => commitPosition(Number(event.currentTarget.value))}
+              onPointerCancel={() => { setDragging(false); setDraftPosition(selectedPosition); }}
+              onKeyDown={event => { const offset = ({ ArrowLeft: -1, ArrowDown: -1, PageDown: -1, ArrowRight: 1, ArrowUp: 1, PageUp: 1 } as Record<string, number>)[event.key]; if (offset !== undefined || event.key === 'Home' || event.key === 'End') { event.preventDefault(); setDraftPosition(event.key === 'Home' ? 0 : event.key === 'End' ? lastPosition : Math.max(0, Math.min(lastPosition, Math.round(draftPosition) + offset))); } }}
+              onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) commitPosition(Number(event.currentTarget.value)); }} className="agent-thinking-range" />
           </div>
-          <div className="mt-2 grid gap-1" style={{ gridTemplateColumns: `repeat(${props.thinkingLevels.length}, minmax(0, 1fr))` }}>{props.thinkingLevels.map(level => <button key={level} type="button" disabled={busy} aria-label={`思考强度：${agentThinkingLabels[level]}`} aria-pressed={props.thinkingLevel === level} onClick={() => thinking(level)} className={`min-h-8 rounded-lg text-xs disabled:opacity-50 ${props.thinkingLevel === level ? 'bg-indigo-100 font-medium text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}>{agentThinkingLabels[level]}</button>)}</div>
         </div> : <p className="py-2 text-center text-xs text-gray-500 dark:text-gray-400">当前模型不提供可调思考强度</p>}
       </> : <>
         {props.models.length > 8 && <input aria-label="搜索模型" placeholder="搜索模型或服务…" value={query} onChange={event => setQuery(event.target.value)} className="mb-2 h-9 w-full rounded-lg border border-gray-200 bg-transparent px-2 text-xs text-gray-700 dark:border-gray-700 dark:text-gray-200" />}
