@@ -1,9 +1,10 @@
 import './AgentSurface.css';
+import { getLastAgentPageRead, observeAgentPage, readAgentPage, type AgentPageSnapshot } from '../services/agentWorkspace';
 import { getAgentContextUsage } from '../services/agentContextUsage';
 import { AgentProjectImage } from './AgentProjectImage';
 import { extractAgentMedia } from '../services/agentMedia';
 import { prepareAgentAttachment } from '../services/agentAttachments';
-import { agentDraftChangedFields, promptAgentCoordinator } from '../services/promptAgentCoordinator';
+import { promptAgentCoordinator } from '../services/promptAgentCoordinator';
 import { AgentChatDisplayOptions, AgentDisclosure, useAgentDisplayPreferences } from './AgentChatPreferences';
 import { AgentPermissionSelect } from './AgentPermissionSelect';
 import { AgentModelControl } from './AgentModelControl';
@@ -30,7 +31,7 @@ interface PromptAgentPanelProps {
   draft: PromptAgentDraft;
   apiKey: string;
   onRunStart: (snapshot: PromptAgentDraft) => void;
-  onFinalDraft: (draft: PromptAgentDraft) => void;
+  onFinalDraft: (draft: PromptAgentDraft, reviewOnly?: boolean) => void;
   onRequestGeneration: (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>) => Promise<boolean | PromptAgentGenerationResult> | void;
   onUndo: () => void;
   canUndo: boolean;
@@ -126,14 +127,13 @@ const AgentMarkdown: React.FC<{ text: string }> = React.memo(({ text }) => {
   return <>{output}</>;
 });
 
-const AgentUsageDetails: React.FC<{ message: PanelMessage }> = ({ message }) => <details className="min-w-0">
-  <summary aria-label="回答用量" className="cursor-pointer rounded-lg px-2 py-1.5 text-micro hover:bg-gray-100 dark:hover:bg-gray-800">用量</summary>
+const AgentUsageDetails: React.FC<{ message: PanelMessage }> = ({ message }) => <div aria-label="回答用量" className="min-w-0">
   <div className="max-w-full break-words px-2 py-1 text-micro leading-5">
     {message.model}{typeof message.usage?.totalTokens === 'number' ? ` · ${message.usage.totalTokens.toLocaleString()} tokens` : ''}
     {message.stopReason && message.stopReason !== 'stop' ? ` · ${message.stopReason}` : ''}
     {message.visionUsage?.map((item, index) => <div key={index}>历史视觉用量：{item.model} · {item.imageCount} 图{typeof item.usage?.totalTokens === 'number' ? ` · ${item.usage.totalTokens.toLocaleString()} tokens` : ''}</div>)}
   </div>
-</details>;
+</div>;
 
 const AgentMessageList = React.memo(({
   messages,
@@ -172,7 +172,7 @@ const AgentMessageList = React.memo(({
       {message.role === 'agent' ? <AgentMarkdown text={message.text || (running && index === visibleMessages.length - 1 && !message.tools?.length && !message.thinking ? '正在思考…' : '')} /> : message.text}
       {message.tools?.flatMap(tool => extractAgentMedia(tool.result)).filter((image, index, list) => list.findIndex(item => item.path === image.path) === index).slice(0, 4).map(image => <AgentProjectImage key={image.path} image={image} onReady={onMediaReady} />)}
       </div>
-      {Boolean(message.text || message.model || message.usage || message.visionUsage?.length) && <div className="mt-1 flex min-w-0 items-center gap-0.5 text-xs text-gray-400 md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+      {Boolean(message.text || message.model || message.usage || message.visionUsage?.length) && <div className="mt-1 flex min-w-0 items-center gap-0.5 text-xs text-gray-400">
         {!!message.text && <button type="button" onClick={() => onCopy(message)} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title={copiedMessageId === message.id ? '已复制' : '复制'} aria-label={copiedMessageId === message.id ? '已复制' : '复制'}>{copiedMessageId === message.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}</button>}
         {message.role === 'user' && !running && !message.queued && <button type="button" onClick={() => onEdit(message)} aria-label="编辑重发" title="编辑重发" className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"><Pencil className="h-3.5 w-3.5" /></button>}
         {message.role === 'agent' && index === visibleMessages.length - 1 && !running && <button type="button" onClick={onRetry} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title="重新回答；已完成的资料修改不会撤回" aria-label="重新生成"><RotateCcw className="h-3.5 w-3.5" /></button>}
@@ -246,7 +246,17 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const confirmAction = useConfirmDialog();
   const taskCursorRef = useRef({ runId: '', cursor: 0, events: [] as PromptAgentEvent[] });
   const [taskSnapshot, setTaskSnapshot] = useState<PromptAgentTask>({});
-  const [artifactDismissed, setArtifactDismissed] = useState('');
+  const [pageRead, setPageRead] = useState<AgentPageSnapshot | null>(getLastAgentPageRead);
+  useEffect(() => {
+    if (!props.open) return;
+    const update = (event: Event) => setPageRead((event as CustomEvent<AgentPageSnapshot>).detail);
+    const refresh = () => { readAgentPage(); };
+    window.addEventListener('nai-agent-page-read', update);
+    window.addEventListener('nai-workspace-changed', refresh);
+    const stopObserving = observeAgentPage(refresh);
+    refresh();
+    return () => { stopObserving(); window.removeEventListener('nai-agent-page-read', update); window.removeEventListener('nai-workspace-changed', refresh); };
+  }, [props.open]);
   const uiActiveRef = useRef(props.open);
   const currentKeyRef = useRef(props.apiKey);
   currentKeyRef.current = props.apiKey;
@@ -673,9 +683,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       let artistFavorites: string[] = [];
       try { artistFavorites = JSON.parse(localStorage.getItem('nai_fav_artists') || '[]'); } catch { /* ignore damaged browser preference */ }
       await promptAgentCoordinator.run({ apiKey: props.apiKey, sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], draft: props.draft, context: { clientSettings: {
+        currentPage: (() => { const page = readAgentPage(); return { view: page.view, title: page.title, snapshotId: page.snapshotId, capturedAt: page.capturedAt }; })(),
         themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true', safeModeStartup: localStorage.getItem('nai_safe_mode_startup') !== 'false',
         imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey), artistFavorites: Array.isArray(artistFavorites) ? artistFavorites.slice(0, 2000) : [],
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        autoShowGenerated: displayPreferences.autoShowGenerated,
         tagAssistEnabled: props.tagAssistEnabled, splitPromptFields: props.splitPromptFields ?? false,
       } } }, event => {
         if (!uiActiveRef.current) return;
@@ -732,7 +744,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         if (event.type === 'error') throw new Error(event.error);
         if (event.type === 'done') {
           setTaskSnapshot(previous => ({ ...previous, status: event.status || 'completed', finalDraft: event.status === 'aborted' ? null : event.draft }));
-          if (labChanged && event.status !== 'aborted') { props.onFinalDraft(event.draft); setArtifactDismissed(event.runId || ''); }
+          if (labChanged && event.status !== 'aborted') props.onFinalDraft(event.draft, !displayPreferences.autoApplyDraft);
           if (navigationTarget) {
             window.dispatchEvent(new CustomEvent('nai-agent-navigate', { detail: navigationTarget }));
             props.onClose();
@@ -862,10 +874,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     return creativePresets.find(p => p.name === session.presetName)?.id || defaultPresetId;
   };
 
-  const formatUsage = (usage?: PromptAgentUsage) => usage && typeof usage.totalTokens === 'number'
-    ? `${usage.totalTokens.toLocaleString()} tokens`
-    : '';
-
   const copyMessage = async (messageId: string, value: string) => {
     try {
       if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(value);
@@ -915,7 +923,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       role="dialog"
       aria-modal="true"
       aria-label="Agent 控制面板"
-      className="appearance-panel agent-panel pointer-events-auto absolute flex overflow-hidden border-gray-200 bg-gray-50 shadow-2xl transition-[width,height,border-radius] dark:border-gray-800 dark:bg-gray-950"
+      data-agent-surface
+      className="agent-theme appearance-panel agent-panel pointer-events-auto absolute flex overflow-hidden border-gray-200 bg-gray-50 shadow-2xl transition-[width,height,border-radius] dark:border-gray-800 dark:bg-gray-950"
       style={{ '--agent-mobile-height': `${mobileHeight}dvh`, '--agent-width': `${panelWidth}px` } as React.CSSProperties}
     >
     <button type="button" aria-label="调整 Agent 宽度" onPointerDown={startDesktopResize} className="agent-resize-handle-desktop" />
@@ -949,7 +958,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
     <section className="relative flex min-w-0 flex-1 flex-col">
       {runtimeWarning && <p role="status" className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">{runtimeWarning}</p>}
-      {taskSnapshot.finalDraft && agentDraftChangedFields(props.draft, taskSnapshot.finalDraft).length > 0 && taskSnapshot.runId !== artifactDismissed && <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 p-2 text-xs dark:border-gray-800 dark:text-gray-300"><span className="min-w-0 flex-1">上次完成的草稿已保留。</span><button type="button" onClick={() => { if (taskSnapshot.finalDraft) props.onFinalDraft(taskSnapshot.finalDraft); setArtifactDismissed(taskSnapshot.runId || ''); }} className="mobile-touch rounded-lg px-2 text-indigo-600 dark:text-indigo-300">查看与恢复</button><button type="button" onClick={() => setArtifactDismissed(taskSnapshot.runId || '')} className="mobile-touch px-2">暂不应用</button></div>}
       {(taskSnapshot.pending || []).filter(item => !item.approved).map(item => <div key={item.requestId} className="flex flex-wrap items-center gap-2 border-b border-amber-200 p-2 text-xs dark:border-amber-900 dark:text-gray-300"><span className="min-w-0 flex-1">任务等待你确认：{item.operation.action}</span><button type="button" className="mobile-touch px-2 text-indigo-600 dark:text-indigo-300" onClick={() => handleConfirmedAction({ type: 'action', action: item.operation.action === 'request_generation' ? { kind: 'request_generation', patch: { requestId: item.requestId, reason: '接续上次请求' } } : { kind: 'request_project_action', patch: { ...item.operation, requestId: item.requestId, title: '接续项目操作？', consequence: JSON.stringify(item.operation) } }, draft: item.operation.payload.draft as PromptAgentDraft | undefined })}>查看并决定</button></div>)}
       {modelsLoaded && !activeModel && <div className="flex flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200"><span className="min-w-0 flex-1">{models.length ? '这条会话的模型已不可用，请选择已接入的模型。' : '先接入模型服务，再开始创作。可以直接填写模型 ID，无需获取模型列表。'}</span><button type="button" onClick={models.length ? () => setShowModelMenu(true) : openAgentSettings} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-white">{models.length ? '选择模型' : '接入 API'}</button></div>}
       {/* 顶栏与状态栏合流为单行（节省约 36px 空间） */}
@@ -997,21 +1005,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             </div>
           </div>
 
-          {/* 撤销修改：醒目克制地提升到主顶栏 */}
-          {props.canUndo && (
-            <button
-              type="button"
-              onClick={props.onUndo}
-              disabled={running}
-              className="mobile-touch inline-flex h-9 items-center justify-center gap-1 rounded-xl border border-amber-300/80 bg-amber-50 px-2.5 text-xs font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-40 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/70"
-              title="撤销最近一次 Agent 对项目的修改"
-              aria-label="撤销修改"
-            >
-              <RotateCcw className="h-4 w-4 shrink-0" />
-              <span className="hidden sm:inline">撤销修改</span>
-            </button>
-          )}
-
           {/* 新增：“…” 更多菜单（收进：导出会话日志、清空当前对话） */}
           <div ref={moreMenuRef} className="relative flex items-center">
             <button
@@ -1057,7 +1050,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           </div>
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-1 px-3 pb-2 text-micro text-gray-500 dark:text-gray-400">
-          <span>{props.draft.target ? `当前目标：${props.draft.target.name || '未命名作品'} · ${{ 'text-to-image': '文生图', 'image-to-image': '图生图', inpaint: '局部重绘', outpaint: '扩图' }[props.draft.target.mode]}` : '当前目标：项目资料与设置'}</span>
+          <span aria-live="polite">已读取：{pageRead?.title || '页面尚未就绪'}{pageRead?.capturedAt ? ` · ${new Date(pageRead.capturedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
         </div>
       </header>
       {logExportError && <div role="status" className="absolute right-3 top-[calc(3.25rem+env(safe-area-inset-top))] z-40 max-w-[min(28rem,calc(100%-1.5rem))] rounded-lg bg-red-50 px-2 py-1 text-micro font-bold text-red-600 shadow dark:bg-red-950/80 dark:text-red-300">{logExportError}</div>}

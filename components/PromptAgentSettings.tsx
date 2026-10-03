@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AgentChatDisplayOptions } from './AgentChatPreferences';
-import { AgentPermissionSelect } from './AgentPermissionSelect';
+import './AgentSurface.css';
+import { AgentGenerationOptions } from './AgentChatPreferences';
 import { useAgentRuntimeRecheck } from './useAgentRuntimeRecheck';
 import { AgentConnectionForm } from './AgentConnectionForm';
 import { ArrowLeft, Check, Copy, Download, FileUp, Plus, Save, Settings2, Star, Trash2, Upload, X } from 'lucide-react';
@@ -768,9 +768,9 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
 
   return <>
     {view === 'home' && (
-      <div className="mt-3 space-y-4">
+      <div data-agent-surface className="agent-theme mt-3 space-y-4">
       {/* 阶段二：层级 1 - 当前运行模型卡 */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <div className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-meta font-bold uppercase tracking-wider text-indigo-500">当前 Agent 模型</div>
           <div className="flex items-center gap-2">
@@ -790,15 +790,9 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
       {config && agentRuntimeWarning(config) && <div role="status" className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{agentRuntimeWarning(config)}</div>}
       {config?.credentialWarning && <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{config.credentialWarning}</div>}
 
-      <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex flex-wrap items-center justify-between gap-2"><b className="text-sm text-gray-900 dark:text-white">操作权限</b><AgentPermissionSelect /></div>
-        <div className="mt-2 space-y-1 text-xs leading-5 text-gray-500 dark:text-gray-400"><p>只读：查询项目、浏览本地图片，不修改或保存。</p><p>标准：正常操作项目，首次向电脑文件夹保存图片时确认。</p><p>完全访问：按你的要求自动读写图片和创建目标文件夹。</p><p>档位长期记住。生图费用、删除和清空仍单独确认。</p></div>
-        <div className="mt-4 border-t border-gray-100 pt-4 dark:border-gray-800"><AgentChatDisplayOptions /></div>
-      </div>
-
       {/* 层级 2 - 注入预设专属卡片 */}
       {/* 阶段二：层级 3 - 模型服务管理区 */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <div className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex items-center justify-between gap-2">
           <div>
             <b className="block text-sm text-gray-900 dark:text-white">API 连接</b>
@@ -842,6 +836,11 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
             </div>
           )}
         </div>
+      </div>
+      <section aria-label="生图协作" className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+        <h3 className="mb-2 text-sm font-bold text-gray-900 dark:text-white">生图协作</h3>
+        <AgentGenerationOptions />
+      </section>
       {(() => {
         const effectiveActiveId = activeCreativePresetId || defaultPresetId(creativePresets);
         const activePreset = creativePresets.find(p => p.id === effectiveActiveId);
@@ -849,7 +848,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         const customCount = creativePresets.filter(p => !p.isBuiltin).length;
         const builtinCount = creativePresets.length - customCount;
         return (
-          <div className="rounded-2xl border border-violet-200 bg-violet-50/40 p-4 shadow-sm dark:border-violet-900/60 dark:bg-violet-950/20">
+          <div className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
@@ -881,7 +880,6 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         );
       })()}
 
-      </div>
       <p className="text-meta leading-5 text-gray-500 dark:text-gray-400">这里设置新对话的默认模型；已有对话可在发送键旁切换。图片观察使用当前模型，展示已有图片无需识图能力。Agent 可按权限读取电脑图片和保存结果，也可搜索公网。Key 加密保存在电脑，不进入浏览器存储。</p>
     </div>
     )}
@@ -892,7 +890,8 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         role="dialog"
         aria-modal="true"
         aria-label={view === 'model' ? '选择 Agent 模型' : view === 'custom' ? (customDraft.id ? '编辑 API 连接' : '连接 API') : '注入预设管理'}
-        className="agent-settings-subview absolute inset-0 z-[1100] flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950"
+        data-agent-surface
+        className="agent-theme appearance-surface agent-settings-subview absolute inset-0 z-[1100] flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950"
       >
       <header className="workspace-command-bar flex flex-none items-center gap-3 border-b border-gray-200 bg-white px-3 pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900 md:px-5">
         <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="返回"><ArrowLeft className="h-5 w-5" /></button>

@@ -138,6 +138,20 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect((screen.getByRole('textbox', { name: '任务要求' }) as HTMLTextAreaElement).disabled).toBe(true);
     expect(run).not.toHaveBeenCalled(); window.removeEventListener('nai-open-global-settings', open);
   });
+  it('页面读取栏跟随当前页面，移除恢复和撤销，回答用量常驻展开', async () => {
+    stubServices();
+    const workspace = document.createElement('main'); workspace.dataset.agentView = 'history'; document.body.append(workspace);
+    try {
+      vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ role: 'agent', id: 'a', text: '收到', model: 'model', usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12 } }]);
+      renderPanel(true);
+      expect(await screen.findByText(/已读取：生成历史/)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: '撤销修改' })).toBeNull();
+      expect(screen.queryByText('上次完成的草稿已保留。')).toBeNull();
+      expect((await screen.findByLabelText('回答用量')).closest('details')).toBeNull();
+      workspace.dataset.agentView = 'characters'; fireEvent(window, new Event('nai-workspace-changed'));
+      expect(screen.getByText(/已读取：角色库/)).toBeTruthy();
+    } finally { workspace.remove(); }
+  });
   it.each([true, false])('实际面板生成回调批准 %s 时发送正确确认与完成顺序', async accepted => {
     stubServices(); const controls: Array<{ action: string; accepted?: boolean; success?: boolean }> = [];
     vi.spyOn(promptAgentService, 'control').mockImplementation(async (_session, action, _message, payload) => { controls.push({ action, ...payload }); });
@@ -151,6 +165,19 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     await waitFor(() => expect(controls.length).toBe(accepted ? 2 : 1));
     expect(controls.map(value => value.action)).toEqual(accepted ? ['confirm', 'finalize'] : ['confirm']);
     expect(controls[0].accepted).toBe(accepted); if (accepted) expect(controls[1].success).toBe(true);
+  });
+  it('关闭自动应用时，完成后的修改进入审阅且图片展示偏好传到后端', async () => {
+    stubServices(); localStorage.setItem('nai_agent_display', JSON.stringify({ autoApplyDraft: false, autoShowGenerated: false }));
+    const apply = vi.fn();
+    const run = vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, onEvent) => {
+      onEvent({ type: 'action', action: { kind: 'update_prompts', patch: { basePrompt: 'new prompt' } } });
+      onEvent({ type: 'done', draft: { ...input.draft, basePrompt: 'new prompt' }, message: '已准备', provider: 'deepseek', model: 'deepseek-chat' });
+    });
+    renderPanel(false, { onFinalDraft: apply });
+    const box = screen.getByRole('textbox', { name: '任务要求' }); await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(box, { target: { value: '调整提示词' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(apply).toHaveBeenCalledWith(expect.objectContaining({ basePrompt: 'new prompt' }), true));
+    expect(run.mock.calls[0][0].context.clientSettings?.autoShowGenerated).toBe(false);
   });
   it('附件拒绝原因可见，格式错误不会消失在后台', async () => {
     stubServices({ imageInput: true }); renderPanel();

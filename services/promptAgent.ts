@@ -2,6 +2,7 @@ import { PromptAgentAction, PromptAgentDraft } from '../types';
 import { parseErrorResponse } from './api';
 import { isAgentImagePath } from './agentMedia';
 import { agentConnectionEndpoint } from './agentConnection.mjs';
+import type { AgentPageOperation } from './agentWorkspace';
 
 
 const agentAuthHeaders = (): Record<string, string> => {
@@ -204,6 +205,7 @@ export interface PromptAgentHistoryMessage {
 }
 
 export type PromptAgentEvent = ({ runId?: string; seq?: number } & (
+  | { type: 'ui_request'; requestId: string; operation: AgentPageOperation }
   | { type: 'response_start'; id: string }
   | { type: 'text_delta'; delta: string }
   | { type: 'thinking_delta'; delta: string }
@@ -457,7 +459,7 @@ export const promptAgentService = {
     const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
     if (!response.ok) return readError(response);
   },
-  control: async (sessionId: string, action: 'steer' | 'followUp' | 'abort' | 'clear' | 'confirm' | 'finalize', message?: string, payload?: Record<string, unknown>) => {
+  control: async (sessionId: string, action: 'steer' | 'followUp' | 'abort' | 'clear' | 'confirm' | 'finalize' | 'ui_result', message?: string, payload?: Record<string, unknown>) => {
     const response = await fetch('/api/prompt-agent/control', { method: 'POST', headers: { 'Content-Type': 'application/json', ...agentAuthHeaders() }, body: JSON.stringify({ sessionId, action, message, ...(payload || {}) }) });
     if (!response.ok) return readError(response);
   },

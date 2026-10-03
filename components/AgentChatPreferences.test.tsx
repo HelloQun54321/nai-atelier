@@ -2,12 +2,21 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { AgentChatDisplayOptions, AgentDisclosure, useAgentDisplayPreferences } from './AgentChatPreferences';
+import { AgentChatDisplayOptions, AgentGenerationOptions, AgentDisclosure, useAgentDisplayPreferences } from './AgentChatPreferences';
 import { AgentPermissionSelect } from './AgentPermissionSelect';
 import { getAgentDisplayPreferences } from '../services/agentDisplayPreferences';
 import { promptAgentService } from '../services/promptAgent';
 
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
+it('生图协作偏好独立保存，不改变思考与工具展开状态', () => {
+  render(<AgentGenerationOptions />);
+  const toggle = screen.getByRole('switch', { name: '自动应用提示词与参数' });
+  expect(toggle.className).toContain('mobile-touch'); expect(toggle.className).toContain('h-11 w-11');
+  expect(toggle.firstElementChild?.className).toContain('h-5 w-9');
+  fireEvent.click(screen.getByRole('switch', { name: '自动应用提示词与参数' }));
+  fireEvent.click(screen.getByRole('switch', { name: '生成后在聊天展示图片' }));
+  expect(getAgentDisplayPreferences()).toEqual({ thinkingExpanded: false, toolsExpanded: false, autoApplyDraft: false, autoShowGenerated: false });
+});
 const Transcript = ({ text = '合成思考' }) => {
   const preferences = useAgentDisplayPreferences();
   return <><AgentChatDisplayOptions /><AgentDisclosure title="思考过程" label="思考过程" defaultExpanded={preferences.thinkingExpanded}>{text}</AgentDisclosure><AgentDisclosure title="工具活动" label="工具活动" defaultExpanded={preferences.toolsExpanded}>合成工具回执</AgentDisclosure></>;
@@ -21,7 +30,7 @@ it('默认折叠，思考和工具分别设置且保存，修改偏好同步更�
   await waitFor(() => expect(thinking().open).toBe(true)); expect(tools().open).toBe(false);
   fireEvent.click(screen.getByRole('switch', { name: '默认展开工具' }));
   await waitFor(() => expect(tools().open).toBe(true));
-  expect(getAgentDisplayPreferences()).toEqual({ thinkingExpanded: true, toolsExpanded: true });
+  expect(getAgentDisplayPreferences()).toEqual({ thinkingExpanded: true, toolsExpanded: true, autoApplyDraft: true, autoShowGenerated: true });
   view.unmount(); render(<Transcript />);
   expect(thinking().open).toBe(true); expect(tools().open).toBe(true);
 });
@@ -33,7 +42,7 @@ it('手动展开不被后续流式内容刷新重置', async () => {
 });
 it('损坏的显示偏好退回折叠，保持开关可用', () => {
   localStorage.setItem('nai_agent_display', '{broken');
-  expect(getAgentDisplayPreferences()).toEqual({ thinkingExpanded: false, toolsExpanded: false });
+  expect(getAgentDisplayPreferences()).toEqual({ thinkingExpanded: false, toolsExpanded: false, autoApplyDraft: true, autoShowGenerated: true });
 });
 it('权限读取后切档并保存，保存失败保留旧档位，任务期间禁用选择', async () => {
   vi.spyOn(promptAgentService, 'getConfig').mockResolvedValue({ permissionMode: 'standard' } as Awaited<ReturnType<typeof promptAgentService.getConfig>>);

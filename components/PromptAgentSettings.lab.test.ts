@@ -69,6 +69,14 @@ afterEach(() => {
 });
 
 describe('CreativeLab UI', () => {
+  it('API 下方提供实际生图协作设置，权限和过程显示不重复放在这里', async () => {
+    stubConfig(); render(React.createElement(SettingsHarness));
+    const api = (await screen.findByText('API 连接')).closest('.appearance-panel')!;
+    const generation = screen.getByRole('region', { name: '生图协作' });
+    expect(api.nextElementSibling).toBe(generation);
+    expect(screen.queryByText('操作权限')).toBeNull(); expect(screen.queryByText('过程显示')).toBeNull();
+    expect(screen.getByRole('switch', { name: '生成后在聊天展示图片' })).toBeTruthy();
+  });
   it('渲染 9 个固定槽位标签（含 textarea）并默认选中 active 预设', async () => {
     await openLab();
     // 9 个 target 的 section 标签都应出现（每个 label 可能同时出现于 <b> 与 <label>）

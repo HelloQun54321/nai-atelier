@@ -1,5 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { AgentUiBridge } from './agent-ui-bridge.mjs';
+
+test('页面 RPC 绑定会话和单次回执，跨会话与重复回执被拒绝', async () => {
+  const bridge = new AgentUiBridge(); let request;
+  const pending = bridge.request('a', { action: 'read' }, event => { request = event; });
+  const result = { title: '生成历史', snapshotId: 'page-1', controls: [] };
+  assert.throws(() => bridge.reply('b', { requestId: request.requestId, result }), /不属于/);
+  assert.throws(() => bridge.reply('a', { requestId: request.requestId, result: {} }), /格式/);
+  bridge.reply('a', { requestId: request.requestId, result }); assert.deepEqual(await pending, result);
+  assert.throws(() => bridge.reply('a', { requestId: request.requestId, result }), /过期/); assert.equal(bridge.pending.size, 0);
+});
+test('浏览器未回应、任务停止及发送失败都会释放页面等待，不回退到旧草稿', async () => {
+  const bridge = new AgentUiBridge(), abort = new AbortController();
+  await assert.rejects(bridge.request('a', { action: 'read' }, () => {}, undefined, 5), /不能把旧实验室/);
+  const pending = bridge.request('a', { action: 'read' }, () => {}, abort.signal); abort.abort(); await assert.rejects(pending, /停止/);
+  await assert.rejects(bridge.request('a', { action: 'read' }, () => { throw new Error('断开'); }), /断开/);
+  assert.equal(bridge.pending.size, 0);
+});
 import { agentOutputLimit, agentTokenUsage, boundAgentToolResult, compactAuditEntries, compactAgentValue, inferAgentToolGroups, isProjectImagePath, localTimeInfo, selectRuntimeTools } from './agent-runtime.mjs';
 
 test('长资料、编码与成组结果有界，明确省略且不修改源资料', () => {

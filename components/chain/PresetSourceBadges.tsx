@@ -43,7 +43,7 @@ interface PromptAgentOverlayControllerProps {
     draft: PromptAgentDraft;
     apiKey: string;
     onRunStart: (snapshot: PromptAgentDraft) => void;
-    onFinalDraft: (draft: PromptAgentDraft) => void;
+    onFinalDraft: (draft: PromptAgentDraft, reviewOnly?: boolean) => void;
     onRequestGeneration: (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>) => Promise<boolean | PromptAgentGenerationResult>;
     canUndo: boolean;
     onUndo: () => void;

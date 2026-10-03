@@ -40,6 +40,7 @@ const App = () => {
   const [view, setView] = useState<ViewState>('list');
   const viewSessionRef = useRef({ view });
   if (viewSessionRef.current.view !== view) viewSessionRef.current = { view };
+  useEffect(() => { window.dispatchEvent(new Event('nai-workspace-changed')); }, [view]);
   const [mountedViews, setMountedViews] = useState<KeepAliveView[]>(['list']);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [chains, setChains] = useState<PromptChain[]>([]);
@@ -122,11 +123,18 @@ const App = () => {
         void handleNavigateRef.current(detail.view, detail.id, { externalImport: detail.externalImport === true });
       }
     };
+    const navigatePage = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (!detail || !['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'inspiration', 'history', 'playground'].includes(detail.view)) { detail?.reject?.(new Error('页面不存在')); return; }
+      void handleNavigateRef.current(detail.view).then(detail.resolve, detail.reject);
+    };
     window.addEventListener('nai-agent-ui-preferences', applyPreferences);
     window.addEventListener('nai-agent-navigate', navigate);
+    window.addEventListener('nai-agent-page-navigate', navigatePage);
     return () => {
       window.removeEventListener('nai-agent-ui-preferences', applyPreferences);
       window.removeEventListener('nai-agent-navigate', navigate);
+      window.removeEventListener('nai-agent-page-navigate', navigatePage);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -717,6 +725,7 @@ const App = () => {
 
   return (
     <div
+      data-agent-view={view}
       className={`agent-stage flex flex-col h-screen ${safeMode ? 'safe-mode' : ''} ${safeMode && safeModeHideTitles ? 'safe-mode-hide-titles' : ''}`}
       onClickCapture={handleSafeModeClickCapture}
     >

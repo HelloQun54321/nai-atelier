@@ -103,6 +103,18 @@ describe('全局外观覆盖审计', () => {
     expect(panel.match(/className="agent-composer-action /g)?.length).toBe(2);
   });
 
+  it('Agent 表单、工具栏和滑块跟随面板材质、边框与主色', () => {
+    const surface = parse(readFileSync(resolve('components/AgentSurface.css'), 'utf8'));
+    const rules: Record<string, Record<string, string>> = {};
+    surface.walkRules(rule => { rule.walkDecls(decl => { (rules[rule.selector] ||= {})[decl.prop] = decl.value; }); });
+    const fields = rules[".agent-theme :where(input:not([type='checkbox']):not([type='radio']):not([type='range']), textarea, select)"];
+    expect(fields['background-color']).toContain('var(--nai-panel-surface)'); expect(fields['background-color']).toContain('var(--nai-accent)');
+    expect(fields['border-color']).toBe('var(--nai-panel-border)');
+    expect(rules['.agent-theme :where(header, .workspace-command-bar)']['background-color']).toBe('var(--nai-toolbar-surface)');
+    const model = readFileSync(resolve('components/AgentModelControl.css'), 'utf8');
+    expect(model).toMatch(/\.agent-thinking-thumb\s*\{[^}]*background:\s*var\(--nai-panel-surface(?:,\s*white)?\)/);
+  });
+
   it('Agent 手机圆角、拖拽强调色与手机详情栏使用主题变量，全屏边界保留直角', () => {
     expect(declarations('.agent-panel')['border-radius']).toBe('0'); // 桌面贴边，最后规则保持直角。
     expect(css).toMatch(/\.agent-panel\s*\{[^}]*border-radius: var\(--radius-2xl\) var\(--radius-2xl\) 0 0;/);

@@ -1,3 +1,9 @@
 /* 操作形状保持稳定；密度与字号仍由全局主题变量决定。 */
 .agent-composer-action { --agent-action-size: calc(var(--spacing, .25rem) * 9); width: var(--agent-action-size); height: var(--agent-action-size); min-width: var(--agent-action-size); min-height: var(--agent-action-size); flex: 0 0 var(--agent-action-size); aspect-ratio: 1; padding: 0; border-radius: 50%; }
 @media (max-width: 767px) { .agent-composer-action { --agent-action-size: max(44px, 2.75rem); } }
+
+/* Agent 与工坊共用材质、边框和强调色；表单保持可辨识的中性底色。 */
+.agent-theme :where(input:not([type='checkbox']):not([type='radio']):not([type='range']), textarea, select) { background-color: color-mix(in srgb, var(--nai-panel-surface) 92%, var(--nai-accent) 8%); border-color: var(--nai-panel-border); color: var(--color-gray-800); }
+.dark .agent-theme :where(input:not([type='checkbox']):not([type='radio']):not([type='range']), textarea, select) { color: var(--color-gray-100); }
+.agent-theme :where(header, .workspace-command-bar) { background-color: var(--nai-toolbar-surface); border-color: var(--nai-panel-border); }
+.agent-theme :where(input, textarea, select):focus-visible { outline-color: var(--nai-accent); }

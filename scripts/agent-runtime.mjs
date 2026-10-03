@@ -84,7 +84,7 @@ export const inferAgentToolGroups = (request = '', previous = '') => {
   return [...groups];
 };
 export const selectRuntimeTools = (tools, groups) => {
-  const names = new Set(['get_agent_capabilities', 'get_local_time', 'enable_tool_group', 'get_lab_state', 'show_project_image']);
+  const names = new Set(['get_agent_capabilities', 'get_local_time', 'read_current_page', 'operate_current_page', 'enable_tool_group', 'get_lab_state', 'show_project_image']);
   for (const group of groups) for (const name of AGENT_TOOL_GROUPS[group] || []) names.add(name);
   return tools.filter(tool => names.has(tool.name));
 };

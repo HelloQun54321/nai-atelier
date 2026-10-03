@@ -638,6 +638,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
         role="dialog"
         aria-modal="true"
         aria-label="全局设置"
+        data-agent-private="true"
+        data-agent-page-title={activeSectionMeta?.label || '全局设置'}
         className="settings-dialog ui-modal-enter operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
         onMouseDown={event => event.stopPropagation()}
       >

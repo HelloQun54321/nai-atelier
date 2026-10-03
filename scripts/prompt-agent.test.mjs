@@ -58,6 +58,31 @@ test('工具历史按实际回执展示失败和中断', () => isolated(async se
 }));
 const customInput = (id = 'custom-synthetic-a') => ({ id, name: 'synthetic', baseUrl: 'http://127.0.0.1:1234/v1', models: [{ id: 'a' }, { id: 'b' }] });
 
+test('实时页面工具获取当前回执，不把旧实验室目标当作用户当前页', () => isolated(async service => {
+  const operations = [];
+  const tools = service.createTools({ target: { name: '旧实验室' }, params: {} }, {}, () => {}, { requestUI: async operation => { operations.push(operation); return { title: '生成历史', snapshotId: 'page-2', controls: [] }; } });
+  const read = JSON.parse((await tools.find(item => item.name === 'read_current_page').execute('t', {})).content[0].text);
+  assert.equal(read.title, '生成历史'); assert.equal(JSON.stringify(read).includes('旧实验室'), false);
+  await tools.find(item => item.name === 'operate_current_page').execute('t', { action: 'navigate', view: 'characters' });
+  assert.deepEqual(operations, [{ action: 'read' }, { action: 'navigate', view: 'characters' }]);
+  const offline = service.createTools({ params: {} }, {}, () => {});
+  await assert.rejects(offline.find(item => item.name === 'read_current_page').execute('t', {}), /不可用/);
+}));
+
+test('生成回执按真实历史 ID 自动展示，关闭选项或历史未保存不猜图片', () => isolated(async service => {
+  for (const [show, historySaved, expected] of [[true, true, 1], [false, true, 0], [true, false, 0]]) {
+    service.activeAgents.set('s', { agent: {}, emit() {} });
+    const tools = service.createTools({ params: {} }, { clientSettings: { autoShowGenerated: show } }, event => {
+      const payload = { requestId: event.action.patch.requestId };
+      service.controlSession('s', 'confirm', '', { ...payload, accepted: true });
+      service.controlSession('s', 'finalize', '', { ...payload, success: true, result: { historySaved, historyId: 'exact-generated-id' } });
+    }, { agentSessionId: 's' });
+    const receipt = JSON.parse((await tools.find(item => item.name === 'request_generation').execute('t', {})).content[0].text);
+    assert.equal(receipt.displayImages?.length || 0, expected);
+    if (expected) assert.equal(receipt.displayImages[0].path, '/api/local-history/exact-generated-id/image');
+  }
+}));
+
 test('官方 DeepSeek 元数据贯通图片、真实思考档位、窗口与输出；声明优先于目录', () => {
   const raw = { id: 'deepseek-flash', name: 'DeepSeek-V4.1-Flash', context_window: 1048576, max_output_tokens: 393216, input_modalities: ['text', 'image'], output_modalities: ['text'], effort: { supported_levels: ['low', 'high', 'max'], default_level: 'high' }, capabilities: { tools: true } };
   const model = detectModelCapabilities(raw);

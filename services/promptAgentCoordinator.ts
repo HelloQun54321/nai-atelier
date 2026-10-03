@@ -1,5 +1,6 @@
 import { promptAgentService, type PromptAgentEvent } from './promptAgent';
 import type { PromptAgentDraft } from '../types';
+import { operateAgentPage } from './agentWorkspace';
 
 type RunInput = Parameters<typeof promptAgentService.run>[0];
 const active = new Map<string, Promise<void>>();
@@ -10,7 +11,14 @@ export const promptAgentCoordinator = {
   running: (sessionId: string) => active.has(sessionId),
   run(input: RunInput, onEvent: (event: PromptAgentEvent) => void) {
     if (active.has(input.sessionId)) return Promise.reject(new Error('这个会话已有任务在执行'));
-    const task = promptAgentService.run(input, onEvent).finally(() => { active.delete(input.sessionId); });
+    const handled = new Set<string>();
+    const task = promptAgentService.run(input, event => {
+      if (event.type === 'ui_request') {
+        if (handled.has(event.requestId)) return;
+        handled.add(event.requestId);
+        void operateAgentPage(event.operation).then(result => promptAgentService.control(input.sessionId, 'ui_result', '', { requestId: event.requestId, result }), error => promptAgentService.control(input.sessionId, 'ui_result', '', { requestId: event.requestId, error: error instanceof Error ? error.message : '页面操作失败' })).catch(() => { /* 服务已停止时不重放操作。 */ });
+      } else onEvent(event);
+    }).finally(() => { active.delete(input.sessionId); });
     active.set(input.sessionId, task);
     return task;
   },

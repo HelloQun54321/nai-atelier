@@ -2024,7 +2024,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 draft={currentAgentDraft()}
                 apiKey={apiKey}
                 onRunStart={snapshot => { agentRunRevisionRef.current = editorRevisionRef.current; setAgentUndoSnapshot(snapshot); }}
-                onFinalDraft={draft => {
+                onFinalDraft={(draft, reviewOnly) => {
+                    if (reviewOnly) { setAgentProposal(draft); return; }
                     if (draft.target && (draft.target.chainId !== chain.id || draft.target.mode !== activeGenerationMode)) { notify('草稿属于其他作品或模式，请回到原目标后恢复', 'error'); return; }
                     if (draft.target ? draft.target.fingerprint !== currentAgentDraft().target?.fingerprint : editorRevisionRef.current !== agentRunRevisionRef.current) { setAgentProposal(draft); return; }
                     setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft);

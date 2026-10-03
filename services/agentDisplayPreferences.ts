@@ -1,6 +1,6 @@
-export interface AgentDisplayPreferences { thinkingExpanded: boolean; toolsExpanded: boolean }
+export interface AgentDisplayPreferences { thinkingExpanded: boolean; toolsExpanded: boolean; autoApplyDraft: boolean; autoShowGenerated: boolean }
 const key = 'nai_agent_display';
-const normalize = (value: Partial<AgentDisplayPreferences> | null): AgentDisplayPreferences => ({ thinkingExpanded: value?.thinkingExpanded === true, toolsExpanded: value?.toolsExpanded === true });
+const normalize = (value: Partial<AgentDisplayPreferences> | null): AgentDisplayPreferences => ({ thinkingExpanded: value?.thinkingExpanded === true, toolsExpanded: value?.toolsExpanded === true, autoApplyDraft: value?.autoApplyDraft !== false, autoShowGenerated: value?.autoShowGenerated !== false });
 export const getAgentDisplayPreferences = (): AgentDisplayPreferences => {
   try { return normalize(JSON.parse(localStorage.getItem(key) || '{}')); } catch { return normalize(null); }
 };

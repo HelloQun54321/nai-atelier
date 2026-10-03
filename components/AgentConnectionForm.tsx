@@ -32,7 +32,7 @@ export const AgentConnectionForm: React.FC<{
   const ready = Boolean(value.baseUrl.trim() && value.models.some(model => model.id.trim()));
   const matched = discovered.filter(model => `${model.id} ${model.name || ''}`.toLowerCase().includes(search.toLowerCase()));
   return <div className="min-h-0 flex-1 overflow-y-auto py-3">
-    <div className="appearance-panel mx-auto max-w-xl rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 md:p-5">
+    <div className="agent-theme appearance-panel mx-auto max-w-xl rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 md:p-5">
       <fieldset disabled={busy} className="space-y-4">
         <label className="block text-sm text-gray-700 dark:text-gray-200">API 地址<input autoFocus value={value.baseUrl} onChange={event => onChange({ ...value, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" className={`mt-1 font-mono ${inputStyle}`} /></label>
         <label className="block text-sm text-gray-700 dark:text-gray-200">API Key<span className="mt-1 flex gap-2"><input value={value.apiKey || ''} type={showKey ? 'text' : 'password'} onChange={event => onChange({ ...value, apiKey: event.target.value })} placeholder={value.id ? '留空保留已保存的 Key' : '填写 Key，本机无鉴权服务可留空'} autoComplete="new-password" className={`min-w-0 flex-1 font-mono ${inputStyle}`} /><button type="button" aria-label={showKey ? '隐藏 API Key' : '显示 API Key'} onClick={() => setShowKey(!showKey)} className="mobile-touch shrink-0 rounded-xl px-3 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800">{showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></span></label>
