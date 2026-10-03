@@ -221,16 +221,32 @@ export const resolveNovelAiModelFamily = modelId => {
   return 'unknown';
 };
 
+// 创作策略是项目偏好，与官方模型是否支持自然语言分别表达。
+const getPromptWritingStrategy = family => ({
+  source: '项目创作策略；不等同于模型能力限制',
+  mode: family === 'v5' ? 'mixed' : 'tags',
+  positive: family === 'v5'
+    ? 'Tag 与自然语言混合。画师、媒介、画风、可靠角色身份及简单视觉概念优先保留准确 Tag；复杂动作、空间关系、互动和场景细节按需要用简洁具体的自然语言。两者比例随内容决定，不强制全句子，不把整段自然语言拆成碎 Tag，也不重复描述同一概念。'
+    : family === 'unknown'
+      ? '模型代际未知，保守使用已验证的英文 Tag，以逗号分隔；先查实际官方能力，不凭名称套用 V5 自然语言策略。'
+      : '默认使用准确的英文 Danbooru/NovelAI Tag，以逗号分隔；复杂要求先查合适 Tag，不默认改成长篇自然语言。用户明确指定写法时遵循要求；不能据此声称 V4/V4.5 不支持自然语言。',
+  language: '生图提示词默认用英文 Tag／英文自然语言，用户指定产物语言时遵循要求；交流、思考和进度说明使用中文。',
+  formatRules: 'Tag 顺序、数量与权重模板仅用于实际 Tag 部分，不能强制套在 V5 自然语言上；两种写法保持同一字段分工，角色专属内容仍进入角色槽。',
+  negative: '负面提示词优先使用简洁且针对具体问题的 Tag；不把正向自然语言机械搬进负面词，不排斥画面中需要保留的内容。',
+  preservation: '切换生成模型只更新当前编写策略，不自动重写已有提示词；局部修改保留未要求修改的画风、角色、模块及原有写法。',
+});
+
 export const getNovelAiModelProfile = modelId => {
   const id = String(modelId || 'nai-diffusion-4-5-full').trim() || 'nai-diffusion-4-5-full';
   const family = resolveNovelAiModelFamily(id);
+  const promptStrategy = getPromptWritingStrategy(family);
   if (family === 'v5') return {
     id, family, label: /curated/.test(id) ? 'V5 Curated' : 'V5 Full',
     officialPrompting: 'Tag 与自然语言均完整支持；官方语言为英语、日语，中文可用但效果可能波动。',
     officialPromptCapacity: '长于 V4.5；官方发布公告未给出精确 Token 上限。',
     officialCharacterCapability: '高于 V4.5，官方测试最高展示 22 个角色；不是稳定保证。',
     officialPositioning: '画布自由定位，服从性比 V4.5 更强。',
-    project: { maxCharacterPrompts: 32, supportsVibes: false, supportsPreciseReference: false, supportsAlphaTransparency: true, coordinateRange: '0..1' },
+    project: { promptStrategy, maxCharacterPrompts: 32, supportsVibes: false, supportsPreciseReference: false, supportsAlphaTransparency: true, coordinateRange: '0..1' },
   };
   if (family === 'v4.5') return {
     id, family, label: /curated/.test(id) ? 'V4.5 Curated' : 'V4.5 Full',
@@ -238,7 +254,7 @@ export const getNovelAiModelProfile = modelId => {
     officialPromptCapacity: '基础提示词与全部角色提示词合计约 512 T5 Token。',
     officialCharacterCapability: '最多六个独立角色提示词。',
     officialPositioning: '官方界面为 5×5 粗略位置提示，需与顺序和文字描述一致。',
-    project: { maxCharacterPrompts: 6, supportsVibes: true, supportsPreciseReference: true, supportsAlphaTransparency: false, coordinateRange: '0..1' },
+    project: { promptStrategy, maxCharacterPrompts: 6, supportsVibes: true, supportsPreciseReference: true, supportsAlphaTransparency: false, coordinateRange: '0..1' },
   };
   if (family === 'v4') return {
     id, family, label: /curated/.test(id) ? 'V4 Curated' : 'V4 Full',
@@ -246,7 +262,7 @@ export const getNovelAiModelProfile = modelId => {
     officialPromptCapacity: '基础提示词与全部角色提示词合计约 512 T5 Token。',
     officialCharacterCapability: '最多六个独立角色提示词。',
     officialPositioning: '5×5 粗略位置提示。',
-    project: { maxCharacterPrompts: 6, supportsVibes: true, supportsPreciseReference: false, supportsAlphaTransparency: false, coordinateRange: '0..1' },
+    project: { promptStrategy, maxCharacterPrompts: 6, supportsVibes: true, supportsPreciseReference: false, supportsAlphaTransparency: false, coordinateRange: '0..1' },
   };
   return {
     id, family, label: id,
@@ -254,7 +270,7 @@ export const getNovelAiModelProfile = modelId => {
     officialPromptCapacity: '未知，不套用其他代际的 Token 上限。',
     officialCharacterCapability: '未知，按项目保守上限处理。',
     officialPositioning: '未知，位置只视为粗略提示。',
-    project: { maxCharacterPrompts: 6, supportsVibes: false, supportsPreciseReference: false, supportsAlphaTransparency: false, coordinateRange: '0..1' },
+    project: { promptStrategy, maxCharacterPrompts: 6, supportsVibes: false, supportsPreciseReference: false, supportsAlphaTransparency: false, coordinateRange: '0..1' },
   };
 };
 

@@ -201,6 +201,19 @@ test('prompt agent official knowledge is model-aware and release-first', () => {
   assert.equal(readNovelAiOfficialKnowledge('prompt-emphasis').sourceUrl, 'https://docs.novelai.net/en/image/strengthening-weakening/');
 });
 
+test('prompt authoring distinguishes V5 mixed writing from older Tag defaults without changing official capabilities', () => {
+  for (const model of ['nai-diffusion-5-full', 'nai-diffusion-5-curated', 'nai-diffusion-4-5-full', 'nai-diffusion-4-5-curated', 'nai-diffusion-4-full', 'nai-diffusion-4-curated-preview', 'nai-diffusion-3', 'nai-diffusion-6-unknown']) {
+    const profile = getNovelAiModelProfile(model), strategy = profile.project.promptStrategy;
+    assert.equal(strategy.mode, profile.family === 'v5' ? 'mixed' : 'tags');
+    assert.match(strategy.source, /项目创作策略/);
+    assert.match(strategy.preservation, /不自动重写已有提示词/);
+    assert.match(strategy.negative, /不把正向自然语言机械搬进负面词/);
+    if (profile.family === 'v5') { assert.match(strategy.positive, /不强制全句子/); assert.match(strategy.formatRules, /不能强制套在 V5 自然语言上/); }
+    if (['v4', 'v4.5'].includes(profile.family)) { assert.match(strategy.positive, /默认使用准确的英文/); assert.match(profile.officialPrompting, /支持英文自然语言/); }
+    if (profile.family === 'unknown') assert.match(strategy.positive, /代际未知/);
+  }
+});
+
 test('prompt agent exposes official knowledge and current laboratory interface context', async () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
   const draft = {

@@ -23,7 +23,7 @@ import { normalizeTransparentWeight, TRANSPARENT_WEIGHT_MIN, TRANSPARENT_WEIGHT_
 import { AGENT_THINKING_LEVELS, createAgentThinkingMap, normalizeAgentThinkingLevels, normalizeAgentThinkingMap } from '../services/agentThinking.mjs';
 
 const CONFIG_FILE = 'local-data/prompt-agent.json';
-const runtimeSourceFiles = ['prompt-agent.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs', '../PROJECT_AGENT.md'];
+const runtimeSourceFiles = ['prompt-agent.mjs', 'novelai-agent-knowledge.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs', '../PROJECT_AGENT.md'];
 // 内置助手的独立规则在启动时读取，保持会话缓存前缀稳定；更新文件后提示重启。
 const PROJECT_AGENT_INSTRUCTIONS = readFileSync(new URL('../PROJECT_AGENT.md', import.meta.url), 'utf8').trim();
 const sourceSignature = () => createHash('sha256').update(runtimeSourceFiles.map(file => readFileSync(new URL(file, import.meta.url))).join('\n')).digest('hex');
@@ -80,7 +80,7 @@ const shorthandHash = (value, length = 12) => createHash('sha256').update(String
 // Bump this whenever the built-in Agent instruction set changes. The UI exposes
 // only this version and a hash, never the instruction text itself, so a running
 // local backend can be verified without relying on a behavioral probe.
-const PROMPT_AGENT_POLICY_VERSION = '2026-10-04.2';
+const PROMPT_AGENT_POLICY_VERSION = '2026-10-04.3';
 let proxyRunCount = 0;
 let previousDispatcher = null;
 let sharedProxyDispatcher = null;
@@ -686,7 +686,7 @@ const validatePromptDraft = draft => {
 const baseSystemPrompt = `你是 NAI Atelier 的项目业务 Agent。你的职责不是只给建议，而是读取项目中的真实数据并使用工具完成操作。
 
 规则：
-1. NovelAI 提示词默认优先使用英文 Danbooru/NovelAI Tag，以逗号分隔；给用户的解释使用中文。V5 同时完整支持自然语言，用户明确要求自然语言或非英语提示时，应先读取当前模型的官方知识再决定写法，不得把 V4.5 的限制套到 V5。
+1. 按当前实际 NovelAI 生图模型编写提示词，不按聊天模型判断：V5 Full/Curated 使用 Tag 与自然语言混合，简单概念与可靠身份/画风保留 Tag，复杂动作、关系、空间和场景细节可用具体自然语言，不强制全句子；V4/V4.5 默认使用逗号分隔的英文 Tag。具体策略以实时上下文或 get_lab_state 的 modelProfile.project.promptStrategy 为准。给用户的解释与思考使用中文，生图提示词产物按策略及用户要求编写；不能把项目默认写法冒充官方能力限制。
 2. 先理解用户意图，必要时读取历史原图和元数据、搜索 Tag、风格串、角色、灵感、AITag、Vibe 或角色参考图，再调用修改工具。项目里已有的数据绝不能要求用户重新描述或手工复制。
 3. 保留用户没有要求修改的内容。修改提示词或参数前先读取实验室当前模型，并通过 search_novelai_docs 查找适用规则；官方模型事实优先于下方项目经验，不得凭记忆编造模型能力。
 4. 用户明确要求“生成、出图、跑一张、试试看”等操作时，修改完成后调用 request_generation；否则不要擅自消耗 Anlas。
@@ -705,6 +705,7 @@ const techBlock = `
 - search_novelai_docs/read_novelai_doc 返回的是带官方来源的模型事实，优先级高于本技术块。
 - 本技术块 A–K 是项目工作流与经验规则，不得称为 NovelAI 官方硬性要求；与当前模型官方资料冲突时，以模型适用的官方资料为准。
 - 当前模型、提示词布局和项目能力以 get_lab_state 返回的 modelProfile/interface 为准，不得把 V4.5 的 Token、角色数、定位和参考图能力套到 V5 或未来模型。
+- 以下 Tag 顺序、Tag 数和 Tag 权重经验只约束实际 Tag 部分；V5 的自然语言按当前混合策略组织，不为满足 Tag 模板改成碎片或强制套权重。字段分工、身份保留与真实画面语义对两种写法均适用。
 
 A. 权重语法
 - 花括号强调：{tag}=1.05x，{{tag}}=1.10x，{{{tag}}}=1.16x，每层约+0.05~0.06x，可叠加。只强化确实重要的内容，不得与精确权重同用，不得给无关 Tag 加权。
@@ -755,9 +756,9 @@ F. 角色一致性 DNA 锁定（对接 set_characters）
 - 多角色UC互斥：独立Character槽+准确顺序+坐标+朝向+source/target/mutual绑定是第一手段；只有某可见特征确实容易串入另一角色才在受影响角色UC加0~2个针对性错误特征，禁全员两两排斥。禁排斥双方共有特征、性别词girl/boy/other、完全不可见身份、真实非人结构及其同义/上位/正确数量。
 - Type H人形拓扑/Type M非人拓扑只表示身体结构：Type H保留标准人形头躯干双臂双腿+附加兽耳角尾翼；Type M核心区域被替换或数量改变(蛇身代腿/半人马/四足/多臂/多头)。物种名不能替代可见拓扑，验收法：去掉物种Tag后剩余描述仍能表达可见身体构型。
 
-G. Tag 构成
+G. Tag 与自然语言构成
 - 正向提示由一个整图提示字段与各 characters 槽组成。Scene负责整图共有信息，各Character负责该角色独有信息，不得两处重复倾倒。V4/V4.5 的 Scene/Base 与全部 Character 共用约 512 T5 Token；V5 只可表述为官方支持更长提示词，除非官方知识给出新数字，否则不得编造精确 Token 上限。
-- 只用NovelAI熟悉的独立标准Tag；未知复杂概念用一句简短具体英文自然语言。禁自造长复合Tag、同义词堆叠、固定套餐、假Token公式。
+- V4/V4.5 默认使用 NovelAI 熟悉的独立标准 Tag，复杂概念先查询对应 Tag；V5 用 Tag 与自然语言混合，简单概念可用 Tag，复杂动作/关系/场景可用简短具体英文句子，不强制两者比例。禁自造长复合Tag、重复表达同一概念、同义词堆叠、固定套餐、假Token公式。
 - subjectPrompt 构成职责：分级、准确总人数性别、正文明确整图关系/共用状态、地点环境、时间天气、全局光源氛围、全局构图。禁止放单角色DNA/专属服装/专属动作/专属表情/角色专用位置。
 - subjectPrompt 堆叠顺序：真实冲突的针对性负权重→准确人数/性别→分级→明确关系/共用状态→地点→周边物件→时间天气→氛围→主光源/方向/光影→主景别→主视角→可选特殊镜头/焦点。负权重无冲突不写，不凑。
 - characters.prompt 堆叠顺序：针对性负权重→N=1的1girl/1boy/1other或N≥2的girl/boy/other→角色/作品→本图需要的景别视角→前发/主发型/发长/发色→瞳色→肤色/永久标记→逐件详细服装(头到脚外到内)→身体/身高/比例/胸部→主体→朝向/粗略位置→动作/接触→source/target/mutual→表情/生理/当前状态→物理形变→正文明示器官/行为。
@@ -780,13 +781,13 @@ I. 填字段前的思考流程（每次生图前按序自检）
 0.需求分析：生图类型/张数/画风串/特殊要求。
 1.角色与身份：每角色中文→标准名，判定同人(character_(series)标准Tag)或原创(1.5::Name::,1.3::original::)，人/非人拓扑，穿着总状态。
 2.背景锁定：地点、关键细节、时间天气、主光源。
-3.主体与构图：每图主视觉概念→主体Tag1~3个→主体权重1.4~1.6；主景别1+主视角1+(POV/越肩/反射0~1)+(焦点0~1)+(镜头效果0~1)；分辨率由布局决定。
+3.主体与构图：先按当前生成模型选择 Tag／混合写法，再准确表达本图主视觉概念；采用 Tag 时按需选1~3个并参考主体权重，V5 自然语言不强制套 Tag 数与权重；主景别1+主视角1+(POV/越肩/反射0~1)+(焦点0~1)+(镜头效果0~1)；分辨率由布局决定。
 4.分级：三问判定Safe/R/X→对应前缀与UC。
 5.人数：N值→base写准确总人数→每角色槽类别词(N≥2用无数字)→构图底线→预算检查。
 6.角色DNA：每角色逐字段提取可见DNA(发色前发主发型发长瞳色脸型身体胸部肤色身高非人部位)，不可见省略不进UC。
 7.服装：每件实际衣物独立记录款式/颜色/长度结构/材质/图案标志/当前状态/可见性，透明遮挡按真实可见；不透明外衣完全遮住内衣则省略不当UC；全裸不补内衣。
 8.UC构成：标准人类/Type H固定底座 bad face,poorly drawn face,distorted face,asymmetrical face,bad anatomy,bad hands,heterochromia,mismatched pupils,glowing eyes,background characters(N≥2追加fused bodies)；Type M只释放会压制真实拓扑的具体项，有正常人手/人脸/眼睛保留对应词；分级UC按分级表；针对多人泄漏0~2项；UC非空。
-9.最终自检：subjectPrompt职责正确/准确人数只在base/角色类别词正确/固定Tag顺序/服装逐件归属/动作同一瞬间/互动前缀正确/坐标位置朝向一致/不可见DNA未进UC/UC非空无误伤真实结构/权重语法x::tag::无(tag:x)/无同义词凑数与假Token公式。全部通过才返回工具调用。
+9.最终自检：当前模型策略正确/subjectPrompt职责正确/准确人数只在base/角色类别词正确/实际Tag部分顺序合理/自然语言与Tag不重复或矛盾/服装逐件归属/动作同一瞬间/互动前缀正确/坐标位置朝向一致/不可见DNA未进UC/UC非空无误伤真实结构/权重语法x::tag::无(tag:x)/无同义词凑数与假Token公式。全部通过才返回工具调用。
 
 J. 字段误用警告
 - 不得把"人物外貌/角色身份Tag"写进 subjectPrompt；这些进 characters.prompt（通过 set_characters）。
@@ -826,6 +827,7 @@ const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
 - 当前作品与模式：${JSON.stringify(draft?.target || { mode: 'text-to-image' })}。只能修改当前模式，切换作品或模式后先读取真实工作区并以新的 target 为准；可通过页面 commands 编辑蒙版、选区和扩图，坐标以实际画布像素为准。生成仍必须通过 request_generation 请求用户确认。
 - 当前 NovelAI 模型：${JSON.stringify(modelProfile.id)}（${modelProfile.label} / ${modelProfile.family}）
 - 官方提示能力：${modelProfile.officialPrompting}
+- 当前提示词编写策略（项目偏好）：${JSON.stringify(modelProfile.project.promptStrategy)}。仅决定本次新写或修改的内容，不自动重写现有草稿。
 - 官方提示容量：${modelProfile.officialPromptCapacity}
 - 官方多角色能力：${modelProfile.officialCharacterCapability}
 - 官方定位能力：${modelProfile.officialPositioning}
@@ -2412,8 +2414,11 @@ export class PromptAgentService {
         execute: async (_id, args) => {
           const query = text(args.query).slice(0, 100);
           const paragraphs = techBlock.split('\n\n').filter(paragraph => !query || paragraph.includes(query));
-          const content = paragraphs.join('\n\n').slice(0, 16000);
-          return { content: jsonText({ source: '项目经验；官方模型事实优先', content }), details: { chars: content.length } };
+          const modelProfile = getNovelAiModelProfile(draft.params?.model);
+          const promptStrategy = modelProfile.project.promptStrategy;
+          // 即使筛选某个段落，也始终先返回当前策略；工具创建后切模型仍读取最新草稿。
+          const content = `[当前模型编写策略：${modelProfile.id}]\n${promptStrategy.positive}\n${promptStrategy.formatRules}\n\n${paragraphs.join('\n\n')}`.slice(0, 16000);
+          return { content: jsonText({ source: '项目经验；官方模型事实优先', modelId: modelProfile.id, promptStrategy, content }), details: { chars: content.length, model: modelProfile.id, promptStrategy: promptStrategy.mode } };
         },
       },
       {

@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.31.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.32.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -524,6 +524,7 @@ Agent 设置的 API 连接下方提供**生图协作**：默认自动应用提�
 - **一次处理当前要求**：不提供任务转向、后续追加与排队入口。执行期间可以先写下一条消息，Enter 不会追加任务或清空草稿；当前任务结束或停止后手动发送。每轮使用独立运行编号与事件游标，关闭面板不停止电脑任务；重开／断线后恢复有限事件窗口、真实终态与最终草稿。有效待确认操作需要再次查看并决定，历史操作不会自动重放。停止会取消启动、模型请求与确认等待，但不能撤回供应商已处理的请求或已完成的资料修改。
 - **展开后看最新过程**：当前思考与打开的工具回执自动跟随输出末尾，聊天在展开最新过程时同步定位；主动上翻暂停跟随，回到末尾或重新展开后恢复，历史内容保持阅读位置。
 - **独立助手规则**：[PROJECT_AGENT.md](./PROJECT_AGENT.md) 定义内置生图助手的交流与执行约定，后端启动时实际读取并加入固定系统提示词。明确要求回复、模型思考输出与进度说明使用简体中文，英文生图 Tag、模型 ID、代码及路径保留准确原文。修改后重启本地服务即可生效，并会触发旧后端提示。根目录 `AGENTS.md` 用于开发协作，与内置助手规则分别维护。
+- **提示词跟随生图模型**：V5 Full／Curated 使用 Tag 与自然语言混合，画师、身份和简单概念保留准确 Tag，复杂动作、空间关系及场景细节按需要用自然语言，不强制全句子或固定比例；V4／V4.5 默认用英文 Tag。策略随当前生成模型、历史复用和页面切换刷新，与聊天模型无关；切模型不自动重写已有内容，局部修改保留原有写法。生图提示词默认英文，用户指定产物语言时遵循要求，交流与思考仍为中文。
 - **明确的运行边界**：每轮最多 16 次模型回复／64k Token，总时限 15 分钟、单次模型请求 3 分钟；模型上下文包含系统、完整工具 schema 与图片估算，实际输出也使用同一预算。默认选择适中思考等级，保留手动选择。LLM 费用由服务商计算，独立于 NovelAI Anlas。
 
 #### 多模态视觉图像观察

@@ -35,6 +35,44 @@ test('独立 Agent 规则文件实际进入固定系统前缀，包含中文思�
   } finally { globalThis.fetch = previous; }
 }));
 
+test('同一套业务工具在切换模型后读取最新混合／Tag 策略，不重写提示词和角色', () => isolated(async service => {
+  const draft = { basePrompt: 'artist style', subjectPrompt: 'garden, Warm evening light falls across the bridge.', negativePrompt: 'low quality', modules: [{ id: 'm', content: 'soft light', isActive: true }], params: { model: 'nai-diffusion-4-5-full', characters: [{ prompt: 'girl, blue hair', negativePrompt: 'red hair', x: .2, y: .5 }] } };
+  const original = structuredClone(draft), tools = service.createTools(draft, {}, () => {});
+  const call = async (name, args = {}) => { const value = JSON.parse((await tools.find(tool => tool.name === name).execute('t', args)).content[0].text); return value.data || value; };
+  for (const [model, mode] of [['nai-diffusion-5-full', 'mixed'], ['nai-diffusion-5-curated', 'mixed'], ['nai-diffusion-4-5-curated', 'tags'], ['nai-diffusion-4-full', 'tags']]) {
+    await call('set_generation_params', { model });
+    const state = await call('get_lab_state'), rules = await call('read_prompt_guidelines', { query: '构图' });
+    assert.equal(state.modelProfile.project.promptStrategy.mode, mode);
+    assert.equal(rules.modelId, model); assert.equal(rules.promptStrategy.mode, mode);
+    assert.ok(rules.content.startsWith(`[当前模型编写策略：${model}]`));
+    assert.ok(rules.content.includes(rules.promptStrategy.positive));
+    assert.equal(draft.basePrompt, original.basePrompt); assert.equal(draft.subjectPrompt, original.subjectPrompt); assert.equal(draft.negativePrompt, original.negativePrompt);
+    assert.deepEqual(draft.modules, original.modules); assert.equal(draft.params.characters[0].prompt, original.params.characters[0].prompt);
+  }
+}));
+
+test('原生多轮请求随生成模型切换策略，固定系统和工具前缀保持稳定', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
+  const session = await service.createSession(), previous = globalThis.fetch, requests = [];
+  const rounds = [
+    { tool: 'set_generation_params', args: { model: 'nai-diffusion-5-full' } }, { tool: 'read_prompt_guidelines', args: { query: 'Tag' } }, {},
+    { tool: 'set_generation_params', args: { model: 'nai-diffusion-4-5-full' } }, { tool: 'read_prompt_guidelines', args: { query: 'Tag' } }, {},
+  ];
+  globalThis.fetch = async (_url, options) => { requests.push(JSON.parse(options.body)); return syntheticAgentStream({ ...rounds[requests.length - 1], id: requests.length }); };
+  try {
+    const first = await service.run({ sessionId: session.id, message: '切换到 V5，只查看编写策略', draft: { basePrompt: 'artist style', subjectPrompt: 'garden', params: { model: 'nai-diffusion-4-5-full' } } }, () => {});
+    const second = await service.run({ sessionId: session.id, message: '再切回 V4.5，只查看编写策略', draft: first.draft }, () => {});
+    assert.equal(requests.length, 6);
+    for (const request of requests) { assert.equal(request.messages[0].content, requests[0].messages[0].content); assert.deepEqual(request.tools, requests[0].tools); }
+    for (const index of [1, 2, 3]) assert.match(requests[index].messages.at(-1).content, /"mode":"mixed"/);
+    for (const index of [0, 4, 5]) assert.match(requests[index].messages.at(-1).content, /"mode":"tags"/);
+    const lastTool = index => { const value = JSON.parse(requests[index].messages.filter(message => message.role === 'tool').at(-1).content); return value.data || value; };
+    assert.equal(lastTool(2).promptStrategy.mode, 'mixed'); assert.equal(lastTool(5).promptStrategy.mode, 'tags');
+    assert.equal(second.draft.basePrompt, 'artist style'); assert.equal(second.draft.subjectPrompt, 'garden');
+    assert.equal(JSON.stringify((await service.readSession(session.id)).messages).includes('[实时工作区快照'), false);
+  } finally { globalThis.fetch = previous; }
+}));
+
 test('短句连续修改无需重新加载工具；原始会话与稳定前缀跨轮保留', () => isolated(async service => {
   await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
   const session = await service.createSession(), previous = globalThis.fetch, requests = [], events = [];
