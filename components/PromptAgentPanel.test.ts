@@ -2,6 +2,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { PromptAgentPanel } from './PromptAgentPanel';
 import { ConfirmDialogProvider } from './ConfirmDialog';
 import { NAIParams } from '../types';
@@ -114,6 +115,37 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     vi.clearAllMocks();
     vi.restoreAllMocks();
     sessionStorage.clear(); localStorage.clear();
+  });
+
+  it.each([false, true])('聊天输入在暗色=%s 时透出工具栏表面，不被通用表单底色覆盖', async dark => {
+    stubServices();
+    const previousDark = document.documentElement.classList.contains('dark');
+    document.documentElement.classList.toggle('dark', dark);
+    const style = document.createElement('style');
+    // 模拟不同预设的父面板和通用表单底色，使用真实 CSS 验证输入覆盖的优先级。
+    style.textContent = `.appearance-surface { background-color: ${dark ? 'rgb(23, 27, 36)' : 'rgb(255, 255, 255)'}; } .agent-theme textarea { background-color: rgb(220, 235, 255); }\n` + readFileSync('components/AgentSurface.css', 'utf8');
+    document.head.append(style);
+    try {
+      renderPanel();
+      const box = screen.getByRole('textbox', { name: '任务要求' });
+      await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+      expect(getComputedStyle(box).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+      expect(getComputedStyle(box.closest('.appearance-surface')!).backgroundColor).toBe(dark ? 'rgb(23, 27, 36)' : 'rgb(255, 255, 255)');
+    } finally { style.remove(); document.documentElement.classList.toggle('dark', previousDark); }
+  });
+
+  it('回到底部使用共用主题表面，点击后恢复跟随且滚动到实际末尾', async () => {
+    stubServices(); renderPanel();
+    await screen.findByRole('heading', { name: '新对话' });
+    const scroll = screen.getByRole('textbox', { name: '任务要求' }).closest('main')!.querySelector('.space-y-6')!;
+    Object.defineProperties(scroll, { scrollHeight: { value: 1000, configurable: true }, clientHeight: { value: 200, configurable: true }, scrollTop: { value: 0, writable: true, configurable: true } });
+    fireEvent.scroll(scroll);
+    const button = screen.getByRole('button', { name: '回到底部' });
+    expect(button.classList.contains('appearance-surface')).toBe(true);
+    expect(button.className).not.toMatch(/bg-gray-900\/90|bg-white\/90|text-white|dark:text-gray-900/);
+    fireEvent.click(button);
+    expect(scroll.scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ top: 1000 }));
+    expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull();
   });
 
   it('没有模型时直接提供 API 接入入口，并阻止发起模型任务', async () => {

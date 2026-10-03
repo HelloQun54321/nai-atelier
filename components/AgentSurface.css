@@ -5,5 +5,7 @@
 /* Agent 与工坊共用材质、边框和强调色；表单保持可辨识的中性底色。 */
 .agent-theme :where(input:not([type='checkbox']):not([type='radio']):not([type='range']), textarea, select) { background-color: color-mix(in srgb, var(--nai-panel-surface) 92%, var(--nai-accent) 8%); border-color: var(--nai-panel-border); color: var(--color-gray-800); }
 .dark .agent-theme :where(input:not([type='checkbox']):not([type='radio']):not([type='range']), textarea, select) { color: var(--color-gray-100); }
+/* 聊天输入与工具栏共用一个表面；透明底避免透光主题叠色及通用表单的强调色块。 */
+.agent-theme .agent-composer-input { background-color: transparent; }
 .agent-theme :where(header, .workspace-command-bar) { background-color: var(--nai-toolbar-surface); border-color: var(--nai-panel-border); }
 .agent-theme :where(input, textarea, select):focus-visible { outline-color: var(--nai-accent); }
