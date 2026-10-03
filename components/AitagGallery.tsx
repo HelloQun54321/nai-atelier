@@ -22,7 +22,7 @@ import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './Mo
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { ExternalLink, Filter, FlaskConical, Package, Star } from 'lucide-react';
+import { ExternalLink, Filter, FlaskConical, LoaderCircle, Package, Star } from 'lucide-react';
 import { FavoriteButton, IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -326,6 +326,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const [cacheStatus, setCacheStatus] = useState<AitagCacheStatus | null>(() => aitagPageCache.cacheStatus);
   const [isLoading, setIsLoading] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const savingImageRef = useRef<string | null>(null);
+  const [savingImage, setSavingImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(() => aitagPageCache.error);
   const [isOfflineCache, setIsOfflineCache] = useState(() => aitagPageCache.isOfflineCache);
   const [isPageInputOpen, setIsPageInputOpen] = useState(false);
@@ -1175,6 +1177,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   };
 
   const saveAsArtistChain = async (image: AitagImage, index: number) => {
+    if (savingImageRef.current !== null) return;
+    const imageKey = `${image.work_id}-${image.file_name}`;
+    savingImageRef.current = imageKey;
+    setSavingImage(imageKey);
     try {
       const importData = parseImageImportData(image);
       const now = Date.now();
@@ -1200,10 +1206,17 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       notify('已保存到风格串');
     } catch (e: any) {
       notify(e.message || '保存失败', 'error');
+    } finally {
+      savingImageRef.current = null;
+      setSavingImage(null);
     }
   };
 
   const saveToInspiration = async (image: AitagImage, index: number) => {
+    if (savingImageRef.current !== null) return;
+    const imageKey = `inspiration-${image.work_id}-${image.file_name}`;
+    savingImageRef.current = imageKey;
+    setSavingImage(imageKey);
     try {
       const importData = parseImageImportData(image);
       await db.saveInspiration({
@@ -1226,6 +1239,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       notify('已加入灵感库');
     } catch (e: any) {
       notify(e.message || '加入灵感库失败', 'error');
+    } finally {
+      savingImageRef.current = null;
+      setSavingImage(null);
     }
   };
 
@@ -1427,8 +1443,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                               </div>
                             </div>
                             <div className="flex flex-none gap-2">
-                              <IconButton label="保存到风格串" onClick={() => saveAsArtistChain(image, index)}><Package /></IconButton>
-                              <IconButton label="加入灵感库" tone="favorite" onClick={() => saveToInspiration(image, index)}><Star /></IconButton>
+                              <IconButton label="保存到风格串" disabled={savingImage !== null} aria-busy={savingImage === `${image.work_id}-${image.file_name}`} onClick={() => saveAsArtistChain(image, index)}>{savingImage === `${image.work_id}-${image.file_name}` ? <LoaderCircle className="animate-spin" /> : <Package />}</IconButton>
+                              <IconButton label="加入灵感库" tone="favorite" disabled={savingImage !== null} aria-busy={savingImage === `inspiration-${image.work_id}-${image.file_name}`} onClick={() => saveToInspiration(image, index)}>{savingImage === `inspiration-${image.work_id}-${image.file_name}` ? <LoaderCircle className="animate-spin" /> : <Star />}</IconButton>
                               <IconButton label="导入实验室" tone="primary" onClick={() => importToPlayground(image)}><FlaskConical /></IconButton>
                               {!promptText.trim() && <ImageTaggerAction
                                 notify={notify}

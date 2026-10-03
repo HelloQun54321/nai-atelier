@@ -275,6 +275,42 @@ const readLimitedImageBody = async (response: Response) => {
     return output;
 };
 
+/** 新串拥有独立封面；已缓存图片只在本机复制，避免以后换封面时删除来源资产。 */
+const createChainCover = async (env: Env, db: D1Database, value: unknown, id: string, user: { id: string; role: string }) => {
+    if (!value) return null;
+    if (typeof value !== 'string') throw new Error('封面地址无效');
+    if (value.startsWith('data:')) return processImageUpload(env, value, 'covers', id, user);
+    if (value.startsWith('https://')) return fetchAndUploadImage(env, value, 'covers', id, user);
+    if (!env.BUCKET) throw new Error('R2 Bucket not configured');
+    let key = '';
+    let imageType = '';
+    if (value.startsWith('/api/assets/')) key = decodeURIComponent(value.slice('/api/assets/'.length));
+    else {
+        const match = value.match(/^\/api\/(inspirations|local-history)\/([^/]+)\/image$/);
+        if (!match) throw new Error('封面必须是本地资产或 HTTPS 图片');
+        const table = match[1] === 'inspirations' ? 'inspirations' : 'local_generation_history';
+        const row = await db.prepare(`SELECT image_key, image_type FROM ${table} WHERE id = ? AND user_id = ?`)
+            .bind(decodeURIComponent(match[2]), user.id).first<{ image_key: string; image_type: string }>();
+        key = row?.image_key || '';
+        imageType = row?.image_type || '';
+    }
+    if (!key || /[\\?#\u0000]/.test(key) || key.split('/').some(part => !part || part === '.' || part === '..')) {
+        throw new Error('本地封面地址无效');
+    }
+    const source = await env.BUCKET.get(key);
+    if (!source) throw new Error('本地封面图片不存在');
+    const headers = new Headers();
+    source.writeHttpMetadata(headers);
+    if (imageType) headers.set('content-type', imageType);
+    const contentType = (headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    const extension = ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' } as Record<string, string>)[contentType];
+    if (!extension) throw new Error('封面不是支持的 PNG、JPEG 或 WebP 图片');
+    const bytes = await readLimitedImageBody(new Response(source.body, { headers }));
+    const target = `covers/${id}_${Date.now()}.${extension}`;
+    await env.BUCKET.put(target, bytes.buffer as ArrayBuffer, { httpMetadata: { contentType } });
+    return `/api/assets/${target}`;
+};
+
 // Helper: Process Base64 Image and Upload to R2 with Quota Check
 export async function processImageUpload(
     env: Env,
@@ -686,17 +722,30 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     const tags = JSON.stringify(normalizeChainTags(Array.isArray(body.tags)
       ? body.tags.map((tag: unknown) => typeof tag === 'string' ? tag.trim().substring(0, 50) : '') : []));
     const paramsToStore = JSON.stringify({ ...DEFAULT_CHAIN_PARAMS, ...(body.params && typeof body.params === 'object' ? body.params : {}) });
+    let previewImage: string | null;
     try {
-      await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, String(body.name || ''), String(body.description || ''), tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', paramsToStore, body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, Date.now(), Date.now()).run();
-      return json({ id });
+      previewImage = await createChainCover(env, db, body.previewImage, id, currentUser);
+    } catch (e: any) { return error(e.message || '保存封面失败', 422); }
+    const now = Date.now();
+    const insert = () => db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, String(body.name || ''), String(body.description || ''), tags, previewImage, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', paramsToStore, body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, now, now).run();
+    try {
+      await insert();
     } catch (e: any) {
       if (isMissingColumnError(e)) {
         await initDB();
-        await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, String(body.name || ''), String(body.description || ''), tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', paramsToStore, body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, Date.now(), Date.now()).run();
-        return json({ id });
+        await insert();
+      } else {
+        throw e;
       }
-      throw e;
     }
+    // 保留旧调用方的 id，同时返回实际落库内容；打开新条目无需重新读取整库。
+    return json({ id, chain: {
+      id, userId: currentUser.id, username: currentUser.username, type,
+      name: String(body.name || ''), description: String(body.description || ''),
+      tags: JSON.parse(tags), previewImage, basePrompt: body.basePrompt || '', negativePrompt: body.negativePrompt || '',
+      modules: body.modules || [], params: JSON.parse(paramsToStore), variableValues: body.variableValues || {},
+      guestHidden: Boolean(guestHidden), createdAt: now, updatedAt: now,
+    } });
   }
   const chainIdMatch = path.match(/^\/api\/chains\/([^\/]+)$/);
   if (chainIdMatch && method === 'GET') {

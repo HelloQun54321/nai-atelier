@@ -38,6 +38,8 @@ const isKeepAliveView = (targetView: ViewState): targetView is KeepAliveView => 
 const App = () => {
   const confirmAction = useConfirmDialog();
   const [view, setView] = useState<ViewState>('list');
+  const viewSessionRef = useRef({ view });
+  if (viewSessionRef.current.view !== view) viewSessionRef.current = { view };
   const [mountedViews, setMountedViews] = useState<KeepAliveView[]>(['list']);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [chains, setChains] = useState<PromptChain[]>([]);
@@ -106,7 +108,7 @@ const App = () => {
   }, []);
 
   // Agent 事件桥接：handleNavigate 每次渲染都会重建，经 ref 转发以保持监听只注册一次。
-  const handleNavigateRef = useRef<(view: ViewState, id?: string, options?: { externalImport?: boolean; refreshData?: boolean }) => void>(() => {});
+  const handleNavigateRef = useRef<(view: ViewState, id?: string, options?: { externalImport?: boolean; refreshData?: boolean }) => Promise<void>>(async () => {});
   useEffect(() => {
     const applyPreferences = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
@@ -132,16 +134,26 @@ const App = () => {
   // refreshData 并发守卫：创建/删除/Agent 数据变更事件可能同时触发多次刷新，
   // 先完成者的 finally 会提前清掉后者的 loading，响应乱序时还会互相覆盖
   const refreshDataSeqRef = useRef(0);
+  const chainCreateRevisionRef = useRef(0);
+  const recentCreatedChainsRef = useRef(new Map<string, { chain: PromptChain; revision: number }>());
   const refreshData = async (force = false) => {
     // Chains (Always load all chains so we can filter client side and do mutual imports)
     if (!force && chains.length > 0 && Date.now() - lastChainFetch < CACHE_TTL) return;
 
     const refreshSeq = ++refreshDataSeqRef.current;
+    const createRevision = chainCreateRevisionRef.current;
     setLoading(true);
     try {
       const data = await db.getAllChains();
       if (refreshSeq !== refreshDataSeqRef.current) return;
-      setChains(data);
+      // 查询期间新建的条目可能不在这个快照里；合并它们，既保留旧资料也不丢新工作台。
+      const ids = new Set(data.map(chain => chain.id));
+      const additions: PromptChain[] = [];
+      for (const [id, entry] of recentCreatedChainsRef.current) {
+        if (entry.revision > createRevision && !ids.has(id)) additions.push(entry.chain);
+        else recentCreatedChainsRef.current.delete(id);
+      }
+      setChains([...additions, ...data]);
       setLastChainFetch(Date.now());
       setDbConfigError(false);
     } catch (e: any) {
@@ -450,7 +462,7 @@ const App = () => {
     if (newView === 'inspiration') loadInspirations();
 
   };
-  handleNavigateRef.current = (targetView, targetId, options) => { void handleNavigate(targetView, targetId, options); };
+  handleNavigateRef.current = handleNavigate;
 
   const handleUpdatePlaygroundChain = async (id: string, updates: Partial<PromptChain>) => {
     setPlaygroundChain(prev => prev ? { ...prev, ...updates } : null);
@@ -498,16 +510,14 @@ const App = () => {
   };
 
   const handleCreateChainFromAitag = async (chain: PromptChain) => {
-    setLoading(true);
-    try {
-      const newId = await db.createChain(chain.name, chain.description, chain, 'style');
-      await refreshData(true);
-      handleNavigate('edit', newId);
-    } catch (e) {
-      console.error('从 AITag 创建风格串失败', e);
-      notify('创建失败，请稍后重试', 'error');
-    } finally {
-      setLoading(false);
+    const entrySession = viewSessionRef.current;
+    const saved = await db.createChainWithData(chain.name, chain.description, chain, 'style');
+    recentCreatedChainsRef.current.set(saved.id, { chain: saved, revision: ++chainCreateRevisionRef.current });
+    setChains(current => [saved, ...current.filter(item => item.id !== saved.id)]);
+    setLastChainFetch(0);
+    // 保存期间主动离开来源页时保留用户的位置；当前页保存则等待实际导航完成。
+    if (viewSessionRef.current === entrySession) {
+      await handleNavigateRef.current('edit', saved.id);
     }
   };
 

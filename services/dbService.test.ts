@@ -76,4 +76,20 @@ describe('dbService 会话级 blob: 封面防护', () => {
     expect(updates.tags).toEqual(['NAI', 'aitag', '新分类']);
     expect(source.tags).toEqual(['aitag', 'NAI', '待实测', '夜景']);
   });
+
+  it('创建后直接使用服务端保存的条目与封面，不重新读列表', async () => {
+    const saved = makeChain({ id: 'saved', previewImage: '/api/assets/covers/saved.png', tags: ['夜景'] });
+    apiMock.post.mockResolvedValue({ id: saved.id, chain: saved });
+    expect(await db.createChainWithData('测试串', '', makeChain())).toEqual(saved);
+    expect(apiMock.get).not.toHaveBeenCalled();
+  });
+
+  it('旧 Worker 只返回 ID 时只读取这个条目；失败向调用方传递', async () => {
+    const saved = makeChain({ id: 'saved' });
+    apiMock.post.mockResolvedValue({ id: saved.id }); apiMock.get.mockResolvedValue(saved);
+    expect(await db.createChainWithData('测试串', '', makeChain())).toEqual(saved);
+    expect(apiMock.get).toHaveBeenCalledWith('/chains/saved');
+    apiMock.post.mockRejectedValueOnce(new Error('模拟创建失败'));
+    await expect(db.createChainWithData('测试串', '', makeChain())).rejects.toThrow('模拟创建失败');
+  });
 });

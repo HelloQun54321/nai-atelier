@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.16.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.16.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -671,10 +671,12 @@ Vibe／角色参考管理共用资料库／归档工具栏，按实际窗口宽�
 | 操作 | 结果 |
 | :--- | :--- |
 | **导入实验室** | 把识别出的 Prompt 和参数带入实验室继续生成 |
-| **保存到风格串** | 把图片、Prompt、负面 Prompt 和参数保存为可编辑预设 |
+| **保存到风格串** | 把图片、Prompt、负面 Prompt 和参数保存为可编辑预设，保存成功后直接打开该预设的实验室工作台 |
 | **加入灵感库** | 把图片、完整生成配置和 AITag 来源存进个人灵感库，之后继续分类与复用 |
 
 详情中保留 aitag.win 和 Pixiv 原作品入口，便于回到来源核对。
+
+保存直接使用已经显示的图片 JSON，不重新下载详情，也不等待整份风格串列表刷新；按钮在保存期间显示进度并防止重复创建，失败只提示真实错误。已缓存图片在本机保存为独立封面，未缓存的外链图片仍需完成下载。旧列表读取迟到不会覆盖新条目；保存期间主动切页后保留当前页面，不被旧结果拉回工作台。「加入灵感库」同样显示保存进度并防连点，仍留在当前作品详情。灵感库创建风格串共用直接打开与封面保存流程。
 
 ### Danbooru：通用级素材与 Tag 参考
 

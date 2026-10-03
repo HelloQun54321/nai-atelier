@@ -7,12 +7,13 @@ import type { User } from '../types';
 
 const mocks = vi.hoisted(() => ({
   search: vi.fn(), searchCache: vi.fn(), getWork: vi.fn(), getMonths: vi.fn(), getCacheStatus: vi.fn(), setFavorite: vi.fn(),
-  masonry: vi.fn(),
+  masonry: vi.fn(), createChain: vi.fn(), navigate: vi.fn(), saveInspiration: vi.fn(),
 }));
 vi.mock('../services/aitagService', async original => ({
   ...await original<typeof import('../services/aitagService')>(),
   aitagService: { ...mocks },
 }));
+vi.mock('../services/dbService', () => ({ db: { saveInspiration: mocks.saveInspiration } }));
 vi.mock('./ShortestColumnMasonry', () => ({
   useMasonryColumnCount: () => 3,
   ShortestColumnMasonry: (props: { items: AitagWorkSummary[]; renderItem: (work: AitagWorkSummary) => React.ReactNode }) => {
@@ -34,7 +35,7 @@ vi.mock('./ImagePreviewPortal', () => ({ ImagePreviewPortal: ({ children }: { ch
 const works: AitagWorkSummary[] = [1, 2].map(id => ({
   id, title: `合成作品 ${id}`, AI_type: 'NAI', image_count: 2, hasFullyCachedImages: true, hasCachedDetail: true,
   localFirstImageUrl: `/synthetic/${id}.png`,
-  firstImage: { id, work_id: id, author_id: 1, image_type: 'nai', file_name: `${id}.png`, local_image_url: `/synthetic/${id}.png`, model: id === 1 ? 'NovelAI Diffusion V4.5' : 'NovelAI Diffusion V5', prompt_text: 'synthetic prompt' },
+  firstImage: { id, work_id: id, author_id: 1, image_type: 'nai', file_name: `${id}.png`, local_image_url: `/api/assets/aitag/${id}.png`, model: id === 1 ? 'NovelAI Diffusion V4.5' : 'NovelAI Diffusion V5', prompt_text: 'synthetic prompt', ai_json: { prompt: `synthetic prompt ${id}`, uc: 'synthetic negative', width: 832, height: 1216, steps: 23, seed: 123, model: id === 1 ? 'nai-diffusion-4-5-full' : 'nai-diffusion-5-full' } },
 }));
 const callbacks = new Set<() => void>();
 const tops: Record<number, number> = { 1: 1800, 2: 2500 };
@@ -49,6 +50,8 @@ beforeEach(() => {
   mocks.getMonths.mockResolvedValue({ months: [] });
   mocks.getCacheStatus.mockResolvedValue({ total: 2 });
   mocks.setFavorite.mockResolvedValue({});
+  mocks.createChain.mockResolvedValue(undefined);
+  mocks.saveInspiration.mockResolvedValue(undefined);
   mocks.getWork.mockImplementation(async id => ({ work: works.find(work => work.id === id), images: [works[id - 1].firstImage] }));
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
@@ -69,7 +72,7 @@ const setup = async (layout = 'masonry') => {
   const { AitagGallery } = await import('./AitagGallery');
   const { ImageActivityContext } = await import('./SmartImage');
   const notify = vi.fn();
-  const draw = (active: boolean) => <ImageActivityContext.Provider value={active}><AitagGallery active={active} currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={vi.fn()} onCreateArtistChain={vi.fn()} /></ImageActivityContext.Provider>;
+  const draw = (active: boolean) => <ImageActivityContext.Provider value={active}><AitagGallery active={active} currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={mocks.navigate} onCreateArtistChain={mocks.createChain} /></ImageActivityContext.Provider>;
   const view = render(draw(true));
   await screen.findByRole('button', { name: '查看作品 合成作品 1' });
   return { ...view, draw, notify, main: view.container.querySelector('main')! };
@@ -204,4 +207,59 @@ it('详情请求尚未完成时取消，迟到结果不会重开详情或恢复�
   await act(async () => resolve({ work: works[0], images: [works[0].firstImage] }));
   noSelection();
   expect(document.querySelector('aside')!.className).toContain('aitag-detail-panel--closed');
+});
+
+it('用已显示的 JSON 和本地图片保存，立即显示忙碌并阻止连点，完成后才通知成功', async () => {
+  let resolve!: () => void;
+  mocks.createChain.mockImplementation(() => new Promise<void>(done => { resolve = done; }));
+  const { notify } = await setup();
+  fireEvent.click(card(1));
+  const button = await screen.findByRole('button', { name: '保存到风格串' });
+  fireEvent.click(button); fireEvent.click(button);
+  expect(mocks.createChain).toHaveBeenCalledTimes(1);
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  expect(button.getAttribute('aria-busy')).toBe('true');
+  expect(notify).not.toHaveBeenCalledWith('已保存到风格串');
+  expect(mocks.createChain.mock.calls[0][0]).toMatchObject({
+    name: '合成作品 1 P1', basePrompt: 'synthetic prompt 1', negativePrompt: 'synthetic negative',
+    previewImage: '/api/assets/aitag/1.png', tags: [], params: { seed: 123, steps: 23 },
+  });
+  expect(mocks.getWork).toHaveBeenCalledTimes(1);
+  await act(async () => resolve());
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('已保存到风格串'));
+  expect((button as HTMLButtonElement).disabled).toBe(false);
+});
+
+it('失败只显示错误并恢复按钮，重试可以保存，其他复用入口仍使用当前元数据', async () => {
+  const { notify } = await setup();
+  mocks.createChain.mockRejectedValueOnce(new Error('模拟写入失败'));
+  fireEvent.click(card(2));
+  const button = await screen.findByRole('button', { name: '保存到风格串' });
+  fireEvent.click(button);
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('模拟写入失败', 'error'));
+  expect(notify).not.toHaveBeenCalledWith('已保存到风格串');
+  expect((button as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(button);
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('已保存到风格串'));
+  expect(mocks.createChain).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
+  expect(mocks.navigate).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(sessionStorage.getItem('nai_pending_import')!)).toMatchObject({ prompt: 'synthetic prompt 2', params: { steps: 23, seed: 123 } });
+  expect(mocks.getWork).toHaveBeenCalledTimes(1);
+});
+
+it('相邻的加入灵感库同样显示进度并拦截连点，保持原本不跳转的行为', async () => {
+  let resolve!: () => void;
+  mocks.saveInspiration.mockImplementation(() => new Promise<void>(done => { resolve = done; }));
+  const { notify } = await setup(); fireEvent.click(card(1));
+  const button = await screen.findByRole('button', { name: '加入灵感库' });
+  fireEvent.click(button); fireEvent.click(button);
+  expect(mocks.saveInspiration).toHaveBeenCalledTimes(1);
+  expect(button.getAttribute('aria-busy')).toBe('true');
+  expect((screen.getByRole('button', { name: '保存到风格串' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(mocks.saveInspiration.mock.calls[0][0]).toMatchObject({ imageUrl: '/api/assets/aitag/1.png', prompt: 'synthetic prompt 1', sourceType: 'aitag' });
+  await act(async () => resolve());
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('已加入灵感库'));
+  expect(mocks.navigate).not.toHaveBeenCalled(); expect(mocks.createChain).not.toHaveBeenCalled();
+  expect(mocks.getWork).toHaveBeenCalledTimes(1);
 });
