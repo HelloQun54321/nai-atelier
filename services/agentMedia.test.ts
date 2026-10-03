@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { extractAgentMedia, isAgentImagePath } from './agentMedia';
 
 describe('聊天图片收据', () => {
+  it('接受项目内酒馆历史原图索引，拒绝无效 ID 与任意集成端点', () => {
+    const path = `/api/integrations/st-chatu8/history/${'a'.repeat(64)}/image`;
+    expect(isAgentImagePath(path)).toBe(true);
+    expect(extractAgentMedia([{ type: 'text', text: JSON.stringify({ displayImages: [{ id: 'c', kind: 'history', title: '酒馆历史', path }] }) }])).toHaveLength(1);
+    for (const invalid of [path.replace('a'.repeat(64), 'private'), path + '?key=secret', path.replace('/image', '/metadata')]) expect(isAgentImagePath(invalid)).toBe(false);
+  });
   it('本地图片只接受会话与不透明 ID，拒绝多余查询参数', () => {
     const path = '/api/prompt-agent/local-image?sessionId=s&id=' + 'a'.repeat(32);
     expect(isAgentImagePath(path)).toBe(true);

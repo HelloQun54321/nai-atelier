@@ -675,6 +675,12 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
     }
 
     const deleteMatch = path.match(/^\/api\/local-history\/([^/]+)$/);
+    if (deleteMatch && method === 'GET') {
+      const id = decodeURIComponent(deleteMatch[1]);
+      const row = await db.prepare('SELECT * FROM local_generation_history WHERE id = ? AND user_id = ?')
+        .bind(id, currentUser.id).first<any>();
+      return row ? json({ item: mapLocalHistoryRow(row) }) : error('History item not found', 404);
+    }
     if (deleteMatch && method === 'DELETE') {
       const id = decodeURIComponent(deleteMatch[1]);
       const row = await db.prepare('SELECT id, image_key FROM local_generation_history WHERE id = ? AND user_id = ?')
@@ -861,6 +867,12 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
     return json({ success: true });
   }
   const inspirationMatch = path.match(/^\/api\/inspirations\/([^/]+)$/);
+  if (inspirationMatch && method === 'GET') {
+    const id = decodeURIComponent(inspirationMatch[1]);
+    const row = await db.prepare('SELECT * FROM inspirations WHERE id = ? AND user_id = ?')
+      .bind(id, currentUser.id).first<any>();
+    return row ? json({ item: mapInspirationRow(row) }) : error('Inspiration item not found', 404);
+  }
   if (inspirationMatch && method === 'PUT') {
     if (currentUser.role === 'guest') return error('Forbidden', 403);
     const id = decodeURIComponent(inspirationMatch[1]);

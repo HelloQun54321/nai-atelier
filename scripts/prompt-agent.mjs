@@ -122,6 +122,10 @@ const isLoopbackHostname = hostname => {
   return normalized === 'localhost' || normalized.endsWith('.localhost') || normalized === '::1' || /^127(?:\.\d{1,3}){3}$/.test(normalized);
 };
 const jsonText = value => [{ type: 'text', text: JSON.stringify(value) }];
+// 历史可能是酒馆原图索引；沿用详情返回的真实资产地址，不凭 ID 拼接另一份图片。
+const projectImagePath = (kind, base, id, item) => kind === 'chain' ? item.previewImage
+  : kind === 'history' || kind === 'inspiration' ? item.imageUrl || `/api/${base}/${encodeURIComponent(id)}/image`
+    : item.originalImageUrl || `/api/${base}/${encodeURIComponent(id)}/image`;
 const atomicJsonWrite = async (file, value) => {
   await mkdir(dirname(file), { recursive: true });
   const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
@@ -2736,7 +2740,7 @@ export class PromptAgentService {
       if (!base || !id || !project.requestBuffer) throw new Error('缺少有效的项目图片 ID 或图片服务');
       const response = await readProject('/api/' + base + '/' + encodeURIComponent(id)); const item = response.item || response;
       if (String(item?.id) !== id) throw new Error('项目图片不存在');
-      const path = args.kind === 'chain' ? item.previewImage : '/api/' + base + '/' + encodeURIComponent(id) + '/image';
+      const path = projectImagePath(args.kind, base, id, item);
       if (!isProjectImagePath(path)) throw new Error('该项目资料没有可读取的图片');
       return project.requestBuffer(path, MAX_AGENT_IMAGE_BYTES);
     };
@@ -2822,7 +2826,7 @@ export class PromptAgentService {
           const response = await readProject('/api/' + base + '/' + encodeURIComponent(id));
           const item = response.item || response;
           if (!item?.id || String(item.id) !== id) throw new Error('项目图片不存在，请先检索对应资料');
-          const path = args.kind === 'chain' ? item.previewImage : '/api/' + base + '/' + encodeURIComponent(id) + '/image';
+          const path = projectImagePath(args.kind, base, id, item);
           if (!isProjectImagePath(path)) throw new Error('该资料没有可展示的本地图片；请先在项目中保存图片');
           return { content: jsonText({ displayImages: [{ kind: args.kind, id, title: text(item.name || item.title || item.sourceChainName || '项目图片').slice(0, 160), path }], shown: true, modelHasSeenImage: false }) };
         },
@@ -2837,7 +2841,7 @@ export class PromptAgentService {
           if (!base || !id) throw new Error('缺少有效的项目图片 ID');
           const response = await readProject('/api/' + base + '/' + encodeURIComponent(id)); const item = response.item || response;
           if (!item?.id || String(item.id) !== id) throw new Error('项目图片不存在');
-          const path = args.kind === 'chain' ? item.previewImage : '/api/' + base + '/' + encodeURIComponent(id) + '/image';
+          const path = projectImagePath(args.kind, base, id, item);
           if (!isProjectImagePath(path) || !project?.requestBuffer) throw new Error('该资料没有可读取的本地图片');
           const image = await project.requestBuffer(path, MAX_AGENT_IMAGE_BYTES);
           if (!image?.buffer?.length || !/^image\/(png|jpeg|webp|gif)$/.test(image.mimeType || '')) throw new Error('图片不存在或格式无效');
@@ -3011,7 +3015,7 @@ export class PromptAgentService {
             ? `sourceChainId=${encodeURIComponent(text(args.sourceChainId).slice(0, 200))}&limit=${limit}`
             : `page=0&pageSize=${limit}`;
           const result = listItems(await readProject(`/api/local-history?${query}`)).map(item => ({
-            id: item.id, promptSummary: text(item.prompt).slice(0, 240), negativeSummary: text(item.negativePrompt).slice(0, 120), params: { model: item.params?.model, width: item.params?.width, height: item.params?.height, seed: item.params?.seed },
+            id: item.id, imageUrl: isProjectImagePath(item.imageUrl) ? item.imageUrl : undefined, promptSummary: text(item.prompt).slice(0, 240), negativeSummary: text(item.negativePrompt).slice(0, 120), params: { model: item.params?.model, width: item.params?.width, height: item.params?.height, seed: item.params?.seed },
             sourceChainId: item.sourceChainId, sourceChainName: item.sourceChainName, sourceChainType: item.sourceChainType, createdAt: item.createdAt,
           }));
           return { content: jsonText(result), details: result };
@@ -3029,12 +3033,14 @@ export class PromptAgentService {
           }
           if (!item) throw new Error('找不到这条历史记录，请重新读取生成历史');
           if (!project?.requestBuffer) throw new Error('电脑历史图片服务不可用');
-          const image = await project.requestBuffer(`/api/local-history/${encodeURIComponent(item.id)}/image`, MAX_AGENT_IMAGE_BYTES);
+          const path = projectImagePath('history', 'local-history', String(item.id), item);
+          if (!isProjectImagePath(path)) throw new Error('历史图片地址无效，请重新读取生成历史');
+          const image = await project.requestBuffer(path, MAX_AGENT_IMAGE_BYTES);
           if (!image?.buffer?.length) throw new Error('历史原图为空或已经损坏');
           const metadata = { id: item.id, prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params, sourceChainName: item.sourceChainName, createdAt: item.createdAt };
           return {
             content: [
-              { type: 'text', text: JSON.stringify(metadata) },
+              { type: 'text', text: JSON.stringify({ ...metadata, displayImages: [{ kind: 'history', id: String(item.id), title: text(item.sourceChainName || '历史图片'), path }], modelHasSeenImage: true }) },
               { type: 'image', data: image.buffer.toString('base64'), mimeType: image.mimeType || 'image/png' },
             ],
             details: { ...metadata, imageBytes: image.buffer.length, mimeType: image.mimeType },

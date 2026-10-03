@@ -100,7 +100,7 @@ export const isProjectImagePath = path => {
   try {
     const decoded = decodeURIComponent(path);
     if (/[\\?#\u0000-\u001f]/.test(decoded) || decoded.split('/').some(part => part === '.' || part === '..')) return false;
-    return /^\/api\/(?:assets\/.+|(?:local-history|inspirations|vibes|character-references)\/[^/]+\/(?:image|thumbnail))$/.test(path);
+    return /^\/api\/(?:assets\/.+|integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image|(?:local-history|inspirations|vibes|character-references)\/[^/]+\/(?:image|thumbnail))$/.test(path);
   } catch { return false; }
 };
 

@@ -65,6 +65,22 @@ it('外部图片反推结果沿用灵感持久化，按精确来源和所有者�
 });
 
 describe('历史浏览查询（隔离 SQLite，无真实资产）', () => {
+  it('历史与灵感按 ID 读取完整详情，旧记录不受首页限制，拒绝其他所有者', async () => {
+    const detail = async (path: string) => {
+      const request = new Request(`http://localhost${path}`);
+      return (await handleHistoryRoute({ request, url: new URL(request.url), path, method: 'GET', db, currentUser: { id: 'owner' }, env: { LOCAL_HISTORY_ENABLED: 'true', BUCKET: bucket } } as unknown as RouteContext))!;
+    };
+    const row = await detail('/api/local-history/row-000');
+    expect(row.status).toBe(200);
+    expect(await row.json()).toMatchObject({ item: { id: 'row-000', prompt: 'normal prompt', imageUrl: '/api/local-history/row-000/image', params: { model: 'model-b' } } });
+    sqlite.prepare('UPDATE local_generation_history SET external_source = ?, external_id = ? WHERE id = ?').run('st-chatu8', 'a'.repeat(64), 'row-000');
+    expect(await (await detail('/api/local-history/row-000')).json()).toMatchObject({ item: { imageUrl: `/api/integrations/st-chatu8/history/${'a'.repeat(64)}/image` } });
+    sqlite.prepare('INSERT OR REPLACE INTO inspirations (id,user_id,title,prompt,created_at,updated_at) VALUES (?,?,?,?,?,?)').run('detail-test', 'owner', '完整灵感', 'long prompt', 1, 1);
+    expect(await (await detail('/api/inspirations/detail-test')).json()).toMatchObject({ item: { id: 'detail-test', title: '完整灵感', prompt: 'long prompt' } });
+    sqlite.prepare('UPDATE inspirations SET user_id = ? WHERE id = ?').run('other-owner', 'detail-test');
+    for (const path of ['/api/local-history/private-other', '/api/local-history/missing', '/api/inspirations/detail-test', '/api/inspirations/missing']) expect((await detail(path)).status).toBe(404);
+    expect(bucket.get).not.toHaveBeenCalled(); expect(bucket.put).not.toHaveBeenCalled();
+  });
   it.each(['newest', 'oldest', 'favorite', 'random'] as const)('%s 的完整索引与浏览器兼容读取一致且稳定', async sort => {
     const query = { sort, seed: 'stable', favoriteOnly: sort === 'favorite' };
     const suffix = `?sort=${sort}&seed=stable${query.favoriteOnly ? '&favorite=1' : ''}`;

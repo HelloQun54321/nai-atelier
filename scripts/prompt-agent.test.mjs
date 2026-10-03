@@ -372,6 +372,22 @@ test('能力与时区查询、文字模型展示、长字段分段读取都有�
   const field = JSON.parse((await call('read_project_text', { kind: 'history', id: 'a', field: 'prompt', offset: 3500 })).content[0].text);
   assert.equal(field.offset, 3500); assert.equal(field.nextOffset, 7000); assert.equal(field.totalChars, 20000); assert.equal(field.text, '原文'.repeat(10000).slice(3500, 7000));
 }));
+
+test('最近三张图均可展示，外部索引沿用真实图片路径；展示不要求识图', () => isolated(async service => {
+  const path = `/api/integrations/st-chatu8/history/${'a'.repeat(64)}/image`;
+  const items = ['a', 'b', 'c'].map(id => ({ id, imageUrl: id === 'c' ? path : `/api/local-history/${id}/image` }));
+  const project = { requestJson: async url => url.includes('?') ? { items } : { item: items.find(item => url.endsWith('/' + item.id)) }, requestBuffer: async url => { assert.equal(url, path); return { buffer: Buffer.from('image'), mimeType: 'image/png' }; } };
+  const tools = service.createTools({ params: {} }, {}, () => {}, project, { imageInput: false });
+  const history = JSON.parse((await tools.find(tool => tool.name === 'list_generation_history').execute('t', { limit: 3 })).content[0].text);
+  const shown = [];
+  for (const item of history) shown.push(JSON.parse((await tools.find(tool => tool.name === 'show_project_image').execute('t', { kind: 'history', id: item.id })).content[0].text));
+  assert.equal(shown.length, 3); assert.ok(shown.every(item => item.shown && item.modelHasSeenImage === false));
+  assert.equal(shown[2].displayImages[0].path, path);
+  const vision = service.createTools({ params: {} }, {}, () => {}, project, { imageInput: true });
+  const inspected = await vision.find(tool => tool.name === 'inspect_generation_image').execute('t', { id: 'c' });
+  assert.equal(JSON.parse(inspected.content[0].text).displayImages[0].path, path);
+  assert.equal(inspected.content[1].type, 'image');
+}));
 test('目录确认绑定真实路径，保存工具落盘后才返回成功', () => isolated(async service => {
   const directory = join(service.isolatedRoot, 'images'); await mkdir(directory);
   service.runs.set('s', { state: { runId: 'r' }, keyHash: 'key', controller: new AbortController() });
