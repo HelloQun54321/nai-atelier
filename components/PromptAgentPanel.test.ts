@@ -300,7 +300,8 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
     fireEvent.change(box, { target: { value: '继续这个任务' } });
     fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
-    fireEvent.click(screen.getByRole('button', { name: '思考强度：高' }));
+    const slider = screen.getByRole('slider', { name: '思考强度' });
+    fireEvent.change(slider, { target: { value: '2' } }); fireEvent.pointerUp(slider);
     const send = screen.getByRole('button', { name: '执行' }) as HTMLButtonElement;
     expect(send.disabled).toBe(true); fireEvent.click(send); fireEvent.keyDown(box, { key: 'Enter' });
     expect(run).not.toHaveBeenCalled(); expect((box as HTMLTextAreaElement).value).toBe('继续这个任务');

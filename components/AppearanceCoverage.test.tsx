@@ -81,6 +81,26 @@ describe('全局外观覆盖审计', () => {
     expect(declarations('.p-3').padding).toBe('calc(var(--spacing) * 3)');
   });
 
+  it('Agent 强度轨道沿用主题色，圆形发送和停止不受手机最小高度拉伸', () => {
+    const modelCss = readFileSync(resolve('components/AgentModelControl.css'), 'utf8');
+    const actionCss = readFileSync(resolve('components/AgentSurface.css'), 'utf8');
+    const modelRules = parse(modelCss), actionRules = parse(actionCss);
+    const ruleDecls = (root: ReturnType<typeof parse>, selector: string) => {
+      const result: Record<string, string> = {};
+      root.walkRules(rule => { if (rule.selectors.includes(selector)) rule.walkDecls(decl => { result[decl.prop] = decl.value; }); });
+      return result;
+    };
+    expect(ruleDecls(modelRules, '.agent-thinking-fill').background).toBe('var(--nai-accent, #006fdf)');
+    expect(ruleDecls(modelRules, "html[data-motion='reduced'] .agent-thinking-flow").animation).toBe('none');
+    expect(ruleDecls(modelRules, "html[data-motion='off'] .agent-thinking-flow").animation).toBe('none');
+    const action = ruleDecls(actionRules, '.agent-composer-action');
+    expect(action.width).toBe(action.height); expect(action['min-width']).toBe(action['min-height']);
+    expect(action['border-radius']).toBe('50%'); expect(action.flex).toBe('0 0 var(--agent-action-size)');
+    expect(actionCss).toContain('max(44px, 2.75rem)');
+    const panel = sources.find(source => source.file === 'components/PromptAgentPanel.tsx')!.text;
+    expect(panel.match(/className="agent-composer-action /g)?.length).toBe(2);
+  });
+
   it('Agent 手机圆角、拖拽强调色与手机详情栏使用主题变量，全屏边界保留直角', () => {
     expect(declarations('.agent-panel')['border-radius']).toBe('0'); // 桌面贴边，最后规则保持直角。
     expect(css).toMatch(/\.agent-panel\s*\{[^}]*border-radius: var\(--radius-2xl\) var\(--radius-2xl\) 0 0;/);

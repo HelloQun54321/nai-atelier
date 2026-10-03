@@ -1,0 +1,3 @@
+/* 操作形状保持稳定；密度与字号仍由全局主题变量决定。 */
+.agent-composer-action { --agent-action-size: calc(var(--spacing, .25rem) * 9); width: var(--agent-action-size); height: var(--agent-action-size); min-width: var(--agent-action-size); min-height: var(--agent-action-size); flex: 0 0 var(--agent-action-size); aspect-ratio: 1; padding: 0; border-radius: 50%; }
+@media (max-width: 767px) { .agent-composer-action { --agent-action-size: max(44px, 2.75rem); } }
