@@ -5,7 +5,8 @@ import { LAN_ACCESS_COOKIE } from '../sharedWhitelist.mjs';
 import { MEDIA_VARIANTS, validateMediaSource } from '../mediaValidation';
 import { normalizeChainTags } from '../../services/chainTags';
 import { DEFAULT_IMAGE_TAGGER_MODEL, findImageTaggerModel } from '../../services/imageTaggerModels.mjs';
-import { json, error, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, type D1Database, type Env, type RouteContext } from './types';
+import { buildAitagImageFetch, getAitagImageCacheKeys } from './aitagRoutes';
+import { json, error, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, type D1Database, type Env, type R2ObjectBody, type RouteContext } from './types';
 
 const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const lanAccessAttempts = new Map<string, { failures: number; blockedUntil: number }>();
@@ -275,12 +276,32 @@ const readLimitedImageBody = async (response: Response) => {
     return output;
 };
 
+const copyChainCover = async (env: Env, source: R2ObjectBody, id: string, imageType = '') => {
+    const headers = new Headers();
+    source.writeHttpMetadata(headers);
+    if (imageType) headers.set('content-type', imageType);
+    const contentType = (headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    const extension = ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' } as Record<string, string>)[contentType];
+    if (!extension) throw new Error('封面不是支持的 PNG、JPEG 或 WebP 图片');
+    const bytes = await readLimitedImageBody(new Response(source.body, { headers }));
+    const target = `covers/${id}_${Date.now()}.${extension}`;
+    await env.BUCKET!.put(target, bytes.buffer as ArrayBuffer, { httpMetadata: { contentType } });
+    return `/api/assets/${target}`;
+};
+
 /** 新串拥有独立封面；已缓存图片只在本机复制，避免以后换封面时删除来源资产。 */
 const createChainCover = async (env: Env, db: D1Database, value: unknown, id: string, user: { id: string; role: string }) => {
     if (!value) return null;
     if (typeof value !== 'string') throw new Error('封面地址无效');
     if (value.startsWith('data:')) return processImageUpload(env, value, 'covers', id, user);
-    if (value.startsWith('https://')) return fetchAndUploadImage(env, value, 'covers', id, user);
+    if (value.startsWith('https://')) {
+        // 详情可能早于后台缓存完成，仍保留远程地址；先查已经落盘的同一张图。
+        for (const key of getAitagImageCacheKeys(value)) {
+            const cached = await env.BUCKET?.get(key);
+            if (cached) return copyChainCover(env, cached, id);
+        }
+        return fetchAndUploadImage(env, value, 'covers', id, user);
+    }
     if (!env.BUCKET) throw new Error('R2 Bucket not configured');
     let key = '';
     let imageType = '';
@@ -299,16 +320,7 @@ const createChainCover = async (env: Env, db: D1Database, value: unknown, id: st
     }
     const source = await env.BUCKET.get(key);
     if (!source) throw new Error('本地封面图片不存在');
-    const headers = new Headers();
-    source.writeHttpMetadata(headers);
-    if (imageType) headers.set('content-type', imageType);
-    const contentType = (headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-    const extension = ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' } as Record<string, string>)[contentType];
-    if (!extension) throw new Error('封面不是支持的 PNG、JPEG 或 WebP 图片');
-    const bytes = await readLimitedImageBody(new Response(source.body, { headers }));
-    const target = `covers/${id}_${Date.now()}.${extension}`;
-    await env.BUCKET.put(target, bytes.buffer as ArrayBuffer, { httpMetadata: { contentType } });
-    return `/api/assets/${target}`;
+    return copyChainCover(env, source, id, imageType);
 };
 
 // Helper: Process Base64 Image and Upload to R2 with Quota Check
@@ -370,7 +382,9 @@ export async function fetchAndUploadImage(
         let target = validateExternalImageUrl(imageUrl);
         let response: Response | null = null;
         for (let redirects = 0; redirects <= 3; redirects++) {
-            response = await fetch(target.toString(), { redirect: 'manual', signal: AbortSignal.timeout(20_000) });
+            const isAitag = ['ai-img.10118899.xyz', 'aitag.win'].includes(target.hostname.toLowerCase());
+            const transport = isAitag ? buildAitagImageFetch(target.toString(), env) : { url: target.toString(), headers: {} };
+            response = await fetch(transport.url, { headers: transport.headers, redirect: 'manual', signal: AbortSignal.timeout(20_000) });
             if (![301, 302, 303, 307, 308].includes(response.status)) break;
             const location = response.headers.get('location');
             if (!location) throw new Error('外链图片重定向地址无效');

@@ -86,6 +86,30 @@ function buildLocalAitagFetch(targetUrl: string, env?: Env) {
   };
 }
 
+/** 图片缓存与封面保存共用图床防盗链头及本机代理，内部凭据只发给本机代理。 */
+export function buildAitagImageFetch(targetUrl: string, env?: Env) {
+  const localFetch = buildLocalAitagFetch(targetUrl, env);
+  return {
+    url: localFetch.url,
+    headers: {
+      'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      'Referer': `${AITAG_BASE_URL}/`,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+      ...localFetch.headers,
+    },
+  };
+}
+
+/** 旧详情仍带外链时，按现有图片缓存键查找；首图缓存只适用于 P0。 */
+export function getAitagImageCacheKeys(value: string) {
+  const url = new URL(value);
+  if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'ai-img.10118899.xyz' || url.username || url.password || (url.port && url.port !== '443')) return [];
+  const match = url.pathname.match(/^\/[^/]+\/\d+\/(\d+)_p(\d+)\.webp$/i);
+  if (!match) return [];
+  const [, workId, index] = match;
+  return [`aitag-images/${workId}/${workId}_p${index}.webp`, ...(Number(index) === 0 ? [`aitag-covers/${workId}.webp`] : [])];
+}
+
 function normalizeAitagSearchPayload(payload: any, fallbackPage: number, fallbackPageSize: number) {
   const items = Array.isArray(payload?.items)
     ? payload.items
@@ -324,14 +348,9 @@ async function fetchAitagImageToBucket(env: Env, image: any, options: { workId: 
   }
 
   try {
-    const localFetch = buildLocalAitagFetch(remoteUrl, env);
+    const localFetch = buildAitagImageFetch(remoteUrl, env);
     const response = await fetch(localFetch.url, {
-      headers: {
-        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-        'Referer': `${AITAG_BASE_URL}/`,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
-        ...localFetch.headers,
-      },
+      headers: localFetch.headers,
     });
     if (!response.ok) throw new Error(`image HTTP ${response.status}`);
 

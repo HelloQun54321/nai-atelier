@@ -2,12 +2,12 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { handleSettingsRoute } from './settingsRoutes';
 import { handleAgentRoute } from './historyRoutes';
-import { INIT_SQL, type D1Database, type R2Bucket, type RouteContext } from './types';
+import { INIT_SQL, type D1Database, type Env, type R2Bucket, type RouteContext } from './types';
 
 const databases: DatabaseSync[] = [];
 afterEach(() => { for (const database of databases.splice(0)) database.close(); vi.unstubAllGlobals(); });
 
-const fixture = (bucket?: R2Bucket) => {
+const fixture = (bucket?: R2Bucket, envOverrides: Partial<Env> = {}) => {
   const sqlite = new DatabaseSync(':memory:'); databases.push(sqlite); sqlite.exec(INIT_SQL);
   const db = { prepare(query: string) {
     let values: any[] = [];
@@ -21,7 +21,7 @@ const fixture = (bucket?: R2Bucket) => {
   const initDB = vi.fn(async () => { throw new Error('不允许迁移'); });
   const invoke = async (path = '/api/chains', method = 'GET', body?: unknown) => {
     const request = new Request(`http://localhost${path}`, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    const context: RouteContext = { request, path: new URL(request.url).pathname, method, url: new URL(request.url), db, currentUser: { id: 'test-owner', username: 'test', role: 'admin' }, env: { BUCKET: bucket, ASSETS: { fetch: async () => { throw new Error('不允许访问真实资产'); } } }, initDB };
+    const context: RouteContext = { request, path: new URL(request.url).pathname, method, url: new URL(request.url), db, currentUser: { id: 'test-owner', username: 'test', role: 'admin' }, env: { BUCKET: bucket, ASSETS: { fetch: async () => { throw new Error('不允许访问真实资产'); } }, ...envOverrides }, initDB };
     const response = path.startsWith('/api/agent/') ? await handleAgentRoute(context) : await handleSettingsRoute(context);
     return response!;
   };
@@ -110,6 +110,65 @@ describe('新建风格串的立即打开与封面保存（隔离 SQLite／R2）'
     expect(result.status).toBe(200);
     expect((await result.json() as any).chain.previewImage).toMatch(/^\/api\/assets\/covers\/.+\.png$/);
     expect(fetchMock).toHaveBeenCalledTimes(1); expect(b.put).toHaveBeenCalledTimes(1);
+  });
+
+  it('图床要求防盗链头时仍能保存：缺少 Referer／浏览器 UA 的请求会返回 403', async () => {
+    const b = bucketFixture(); const f = fixture(b.bucket, { LAN_ACCESS_SECRET: 'synthetic-internal-secret' });
+    const fetchMock = vi.fn(async (_url: string, options: RequestInit) => {
+      const headers = new Headers(options.headers);
+      if (headers.get('Referer') !== 'https://aitag.win/' || !headers.get('User-Agent')?.includes('Mozilla/5.0')) return new Response('Forbidden', { status: 403 });
+      expect(headers.has('X-Nai-Internal-Secret')).toBe(false);
+      return new Response(new Uint8Array([4, 3, 2, 1]), { headers: { 'Content-Type': 'image/webp' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await f.invoke('/api/chains', 'POST', { name: '防盗链回归', previewImage: 'https://ai-img.10118899.xyz/nai/1/123_p1.webp' });
+    expect(result.status).toBe(200);
+    expect((await result.json() as any).chain.previewImage).toMatch(/^\/api\/assets\/covers\//);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('本机模式走 AITag 专用代理及内部鉴权，沿用图床挑战恢复链路', async () => {
+    const b = bucketFixture();
+    const f = fixture(b.bucket, { AITAG_LOCAL_PROXY_URL: 'http://127.0.0.1:3001/__internal/aitag-fetch', LAN_ACCESS_SECRET: 'synthetic-internal-secret' });
+    const source = 'https://ai-img.10118899.xyz/nai/1/123_p1.webp';
+    const fetchMock = vi.fn(async (value: string, options: RequestInit) => {
+      const target = new URL(value);
+      if (target.origin !== 'http://127.0.0.1:3001') return new Response('Forbidden', { status: 403 });
+      expect(target.pathname).toBe('/__internal/aitag-fetch'); expect(target.searchParams.get('url')).toBe(source);
+      expect(new Headers(options.headers).get('X-Nai-Internal-Secret')).toBe('synthetic-internal-secret');
+      return new Response(new Uint8Array([4, 3, 2, 1]), { headers: { 'Content-Type': 'image/webp' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await f.invoke('/api/chains', 'POST', { name: '本机代理回归', previewImage: source });
+    expect(result.status).toBe(200); expect(fetchMock).toHaveBeenCalledTimes(1); expect(b.put).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['aitag-images/123/123_p0.webp', 'aitag-covers/123.webp'])('详情仍带外链时优先使用已落盘的 %s，不再次联网', async key => {
+    const b = bucketFixture(); b.data.set(key, new Uint8Array([7, 8, 9])); const f = fixture(b.bucket);
+    const fetchMock = vi.fn(async () => new Response('Forbidden', { status: 403 })); vi.stubGlobal('fetch', fetchMock);
+    const result = await f.invoke('/api/chains', 'POST', { name: '迟到缓存回归', previewImage: 'https://ai-img.10118899.xyz/nai/1/123_p0.webp' });
+    expect(result.status).toBe(200); expect(fetchMock).not.toHaveBeenCalled();
+    const created = await result.json() as any;
+    expect(b.data.get(created.chain.previewImage.slice('/api/assets/'.length))).toEqual(new Uint8Array([7, 8, 9]));
+    expect(b.data.has(key)).toBe(true); expect(b.del).not.toHaveBeenCalled();
+  });
+
+  it('P1 不误用 P0 的首图缓存，跳转其他图床也不携带内部代理凭据', async () => {
+    const b = bucketFixture(); b.data.set('aitag-covers/123.webp', new Uint8Array([7, 8, 9]));
+    const f = fixture(b.bucket, { AITAG_LOCAL_PROXY_URL: 'http://127.0.0.1:3001/__internal/aitag-fetch', LAN_ACCESS_SECRET: 'synthetic-internal-secret' });
+    const fetchMock = vi.fn(async (value: string, options: RequestInit) => {
+      if (value.startsWith('http://127.0.0.1:3001')) return new Response(null, { status: 302, headers: { Location: 'https://cdn.donmai.us/synthetic.webp' } });
+      expect(value).toBe('https://cdn.donmai.us/synthetic.webp');
+      const headers = new Headers(options.headers);
+      expect(headers.has('X-Nai-Internal-Secret')).toBe(false); expect(headers.has('Referer')).toBe(false);
+      return new Response(new Uint8Array([4, 3, 2, 1]), { headers: { 'Content-Type': 'image/webp' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await f.invoke('/api/chains', 'POST', { name: '分图回归', previewImage: 'https://ai-img.10118899.xyz/nai/1/123_p1.webp' });
+    expect(result.status).toBe(200); expect(b.get).not.toHaveBeenCalledWith('aitag-covers/123.webp');
+    const created = await result.json() as any;
+    expect(b.data.get(created.chain.previewImage.slice('/api/assets/'.length))).toEqual(new Uint8Array([4, 3, 2, 1]));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it.each(['/api/assets/missing.png', '/api/assets/../private.png', 'blob:synthetic', 'https://127.0.0.1/private.png'])('封面失败 %s 不创建半套条目或删除来源', async previewImage => {
