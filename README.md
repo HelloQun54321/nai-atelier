@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.17.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.17.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -468,6 +468,8 @@ flowchart LR
 - **全链路资产盘活**：同一张灵感图可一键派生为风格串、角色参考图、永久 Vibe 编码，或设为现有预设封面；详情自动推荐提示词相近的灵感。
 
 ### ✦ 项目 Agent：业务联动多会话工作台
+
+内置 Agent 的前后端审查、现有 API 接入说明、已复现的流程缺陷与分阶段优化方案见 [Agent 审查与优化计划](./docs/AGENT_REVIEW_AND_PLAN.md)。该文档区分现有实现与尚未实施的建议。
 
 桌面侧栏、移动端贴边可拖拽浮钮（或系统设置）及实验室右上角均可一键打开基于 [pi.dev](https://pi.dev/) 轻量核心的项目 Agent。它不是一个需要您手动复制 Prompt 的旁路聊天框，而是能直接读取电脑资料、观察历史原图并调用工坊工具的业务级 AI 助手。
 
