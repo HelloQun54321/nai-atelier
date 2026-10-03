@@ -23,6 +23,7 @@ export const AgentPermissionSelect: React.FC<{ disabled?: boolean }> = ({ disabl
   const requestSequence = useRef(0);
   const selected = levels.find(item => item.mode === mode)!;
   const Icon = selected.icon;
+  const positioned = position !== undefined;
 
   const load = useCallback(async () => {
     if (saving.current) return;
@@ -74,8 +75,10 @@ export const AgentPermissionSelect: React.FC<{ disabled?: boolean }> = ({ disabl
     return () => { observer?.disconnect(); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
   }, [open]);
   useEffect(() => {
+    if (open && positioned) menu.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
+  }, [open, positioned]);
+  useEffect(() => {
     if (!open) return;
-    menu.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
     const outside = (event: PointerEvent) => {
       if (event.target instanceof Node && !trigger.current?.contains(event.target) && !menu.current?.contains(event.target)) setOpen(false);
     };

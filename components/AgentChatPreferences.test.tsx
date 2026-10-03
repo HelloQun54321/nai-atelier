@@ -58,6 +58,7 @@ it('权限菜单支持键盘与外部关闭，选择当前档位不重复写入'
   fireEvent.keyDown(trigger, { key: 'ArrowDown' }); const menu = screen.getByRole('menu');
   expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: /^标准/ }));
   fireEvent.keyDown(menu, { key: 'ArrowDown' }); expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: /^完全访问/ }));
+  fireEvent(window, new Event('resize')); expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: /^完全访问/ }));
   fireEvent.keyDown(menu, { key: 'Home' }); expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: /^只读/ }));
   fireEvent.keyDown(menu, { key: 'Escape' }); expect(screen.queryByRole('menu')).toBeNull(); expect(document.activeElement).toBe(trigger);
   fireEvent.click(trigger); fireEvent.click(screen.getByRole('menuitemradio', { name: /^标准/ })); expect(save).not.toHaveBeenCalled();
