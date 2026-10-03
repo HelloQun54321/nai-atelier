@@ -1,6 +1,12 @@
 import { PromptAgentAction, PromptAgentDraft } from '../types';
 import { parseErrorResponse } from './api';
 
+
+const agentAuthHeaders = (): Record<string, string> => {
+  const key = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '' : '';
+  return key ? { Authorization: 'Bearer ' + key } : {};
+};
+
 export interface PromptAgentConfig {
   provider: string;
   model: string;
@@ -163,7 +169,7 @@ export interface PromptAgentHistoryMessage {
   tools?: Array<{ id: string; name: string; args?: unknown; result?: unknown; state: 'running' | 'done' | 'error' | 'interrupted' }>;
 }
 
-export type PromptAgentEvent =
+export type PromptAgentEvent = ({ runId?: string; seq?: number } & (
   | { type: 'response_start'; id: string }
   | { type: 'text_delta'; delta: string }
   | { type: 'thinking_delta'; delta: string }
@@ -174,8 +180,20 @@ export type PromptAgentEvent =
   | { type: 'queue'; action: 'steer' | 'followUp'; message: string }
   | { type: 'action'; action: PromptAgentAction; draft?: PromptAgentDraft }
   | { type: 'project_changed'; resource: string }
-  | { type: 'done'; draft: PromptAgentDraft; message: string; provider: string; model: string }
-  | { type: 'error'; error: string };
+  | { type: 'done'; draft: PromptAgentDraft; message: string; provider: string; model: string; status?: string }
+  | { type: 'error'; error: string }));
+
+export interface PromptAgentTask {
+  status?: string;
+  runId?: string;
+  cursor?: number;
+  reset?: boolean;
+  error?: string;
+  target?: PromptAgentDraft['target'];
+  finalDraft?: PromptAgentDraft | null;
+  events?: PromptAgentEvent[];
+  pending?: Array<{ requestId: string; approved: boolean; expiresAt: number; operation: { action: string; resourceId: string; payload: Record<string, unknown> } }>;
+}
 
 // ── 破限提示词与预设实验室（9 槽注入契约）────────────────────────────
 // 9 个注入目标（target）固定、顺序稳定、跨组件一致，无旧键别名：
@@ -406,7 +424,7 @@ export const promptAgentService = {
     if (!response.ok) return readError(response);
   },
   control: async (sessionId: string, action: 'steer' | 'followUp' | 'abort' | 'clear' | 'confirm' | 'finalize', message?: string, payload?: Record<string, unknown>) => {
-    const response = await fetch('/api/prompt-agent/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId, action, message, ...(payload || {}) }) });
+    const response = await fetch('/api/prompt-agent/control', { method: 'POST', headers: { 'Content-Type': 'application/json', ...agentAuthHeaders() }, body: JSON.stringify({ sessionId, action, message, ...(payload || {}) }) });
     if (!response.ok) return readError(response);
   },
   resetSession: async (sessionId: string) => {
@@ -419,7 +437,7 @@ export const promptAgentService = {
     return (await response.json()).items || [];
   },
   executeProjectAction: async (action: { action: string; resourceId?: string; payload?: Record<string, unknown>; sessionId?: string; confirmationRequestId?: string }) => {
-    const response = await fetch('/api/prompt-agent/project-action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action) });
+    const response = await fetch('/api/prompt-agent/project-action', { method: 'POST', headers: { 'Content-Type': 'application/json', ...agentAuthHeaders() }, body: JSON.stringify(action) });
     if (!response.ok) return readError(response) as never;
     return response.json() as Promise<{ ok: boolean; action: string; resourceId?: string }>;
   },
@@ -428,8 +446,8 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return (await response.json()).items || [];
   },
-  getTask: async (sessionId: string): Promise<{ status?: string; events?: PromptAgentEvent[] }> => {
-    const response = await fetch(`/api/prompt-agent/task?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' });
+  getTask: async (sessionId: string, after = 0, runId = ''): Promise<PromptAgentTask> => {
+    const response = await fetch(`/api/prompt-agent/task?sessionId=${encodeURIComponent(sessionId)}&after=${after}&runId=${encodeURIComponent(runId)}`, { cache: 'no-store' });
     if (!response.ok) return readError(response) as never;
     return response.json();
   },

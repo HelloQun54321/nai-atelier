@@ -1,3 +1,5 @@
+import { promptAgentCoordinator } from '../services/promptAgentCoordinator';
+import type { PromptAgentEvent, PromptAgentTask } from '../services/promptAgent';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 import { isTopmostModal } from './useModalA11y';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -209,6 +211,22 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     retry: () => {},
   });
   const confirmAction = useConfirmDialog();
+  const taskCursorRef = useRef({ runId: '', cursor: 0, events: [] as PromptAgentEvent[] });
+  const [taskSnapshot, setTaskSnapshot] = useState<PromptAgentTask>({});
+  const [artifactDismissed, setArtifactDismissed] = useState('');
+  const uiActiveRef = useRef(props.open);
+  const currentKeyRef = useRef(props.apiKey);
+  currentKeyRef.current = props.apiKey;
+  useEffect(() => { uiActiveRef.current = props.open; return () => { uiActiveRef.current = false; }; }, [props.open]);
+  const composerSessionRef = useRef('');
+  const composerRestoringRef = useRef(false);
+  useEffect(() => {
+    if (composerSessionRef.current === activeSessionId) return;
+    composerSessionRef.current = activeSessionId; composerRestoringRef.current = true;
+    const saved = promptAgentCoordinator.loadComposer(activeSessionId);
+    setInput(saved.text); setAttachments(saved.attachments); setEditingMessageId('');
+  }, [activeSessionId]);
+  useEffect(() => { if (composerRestoringRef.current) { composerRestoringRef.current = false; return; } if (composerSessionRef.current === activeSessionId) promptAgentCoordinator.saveComposer(activeSessionId, input, attachments); }, [activeSessionId, input, attachments]);
   const closePanel = () => {
     props.onClose();
   };
@@ -354,8 +372,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     const loadSeq = ++sessionLoadSeqRef.current;
     void Promise.all([promptAgentService.getSession(activeSessionId), promptAgentService.getTask(activeSessionId)]).then(([items, task]) => {
       if (loadSeq !== sessionLoadSeqRef.current) return;
-      const restored = items.map(item => ({ ...item }));
-      if ((task.status === 'interrupted' || task.status === 'running') && task.events?.length) {
+      taskCursorRef.current = { runId: task.runId || '', cursor: task.cursor || 0, events: task.events || [] };
+      setTaskSnapshot(task);
+      const restored: PanelMessage[] = items.map(item => ({ ...item }));
+      if ((['interrupted', 'preparing', 'running', 'waiting_confirmation', 'executing'].includes(String(task.status))) && task.events?.length) {
         const replayText = task.events.map(event => {
           if (event.type === 'text_delta') return event.delta;
           if (event.type === 'tool_start') return `\n▸ 开始：${event.toolName}`;
@@ -364,8 +384,9 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           if (event.type === 'queue') return `\n↳ 已排队：${event.action}`;
           return '';
         }).join('').trim();
-        restored.push({ id: `task-replay-${activeSessionId}`, role: 'agent', text: `任务执行回放（${task.status === 'running' ? '异常中断' : '中断'}）\n\n${replayText || '没有可恢复的文本事件。'}\n\n你可以继续发送要求。` });
+        restored.push({ id: `task-replay-${activeSessionId}`, role: 'agent', text: `任务执行回放（${task.status === 'interrupted' ? '服务中断' : '仍在执行'}）\n\n${replayText || '没有可恢复的文本事件。'}\n\n你可以继续发送要求。` });
       }
+      if (task.error) restored.push({ id: 'task-error-' + (task.runId || activeSessionId), role: 'error', text: task.error });
       loadedSessionIdRef.current = activeSessionId;
       setMessages(restored);
     }).catch(() => {});
@@ -381,9 +402,18 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     const poll = async () => {
       let delay = wasRunning ? 2000 : 10000;
       try {
-        const task = await promptAgentService.getTask(activeSessionId);
+        const prior = taskCursorRef.current;
+        const task = await promptAgentService.getTask(activeSessionId, prior.cursor, prior.runId);
+        const events = task.reset || task.runId !== prior.runId ? task.events || [] : [...prior.events, ...(task.events || [])].slice(-500);
+        task.events = events;
+        taskCursorRef.current = { runId: task.runId || '', cursor: task.cursor || 0, events };
         if (disposed) return;
-        const isRunning = task.status === 'running';
+        setTaskSnapshot(task);
+        const isRunning = ['preparing', 'running', 'waiting_confirmation', 'executing'].includes(String(task.status));
+        if (isRunning && !promptAgentCoordinator.running(activeSessionId)) {
+          const replay = (task.events || []).map(event => event.type === 'text_delta' ? event.delta : event.type === 'tool_start' ? '\n▸ ' + event.toolName : '').join('');
+          setMessages(previous => [...previous.filter(item => !item.id.startsWith('task-replay-')), { id: 'task-replay-' + activeSessionId, role: 'agent', text: replay || '电脑正在执行任务…' }]);
+        }
         delay = isRunning ? 2000 : 10000;
         if (isRunning) setRunning(true);
         else if (wasRunning && ['completed', 'failed', 'aborted', 'interrupted'].includes(String(task.status))) {
@@ -407,7 +437,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const runningTool = messages.slice().reverse().map(message => message.tools?.find(tool => tool.state === 'running')).find(Boolean);
   const executionStatus = running
     ? runningTool ? `正在${toolLabels[runningTool.name] || runningTool.name}` : responseStartedRef.current ? '正在生成回复' : '正在准备任务'
-    : !sessionReady ? '正在加载对话' : editingMessageId ? '正在编辑旧消息' : '准备就绪';
+    : taskSnapshot.status === 'failed' ? '上次任务失败' : taskSnapshot.status === 'aborted' ? '已停止' : taskSnapshot.status === 'interrupted' ? '服务已中断' : !sessionReady ? '正在加载对话' : editingMessageId ? '正在编辑旧消息' : '准备就绪';
 
   useLayoutEffect(() => {
     if (!props.open) return;
@@ -515,6 +545,56 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     }
   };
 
+  const handleConfirmedAction = (event: Extract<PromptAgentEvent, { type: 'action' }>) => {
+    const approvalKey = props.apiKey;
+    if (event.action.kind === 'request_project_action') {
+            const patch = event.action.patch;
+            void (async () => {
+              const isEncoding = patch.action === 'encode_vibe';
+              const accepted = await confirmAction({ title: patch.title, message: patch.consequence, confirmLabel: patch.action === 'clear_history' ? '永久清空' : isEncoding ? '消耗 2 Anlas 并生成' : '确认执行', ...(isEncoding ? {} : { tone: 'danger' as const }) });
+              if (!accepted) {
+                if (approvalKey !== currentKeyRef.current) throw new Error('NovelAI Key 已变化，请重新提出请求');
+                await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false }).catch(() => {});
+                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: '已取消该项目操作，没有修改数据。' }]);
+                return;
+              }
+              try {
+                await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: true });
+                if (patch.action === 'encode_vibe') {
+                  if (!props.apiKey) throw new Error('请先在全局设置中填写 NovelAI API Key');
+                  await vibeService.encode(patch.resourceId || '', Number(patch.payload?.informationExtracted ?? 1), props.apiKey);
+                  await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: true, result: { action: patch.action, resourceId: patch.resourceId } });
+                } else if (patch.action === 'clear_mobile_cache') {
+                  await clearMobileThumbnailCache();
+                  await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: true, result: { action: patch.action } });
+                } else await promptAgentService.executeProjectAction({ action: patch.action, resourceId: patch.resourceId, payload: patch.payload, sessionId: activeSessionId, confirmationRequestId: patch.requestId });
+                window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: patch }));
+                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: '已在你确认后完成该项目操作。' }]);
+              } catch (error) {
+                await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: false }).catch(() => {});
+                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '项目操作失败' }]);
+              }
+            })();
+          } else if (event.action.kind === 'request_generation') {
+            const generationAction = event.action;
+            void (async () => {
+              let approved = false;
+              const requestId = generationAction.patch.requestId;
+              try {
+                const success = await props.onRequestGeneration(event.draft || props.draft, generationAction.patch.reason, async () => {
+                  if (approvalKey !== currentKeyRef.current || !uiActiveRef.current) throw new Error('当前 Key 或创作目标已变化，请重新提出请求');
+                  await promptAgentService.control(activeSessionId, 'confirm', requestId, { requestId, accepted: true });
+                  approved = true;
+                });
+                await promptAgentService.control(activeSessionId, approved ? 'finalize' : 'confirm', requestId, { requestId, accepted: false, success: success === true });
+              } catch (error) {
+                await promptAgentService.control(activeSessionId, approved ? 'finalize' : 'confirm', requestId, { requestId, accepted: false, success: false }).catch(() => {});
+                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '生成失败' }]);
+              }
+            })();
+          }
+  };
+
   const run = async (suggestion?: string, mode: 'prompt' | 'retry' = 'prompt') => {
     const prompt = (suggestion ?? input).trim() || (attachments.length ? '请分析我附带的图片，并结合项目内容给出建议。' : '');
     if (!activeSessionId || !activeSession || (mode === 'prompt' && !prompt)) return;
@@ -522,6 +602,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: '没有可用的视觉模型，请先在 Agent 设置中选择带“识图”标记的模型。' }]);
       return;
     }
+    if (running && attachments.length) { setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: '运行中只支持文字补充，图片仍保留；请等完成后发送。' }]); return; }
     if (running) {
       try {
         await promptAgentService.control(activeSessionId, queueMode, prompt);
@@ -560,11 +641,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       const imageDisplay = getMobileImageDisplayPreferences();
       let artistFavorites: string[] = [];
       try { artistFavorites = JSON.parse(localStorage.getItem('nai_fav_artists') || '[]'); } catch { /* ignore damaged browser preference */ }
-      await promptAgentService.run({ apiKey: props.apiKey, sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], draft: props.draft, context: { clientSettings: {
+      await promptAgentCoordinator.run({ apiKey: props.apiKey, sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], draft: props.draft, context: { clientSettings: {
         themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true', safeModeStartup: localStorage.getItem('nai_safe_mode_startup') !== 'false',
         imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey), artistFavorites: Array.isArray(artistFavorites) ? artistFavorites.slice(0, 2000) : [],
         tagAssistEnabled: props.tagAssistEnabled,
       } } }, event => {
+        if (!uiActiveRef.current) return;
+        if (event.runId) setTaskSnapshot(previous => ({ ...previous, runId: event.runId }));
         if (event.type === 'response_start') {
           if (responseStartedRef.current) {
             const nextId = crypto.randomUUID();
@@ -580,50 +663,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         if (event.type === 'tool_end') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, tools: (item.tools || []).map(tool => tool.id === event.toolCallId ? { ...tool, result: event.result, state: event.isError ? 'error' : 'done' } : tool) } : item));
         if (event.type === 'project_changed') window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: event.resource } }));
         if (event.type === 'action') {
-          if (event.action.kind === 'request_project_action') {
-            const patch = event.action.patch;
-            void (async () => {
-              const isEncoding = patch.action === 'encode_vibe';
-              const accepted = await confirmAction({ title: patch.title, message: patch.consequence, confirmLabel: patch.action === 'clear_history' ? '永久清空' : isEncoding ? '消耗 2 Anlas 并生成' : '确认执行', ...(isEncoding ? {} : { tone: 'danger' as const }) });
-              if (!accepted) {
-                await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false }).catch(() => {});
-                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: '已取消该项目操作，没有修改数据。' }]);
-                return;
-              }
-              try {
-                await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: true });
-                if (patch.action === 'encode_vibe') {
-                  if (!props.apiKey) throw new Error('请先在全局设置中填写 NovelAI API Key');
-                  await vibeService.encode(patch.resourceId || '', Number(patch.payload?.informationExtracted ?? 1), props.apiKey);
-                  await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: true, result: { action: patch.action, resourceId: patch.resourceId } });
-                } else if (patch.action === 'clear_mobile_cache') {
-                  await clearMobileThumbnailCache();
-                  await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: true, result: { action: patch.action } });
-                } else await promptAgentService.executeProjectAction({ action: patch.action, resourceId: patch.resourceId, payload: patch.payload, sessionId: activeSessionId, confirmationRequestId: patch.requestId });
-                window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: patch }));
-                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: '已在你确认后完成该项目操作。' }]);
-              } catch (error) {
-                await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: false }).catch(() => {});
-                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '项目操作失败' }]);
-              }
-            })();
-          } else if (event.action.kind === 'request_generation') {
-            const generationAction = event.action;
-            void (async () => {
-              let approved = false;
-              const requestId = generationAction.patch.requestId;
-              try {
-                const success = await props.onRequestGeneration(event.draft || props.draft, generationAction.patch.reason, async () => {
-                  await promptAgentService.control(activeSessionId, 'confirm', requestId, { requestId, accepted: true });
-                  approved = true;
-                });
-                await promptAgentService.control(activeSessionId, approved ? 'finalize' : 'confirm', requestId, { requestId, accepted: false, success: success === true });
-              } catch (error) {
-                await promptAgentService.control(activeSessionId, approved ? 'finalize' : 'confirm', requestId, { requestId, accepted: false, success: false }).catch(() => {});
-                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '生成失败' }]);
-              }
-            })();
-          } else if (event.action.kind === 'set_client_preferences') {
+          if (event.action.kind === 'request_project_action' || event.action.kind === 'request_generation') handleConfirmedAction(event); else if (event.action.kind === 'set_client_preferences') {
             const patch = event.action.patch;
             if (patch.themeMode) {
               localStorage.setItem('nai_theme', patch.themeMode);
@@ -658,14 +698,15 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         }
         if (event.type === 'error') throw new Error(event.error);
         if (event.type === 'done') {
-          if (labChanged) props.onFinalDraft(event.draft);
+          setTaskSnapshot(previous => ({ ...previous, status: event.status || 'completed', finalDraft: event.status === 'aborted' ? null : event.draft }));
+          if (labChanged && event.status !== 'aborted') { props.onFinalDraft(event.draft); setArtifactDismissed(event.runId || ''); }
           if (navigationTarget) {
             window.dispatchEvent(new CustomEvent('nai-agent-navigate', { detail: navigationTarget }));
             props.onClose();
           }
           if (!event.message) setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current && !item.text ? { ...item, text: '已完成。' } : item));
         }
-      }, controller.signal);
+      });
     } catch (error) {
       if (controller.signal.aborted) {
         setMessages(previous => previous.map(item => item.id === assistantId && !item.text ? { ...item, text: '已停止。' } : item));
@@ -880,6 +921,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     </aside>
 
     <section className="relative flex min-w-0 flex-1 flex-col">
+      {taskSnapshot.finalDraft && taskSnapshot.runId !== artifactDismissed && <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 p-2 text-xs dark:border-gray-800 dark:text-gray-300"><span className="min-w-0 flex-1">上次完成的草稿已保留。</span><button type="button" onClick={() => { if (taskSnapshot.finalDraft) props.onFinalDraft(taskSnapshot.finalDraft); setArtifactDismissed(taskSnapshot.runId || ''); }} className="mobile-touch rounded-lg px-2 text-indigo-600 dark:text-indigo-300">查看与恢复</button><button type="button" onClick={() => setArtifactDismissed(taskSnapshot.runId || '')} className="mobile-touch px-2">暂不应用</button></div>}
+      {(taskSnapshot.pending || []).filter(item => !item.approved).map(item => <div key={item.requestId} className="flex flex-wrap items-center gap-2 border-b border-amber-200 p-2 text-xs dark:border-amber-900 dark:text-gray-300"><span className="min-w-0 flex-1">任务等待你确认：{item.operation.action}</span><button type="button" className="mobile-touch px-2 text-indigo-600 dark:text-indigo-300" onClick={() => handleConfirmedAction({ type: 'action', action: item.operation.action === 'request_generation' ? { kind: 'request_generation', patch: { requestId: item.requestId, reason: '接续上次请求' } } : { kind: 'request_project_action', patch: { ...item.operation, requestId: item.requestId, title: '接续项目操作？', consequence: JSON.stringify(item.operation) } }, draft: item.operation.payload.draft as PromptAgentDraft | undefined })}>查看并决定</button></div>)}
       {/* 顶栏与状态栏合流为单行（节省约 36px 空间） */}
       <header className="border-b border-gray-200 bg-white pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900">
         <div className="flex h-12 items-center gap-1 px-2 md:px-3">

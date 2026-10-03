@@ -577,6 +577,7 @@ const sanitizeParams = raw => {
 };
 
 const sanitizeDraft = raw => ({
+  ...(raw?.target && typeof raw.target === 'object' ? { target: { chainId: text(raw.target.chainId).slice(0, 200), mode: ['text-to-image', 'image-to-image', 'inpaint', 'outpaint'].includes(raw.target.mode) ? raw.target.mode : 'text-to-image', fingerprint: text(raw.target.fingerprint).slice(0, 100) } } : {}),
   basePrompt: text(raw?.basePrompt),
   subjectPrompt: text(raw?.subjectPrompt),
   negativePrompt: text(raw?.negativePrompt),
@@ -1380,6 +1381,7 @@ export class PromptAgentService {
     this.config = { version: PROMPT_AGENT_CONFIG_VERSION, provider: 'deepseek', model: this.defaultModelFor('deepseek'), visionProvider: '', visionModel: '', visionMode: 'auto', encryptedKeys: {}, customProviders: [], creativeMode: true };
     this.activeAgents = new Map();
     this.startingAgents = new Set();
+    this.runs = new Map();
     this.pendingConfirmations = new Map();
     this.taskEventWrites = new Map();
     this.taskEventBuffers = new Map();
@@ -1439,7 +1441,7 @@ export class PromptAgentService {
       if (!file.endsWith('.json')) continue;
       try {
         const task = JSON.parse(await readFile(join(this.taskDirPath(), file), 'utf8'));
-        if (task.status === 'running') await atomicJsonWrite(join(this.taskDirPath(), file), { ...task, status: 'interrupted', updatedAt: Date.now() });
+        if (['preparing', 'running', 'waiting_confirmation', 'executing'].includes(task.status)) await atomicJsonWrite(join(this.taskDirPath(), file), { ...task, status: 'interrupted', updatedAt: Date.now() });
       } catch { /* Ignore a damaged status record; session data remains usable. */ }
     }
     let configNeedsMigration = false;
@@ -2000,6 +2002,7 @@ export class PromptAgentService {
     const requestId = text(input?.confirmationRequestId).slice(0, 100);
     const confirmation = this.pendingConfirmations.get(requestId);
     if (!confirmation || confirmation.sessionId !== text(input?.sessionId) || confirmation.approved !== true) throw Object.assign(new Error('危险操作缺少有效的 Agent 确认令牌'), { status: 403 });
+    if (confirmation.runId && confirmation.runId !== this.runs.get(confirmation.sessionId)?.state.runId || confirmation.keyHash && confirmation.keyHash !== project.keyHash) throw Object.assign(new Error('任务或 NovelAI Key 已变化，请重新提出请求'), { status: 403 });
     const canonical = value => JSON.stringify(value, (_, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
     if (confirmation.executing || confirmation.expiresAt <= Date.now() || canonical({ action: input?.action, resourceId: input?.resourceId || '', payload: input?.payload || {} }) !== canonical(confirmation.operation)) throw Object.assign(new Error('确认内容不匹配、已过期或已在执行'), { status: 409 });
     confirmation.executing = true;
@@ -2202,11 +2205,7 @@ export class PromptAgentService {
       const safe = this.sanitizeTaskEvent(event);
       const state = await this.loadTaskEventBuffer(sessionId);
       const events = state.events;
-      const last = events[events.length - 1];
-      if ((safe.type === 'text_delta' || safe.type === 'thinking_delta') && last?.type === safe.type) {
-        last.delta = `${last.delta || ''}${safe.delta || ''}`.slice(-100_000);
-        last.timestamp = Date.now();
-      } else events.push({ ...safe, timestamp: Date.now() });
+      events.push({ ...safe, timestamp: Date.now() });
       if (events.length > MAX_TASK_EVENTS) events.splice(0, events.length - MAX_TASK_EVENTS);
       state.version += 1;
       state.dirty = true;
@@ -2216,12 +2215,23 @@ export class PromptAgentService {
     try { await next; } finally { if (this.taskEventWrites.get(sessionId) === next) this.taskEventWrites.delete(sessionId); }
   }
 
-  async getTask(sessionId) {
+  async getTask(sessionId, after = 0, runId = '') {
     let status = {};
     try { status = JSON.parse(await readFile(this.taskFile(sessionId), 'utf8')); } catch { /* no task */ }
     await (this.taskEventWrites.get(sessionId) || Promise.resolve()).catch(() => {});
     const state = await this.loadTaskEventBuffer(sessionId);
-    return { ...status, events: state.events.slice(-MAX_TASK_EVENTS) };
+    const live = this.runs.get(sessionId);
+    const current = live?.state || status;
+    const pending = [...this.pendingConfirmations].filter(([, item]) => item.sessionId === sessionId && !item.executing).map(([requestId, item]) => ({ requestId, approved: item.approved === true, expiresAt: item.expiresAt, operation: item.operation }));
+    return { ...current, cursor: state.events.at(-1)?.seq || 0, reset: Boolean(runId && current.runId !== runId), events: state.events.filter(event => (!current.runId || event.runId === current.runId) && (runId && current.runId !== runId || (event.seq || 0) > Number(after))), pending };
+  }
+
+  async withSignal(promise, signal) {
+    if (!signal) return promise;
+    signal.throwIfAborted();
+    let abort;
+    try { return await Promise.race([promise, new Promise((_, reject) => { abort = () => reject(signal.reason); signal.addEventListener('abort', abort, { once: true }); })]); }
+    finally { signal.removeEventListener('abort', abort); }
   }
 
   cancelSessionConfirmations(sessionId) {
@@ -2229,11 +2239,10 @@ export class PromptAgentService {
   }
 
   normalizeThinkingLevel(value, model) {
-    // A new session deliberately starts at the strongest level the exact Pi
-    // model supports. Existing, explicitly selected valid levels are retained.
+    // 默认适中，保留用户已明确选择且当前模型支持的等级。
     const supported = supportedThinkingLevelsFor(model);
     if (supported.includes(value)) return value;
-    return supported.at(-1) || 'off';
+    return supported.includes('medium') ? 'medium' : supported.find(level => level !== 'off') || 'off';
   }
 
   async readSession(sessionId) {
@@ -2533,6 +2542,7 @@ export class PromptAgentService {
 
   controlSession(sessionId, action, message = '', payload = {}) {
     const active = this.activeAgents.get(sessionId);
+    if (action === 'abort' && this.runs.has(sessionId)) { this.runs.get(sessionId).controller.abort(); active?.agent.abort(); this.cancelPendingConfirmations(sessionId); return { ok: true, action }; }
     if (!active) throw Object.assign(new Error('这个会话当前没有正在运行的任务'), { status: 409 });
     if (action === 'abort') { active.agent.abort(); this.cancelPendingConfirmations(sessionId); }
     else if (action === 'steer' || action === 'followUp') {
@@ -2546,7 +2556,8 @@ export class PromptAgentService {
       const requestId = text(payload.requestId || message).slice(0, 100);
       const pending = this.pendingConfirmations.get(requestId);
       if (!pending || pending.sessionId !== sessionId || pending.expiresAt <= Date.now() || pending.approved || pending.executing) throw Object.assign(new Error('确认请求已过期或已被处理'), { status: 409 });
-      if (payload.accepted === true) pending.approved = true;
+      if (payload.accepted === true && pending.keyHash && payload.keyHash !== pending.keyHash) { this.cancelPendingConfirmations(sessionId); throw Object.assign(new Error('NovelAI Key 已变化，请重新提出请求'), { status: 403 }); }
+      if (payload.accepted === true) { pending.approved = true; const run = this.runs.get(sessionId); if (run) run.state.status = 'executing'; }
       else {
         clearTimeout(pending.timer);
         this.pendingConfirmations.delete(requestId);
@@ -2584,9 +2595,11 @@ export class PromptAgentService {
   createConfirmation(sessionId, operation, timeout = 5 * 60 * 1000) {
     const requestId = randomUUID();
     const expiresAt = Date.now() + timeout;
+    const run = this.runs.get(sessionId);
+    if (run) run.state.status = 'waiting_confirmation';
     const promise = new Promise(resolve => {
       const timer = setTimeout(() => { this.pendingConfirmations.delete(requestId); resolve({ accepted: false, result: { reason: '确认超时' } }); }, timeout);
-      this.pendingConfirmations.set(requestId, { sessionId, operation: structuredClone(operation), expiresAt, resolve, timer });
+      this.pendingConfirmations.set(requestId, { sessionId, runId: run?.state.runId, keyHash: run?.keyHash, operation: structuredClone(operation), expiresAt, resolve: result => { if (run) run.state.status = 'running'; resolve(result); }, timer });
     });
     return { requestId, promise };
   }
@@ -2647,6 +2660,12 @@ export class PromptAgentService {
   }
 
   createTools(draft, contextData, emit, project, modelInfo) {
+    if (project?.signal) {
+      const source = project;
+      project = { ...source };
+      if (source.requestJson) project.requestJson = (path, options) => { source.signal.throwIfAborted(); return this.withSignal(source.requestJson(path, { ...options, signal: source.signal }), source.signal); };
+      if (source.requestBuffer) project.requestBuffer = (path, limit) => { source.signal.throwIfAborted(); return this.withSignal(source.requestBuffer(path, limit, source.signal), source.signal); };
+    }
     const apply = (kind, patch) => {
       emit({ type: 'action', action: { kind, patch } });
       return { content: jsonText({ ok: true, applied: patch }), details: { kind, patch } };
@@ -2701,7 +2720,7 @@ export class PromptAgentService {
       for (const provider of providers) {
         try {
           const response = await fetch(provider.url, {
-            redirect: 'error', signal: AbortSignal.timeout(15_000),
+            redirect: 'error', signal: project.signal ? AbortSignal.any([project.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
             headers: { Accept: provider.id === 'bing' ? 'application/rss+xml, application/xml;q=0.9, text/xml;q=0.8' : 'text/html,application/xhtml+xml', 'User-Agent': 'NAI-Atelier-Agent/1.0' },
           });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -3693,8 +3712,24 @@ export class PromptAgentService {
       throw Object.assign(new Error('Agent 请求过于频繁，请一分钟后再试'), { status: 429 });
     }
     this.startingAgents.add(sessionId);
+    const controller = new AbortController();
+    const combined = AbortSignal.any([controller.signal, AbortSignal.timeout(15 * 60 * 1000), ...(signal ? [signal] : [])]);
+    const runState = { sessionId, runId, status: 'preparing', target: input?.draft?.target || null, startedAt: Date.now(), updatedAt: Date.now() };
+    this.runs.set(sessionId, { controller, state: runState, keyHash: project.keyHash || '' });
+    let sequence = 0;
+    const taskEmit = event => {
+      const scoped = { ...event, runId, seq: ++sequence };
+      emit(scoped);
+      void this.appendTaskEvent(sessionId, scoped).catch(() => {});
+      audit('agent_event', { eventType: event?.type || '' });
+    };
     try {
-    const storedSession = await this.readSession(sessionId);
+    await this.flushTaskEvents(sessionId);
+    this.clearTaskEventState(sessionId);
+    this.taskEventBuffers.set(sessionId, { events: [], dirty: true, version: 0 });
+    await atomicJsonWrite(this.taskFile(sessionId), runState);
+    combined.throwIfAborted();
+    const storedSession = await this.withSignal(this.readSession(sessionId), combined);
     const globalConfig = this.publicConfig();
     const provider = this.normalizeProvider(storedSession.meta?.provider || globalConfig.provider);
     const modelId = storedSession.meta?.model || globalConfig.model;
@@ -3726,7 +3761,7 @@ export class PromptAgentService {
     // 会话绑定的不可变预设修订：新会话在 createSession 冻结；旧会话（无修订）
     // 在启动前惰性补齐（atomic 写回，不改动 messages）。run 只读绑定 revision，
     // 预设本体/active 的改删不影响已开始会话。
-    const boundPreset = await this.ensureSessionPresetRevision(sessionId);
+    const boundPreset = await this.withSignal(this.ensureSessionPresetRevision(sessionId), combined);
     const boundRevision = boundPreset || { presetId: '', presetName: '', presetRevisionHash: '', version: 0, createdAt: Date.now(), effectivePolicyFingerprint: '', slots: [] };
     const revisionEffectiveCreativeMode = boundRevision.presetRevisionHash
       ? !(boundRevision.emptyPolicy === true)
@@ -3761,12 +3796,6 @@ export class PromptAgentService {
         },
         storedMessageCount: Array.isArray(storedSession.messages) ? storedSession.messages.length : 0,
       });
-      const taskEmit = event => {
-        emit(event);
-        void this.appendTaskEvent(sessionId, event).catch(() => {});
-        // 审计瘦身：agent_event 只记类型与计数，不落事件正文/工具参数。
-        audit('agent_event', { eventType: event?.type || '', eventKeys: Object.keys(event || {}).slice(0, 20) });
-      };
       const credentials = new InMemoryCredentialStore();
       const runtimeProviders = new Set([provider, visionSelection?.provider].filter(Boolean));
       for (const runtimeProvider of runtimeProviders) {
@@ -3796,7 +3825,11 @@ export class PromptAgentService {
           streamFn: modelRuntime.streamSimple.bind(modelRuntime),
           sessionId: `nai-vision-${randomUUID()}`,
         });
-        await visionAgent.prompt(text(focus).slice(0, 8_000) || '请分析这些图片。', images);
+        combined.throwIfAborted();
+        const abortVision = () => visionAgent.abort();
+        combined.addEventListener('abort', abortVision, { once: true });
+        try { await visionAgent.prompt(text(focus).slice(0, 8_000) || '请分析这些图片。', images); combined.throwIfAborted(); }
+        finally { combined.removeEventListener('abort', abortVision); }
         if (visionAgent.state.errorMessage) throw new Error(`视觉模型分析失败：${visionAgent.state.errorMessage}`);
         const result = extractAssistantText(visionAgent.state.messages);
         if (!result) throw new Error('视觉模型没有返回分析结果');
@@ -3814,9 +3847,10 @@ export class PromptAgentService {
       const tools = this.createTools(draft, contextData, taskEmit, {
         ...project,
         agentSessionId: sessionId,
+        signal: combined,
         ...(analyzeImages ? { analyzeImages, visionModelLabel: `${visionSelection.provider}/${visionSelection.model}` } : {}),
       }, modelInfo);
-      const loadedMessages = await this.loadMessages(sessionId);
+      const loadedMessages = await this.withSignal(this.loadMessages(sessionId), combined);
       audit('agent_initialized', {
         toolNames: tools.map(tool => tool.name),
         // 审计瘦身：storedConversation 只记录条数 + token 总量，不落消息正文。
@@ -3893,7 +3927,12 @@ export class PromptAgentService {
           return assembled.canonicalMessages;
         },
       });
+      let turns = 0, totalTokens = 0;
       const unsubscribe = agent.subscribe(event => {
+        if (event.type === 'message_end' && event.message?.role === 'assistant') {
+          totalTokens += event.message.usage?.totalTokens || 0;
+          if (++turns >= 16 || totalTokens >= 64000) { controller.abort(new Error('已达到单轮 16 次模型回复或 64k Token 上限，请分段继续')); }
+        }
         if (event.type === 'message_start' && event.message?.role === 'assistant') taskEmit({ type: 'response_start', id: `response-${event.message.timestamp || Date.now()}` });
         if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta') taskEmit({ type: 'text_delta', delta: event.assistantMessageEvent.delta });
         if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'thinking_delta') taskEmit({ type: 'thinking_delta', delta: event.assistantMessageEvent.delta });
@@ -3904,9 +3943,11 @@ export class PromptAgentService {
       this.activeAgents.set(sessionId, { agent, emit: taskEmit });
       this.startingAgents.delete(sessionId);
       taskStatus = 'running';
-      await atomicJsonWrite(this.taskFile(sessionId), { sessionId, status: 'running', startedAt: taskStartedAt, updatedAt: Date.now() });
-      const abort = () => agent.abort();
-      signal?.addEventListener('abort', abort, { once: true });
+      runState.status = 'running';
+      await atomicJsonWrite(this.taskFile(sessionId), { ...runState, startedAt: taskStartedAt });
+      const abort = () => { agent.abort(); this.cancelPendingConfirmations(sessionId); };
+      combined.throwIfAborted();
+      combined.addEventListener('abort', abort, { once: true });
       try {
         if (input?.mode === 'retry') {
           const messages = agent.state.messages;
@@ -3948,7 +3989,7 @@ export class PromptAgentService {
         audit('run_failed', { status: taskStatus, error: error instanceof Error ? error.message : 'Unknown error' });
         throw error;
       }
-      finally { signal?.removeEventListener('abort', abort); unsubscribe(); }
+      finally { combined.removeEventListener('abort', abort); unsubscribe(); }
       const lastAssistant = [...agent.state.messages].reverse().find(message => message?.role === 'assistant');
       if (lastAssistant && visionUsages.length) lastAssistant.visionUsage = visionUsages;
       for (const message of agent.state.messages) if (message.role === 'assistant' && message.usage && !modelInfo.cost) message.usage.cost = null;
@@ -3958,7 +3999,7 @@ export class PromptAgentService {
         audit('run_failed', { status: taskStatus, error: agent.state.errorMessage });
         throw new Error(agent.state.errorMessage);
       }
-      taskStatus = lastAssistant?.stopReason === 'aborted' ? 'aborted' : 'completed';
+      taskStatus = combined.aborted || lastAssistant?.stopReason === 'aborted' ? 'aborted' : 'completed';
       audit('run_completed', {
         status: taskStatus,
         // 审计瘦身：不落 finalDraft / lastAssistant 全文，只留摘要。
@@ -3966,16 +4007,31 @@ export class PromptAgentService {
         assistantMessageLength: (lastAssistant ? extractAssistantText([lastAssistant]) : '').length,
         provider, model: modelId,
       });
-      return { draft, message: extractAssistantText(agent.state.messages), provider, model: modelId };
+      const result = { draft, message: extractAssistantText(agent.state.messages), provider, model: modelId };
+      runState.finalDraft = taskStatus === 'completed' ? structuredClone(draft) : null;
+      taskEmit({ type: 'done', ...result, status: taskStatus });
+      return result;
     } finally {
       leaveOutboundProxy();
       await this.flushTaskEvents(sessionId).catch(() => {});
       this.cancelPendingConfirmations(sessionId);
       this.activeAgents.delete(sessionId);
       this.startingAgents.delete(sessionId);
-      await atomicJsonWrite(this.taskFile(sessionId), { sessionId, status: taskStatus, updatedAt: Date.now() });
+      runState.status = taskStatus;
+      runState.updatedAt = Date.now();
+      await atomicJsonWrite(this.taskFile(sessionId), runState);
       await this.flushAuditLog(sessionId);
     }
-    } finally { this.startingAgents.delete(sessionId); }
+    } catch (error) {
+      runState.status = combined.aborted ? 'aborted' : 'failed';
+      runState.error = combined.reason?.message || error.message || 'Agent 执行失败';
+      taskEmit({ type: 'error', error: runState.error });
+      throw error;
+    } finally {
+      this.startingAgents.delete(sessionId); this.activeAgents.delete(sessionId); this.cancelPendingConfirmations(sessionId);
+      await this.flushTaskEvents(sessionId).catch(() => {});
+      await atomicJsonWrite(this.taskFile(sessionId), { ...runState, updatedAt: Date.now() }).catch(() => {});
+      this.runs.delete(sessionId);
+    }
   }
 }

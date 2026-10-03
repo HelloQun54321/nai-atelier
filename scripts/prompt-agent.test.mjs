@@ -86,3 +86,27 @@ test('手填模型功能测试不请求 models，视觉用途不要求工具', (
     assert.equal(result.checks.tools, 'not_tested');
   } finally { globalThis.fetch = previous; }
 }));
+test('任务游标隔离运行，确认摘要可以恢复但事件不暴露令牌', () => isolated(async service => {
+  const state = { sessionId: 's', runId: 'new', status: 'running' };
+  service.runs.set('s', { state, controller: new AbortController() });
+  await service.appendTaskEvent('s', { type: 'text_delta', delta: 'old', runId: 'old', seq: 1 });
+  await service.appendTaskEvent('s', { type: 'text_delta', delta: 'new', runId: 'new', seq: 2 });
+  const { requestId, promise } = service.createConfirmation('s', { action: 'request_generation', resourceId: '', payload: {} });
+  await service.appendTaskEvent('s', { type: 'action', runId: 'new', seq: 3, action: { kind: 'request_generation', patch: { requestId } } });
+  const task = await service.getTask('s', 1, 'new');
+  assert.equal(task.status, 'waiting_confirmation');
+  assert.deepEqual(task.events.map(event => event.seq), [2, 3]);
+  assert.equal(task.events[1].action.patch.requestId, '[redacted]');
+  assert.equal(task.pending[0].requestId, requestId);
+  assert.equal((await service.getTask('s', 100, 'old')).reset, true);
+  service.controlSession('s', 'abort');
+  assert.equal((await promise).accepted, false);
+  await service.flushTaskEvents('s');
+}));
+test('停止准备中的任务与挂起网络立即结束等待', () => isolated(async service => {
+  const controller = new AbortController();
+  service.runs.set('s', { state: { runId: 'r' }, controller });
+  const waiting = service.withSignal(new Promise(() => {}), controller.signal);
+  service.controlSession('s', 'abort');
+  await assert.rejects(waiting, { name: 'AbortError' });
+}));

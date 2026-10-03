@@ -543,10 +543,10 @@ const readJsonBody = async (req, limit) => {
   }
 };
 
-const requestWorkerJson = (path, req, workerPort, { method = 'GET', body, headers = {} } = {}) => new Promise((resolve, reject) => {
+const requestWorkerJson = (path, req, workerPort, { method = 'GET', body, headers = {}, signal } = {}) => new Promise((resolve, reject) => {
   const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
   const upstream = httpRequest({
-    hostname: '127.0.0.1', port: workerPort, path, method,
+    hostname: '127.0.0.1', port: workerPort, path, method, signal,
     headers: {
       accept: 'application/json', 'content-type': 'application/json', cookie: req.headers.cookie || '',
       host: getForwardHost(req), 'user-agent': req.headers['user-agent'] || 'NAI-Atelier-MediaGateway',
@@ -2214,9 +2214,9 @@ const readLimitedResponse = async response => {
   return Buffer.concat(chunks, size);
 };
 
-const requestWorkerBuffer = (source, req, workerPort) => new Promise((resolve, reject) => {
+const requestWorkerBuffer = (source, req, workerPort, signal) => new Promise((resolve, reject) => {
   const upstream = httpRequest({
-    hostname: '127.0.0.1',
+    signal, hostname: '127.0.0.1',
     port: workerPort,
     path: source,
     method: 'GET',
@@ -3271,7 +3271,7 @@ const serveDistFile = async (req, res, url) => {
         if (url.pathname === '/api/prompt-agent/control') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
           const body = JSON.parse((await readRequestBody(req, 16 * 1024)).toString('utf8') || '{}');
-          return sendJson(res, 200, promptAgent.controlSession(String(body.sessionId || ''), String(body.action || ''), String(body.message || ''), body));
+          return sendJson(res, 200, promptAgent.controlSession(String(body.sessionId || ''), String(body.action || ''), String(body.message || ''), { ...body, keyHash: (await getCloudQueueScope(req)).keyHash }));
         }
         if (url.pathname === '/api/prompt-agent/session/reset') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -3290,7 +3290,7 @@ const serveDistFile = async (req, res, url) => {
         }
         if (url.pathname === '/api/prompt-agent/task') {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
-          return sendJson(res, 200, await promptAgent.getTask(url.searchParams.get('sessionId') || ''));
+          return sendJson(res, 200, await promptAgent.getTask(url.searchParams.get('sessionId') || '', Number(url.searchParams.get('after') || 0), url.searchParams.get('runId') || ''));
         }
         if (url.pathname === '/api/prompt-agent/log') {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -3300,6 +3300,7 @@ const serveDistFile = async (req, res, url) => {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
           const body = JSON.parse((await readRequestBody(req, 32 * 1024)).toString('utf8') || '{}');
           return sendJson(res, 200, await promptAgent.executeConfirmedProjectAction(body, {
+            keyHash: (await getCloudQueueScope(req)).keyHash,
             requestJson: (path, options) => requestWorkerJson(path, req, workerPort, options),
             tagDictionary: method => requestTagDictionaryControl(method),
           }));
@@ -3310,21 +3311,17 @@ const serveDistFile = async (req, res, url) => {
           // room for JSON and metadata while keeping a hard upper bound.
           const body = JSON.parse((await readRequestBody(req, 48 * 1024 * 1024)).toString('utf8') || '{}');
           if (body.mode !== 'retry' && !String(body.message || '').trim() && (!Array.isArray(body.images) || body.images.length === 0)) return sendJson(res, 400, { error: '请先告诉 Agent 你想做什么' });
-          // A phone changing network or a browser refresh must not kill the
-          // computer-side Agent. If the lost client owned a confirmation,
-          // cancel only that pending confirmation so the task can fail cleanly.
-          const disconnect = () => promptAgent.cancelSessionConfirmations(String(body.sessionId || ''));
-          req.once('aborted', disconnect);
-          res.once('close', () => { if (!res.writableEnded) disconnect(); });
           res.writeHead(200, {
             'Content-Type': 'application/x-ndjson; charset=utf-8',
             'Cache-Control': 'private, no-store',
             'X-Content-Type-Options': 'nosniff',
           });
-          const emit = event => { if (!res.destroyed) res.write(`${JSON.stringify(event)}\n`); };
+          let terminal = false;
+          const emit = event => { if (event.type === 'done' || event.type === 'error') terminal = true; if (!res.destroyed) res.write(`${JSON.stringify(event)}\n`); };
           try {
             const cloudQueueScope = await getCloudQueueScope(req);
-            const result = await promptAgent.run(body, emit, undefined, {
+            await promptAgent.run(body, emit, undefined, {
+              keyHash: cloudQueueScope.keyHash,
               requestJson: (path, options) => requestWorkerJson(path, req, workerPort, options),
               getQueuePreferences: () => ({ ...cloudQueueScope.preferences }),
               setQueuePreferences: async next => {
@@ -3342,8 +3339,8 @@ const serveDistFile = async (req, res, url) => {
                 return { ...preferences };
               },
               tagDictionary: method => requestTagDictionaryControl(method),
-              requestBuffer: async (path, maxBytes) => {
-                const result = await requestWorkerBuffer(path, req, workerPort);
+              requestBuffer: async (path, maxBytes, signal) => {
+                const result = await requestWorkerBuffer(path, req, workerPort, signal);
                 if (result.status >= 400) throw Object.assign(new Error('读取项目图片失败'), { status: result.status });
                 if (result.buffer.length > maxBytes) throw Object.assign(new Error('图片过大，无法交给当前模型识别'), { status: 413 });
                 const header = result.headers['content-type'];
@@ -3352,11 +3349,10 @@ const serveDistFile = async (req, res, url) => {
                 return { buffer: result.buffer, mimeType };
               },
             });
-            emit({ type: 'done', ...result });
+
           } catch (error) {
-            emit({ type: 'error', error: error.message || 'Agent 执行失败' });
+            if (!terminal) emit({ type: 'error', error: error.message || 'Agent 执行失败' });
           } finally {
-            req.removeListener('aborted', disconnect);
             if (!res.writableEnded) res.end();
           }
           return;
