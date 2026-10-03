@@ -667,20 +667,11 @@ const baseSystemPrompt = `你是 NAI Atelier 的项目业务 Agent。你的职�
 10. Precise/角色参考每张每次生图增加 5 Anlas，当前与 Vibe Transfer 互斥；设置其中一项时必须关闭另一项。
 11. 必须严格区分三类正面提示词：basePrompt 只放画师名、媒介、渲染和可复用画风；subjectPrompt 只放整图主体、场景、动作、构图和其他全局动态内容；params.characters 通过 set_characters 存放角色专属外貌、服装、身份 Tag 与角色专属负面词。用户说“角色提示词”“人物提示词”“角色外貌”或要求填写某个角色时，即使只有一个角色，也必须优先调用 set_characters，除非用户明确指定放到主体／变量提示词框。不得把角色专属提示词写入 subjectPrompt。若当前界面是“单一全局提示词”，则只使用 basePrompt 存放完整正面提示词并保持 subjectPrompt 为空。`;
 
-// 内置预设正文（jailbreakBlock / creativePreamble / creativeSeedMessages / presetSlots）仅存于
-// local-data/agent/builtin-preset-content.json（.gitignore 覆盖，未经授权不得公开）。
-// 文件缺失时回退为空正文，内置预设退化为中性结构，公开部署下此功能优雅降级。
-const agentPresetContent = (() => {
-  try {
-    return JSON.parse(readFileSync(new URL('../local-data/agent/builtin-preset-content.json', import.meta.url), 'utf8'));
-  } catch {
-    return null;
-  }
-})();
-const jailbreakBlock = typeof agentPresetContent?.jailbreakBlock === 'string' ? agentPresetContent.jailbreakBlock : '';
-const creativePreamble = typeof agentPresetContent?.creativePreamble === 'string' ? agentPresetContent.creativePreamble : '';
-const creativeSeedMessages = Array.isArray(agentPresetContent?.creativeSeedMessages) ? agentPresetContent.creativeSeedMessages : [];
-const builtinPresetSlots = Array.isArray(agentPresetContent?.presetSlots) ? agentPresetContent.presetSlots : [];
+// 内置默认保持空白，不再加载本地旧默认正文；自定义预设与会话快照保留。
+const jailbreakBlock = '';
+const creativePreamble = '';
+const creativeSeedMessages = [];
+const builtinPresetSlots = [];
 
 const techBlock = `
 [规则来源层级]
@@ -786,7 +777,7 @@ K. 角色与服装调用判定（防 DNA 串位、手猜错、旧资料过时）
 
 // 系统策略常量正文 = base + 技术块 + 联网研究规则，与 creativeMode 无关。
 // 破甲块（jailbreakBlock）不再在此烘焙：破限提示词预设实验室上线后，破甲正文
-// 只经由会话绑定预设的 system_middle 槽位注入（builtin-default 携带完整破甲；
+// 只经由会话绑定预设的 system_middle 槽位注入（builtin-default 保持空白；
 // 自定义预设可自行决定）。creativeMode 只决定会话默认绑定 builtin 还是空策略。
 const researchBlock = `
 
@@ -820,16 +811,7 @@ const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
 - Tag 辅助界面：${tagAssistEnabled ? '开启' : '关闭'}。这只影响编辑器补全，不限制 Agent 使用 Tag 或自然语言。
 - 涉及模型能力、提示写法、角色、文字、权重、质量 Tag、Vibe 或参考图时，先调用 search_novelai_docs；需要完整事实时再调用 read_novelai_doc。`;
 };
-// 复刻酒馆"同帧淹没"机制：在 agent 模式下，每轮用户请求前重发一遍浓缩破甲前导，
-// 让破甲话术与触发词在同一帧内同时占据模型注意力，最大化压制第一层犹豫。
-// systemPrompt 已含完整破甲但模型可能当成背景；此前导作为判定帧前台话术生效。
-// creativePreamble 正文同上（统一由上方 agentPresetContent 加载）。
-
-// ── 破限提示词与预设实验室：builtin-default 代码单例 ────────────────────────
-// builtin-default 永不落盘（非 customPresets 成员），list 时按展示顺序合并。
-// 内容与既有常量映射保持正文完全一致：system_middle ← jailbreakBlock、
-// context_head ← creativeSeedMessages 成对帧、user_preamble ← creativePreamble，
-// 其余槽位为空；新增的 system_tail 由运行链路承载 safetyFooter。
+// 内置默认永不落盘；前端补齐空白编辑槽位，不预填注入正文。
 
 // creativeMode 关闭时运行链路冻结的“空策略”预设（builtin 缺省策略）。
 const EMPTY_CREATIVE_PRESET = Object.freeze({

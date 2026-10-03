@@ -122,9 +122,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-// 内置预设正文仅存于 local-data（gitignore）；缺失时相关断言走中性回退分支。
-const agentPresetContentFile = new URL('../local-data/agent/builtin-preset-content.json', import.meta.url);
-const agentPresetContent = existsSync(agentPresetContentFile) ? JSON.parse(readFileSync(agentPresetContentFile, 'utf8')) : null;
+// 测试不读取私人默认正文；默认注入内容为空。
+const agentPresetContent = null;
 import {
   VibeEncodingMemoryCache,
   buildCachedVibeReferences,
@@ -1691,28 +1690,18 @@ test('局域网改密：未授权拒绝、改后旧密码立即失效且 secret 
 
 // ── 破限提示词与预设实验室：纯函数 normalize / builtin-default / assemble ──
 
-test('creative lab: builtin-default singleton is read-only and maps existing constants by target', () => {
+test('creative lab: builtin-default singleton stays empty and returns independent copies', () => {
   const builtin = getBuiltinDefaultPreset(true);
   assert.equal(builtin.id, 'builtin-default');
   assert.equal(builtin.name, '内置默认');
   assert.equal(builtin.isBuiltin, true);
-  const targets = builtin.slots.map(slot => slot.target);
-  // system_middle ← jailbreakBlock；context_head ← creativeSeedMessages 成对帧；
-  // user_preamble ← creativePreamble；其余槽位为空。
-  assert.equal(targets.includes('system_middle'), Boolean(agentPresetContent));
-  assert.equal(targets.includes('user_preamble'), Boolean(agentPresetContent));
-  assert.equal(targets.includes('context_head'), Boolean(agentPresetContent));
-  assert.equal(targets.filter(target => target === 'context_head').length, agentPresetContent ? agentPresetContent.creativeSeedMessages.length : 0);
-  const middle = builtin.slots.find(slot => slot.target === 'system_middle');
-  assert.equal(middle?.content || '', agentPresetContent ? agentPresetContent.jailbreakBlock : '');
+  assert.deepEqual(builtin.slots, []);
   // 单例不可变：改造副本不影响后续取值。
   const copy = getBuiltinDefaultPreset(true);
   copy.name = 'mutated';
+  copy.slots.push({ target: 'system_middle', content: 'mutated' });
+  assert.deepEqual(getBuiltinDefaultPreset(true).slots, []);
   assert.notEqual(getBuiltinDefaultPreset(true).name, 'mutated');
-  if (agentPresetContent) {
-    copy.slots[0].content = 'mutated';
-    assert.notEqual(getBuiltinDefaultPreset(true).slots[0].content, 'mutated');
-  }
   // creativeMode=false → 空策略 builtin。
   const empty = getBuiltinDefaultPreset(false);
   assert.equal(empty.slots.length, 0);
@@ -1808,6 +1797,7 @@ test('creative lab: assemblePromptContext deep-copies, prepends head seeds in pa
   // canonical 顺序：正文齐备时 4 条 head seeds → 历史 → user_preamble 合并进最后 user；
   // 正文缺失时无 seeds 无合并，历史原样进入 canonical。
   const roles = result.canonicalMessages.map(message => message.role);
+  assert.deepEqual(roles, ['user', 'assistant', 'user']);
   const messageText = message => (typeof message.content === 'string' ? message.content : message.content.filter(part => part?.type === 'text').map(part => part.text).join(''));
   if (agentPresetContent) {
     assert.deepEqual(roles.slice(0, 4), ['user', 'assistant', 'user', 'assistant']);
