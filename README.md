@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.24.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.24.2-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -139,6 +139,8 @@ npm run dev:local
 
 启动器会按需构建；更新代码或切换版本后，应停止旧服务、安装该版本依赖后重新启动。更新前先备份数据。
 
+再次打开启动器会检查正在运行的后端。已同步时打开现有页面；旧进程尚未关闭时会明确提示，重复双击不能完成重启。先结束生图与 Agent 任务，再在原服务窗口按 Ctrl+C 并重新启动。也可在项目目录执行 `npm run dev:local -- --restart`：仅在核对项目目录、监听 PID 和服务入口后停止原服务，等待端口释放再构建与启动。此命令会结束原服务上的未完成任务；不是批量清理 Node 进程，也不会删除数据。更新过桌面脚本前需重新「发送启动器到桌面」，使桌面入口使用新的检查规则。
+
 <details>
 <summary>启动器自检与服务编排详情</summary>
 
@@ -146,7 +148,7 @@ npm run dev:local
 
 1. **自适应目录解析**：根目录脚本按所在位置定位项目，桌面脚本使用生成时记录的项目路径；移动项目后应重新发送桌面启动器。
 2. **Git 分支安全防护**：校验 Node.js 与 npm 环境，检测当前 Git 分支状态（若处于非 `main` 分支时弹出警告，防止在实验性分支中误启动）。
-3. **已有实例探针复用（防端口冲突）**：启动前自动探针检测 `http://localhost:3000/api/lan/status`，若工坊已在后台运行，直接唤起默认浏览器打开页面并秒级退出，减少重复启动造成的端口冲突。
+3. **已有实例版本检查（防端口冲突）**：核对正在运行的工坊后端；已同步才打开现有页面，旧进程则明确提示停止原服务后再启动。命令行 `--restart` 可定向重启本项目。
 4. **智能增量构建判断**：比对源码目录与 `dist/` 产物的最后修改时间戳，必要时重新构建，免去手动运行 `npm run build`。
 5. **多服务协同编排**：统一拉起 Cloudflare Worker 本地运行时、图片媒体网关与 Tag 词库更新服务，就绪后自动在默认浏览器中打开 `http://localhost:3000`。
 

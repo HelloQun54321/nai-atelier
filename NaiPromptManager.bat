@@ -53,16 +53,13 @@ echo.
 echo Press Ctrl+C to stop the server.
 echo.
 
-powershell -NoProfile -Command "try { $r = Invoke-RestMethod -Uri 'http://localhost:3000/api/lan/status' -TimeoutSec 2; if ($null -ne $r.authorized) { exit 0 } } catch {}; exit 1" >nul 2>nul
-if not errorlevel 1 (
-  echo NAI Atelier is already running. Opening the existing page...
-  start "" "http://localhost:3000"
-  exit /b 0
-)
-
-call npm run dev:local
+call npm run dev:local -- %*
 
 echo.
-echo NAI Atelier has stopped.
+if errorlevel 1 (
+  echo The launcher did not start a new server. Read the message above.
+) else (
+  echo Launcher finished.
+)
 pause
 endlocal

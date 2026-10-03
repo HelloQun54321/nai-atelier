@@ -31,10 +31,19 @@ describe('desktop-launcher service', () => {
     assert.ok(typeof desktop === 'string' && desktop.length > 0);
   });
 
+  test('root launcher delegates the same version check and restart arguments', async () => {
+    const bat = await readFile(new URL('../NaiPromptManager.bat', import.meta.url), 'utf8');
+    assert.match(bat, /call npm run dev:local -- %\*/);
+    assert.doesNotMatch(bat, /api\/lan\/status/);
+  });
+
   test('generateLauncherBatContent injects normalized projectDir', () => {
     const bat = generateLauncherBatContent({ projectDir: 'D:\\TestProject' });
     assert.match(bat, /set "PROJECT_DIR=D:\\TestProject"/);
     assert.match(bat, /npm run dev:local/);
+    assert.match(bat, /call npm run dev:local -- %\*/);
+    assert.doesNotMatch(bat, /api\/lan\/status/);
+    assert.doesNotMatch(bat, /Opening the existing page/);
     assert.match(bat, /title NAI Atelier Launcher/);
   });
 

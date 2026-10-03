@@ -1,2 +1,2 @@
 @echo off
-node scripts\local-server.mjs
+node scripts\local-server.mjs %*

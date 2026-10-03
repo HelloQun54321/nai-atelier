@@ -7,6 +7,7 @@ import { networkInterfaces, platform } from 'os';
 import { resolve as resolvePath } from 'node:path';
 import { startTagUpdateServer } from './tag-update-server.mjs';
 import { createMediaGateway } from './media-gateway.mjs';
+import { inspectExistingLocalServer, restartOwnedLocalServer } from './local-server-runtime.mjs';
 
 const IS_WINDOWS = platform() === 'win32';
 const IS_TERMUX = process.env.TERMUX_VERSION || existsSync('/data/data/com.termux');
@@ -271,16 +272,28 @@ async function openWhenReady() {
 }
 
 async function reuseExistingServer() {
-  try {
-    const response = await fetch(`${LOCAL_URL}/api/lan/status`, { cache: 'no-store', signal: AbortSignal.timeout(2000) });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || typeof payload?.authorized !== 'boolean') return false;
-    console.log('\x1b[33mNAI Atelier 已经在运行，直接打开现有页面。\x1b[0m');
-    if (process.env.NAI_NO_BROWSER !== '1') openBrowser(DISPLAY_URL);
-    return true;
-  } catch {
-    return false;
+  const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
+  const running = await inspectExistingLocalServer(version);
+  if (!running) return false;
+  if (process.argv.includes('--restart')) {
+    console.log('\x1b[33m正在重启当前项目的本地服务（会结束原服务上的未完成任务）...\x1b[0m');
+    try {
+      const pid = await restartOwnedLocalServer(process.cwd());
+      console.log(`\x1b[32m原服务进程 ${pid} 已停止，将构建并启动最新版本。\x1b[0m`);
+      return false;
+    } catch (error) {
+      console.error(`\x1b[31m重启未完成：${error.message}\x1b[0m`);
+      process.exit(1);
+    }
   }
+  if (!running.current) {
+    console.error(`\x1b[33m已有服务仍运行 ${running.backendVersion || '旧版'}，当前项目版本为 ${version}。再次启动会复用原进程，不能加载更新。\x1b[0m`);
+    console.error('\x1b[33m请先结束生图与 Agent 任务，再在原服务窗口按 Ctrl+C 并重新启动；也可执行 npm run dev:local -- --restart。\x1b[0m');
+    process.exit(2);
+  }
+  console.log(`\x1b[32mNAI Atelier ${version} 已经在运行，直接打开现有页面。\x1b[0m`);
+  if (process.env.NAI_NO_BROWSER !== '1') openBrowser(DISPLAY_URL);
+  return true;
 }
 
 async function waitForWorker(port, { outputSeen = () => true, onWranglerRestart = null } = {}) {
