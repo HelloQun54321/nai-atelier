@@ -438,7 +438,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   const activeSession = sessions.find(item => item.id === activeSessionId);
   const activeModel = models.find(item => item.provider === activeSession?.provider && item.id === activeSession?.model);
-  const supportsImages = Boolean(activeModel?.imageInput || activeSession?.visionAvailable);
+  const supportsImages = Boolean(activeModel?.imageInput);
   const sessionReady = Boolean(activeSessionId && activeSession && activeModel);
   const runningTool = messages.slice().reverse().map(message => message.tools?.find(tool => tool.state === 'running')).find(Boolean);
   const executionStatus = running
@@ -667,7 +667,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         if (event.type === 'text_delta') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, text: item.text + event.delta } : item));
         if (event.type === 'thinking_delta') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, thinking: (item.thinking || '') + event.delta } : item));
         if (event.type === 'response_end') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, model: event.model, provider: event.provider, usage: event.usage, stopReason: event.stopReason, timestamp: event.timestamp } : item));
-        if (event.type === 'vision_usage') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, visionUsage: [...(item.visionUsage || []), { provider: event.provider, model: event.model, imageCount: event.imageCount, usage: event.usage }] } : item));
         if (event.type === 'tool_start') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, tools: [...(item.tools || []), { id: event.toolCallId, name: event.toolName, args: event.args, state: 'running' }] } : item));
         if (event.type === 'tool_end') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, tools: (item.tools || []).map(tool => tool.id === event.toolCallId ? { ...tool, result: event.result, state: event.isError ? 'error' : 'done' } : tool) } : item));
         if (event.type === 'project_changed') window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: event.resource } }));
@@ -1051,7 +1050,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         <div className="flex flex-wrap gap-x-3 gap-y-1 px-3 pb-2 text-micro text-gray-500 dark:text-gray-400">
           <span>{props.draft.target ? `当前目标：${props.draft.target.name || '未命名作品'} · ${{ 'text-to-image': '文生图', 'image-to-image': '图生图', inpaint: '局部重绘', outpaint: '扩图' }[props.draft.target.mode]}` : '当前目标：项目资料与设置'}</span>
           {activeModel && <span>服务：{activeModel.providerName || activeModel.provider}</span>}
-          {activeSession?.visionDedicated && <span>视觉：{activeSession.visionProvider}/{activeSession.visionModel} · 单独计费</span>}
         </div>
       </header>
       {logExportError && <div role="status" className="absolute right-3 top-[calc(3.25rem+env(safe-area-inset-top))] z-40 max-w-[min(28rem,calc(100%-1.5rem))] rounded-lg bg-red-50 px-2 py-1 text-micro font-bold text-red-600 shadow dark:bg-red-950/80 dark:text-red-300">{logExportError}</div>}
@@ -1158,7 +1156,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           {input.length >= 7000 && <p className="mb-2 text-micro text-gray-500">任务要求 {input.length} / 8000 字符，请分段发送。</p>}
           {attachmentBusy && <p role="status" className="mb-2 text-xs text-gray-500">正在处理图片副本…</p>}
           {attachmentError && <p role="alert" className="mb-2 text-xs text-red-600 dark:text-red-300">{attachmentError}</p>}
-          {!!attachments.length && <p className="mb-2 text-micro text-gray-500">发送时交给 {activeSession?.visionDedicated ? `${activeSession.visionProvider}/${activeSession.visionModel}` : `${activeModel?.provider}/${activeModel?.id}`}；图片可能产生视觉模型费用。原文件保持不变。</p>}
+          {!!attachments.length && <p className="mb-2 text-micro text-gray-500">发送时交给 {`${activeModel?.provider}/${activeModel?.id}`}；图片用量计入当前模型。原文件保持不变。</p>}
           {!!attachments.length && (
             <div className="mb-2 flex flex-wrap gap-1.5">
               {attachments.map((attachment, index) => (

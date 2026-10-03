@@ -17,6 +17,8 @@ it('保存默认不选用，测试模型和图片用途显式选择，发现列�
   render(<CustomProviderForm value={{ name: 'test', baseUrl: 'http://localhost:1234/v1', api: 'openai-completions', models: [model] }} discovered={[{ ...model, id: 'b' }]} onChange={change} busy={false} onTest={test} onSave={save} onFetch={() => {}} result={{ ok: false, message: '模拟失败', model: 'a', usage: [{ input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12, cost: null }], checks: { text: 'not_tested' } }}/>);
   const selection = screen.getByLabelText('保存后设为默认（已有对话保留自己的模型）') as HTMLInputElement;
   expect(selection.checked).toBe(false);
+  expect(screen.queryByLabelText('用途')).toBeNull();
+  expect(screen.queryByText('视觉服务（仅文本协议）')).toBeNull();
   expect((screen.getByLabelText('测试图片接受（需模型支持识图，可能另计费用）') as HTMLInputElement).checked).toBe(false);
   fireEvent.click(screen.getByText('＋ b'));
   expect(change.mock.calls[0][0].models.map((item: {id:string}) => item.id)).toEqual(['a', 'b']);

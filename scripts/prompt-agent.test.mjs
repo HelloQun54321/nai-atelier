@@ -128,7 +128,7 @@ test('手填模型功能测试不请求 models，视觉用途不要求工具', (
     return new Response(JSON.stringify({ error: { message: 'synthetic rejection' } }), { status: 401, headers: { 'content-type': 'application/json' } });
   };
   try {
-    const result = await service.testCustomProvider({ ...customInput(), apiKey: 'synthetic', testRole: 'vision' });
+    const result = await service.testCustomProvider({ ...customInput(), apiKey: 'synthetic' });
     assert.equal(result.ok, false);
     assert.ok(urls.length > 0, result.message);
     assert.ok(urls.every(url => !url.endsWith('/models')));
@@ -194,5 +194,25 @@ test('真实流适配器遵守输出预算，并持久化唯一终态与目标�
     assert.equal(task.status, 'completed');
     assert.equal(task.finalDraft.target.chainId, 'c');
     assert.equal(task.events.at(-1).type, 'done');
+  } finally { globalThis.fetch = previous; }
+}));
+
+test('附件只调用当前模型，旧视觉配置不能为纯文本模型代发', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', models: [{ id: 'a', imageInput: true }, { id: 'b', imageInput: false }], select: true });
+  service.config.visionProvider = 'unused'; service.config.visionModel = 'unused';
+  const previous = globalThis.fetch; const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url: String(url), body: JSON.parse(options.body) });
+    const chunk = { id: 'img', object: 'chat.completion.chunk', created: 1, model: 'a', choices: [{ index: 0, delta: { role: 'assistant', content: '看到了' }, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } };
+    return new Response('data: ' + JSON.stringify(chunk) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  };
+  try {
+    const session = await service.createSession({ creativeMode: false });
+    await service.run({ sessionId: session.id, message: '看看图片', images: [{ data: 'YWJjZA==', mimeType: 'image/png' }], draft: { params: {} } }, () => {});
+    assert.equal(requests.length, 1); assert.equal(requests[0].body.model, 'a');
+    assert.match(JSON.stringify(requests[0].body.messages), /data:image\/png;base64,YWJjZA==/);
+    await service.updateSession(session.id, { model: 'b' });
+    await assert.rejects(() => service.run({ sessionId: session.id, message: '看看', images: [{ data: 'YWJjZA==', mimeType: 'image/png' }], draft: { params: {} } }, () => {}), /不会调用其他模型/);
+    assert.equal(requests.length, 1);
   } finally { globalThis.fetch = previous; }
 }));

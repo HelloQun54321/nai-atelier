@@ -32,7 +32,7 @@ const mockSession = {
   updatedAt: 1000,
 };
 
-const stubServices = (sessionOverrides = {}) => {
+const stubServices = (sessionOverrides: { imageInput?: boolean; [key: string]: unknown } = {}) => {
   const currentSession = { ...mockSession, ...sessionOverrides };
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -44,11 +44,6 @@ const stubServices = (sessionOverrides = {}) => {
         provider: 'deepseek',
         model: 'deepseek-chat',
         imageInput: false,
-        visionProvider: '',
-        visionModel: '',
-        visionAvailable: false,
-        visionDedicated: false,
-        visionMode: 'auto',
         configured: true,
         configuredProviders: ['deepseek'],
         policyVersion: '1.0',
@@ -69,7 +64,7 @@ const stubServices = (sessionOverrides = {}) => {
     if (url.includes('/api/prompt-agent/available-models')) {
       return responseFor({
         items: [
-          { id: 'deepseek-chat', name: 'DeepSeek-V3', provider: 'deepseek', providerName: 'DeepSeek', reasoning: false, imageInput: false, contextWindow: 64000, thinkingLevels: ['off'] },
+          { id: 'deepseek-chat', name: 'DeepSeek-V3', provider: 'deepseek', providerName: 'DeepSeek', reasoning: false, imageInput: sessionOverrides.imageInput === true, contextWindow: 64000, thinkingLevels: ['off'] },
         ],
       });
     }
@@ -153,7 +148,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(controls[0].accepted).toBe(accepted); if (accepted) expect(controls[1].success).toBe(true);
   });
   it('附件拒绝原因可见，格式错误不会消失在后台', async () => {
-    stubServices({ visionAvailable: true }); renderPanel();
+    stubServices({ imageInput: true }); renderPanel();
     const chooser = await screen.findByLabelText('选择图片附件');
     await waitFor(() => expect((chooser as HTMLInputElement).disabled).toBe(false));
     fireEvent.change(chooser, { target: { files: [new File(['synthetic'], 'document.pdf', { type: 'application/pdf' })] } });
@@ -222,14 +217,10 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(screen.queryByRole('button', { name: /全屏/ })).toBeNull();
   });
 
-  it('当前视觉服务与单独计费明确可见，模型名和注入角标仍可读取', async () => {
+  it('不再展示独立视觉服务，模型名和注入角标仍可读取', async () => {
     stubServices({
       creativeMode: false,
       model: 'deepseek-chat',
-      visionDedicated: true,
-      visionModel: 'grok-4.6-vision',
-      visionProvider: 'synthetic-vision',
-      visionAvailable: true,
     });
     renderPanel(false);
 
@@ -241,8 +232,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(screen.getByText('deepseek-chat')).toBeTruthy();
     expect(screen.queryByText('普通')).toBeNull();
 
-    // 费用与供应商在可换行的目标行明确展示
-    expect(screen.getByText(/视觉：synthetic-vision\/grok-4.6-vision · 单独计费/)).toBeTruthy();
+    expect(screen.queryByText(/视觉：|单独计费/)).toBeNull();
     expect(screen.queryByText(/识图/)).toBeNull();
   });
 

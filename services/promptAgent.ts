@@ -11,11 +11,6 @@ export interface PromptAgentConfig {
   provider: string;
   model: string;
   imageInput: boolean;
-  visionProvider: string;
-  visionModel: string;
-  visionAvailable: boolean;
-  visionDedicated: boolean;
-  visionMode: 'auto' | 'manual';
   configured: boolean;
   configuredProviders: string[];
   policyVersion: string;
@@ -68,7 +63,6 @@ export interface PromptAgentCustomProvider {
   models: PromptAgentCustomModel[];
   select?: boolean;
   testModel?: string;
-  testRole?: 'agent' | 'vision';
   testImage?: boolean;
 }
 
@@ -107,7 +101,6 @@ export interface PromptAgentModel {
   /** Exact levels supported by this model according to Pi's model metadata. */
   thinkingLevels: PromptAgentThinkingLevel[];
   current?: boolean;
-  currentVision?: boolean;
 }
 
 export type PromptAgentThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -121,11 +114,7 @@ export interface PromptAgentSession {
   model: string;
   thinkingLevel: PromptAgentThinkingLevel;
   creativeMode: boolean;
-  visionProvider: string;
-  visionModel: string;
-  visionAvailable: boolean;
-  visionDedicated: boolean;
-  visionMode: 'auto' | 'manual';
+  imageInput: boolean;
   creativeModeLocked?: boolean;
   policyFingerprint?: string;
   /** Name of the bound preset (破限提示词预设) that was active when the session was created. */
@@ -175,7 +164,6 @@ export type PromptAgentEvent = ({ runId?: string; seq?: number } & (
   | { type: 'text_delta'; delta: string }
   | { type: 'thinking_delta'; delta: string }
   | { type: 'response_end'; model: string; provider: string; usage: PromptAgentUsage; stopReason: string; timestamp: number }
-  | { type: 'vision_usage'; model: string; provider: string; imageCount: number; usage?: PromptAgentUsage }
   | { type: 'tool_start'; toolCallId: string; toolName: string; args: unknown }
   | { type: 'tool_end'; toolCallId: string; toolName: string; isError: boolean; result?: unknown }
   | { type: 'queue'; action: 'steer' | 'followUp'; message: string }
@@ -392,16 +380,6 @@ export const promptAgentService = {
   },
   selectModel: async (provider: string, model: string): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/selection', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, model }) });
-    if (!response.ok) return readError(response) as never;
-    return response.json();
-  },
-  selectVisionModel: async (provider: string, model: string): Promise<PromptAgentConfig> => {
-    const response = await fetch('/api/prompt-agent/vision-selection', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, model }) });
-    if (!response.ok) return readError(response) as never;
-    return response.json();
-  },
-  selectVisionAuto: async (): Promise<PromptAgentConfig> => {
-    const response = await fetch('/api/prompt-agent/vision-selection', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'auto' }) });
     if (!response.ok) return readError(response) as never;
     return response.json();
   },

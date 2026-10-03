@@ -251,37 +251,14 @@ test('prompt agent discovers model capabilities from metadata, Pi catalog and co
   assert.equal(clamped.maxTokens, 2048);
 });
 
-test('prompt agent automatically gives a text-only main model a configured vision model', () => {
-  const sameProviderService = new PromptAgentService({ lanSecret: 'test-lan-secret' });
-  sameProviderService.setCredential('deepseek', { type: 'api_key', key: 'deepseek-key' });
-  sameProviderService.config.provider = 'deepseek';
-  sameProviderService.config.model = 'deepseek-v4-flash';
-  sameProviderService.config.visionMode = 'auto';
-  const sameProviderVision = sameProviderService.syncAutomaticVisionSelection('deepseek', 'deepseek-v4-flash');
-  assert.equal(sameProviderVision.provider, 'deepseek');
-  assert.equal(sameProviderVision.model, 'deepseek-v4-flash-vision-exp');
-
+test('prompt agent ignores legacy separate vision selection and reports the selected model capability', () => {
   const service = new PromptAgentService({ lanSecret: 'test-lan-secret' });
-  service.setCredential('deepseek', { type: 'api_key', key: 'deepseek-key' });
-  service.config.provider = 'deepseek';
-  service.config.model = 'deepseek-v4-flash';
-  service.config.visionMode = 'auto';
-  const vision = service.syncAutomaticVisionSelection('deepseek', 'deepseek-v4-flash');
-  assert.equal(vision.provider, 'deepseek');
-  assert.equal(vision.info.imageInput, true);
-  assert.equal(service.publicConfig().visionDedicated, true);
-  assert.equal(service.publicConfig().visionMode, 'auto');
-
-  service.config.visionMode = 'manual';
-  service.config.visionProvider = 'missing-provider';
-  service.config.visionModel = 'missing-model';
-  service.syncAutomaticVisionSelection('deepseek', 'deepseek-v4-flash');
-  assert.equal(service.config.visionMode, 'auto');
-  assert.equal(service.config.visionProvider, 'deepseek');
-
-  const sessionMeta = service.publicSessionMeta({ id: 'session', provider: 'deepseek', model: 'deepseek-v4-flash' });
-  assert.equal(sessionMeta.visionProvider, 'deepseek');
-  assert.equal(sessionMeta.visionDedicated, true);
+  service.setCredential('deepseek', { type: 'api_key', key: 'synthetic' });
+  service.config.visionMode = 'manual'; service.config.visionProvider = 'deepseek'; service.config.visionModel = 'deepseek-v4-flash-vision-exp';
+  assert.equal(service.publicConfig().imageInput, false);
+  assert.equal('visionProvider' in service.publicConfig(), false);
+  assert.equal(service.publicSessionMeta({ id: 's', provider: 'deepseek', model: 'deepseek-v4-flash' }).imageInput, false);
+  assert.equal(service.publicSessionMeta({ id: 's', provider: 'deepseek', model: 'deepseek-v4-flash-vision-exp' }).imageInput, true);
 });
 
 test('prompt agent parses web results and blocks private web targets', async () => {
@@ -416,8 +393,7 @@ test('prompt agent keeps API keys encrypted and out of its public config', async
     'deepseek-v4-pro',
   ]);
   assert.equal(service.listAvailableModels().find(model => model.id === 'deepseek-v4-flash-vision-exp').imageInput, true);
-  assert.equal(service.publicConfig().visionProvider, 'deepseek');
-  assert.equal(service.publicConfig().visionModel, 'deepseek-v4-flash-vision-exp');
+  assert.equal(service.publicConfig().imageInput, false);
   const runtime = service.publicConfig();
   assert.match(runtime.policyVersion, /^\d{4}-\d{2}-\d{2}\.\d+$/);
   assert.match(runtime.policyFingerprint, /^[a-f0-9]{12}$/);
@@ -599,19 +575,12 @@ test('prompt agent history inspection returns the real image only to vision mode
   assert.equal(result.content[1].mimeType, 'image/png');
   assert.equal(result.content[1].data, Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64'));
   const textOnlyTool = service.createTools(draft, { presets: [], vibes: [] }, () => {}, project, { imageInput: false }).find(item => item.name === 'inspect_generation_image');
-  await assert.rejects(() => textOnlyTool.execute('call', { id: 'history-1' }), /没有可用的视觉模型/);
-  const routedTool = service.createTools(draft, { presets: [], vibes: [] }, () => {}, {
-    ...project,
-    visionModelLabel: 'google/gemini-vision',
-    analyzeImages: async (images, focus) => {
-      assert.equal(images[0].type, 'image');
-      assert.match(focus, /构图/);
-      return '画面构图稳定';
-    },
-  }, { imageInput: false }).find(item => item.name === 'inspect_generation_image');
-  const routed = await routedTool.execute('call', { id: 'history-1', focus: '分析构图' });
-  assert.equal(JSON.parse(routed.content[0].text).visualAnalysis, '画面构图稳定');
-  assert.equal(JSON.parse(routed.content[0].text).visionModel, 'google/gemini-vision');
+  await assert.rejects(() => textOnlyTool.execute('call', { id: 'history-1' }), /当前模型不支持图片输入/);
+  // 即使传入旧视觉回调，也绝不调用另一个模型。
+  let calls = 0;
+  const oldRoute = service.createTools(draft, {}, () => {}, { ...project, analyzeImages: async () => { calls++; return 'old'; } }, { imageInput: false }).find(item => item.name === 'inspect_generation_image');
+  await assert.rejects(() => oldRoute.execute('call', { id: 'history-1' }), /当前模型不支持图片输入/);
+  assert.equal(calls, 0);
 });
 
 test('prompt agent destructive tools only emit confirmation requests', async () => {
