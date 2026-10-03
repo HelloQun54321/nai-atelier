@@ -1,5 +1,7 @@
+import { agentDraftFingerprint } from '../services/promptAgentCoordinator';
+import { AgentDraftReview } from './AgentDraftReview';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { GenerationMode, ImageEditMetadata, ImageEditOperation, PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft, LabImageEditDraft, LabWorkspaceSession } from '../types';
 import { compilePrompt, mergePromptFields } from '../services/promptUtils';
 import { generateImage, generateImageEdit, generateImageEditStream, generateImageStream } from '../services/naiService';
@@ -234,6 +236,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [isImportDragActive, setIsImportDragActive] = useState(false);
     const [taggerOpen, setTaggerOpen] = useState(false);
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
+    const [agentProposal, setAgentProposal] = useState<PromptAgentDraft | null>(null);
+    const agentEditGenerateRef = useRef<((draft: PromptAgentDraft, onApproved?: () => Promise<void>) => Promise<boolean>) | null>(null);
     const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<PromptAgentDraft | null>(null);
     const editorRevisionRef = useRef(0);
     const agentRunRevisionRef = useRef(0);
@@ -1629,18 +1633,18 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         return formatImageEditCostLabel(cost, operation, focusedReady, opusSubscriptionActive ? novelaiSubscription?.tier : 0);
     };
 
-    const handleImageEditGenerate = async (request: ImageEditRequest) => {
+    const handleImageEditGenerate = async (request: ImageEditRequest, options?: { params: NAIParams; onApproved?: () => Promise<void>; agent: true }): Promise<boolean> => {
         if (!apiKey) {
             const message = '请先在“全局设置”中配置 NovelAI API Key';
             setErrorMsg(message);
             notify(message, 'error');
-            return;
+            return false;
         }
         const freshSubscription = await refreshUsageIfStale();
         let editParamsSource: NAIParams;
         let lowEnabled: boolean;
-        try { lowEnabled = (await getLowConsumption(apiKey)).enabled; editParamsSource = applyLowConsumptionParams(activeEditDraft?.params || params, lowEnabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME, request.operation); }
-        catch (error) { notify(error instanceof Error ? error.message : '读取低消耗设置失败', 'error'); return; }
+        try { lowEnabled = (await getLowConsumption(apiKey)).enabled; editParamsSource = applyLowConsumptionParams(options?.params || activeEditDraft?.params || params, lowEnabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME, request.operation); }
+        catch (error) { notify(error instanceof Error ? error.message : '读取低消耗设置失败', 'error'); return false; }
         let sourceWidth = request.canvasWidth;
         let sourceHeight = request.canvasHeight;
         try {
@@ -1652,7 +1656,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             const message = '无法读取图片编辑底图尺寸';
             setErrorMsg(message);
             notify(message, 'error');
-            return;
+            return false;
         }
         const editCost = estimateImageEditCost(editParamsSource, request.operation, request.strength, Boolean(request.focused), isActiveOpusSubscription(freshSubscription) ? freshSubscription!.tier : 0, opusUsageExhausted, {
             width: sourceWidth,
@@ -1662,12 +1666,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         });
         if (lowEnabled) {
             try { assertLowConsumptionEstimate(editParamsSource, request.operation, naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, editCost, Boolean(request.focused && request.focusedRect)); }
-            catch (error) { notify(error instanceof Error ? error.message : '低消耗检查失败', 'error'); return; }
+            catch (error) { notify(error instanceof Error ? error.message : '低消耗检查失败', 'error'); return false; }
         }
         if (editCost > 0 && anlasBudget.remaining <= 0) {
-            if (!await confirmAction({ title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return;
-        } else if (editCost > 0 && !await confirmAction({ title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。`, confirmLabel: `消耗 ${editCost} 点并生成` })) return;
+            if (!await confirmAction({ title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return false;
+        } else if ((editCost > 0 || options?.agent) && !await confirmAction({ title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。`, confirmLabel: `消耗 ${editCost} 点并生成` })) return false;
 
+        await options?.onApproved?.();
         await flushMaskSave(request.operation).catch(error => console.warn('生成前保存编辑蒙版失败:', error));
         const previousGeneratedImage = generatedImage;
         const previousPreviewMode = previewMode;
@@ -1757,7 +1762,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 editMask,
             });
             // 历史落库完成后才检查挂载态：产物不丢，UI 与工作区草稿仅在仍在编辑页时更新。
-            if (!mountedRef.current) return;
+            if (!mountedRef.current) return false;
             setPreviewHistory(previous => [historyItem, ...previous.filter(item => item.id !== historyItem.id)]);
             setPreviewIndex(0);
             setPreviewMode('history');
@@ -1776,6 +1781,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             }
             checkAndRemoveUntestedTag();
             notify('图片编辑完成，结果已保存为新的历史图片', 'success');
+            return true;
         } catch (editError) {
             if (mountedRef.current) {
                 if (streamedPreviewShown) {
@@ -1790,6 +1796,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 // 离开编辑页后仍应告知编辑失败（全局 toast）。
                 notify(editError instanceof Error ? editError.message : '图片编辑失败', 'error');
             }
+            return false;
         } finally {
             if (mountedRef.current) {
                 setIsGenerating(false);
@@ -1798,15 +1805,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
     };
 
-    const currentAgentDraft = (): PromptAgentDraft => ({
-        basePrompt,
-        subjectPrompt,
-        negativePrompt,
-        modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })),
-        params,
-    });
-
+    const agentCanvasFingerprint = useMemo(() => agentDraftFingerprint({ base: imageEditBaseImage, mask: imageEditMaskData, draft: activeEditDraft && { ...activeEditDraft, params: undefined, prompt: undefined, negativePrompt: undefined } }), [imageEditBaseImage, imageEditMaskData, activeEditDraft]);
+    const currentAgentDraft = (): PromptAgentDraft => {
+        const content: PromptAgentDraft = activeEditDraft ? { editContext: { baseImageAvailable: Boolean(imageEditBaseImage), maskAvailable: Boolean(imageEditMaskData), strength: activeEditDraft.strength, noise: activeEditDraft.noise, focused: activeEditDraft.focused }, basePrompt: activeEditDraft.prompt, subjectPrompt: '', negativePrompt: activeEditDraft.negativePrompt, modules: [], params: activeEditDraft.params } : { basePrompt, subjectPrompt, negativePrompt, modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })), params };
+        return { ...content, target: { chainId: chain.id, mode: activeGenerationMode, fingerprint: agentDraftFingerprint({ content, canvas: activeEditDraft ? agentCanvasFingerprint : null }) } };
+    };
     const applyAgentDraft = (draft: PromptAgentDraft) => {
+        if (draft.target?.mode && draft.target.mode !== 'text-to-image') {
+            updateEditDraft(draft.target.mode, { prompt: [draft.basePrompt, draft.subjectPrompt, ...draft.modules.filter(module => module.isActive).map(module => module.content)].filter(Boolean).join(', '), negativePrompt: draft.negativePrompt, params: draft.params, promptSource: 'custom' });
+            return;
+        }
         setBasePrompt(draft.basePrompt);
         setSubjectPrompt(draft.subjectPrompt);
         setNegativePrompt(draft.negativePrompt);
@@ -1817,6 +1825,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>): Promise<boolean> => {
+        if (draft.target && (draft.target.chainId !== chain.id || draft.target.mode !== activeGenerationMode || draft.target.fingerprint !== currentAgentDraft().target?.fingerprint)) { notify('创作目标已变化，请先查看并应用草稿，再重新请求生成', 'error'); return false; }
+        if (activeGenerationMode !== 'text-to-image') {
+            if (!agentEditGenerateRef.current) { notify('编辑画布尚未准备好', 'error'); return false; }
+            return agentEditGenerateRef.current(draft, onApproved);
+        }
         const freshSubscription = await refreshUsageIfStale();
         let lowEnabled: boolean;
         try { lowEnabled = (await getLowConsumption(apiKey)).enabled; }
@@ -1996,17 +2009,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 apiKey={apiKey}
                 onRunStart={snapshot => { agentRunRevisionRef.current = editorRevisionRef.current; setAgentUndoSnapshot(snapshot); }}
                 onFinalDraft={draft => {
-                    if (editorRevisionRef.current !== agentRunRevisionRef.current) {
-                        notify('检测到 Agent 运行期间实验室已有变化，已保留当前内容，未覆盖你的修改。');
-                        return;
-                    }
-                    applyAgentDraft(draft);
+                    if (draft.target && (draft.target.chainId !== chain.id || draft.target.mode !== activeGenerationMode)) { notify('草稿属于其他作品或模式，请回到原目标后恢复', 'error'); return; }
+                    if (draft.target ? draft.target.fingerprint !== currentAgentDraft().target?.fingerprint : editorRevisionRef.current !== agentRunRevisionRef.current) { setAgentProposal(draft); return; }
+                    setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft);
                 }}
                 onRequestGeneration={(draft, reason, onApproved) => requestAgentGeneration(draft, reason, onApproved)}
                 canUndo={Boolean(agentUndoSnapshot)}
                 onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次 Agent 修改'); } }}
                 tagAssistEnabled={tagAssistEnabled}
+                splitPromptFields={false}
             />
+            {agentProposal && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal} onClose={() => setAgentProposal(null)} onApply={draft => { setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft); setAgentProposal(null); }}/>}
             <ImageTaggerPanel
                 contextual={chain.id !== 'playground'}
                 open={taggerOpen}
@@ -2232,6 +2245,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     updateEditDraft(activeEditOperation, { prompt: value, promptSource: source });
                 }}
                 onDraftChange={patch => updateEditDraft(activeEditOperation, patch)}
+                onAgentGenerateReady={generate => { agentEditGenerateRef.current = generate; }}
                 onBaseImageChange={async (dataUrl, source, parentHistoryId, meta) => {
                     cancelPendingMaskSave();
                     const changeRevision = ++editBaseResolveRevisionRef.current;

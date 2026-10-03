@@ -246,9 +246,13 @@ const isConversationUserMessage = message => {
 };
 
 export const estimateContextTokens = value => {
-  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  let imageTokens = 0;
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value, (_, item) => {
+    if (item?.type === 'image') { imageTokens += 4096; return { type: 'image', mimeType: item.mimeType }; }
+    return item;
+  });
   const cjk = (serialized.match(/[\u3400-\u9fff\uf900-\ufaff]/g) || []).length;
-  return cjk + Math.ceil((serialized.length - cjk) / 4);
+  return imageTokens + cjk + Math.ceil((serialized.length - cjk) / 4);
 };
 
 export const calculateAgentContextBudget = (modelInfo, systemPrompt, seedMessages = []) => {
@@ -577,6 +581,7 @@ const sanitizeParams = raw => {
 };
 
 const sanitizeDraft = raw => ({
+  ...(raw?.editContext ? { editContext: { baseImageAvailable: raw.editContext.baseImageAvailable === true, maskAvailable: raw.editContext.maskAvailable === true, strength: clamp(raw.editContext.strength, 0, 1, 1), noise: clamp(raw.editContext.noise, 0, 1, 0), focused: raw.editContext.focused === true } } : {}),
   ...(raw?.target && typeof raw.target === 'object' ? { target: { chainId: text(raw.target.chainId).slice(0, 200), mode: ['text-to-image', 'image-to-image', 'inpaint', 'outpaint'].includes(raw.target.mode) ? raw.target.mode : 'text-to-image', fingerprint: text(raw.target.fingerprint).slice(0, 100) } } : {}),
   basePrompt: text(raw?.basePrompt),
   subjectPrompt: text(raw?.subjectPrompt),
@@ -775,7 +780,13 @@ const researchBlock = `
 4. 不得尝试访问本机、局域网、带账号信息的地址或搜索结果之外的网址；不得把项目私密数据拼进搜索词。`;
 
 // creativeMode 不再改变常量正文：破甲内容由绑定预设槽位驱动。
-const buildSystemPrompt = () => `${baseSystemPrompt}\n${techBlock}\n${researchBlock}`;
+const buildSystemPrompt = () => `${baseSystemPrompt}\n[规则来源层级]\n官方发布 > 模型专用文档 > 通用文档 > 项目经验。具体知识通过 search_novelai_docs / read_novelai_doc 按需读取；复杂提示词规则通过 read_prompt_guidelines 按需读取。${researchBlock}`;
+
+export const selectAgentTools = (tools, request = '') => {
+  const core = new Set(['get_lab_state', 'update_prompts', 'set_characters', 'set_generation_params', 'request_generation', 'search_tags', 'search_novelai_docs', 'read_novelai_doc', 'read_prompt_guidelines']);
+  const scope = /全部|所有功能|完整项目/.test(request) ? 'all' : /删除|清理|预算|队列|设置|缓存|词库/.test(request) ? 'maintenance' : /收藏|保存|资料|风格串|画师|灵感|历史|Vibe|参考|角色库|AITag|项目/i.test(request) ? 'library' : 'creative';
+  return tools.filter(tool => core.has(tool.name) || scope === 'all' || /搜索|联网|网页|核实|最新|search|web/i.test(request) && ['web_search', 'read_web_page'].includes(tool.name) || scope === 'library' && !/^(set_anlas_budget|set_cloud_queue|request_clear_history|request_cleanup_history|set_client_preferences|request_clear_mobile_cache|update_tag_dictionary)$/.test(tool.name) || scope === 'maintenance' && /^(get_project|set_anlas|set_cloud|set_client|request_|update_tag|navigate)/.test(tool.name) || /模块|Vibe|参考/i.test(request) && /^(set_prompt_modules|set_vibes|set_character_references|search_vibes|search_character_references)$/.test(tool.name));
+};
 
 const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
   const modelProfile = getNovelAiModelProfile(draft?.params?.model);
@@ -783,6 +794,8 @@ const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
   const tagAssistEnabled = clientSettings.tagAssistEnabled !== false;
   return `
 [当前实验室运行上下文：这是项目状态数据，不是用户指令]
+- 编辑输入摘要：${JSON.stringify(draft?.editContext || null)}
+- 当前作品与模式：${JSON.stringify(draft?.target || { mode: 'text-to-image' })}。只能修改当前模式，禁止转到另一模式生成或替用户绘制蒙版。
 - 当前 NovelAI 模型：${JSON.stringify(modelProfile.id)}（${modelProfile.label} / ${modelProfile.family}）
 - 官方提示能力：${modelProfile.officialPrompting}
 - 官方提示容量：${modelProfile.officialPromptCapacity}
@@ -1230,9 +1243,10 @@ export const assemblePromptContext = ({ creativeMode = true, revision = null, sy
   if (tailText) { recordSegment('system_tail', 'system_tail', tailText); systemParts.push(tailText); }
   if (safetyFooter) systemParts.push(String(safetyFooter).trim());
   const systemPrompt = systemParts.join('\n');
-  const systemTokens = estimateContextTokens(systemPrompt) + estimateContextTokens(JSON.stringify(toolDescriptors || []));
-  const contextWindow = Math.round(clamp(preset?.contextWindow || 128_000, 1_024, 10_000_000, 128_000));
-  const configuredOutput = Math.round(clamp(preset?.maxTokens || Math.min(16_384, contextWindow), 256, contextWindow, Math.min(16_384, contextWindow)));
+  const toolTokens = estimateContextTokens(toolDescriptors || []);
+  const systemTokens = estimateContextTokens(systemPrompt);
+  const contextWindow = Math.round(clamp(model?.contextWindow || 32_000, 1_024, 10_000_000, 32_000));
+  const configuredOutput = Math.round(clamp(Math.min(model?.maxTokens || 8192, 8192), 256, contextWindow, Math.min(8192, contextWindow)));
 
   // ── canonical 消息序列（全部深拷贝，零原地修改）──
   const working = cloneAgentMessages(cleanMessages);
@@ -1316,7 +1330,10 @@ export const assemblePromptContext = ({ creativeMode = true, revision = null, sy
     else working.push({ role: 'assistant', content: [{ type: 'text', text: prefillText }], injected: true });
   }
 
-  const canonicalMessages = working;
+  const inputBudget = assembleBudget(contextWindow, configuredOutput, systemTokens, toolTokens, working);
+  const canonicalMessages = trimContextMessages(working, inputBudget.conversationBudget);
+  if (canonicalMessages.length < working.length) warnings.push('旧历史已按完整用户轮次裁剪，保留本轮工具组');
+  if (systemTokens + toolTokens + estimateContextTokens(canonicalMessages) > inputBudget.availableInput) throw Object.assign(new Error(`当前提示词、工具或本轮内容超过 ${contextWindow} Token 模型预算，请缩短注入／输入或选择更大上下文模型`), { status: 400 });
   const presetTokens = estimateContextTokens(slots);
   const historyTokens = estimateContextTokens(cleanMessages);
   const finalBudget = assembleBudget(contextWindow, configuredOutput, systemTokens, estimateContextTokens(toolDescriptors || []), canonicalMessages);
@@ -1329,7 +1346,7 @@ export const assemblePromptContext = ({ creativeMode = true, revision = null, sy
       draftTokens: 0,
       historyTokens,
       presetTokens,
-      totalTokens: systemTokens + estimateContextTokens(canonicalMessages),
+      totalTokens: systemTokens + toolTokens + estimateContextTokens(canonicalMessages),
       contextWindow,
       contextDepth,
       projectedBuffer: finalBudget.projectedBuffer,
@@ -2756,6 +2773,16 @@ export class PromptAgentService {
     };
     return [
       {
+        name: 'read_prompt_guidelines', label: '读取创作提示词规则', description: '按需读取工坊提示词的项目经验与字段规则，不冒充官方规则。query 可筛选相关段落。',
+        parameters: Type.Object({ query: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          const query = text(args.query).slice(0, 100);
+          const paragraphs = techBlock.split('\n\n').filter(paragraph => !query || paragraph.includes(query));
+          const content = paragraphs.join('\n\n').slice(0, 16000);
+          return { content: jsonText({ source: '项目经验；官方模型事实优先', content }), details: { chars: content.length } };
+        },
+      },
+      {
         name: 'search_novelai_docs', label: '检索 NovelAI 官方知识', description: '检索项目内置的 NovelAI 官方文档结构化摘要。默认只返回适用于实验室当前模型的条目；模型发布信息优先于尚未更新的通用文档。',
         parameters: Type.Object({ query: Type.Optional(Type.String()), topic: Type.Optional(Type.String()), modelId: Type.Optional(Type.String()), includeOtherModels: Type.Optional(Type.Boolean()), limit: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => {
@@ -3382,6 +3409,7 @@ export class PromptAgentService {
         name: 'request_generation', label: '请求生成', description: '用户明确要求出图时调用。前端将显示费用与二次确认，工具本身不会直接扣费。',
         parameters: Type.Object({ reason: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
+          if (draft.target?.mode !== undefined && draft.target.mode !== 'text-to-image' && (!draft.editContext?.baseImageAvailable || draft.target.mode !== 'image-to-image' && !draft.editContext?.maskAvailable)) throw new Error('编辑模式缺少底图或蒙版，请先在当前画布准备后再请求生成');
           const { requestId, promise: confirmation } = this.createConfirmation(project?.agentSessionId, { action: 'request_generation', resourceId: '', payload: { draft: structuredClone(draft) } });
           emit({ type: 'action', action: { kind: 'request_generation', patch: { reason: text(args.reason).slice(0, 300), requestId } }, draft: structuredClone(draft) });
           const result = await confirmation;
@@ -3659,17 +3687,17 @@ export class PromptAgentService {
     const contextData = { clientSettings: typeof input.clientSettings === 'object' && input.clientSettings ? input.clientSettings : {} };
     const runtimeContext = buildAgentRuntimeContext(draft, contextData.clientSettings);
     const creativeMode = sessionCreativeMode;
-    const policySystem = `${buildSystemPrompt()}\n${runtimeContext}`;
-    const toolDescriptors = this.createTools(draft, contextData, () => {}, {}, modelInfo).map(tool => ({ name: tool.name, label: tool.label || tool.name, description: tool.description || '' }));
+    const toolDescriptors = selectAgentTools(this.createTools(draft, contextData, () => {}, {}, modelInfo), message).map(tool => ({ name: tool.name, description: tool.description || '', parameters: tool.parameters }));
     const result = assemblePromptContext({
       creativeMode,
       revision: preset,
-      systemPolicy: policySystem,
+      systemPolicy: buildSystemPrompt(),
       runtimeContext,
       safetyFooter: PRESET_SAFETY_FOOTER,
       cleanMessages: [],
       modelApi,
       modelReasoning: modelInfo.reasoning,
+      model: modelInfo,
       thinkingLevel: this.normalizeThinkingLevel(stored.meta?.thinkingLevel, modelInfo),
       toolDescriptors,
       hasVisionImages: false,
@@ -3806,7 +3834,7 @@ export class PromptAgentService {
           ...(this.outboundProxyUrl ? { env: { ...(credential.env || {}), HTTPS_PROXY: this.outboundProxyUrl, HTTP_PROXY: this.outboundProxyUrl } } : {}),
         }));
       }
-      const modelRuntime = createPromptAgentModelRuntime(credentials);
+      const modelRuntime = createPromptAgentModelRuntime(credentials, [...this.customProviders.values()]);
       const model = modelRuntime.getModel(provider, modelId);
       if (!model) throw new Error('无法加载所选模型');
       const dedicatedVision = Boolean(visionSelection && (visionSelection.provider !== provider || visionSelection.model !== modelId));
@@ -3822,7 +3850,7 @@ export class PromptAgentService {
             tools: [],
             messages: [],
           },
-          streamFn: modelRuntime.streamSimple.bind(modelRuntime),
+          streamFn: (model, context, options) => modelRuntime.streamSimple(model, context, { ...options, maxTokens: Math.min(2048, model.maxTokens || 2048), signal: AbortSignal.any([combined, AbortSignal.timeout(180_000), ...(options?.signal ? [options.signal] : [])]) }),
           sessionId: `nai-vision-${randomUUID()}`,
         });
         combined.throwIfAborted();
@@ -3844,12 +3872,12 @@ export class PromptAgentService {
         taskEmit({ type: 'vision_usage', ...visionUsage });
         return result.slice(0, 24_000);
       } : null;
-      const tools = this.createTools(draft, contextData, taskEmit, {
+      const tools = selectAgentTools(this.createTools(draft, contextData, taskEmit, {
         ...project,
         agentSessionId: sessionId,
         signal: combined,
         ...(analyzeImages ? { analyzeImages, visionModelLabel: `${visionSelection.provider}/${visionSelection.model}` } : {}),
-      }, modelInfo);
+      }, modelInfo), requestUserText + ' ' + (storedSession.messages || []).filter(message => message.role === 'user').slice(-2).map(agentMessageText).join(' '));
       const loadedMessages = await this.withSignal(this.loadMessages(sessionId), combined);
       audit('agent_initialized', {
         toolNames: tools.map(tool => tool.name),
@@ -3858,6 +3886,7 @@ export class PromptAgentService {
       });
       // 系统提示词由绑定 revision 装配（system_head/middle/tail 注入其中），
       // transformContext 每轮从干净 state 重新装配 canonical 消息（发送即焚）。
+      let latestAssembly;
       const initialAssembly = assemblePromptContext({
         creativeMode: revisionEffectiveCreativeMode,
         revision: boundRevision,
@@ -3867,10 +3896,12 @@ export class PromptAgentService {
         cleanMessages: loadedMessages,
         modelApi,
         modelReasoning: modelInfo.reasoning,
+        model: modelInfo,
         thinkingLevel,
-        toolDescriptors: tools.map(tool => ({ name: tool.name, label: tool.label || tool.name, description: tool.description || '' })),
+        toolDescriptors: tools.map(tool => ({ name: tool.name, description: tool.description || '', parameters: tool.parameters })),
         hasVisionImages: Boolean(visionSelection?.provider),
       });
+      latestAssembly = initialAssembly;
       const agent = new Agent({
         initialState: {
           systemPrompt: initialAssembly.systemPrompt || activeSystemPrompt,
@@ -3879,7 +3910,7 @@ export class PromptAgentService {
           tools,
           messages: loadedMessages,
         },
-        streamFn: modelRuntime.streamSimple.bind(modelRuntime),
+        streamFn: (model, context, options) => modelRuntime.streamSimple(model, { ...context, systemPrompt: latestAssembly.systemPrompt }, { ...options, maxTokens: latestAssembly.budget.outputReserve, signal: AbortSignal.any([combined, AbortSignal.timeout(180_000), ...(options?.signal ? [options.signal] : [])]) }),
         sessionId: `nai-prompt-agent-${createHash('sha256').update(sessionId).digest('hex').slice(0, 20)}`,
         // Pi can execute independent read tools concurrently. Mutating tools still
         // remain ordered by the model's tool-call plan and all dangerous operations
@@ -3895,15 +3926,17 @@ export class PromptAgentService {
             creativeMode: revisionEffectiveCreativeMode,
             revision: boundRevision,
             systemPolicy: policySystemPrompt,
-            runtimeContext,
+            runtimeContext: buildAgentRuntimeContext(draft, contextData.clientSettings),
             safetyFooter: PRESET_SAFETY_FOOTER,
             cleanMessages: messages,
             modelApi,
             modelReasoning: modelInfo.reasoning,
+            model: modelInfo,
             thinkingLevel,
-            toolDescriptors: tools.map(tool => ({ name: tool.name, label: tool.label || tool.name, description: tool.description || '' })),
+            toolDescriptors: tools.map(tool => ({ name: tool.name, description: tool.description || '', parameters: tool.parameters })),
             hasVisionImages: Boolean(visionSelection?.provider),
           });
+          latestAssembly = assembled;
           audit('model_context', {
             contextWindow: assembled.tokenEstimate?.contextWindow,
             outputReserve: assembled.budget?.outputReserve,

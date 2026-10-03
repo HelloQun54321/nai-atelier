@@ -1,4 +1,5 @@
 import { promptAgentService, type PromptAgentEvent } from './promptAgent';
+import type { PromptAgentDraft } from '../types';
 
 type RunInput = Parameters<typeof promptAgentService.run>[0];
 const active = new Map<string, Promise<void>>();
@@ -28,3 +29,7 @@ export const agentDraftFingerprint = (value: unknown) => {
   for (const character of JSON.stringify(value)) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
   return (hash >>> 0).toString(16);
 };
+
+export const agentDraftFields = ['basePrompt', 'subjectPrompt', 'negativePrompt', 'modules', 'params'] as const;
+export const agentDraftChangedFields = (current: PromptAgentDraft, proposed: PromptAgentDraft) => agentDraftFields.filter(field => JSON.stringify(current[field]) !== JSON.stringify(proposed[field]));
+export const mergeAgentDraftFields = (current: PromptAgentDraft, proposed: PromptAgentDraft, fields: ReadonlyArray<typeof agentDraftFields[number]>): PromptAgentDraft => ({ ...current, ...Object.fromEntries(fields.map(field => [field, proposed[field]])) });

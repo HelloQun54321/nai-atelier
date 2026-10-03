@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PromptAgentService } from './prompt-agent.mjs';
+import { PromptAgentService, assemblePromptContext, estimateContextTokens, selectAgentTools } from './prompt-agent.mjs';
 
 const isolated = async fn => {
   const root = await mkdtemp(join(tmpdir(), 'nai-agent-test-'));
@@ -109,4 +109,41 @@ test('停止准备中的任务与挂起网络立即结束等待', () => isolated
   const waiting = service.withSignal(new Promise(() => {}), controller.signal);
   service.controlSession('s', 'abort');
   await assert.rejects(waiting, { name: 'AbortError' });
+}));
+test('上下文取真实模型窗口，完整 schema 入账，超限不发送', () => {
+  for (const contextWindow of [8192, 32768, 128000, 1000000]) {
+    const assembled = assemblePromptContext({ model: { contextWindow, maxTokens: 32000 }, systemPolicy: 'rules', cleanMessages: [{ role: 'user', content: 'hello' }], toolDescriptors: [{ name: 'test', parameters: { description: 'schema '.repeat(100) } }] });
+    assert.equal(assembled.budget.contextWindow, contextWindow);
+    assert.ok(assembled.budget.outputReserve <= 8192);
+    assert.ok(assembled.tokenEstimate.totalTokens > estimateContextTokens('rules'));
+  }
+  assert.throws(() => assemblePromptContext({ model: { contextWindow: 8192 }, systemPolicy: 'a'.repeat(50000) }), /超过/);
+  assert.ok(estimateContextTokens([{ type: 'image', data: 'a'.repeat(1000000) }]) < 5000);
+});
+test('工具按任务范围提供，保留核心创作和按需知识', () => isolated(async service => {
+  const tools = service.createTools({ params: {} }, {}, () => {});
+  const names = selectAgentTools(tools, '修改提示词').map(tool => tool.name);
+  assert.ok(names.includes('read_prompt_guidelines'));
+  assert.ok(!names.includes('request_clear_history'));
+  assert.ok(selectAgentTools(tools, '清理历史').some(tool => tool.name === 'request_clear_history'));
+}));
+test('真实流适配器遵守输出预算，并持久化唯一终态与目标草稿', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', contextWindow: 32768, maxTokens: 32000 }], apiKey: 'synthetic', select: true });
+  const session = await service.createSession({ creativeMode: false });
+  const previous = globalThis.fetch;
+  const requests = [], events = [];
+  globalThis.fetch = async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    const chunk = { id: 'synthetic', object: 'chat.completion.chunk', created: 1, model: 'a', choices: [{ index: 0, delta: { role: 'assistant', content: '完成' }, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } };
+    return new Response('data: ' + JSON.stringify(chunk) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  };
+  try {
+    await service.run({ sessionId: session.id, message: 'hello', draft: { target: { chainId: 'c', mode: 'text-to-image', fingerprint: 'f' }, params: {} } }, event => events.push(event));
+    assert.equal(events.filter(event => event.type === 'done').length, 1);
+    assert.ok(requests[0].max_tokens <= 8192 || requests[0].max_completion_tokens <= 8192);
+    const task = await service.getTask(session.id);
+    assert.equal(task.status, 'completed');
+    assert.equal(task.finalDraft.target.chainId, 'c');
+    assert.equal(task.events.at(-1).type, 'done');
+  } finally { globalThis.fetch = previous; }
 }));

@@ -9,6 +9,7 @@ import { ChainEditor } from './ChainEditor';
 type ImageEditPanelProps = React.ComponentProps<typeof import('./ImageEditPanel').ImageEditPanel>;
 
 const state = vi.hoisted(() => ({
+  agent: null as React.ComponentProps<typeof import('./chain/PresetSourceBadges').PromptAgentOverlayController> | null,
   low: { enabled: false },
   history: vi.fn(async () => []),
   confirm: vi.fn(async () => true),
@@ -58,7 +59,7 @@ vi.mock('./chain/ChainEditorCharacters', () => ({ ChainEditorCharacters: () => n
 vi.mock('./chain/ChainEditorPresetModal', () => ({ ChainEditorPresetModal: () => null }));
 vi.mock('./chain/PresetSourceBadges', async importOriginal => ({
   ...await importOriginal<typeof import('./chain/PresetSourceBadges')>(),
-  PromptAgentOverlayController: () => null,
+  PromptAgentOverlayController: (props: React.ComponentProps<typeof import('./chain/PresetSourceBadges').PromptAgentOverlayController>) => { state.agent = props; return null; },
 }));
 // 只替换 Canvas 表面；真实编辑器、顶栏、切换、保存和会话持久化均执行实际代码。
 vi.mock('./ImageEditPanel', () => ({ ImageEditPanel: (props: ImageEditPanelProps) => <section aria-label={props.operation}>
@@ -304,4 +305,31 @@ describe('统一工作台真实状态链路', () => {
     expect(screen.getByLabelText('编辑底图').textContent).toBe('');
     expect(screen.getByLabelText('编辑蒙版').textContent).toBe('');
   });
+});
+
+it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Agent 绑定 %s 草稿，不改写其他模式', async mode => {
+  const session = fallback(); session.activeMode = mode;
+  for (const edit of ['image-to-image', 'inpaint', 'outpaint'] as const) session.edits[edit].prompt = 'draft-' + edit;
+  saveLabWorkspaceSession(chain.id, session); setup();
+  await waitFor(() => expect(state.agent?.draft.target?.mode).toBe(mode));
+  const snapshot = state.agent!.draft;
+  expect(state.agent!.splitPromptFields).toBe(false);
+  expect(snapshot.basePrompt).toBe(mode === 'text-to-image' ? 'saved style' : 'draft-' + mode);
+  await act(async () => state.agent!.onFinalDraft({ ...snapshot, basePrompt: 'Agent changed' }));
+  if (mode === 'text-to-image') expect(textPrompt().value).toBe('Agent changed');
+  else {
+    await waitFor(() => expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe('Agent changed'));
+    await switchTo('文生图'); expect(textPrompt().value).toBe('saved style');
+  }
+});
+it('手动修改冲突保留两份，选择字段后才应用', async () => {
+  setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
+  const snapshot = state.agent!.draft;
+  fireEvent.change(textPrompt(), { target: { value: 'manual edit' } });
+  await act(async () => state.agent!.onFinalDraft({ ...snapshot, basePrompt: 'Agent edit' }));
+  expect(textPrompt().value).toBe('manual edit');
+  const dialog = screen.getByRole('dialog', { name: '查看 Agent 草稿差异' });
+  expect(dialog.textContent).toContain('manual edit'); expect(dialog.textContent).toContain('Agent edit');
+  fireEvent.click(within(dialog).getByText('应用选中修改'));
+  expect(textPrompt().value).toBe('Agent edit');
 });

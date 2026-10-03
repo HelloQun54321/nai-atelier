@@ -1,3 +1,4 @@
+import type { PromptAgentDraft, NAIParams } from '../types';
 import React, { useEffect, useRef, useState } from 'react';
 import { ImageEditBaseImageSource, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem } from '../types';
 import { LabPageLayout } from '../services/appearancePreferences';
@@ -52,7 +53,8 @@ interface ImageEditPanelProps {
   onDraftChange: (patch: Partial<LabImageEditDraft> & { maskData?: string }) => void;
   onBaseImageChange: (dataUrl: string, source: ImageEditBaseImageSource, parentHistoryId?: string, meta?: { prompt?: string; negativePrompt?: string; params?: import('../types').NAIParams }) => void | Promise<void>;
   onCanvasChange: (imageData: string, maskData?: string) => void | Promise<void>;
-  onGenerate: (request: ImageEditRequest) => Promise<void>;
+  onGenerate: (request: ImageEditRequest, options?: { params: NAIParams; onApproved?: () => Promise<void>; agent: true }) => Promise<boolean | void>;
+  onAgentGenerateReady?: (generate: (draft: PromptAgentDraft, onApproved?: () => Promise<void>) => Promise<boolean>) => void;
   latestTextToImageItem?: LocalGenItem;
   onOpenLightbox: (image: string | null) => void;
   getDownloadFilename: () => string;
@@ -113,6 +115,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   onBaseImageChange,
   onCanvasChange,
   onGenerate,
+  onAgentGenerateReady,
   latestTextToImageItem,
   onOpenLightbox,
   getDownloadFilename,
@@ -207,6 +210,8 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       unavailableLabel: isImportingImage ? '读取图片中…' : pendingOutpaint ? '请先应用画布扩展' : isApplyingOutpaint || isLoading ? '画布加载中…' : '请先选择底图',
     });
   });
+
+  useEffect(() => { onAgentGenerateReady?.((draft, onApproved) => submit(draft, onApproved)); });
 
   const snapshot = (): MaskSnapshot | null => {
     const canvas = maskCanvasRef.current;
@@ -906,39 +911,39 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     notify(`已将底图规范化为 ${targetWidth} × ${targetHeight}`, 'success');
   };
 
-  const submit = async () => {
-    if (isApplyingOutpaint || applyingOutpaintRef.current || importingImageRef.current || isLoading) return;
-    if (pendingOutpaint) { setError('画布扩展已调整，请先应用后再生成'); return; }
-    if (inFlightRef.current || isGenerating) return;
-    if (lowConsumption.enabled && operation !== 'inpaint') return;
+  const submit = async (override?: PromptAgentDraft, onApproved?: () => Promise<void>): Promise<boolean> => {
+    if (isApplyingOutpaint || applyingOutpaintRef.current || importingImageRef.current || isLoading) return false;
+    if (pendingOutpaint) { setError('画布扩展已调整，请先应用后再生成'); return false; }
+    if (inFlightRef.current || isGenerating) return false;
+    if (lowConsumption.enabled && operation !== 'inpaint') return false;
     const imageCanvas = imageCanvasRef.current;
     const maskCanvas = maskCanvasRef.current;
     // 图生图不渲染蒙版画布（maskCanvas 为 null），仅要求底图画布存在
-    if (!imageCanvas || (operation !== 'image-to-image' && !maskCanvas)) return;
+    if (!imageCanvas || (operation !== 'image-to-image' && !maskCanvas)) return false;
     // 画布存在但尚未载入底图（width=0）时给出明确提示，而不是静默失败
     if (!imageCanvas.width || !imageCanvas.height) {
       setError('请先选择或上传一张底图再生成');
-      return;
+      return false;
     }
     const dimensionError = validateImageEditDimensions(imageCanvas.width, imageCanvas.height);
     if (dimensionError) {
       setError(`请先处理底图尺寸：${dimensionError}`);
-      return;
+      return false;
     }
     if (operation === 'inpaint' && focused && (!state.focusedRect || state.focusedRect.width < 2 || state.focusedRect.height < 2)) {
       setError('请先在画布上框选 Focused Inpainting 区域');
-      return;
+      return false;
     }
     // 蒙版为空（未画任何笔迹/未应用画布扩展）时 infill/outpaint 语义上等于不重绘，
     // 但 NovelAI 仍会按编辑请求计费——拦截并提示，避免白耗 Anlas
     if (operation !== 'image-to-image' && !maskHasInk(maskCanvas!)) {
       setError(operation === 'outpaint' ? '请先设置画布扩展并点击「应用画布扩展」，或手动绘制扩图蒙版' : '请先在蒙版上涂画需要重绘的区域');
-      return;
+      return false;
     }
     setError(null);
     inFlightRef.current = true;
     try {
-      await onGenerate({
+      const result = await onGenerate({
       operation,
       image: canvasToDataUrl(imageCanvas),
       canvasWidth: imageCanvas.width,
@@ -952,10 +957,11 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       minimumContextArea: focused && operation === 'inpaint' ? minimumContextArea : undefined,
       expansion: operation === 'outpaint' ? draft.appliedExpansion || emptyExpansion : undefined,
       focusedRect: focused && operation === 'inpaint' ? state.focusedRect || undefined : undefined,
-      prompt: draft.prompt,
-      negativePrompt: draft.negativePrompt,
-      promptSource: draft.promptSource,
-      });
+      prompt: override ? [override.basePrompt, override.subjectPrompt, ...override.modules.filter(module => module.isActive).map(module => module.content)].filter(Boolean).join(', ') : draft.prompt,
+      negativePrompt: override?.negativePrompt ?? draft.negativePrompt,
+      promptSource: override ? 'custom' : draft.promptSource,
+      }, override ? { params: override.params, onApproved, agent: true } : undefined);
+      return result === true;
     } finally {
       inFlightRef.current = false;
     }

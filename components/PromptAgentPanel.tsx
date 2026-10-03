@@ -25,6 +25,7 @@ interface PromptAgentPanelProps {
   onUndo: () => void;
   canUndo: boolean;
   tagAssistEnabled: boolean;
+  splitPromptFields?: boolean;
 }
 
 type ToolProgress = { id: string; name: string; state: 'running' | 'done' | 'error' | 'interrupted'; args?: unknown; result?: unknown };
@@ -644,7 +645,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       await promptAgentCoordinator.run({ apiKey: props.apiKey, sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], draft: props.draft, context: { clientSettings: {
         themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true', safeModeStartup: localStorage.getItem('nai_safe_mode_startup') !== 'false',
         imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey), artistFavorites: Array.isArray(artistFavorites) ? artistFavorites.slice(0, 2000) : [],
-        tagAssistEnabled: props.tagAssistEnabled,
+        tagAssistEnabled: props.tagAssistEnabled, splitPromptFields: props.splitPromptFields ?? false,
       } } }, event => {
         if (!uiActiveRef.current) return;
         if (event.runId) setTaskSnapshot(previous => ({ ...previous, runId: event.runId }));
