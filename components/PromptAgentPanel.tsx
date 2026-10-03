@@ -1,7 +1,10 @@
 import { AgentProjectImage } from './AgentProjectImage';
 import { extractAgentMedia } from '../services/agentMedia';
 import { prepareAgentAttachment } from '../services/agentAttachments';
-import { promptAgentCoordinator } from '../services/promptAgentCoordinator';
+import { agentDraftChangedFields, promptAgentCoordinator } from '../services/promptAgentCoordinator';
+import { AgentChatDisplayOptions, AgentDisclosure, useAgentDisplayPreferences } from './AgentChatPreferences';
+import { AgentPermissionSelect } from './AgentPermissionSelect';
+import type { AgentDisplayPreferences } from '../services/agentDisplayPreferences';
 import type { PromptAgentEvent, PromptAgentTask } from '../services/promptAgent';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 import { isTopmostModal } from './useModalA11y';
@@ -15,7 +18,7 @@ import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
 import { getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { clearMobileThumbnailCache, getMobileCacheStats, setMobileCacheLimitMb } from '../services/mobileImageCache';
-import { ArrowDown, ArrowLeft, Bot, Check, ChevronDown, Copy, Download, Expand, ImagePlus, List, MoreHorizontal, Pencil, Plus, RotateCcw, Send, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowLeft, Bot, Check, ChevronDown, Copy, Download, Expand, ImagePlus, List, MoreHorizontal, Pencil, Plus, RotateCcw, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
 
 interface PromptAgentPanelProps {
   open: boolean;
@@ -119,56 +122,68 @@ const AgentMarkdown: React.FC<{ text: string }> = React.memo(({ text }) => {
   return <>{output}</>;
 });
 
+const AgentUsageDetails: React.FC<{ message: PanelMessage }> = ({ message }) => <details className="min-w-0">
+  <summary aria-label="回答用量" className="cursor-pointer rounded-lg px-2 py-1.5 text-[11px] hover:bg-gray-100 dark:hover:bg-gray-800">用量</summary>
+  <div className="max-w-full break-words px-2 py-1 text-[11px] leading-5">
+    {message.model}{typeof message.usage?.totalTokens === 'number' ? ` · ${message.usage.totalTokens.toLocaleString()} tokens` : ''}
+    {message.stopReason && message.stopReason !== 'stop' ? ` · ${message.stopReason}` : ''}
+    {message.visionUsage?.map((item, index) => <div key={index}>历史视觉用量：{item.model} · {item.imageCount} 图{typeof item.usage?.totalTokens === 'number' ? ` · ${item.usage.totalTokens.toLocaleString()} tokens` : ''}</div>)}
+  </div>
+</details>;
+
 const AgentMessageList = React.memo(({
   messages,
   visibleMessageCount,
   running,
   copiedMessageId,
+  displayPreferences,
   onLoadEarlier,
   onCopy,
   onEdit,
   onRetry,
+  onMediaReady,
 }: {
   messages: PanelMessage[];
   visibleMessageCount: number;
   running: boolean;
   copiedMessageId: string;
+  displayPreferences: AgentDisplayPreferences;
   onLoadEarlier: () => void;
   onCopy: (message: PanelMessage) => void;
   onEdit: (message: PanelMessage) => void;
   onRetry: () => void;
+  onMediaReady: () => void;
 }) => {
   const visibleMessages = messages.slice(-visibleMessageCount);
   const hiddenMessageCount = Math.max(0, messages.length - visibleMessages.length);
   return <>
     {hiddenMessageCount > 0 && <button type="button" onClick={onLoadEarlier} className="mx-auto flex h-9 items-center rounded-full border border-gray-200 bg-white px-3 text-meta font-bold text-gray-500 shadow-sm hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">再显示前面的 {Math.min(60, hiddenMessageCount)} 条消息</button>}
-    {visibleMessages.map((message, index) => <div key={message.id} className={`group min-w-0 max-w-[88%] [overflow-wrap:anywhere] rounded-2xl px-3 py-2 text-sm leading-6 md:max-w-[84%] ${message.role === 'user' ? 'ml-auto whitespace-pre-wrap bg-indigo-600 text-white shadow-sm shadow-indigo-500/20' : message.role === 'error' ? 'whitespace-pre-wrap bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300' : 'bg-white text-gray-800 shadow-sm dark:bg-gray-900 dark:text-gray-100'}`}>
-      {message.queued && <div className="mb-1 text-micro font-bold opacity-70">{message.queued === 'steer' ? '转向要求 · 当前步骤后处理' : '后续任务 · 完成本轮后处理'}</div>}
-      {!!message.thinking && <details className="mb-2 rounded-xl bg-gray-50 px-3 py-1.5 dark:bg-gray-950"><summary className="cursor-pointer text-meta font-bold text-gray-500">思考过程 <span className="font-normal text-gray-400">· 点击展开</span></summary><div className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere] text-xs leading-5 text-gray-500">{message.thinking}</div></details>}
-      {message.role === 'agent' ? <AgentMarkdown text={message.text || (running ? '正在思考…' : '')} /> : message.text}
-      {message.tools?.flatMap(tool => extractAgentMedia(tool.result)).filter((image, index, list) => list.findIndex(item => item.path === image.path) === index).slice(0, 4).map(image => <AgentProjectImage key={image.path} image={image} />)}
-      {!!message.tools?.length && <div className="mt-2 space-y-1 border-t border-gray-100 pt-2 dark:border-gray-800">{message.tools.map(tool => <details key={tool.id} className={`rounded-lg px-2 py-1.5 text-micro ${tool.state === 'running' ? 'animate-pulse bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300' : (tool.state === 'error' || tool.state === 'interrupted') ? 'bg-red-50 text-red-600 dark:bg-red-950/50' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'}`}><summary className="cursor-pointer font-bold">{tool.state === 'running' ? '处理中' : tool.state === 'error' ? '失败' : tool.state === 'interrupted' ? '未完成' : '完成'} · {toolLabels[tool.name] || tool.name}<span className="ml-1 font-normal opacity-70">· 详情</span></summary><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all border-t border-current/10 pt-1 opacity-75">{JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)}</pre></details>)}</div>}
-      {!!message.visionUsage?.length && <div className="mt-2 space-y-0.5 border-t border-violet-100 pt-1.5 text-micro text-violet-500 dark:border-violet-950 dark:text-violet-300">{message.visionUsage.map((item, usageIndex) => <div key={`${item.provider}/${item.model}/${usageIndex}`} className="truncate">视觉 {item.model} · {item.imageCount} 图{typeof item.usage?.totalTokens === 'number' ? ` · ${item.usage.totalTokens.toLocaleString()} tokens${item.usage.cost ? ` · $${item.usage.cost.total.toFixed(4)}` : ' · 费用未知'}` : ''}</div>)}</div>}
-      <div className={`mt-1 flex min-w-0 items-center gap-1 border-t pt-1 text-micro ${message.role === 'user' ? 'border-white/20 text-white/70' : 'border-gray-100 text-gray-400 dark:border-gray-800'}`}>
-        {message.role === 'agent' && <span className="min-w-0 flex-1 truncate pr-1">{message.model || ''}{message.usage && typeof message.usage.totalTokens === 'number' ? ` · ${message.usage.totalTokens.toLocaleString()} tokens${message.usage.cost ? ` · $${message.usage.cost.total.toFixed(4)}` : ' · 费用未知'}` : ''}{message.stopReason && message.stopReason !== 'stop' ? ` · ${message.stopReason}` : ''}</span>}
-        {message.role !== 'agent' && <span className="flex-1" />}
-        <div className="flex flex-none items-center gap-0.5 whitespace-nowrap">
-          <button type="button" onClick={() => onCopy(message)} className={`mobile-touch flex items-center justify-center rounded-lg font-bold transition-colors ${message.role === 'user' ? 'hover:bg-white/20' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`} title={copiedMessageId === message.id ? '已复制' : '复制'} aria-label={copiedMessageId === message.id ? '已复制' : '复制'}>
-            {copiedMessageId === message.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-            <span className="ml-1 hidden md:inline">{copiedMessageId === message.id ? '已复制' : '复制'}</span>
-          </button>
-          {message.role === 'user' && !running && !message.queued && <button type="button" onClick={() => onEdit(message)} className="mobile-touch rounded-lg px-1.5 font-bold whitespace-nowrap hover:bg-white/20">编辑重发</button>}
-          {message.role === 'agent' && index === visibleMessages.length - 1 && !running && <button type="button" onClick={onRetry} className="mobile-touch flex items-center justify-center rounded-lg font-bold text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-950/40" title="重新回答；已完成的资料修改不会撤回" aria-label="重新生成"><RotateCcw className="h-3.5 w-3.5" /><span className="ml-1 hidden md:inline">重新生成</span></button>}
-        </div>
+    {visibleMessages.map((message, index) => <article key={message.id} className={`group min-w-0 text-sm leading-7 text-gray-800 [overflow-wrap:anywhere] dark:text-gray-100 ${message.role === 'user' ? 'ml-auto flex max-w-[90%] flex-col items-end' : ''}`}>
+      <div className={message.role === 'user' ? 'w-fit max-w-full whitespace-pre-wrap rounded-2xl bg-gray-100 px-4 py-2.5 dark:bg-gray-800' : message.role === 'error' ? 'whitespace-pre-wrap rounded-xl bg-red-50 px-3 py-2 text-red-600 dark:bg-red-950/40 dark:text-red-300' : 'min-w-0'}>
+      {message.queued && <div className="mb-1 text-xs text-gray-500 dark:text-gray-400">{message.queued === 'steer' ? '转向要求 · 当前步骤后处理' : '后续任务 · 完成本轮后处理'}</div>}
+      {!!message.thinking && <AgentDisclosure title="思考过程" label="思考过程" defaultExpanded={displayPreferences.thinkingExpanded}><div className="max-h-64 overflow-y-auto whitespace-pre-wrap text-xs leading-6 text-gray-500 dark:text-gray-400">{message.thinking}</div></AgentDisclosure>}
+      {!!message.tools?.length && <AgentDisclosure title={`工具活动 · ${message.tools.length} 项${message.tools.some(tool => tool.state === 'error' || tool.state === 'interrupted') ? ' · 有未完成项' : message.tools.some(tool => tool.state === 'running') ? ' · 处理中' : ''}`} label="工具活动" defaultExpanded={displayPreferences.toolsExpanded} error={message.tools.some(tool => tool.state === 'error' || tool.state === 'interrupted')}>
+        <div className="space-y-1">{message.tools.map(tool => <details key={tool.id} className={`text-xs leading-6 ${tool.state === 'error' || tool.state === 'interrupted' ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}><summary className="cursor-pointer"><span className={tool.state === 'running' ? 'animate-pulse' : ''}>{tool.state === 'running' ? '处理中' : tool.state === 'error' ? '失败' : tool.state === 'interrupted' ? '未完成' : '完成'} · {toolLabels[tool.name] || tool.name}</span></summary><pre className="my-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-gray-50 p-2 text-[11px] leading-5 dark:bg-gray-900">{JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)}</pre></details>)}</div>
+      </AgentDisclosure>}
+      {message.role === 'agent' ? <AgentMarkdown text={message.text || (running && index === visibleMessages.length - 1 && !message.tools?.length && !message.thinking ? '正在思考…' : '')} /> : message.text}
+      {message.tools?.flatMap(tool => extractAgentMedia(tool.result)).filter((image, index, list) => list.findIndex(item => item.path === image.path) === index).slice(0, 4).map(image => <AgentProjectImage key={image.path} image={image} onReady={onMediaReady} />)}
       </div>
-    </div>)}
+      {Boolean(message.text || message.model || message.usage || message.visionUsage?.length) && <div className="mt-1 flex min-w-0 items-center gap-0.5 text-xs text-gray-400 md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+        {!!message.text && <button type="button" onClick={() => onCopy(message)} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title={copiedMessageId === message.id ? '已复制' : '复制'} aria-label={copiedMessageId === message.id ? '已复制' : '复制'}>{copiedMessageId === message.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}</button>}
+        {message.role === 'user' && !running && !message.queued && <button type="button" onClick={() => onEdit(message)} aria-label="编辑重发" title="编辑重发" className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"><Pencil className="h-3.5 w-3.5" /></button>}
+        {message.role === 'agent' && index === visibleMessages.length - 1 && !running && <button type="button" onClick={onRetry} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title="重新回答；已完成的资料修改不会撤回" aria-label="重新生成"><RotateCcw className="h-3.5 w-3.5" /></button>}
+        {message.role === 'agent' && Boolean(message.model || message.usage || message.visionUsage?.length) && <AgentUsageDetails message={message} />}
+      </div>}
+    </article>)}
   </>;
 }, (previous, next) => previous.messages === next.messages
   && previous.visibleMessageCount === next.visibleMessageCount
   && previous.running === next.running
-  && previous.copiedMessageId === next.copiedMessageId);
+  && previous.copiedMessageId === next.copiedMessageId
+  && previous.displayPreferences === next.displayPreferences);
 
 export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
+  const displayPreferences = useAgentDisplayPreferences();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<PanelMessage[]>([]);
   const [running, setRunning] = useState(false);
@@ -586,7 +601,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                   await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: true, result: { action: patch.action } });
                 } else await promptAgentService.executeProjectAction({ action: patch.action, resourceId: patch.resourceId, payload: patch.payload, sessionId: activeSessionId, confirmationRequestId: patch.requestId });
                 if (patch.action !== 'grant_local_image_folder') window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: patch }));
-                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: patch.action === 'grant_local_image_folder' ? `已允许本次对话${patch.payload?.access === 'write' ? '保存图片到' : '读取图片目录'}：${String(patch.payload?.directory || '')}。权限两小时有效。` : '已在你确认后完成该项目操作。' }]);
+                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: patch.action === 'grant_local_image_folder' ? `已允许本次对话${patch.payload?.access === 'write' ? '保存图片到' : '读取图片目录'}：${String(patch.payload?.directory || '')}。` : '已在你确认后完成该项目操作。' }]);
               } catch (error) {
                 if (approved) await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: false }).catch(() => {});
                 else await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false }).catch(() => {});
@@ -675,11 +690,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             setMessages(previous => [...previous, { id: nextId, role: 'agent', text: '' }]);
           } else responseStartedRef.current = true;
         }
-        if (event.type === 'text_delta') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, text: item.text + event.delta } : item));
-        if (event.type === 'thinking_delta') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, thinking: (item.thinking || '') + event.delta } : item));
-        if (event.type === 'response_end') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, model: event.model, provider: event.provider, usage: event.usage, stopReason: event.stopReason, timestamp: event.timestamp } : item));
-        if (event.type === 'tool_start') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, tools: [...(item.tools || []), { id: event.toolCallId, name: event.toolName, args: event.args, state: 'running' }] } : item));
-        if (event.type === 'tool_end') setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current ? { ...item, tools: (item.tools || []).map(tool => tool.id === event.toolCallId ? { ...tool, result: event.result, state: event.isError ? 'error' : 'done' } : tool) } : item));
+        // React 可批量延迟执行更新；在事件到达时固定归属，避免下一轮覆盖上一轮收据。
+        const responseId = currentAssistantIdRef.current;
+        if (event.type === 'text_delta') setMessages(previous => previous.map(item => item.id === responseId ? { ...item, text: item.text + event.delta } : item));
+        if (event.type === 'thinking_delta') setMessages(previous => previous.map(item => item.id === responseId ? { ...item, thinking: (item.thinking || '') + event.delta } : item));
+        if (event.type === 'response_end') setMessages(previous => previous.map(item => item.id === responseId ? { ...item, model: event.model, provider: event.provider, usage: event.usage, stopReason: event.stopReason, timestamp: event.timestamp } : item));
+        if (event.type === 'tool_start') setMessages(previous => previous.map(item => item.id === responseId ? { ...item, tools: [...(item.tools || []), { id: event.toolCallId, name: event.toolName, args: event.args, state: 'running' }] } : item));
+        if (event.type === 'tool_end') setMessages(previous => previous.map(item => item.id === responseId ? { ...item, tools: (item.tools || []).map(tool => tool.id === event.toolCallId ? { ...tool, result: event.result, state: event.isError ? 'error' : 'done' } : tool) } : item));
         if (event.type === 'project_changed') window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: event.resource } }));
         if (event.type === 'action') {
           if (event.action.kind === 'request_project_action' || event.action.kind === 'request_generation') handleConfirmedAction(event); else if (event.action.kind === 'set_client_preferences') {
@@ -723,7 +740,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             window.dispatchEvent(new CustomEvent('nai-agent-navigate', { detail: navigationTarget }));
             props.onClose();
           }
-          if (!event.message) setMessages(previous => previous.map(item => item.id === currentAssistantIdRef.current && !item.text ? { ...item, text: '已完成。' } : item));
+          if (!event.message) setMessages(previous => previous.map(item => item.id === responseId && !item.text ? { ...item, text: '已完成。' } : item));
         }
       });
     } catch (error) {
@@ -792,7 +809,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     : activeModel?.reasoning ? ['off', 'minimal', 'low', 'medium', 'high'] as PromptAgentThinkingLevel[] : ['off'] as PromptAgentThinkingLevel[];
   const selectedThinkingLevel = availableThinkingLevels.includes(activeSession?.thinkingLevel || 'off')
     ? activeSession?.thinkingLevel || 'off'
-    : availableThinkingLevels.at(-1) || 'off';
+    : availableThinkingLevels.includes('medium') ? 'medium' : availableThinkingLevels[0] || 'off';
 
   const updateCreativeMode = async (creativeMode: boolean) => {
     if (!activeSession || running || activeSession.creativeModeLocked || activeSession.messageCount) return;
@@ -851,7 +868,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   };
 
   const formatUsage = (usage?: PromptAgentUsage) => usage && typeof usage.totalTokens === 'number'
-    ? `${usage.totalTokens.toLocaleString()} tokens${usage.cost?.total ? ` · $${usage.cost.total.toFixed(4)}` : ' · 费用未知'}`
+    ? `${usage.totalTokens.toLocaleString()} tokens`
     : '';
 
   const copyMessage = async (messageId: string, value: string) => {
@@ -937,7 +954,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
     <section className="relative flex min-w-0 flex-1 flex-col">
       {runtimeWarning && <p role="status" className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">{runtimeWarning}</p>}
-      {taskSnapshot.finalDraft && taskSnapshot.runId !== artifactDismissed && <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 p-2 text-xs dark:border-gray-800 dark:text-gray-300"><span className="min-w-0 flex-1">上次完成的草稿已保留。</span><button type="button" onClick={() => { if (taskSnapshot.finalDraft) props.onFinalDraft(taskSnapshot.finalDraft); setArtifactDismissed(taskSnapshot.runId || ''); }} className="mobile-touch rounded-lg px-2 text-indigo-600 dark:text-indigo-300">查看与恢复</button><button type="button" onClick={() => setArtifactDismissed(taskSnapshot.runId || '')} className="mobile-touch px-2">暂不应用</button></div>}
+      {taskSnapshot.finalDraft && agentDraftChangedFields(props.draft, taskSnapshot.finalDraft).length > 0 && taskSnapshot.runId !== artifactDismissed && <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 p-2 text-xs dark:border-gray-800 dark:text-gray-300"><span className="min-w-0 flex-1">上次完成的草稿已保留。</span><button type="button" onClick={() => { if (taskSnapshot.finalDraft) props.onFinalDraft(taskSnapshot.finalDraft); setArtifactDismissed(taskSnapshot.runId || ''); }} className="mobile-touch rounded-lg px-2 text-indigo-600 dark:text-indigo-300">查看与恢复</button><button type="button" onClick={() => setArtifactDismissed(taskSnapshot.runId || '')} className="mobile-touch px-2">暂不应用</button></div>}
       {(taskSnapshot.pending || []).filter(item => !item.approved).map(item => <div key={item.requestId} className="flex flex-wrap items-center gap-2 border-b border-amber-200 p-2 text-xs dark:border-amber-900 dark:text-gray-300"><span className="min-w-0 flex-1">任务等待你确认：{item.operation.action}</span><button type="button" className="mobile-touch px-2 text-indigo-600 dark:text-indigo-300" onClick={() => handleConfirmedAction({ type: 'action', action: item.operation.action === 'request_generation' ? { kind: 'request_generation', patch: { requestId: item.requestId, reason: '接续上次请求' } } : { kind: 'request_project_action', patch: { ...item.operation, requestId: item.requestId, title: '接续项目操作？', consequence: JSON.stringify(item.operation) } }, draft: item.operation.payload.draft as PromptAgentDraft | undefined })}>查看并决定</button></div>)}
       {modelsLoaded && !activeModel && <div className="flex flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200"><span className="min-w-0 flex-1">{models.length ? '这条会话的模型已不可用，请选择已接入的模型。' : '先接入模型服务，再开始创作。可以直接填写模型 ID，无需获取模型列表。'}</span><button type="button" onClick={models.length ? () => setShowModelMenu(true) : openAgentSettings} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-white">{models.length ? '选择模型' : '接入 API'}</button></div>}
       {/* 顶栏与状态栏合流为单行（节省约 36px 空间） */}
@@ -1028,7 +1045,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               <MoreHorizontal className="h-5 w-5" />
             </button>
             {showMoreMenu && (
-              <div className="appearance-panel absolute right-0 top-11 z-30 w-44 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+              <div className="appearance-panel absolute right-0 top-11 z-30 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+                <div className="border-b border-gray-100 p-3 dark:border-gray-800"><AgentChatDisplayOptions /></div>
                 <button
                   type="button"
                   onClick={() => {
@@ -1067,9 +1085,9 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       {logExportError && <div role="status" className="absolute right-3 top-[calc(3.25rem+env(safe-area-inset-top))] z-40 max-w-[min(28rem,calc(100%-1.5rem))] rounded-lg bg-red-50 px-2 py-1 text-micro font-bold text-red-600 shadow dark:bg-red-950/80 dark:text-red-300">{logExportError}</div>}
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
-        <div ref={scrollRef} onScroll={event => { const element = event.currentTarget; const next = element.scrollHeight - element.scrollTop - element.clientHeight < 80; followBottomRef.current = next; setFollowingBottom(next); }} className="relative flex-1 space-y-3 overflow-y-auto p-3 md:p-4">
-          {messages.length === 0 && <div className="mt-8 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">告诉我你想在项目里做什么</h3><p className="mt-1 text-sm text-gray-500">{sessionReady ? '这是一条独立对话，可在项目的任何页面继续。' : sessionInitError || (modelsLoaded && !activeModel ? '接入后可以观察图片和调整当前草稿。' : '正在加载这条对话…')}</p>{!sessionReady && sessionInitError && <button type="button" onClick={() => { setSessionInitError(''); void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); })]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行')); }} className="mobile-touch mt-3 rounded-xl border border-indigo-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">重试</button>}{activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount && (
-            <div className="mx-auto mt-4 flex max-w-sm items-center justify-between gap-3 rounded-2xl border border-violet-200 bg-violet-50/50 p-3 text-left shadow-sm dark:border-violet-900/50 dark:bg-violet-950/20">
+        <div ref={scrollRef} onScroll={event => { const element = event.currentTarget; const next = element.scrollHeight - element.scrollTop - element.clientHeight < 80; followBottomRef.current = next; setFollowingBottom(next); }} className="relative flex-1 space-y-6 overflow-y-auto px-4 py-5 md:px-6">
+          {messages.length === 0 && <div className="my-8 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">告诉我你想在项目里做什么</h3><p className="mt-1 text-sm text-gray-500">{sessionReady ? '这是一条独立对话，可在项目的任何页面继续。' : sessionInitError || (modelsLoaded && !activeModel ? '接入后可以观察图片和调整当前草稿。' : '正在加载这条对话…')}</p>{!sessionReady && sessionInitError && <button type="button" onClick={() => { setSessionInitError(''); void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); })]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行')); }} className="mobile-touch mt-3 rounded-xl border border-indigo-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">重试</button>}{activeSession && !activeSession.creativeModeLocked && !activeSession.messageCount && (
+            <div className="mx-auto mt-5 flex max-w-sm items-center justify-between gap-3 border-y border-gray-100 py-3 text-left dark:border-gray-800">
               <div className="min-w-0 flex-1">
                 <b className="block text-xs font-bold text-gray-800 dark:text-gray-100">注入预设</b>
                 <span className="block text-micro text-gray-500">首条消息前可选，发送后锁定</span>
@@ -1079,7 +1097,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 disabled={running}
                 value={getSessionPresetValue(activeSession)}
                 onChange={event => void selectSessionPreset(event.target.value)}
-                className="mobile-touch max-w-[11rem] rounded-xl border border-violet-300 bg-white px-2.5 py-1 text-xs font-bold text-violet-700 shadow-sm outline-none dark:border-violet-800 dark:bg-gray-900 dark:text-violet-300"
+                className="mobile-touch max-w-[11rem] rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
               >
                 <option value="off">关闭注入（普通模式）</option>
                 <optgroup label="内置预设">
@@ -1096,75 +1114,27 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 )}
               </select>
             </div>
-          )}<div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '查看当前设置和 Anlas 预算'].map(value => <button key={value} type="button" disabled={!sessionReady} onClick={() => void run(value)} className="mobile-touch rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold text-gray-700 shadow-sm hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{value}</button>)}</div></div>}
+          )}<div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '看看我的本地图片目录'].map(value => <button key={value} type="button" disabled={!sessionReady} onClick={() => void run(value)} className="mobile-touch rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">{value}</button>)}</div></div>}
           <AgentMessageList
             messages={messages}
             visibleMessageCount={visibleMessageCount}
             running={running}
             copiedMessageId={copiedMessageId}
+            displayPreferences={displayPreferences}
             onLoadEarlier={() => messageActionsRef.current.loadEarlier()}
             onCopy={message => messageActionsRef.current.copy(message)}
             onEdit={message => messageActionsRef.current.edit(message)}
             onRetry={() => messageActionsRef.current.retry()}
+            onMediaReady={() => { if (followBottomRef.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'auto' }); }}
           />
           {!followingBottom && <button type="button" onClick={() => { followBottomRef.current = true; setFollowingBottom(true); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: appearanceScrollBehavior() }); }} className="sticky bottom-2 mx-auto flex items-center gap-1 rounded-full bg-gray-900/90 px-3 py-1.5 text-xs font-bold text-white shadow-lg backdrop-blur-xs transition hover:scale-105 active:scale-95 dark:bg-white/90 dark:text-gray-900"><ArrowDown className="h-3.5 w-3.5" />回到底部</button>}
         </div>
-          <div onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void addAttachments(event.dataTransfer.files); } }} className="border-t border-gray-200 bg-white p-2 pb-[max(.5rem,env(safe-area-inset-bottom))] dark:border-gray-800 dark:bg-gray-900 md:p-3" aria-busy={!sessionReady}>
+          <div onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void addAttachments(event.dataTransfer.files); } }} className="mx-3 mb-3 rounded-2xl border border-gray-200 bg-gray-50/60 p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] focus-within:border-gray-400 dark:border-gray-700 dark:bg-gray-900/80 dark:focus-within:border-gray-500 md:mx-5" aria-busy={!sessionReady}>
           {editingMessageId && !running && <div className="mb-2 flex items-center rounded-xl bg-amber-50 px-3 py-1.5 text-meta text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"><b>正在编辑旧消息</b><span className="ml-1">发送后会从这里重新执行，后面的旧回答将被替换。</span><span className="flex-1" /><button type="button" onClick={() => { setEditingMessageId(''); setInput(''); }} className="font-bold">取消</button></div>}
-          {running && (
-            <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 px-2.5 py-1.5 text-xs dark:border-indigo-950/60 dark:bg-indigo-950/30">
-              <div className="flex items-center gap-2">
-                <span className="flex items-center gap-1 font-bold text-indigo-700 dark:text-indigo-300">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-500" />
-                  追加模式
-                </span>
-                <div className="inline-flex rounded-lg bg-indigo-100/70 p-0.5 dark:bg-indigo-900/50">
-                  <button
-                    type="button"
-                    onClick={() => setQueueMode('steer')}
-                    className={`rounded-md px-2 py-0.5 text-micro font-bold transition ${
-                      queueMode === 'steer'
-                        ? 'bg-white text-indigo-700 shadow-sm dark:bg-gray-800 dark:text-indigo-300'
-                        : 'text-gray-500 hover:text-indigo-700 dark:text-gray-400 dark:hover:text-indigo-200'
-                    }`}
-                  >
-                    转向当前任务
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setQueueMode('followUp')}
-                    className={`rounded-md px-2 py-0.5 text-micro font-bold transition ${
-                      queueMode === 'followUp'
-                        ? 'bg-white text-indigo-700 shadow-sm dark:bg-gray-800 dark:text-indigo-300'
-                        : 'text-gray-500 hover:text-indigo-700 dark:text-gray-400 dark:hover:text-indigo-200'
-                    }`}
-                  >
-                    排到任务之后
-                  </button>
-                </div>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => void stopTask()}
-                  className="mobile-touch flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 text-micro font-bold text-rose-600 transition hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-900/60"
-                  title="停止当前 Agent 任务"
-                >
-                  <Square className="h-2.5 w-2.5 fill-current" />
-                  停止任务
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void promptAgentService.control(activeSessionId, 'clear').catch(reportControlError)}
-                  className="mobile-touch rounded px-1.5 py-0.5 text-micro font-bold text-gray-400 transition-colors hover:text-rose-600 dark:hover:text-rose-400"
-                  title="清空已排队的任务要求"
-                >
-                  清空排队
-                </button>
-              </div>
-            </div>
-          )}
-          {(editingMessageId || running) && <p className="mb-2 text-micro text-gray-500">停止或重新回答不会撤销已经完成的资料修改；实验室撤销只恢复草稿。</p>}
+          {running && <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <select aria-label="追加处理方式" value={queueMode} onChange={event => setQueueMode(event.target.value as 'steer' | 'followUp')} className="min-h-8 max-w-full rounded-lg border border-gray-200 bg-transparent px-2 text-xs dark:border-gray-700 dark:[color-scheme:dark]"><option value="steer">转向当前任务</option><option value="followUp">完成后继续</option></select>
+            <button type="button" onClick={() => void promptAgentService.control(activeSessionId, 'clear').catch(reportControlError)} className="min-h-8 rounded-lg px-2 hover:bg-gray-100 dark:hover:bg-gray-800" title="清空已排队的任务要求">清空排队</button>
+          </div>}
           {input.length >= 7000 && <p className="mb-2 text-micro text-gray-500">任务要求 {input.length} / 8000 字符，请分段发送。</p>}
           {attachmentBusy && <p role="status" className="mb-2 text-xs text-gray-500">正在处理图片副本…</p>}
           {attachmentError && <p role="alert" className="mb-2 text-xs text-red-600 dark:text-red-300">{attachmentError}</p>}
@@ -1186,31 +1156,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               ))}
             </div>
           )}
-          <div className="flex min-w-0 items-end gap-2">
-            <label title={!sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : supportsImages ? '添加图片' : '当前模型不支持图片输入'} aria-disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} className={`mobile-touch flex h-11 w-11 flex-none items-center justify-center rounded-xl border border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400 ${sessionReady && supportsImages && !running && attachments.length < 4 ? 'cursor-pointer hover:border-indigo-400 hover:text-indigo-500' : 'cursor-not-allowed opacity-35'}`}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片附件" onChange={event => { void addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} /></label>
-            <textarea onPaste={event => { const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); void addAttachments(files); } }} maxLength={8000} aria-label="任务要求" ref={inputRef} value={input} disabled={!sessionReady} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void run(); } }} rows={1} placeholder={!sessionReady ? modelsLoaded ? '先接入或选择模型服务…' : '正在加载对话…' : running ? (queueMode === 'steer' ? '补充或纠正当前任务…' : '添加完成后继续处理的任务…') : editingMessageId ? '修改这条消息后重新发送…' : ''} className="min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-gray-300 bg-gray-50 px-3 py-2.5 text-sm leading-5 text-gray-900 outline-none placeholder:text-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 disabled:cursor-wait disabled:opacity-55 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-600 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20" />
-            {running && !input.trim() && !attachments.length ? (
-              <button
-                type="button"
-                onClick={() => void stopTask()}
-                className="mobile-touch flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-rose-600 p-0 text-white shadow-lg shadow-rose-600/20 transition hover:bg-rose-500 active:scale-95"
-                aria-label="停止"
-                title="停止当前 Agent 任务"
-              >
-                <Square className="h-3.5 w-3.5 fill-current" />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void run()}
-                disabled={!sessionReady || attachmentBusy || (!input.trim() && !attachments.length)}
-                className="mobile-touch flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-indigo-600 p-0 text-white shadow-lg shadow-indigo-500/15 transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none dark:disabled:bg-gray-800 dark:disabled:text-gray-600"
-                aria-label={!sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : running ? '追加要求' : editingMessageId ? '重新发送' : '执行'}
-                title={!sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : running ? '追加要求' : editingMessageId ? '重新发送' : '执行'}
-              >
-                <Send className="h-[18px] w-[18px]" />
-              </button>
-            )}
+          <textarea onPaste={event => { const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); void addAttachments(files); } }} maxLength={8000} aria-label="任务要求" ref={inputRef} value={input} disabled={!sessionReady} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void run(); } }} rows={1} placeholder={!sessionReady ? modelsLoaded ? '先接入或选择模型服务…' : '正在加载对话…' : running ? (queueMode === 'steer' ? '补充或纠正当前任务…' : '添加完成后继续处理的任务…') : editingMessageId ? '修改这条消息后重新发送…' : '输入要求，或粘贴图片…'} className="min-h-12 w-full min-w-0 resize-none bg-transparent px-1 py-2 text-sm leading-6 text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-55 dark:text-gray-100 dark:placeholder:text-gray-500" />
+          <div className="mt-1 flex min-w-0 items-center gap-2">
+            <label title={!sessionReady ? '请配置或选择模型服务' : supportsImages ? '添加图片' : '当前模型不支持图片输入'} aria-disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} className={'flex h-9 w-9 flex-none items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 ' + (sessionReady && supportsImages && !running && attachments.length < 4 ? 'cursor-pointer hover:bg-gray-200/60 dark:hover:bg-gray-800' : 'cursor-not-allowed opacity-35')}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片附件" onChange={event => { void addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} /></label>
+            <AgentPermissionSelect disabled={running} />
+            <span className="min-w-0 flex-1" />
+            {running && <button type="button" onClick={() => void stopTask()} className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900" aria-label="停止" title="停止任务；已完成的修改不会撤销"><Square className="h-3.5 w-3.5 fill-current" /></button>}
+            {(!running || input.trim() || attachments.length > 0) && <button type="button" onClick={() => void run()} disabled={!sessionReady || attachmentBusy || (!input.trim() && !attachments.length)} className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:bg-gray-100 dark:text-gray-900 dark:disabled:bg-gray-800 dark:disabled:text-gray-600" aria-label={!sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : running ? '追加要求' : editingMessageId ? '重新发送' : '执行'} title={running ? '追加要求' : '发送 · Enter；换行 · Shift+Enter'}><ArrowUp className="h-[18px] w-[18px]" /></button>}
           </div>
         </div>
       </main>

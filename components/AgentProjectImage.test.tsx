@@ -11,8 +11,9 @@ beforeEach(() => { vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = ''; });
 it('通过项目认证接口显示原图，可展开；卸载释放图片地址', async () => {
   const read = vi.spyOn(api, 'getBlob').mockResolvedValue(new Blob(['image'], { type: 'image/png' }));
-  const result = render(<AgentProjectImage image={image} />);
+  const ready = vi.fn(); const result = render(<AgentProjectImage image={image} onReady={ready} />);
   await screen.findByRole('img', { name: '作品' });
+  fireEvent.load(screen.getByRole('img', { name: '作品' })); expect(ready).toHaveBeenCalledTimes(1);
   expect(read).toHaveBeenCalledWith('/local-history/a/image');
   fireEvent.click(screen.getByRole('button', { name: '查看图片：作品' }));
   expect(screen.getByRole('img').getAttribute('data-safe-mode-ignore')).toBe('true');

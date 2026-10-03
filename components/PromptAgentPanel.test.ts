@@ -178,6 +178,28 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(run.mock.calls[1][0].mode).toBe('retry');
     expect((box as HTMLTextAreaElement).value).toBe('unsent next request');
   });
+  it('聊天布局正文与气泡分离，工具失败在折叠摘要可见，纯聊天不提示恢复草稿', async () => {
+    stubServices();
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, onEvent) => {
+      onEvent({ type: 'thinking_delta', delta: '合成思考内容' });
+      onEvent({ type: 'tool_start', toolCallId: 't', toolName: 'get_local_time', args: {} });
+      onEvent({ type: 'tool_end', toolCallId: 't', toolName: 'get_local_time', isError: true, result: { error: '合成错误' } });
+      onEvent({ type: 'text_delta', delta: '简洁正文' });
+      onEvent({ type: 'done', draft: input.draft, message: '简洁正文', provider: 'deepseek', model: 'deepseek-chat' });
+    });
+    renderPanel(); const input = screen.getByRole('textbox', { name: '任务要求' });
+    await waitFor(() => expect((input as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(input, { target: { value: '你好' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    const response = await screen.findByText('简洁正文');
+    expect(response.closest('article')?.className).not.toContain('max-w-[88%]');
+    expect(screen.getByText('你好').className).toContain('w-fit');
+    expect(screen.getByLabelText('工具活动').textContent).toContain('有未完成项');
+    expect((screen.getByLabelText('工具活动').closest('details') as HTMLDetailsElement).open).toBe(false);
+    expect(screen.queryByText('上次完成的草稿已保留。')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }));
+    fireEvent.click(screen.getByRole('switch', { name: '默认展开工具' }));
+    await waitFor(() => expect(screen.getByText('失败 · 查询本机时间与时区')).toBeTruthy());
+  });
   it('停止请求失败明确反馈，正在执行状态仍保留', async () => {
     stubServices(); vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({ status: 'running' });
     vi.spyOn(promptAgentService, 'control').mockRejectedValue(new Error('电脑连接中断，请重试停止'));
@@ -185,6 +207,27 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     const buttons = await screen.findAllByRole('button', { name: /停止/ }); fireEvent.click(buttons[0]);
     expect(await screen.findByText('电脑连接中断，请重试停止')).toBeTruthy();
     expect(screen.getAllByRole('button', { name: /停止/ }).length).toBeGreaterThan(0);
+  });
+  it('只有工具调用的模型回复仍可查看用量，不出现空复制操作', async () => {
+    stubServices();
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, onEvent) => {
+      onEvent({ type: 'response_start', id: 'first' });
+      onEvent({ type: 'response_end', model: 'deepseek-chat', provider: 'deepseek', stopReason: 'toolUse', timestamp: 1, usage: { input: 12000, output: 345, cacheRead: 0, cacheWrite: 0, totalTokens: 12345, cost: null } });
+      onEvent({ type: 'tool_start', toolCallId: 't', toolName: 'get_local_time', args: {} });
+      onEvent({ type: 'tool_end', toolCallId: 't', toolName: 'get_local_time', isError: false });
+      onEvent({ type: 'response_start', id: 'second' });
+      onEvent({ type: 'text_delta', delta: '最终简短回复' });
+      onEvent({ type: 'response_end', model: 'deepseek-chat', provider: 'deepseek', stopReason: 'stop', timestamp: 2, usage: { input: 10, output: 11, cacheRead: 0, cacheWrite: 0, totalTokens: 21, cost: null } });
+      onEvent({ type: 'done', draft: input.draft, message: '最终简短回复', provider: 'deepseek', model: 'deepseek-chat' });
+    });
+    renderPanel(); const input = screen.getByRole('textbox', { name: '任务要求' });
+    await waitFor(() => expect((input as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(input, { target: { value: '查时间' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await screen.findByText('最终简短回复');
+    const usage = screen.getAllByLabelText('回答用量'); expect(usage.length).toBe(2);
+    expect(usage[0].closest('article')?.textContent).toContain('12,345 tokens');
+    expect(usage[0].closest('article')?.textContent).not.toContain('费用');
+    expect(usage[0].closest('article')?.querySelector('button[aria-label="复制"]')).toBeNull();
   });
 
   it('其他操作窗口在前景时 Esc 保留后台 Agent 菜单状态', async () => {

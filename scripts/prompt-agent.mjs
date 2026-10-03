@@ -1,4 +1,4 @@
-import { AGENT_TOOL_GROUPS, agentOutputLimit, boundAgentToolResult, compactAuditEntries, inferAgentToolGroups, isProjectImagePath, localTimeInfo, publicAgentToolContent, selectRuntimeTools } from './agent-runtime.mjs';
+import { AGENT_TOOL_GROUPS, agentOutputLimit, agentTokenUsage, boundAgentToolResult, compactAuditEntries, inferAgentToolGroups, isProjectImagePath, localTimeInfo, publicAgentToolContent, selectRuntimeTools } from './agent-runtime.mjs';
 import { AgentLocalImages } from './agent-local-images.mjs';
 import { Agent } from '@earendil-works/pi-agent-core';
 import { InMemoryCredentialStore, Type, createModels, createProvider, getSupportedThinkingLevels } from '@earendil-works/pi-ai';
@@ -299,7 +299,6 @@ const publicModel = (model, provider) => ({
   imageInput: Array.isArray(model.input) ? model.input.includes('image') : model.imageInput === true,
   contextWindow: Number(model.contextWindow) || 0,
   maxTokens: Number(model.maxTokens) || 0,
-  cost: model.cost || null,
   ...(model.capabilityDetection ? { capabilityDetection: model.capabilityDetection } : {}),
   thinkingLevels: supportedThinkingLevelsFor(model),
 });
@@ -331,7 +330,8 @@ export const customProviderRuntime = custom => {
     baseUrl: custom.baseUrl,
     reasoning: model.reasoning === true,
     input: model.imageInput === true ? ['text', 'image'] : ['text'],
-    cost: model.cost || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    // Pi 模型协议要求这个字段；不配置价格或输出费用记录。
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: model.contextWindow || 128_000,
     maxTokens: model.maxTokens || 16_384,
     ...(custom.headers && Object.keys(custom.headers).length ? { headers: custom.headers } : {}),
@@ -383,7 +383,6 @@ export const sanitizeCustomProvider = raw => {
       imageInput: item?.imageInput === true,
       contextWindow,
       maxTokens: Math.round(clamp(item?.maxTokens, 256, contextWindow, Math.min(16_384, contextWindow))),
-      cost: item?.cost ? Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite'].map(key => [key, clamp(item.cost[key], 0, 10000, 0)])) : null,
       ...(item?.capabilityDetection && typeof item.capabilityDetection === 'object' ? { capabilityDetection: {
         imageInput: ['metadata', 'pi_catalog', 'model_name', 'unknown', 'manual'].includes(item.capabilityDetection.imageInput) ? item.capabilityDetection.imageInput : 'manual',
         reasoning: ['metadata', 'pi_catalog', 'model_name', 'unknown', 'manual'].includes(item.capabilityDetection.reasoning) ? item.capabilityDetection.reasoning : 'manual',
@@ -609,7 +608,7 @@ const baseSystemPrompt = `你是 NAI Atelier 的项目业务 Agent。你的职�
 5. request_generation 只发出待确认请求，不能声称图片已经生成。
 6. 当用户要求参考上一张/最近一张生成图时，先调用 list_generation_history，再调用 inspect_generation_image。没有真正收到图片时不得声称看过图片。
 7. 删除、清空等危险操作只能调用请求确认工具；确认前不得声称已经完成。
-8. 不得要求或泄露 API Key，不得执行命令行或操作系统进程。用户需要电脑图片时，加载 local_files：先请求具体目录的读/写权限，再列出、展示、观察或保存图片；不能访问未授权目录或 local-data 保护区。不得凭空声称保存成功，必须取得实际落盘收据。
+8. 不得要求或泄露 API Key，不得执行命令行或操作系统进程。用户需要电脑图片时加载 local_files。读取和展示图片无需目录租期；只读档不能修改项目或保存图片；标准档首次写入目录用 request_local_image_folder_access 确认；完全访问档可以按用户指令直接读写。local-data 保护区不能开放磁盘权限。不得凭空声称保存成功，必须取得实际落盘收据。
 9. 问候和普通聊天直接简短回答，不要无故读取资料。用户询问能力时调用 get_agent_capabilities，查询时间/时区调用 get_local_time；展示已有图片调用 show_project_image，展示不要求模型识图。需要其他工具时调用 enable_tool_group，不能把未加载的工具误说成没有能力。
 10. 优先执行与当前要求相关的工具。完成后只用简短中文总结实际读取、修改或待确认的事项，不复述整份实验室内容。
 10. Precise/角色参考每张每次生图增加 5 Anlas，当前与 Vibe Transfer 互斥；设置其中一项时必须关闭另一项。
@@ -1029,7 +1028,7 @@ export const cloneAgentMessages = messages => (Array.isArray(messages) ? message
     return part;
   }) } : {}),
   ...(Array.isArray(message.toolCallIds) ? { toolCallIds: message.toolCallIds.slice() } : {}),
-  ...(message.usage && typeof message.usage === 'object' ? { usage: { ...message.usage } } : {}),
+  ...(message.usage && typeof message.usage === 'object' ? { usage: agentTokenUsage(message.usage) } : {}),
 }));
 
 // 单条 Agent 用户消息 → 纯文本（text 帧拼接，图片帧不计文本）。
@@ -1331,7 +1330,7 @@ export const assemblePromptContext = ({ creativeMode = true, revision = null, sy
 export class PromptAgentService {
   constructor({ lanSecret, outboundProxyUrl = '', configFile = '' }) {
     this.runtimeStartedAt = Date.now();
-    this.localImages = new AgentLocalImages();
+    this.localImages = new AgentLocalImages({ getMode: () => this.config?.permissionMode || 'standard' });
     this.customProviders = new Map();
     this.sessionSummaries = new Map();
     // 测试隔离：传入 configFile 时该实例的会话/审计/任务/配置全部落在指定目录，
@@ -1387,7 +1386,7 @@ export class PromptAgentService {
     if (!this.configTransaction) await atomicJsonWrite(this.configFilePath(), this.config);
   }
   installConfigTransactions() {
-    const names = ['saveCustomProvider', 'deleteCustomProvider', 'selectModel', 'loginProvider', 'logoutProvider', 'createCreativePreset', 'updateCreativePreset', 'deleteCreativePreset', 'setActiveCreativePreset', 'importCreativePresets'];
+    const names = ['setPermissionMode', 'saveCustomProvider', 'deleteCustomProvider', 'selectModel', 'loginProvider', 'logoutProvider', 'createCreativePreset', 'updateCreativePreset', 'deleteCreativePreset', 'setActiveCreativePreset', 'importCreativePresets'];
     for (const name of names) {
       this[name] = (...args) => {
         const next = (this.configWriteTail || Promise.resolve()).catch(() => {}).then(async () => {
@@ -1616,6 +1615,7 @@ export class PromptAgentService {
       provider,
       model,
       imageInput: Boolean(models.find(item => item.id === model)?.imageInput),
+      permissionMode: ['read_only', 'standard', 'full'].includes(this.config.permissionMode) ? this.config.permissionMode : 'standard',
       configured: configuredProviders.includes(provider),
       configuredProviders,
       policyVersion: PROMPT_AGENT_POLICY_VERSION,
@@ -1627,6 +1627,14 @@ export class PromptAgentService {
       creativeMode: policy.creativeMode,
       ...(this.credentialWarning ? { credentialWarning: this.credentialWarning } : {}),
     };
+  }
+
+  async setPermissionMode(mode) {
+    if (this.activeAgents.size || this.startingAgents.size) throw Object.assign(new Error('请先停止当前 Agent 任务，再切换权限档位'), { status: 409 });
+    if (!['read_only', 'standard', 'full'].includes(mode)) throw Object.assign(new Error('无效的权限档位'), { status: 400 });
+    this.config.permissionMode = mode;
+    await this.persistConfig();
+    return this.publicConfig();
   }
 
   configuredProviderIds() {
@@ -1816,7 +1824,7 @@ export class PromptAgentService {
       const configuredCandidate = custom.models.find(model => model.id === input.testModel) || custom.models.find(model => model.id !== '__capability_discovery__');
       const candidate = configuredCandidate || (await this.fetchCustomProviderModels(input)).models[0];
       if (!candidate) throw Object.assign(new Error('接口可访问，但没有返回可用于能力测试的模型 ID'), { status: 400 });
-      const probeProvider = { ...custom, models: [{ ...candidate, cost: candidate.cost || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] };
+      const probeProvider = { ...custom, models: [candidate] };
       const credentials = new InMemoryCredentialStore();
       await credentials.modify(probeProvider.id, async () => ({ type: 'api_key', key }));
       const modelRuntime = createPromptAgentModelRuntime(credentials, [probeProvider]);
@@ -1867,7 +1875,7 @@ export class PromptAgentService {
       checks.tools = toolCalled ? 'passed' : 'failed';
       checks.image = probeImages.length ? 'accepted' : 'not_tested';
       const ok = checks.tools !== 'failed';
-      return { ok, model: candidate.id, checks, elapsedMs: Date.now() - startedAt, message: ok ? '文本请求已通过；图片接受不代表识图准确度。' : '文本可用，但未调用工具；Agent 需要支持工具调用。', usage: probeAgent.state.messages.filter(message => message.role === 'assistant').map(message => message.usage && { ...message.usage, cost: candidate.cost ? message.usage.cost : null }).filter(Boolean) };
+      return { ok, model: candidate.id, checks, elapsedMs: Date.now() - startedAt, message: ok ? '文本请求已通过；图片接受不代表识图准确度。' : '文本可用，但未调用工具；Agent 需要支持工具调用。', usage: probeAgent.state.messages.filter(message => message.role === 'assistant').map(message => agentTokenUsage(message.usage)).filter(Boolean) };
     } catch (error) {
       const reason = error instanceof Error ? error.message : '';
       checks.text = 'failed';
@@ -2399,8 +2407,10 @@ export class PromptAgentService {
       : []));
     const safeMessages = trimStoredMessages(messages).map(message => ({
       ...message,
+      ...(message.usage ? { usage: agentTokenUsage(message.usage) } : {}),
+      ...(Array.isArray(message.visionUsage) ? { visionUsage: message.visionUsage.map(item => ({ ...item, ...(item.usage ? { usage: agentTokenUsage(item.usage) } : {}) })) } : {}),
       ...(message?.role === 'assistant' && !Array.isArray(message.visionUsage) && existingVisionUsage.has(`${message.timestamp || 0}/${message.provider || ''}/${message.model || ''}`)
-        ? { visionUsage: existingVisionUsage.get(`${message.timestamp || 0}/${message.provider || ''}/${message.model || ''}`) }
+        ? { visionUsage: existingVisionUsage.get(`${message.timestamp || 0}/${message.provider || ''}/${message.model || ''}`).map(item => ({ ...item, ...(item.usage ? { usage: agentTokenUsage(item.usage) } : {}) })) }
         : {}),
       content: Array.isArray(message.content)
         ? message.content.filter(item => item?.type !== 'image').map(item => item?.type === 'toolResult'
@@ -2454,7 +2464,7 @@ export class PromptAgentService {
       return (content.trim() || tools.length || thinking) ? [{
         id: `saved-${sourceOffset + index}`, role: message.role === 'user' ? 'user' : 'agent', text: content.trim(),
         ...(thinking ? { thinking } : {}), ...(tools.length ? { tools } : {}),
-        ...(message.role === 'assistant' ? { model: message.model, provider: message.provider, usage: message.usage, visionUsage: Array.isArray(message.visionUsage) ? message.visionUsage : [], stopReason: message.stopReason, timestamp: message.timestamp } : { timestamp: message.timestamp }),
+        ...(message.role === 'assistant' ? { model: message.model, provider: message.provider, usage: agentTokenUsage(message.usage), visionUsage: Array.isArray(message.visionUsage) ? message.visionUsage.map(item => ({ ...item, ...(item.usage ? { usage: agentTokenUsage(item.usage) } : {}) })) : [], stopReason: message.stopReason, timestamp: message.timestamp } : { timestamp: message.timestamp }),
       }] : [];
     });
   }
@@ -2674,6 +2684,17 @@ export class PromptAgentService {
       return `agent-${createHash('sha256').update(canonical).digest('hex')}`;
     };
     const localScope = { sessionId: project.agentSessionId || '', keyHash: project.keyHash || '' };
+    const writableLocalFolder = async rawDirectory => {
+      const directory = await this.localImages.folder(rawDirectory, true);
+      try { return await this.localImages.authorized(localScope, directory, 'write'); }
+      catch (error) {
+        if (error.status !== 403 && error.code !== 'ENOENT') throw error;
+        const create = error.code === 'ENOENT';
+        if (this.config.permissionMode === 'full') return (await this.localImages.grant(localScope, directory, 'write', create)).directory;
+        await pending('grant_local_image_folder', '', '允许保存图片到这个文件夹？', `${directory}\n保存或复制图片，不覆盖原文件；包含子目录。${create ? '目标目录不存在，会创建。' : ''}`, { directory, access: 'write', create });
+        return this.localImages.authorized(localScope, directory, 'write');
+      }
+    };
     const projectImage = async args => {
       const bases = { history: 'local-history', inspiration: 'inspirations', vibe: 'vibes', reference: 'character-references', chain: 'chains' };
       const id = text(args.id).trim().slice(0, 200); const base = bases[args.kind];
@@ -2686,25 +2707,27 @@ export class PromptAgentService {
     };
     return [
       {
-        name: 'request_local_image_folder_access', label: '确认本地图片目录', description: '用户给出电脑绝对目录后，显示具体路径与读/写用途并请求一次确认。读取后可列出与展示目录及子目录的图片；写入后可保存图片，不覆盖文件。create=true 可在确认写入后创建不存在的目标目录。权限绑定本次对话与 Key，有效两小时。',
+        name: 'request_local_image_folder_access', label: '确认本地图片目录', description: '标准权限首次向电脑目录写图片时确认用途，确认后同一对话与 Key 可继续保存；没有计时失效。读取图片直接使用 list/show/inspect 工具，不要求目录确认。完全访问权限自动允许目录读写。create=true 可以创建目标目录。',
         parameters: Type.Object({ directory: Type.String(), access: Type.Union([Type.Literal('read'), Type.Literal('write')]), create: Type.Optional(Type.Boolean()) }),
         execute: async (_id, args) => {
           const directory = await this.localImages.folder(args.directory, args.create === true && args.access === 'write');
-          return pending('grant_local_image_folder', '', args.access === 'write' ? '允许保存图片到这个文件夹？' : '允许读取这个文件夹里的图片？', `${directory}\n${args.access === 'write' ? '保存或复制图片；不覆盖原文件' : '列出目录、读取与展示 PNG/JPEG/WebP/GIF 图片'}，包含子目录；本次对话两小时有效。${args.create && args.access === 'write' ? '目标目录不存在时会创建。' : ''}`, { directory, access: args.access, create: args.create === true });
+          if (args.access === 'read' || this.config.permissionMode === 'full') return { content: jsonText(await this.localImages.grant(localScope, directory, args.access, args.create === true)) };
+          try { await this.localImages.authorized(localScope, directory, 'write'); return { content: jsonText({ directory, access: 'write', alreadyApproved: true }) }; } catch { /* 未确认目录显示具体路径。 */ }
+          return pending('grant_local_image_folder', '', '允许保存图片到这个文件夹？', `${directory}\n保存或复制图片，不覆盖原文件；包含子目录。同一对话与当前 Key 可继续使用，没有计时失效。${args.create ? '目标目录不存在时会创建。' : ''}`, { directory, access: args.access, create: args.create === true });
         },
       },
       {
-        name: 'list_local_images', label: '浏览本地图片文件夹', description: '分页列出已获读取权限的电脑目录内的图片与子目录，单页最多 50 项，不递归扫描；nextOffset 非空时可继续下一页。',
+        name: 'list_local_images', label: '浏览本地图片文件夹', description: '分页列出电脑目录内的图片与子目录，无需目录确认，单页最多 50 项，不递归扫描；nextOffset 非空时可继续下一页。',
         parameters: Type.Object({ directory: Type.String(), offset: Type.Optional(Type.Number()), limit: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => ({ content: jsonText(await this.localImages.list(localScope, args.directory, args.offset, args.limit)) }),
       },
       {
-        name: 'show_local_image', label: '在聊天中展示本地图片', description: '把已获读取权限的电脑图片直接贴在聊天中；文字模型也可展示，展示不表示模型已观察。path 使用目录列表里的真实绝对路径。',
+        name: 'show_local_image', label: '在聊天中展示本地图片', description: '把电脑图片直接贴在聊天中，无需目录确认；文字模型也可展示，展示不表示模型已观察。path 使用目录列表里的真实绝对路径。',
         parameters: Type.Object({ path: Type.String() }),
         execute: async (_id, args) => ({ content: jsonText({ displayImages: [await this.localImages.register(localScope, args.path)], modelHasSeenImage: false }) }),
       },
       {
-        name: 'inspect_local_image', label: '观察本地图片', description: '直接将已获读取权限的电脑图片交给当前模型观察，不调用其他模型；仅在用户要求观察时使用，当前模型必须支持图片。',
+        name: 'inspect_local_image', label: '观察本地图片', description: '直接将电脑图片交给当前模型观察，不调用其他模型；仅在用户要求观察时使用，当前模型必须支持图片。',
         parameters: Type.Object({ path: Type.String(), focus: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           if (!modelInfo?.imageInput) throw new Error('当前模型不支持图片输入；仍可用 show_local_image 展示，或切换支持图片的当前模型');
@@ -2713,20 +2736,20 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'save_project_image_to_folder', label: '保存图片到电脑文件夹', description: '将已存在的项目图片原始字节保存到已获写入权限的电脑目录，保留图片元数据；支持历史、灵感、Vibe、参考图、风格串封面。按实际格式命名，遇到同名文件自动加编号，成功后返回真实绝对路径。刚生成的图先取得已落盘历史 ID 再保存。',
+        name: 'save_project_image_to_folder', label: '保存图片到电脑文件夹', description: '将已存在的项目图片原始字节保存到电脑目录，保留图片元数据；标准档自动请求首次目录写入确认，完全访问直接保存，不存在的目标目录可以创建。支持历史、灵感、Vibe、参考图、风格串封面。遇到同名文件自动加编号，成功后返回真实绝对路径。刚生成的图先取得已落盘历史 ID 再保存。',
         parameters: Type.Object({ kind: Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String(), directory: Type.String(), filename: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
-          await this.localImages.authorized(localScope, args.directory, 'write');
+          const directory = await writableLocalFolder(args.directory);
           const image = await projectImage(args);
-          return { content: jsonText(await this.localImages.save(localScope, args.directory, args.filename, image.buffer, operationId(args))) };
+          return { content: jsonText(await this.localImages.save(localScope, directory, args.filename, image.buffer, operationId(args))) };
         },
       },
       {
-        name: 'copy_local_image', label: '复制本地图片', description: '将已获读取权限的电脑图片复制到已获写入权限的目标目录，保留原图，不覆盖目标文件。',
+        name: 'copy_local_image', label: '复制本地图片', description: '将电脑图片复制到目标目录；标准档自动请求首次写入确认，完全访问直接执行，可以创建不存在的目标目录。保留原图，不覆盖目标文件。',
         parameters: Type.Object({ path: Type.String(), directory: Type.String(), filename: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
-          await this.localImages.authorized(localScope, args.directory, 'write'); const image = await this.localImages.read(localScope, args.path);
-          return { content: jsonText(await this.localImages.save(localScope, args.directory, args.filename || image.name, image.buffer, operationId(args))) };
+          const image = await this.localImages.read(localScope, args.path); const directory = await writableLocalFolder(args.directory);
+          return { content: jsonText(await this.localImages.save(localScope, directory, args.filename || image.name, image.buffer, operationId(args))) };
         },
       },
       {
@@ -2744,8 +2767,9 @@ export class PromptAgentService {
           model: { imageInput: Boolean(modelInfo?.imageInput), separateVisionModel: false },
           localTime: true, displayProjectImages: Boolean(project?.requestJson), projectDataAvailable: Boolean(project?.requestJson),
           toolGroups: Object.keys(AGENT_TOOL_GROUPS), toolInventory: { total: project?.getToolInventory?.().length || new Set(Object.values(AGENT_TOOL_GROUPS).flat()).size, note: '具体工具随对应分组加载，不能把未加载工具说成没有能力' },
-          localImages: { available: true, actions: ['列出指定目录的图片与子目录', '在聊天中展示本地图片', '当前模型观察本地图片（需要图片输入）', '保存项目图片到指定目录', '复制本地图片'], requiresFolderApproval: true, permissionHours: 2 },
-          limits: ['只访问用户确认用途的图片目录；不提供任意文本文件读写或系统命令', '图片展示不等于模型已经看过图片', '生图、付费和危险操作仍需用户确认', '未加载的工具可通过 enable_tool_group 按需启用'],
+          permissionMode: this.publicConfig().permissionMode,
+          localImages: { available: true, actions: ['列出指定目录的图片与子目录', '在聊天中展示本地图片', '当前模型观察本地图片（需要图片输入）', '保存项目图片到指定目录', '复制本地图片'], writeAllowed: this.publicConfig().permissionMode !== 'read_only', writeFolderApproval: this.publicConfig().permissionMode === 'standard', timedExpiry: false },
+          limits: ['本地文件能力限于图片，不提供任意文本文件读写或系统命令；local-data 通过项目工具访问', '图片展示不等于模型已经看过图片', '生图、付费和危险操作仍需用户确认', '未加载的工具可通过 enable_tool_group 按需启用'],
         }) }),
       },
       {
@@ -3416,7 +3440,11 @@ export class PromptAgentService {
           return { content: jsonText({ ok: true, confirmed: true, result: result.result }), details: result.result };
         },
       },
-    ].map(tool => ({ ...tool, execute: async (...args) => boundAgentToolResult(await tool.execute(...args)) }));
+    ].map(tool => ({ ...tool, execute: async (...args) => {
+      const readOnly = /^(get_|list_|search_|read_|inspect_|show_)/.test(tool.name) || ['enable_tool_group', 'navigate_view'].includes(tool.name) || tool.name === 'request_local_image_folder_access' && args[1]?.access === 'read';
+      if (this.config.permissionMode === 'read_only' && !readOnly) throw new Error('当前为只读权限，不能修改项目、生成或保存图片；请由用户在权限菜单切换档位');
+      return boundAgentToolResult(await tool.execute(...args));
+    } }));
   }
 
   // ── 破限提示词与预设实验室：customPresets 配置扩展读写（单一串行写队列）──
@@ -3966,7 +3994,7 @@ export class PromptAgentService {
         if (event.type === 'message_start' && event.message?.role === 'assistant') taskEmit({ type: 'response_start', id: `response-${event.message.timestamp || Date.now()}` });
         if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta') taskEmit({ type: 'text_delta', delta: event.assistantMessageEvent.delta });
         if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'thinking_delta') taskEmit({ type: 'thinking_delta', delta: event.assistantMessageEvent.delta });
-        if (event.type === 'message_end' && event.message?.role === 'assistant') taskEmit({ type: 'response_end', model: event.message.model, provider: event.message.provider, usage: { ...event.message.usage, cost: modelInfo.cost ? event.message.usage?.cost : null }, stopReason: event.message.stopReason, timestamp: event.message.timestamp });
+        if (event.type === 'message_end' && event.message?.role === 'assistant') taskEmit({ type: 'response_end', model: event.message.model, provider: event.message.provider, usage: agentTokenUsage(event.message.usage), stopReason: event.message.stopReason, timestamp: event.message.timestamp });
         if (event.type === 'tool_execution_start') taskEmit({ type: 'tool_start', toolCallId: event.toolCallId, toolName: event.toolName, args: event.args });
         if (event.type === 'tool_execution_end') taskEmit({ type: 'tool_end', toolCallId: event.toolCallId, toolName: event.toolName, isError: event.isError, result: { ...event.result, content: publicAgentToolContent(event.result?.content) } });
       });
@@ -4012,7 +4040,6 @@ export class PromptAgentService {
       }
       finally { combined.removeEventListener('abort', abort); unsubscribe(); await checkpoint; }
       const lastAssistant = [...agent.state.messages].reverse().find(message => message?.role === 'assistant');
-      for (const message of agent.state.messages) if (message.role === 'assistant' && message.usage && !modelInfo.cost) message.usage.cost = null;
       await this.saveMessages(sessionId, agent.state.messages);
       if (agent.state.errorMessage && lastAssistant?.stopReason !== 'aborted') {
         taskStatus = 'failed';

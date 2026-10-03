@@ -25,6 +25,9 @@ it('保存默认不选用，测试模型和图片用途显式选择，发现列�
   fireEvent.click(screen.getByText('测试模型 · 可能收费')); expect(test).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByText('保存配置')); expect(save).toHaveBeenCalledOnce();
   expect(screen.getByRole('status').textContent).toContain('文本：未测');
-  expect(screen.getByRole('status').textContent).toContain('本次测试 a · 12 tokens · 费用未知');
+  expect(screen.getByRole('status').textContent).toContain('本次测试 a · 12 tokens');
+  expect(screen.getByRole('status').textContent).not.toContain('费用');
+  expect(screen.queryByText('模型能力与价格')).toBeNull();
+  expect(screen.queryByLabelText(/Token 美元/)).toBeNull();
   expect(screen.getByText(/能力来源/).textContent).toContain('识图 未知 · 推理 名称推断');
 });

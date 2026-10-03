@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { agentOutputLimit, boundAgentToolResult, compactAuditEntries, compactAgentValue, inferAgentToolGroups, isProjectImagePath, localTimeInfo, selectRuntimeTools } from './agent-runtime.mjs';
+import { agentOutputLimit, agentTokenUsage, boundAgentToolResult, compactAuditEntries, compactAgentValue, inferAgentToolGroups, isProjectImagePath, localTimeInfo, selectRuntimeTools } from './agent-runtime.mjs';
 
 test('长资料、编码与成组结果有界，明确省略且不修改源资料', () => {
   const source = { name: '项目', data: 'a'.repeat(500000), prompt: '构图，'.repeat(20000), items: Array.from({ length: 100 }, (_, id) => ({ id, notes: '画面 '.repeat(1000) })) };
@@ -43,4 +43,12 @@ test('旧日志重复片段只在导出时合并，原记录保留', () => {
   const output = compactAuditEntries(entries);
   assert.equal(output.length, 2); assert.equal(output[0].thinkingChunks, 40000);
   assert.equal(entries.length, 40001);
+});
+test('Token 摘要与旧日志导出剔除金额，原资料不变，NovelAI Anlas 后果保留', () => {
+  const usage = { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12, cost: { total: 9 } };
+  assert.deepEqual(agentTokenUsage(usage), { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12 });
+  const original = [{ type: 'model_response', usage, event: { visionUsage: [{ usage }] }, operation: { estimatedCost: 20 } }];
+  const result = compactAuditEntries(original);
+  assert.equal(JSON.stringify(result).includes('"cost"'), false); assert.equal(result[0].operation.estimatedCost, 20);
+  assert.equal(original[0].usage.cost.total, 9);
 });

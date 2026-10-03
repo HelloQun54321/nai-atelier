@@ -12,20 +12,26 @@ const fixture = async fn => {
   const read = join(root, 'read'), write = join(root, 'write'), protectedRoot = join(root, 'local-data');
   await Promise.all([read, write, protectedRoot].map(path => mkdir(path)));
   await writeFile(join(read, 'source.png'), png);
-  let clock = Date.now(); const store = new AgentLocalImages({ protectedRoot, now: () => clock });
-  try { await fn({ root, read, write, protectedRoot, store, expire: () => { clock += 3 * 60 * 60 * 1000; } }); }
+  let mode = 'standard'; const store = new AgentLocalImages({ protectedRoot, getMode: () => mode });
+  try { await fn({ root, read, write, protectedRoot, store, setMode: next => { mode = next; } }); }
   finally { await rm(root, { recursive: true, force: true }); }
 };
-test('本地图片权限绑定用途、会话、Key 和过期时间', () => fixture(async ({ read, write, store, expire }) => {
-  await assert.rejects(store.list(scope, read), /权限/);
-  await store.grant(scope, read, 'read');
+test('标准档直接读取图片，写目录批准绑定用途、会话与 Key，没有计时租约', () => fixture(async ({ read, write, store }) => {
   assert.equal((await store.list(scope, read)).items[0].name, 'source.png');
-  await assert.rejects(store.read({ ...scope, keyHash: 'other' }, join(read, 'source.png')), /权限/);
-  await assert.rejects(store.read({ ...scope, sessionId: 'other' }, join(read, 'source.png')), /权限/);
   await assert.rejects(store.save(scope, read, 'image.png', png), /写入权限/);
-  await store.grant(scope, write, 'write');
-  await assert.rejects(store.list(scope, write), /读取权限/);
-  expire(); await assert.rejects(store.list(scope, read), /权限/);
+  const receipt = await store.grant(scope, write, 'write'); assert.equal(receipt.expiresAt, undefined);
+  assert.equal((await store.list(scope, write)).items.length, 0);
+  await assert.rejects(store.save({ ...scope, keyHash: 'other' }, write, 'image.png', png), /写入权限/);
+  await assert.rejects(store.save({ ...scope, sessionId: 'other' }, write, 'image.png', png), /写入权限/);
+  assert.equal((await store.save(scope, write, 'image.png', png)).saved, true);
+}));
+test('只读拒绝写入和目录创建，完全访问无需目录授权，切档立即生效', () => fixture(async ({ root, read, write, store, setMode }) => {
+  setMode('read_only');
+  assert.equal((await store.list(scope, read)).items.length, 1);
+  await assert.rejects(store.grant(scope, join(root, 'new'), 'write', true), /只读/);
+  await assert.rejects(store.save(scope, write, 'read-only.png', png), /只读/);
+  setMode('full'); assert.equal((await store.save(scope, write, 'full.png', png)).saved, true);
+  setMode('standard'); await assert.rejects(store.save(scope, write, 'standard.png', png), /写入权限/);
 }));
 test('原图字节保留、同名不覆盖、重复调用幂等和文件名校验', () => fixture(async ({ write, store }) => {
   await store.grant(scope, write, 'write');
@@ -38,23 +44,26 @@ test('原图字节保留、同名不覆盖、重复调用幂等和文件名校�
   for (const filename of ['../escape.png', 'sub/image.png', 'CON.png', 'bad.png.', '.hidden.png', 'bad.jpg']) await assert.rejects(store.save(scope, write, filename, png));
   await assert.rejects(store.save(scope, write, 'text.png', Buffer.from('not an image')), /只允许/);
 }));
-test('保护区和越界目录软链接不可读取或写入', () => fixture(async ({ read, root, protectedRoot, store }) => {
+test('所有档位保护 local-data，标准档写入软链接不能逃逸已确认目录', () => fixture(async ({ read, root, protectedRoot, store, setMode }) => {
   await assert.rejects(store.grant(scope, protectedRoot, 'read'), /保护区/);
   await assert.rejects(store.grant(scope, join(protectedRoot, 'new'), 'write', true), /保护区/);
   const outside = join(root, 'outside'); await mkdir(outside); await writeFile(join(outside, 'other.png'), png);
   await symlink(outside, join(read, 'escape'), 'junction');
   await symlink(protectedRoot, join(read, 'protected'), 'junction');
-  await store.grant(scope, read, 'read');
-  assert.equal((await store.list(scope, read)).items.length, 1);
-  await assert.rejects(store.read(scope, join(read, 'escape', 'other.png')), /权限/);
+  await store.grant(scope, read, 'write');
+  assert.equal((await store.list(scope, read)).items.length, 2);
+  assert.deepEqual((await store.read(scope, join(read, 'escape', 'other.png'))).buffer, png);
+  await assert.rejects(store.save(scope, join(read, 'escape'), 'bad.png', png), /权限/);
   await assert.rejects(store.grant(scope, join(read, 'protected'), 'read'), /保护区/);
+  setMode('full'); await assert.rejects(store.save(scope, protectedRoot, 'bad.png', png), /保护区/);
 }));
-test('展示使用不透明引用，不能换会话或 Key 读取；过期要重新确认', () => fixture(async ({ read, store, expire }) => {
+test('展示使用不透明引用，不能换会话或 Key 获取图片，引用没有计时租约', () => fixture(async ({ read, store }) => {
   await store.grant(scope, read, 'read'); const reference = await store.register(scope, join(read, 'source.png'));
   assert.equal(reference.path.includes(read), false); assert.equal(reference.modelHasSeenImage, false);
   assert.deepEqual((await store.asset(scope, reference.id)).buffer, png);
-  await assert.rejects(store.asset({ ...scope, keyHash: 'other' }, reference.id), /失效/);
-  expire(); await assert.rejects(store.asset(scope, reference.id), /失效/);
+  await assert.rejects(store.asset({ ...scope, keyHash: 'other' }, reference.id), /不属于/);
+  await assert.rejects(store.asset({ ...scope, sessionId: 'other' }, reference.id), /不属于/);
+  assert.equal(store.images.get(reference.id).expiresAt, undefined);
 }));
 test('分页不递归、拒绝伪图片、目录创建只在批准后执行', () => fixture(async ({ root, read, store }) => {
   await store.grant(scope, read, 'read'); await mkdir(join(read, 'sub'));

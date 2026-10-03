@@ -8,6 +8,8 @@ const agentAuthHeaders = (): Record<string, string> => {
   return key ? { Authorization: 'Bearer ' + key } : {};
 };
 
+export type AgentPermissionMode = 'read_only' | 'standard' | 'full';
+
 export interface PromptAgentConfig {
   provider: string;
   model: string;
@@ -21,6 +23,7 @@ export interface PromptAgentConfig {
   backendVersion?: string;
   sourceVersion?: string;
   restartRequired?: boolean;
+  permissionMode?: AgentPermissionMode;
   credentialWarning?: string;
 }
 
@@ -107,7 +110,8 @@ export interface PromptAgentModel {
   imageInput: boolean;
   contextWindow: number;
   maxTokens: number;
-  cost: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } | null;
+  /** 仅兼容旧配置，新接口不再提供价格。 */
+  cost?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } | null;
   /** Exact levels supported by this model according to Pi's model metadata. */
   thinkingLevels: PromptAgentThinkingLevel[];
   current?: boolean;
@@ -145,7 +149,8 @@ export interface PromptAgentUsage {
   cacheWrite: number;
   totalTokens: number;
   reasoning?: number;
-  cost: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number } | null;
+  /** 仅兼容旧记录；新事件及持久化记录只保留 Token 数。 */
+  cost?: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number } | null;
 }
 
 export interface PromptAgentVisionUsage {
@@ -338,6 +343,11 @@ export const formatModelOptionTitle = (
 };
 
 export const promptAgentService = {
+  setPermissionMode: async (mode: AgentPermissionMode): Promise<PromptAgentConfig> => {
+    const response = await fetch('/api/prompt-agent/permissions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) });
+    if (!response.ok) throw await parseErrorResponse(response);
+    return response.json();
+  },
   getLocalImage: async (path: string, signal?: AbortSignal): Promise<Blob> => {
     if (!path.startsWith('/api/prompt-agent/local-image?') || !isAgentImagePath(path)) throw new Error('本地图片引用无效');
     const response = await fetch(path, { headers: agentAuthHeaders(), cache: 'no-store', signal });

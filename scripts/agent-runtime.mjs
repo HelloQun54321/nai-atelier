@@ -1,4 +1,11 @@
 // 工具结果只携带完成当前判断所需的文字；图片和编码由资产引用承载。
+/** Agent 仅保留 Token 计数；供应商费用不进入事件、会话或诊断记录。 */
+export const agentTokenUsage = usage => usage && typeof usage === 'object'
+  ? Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite', 'totalTokens', 'reasoning'].filter(key => typeof usage[key] === 'number' && Number.isFinite(usage[key])).map(key => [key, usage[key]]))
+  : undefined;
+const withoutUsageFees = value => Array.isArray(value) ? value.map(withoutUsageFees) : value && typeof value === 'object'
+  ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, key === 'usage' ? agentTokenUsage(item) : withoutUsageFees(item)])) : value;
+
 export const compactAgentValue = (input, { maxChars = 16_000, maxString = 4_000, maxItems = 30 } = {}) => {
   let remaining = maxChars, nodes = 600, omitted = false;
   const visit = (value, depth = 0, key = '') => {
@@ -110,7 +117,7 @@ export const compactAuditEntries = entries => {
       const summary = streams.get(key) || { type: 'stream_summary', runId: key, at: entry.at, timestamp: entry.timestamp, thinkingChunks: 0, textChunks: 0 };
       summary[entry.eventType === 'thinking_delta' ? 'thinkingChunks' : 'textChunks']++;
       streams.set(key, summary);
-    } else { flush(key); output.push(entry); }
+    } else { flush(key); output.push(withoutUsageFees(entry)); }
   }
   for (const key of streams.keys()) flush(key);
   return output;

@@ -40,3 +40,10 @@ it('后端旧版本、未重启与已同步状态有准确提示', () => {
   expect(agentRuntimeWarning(config, 'next-version')).toContain('未同步');
   expect(agentRuntimeWarning({} as PromptAgentConfig, 'next-version')).toContain('旧版');
 });
+it('权限切档发送规范参数，后端拒绝的原因可见', async () => {
+  const request = vi.fn(async () => new Response(JSON.stringify({ permissionMode: 'full' }), { headers: { 'content-type': 'application/json' } })); vi.stubGlobal('fetch', request);
+  expect((await promptAgentService.setPermissionMode('full')).permissionMode).toBe('full');
+  expect(request).toHaveBeenCalledWith('/api/prompt-agent/permissions', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ mode: 'full' }) }));
+  request.mockImplementation(async () => new Response(JSON.stringify({ error: '请先停止当前 Agent 任务' }), { status: 409, headers: { 'content-type': 'application/json' } }));
+  await expect(promptAgentService.setPermissionMode('read_only')).rejects.toThrow('请先停止当前 Agent 任务');
+});

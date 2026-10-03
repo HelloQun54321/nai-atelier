@@ -3230,6 +3230,11 @@ const serveDistFile = async (req, res, url) => {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
           return sendJson(res, 200, promptAgent.publicConfig());
         }
+        if (url.pathname === '/api/prompt-agent/permissions') {
+          if (req.method !== 'PUT') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
+          return sendJson(res, 200, await promptAgent.setPermissionMode(body.mode));
+        }
         if (url.pathname === '/api/prompt-agent/local-image') {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
           const scope = await getCloudQueueScope(req);

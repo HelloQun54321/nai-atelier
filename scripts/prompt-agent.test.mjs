@@ -55,6 +55,43 @@ test('工具历史按实际回执展示失败和中断', () => isolated(async se
   assert.deepEqual((await service.getSessionHistory('s'))[0].tools.map(item => item.state), ['error', 'interrupted']);
 }));
 const customInput = (id = 'custom-synthetic-a') => ({ id, name: 'synthetic', baseUrl: 'http://127.0.0.1:1234/v1', models: [{ id: 'a' }, { id: 'b' }] });
+
+test('权限档位持久化、旧配置默认标准，非法档位和失败写入不发布', () => isolated(async service => {
+  assert.equal(service.publicConfig().permissionMode, 'standard');
+  await service.setPermissionMode('full');
+  assert.equal(JSON.parse(await readFile(service.configFilePath(), 'utf8')).permissionMode, 'full');
+  const restored = new PromptAgentService({ lanSecret: 'synthetic', configFile: service.isolatedRoot }); await restored.init();
+  assert.equal(restored.publicConfig().permissionMode, 'full');
+  await assert.rejects(service.setPermissionMode('unknown'), /无效/);
+  service.activeAgents.set('running', {}); await assert.rejects(service.setPermissionMode('read_only'), /先停止/); service.activeAgents.clear();
+  service.configFileOverride = join(service.isolatedRoot, 'blocked', 'config.json'); await writeFile(join(service.isolatedRoot, 'blocked'), 'synthetic');
+  await assert.rejects(service.setPermissionMode('read_only'));
+  assert.equal(service.publicConfig().permissionMode, 'full');
+}));
+test('会话落盘与历史接口不保存或返回费用，仅保留 Token 和旧视觉计数', () => isolated(async service => {
+  const usage = { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12, cost: { total: 99 } };
+  const message = { role: 'assistant', content: [{ type: 'text', text: '合成回复' }], usage, timestamp: 1, visionUsage: [{ model: 'legacy', imageCount: 1, usage }] };
+  await service.saveMessages('s', [message]);
+  const stored = await service.readSession('s');
+  assert.equal(stored.messages[0].usage.totalTokens, 12); assert.equal(JSON.stringify(stored.messages).includes('"cost"'), false);
+  const history = await service.getSessionHistory('s'); assert.equal(history[0].usage.totalTokens, 12); assert.equal(history[0].visionUsage[0].imageCount, 1);
+  assert.equal(JSON.stringify(history).includes('"cost"'), false); assert.equal(message.usage.cost.total, 99);
+}));
+
+test('只读在工具执行层阻止整个修改集合，完全访问创建图片目录不弹确认', () => isolated(async service => {
+  await service.setPermissionMode('read_only'); const events = [], requests = [];
+  const tools = service.createTools({ params: {} }, {}, event => events.push(event), { agentSessionId: 's', requestJson: async path => { requests.push(path); return {}; } }, {});
+  const readTool = name => /^(get_|list_|search_|read_|inspect_|show_)/.test(name) || ['enable_tool_group', 'navigate_view'].includes(name);
+  const mutations = tools.filter(tool => !readTool(tool.name)); assert.ok(mutations.length > 20);
+  for (const tool of mutations) await assert.rejects(tool.execute('t', {}), /只读/);
+  assert.equal(requests.length, 0); assert.equal(events.length, 0);
+  const caps = JSON.parse((await tools.find(tool => tool.name === 'get_agent_capabilities').execute('t', {})).content[0].text);
+  assert.equal(caps.permissionMode, 'read_only'); assert.equal(caps.localImages.timedExpiry, false);
+  await service.setPermissionMode('full');
+  const directory = join(service.isolatedRoot, 'automatic', 'images');
+  await tools.find(tool => tool.name === 'request_local_image_folder_access').execute('t', { directory, access: 'write', create: true });
+  assert.equal(events.length, 0); assert.equal(await service.localImages.folder(directory), directory);
+}));
 test('附件不静默截断或忽略，服务器和前端共享 4 张／6 MB 边界', () => {
   const image = { data: 'YWJjZA==', mimeType: 'image/png' };
   assert.equal(sanitizeAgentImages([image]).length, 1);
@@ -69,7 +106,7 @@ test('空 Key 任务也绑定 Key 状态，确认期间新增 Key 不能沿用�
   assert.throws(() => service.controlSession('s', 'confirm', '', { requestId, accepted: true, keyHash: 'new-key-hash' }), /Key 已变化/);
   assert.equal((await promise).accepted, false);
 }));
-test('连接测试反复调用工具时最多两次模型回复，未知价格仍返回 null', () => isolated(async service => {
+test('连接测试反复调用工具时最多两次模型回复，结果只包含 Token 不包含费用', () => isolated(async service => {
   const previous = globalThis.fetch; let calls = 0;
   globalThis.fetch = async () => {
     calls++;
@@ -79,7 +116,7 @@ test('连接测试反复调用工具时最多两次模型回复，未知价格�
   try {
     const result = await service.testCustomProvider({ ...customInput(), apiKey: 'synthetic', testModel: 'a' });
     assert.equal(calls, 2); assert.equal(result.checks.tools, 'passed');
-    assert.ok(result.usage.every(usage => usage.cost === null));
+    assert.ok(result.usage.every(usage => !('cost' in usage)));
   } finally { globalThis.fetch = previous; }
 }));
 
@@ -115,10 +152,10 @@ test('服务实例注册表隔离，编辑保留默认模型，失败落盘不�
   await assert.rejects(service.saveCustomProvider(customInput('custom-synthetic-b')));
   assert.equal(service.listCustomProviders().length, 1);
 }));
-test('并发配置写入合并且未知模型价格不伪造免费', () => isolated(async service => {
+test('并发配置写入合并且模型配置不保留价格', () => isolated(async service => {
   await Promise.all([service.saveCustomProvider(customInput('custom-synthetic-a')), service.saveCustomProvider(customInput('custom-synthetic-b'))]);
   assert.equal(service.listCustomProviders().length, 2);
-  assert.equal(service.listCustomProviders()[0].models[0].cost, null);
+  assert.equal(service.listCustomProviders()[0].models[0].cost, undefined);
 }));
 test('手填模型功能测试不请求 models，视觉用途不要求工具', () => isolated(async service => {
   const previous = globalThis.fetch;
@@ -251,6 +288,26 @@ test('目录确认绑定真实路径，保存工具落盘后才返回成功', ()
   await writeFile(join(directory, 'fake.png'), 'invalid');
   await assert.rejects(tools.find(tool => tool.name === 'show_local_image').execute('t', { path: join(directory, 'fake.png') }), /内容不是/);
 }));
+
+test('直接保存自动完成目录确认，完全访问可一步创建目录并保存原图', () => isolated(async service => {
+  const directory = join(service.isolatedRoot, 'new', 'images'); const events = [];
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCX0AAAAASUVORK5CYII=', 'base64');
+  const project = { agentSessionId: 's', requestJson: async () => ({ id: 'a' }), requestBuffer: async () => ({ buffer: png }) };
+  service.activeAgents.set('s', { agent: {}, emit() {} });
+  const tools = service.createTools({ params: {} }, {}, event => events.push(event), project, {});
+  const save = tools.find(tool => tool.name === 'save_project_image_to_folder');
+  const writing = save.execute('t', { kind: 'history', id: 'a', directory, filename: 'standard.png' });
+  while (!events.length) await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(readFile(join(directory, 'standard.png')), { code: 'ENOENT' });
+  const patch = events[0].action.patch; assert.equal(patch.payload.create, true);
+  service.controlSession('s', 'confirm', '', { requestId: patch.requestId, accepted: true });
+  await service.executeConfirmedProjectAction({ sessionId: 's', confirmationRequestId: patch.requestId, action: patch.action, payload: patch.payload }, project);
+  assert.equal(JSON.parse((await writing).content[0].text).saved, true); assert.deepEqual(await readFile(join(directory, 'standard.png')), png);
+  service.activeAgents.clear(); await service.setPermissionMode('full');
+  const second = join(service.isolatedRoot, 'automatic', 'images');
+  const result = await save.execute('t2', { kind: 'history', id: 'a', directory: second, filename: 'full.png' });
+  assert.equal(events.length, 1); assert.equal(JSON.parse(result.content[0].text).path, join(second, 'full.png')); assert.deepEqual(await readFile(join(second, 'full.png')), png);
+}));
 test('真实 Pi 工具循环可以动态加载工具，日志只记录完整事件摘要', () => isolated(async service => {
   await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
   const session = await service.createSession({ creativeMode: false }); const previous = globalThis.fetch;
@@ -271,6 +328,9 @@ test('真实 Pi 工具循环可以动态加载工具，日志只记录完整事�
     assert.equal(requests[1].tools.some(tool => tool.function.name === 'list_generation_history'), true);
     assert.equal(audits.filter(entry => entry.type === 'model_response').length, 3);
     assert.equal(audits.filter(entry => entry.type === 'tool_completed').length, 2);
+    assert.equal(JSON.stringify(audits).includes('"cost"'), false);
+    assert.equal(JSON.stringify((await service.readSession(session.id)).messages).includes('"cost"'), false);
+    assert.equal(JSON.stringify(await service.getTask(session.id)).includes('"cost"'), false);
     assert.equal(audits.some(entry => entry.type === 'agent_event' && entry.eventType === 'text_delta'), false);
     assert.ok(JSON.stringify(requests[2]).length < 100000);
   } finally { globalThis.fetch = previous; }

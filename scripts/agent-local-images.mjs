@@ -3,21 +3,19 @@ import { isAbsolute, resolve, relative, dirname, basename, extname, sep, join } 
 import { randomBytes, createHash } from 'node:crypto';
 
 const MAX_BYTES = 30 * 1024 * 1024;
-const TTL = 2 * 60 * 60 * 1000;
 const inside = (root, target) => { const rel = relative(root, target); return !rel || !isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + sep); };
 export const imageMime = buffer => buffer.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) ? 'image/png'
   : buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255 ? 'image/jpeg'
   : ['GIF87a', 'GIF89a'].includes(buffer.subarray(0, 6).toString()) ? 'image/gif'
   : buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP' ? 'image/webp' : '';
 
-/** 只开放用户确认的图片目录；权限与会话、Key 绑定，不提供任意文件或命令执行。 */
+/** 读取由权限档位控制，标准档目录写入需要确认；不提供任意文件或命令执行。 */
 export class AgentLocalImages {
-  constructor({ protectedRoot = resolve('local-data'), now = () => Date.now() } = {}) {
-    this.protectedRoot = protectedRoot; this.now = now; this.grants = new Map(); this.images = new Map(); this.writes = new Map();
+  constructor({ protectedRoot = resolve('local-data'), getMode = () => 'standard' } = {}) {
+    this.protectedRoot = protectedRoot; this.getMode = getMode; this.grants = new Map(); this.images = new Map(); this.writes = new Map();
   }
   prune() {
     for (const map of [this.grants, this.images, this.writes]) {
-      for (const [id, value] of map) if (value.expiresAt <= this.now()) map.delete(id);
       while (map.size > 512) map.delete(map.keys().next().value);
     }
   }
@@ -45,16 +43,20 @@ export class AgentLocalImages {
   }
   async grant(scope, path, access, create = false) {
     if (!['read', 'write'].includes(access) || !scope.sessionId) throw new Error('缺少有效的目录权限或会话');
+    if (access === 'write' && this.getMode() === 'read_only') throw new Error('当前为只读权限，不能保存图片或创建目录');
     const canonical = await this.folder(path, create && access === 'write');
     if (create && access === 'write') await mkdir(canonical, { recursive: true });
     const actual = await this.folder(canonical);
     const id = randomBytes(16).toString('hex');
-    this.prune(); this.grants.set(id, { ...scope, keyHash: scope.keyHash || '', path: actual, access, expiresAt: this.now() + TTL });
-    return { directory: actual, access, expiresAt: this.now() + TTL, note: '本次会话两小时内有效；切换 Key 或重启服务后需要重新确认' };
+    this.prune(); this.grants.set(id, { ...scope, keyHash: scope.keyHash || '', path: actual, access });
+    return { directory: actual, access, note: '标准权限下，此对话与当前 Key 可继续使用该目录；没有计时失效' };
   }
   async authorized(scope, target, access) {
     this.prune();
     const actual = await realpath(target); await this.checkProtected(actual);
+    if (access === 'read') return actual;
+    if (this.getMode() === 'read_only') throw Object.assign(new Error('当前为只读权限，不能保存或复制图片'), { status: 403 });
+    if (this.getMode() === 'full') return actual;
     const grant = [...this.grants.values()].find(item => item.sessionId === scope.sessionId && item.keyHash === (scope.keyHash || '') && item.access === access && inside(item.path, actual));
     if (!grant) throw Object.assign(new Error(`此目录尚未获得${access === 'read' ? '读取' : '写入'}权限，请先请求用户确认目录用途`), { status: 403 });
     return actual;
@@ -89,12 +91,12 @@ export class AgentLocalImages {
   }
   async register(scope, path) {
     const image = await this.read(scope, path); const id = randomBytes(16).toString('hex'); this.prune();
-    this.images.set(id, { ...scope, keyHash: scope.keyHash || '', path: image.path, expiresAt: this.now() + TTL });
+    this.images.set(id, { ...scope, keyHash: scope.keyHash || '', path: image.path });
     return { kind: 'local', id, title: image.name, path: '/api/prompt-agent/local-image?sessionId=' + encodeURIComponent(scope.sessionId) + '&id=' + id, modelHasSeenImage: false };
   }
   async asset(scope, id) {
     this.prune(); const image = this.images.get(id);
-    if (!image || image.sessionId !== scope.sessionId || image.keyHash !== (scope.keyHash || '')) throw Object.assign(new Error('本地图片权限已失效，请重新确认目录并展示图片'), { status: 403 });
+    if (!image || image.sessionId !== scope.sessionId || image.keyHash !== (scope.keyHash || '')) throw Object.assign(new Error('该图片引用不属于当前会话或 Key，请重新展示图片'), { status: 403 });
     return this.read(scope, image.path);
   }
   async save(scope, directory, filename, buffer, operationId = '') {
@@ -124,7 +126,7 @@ export class AgentLocalImages {
       try { file = await open(target, 'wx'); } catch (error) { if (error.code === 'EEXIST') continue; throw error; }
       try { await file.writeFile(buffer); await file.sync(); } finally { await file.close(); }
       const receipt = { saved: true, path: target, filename: name, bytes: buffer.length, overwritten: false };
-      if (operationId) this.writes.set(cacheKey, { receipt, expiresAt: this.now() + TTL });
+      if (operationId) this.writes.set(cacheKey, { receipt });
       return receipt;
     }
     throw new Error('同名图片过多，请换一个文件名');
