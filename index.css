@@ -2,6 +2,12 @@
 @import "tailwindcss";
 @import "./components/operationDialog.css";
 
+/* Agent 的语义悬停只显露已有卡片操作，不覆盖主题、颜色或真实鼠标状态。 */
+[data-agent-hover] .group-hover\:opacity-100,
+[data-agent-hover] .md\:group-hover\:opacity-100,
+[data-agent-hover] .lg\:group-hover\:opacity-100 { opacity: 1; }
+[data-agent-hover] .group-hover\:pointer-events-auto { pointer-events: auto; }
+
 /* Theme selection is controlled by App.tsx, not directly by the OS media query. */
 @custom-variant dark (&:where(.dark, .dark *));
 

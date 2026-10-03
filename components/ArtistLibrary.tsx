@@ -48,8 +48,17 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                                 <div
                                     key={artist.id}
                                     data-safe-mode-work="true"
+                                    role="button"
+                                    data-agent-action="select"
+                                    aria-label={`选择画师：${artist.name}`}
+                                    aria-pressed={isSelected}
+                                    tabIndex={0}
                                     className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden border transition-colors cursor-pointer ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}
                                     onClick={() => toggleCart(artist.name)}
+                                    onKeyDown={event => {
+                                        if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
+                                        event.preventDefault(); toggleCart(artist.name);
+                                    }}
                                 >
                                     <div className="mobile-gallery-frame md:aspect-[2/3] relative overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': artistRatios[artist.id] ? `${Math.round(artistRatios[artist.id] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
                                         <DanbooruCover

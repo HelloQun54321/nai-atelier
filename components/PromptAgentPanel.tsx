@@ -245,6 +245,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const taskCursorRef = useRef({ runId: '', cursor: 0, events: [] as PromptAgentEvent[] });
   const [taskSnapshot, setTaskSnapshot] = useState<PromptAgentTask>({});
   const [pageRead, setPageRead] = useState<AgentPageSnapshot | null>(getLastAgentPageRead);
+  const currentDraftRef = useRef(props.draft);
+  currentDraftRef.current = props.draft;
   useEffect(() => {
     if (!props.open) return;
     const update = (event: Event) => setPageRead((event as CustomEvent<AgentPageSnapshot>).detail);
@@ -440,6 +442,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         task.events = events;
         taskCursorRef.current = { runId: task.runId || '', cursor: task.cursor || 0, events };
         if (disposed) return;
+        promptAgentCoordinator.resumePageRequests(activeSessionId, task, () => currentDraftRef.current);
         setTaskSnapshot(task);
         const isRunning = ['preparing', 'running', 'waiting_confirmation', 'executing'].includes(String(task.status));
         if (isRunning && !promptAgentCoordinator.running(activeSessionId)) {
@@ -738,7 +741,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           }
           if (!event.message) setMessages(previous => previous.map(item => item.id === responseId && !item.text ? { ...item, text: '已完成。' } : item));
         }
-      });
+      }, () => currentDraftRef.current);
     } catch (error) {
       if (controller.signal.aborted) {
         setMessages(previous => previous.map(item => item.id === assistantId && !item.text ? { ...item, text: '已停止。' } : item));

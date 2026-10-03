@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AgentUiBridge } from './agent-ui-bridge.mjs';
+import { applyAgentClientChanges, diffAgentClientDraft } from '../services/agentLabSync.mjs';
 
 test('页面 RPC 绑定会话和单次回执，跨会话与重复回执被拒绝', async () => {
   const bridge = new AgentUiBridge(); let request;
@@ -10,6 +11,27 @@ test('页面 RPC 绑定会话和单次回执，跨会话与重复回执被拒绝
   assert.throws(() => bridge.reply('a', { requestId: request.requestId, result: {} }), /格式/);
   bridge.reply('a', { requestId: request.requestId, result }); assert.deepEqual(await pending, result);
   assert.throws(() => bridge.reply('a', { requestId: request.requestId, result }), /过期/); assert.equal(bridge.pending.size, 0);
+});
+test('重连只返回发起标签页的实时请求，认领一次且过期、错误令牌不能执行', async () => {
+  const bridge = new AgentUiBridge(); let event;
+  const pending = bridge.request('s', { action: 'click' }, item => { event = item; }, undefined, 1000, 'tab-a');
+  assert.deepEqual(bridge.list('s', 'tab-b'), []); assert.equal(bridge.list('s', 'tab-a').length, 1);
+  const payload = { requestId: event.requestId, clientId: 'tab-a' };
+  assert.throws(() => bridge.claim('s', { ...payload, clientId: 'tab-b' }), /不属于/);
+  const claim = bridge.claim('s', payload); assert.equal(claim.execute, true); assert.equal(bridge.claim('s', payload).execute, false);
+  const result = { title: '筛选', snapshotId: 'p', controls: [] };
+  assert.throws(() => bridge.reply('s', { ...payload, result, claimId: 'wrong' }), /令牌/);
+  bridge.reply('s', { ...payload, result, claimId: claim.claimId }); await pending;
+  assert.deepEqual(bridge.list('s', 'tab-a'), []); assert.throws(() => bridge.claim('s', payload), /过期/);
+});
+test('页面已提交改动按字段合并，用户选择优先，其他工作草稿修改不丢失', () => {
+  const original = { basePrompt: '风格', params: { steps: 20, scale: 5 }, editContext: { strength: 0.5 } };
+  const page = { basePrompt: '风格', params: { steps: 23, scale: 5 }, editContext: { strength: 0.7 } };
+  const draft = { basePrompt: 'Agent 新风格', params: { steps: 28, scale: 7 }, editContext: { strength: 0.5 } };
+  assert.deepEqual(applyAgentClientChanges(draft, diffAgentClientDraft(original, page)), ['params.steps']);
+  assert.deepEqual(draft, { basePrompt: 'Agent 新风格', params: { steps: 23, scale: 7 }, editContext: { strength: 0.7 } });
+  const before = structuredClone(draft);
+  assert.throws(() => applyAgentClientChanges(draft, [{ path: ['params', '__proto__', 'evil'], after: true }]), /无效/); assert.deepEqual(draft, before);
 });
 test('浏览器未回应、任务停止及发送失败都会释放页面等待，不回退到旧草稿', async () => {
   const bridge = new AgentUiBridge(), abort = new AbortController();

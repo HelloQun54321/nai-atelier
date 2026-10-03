@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { operateAgentPage, readAgentPage } from '../services/agentWorkspace';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetTagDictionaryCache } from '../services/tagDictionary';
 import { findCompletionTarget, TagAutocompleteTextarea } from './TagAutocompleteTextarea';
@@ -36,6 +37,15 @@ const openSuggestions = async (textarea: HTMLTextAreaElement, value: string, car
 };
 
 describe('TagAutocompleteTextarea 输入优先交互', () => {
+  it('Agent 填写后保留焦点，读取 body 中真实候选并点击完成补全', async () => {
+    render(React.createElement('main', { 'data-agent-view': 'playground' }, React.createElement(Harness)));
+    const page = readAgentPage({ query: 'Prompt' }); let operation!: ReturnType<typeof operateAgentPage>;
+    act(() => { operation = operateAgentPage({ action: 'fill', snapshotId: page.snapshotId, controlId: page.controls[0].id, value: 'ma', commit: false }); });
+    await screen.findAllByRole('option'); await operation;
+    const popup = readAgentPage({ query: 'masterpiece' }); expect(popup.foreground).toBe('listbox');
+    act(() => { operation = operateAgentPage({ action: 'click', snapshotId: popup.snapshotId, controlId: popup.controls[0].id }); }); await operation;
+    expect((screen.getByRole('combobox') as HTMLTextAreaElement).value).toContain('masterpiece'); expect(screen.queryByRole('listbox')).toBeNull();
+  });
   beforeEach(() => {
     resetTagDictionaryCache();
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {

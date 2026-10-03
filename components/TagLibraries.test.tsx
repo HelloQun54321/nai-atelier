@@ -6,6 +6,7 @@ import { ArtistLibrary } from './ArtistLibrary';
 import { CharacterLibrary } from './CharacterLibrary';
 import type { PromptChain } from '../types';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
+import { operateAgentPage, readAgentPage } from '../services/agentWorkspace';
 import { generateImage } from '../services/naiService';
 import {
   getArtistDictionaryEntriesAt, getArtistDictionaryPage,
@@ -30,7 +31,7 @@ vi.mock('./DanbooruCover', () => ({ DanbooruCover: ({ tag, fixedSrc }: { tag: st
   <div data-testid={`cover-${tag}`} data-fixed-src={fixedSrc}>{tag}</div>,
 }));
 // jsdom 没有容器宽度；布局由既有测试覆盖，这里直接渲染条目以验证目录状态。
-vi.mock('./ShortestColumnMasonry', () => ({ ShortestColumnMasonry: ({ items, renderItem }: { items: unknown[]; renderItem: (item: unknown) => React.ReactNode }) =>
+vi.mock('./ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 6, ShortestColumnMasonry: ({ items, renderItem }: { items: unknown[]; renderItem: (item: unknown) => React.ReactNode }) =>
   <div>{items.map((item, index) => <React.Fragment key={index}>{renderItem(item)}</React.Fragment>)}</div>,
 }));
 vi.mock('../services/danbooruService', () => ({ danbooruService: {
@@ -97,6 +98,18 @@ afterEach(() => {
 });
 
 describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', kind => {
+  it.each([1280, 390])('Agent 在宽度 %s 选择卡片并读取真实状态，重复 check 不取消选择', async width => {
+    const { container } = renderLibrary(kind, width); container.dataset.agentView = kind === 'artist' ? 'library' : 'characters';
+    await screen.findByTestId(`cover-${entriesFor(kind)[0].name}`);
+    const page = readAgentPage({ query: `选择${kind === 'artist' ? '画师' : '角色'}：` }), card = page.controls[0]; expect(card.pressed).toBe(false);
+    let pending!: ReturnType<typeof operateAgentPage>;
+    act(() => { pending = operateAgentPage({ action: 'check', snapshotId: page.snapshotId, controlId: card.id, checked: true }); }); await pending;
+    let current = readAgentPage({ controlId: card.id }); expect(current.controls[0].pressed).toBe(true);
+    act(() => { pending = operateAgentPage({ action: 'check', snapshotId: current.snapshotId, controlId: card.id, checked: true }); }); await pending;
+    expect(readAgentPage({ controlId: card.id }).controls[0].pressed).toBe(true);
+    fireEvent.keyDown(screen.getByRole('button', { name: card.label }), { key: ' ' });
+    current = readAgentPage({ controlId: card.id }); expect(current.controls[0].pressed).toBe(false); expect(generateImage).not.toHaveBeenCalled();
+  });
   it.each([1280, 390])('宽度 %s 保留核心入口，不藏起旧测试功能', async width => {
     const { container } = renderLibrary(kind, width);
     await screen.findByTestId(`cover-${entriesFor(kind)[0].name}`);

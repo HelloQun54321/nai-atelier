@@ -2,7 +2,7 @@ import { PromptAgentAction, PromptAgentDraft } from '../types';
 import { parseErrorResponse } from './api';
 import { isAgentImagePath } from './agentMedia';
 import { agentConnectionEndpoint } from './agentConnection.mjs';
-import type { AgentPageOperation } from './agentWorkspace';
+import { getAgentPageClientId, type AgentPageOperation } from './agentWorkspace';
 
 
 const agentAuthHeaders = (): Record<string, string> => {
@@ -194,8 +194,10 @@ export interface PromptAgentHistoryMessage {
   tools?: Array<{ id: string; name: string; args?: unknown; result?: unknown; state: 'running' | 'done' | 'error' | 'interrupted' }>;
 }
 
+export interface AgentPageRequest { requestId: string; operation: AgentPageOperation; clientId?: string; expiresAt?: number; claimId?: string }
 export type PromptAgentEvent = ({ runId?: string; seq?: number } & (
-  | { type: 'ui_request'; requestId: string; operation: AgentPageOperation }
+  | ({ type: 'ui_request' } & AgentPageRequest)
+  | { type: 'ui_cancel'; requestId: string; clientId?: string }
   | { type: 'response_start'; id: string }
   | { type: 'text_delta'; delta: string }
   | { type: 'thinking_delta'; delta: string }
@@ -218,6 +220,8 @@ export interface PromptAgentTask {
   finalDraft?: PromptAgentDraft | null;
   events?: PromptAgentEvent[];
   pending?: Array<{ requestId: string; approved: boolean; expiresAt: number; operation: { action: string; resourceId: string; payload: Record<string, unknown> } }>;
+  pendingUI?: AgentPageRequest[];
+  clientDraft?: PromptAgentDraft;
 }
 
 const readError = async (response: Response) => {
@@ -333,6 +337,11 @@ export const promptAgentService = {
     const response = await fetch('/api/prompt-agent/control', { method: 'POST', headers: { 'Content-Type': 'application/json', ...agentAuthHeaders() }, body: JSON.stringify({ sessionId, action, message, ...(payload || {}) }) });
     if (!response.ok) return readError(response);
   },
+  pageControl: async (sessionId: string, action: 'ui_claim' | 'ui_context' | 'ui_result', payload: Record<string, unknown>): Promise<{ ok?: boolean; execute?: boolean; claimId?: string }> => {
+    const response = await fetch('/api/prompt-agent/control', { method: 'POST', headers: { 'Content-Type': 'application/json', ...agentAuthHeaders() }, body: JSON.stringify({ sessionId, action, ...payload }) });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
   resetSession: async (sessionId: string) => {
     const response = await fetch('/api/prompt-agent/session/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId }) });
     if (!response.ok) return readError(response);
@@ -353,7 +362,7 @@ export const promptAgentService = {
     return (await response.json()).items || [];
   },
   getTask: async (sessionId: string, after = 0, runId = ''): Promise<PromptAgentTask> => {
-    const response = await fetch(`/api/prompt-agent/task?sessionId=${encodeURIComponent(sessionId)}&after=${after}&runId=${encodeURIComponent(runId)}`, { cache: 'no-store' });
+    const response = await fetch(`/api/prompt-agent/task?sessionId=${encodeURIComponent(sessionId)}&after=${after}&runId=${encodeURIComponent(runId)}&clientId=${encodeURIComponent(getAgentPageClientId())}`, { cache: 'no-store' });
     if (!response.ok) return readError(response) as never;
     return response.json();
   },

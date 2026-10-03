@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { operateAgentPage, readAgentPage } from '../services/agentWorkspace';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PromptChain } from '../types';
 import { ChainList } from './ChainList';
@@ -36,6 +37,26 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('风格串列表的酒馆筛选交互', () => {
+  it.each(['desktop', 'mobile'])('Agent 在 %s 从大量卡片打开真实筛选浮层，读取选项并选中 V5 后实际过滤列表', async surface => {
+    render(React.createElement('main', { 'data-agent-view': 'list' }, React.createElement(ChainList, { ...props(), chains: [...Array.from({ length: 40 }, (_, i) => chain(`old-${i}`, `旧风格${i}`)), chain('v5', 'V5 作品', 'nai-diffusion-5-full')] })));
+    const page = readAgentPage({ query: '筛选' }), trigger = page.controls.find(item => item.label === (surface === 'desktop' ? '筛选' : '筛选与排序'))!;
+    let operation!: ReturnType<typeof operateAgentPage>;
+    act(() => { operation = operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: trigger.id, expect: { label: '模型筛选' } }); });
+    await operation;
+    const filter = readAgentPage({ query: '模型筛选' }); expect(filter.title).toBe('筛选与排序');
+    expect(filter.controls[0].options?.some(option => option.value === 'nai-diffusion-5-full')).toBe(true);
+    act(() => { operation = operateAgentPage({ action: 'select', snapshotId: filter.snapshotId, controlId: filter.controls[0].id, value: 'nai-diffusion-5-full' }); });
+    expect((await operation).verification?.control?.value).toBe('nai-diffusion-5-full');
+    expect(screen.getByText('V5 作品')).toBeTruthy(); expect(screen.queryByText('旧风格0')).toBeNull();
+  });
+  it('无封面卡片可直接读取并打开，子按钮回车不触发父卡片', async () => {
+    const p = props(); render(React.createElement('main', { 'data-agent-view': 'list' }, React.createElement(ChainList, p)));
+    const page = readAgentPage({ query: '打开风格串：风格 A' }); expect(page.controls).toHaveLength(1);
+    let operation!: ReturnType<typeof operateAgentPage>;
+    act(() => { operation = operateAgentPage({ action: 'press', snapshotId: page.snapshotId, controlId: page.controls[0].id, key: 'Enter' }); }); await operation;
+    expect(p.onSelect).toHaveBeenCalledExactlyOnceWith('a');
+    fireEvent.keyDown(screen.getAllByTitle('复制/查看详情')[0], { key: 'Enter' }); expect(p.onSelect).toHaveBeenCalledTimes(1);
+  });
   it.each(['desktop', 'mobile'])('%s 自定义标签可组合模型与状态筛选，多选要求同时包含，选项不被结果缩掉', surface => {
     const items = [
       { ...chain('a', '夜景 A'), tags: ['aitag', 'NAI', '星空', '水面', '待实测'] },

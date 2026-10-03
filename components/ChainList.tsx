@@ -343,12 +343,13 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
   const renderChainCard = (chain: PromptChain) => (
     <div key={chain.id} data-safe-mode-work="true" data-return-item-id={chain.id}
-      role={syncSelection.selecting ? 'checkbox' : undefined}
-      aria-label={syncSelection.selecting ? `智慧姬同步：${chain.name}` : undefined}
+      role={syncSelection.selecting ? 'checkbox' : 'button'}
+      data-agent-action={syncSelection.selecting ? 'select' : 'browse'}
+      aria-label={syncSelection.selecting ? `智慧姬同步：${chain.name}` : `打开${chain.type === 'character' ? '自定义角色' : '风格串'}：${chain.name}`}
       aria-checked={syncSelection.selecting ? syncSelection.selected.has(chain.id) : undefined}
       aria-disabled={syncSelection.selecting ? syncSelection.busy || !syncSelection.available.has(chain.id) : undefined}
-      tabIndex={syncSelection.selecting ? 0 : undefined}
-      onKeyDown={event => { if (syncSelection.selecting && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); syncSelection.toggle(chain.id); } }}
+      tabIndex={0}
+      onKeyDown={event => { if (event.target === event.currentTarget && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); if (syncSelection.selecting) syncSelection.toggle(chain.id); else onSelect(chain.id); } }}
       onClick={() => syncSelection.selecting ? syncSelection.toggle(chain.id) : onSelect(chain.id)}
       className={`mobile-gallery-item group bg-white dark:bg-gray-850 border border-gray-200 dark:border-gray-800/80 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${syncSelection.selecting && syncSelection.selected.has(chain.id) ? '!border-indigo-500 ring-2 ring-indigo-500/20' : ''} ${syncSelection.selecting && !isStChatu8ExportableChain(chain) ? '!cursor-default opacity-60' : ''}`}>
       {/* 桌面悬浮／键盘聚焦时显示卡片操作；手机保留可直接点击的信息编辑。 */}

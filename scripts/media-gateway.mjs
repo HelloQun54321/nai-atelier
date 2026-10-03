@@ -3220,7 +3220,7 @@ const serveDistFile = async (req, res, url) => {
         }
         if (url.pathname === '/api/prompt-agent/control') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
-          const body = JSON.parse((await readRequestBody(req, 16 * 1024)).toString('utf8') || '{}');
+          const body = JSON.parse((await readRequestBody(req, 2 * 1024 * 1024)).toString('utf8') || '{}');
           return sendJson(res, 200, promptAgent.controlSession(String(body.sessionId || ''), String(body.action || ''), String(body.message || ''), { ...body, keyHash: (await getCloudQueueScope(req)).keyHash }));
         }
         if (url.pathname === '/api/prompt-agent/session/reset') {
@@ -3240,7 +3240,7 @@ const serveDistFile = async (req, res, url) => {
         }
         if (url.pathname === '/api/prompt-agent/task') {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
-          return sendJson(res, 200, await promptAgent.getTask(url.searchParams.get('sessionId') || '', Number(url.searchParams.get('after') || 0), url.searchParams.get('runId') || ''));
+          return sendJson(res, 200, await promptAgent.getTask(url.searchParams.get('sessionId') || '', Number(url.searchParams.get('after') || 0), url.searchParams.get('runId') || '', url.searchParams.get('clientId') || ''));
         }
         if (url.pathname === '/api/prompt-agent/log') {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { operateAgentPage, readAgentPage } from '../services/agentWorkspace';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChainEditorParams } from './ChainEditorParams';
 import type { NAIParams } from '../types';
@@ -64,6 +65,16 @@ const renderParams = (props: Record<string, unknown> = {}) => render(React.creat
 afterEach(() => { cleanup(); lowMode.enabled = false; });
 
 describe('ChainEditorParams', () => {
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Agent 在 %s 填透明权重，数值失焦后真实参数与滑条同时生效', async mode => {
+    let actual: NAIParams;
+    const Harness = () => {
+      const [value, setValue] = React.useState<NAIParams>({ ...params, model: 'nai-diffusion-5-full', transparent: true, transparentWeight: 1 }); actual = value;
+      return React.createElement('main', { 'data-agent-view': 'playground' }, React.createElement(ChainEditorParams, { params: value, setParams: setValue, canEdit: true, markChange: vi.fn(), mode }));
+    };
+    render(React.createElement(Harness)); const page = readAgentPage({ query: '透明权重数值' }); let operation!: ReturnType<typeof operateAgentPage>;
+    act(() => { operation = operateAgentPage({ action: 'fill', snapshotId: page.snapshotId, controlId: page.controls[0].id, value: '1.5' }); }); await operation;
+    expect(actual!.transparentWeight).toBe(1.5); expect((screen.getByRole('slider', { name: '透明权重' }) as HTMLInputElement).value).toBe('1.5');
+  });
   it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 的 V5 权重滑条与数值输入修改同一参数，开关保留权重', mode => {
     const changed = vi.fn();
     const Harness = () => {

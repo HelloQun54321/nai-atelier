@@ -120,9 +120,51 @@ test('实时页面工具获取当前回执，不把旧实验室目标当作用�
   const read = JSON.parse((await tools.find(item => item.name === 'read_current_page').execute('t', {})).content[0].text);
   assert.equal(read.title, '生成历史'); assert.equal(JSON.stringify(read).includes('旧实验室'), false);
   await tools.find(item => item.name === 'operate_current_page').execute('t', { action: 'navigate', view: 'characters' });
-  assert.deepEqual(operations, [{ action: 'read' }, { action: 'navigate', view: 'characters' }]);
+  assert.deepEqual(operations, [{ action: 'read', permissionMode: service.config.permissionMode }, { action: 'navigate', view: 'characters', permissionMode: service.config.permissionMode }]);
   const offline = service.createTools({ params: {} }, {}, () => {});
   await assert.rejects(offline.find(item => item.name === 'read_current_page').execute('t', {}), /不可用/);
+}));
+test('页面上下文只接受所属标签页，已提交参数合并且用户选择优先于旧提案', () => isolated(async service => {
+  const draft = { basePrompt: 'Agent 风格', params: { steps: 28, scale: 7 }, target: { chainId: 'playground', mode: 'text-to-image', fingerprint: 'before' } };
+  const contextData = { clientSettings: { pageClientId: 'tab-a' } };
+  service.runs.set('sync', { state: { status: 'running' }, contextData, draft, clientDraft: { ...structuredClone(draft), params: { steps: 20, scale: 5 } } });
+  const payload = { clientId: 'tab-a', page: { title: '生成历史', view: 'history', snapshotId: 'p-2', capturedAt: 2 }, labSync: { targetBefore: draft.target, targetAfter: { ...draft.target, fingerprint: 'after' }, changes: [{ path: ['params', 'steps'], before: 20, after: 23 }] } };
+  assert.throws(() => service.controlSession('sync', 'ui_context', '', { ...payload, clientId: 'tab-b' }), /不属于/);
+  service.controlSession('sync', 'ui_context', '', payload); assert.equal(draft.params.steps, 23); assert.equal(draft.params.scale, 7); assert.equal(draft.basePrompt, 'Agent 风格');
+  assert.equal(contextData.clientSettings.currentPage.title, '生成历史'); assert.deepEqual(contextData.clientSettings.pageOverrides, ['params.steps']);
+  service.controlSession('sync', 'ui_context', '', payload); assert.equal(draft.params.steps, 23);
+  const state = JSON.parse((await service.createTools(draft, contextData, () => {}).find(tool => tool.name === 'get_lab_state').execute('t', {})).content[0].text);
+  assert.equal(state.params.steps, 23); assert.equal(state.target.fingerprint, 'after');
+  assert.equal((await service.getTask('sync', 0, '', 'tab-b')).clientDraft, undefined);
+  assert.equal((await service.getTask('sync', 0, '', 'tab-a')).clientDraft.params.steps, 23);
+}));
+test('页面分页和选项不经资料摘要器截断，保存后的下一轮仍保留完整回执', () => isolated(async service => {
+  const page = { snapshotId: 'page-large', title: '模型筛选', controls: Array.from({ length: 20 }, (_, i) => ({ id: `control-${i}`, options: Array.from({ length: 12 }, (_, n) => ({ value: `model-${i}-${n}`, label: `模型${n}`, selected: n === 0, disabled: false })) })), nextOffset: 20, totalControls: 100 };
+  const tools = service.createTools({ params: {} }, {}, () => {}, { requestUI: async () => page });
+  const receipt = await tools.find(tool => tool.name === 'read_current_page').execute('t', { offset: 0 });
+  assert.deepEqual(JSON.parse(receipt.content[0].text), page);
+  service.readSession = async () => ({ messages: [{ role: 'toolResult', toolName: 'read_current_page', toolCallId: 'p', ...receipt }] });
+  assert.deepEqual(JSON.parse((await service.loadMessages('s'))[0].content[0].text), page);
+}));
+test('每轮真正模型请求前获取新页面和参数，不新增模型请求', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true }); const session = await service.createSession();
+  const previous = globalThis.fetch, requests = []; let reads = 0;
+  globalThis.fetch = async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    const delta = requests.length === 1 ? { role: 'assistant', tool_calls: [{ index: 0, id: 'read-state', type: 'function', function: { name: 'get_lab_state', arguments: '{}' } }] } : { role: 'assistant', content: '已读取最新页面与参数' };
+    return new Response('data: ' + JSON.stringify({ id: 's', object: 'chat.completion.chunk', created: 1, model: 'a', choices: [{ index: 0, delta, finish_reason: requests.length === 1 ? 'tool_calls' : 'stop' }] }) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  };
+  try {
+    await service.run({ sessionId: session.id, message: '查看当前页面和参数', draft: { params: { steps: 20 }, target: { chainId: 'playground', mode: 'text-to-image', fingerprint: 'before' } }, context: { clientSettings: { pageClientId: 'tab-a' } } }, event => {
+      if (event.type !== 'ui_request') return;
+      reads++; const claim = service.controlSession(session.id, 'ui_claim', '', { requestId: event.requestId, clientId: 'tab-a' });
+      if (reads === 2) service.controlSession(session.id, 'ui_context', '', { clientId: 'tab-a', page: { title: '生成历史', view: 'history', snapshotId: 'p-2', capturedAt: 2 }, labSync: { targetBefore: { fingerprint: 'before' }, targetAfter: { chainId: 'playground', mode: 'text-to-image', fingerprint: 'after' }, changes: [{ path: ['params', 'steps'], before: 20, after: 23 }] } });
+      service.controlSession(session.id, 'ui_result', '', { requestId: event.requestId, clientId: 'tab-a', claimId: claim.claimId, result: { title: reads === 1 ? '风格串' : '生成历史', view: reads === 1 ? 'list' : 'history', snapshotId: `p-${reads}`, controls: [], capturedAt: reads } });
+    });
+    assert.equal(requests.length, 2); assert.equal(reads, 2);
+    assert.match(requests[0].messages[0].content, /当前可见页面：[^\n]*"title":"风格串"/); assert.match(requests[1].messages[0].content, /当前可见页面：[^\n]*"title":"生成历史"/);
+    assert.match(requests[1].messages[0].content, /本轮工作草稿参数：[^\n]*"steps":23/);
+  } finally { globalThis.fetch = previous; }
 }));
 
 test('生成回执按真实历史 ID 自动展示，关闭选项或历史未保存不猜图片', () => isolated(async service => {
