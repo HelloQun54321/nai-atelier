@@ -32,11 +32,12 @@ const PLACEHOLDER = /^(?:<|\$|your[-_ ]|replace[-_ ]|example[-_ ]|test[-_ ]|dumm
 export const isSensitivePath = file => {
   const normalized = file.replaceAll('\\', '/');
   const base = path.posix.basename(normalized).toLowerCase();
-  if (base === '.env.example' || base === '.env.sample') return false;
+  if (['.env.example', '.env.sample', '.dev.vars.example', '.dev.vars.sample'].includes(base)) return false;
   return /^\.env(?:\.|$)/i.test(base)
+    || /^\.dev\.vars(?:\.|$)/i.test(base)
     || /\.(?:pem|key|p12|pfx)$/i.test(base)
     || /^(?:credentials|secrets)\.json$/i.test(base)
-    || /^(?:id_rsa|id_ed25519)$/i.test(base);
+    || /^(?:id_rsa|id_dsa|id_ecdsa|id_ed25519)$/i.test(base);
 };
 
 const lineNumberAt = (text, index) => text.slice(0, index).split('\n').length;

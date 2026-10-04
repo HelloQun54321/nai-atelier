@@ -30,6 +30,16 @@ dist-ssr
 .env.*
 !.env.example
 !.env.sample
+# Wrangler 本地环境变量，公开示例保留入库
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+!.dev.vars.sample
+# SSH 私钥（不忽略对应的 .pub 公钥）
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
 *.pem
 *.key
 *.p12

@@ -24,6 +24,23 @@ test('secret scanner blocks sensitive filenames but permits templates', () => {
   assert.equal(isSensitivePath('.env.example'), false);
 });
 
+test('密钥扫描拦截 Wrangler 本地变量及环境变体，允许公开示例', () => {
+  for (const file of ['.dev.vars', '.dev.vars.production', 'config/.dev.vars.staging', 'config\\.dev.vars.local']) {
+    assert.equal(isSensitivePath(file), true, file);
+  }
+  for (const file of ['.env.example', '.env.sample', '.dev.vars.example', 'config/.dev.vars.sample']) {
+    assert.equal(isSensitivePath(file), false, file);
+  }
+});
+
+test('密钥扫描拦截常见无扩展名 SSH 私钥，保留公钥', () => {
+  for (const name of ['id_rsa', 'id_dsa', 'id_ecdsa', 'id_ed25519']) {
+    assert.equal(isSensitivePath(name), true, name);
+    assert.equal(isSensitivePath(`keys/${name}`), true, name);
+    assert.equal(isSensitivePath(`keys/${name}.pub`), false, name);
+  }
+});
+
 test('secret scanner detects sk-family variants, hf/gitlab/telegram tokens and unquoted named secrets', () => {
   const stripeKey = 'sk_live_' + 'A'.repeat(24);
   const openRouterKey = 'sk-or-v1-' + 'B'.repeat(24);
