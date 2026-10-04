@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.36.5-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.36.6-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -161,6 +161,9 @@ npm run dev:local
 ---
 
 ## 📱 手机局域网访问
+
+> [!NOTE]
+> 本节描述当前已提供的电脑工坊与手机局域网访问。独立 Android APK 已确认为产品目标，面向没有电脑的创作者；目前尚未提供可安装 APK，技术路线与适配范围见 [独立 Android 方案评估](./docs/ANDROID_STANDALONE.md)。
 
 随时随地窝在沙发或床上用手机搓图、挑图是最高频的心流体验。电脑负责充当本地工作站（运行 Worker、网关与存储核心），手机只要连上同一个 Wi-Fi，就能无缝操控电脑里的所有预设、原图与历史。
 
