@@ -576,10 +576,10 @@ const requestWorkerJson = (path, req, workerPort, { method = 'GET', body, header
 
 const requestTagDictionaryControl = method => new Promise((resolve, reject) => {
   const upstream = httpRequest({
-    hostname: '127.0.0.1', port: 3002, path: '/tag-dictionary', method,
+    hostname: '127.0.0.1', port: Number(process.env.NAI_TAG_UPDATE_PORT || 3002), path: '/tag-dictionary', method,
     headers: {
       accept: 'application/json',
-      origin: 'http://localhost:3000',
+      origin: `http://localhost:${Number(process.env.NAI_GATEWAY_PORT || 3000)}`,
       'x-nai-local-control': 'true',
     },
   }, async upstreamRes => {
@@ -2798,14 +2798,15 @@ const STATIC_CONTENT_TYPES = {
   '.txt': 'text/plain; charset=utf-8',
   '.map': 'application/json; charset=utf-8',
 };
-const DIST_ROOT = join(process.cwd(), 'dist');
+const DIST_ROOT = process.env.NAI_PACKAGED === '1' ? join(process.env.NAI_APP_ROOT, 'dist') : join(process.cwd(), 'dist');
 const serveDistFile = async (req, res, url) => {
   let pathname = url.pathname;
   try { pathname = decodeURIComponent(pathname); } catch { return false; }
   if (pathname.includes('..') || pathname.includes('\0')) return false;
   const relative = pathname.replace(/^\/+/, '') || 'index.html';
-  const filePath = join(DIST_ROOT, relative);
-  if (!filePath.startsWith(DIST_ROOT)) return false;
+  const root = process.env.NAI_PACKAGED === '1' && relative.startsWith('tag-data/') ? join(process.cwd(), 'public') : DIST_ROOT;
+  const filePath = join(root, relative);
+  if (!filePath.startsWith(root)) return false;
   let data;
   try { data = await readFile(filePath); } catch { return false; }
   const ext = extname(filePath).toLowerCase();
@@ -3433,6 +3434,7 @@ const serveDistFile = async (req, res, url) => {
     if (url.pathname === '/api/local-maintenance/desktop-launcher/download') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      if (process.env.NAI_PACKAGED === '1') return sendJson(res, 409, { error: '安装版请使用 NAI Atelier 快捷方式或安装目录中的应用程序' });
       const content = Buffer.from(generateLauncherBatContent(), 'utf8');
       res.writeHead(200, {
         'Content-Type': 'application/x-bat',

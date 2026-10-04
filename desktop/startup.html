@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self'">
+  <title>NAI Atelier</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, 'Microsoft YaHei', sans-serif; background: #14171f; color: #edf0f5; }
+    body { margin: 0; display: grid; min-height: 100vh; place-items: center; }
+    main { width: min(440px, calc(100vw - 64px)); }
+    h1 { font-size: 26px; font-weight: 650; margin: 0 0 24px; }
+    p { color: #a6b0c5; line-height: 1.7; overflow-wrap: anywhere; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #5bbfe8; margin-right: 10px; animation: breathe 1.4s ease-in-out infinite; }
+    [data-phase=error] .dot { background: #ef8686; animation: none; }
+    button { border: 1px solid #384256; background: #202633; color: inherit; border-radius: 7px; padding: 10px 16px; margin: 14px 8px 0 0; cursor: pointer; }
+    button:hover { background: #2b3547; } button:focus-visible { outline: 2px solid #5bbfe8; outline-offset: 3px; }
+    [hidden] { display: none; }
+    @keyframes breathe { 50% { opacity: .3; } }
+    @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
+    @media (prefers-color-scheme: light) { :root { background: #f7f8fb; color: #253047; } p { color: #657088; } button { background: #fff; border-color: #d1d8e5; } button:hover { background: #edf1f7; } }
+  </style>
+</head>
+<body>
+  <main data-phase="starting"><h1>NAI Atelier</h1><p role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="message">正在打开工坊…</span></p><div id="actions" hidden><button id="retry">重新尝试</button><button id="logs">查看日志</button><button id="quit">退出</button></div></main>
+  <script src="startup.js"></script>
+</body>
+</html>

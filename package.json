@@ -1,7 +1,7 @@
 {
   "name": "nai-atelier",
   "private": true,
-  "version": "1.36.6",
+  "version": "1.37.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,7 +20,9 @@
     "dev:local:win": "scripts\\local-server.bat",
     "dev:local:linux": "sh scripts/local-server.sh",
     "test:live-sync": "node tests/run.mjs live-sync",
-    "build:local": "vite build && npm run build:worker"
+    "build:local": "vite build && npm run build:worker",
+    "build:desktop": "node scripts/build-desktop.mjs",
+    "build:desktop:dir": "node scripts/build-desktop.mjs --dir"
   },
   "overrides": {
     "shell-quote": "^1.8.5",
@@ -47,6 +49,8 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.1.2",
     "concurrently": "^9.2.1",
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3",
     "esbuild": "^0.25.0",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^5.2.0",
@@ -56,6 +60,6 @@
     "typescript-eslint": "^8.67.0",
     "vite": "^6.4.3",
     "vitest": "^3.2.7",
-    "wrangler": "^4.81.1"
+    "wrangler": "4.81.1"
   }
 }

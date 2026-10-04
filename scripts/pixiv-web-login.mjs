@@ -34,10 +34,17 @@ export const ensurePixivSchemeHandler = async ({
   execFile = promisify(nodeExecFile),
   platform = process.platform,
   nodePath = process.execPath,
+  gatewayUrl = process.env.NAI_PACKAGED === '1' ? process.env.NAI_GATEWAY_URL : '',
 } = {}) => {
   if (platform !== 'win32') return false;
   const scriptPath = resolve(moduleDir, PIXIV_SCHEME_HANDLER_SCRIPT);
-  const command = `"${nodePath}" "${scriptPath}" "%1"`;
+  let callbackTarget = '';
+  if (gatewayUrl) {
+    const target = new URL(gatewayUrl);
+    if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1' || target.username || target.password || target.pathname !== '/' || target.search || target.hash) throw new Error('Pixiv 回调必须指向本机工坊');
+    callbackTarget = ` "${target.origin}"`;
+  }
+  const command = `"${nodePath}" "${scriptPath}" "%1"${callbackTarget}`;
   const schemeKey = `HKCU\\Software\\Classes\\${PIXIV_SCHEME_NAME}`;
   const commands = [
     ['add', schemeKey, '/f', '/ve', '/d', 'URL:Pixiv Login Protocol'],

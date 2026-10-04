@@ -116,7 +116,7 @@ endlocal
 export function getDesktopLauncherStatus({ projectDir = process.cwd(), desktopDir = getDesktopDir() } = {}) {
   const normProjectDir = normalize(resolve(projectDir));
   const normDesktopDir = desktopDir ? normalize(resolve(desktopDir)) : '';
-  const batPath = join(normProjectDir, 'NaiPromptManager.bat');
+  const batPath = process.env.NAI_PACKAGED === '1' && process.env.NAI_DESKTOP_EXECUTABLE ? resolve(process.env.NAI_DESKTOP_EXECUTABLE) : join(normProjectDir, 'NaiPromptManager.bat');
   const shortcutPath = normDesktopDir ? join(normDesktopDir, 'NAI Atelier.lnk') : '';
   const iconPath = join(normProjectDir, 'public', 'nai-atelier.ico');
 
@@ -142,6 +142,7 @@ export function getDesktopLauncherStatus({ projectDir = process.cwd(), desktopDi
 
   return {
     supported: IS_WINDOWS,
+    launcherKind: process.env.NAI_PACKAGED === '1' ? 'exe' : 'script',
     platform: platform(),
     projectDir: normProjectDir,
     desktopDir: normDesktopDir,
@@ -189,7 +190,7 @@ export async function createDesktopLauncher({
   let legacyBatRemoved = false;
   const legacyBatPath = join(status.desktopDir, 'NaiPromptManager.bat');
   // 新快捷方式已保存并复读确认后，才清理与本项目旧模板完全相同的副本。
-  if (resolve(legacyBatPath).toLowerCase() !== resolve(status.batPath).toLowerCase()) {
+  if (process.env.NAI_PACKAGED !== '1' && resolve(legacyBatPath).toLowerCase() !== resolve(status.batPath).toLowerCase()) {
     try {
       const file = await lstat(legacyBatPath);
       const normalizeText = value => value.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').trim();
@@ -208,7 +209,7 @@ export async function createDesktopLauncher({
     legacyBatRemoved,
     batPath: status.batPath,
     shortcutPath: status.shortcutPath,
-    message: '桌面快捷方式已就绪，启动脚本保留在项目内',
+    message: status.launcherKind === 'exe' ? '桌面快捷方式已就绪' : '桌面快捷方式已就绪，启动脚本保留在项目内',
   };
 }
 
@@ -220,7 +221,7 @@ try {
   $path = $env:NAI_SHORTCUT_PATH
   $exists = Test-Path -LiteralPath $path
   $shortcut = $shell.CreateShortcut($path)
-  if ($exists -and $shortcut.Description -ne 'NAI Atelier Launcher') { throw 'A custom desktop shortcut already exists; it has been preserved' }
+  if ($exists -and $shortcut.Description -ne 'NAI Atelier Launcher' -and $shortcut.TargetPath -ne $env:NAI_SHORTCUT_TARGET) { throw 'A custom desktop shortcut already exists; it has been preserved' }
   $icon = $env:NAI_SHORTCUT_ICON + ',0'
   $changed = -not $exists -or $shortcut.TargetPath -ne $env:NAI_SHORTCUT_TARGET -or $shortcut.WorkingDirectory -ne $env:NAI_SHORTCUT_PROJECT -or $shortcut.IconLocation -ne $icon
   if ($changed) {

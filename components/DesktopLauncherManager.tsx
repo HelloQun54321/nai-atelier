@@ -119,7 +119,7 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-gray-200 dark:border-gray-700">
               <div className="flex items-center gap-2">
-                <span className="text-gray-400 dark:text-gray-500">项目内启动脚本:</span>
+                <span className="text-gray-400 dark:text-gray-500">{status.launcherKind === 'exe' ? '桌面应用:' : '项目内启动脚本:'}</span>
                 {status.batExists ? (
                   <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
                     <CheckCircle2 className="h-3.5 w-3.5 flex-none" />

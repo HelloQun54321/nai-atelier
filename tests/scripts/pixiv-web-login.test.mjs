@@ -264,6 +264,13 @@ test('ensurePixivSchemeHandler 注册 pixiv 协议并幂等', async () => {
   assert.equal(calls.length, 6);
 });
 
+test('安装版协议回调携带实际网关端口，不依赖新进程继承环境', async () => {
+  const calls = [];
+  await ensurePixivSchemeHandler({ platform: 'win32', nodePath: 'D:\\应用 空格\\node.exe', gatewayUrl: 'http://127.0.0.1:3010', execFile: async (_command, args) => { calls.push(args); } });
+  assert.match(calls.at(-1).at(-1), /"%1" "http:\/\/127\.0\.0\.1:3010"$/);
+  for (const gatewayUrl of ['https://example.test/', 'http://user@127.0.0.1:3010', 'http://127.0.0.1:3010/other']) await assert.rejects(ensurePixivSchemeHandler({ platform: 'win32', gatewayUrl, execFile: async () => assert.fail('不应注册') }), /本机工坊/);
+});
+
 test('ensurePixivSchemeHandler 非 Windows 返回 false 且失败不抛出', async () => {
   const execFile = async () => { throw new Error('no reg'); };
   assert.equal(await ensurePixivSchemeHandler({ execFile, platform: 'linux' }), false);

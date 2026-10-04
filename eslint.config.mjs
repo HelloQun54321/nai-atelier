@@ -5,7 +5,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'local-data/**', 'local-cache/**', 'public/**', 'browser-extension/**', '.wrangler/**', 'tests/.tmp/**', 'logs/**'],
+    ignores: ['dist/**', 'node_modules/**', '.desktop-build/**', 'release/**', 'local-data/**', 'local-cache/**', 'public/**', 'browser-extension/**', '.wrangler/**', 'tests/.tmp/**', 'logs/**'],
   },
   ...tseslint.configs.recommended,
   {

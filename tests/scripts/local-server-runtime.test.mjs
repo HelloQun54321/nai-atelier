@@ -223,14 +223,14 @@ test('真实构建期间可快速合并第二次启动，构建失败释放占�
     const runtimePath = join(root, 'local-server-runtime.mjs');
     const runtime = await readFile(new URL('../../scripts/local-server-runtime.mjs', import.meta.url), 'utf8');
     // 不连接真实 3000；其他检查与子进程编排使用真实实现。
-    await writeFile(runtimePath, runtime.replace('LOCAL_LAUNCHER_PORT = 3003', `LOCAL_LAUNCHER_PORT = ${port}`).replaceAll('await portBusy(3000)', `await portBusy(${gatewayPort})`));
+    await writeFile(runtimePath, runtime.replace('LOCAL_LAUNCHER_PORT = 3003', `LOCAL_LAUNCHER_PORT = ${port}`));
     const entry = join(root, 'local-server.mjs');
     const source = await readFile(script, 'utf8');
     await writeFile(entry, source.replace(/from '(\.\/[^']+)'/g, (_match, relative) => `from '${relative === './local-server-runtime.mjs' ? pathToFileURL(runtimePath).href : new URL(relative, script).href}'`));
     await writeFile(join(root, 'package.json'), JSON.stringify({ version: 'synthetic', scripts: { 'build:local': 'node -e "setTimeout(()=>process.exit(1),3000)"' } }));
     await mkdir(join(root, 'node_modules', '.bin'), { recursive: true });
     await writeFile(join(root, 'node_modules', '.bin', platform() === 'win32' ? 'wrangler.cmd' : 'wrangler'), '');
-    const options = { cwd: root, env: { ...process.env, NAI_NO_BROWSER: '1', NAI_NO_DESKTOP_SHORTCUT: '1' }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] };
+    const options = { cwd: root, env: { ...process.env, NAI_NO_BROWSER: '1', NAI_NO_DESKTOP_SHORTCUT: '1', NAI_GATEWAY_PORT: String(gatewayPort) }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] };
     first = spawn(process.execPath, [entry], options);
     let firstOutput = '';
     const completion = new Promise((done, reject) => { first.once('error', reject); first.once('close', code => done(code)); });

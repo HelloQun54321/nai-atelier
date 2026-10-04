@@ -90,4 +90,15 @@ describe('DesktopLauncherManager', () => {
       expect(screen.queryByRole('button', { name: /桌面快捷方式/ })).toBeNull();
     });
   });
+
+  it('安装版展示应用状态，快捷方式修复沿用同一入口', async () => {
+    vi.spyOn(desktopLauncherService, 'getDesktopLauncherStatus').mockResolvedValue({
+      supported: true, launcherKind: 'exe', platform: 'win32', projectDir: 'D:\\数据', desktopDir: 'D:\\桌面', desktopExists: true,
+      batPath: 'D:\\自选目录\\NAI Atelier.exe', batExists: true, batMtime: null, shortcutPath: 'D:\\桌面\\NAI Atelier.lnk', shortcutExists: false, shortcutMtime: null, iconPath: 'D:\\图标.ico', iconExists: true,
+    });
+    render(React.createElement(DesktopLauncherManager, { notify: vi.fn() }));
+    await waitFor(() => expect(screen.getByText('桌面应用:')).toBeTruthy());
+    expect(screen.queryByText('项目内启动脚本:')).toBeNull();
+    expect(screen.getByRole('button', { name: '创建桌面快捷方式' })).toBeTruthy();
+  });
 });

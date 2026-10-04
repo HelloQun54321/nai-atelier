@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -6,13 +6,16 @@ import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const MANIFEST_FILE = path.join(ROOT, 'public', 'tag-data', 'manifest.json');
+const PACKAGED = process.env.NAI_PACKAGED === '1';
+const WORKSPACE = PACKAGED ? process.cwd() : ROOT;
+const MANIFEST_FILE = path.join(WORKSPACE, 'public', 'tag-data', 'manifest.json');
 const UPDATE_SCRIPT = path.join(ROOT, 'scripts', 'update-tag-dictionary.mjs');
 const HOST = '127.0.0.1';
-const PORT = 3002;
+const PORT = Number(process.env.NAI_TAG_UPDATE_PORT || 3002);
+const GATEWAY_PORT = Number(process.env.NAI_GATEWAY_PORT || 3000);
 const ALLOWED_ORIGINS = new Set([
-  'http://localhost:3000',
-  'http://127.0.0.1:3000'
+  `http://localhost:${GATEWAY_PORT}`,
+  `http://127.0.0.1:${GATEWAY_PORT}`
 ]);
 
 const updateState = {
@@ -22,6 +25,16 @@ const updateState = {
   startedAt: null,
   finishedAt: null
 };
+const updateChildren = new Set();
+
+function stopTagUpdates() {
+  for (const child of updateChildren) {
+    if (child.exitCode !== null) continue;
+    child.stopping = true;
+    if (process.platform === 'win32') spawnSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+    else child.kill('SIGTERM');
+  }
+}
 
 async function readManifestSummary() {
   try {
@@ -39,11 +52,12 @@ async function readManifestSummary() {
 function runCommand(command, args, onLine) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      cwd: ROOT,
+      cwd: WORKSPACE,
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true
     });
+    updateChildren.add(child);
 
     const forward = (stream, writer) => {
       const lines = createInterface({ input: stream });
@@ -55,15 +69,16 @@ function runCommand(command, args, onLine) {
     forward(child.stdout, text => process.stdout.write(text));
     forward(child.stderr, text => process.stderr.write(text));
 
-    child.once('error', reject);
+    child.once('error', error => { updateChildren.delete(child); reject(error); });
     child.once('exit', code => {
+      updateChildren.delete(child);
       if (code === 0) resolve();
-      else reject(new Error(`命令执行失败，退出码 ${code ?? '未知'}`));
+      else reject(Object.assign(new Error(`命令执行失败，退出码 ${code ?? '未知'}`), { code: child.stopping ? 'TAG_UPDATE_STOPPED' : 'TAG_UPDATE_FAILED' }));
     });
   });
 }
 
-async function runTagUpdate() {
+async function runTagUpdate(updateScript) {
   updateState.running = true;
   updateState.phase = 'checking';
   updateState.message = '正在检查上游数据库…';
@@ -73,7 +88,7 @@ async function runTagUpdate() {
   let detailedError = '';
 
   try {
-    await runCommand(process.execPath, ['--no-warnings', UPDATE_SCRIPT], line => {
+    await runCommand(process.execPath, ['--no-warnings', updateScript], line => {
       const phase = line.match(/^TAG_UPDATE_PHASE=(\w+)$/)?.[1];
       if (phase === 'checking') {
         updateState.phase = 'checking';
@@ -105,7 +120,9 @@ async function runTagUpdate() {
 
     updateState.phase = 'building';
     updateState.message = '正在应用新词库…';
-    if (process.platform === 'win32') {
+    if (PACKAGED) {
+      // 安装版由网关直接读取用户词库，无需 npm 或修改已安装的前端资源。
+    } else if (process.platform === 'win32') {
       await runCommand(process.env.comspec || 'cmd.exe', ['/d', '/s', '/c', 'npm.cmd run build']);
     } else {
       await runCommand('npm', ['run', 'build']);
@@ -114,6 +131,10 @@ async function runTagUpdate() {
     updateState.phase = 'completed';
     updateState.message = 'Tag 词库更新完成';
   } catch (error) {
+    if (error.code === 'TAG_UPDATE_STOPPED') {
+      updateState.phase = 'idle'; updateState.message = '更新已停止';
+      return;
+    }
     updateState.phase = 'error';
     updateState.message = detailedError || (error instanceof Error ? error.message : '更新失败');
     console.error('[Tag 更新]', error);
@@ -137,7 +158,7 @@ function writeJson(response, status, body, origin) {
   response.end(JSON.stringify(body));
 }
 
-export function startTagUpdateServer() {
+export function startTagUpdateServer({ port = PORT, updateScript = UPDATE_SCRIPT } = {}) {
   const server = createServer(async (request, response) => {
     const origin = request.headers.origin || '';
     const allowedOrigin = ALLOWED_ORIGINS.has(origin) ? origin : '';
@@ -165,7 +186,7 @@ export function startTagUpdateServer() {
     if (request.method === 'POST') {
       // 消费并丢弃请求体：keep-alive 客户端下未读的 body 会污染同连接的下一个请求
       request.resume();
-      if (!updateState.running) void runTagUpdate();
+      if (!updateState.running) void runTagUpdate(updateScript);
       return writeJson(response, updateState.running ? 202 : 200, {
         available: true,
         ...updateState,
@@ -179,8 +200,9 @@ export function startTagUpdateServer() {
   server.on('error', error => {
     console.error(`\x1b[33mTag 更新服务未启动（端口 ${PORT}）：${error.message}\x1b[0m`);
   });
-  server.listen(PORT, HOST, () => {
-    console.log(`\x1b[90mTag 更新服务: http://${HOST}:${PORT}\x1b[0m`);
+  server.stopUpdates = stopTagUpdates;
+  server.listen(port, HOST, () => {
+    console.log(`\x1b[90mTag 更新服务: http://${HOST}:${server.address().port}\x1b[0m`);
   });
   return server;
 }

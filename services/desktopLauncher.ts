@@ -1,5 +1,6 @@
 export interface DesktopLauncherStatus {
   supported: boolean;
+  launcherKind?: 'exe' | 'script';
   platform: string;
   projectDir: string;
   desktopDir: string;

@@ -101,7 +101,7 @@ export const reserveLocalLauncher = async (projectDir, port = LOCAL_LAUNCHER_POR
 };
 
 /** 所有完整启动入口共用此检查；已运行则重启，启动中则合并连续点击。 */
-export const prepareLocalServerLaunch = async (projectDir, { port = LOCAL_LAUNCHER_PORT, reserve = reserveLocalLauncher, fetchImpl = fetch, restart = restartOwnedLocalServer, portBusy = isLocalPortBusy, log = console.log } = {}) => {
+export const prepareLocalServerLaunch = async (projectDir, { port = LOCAL_LAUNCHER_PORT, servicePort = 3000, reserve = reserveLocalLauncher, fetchImpl = fetch, restart = restartOwnedLocalServer, portBusy = isLocalPortBusy, log = console.log } = {}) => {
   let guard;
   try {
     guard = await reserve(projectDir, port);
@@ -119,12 +119,12 @@ export const prepareLocalServerLaunch = async (projectDir, { port = LOCAL_LAUNCH
     catch (error) { if (error.code !== 'EADDRINUSE') throw error; log('另一个启动器已接管启动，本窗口结束。'); return null; }
   }
   try {
-    if (await portBusy(3000)) {
+    if (await portBusy(servicePort)) {
       log('正在检查并重启当前项目的已有服务（会结束原服务上的未完成任务）...');
-      const pid = await restart(projectDir, { fetchImpl, portBusy });
+      const pid = await restart(projectDir, { port: servicePort, fetchImpl, portBusy });
       log(`原服务进程 ${pid} 已停止，将构建并启动最新版本。`);
     }
-    if (await portBusy(3000)) throw new Error('3000 端口尚未释放，已停止继续启动，请检查原窗口');
+    if (await portBusy(servicePort)) throw new Error(`${servicePort} 端口尚未释放，已停止继续启动，请检查原窗口`);
     return guard;
   } catch (error) { await guard.close(); throw error; }
 };

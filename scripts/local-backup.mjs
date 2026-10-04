@@ -9,7 +9,7 @@ const execFile = promisify(nodeExecFile);
 const IS_WINDOWS = platform() === 'win32';
 
 /** 默认备份路径 */
-export const DEFAULT_BACKUP_DIR = IS_WINDOWS ? 'D:\\NaiPromptManager-Backups' : resolve(process.cwd(), '..', 'NaiPromptManager-Backups');
+export const DEFAULT_BACKUP_DIR = process.env.NAI_PACKAGED === '1' && process.env.NAI_BACKUP_DEFAULT_DIR ? resolve(process.env.NAI_BACKUP_DEFAULT_DIR) : IS_WINDOWS ? 'D:\\NaiPromptManager-Backups' : resolve(process.cwd(), '..', 'NaiPromptManager-Backups');
 export const DEFAULT_BACKUP_CONFIG_FILE = join(process.cwd(), 'local-data', 'backup-config.json');
 export const BACKUP_CONFIG_FILE = DEFAULT_BACKUP_CONFIG_FILE;
 

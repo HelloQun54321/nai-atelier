@@ -13,7 +13,12 @@
  */
 import { request } from 'node:http';
 
-const GATEWAY_BASE = process.env.NAI_GATEWAY_URL || 'http://127.0.0.1:3000';
+const GATEWAY_BASE = process.argv[3] || process.env.NAI_GATEWAY_URL || 'http://127.0.0.1:3000';
+// 协议处理器是浏览器新启动的进程，不继承桌面工坊的端口环境。
+try {
+  const target = new URL(GATEWAY_BASE);
+  if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1' || target.username || target.password || target.pathname !== '/' || target.search || target.hash) process.exit(0);
+} catch { process.exit(0); }
 
 const raw = String(process.argv[2] || '').trim();
 let url;

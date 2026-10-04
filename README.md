@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.36.6-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.37.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -91,14 +91,20 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 创作工坊。它不�
 
 ## 🚀 首次使用
 
-### 运行准备
+### Windows 安装版（无需部署工具）
+
+Windows 10／11 **64 位**电脑可使用单独分发的 `NAI-Atelier-Setup-<版本>-x64.exe`：双击安装包，在安装向导中选择程序位置，完成后从桌面或开始菜单打开 **NAI Atelier**。窗口与完整本地服务均已内置，不需要安装 Node.js、npm 或 Git。系统缺少微软 Visual C++ 运行库时，安装器会联网从微软取得并核验运行库安装器，系统可能要求管理员授权。
+
+安装版首次运行是独立空工坊，添加使用者自己的 NovelAI Key，并在「Tag 补全词库」安装所需词库；原图、历史、账户、密钥、已下载词库和反推模型均不随安装包分发。个人数据保存在 `%LOCALAPPDATA%\NAI Atelier\workspace\local-data`，程序目录可以自选，数据目录保持独立；卸载默认保留个人数据。关闭窗口后托盘继续运行，通过托盘「退出工坊」停止后台。更完整的安装、升级、数据路径与发布验证说明见 [Windows 安装版](./docs/WINDOWS_DESKTOP.md)。
+
+### 源码部署：运行准备
 
 - 安装 **Node.js 24.x 与 npm**；若使用 Node.js 22，至少需要 **22.19.0**，以满足当前 Agent 依赖。词库工具还使用内置 `node:sqlite`，该模块从 22.13.0 起无需实验启动参数（[Node.js 文档](https://nodejs.org/download/release/latest-v24.x/docs/api/sqlite.html)）。
 - 使用下方克隆命令需要 Git；也可以下载仓库 ZIP，解压后在项目根目录打开终端。
 - 准备 `pst-` 开头的 NovelAI API Key；免费创作需有效 **Opus** 订阅，过期账号使用已有 Paid Anlas 时应关闭低消耗并确认付费。电脑需要能访问 NovelAI。Agent、Pixiv 与公共队列均为可选配置。
 - 预留依赖、词库与原图存储空间；本地 WD Tagger 首次使用还会下载约 379 MB 模型。Windows 提供桌面启动器，其他系统使用命令行入口。
 
-### 安装并启动
+### 源码部署：安装并启动
 
 ```bash
 git clone https://github.com/HelloQun54321/nai-atelier.git
@@ -123,7 +129,7 @@ Windows 上 `npm install`／`npm ci` 完成依赖安装后会自动创建桌面�
 
 ## 🚀 日常启动
 
-### Windows 桌面启动器
+### 源码版 Windows 桌面启动器
 
 - **部署后自动就绪**：Windows 安装依赖后自动创建带晴空蓝调色盘图标的 `NAI Atelier.lnk`，桌面只保留这个快捷方式，目标为项目根目录的 `NaiPromptManager.bat`；不再生成桌面 BAT 副本。
 - **多端与灵活入口**：
@@ -169,7 +175,7 @@ npm run dev:local
 
 ### 访问方式
 
-在电脑启动项目后，终端窗口会直接打印出当前本机的局域网地址：
+在电脑启动项目后，终端窗口会直接打印出当前本机的局域网地址；安装版通过托盘「打开工坊」后按 Alt 显示菜单，在「工坊 → 查看启动日志」查看地址与四位密码。安装版遇到端口占用时可能使用 3010 等其他端口，以本次日志为准：
 
 ```text
 http://192.168.x.x:3000
@@ -1013,6 +1019,8 @@ flowchart TD
 | 命令 | 用途 |
 | --- | --- |
 | `npm run dev:local` | 启动完整本地服务 |
+| `npm run build:desktop` | 在 Windows x64 构建干净安装包，产物位于 `release/` |
+| `npm run build:desktop:dir` | 构建独立运行目录，用于发布前验证 |
 | `npm run dev:local:watch` | 开发用：监听前端与 Worker 构建并运行 Wrangler；不包含完整启动器的图片网关、局域网认证与词库服务编排，不作为日常入口 |
 | `npm run build` | TypeScript 检查、前端构建和 Worker 构建 |
 | `npm run update:tags` | 更新并重新生成中英 Tag 分片 |

@@ -23,6 +23,8 @@ $RECYCLE.BIN/
 node_modules
 dist
 dist-ssr
+.desktop-build/
+release/
 *.local
 
 # Secrets and local environment overrides

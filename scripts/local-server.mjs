@@ -12,11 +12,22 @@ import { ensureDesktopLauncher } from './desktop-launcher.mjs';
 
 const IS_WINDOWS = platform() === 'win32';
 const IS_TERMUX = process.env.TERMUX_VERSION || existsSync('/data/data/com.termux');
-const LOCAL_URL = 'http://127.0.0.1:3000';
-const DISPLAY_URL = 'http://localhost:3000';
+const PACKAGED = process.env.NAI_PACKAGED === '1';
+const APP_ROOT = PACKAGED ? resolvePath(process.env.NAI_APP_ROOT) : process.cwd();
+const GATEWAY_PORT = Number(process.env.NAI_GATEWAY_PORT || 3000);
+const TAG_UPDATE_PORT = Number(process.env.NAI_TAG_UPDATE_PORT || 3002);
+const LAUNCHER_PORT = Number(process.env.NAI_LAUNCHER_PORT || LOCAL_LAUNCHER_PORT);
+const LOCAL_URL = `http://127.0.0.1:${GATEWAY_PORT}`;
+const DISPLAY_URL = `http://localhost:${GATEWAY_PORT}`;
 const LAN_CONFIG_FILE = 'local-data/lan-access.json';
 const BOOT_T0 = Date.now();
 let launcherGuard = null;
+let stopPackagedService = () => { process.exit(0); };
+if (PACKAGED) {
+  // Electron 被卸载器结束或意外退出时，IPC 断开也会回收本应用的后端子进程。
+  process.once('disconnect', () => stopPackagedService());
+  process.on('message', message => { if (message?.type === 'atelier-shutdown') stopPackagedService(); });
+}
 
 /** 启动至今的秒数，用于各阶段耗时提示。 */
 const bootElapsedSec = () => ((Date.now() - BOOT_T0) / 1000).toFixed(1);
@@ -54,7 +65,7 @@ function getLanUrls() {
   }
   const unique = [...new Set(addresses)];
   unique.sort((a, b) => Number(!/^192\.168\./.test(a)) - Number(!/^192\.168\./.test(b)));
-  return unique.map(address => `http://${address}:3000`);
+  return unique.map(address => `http://${address}:${GATEWAY_PORT}`);
 }
 
 function checkCommand(cmd) {
@@ -142,6 +153,10 @@ const runStartupCommand = command => new Promise((done, reject) => {
 });
 
 async function ensureDependencies() {
+  if (PACKAGED) {
+    if (!existsSync(resolvePath(APP_ROOT, 'node_modules/wrangler/wrangler-dist/cli.js')) || !existsSync(resolvePath(APP_ROOT, 'dist/_worker.js'))) throw new Error('安装文件不完整，请重新安装工坊；用户数据会保留');
+    return;
+  }
   if (IS_TERMUX && !process.env.SKIP_TERMUX_SETUP) {
     console.log('\x1b[36m[Termux]\x1b[0m 检测到 Termux 环境');
     if (!checkCommand('node')) {
@@ -223,6 +238,7 @@ function fullWranglerLog(stream, seen = {}) {
 }
 
 async function buildLatest() {
+  if (PACKAGED) return;
   if (!needsBuild()) {
     console.log('\x1b[90m代码未变化，跳过构建。\x1b[0m');
     return;
@@ -334,7 +350,7 @@ function isPortAvailable(port, host = '127.0.0.1') {
 
 async function findAvailableWorkerPort(preferredPort = 3001) {
   for (let port = preferredPort; port < preferredPort + 50; port++) {
-    if (port === 3000 || port === 3002 || port === LOCAL_LAUNCHER_PORT) continue;
+    if (port === GATEWAY_PORT || port === TAG_UPDATE_PORT || port === LAUNCHER_PORT) continue;
     if (await isPortAvailable(port)) return port;
   }
   return preferredPort;
@@ -344,10 +360,10 @@ async function startServer() {
   const lanAccess = loadLanAccessConfig();
   const outboundProxyUrl = getOutboundProxyUrl();
   const lanUrls = getLanUrls();
-  const workerPort = await findAvailableWorkerPort(3001);
-  console.log('\x1b[32m启动本地服务 (端口 3000)...\x1b[0m');
+  const workerPort = await findAvailableWorkerPort(Number(process.env.NAI_WORKER_PORT || 3001));
+  console.log(`\x1b[32m启动本地服务 (端口 ${GATEWAY_PORT})...\x1b[0m`);
   console.log('\x1b[90m数据存储位置: ./local-data/\x1b[0m');
-  console.log('\x1b[90m电脑访问地址: http://localhost:3000\x1b[0m');
+  console.log(`\x1b[90m电脑访问地址: ${DISPLAY_URL}\x1b[0m`);
   if (lanUrls.length > 0) {
     console.log('\x1b[36m手机访问地址:\x1b[0m');
     lanUrls.forEach(url => console.log(`  ${url}`));
@@ -358,14 +374,14 @@ async function startServer() {
   console.log('');
   
   const args = [
-    'pages', 'dev', 'dist',
+    'pages', 'dev', PACKAGED ? resolvePath(APP_ROOT, 'dist') : 'dist',
     '--persist-to', './local-data',
     '--binding', 'LOCAL_HISTORY_ENABLED=true',
     '--binding', 'PERSONAL_MODE_ENABLED=true',
     '--binding', `LAN_ACCESS_PIN=${lanAccess.pin}`,
     '--binding', `LAN_ACCESS_SECRET=${lanAccess.secret}`,
-    '--binding', 'AITAG_LOCAL_PROXY_URL=http://127.0.0.1:3000/__internal/aitag-fetch',
-    '--binding', 'DANBOORU_LOCAL_PROXY_URL=http://127.0.0.1:3000/__internal/danbooru-fetch',
+    '--binding', `AITAG_LOCAL_PROXY_URL=${LOCAL_URL}/__internal/aitag-fetch`,
+    '--binding', `DANBOORU_LOCAL_PROXY_URL=${LOCAL_URL}/__internal/danbooru-fetch`,
     '--ip', '127.0.0.1',
     '--port', String(workerPort),
     '--compatibility-date', '2024-04-01',
@@ -381,13 +397,13 @@ async function startServer() {
   try {
     if (!existsSync('public/tag-data/manifest.json')) {
       const notice = '\x1b[33m未检测到 Tag 词库数据（public/tag-data）\x1b[0m\n'
-        + '\x1b[33m  Tag 自动补全、画师/角色目录将不可用。请运行 npm run update:tags 下载并生成（数据来自 ffdkj 的中英 Tag 数据库，仅本地使用）。\x1b[0m';
+        + (PACKAGED ? '\x1b[33m  请在「设置 → Tag 词库」安装词库。\x1b[0m' : '\x1b[33m  Tag 自动补全、画师/角色目录将不可用。请运行 npm run update:tags 下载并生成（数据来自 ffdkj 的中英 Tag 数据库，仅本地使用）。\x1b[0m');
       console.log(notice);
     }
   } catch { /* 检测失败不阻断启动 */ }
   // Launch Wrangler's actual CLI process directly. The old cmd -> .cmd wrapper
   // chain left Miniflare descendants behind when startup failed on Windows.
-  const wranglerCli = 'node_modules/wrangler/wrangler-dist/cli.js';
+  const wranglerCli = resolvePath(APP_ROOT, 'node_modules/wrangler/wrangler-dist/cli.js');
   console.log('\x1b[36m核心页面服务正在启动，请稍候（需恢复本地 D1/R2 存储，数据量越大耗时越长）...\x1b[0m');
   const wranglerSeen = { value: false };
   const spawnWrangler = () => {
@@ -424,9 +440,11 @@ async function startServer() {
     shuttingDown = true;
     launcherGuard?.close();
     mediaGateway?.close();
+    tagUpdateServer.stopUpdates();
     tagUpdateServer.close();
     terminateProcessTree(child.pid);
   };
+  stopPackagedService = () => { cleanup(); process.exit(0); };
 
   process.once('SIGINT', () => { cleanup(); process.exit(0); });
   process.once('SIGTERM', () => { cleanup(); process.exit(0); });
@@ -450,7 +468,7 @@ async function startServer() {
     console.log('\x1b[36m图片网关初始化中（缩略图缓存、Agent、Pixiv、桥接）...\x1b[0m');
     const gatewayStartedAt = Date.now();
     mediaGateway = await Promise.race([
-      createMediaGateway({ port: 3000, workerPort, lanSecret: lanAccess.secret, outboundProxyUrl: gatewayOutboundProxy }),
+      createMediaGateway({ port: GATEWAY_PORT, workerPort, lanSecret: lanAccess.secret, outboundProxyUrl: gatewayOutboundProxy }),
       new Promise((_, reject) => setTimeout(() => reject(new Error('图片网关初始化超过 90 秒（可能为系统繁忙或磁盘异常），请关闭窗口后重试')), 90_000)),
     ]);
     console.log(`\x1b[32m图片网关已就绪（耗时 ${((Date.now() - gatewayStartedAt) / 1000).toFixed(1)} 秒），手机列表将按需使用缩略图。\x1b[0m`);
@@ -470,7 +488,7 @@ console.log('\x1b[36m=== NAI Atelier 本地部署 ===\x1b[0m');
 // 检查服务的 fetch 尚有异步句柄在收尾，Windows 上强制 process.exit 会触发 libuv 断言。
 // 默认定向重启已运行的实例；旧 --restart 参数仍兼容，不再要求手工传入。
 try {
-  launcherGuard = await prepareLocalServerLaunch(process.cwd());
+  launcherGuard = await prepareLocalServerLaunch(process.cwd(), { port: LAUNCHER_PORT, servicePort: GATEWAY_PORT });
   if (launcherGuard) {
     await ensureDependencies();
     await buildLatest();

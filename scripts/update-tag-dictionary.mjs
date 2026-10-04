@@ -7,8 +7,9 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // 词库先写入暂存目录、全部成功后再原子替换正式目录：
 // 生成中途失败（磁盘满/进程被杀）只会留下废弃暂存目录，不会破坏现有词库。
-const FINAL_OUTPUT_DIR = path.join(ROOT, 'public', 'tag-data');
-const STAGING_OUTPUT_DIR = path.join(ROOT, 'public', 'tag-data.staging');
+const OUTPUT_ROOT = process.env.NAI_PACKAGED === '1' ? process.cwd() : ROOT;
+const FINAL_OUTPUT_DIR = path.join(OUTPUT_ROOT, 'public', 'tag-data');
+const STAGING_OUTPUT_DIR = path.join(OUTPUT_ROOT, 'public', 'tag-data.staging');
 let OUTPUT_DIR = FINAL_OUTPUT_DIR;
 const MANIFEST_FILE = path.join(FINAL_OUTPUT_DIR, 'manifest.json');
 const NAI_TAGS_FILE = path.join(ROOT, 'data', 'novelai-v45-tags.json');
