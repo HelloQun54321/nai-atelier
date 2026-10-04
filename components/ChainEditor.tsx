@@ -1209,14 +1209,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 data.baseImageUrl,
                 source,
                 data.parentHistoryId,
-                data.prompt || finalPrompt,
-                data.negativePrompt || negativePrompt,
-                data.params || params,
+                data.prompt ?? finalPrompt,
+                data.negativePrompt ?? negativePrompt,
+                data.params ?? params,
                 data.editMetadata,
                 data.reuseEditMask === true,
             );
             notify('已载入底图，正在打开对应图片编辑模式。');
             return;
+        }
+        if (data.targetMode === 'text-to-image') {
+            updateWorkspace(previous => ({ ...previous, activeMode: 'text-to-image' }));
         }
         if (data.mode === 'append-prompt') {
             setBasePrompt(current => mergePromptFields(current, data.prompt));

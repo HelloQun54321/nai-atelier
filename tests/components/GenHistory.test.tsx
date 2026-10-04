@@ -9,9 +9,9 @@ import type { LocalGenItem } from '../../types';
 import { db } from '../../services/dbService';
 import { buildBrowserHistoryOrder } from '../../services/historyBrowse';
 
-const { confirmAction, listeners } = vi.hoisted(() => ({ confirmAction: vi.fn(async () => false), listeners: new Set<(event: { type: string; id?: string; external?: boolean; favorite?: boolean }) => void>() }));
+const { confirmAction, listeners, low } = vi.hoisted(() => ({ confirmAction: vi.fn(async () => false), listeners: new Set<(event: { type: string; id?: string; external?: boolean; favorite?: boolean }) => void>(), low: { enabled: false } }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
-vi.mock('../../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: false }) }));
+vi.mock('../../services/lowConsumption', async importOriginal => ({ ...await importOriginal<typeof import('../../services/lowConsumption')>(), useLowConsumption: () => low }));
 vi.mock('../../services/localHistory', () => ({ localHistory: {
     prepare: vi.fn(async () => 0), subscribe: (listener: (event: { type: string; id?: string; external?: boolean; favorite?: boolean }) => void) => { listeners.add(listener); return () => listeners.delete(listener); },
     getPage: vi.fn(), getBrowseOrder: vi.fn(), setFavorite: vi.fn(async () => 1), delete: vi.fn(),
@@ -34,6 +34,7 @@ let loadMore: (() => void) | undefined;
 
 beforeEach(() => {
     localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks();
+    low.enabled = false;
     loadMore = undefined; confirmAction.mockResolvedValue(false);
     vi.mocked(localHistory.getPage).mockResolvedValue({ items, count: items.length });
     vi.mocked(localHistory.getBrowseOrder).mockResolvedValue({ ids: items.map(item => item.id), models: [], sources: [] });
@@ -63,9 +64,10 @@ afterEach(() => {
 const setup = async (width = 1280, expectedCount = 2) => {
     vi.stubGlobal('innerWidth', width);
     const notify = vi.fn();
-    const result = render(<div className="agent-stage safe-mode dark"><aside className="relative z-40">侧边栏</aside><main className="isolate overflow-hidden"><GenHistory currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} chains={[]} notify={notify} /></main></div>);
+    const navigate = vi.fn();
+    const result = render(<div className="agent-stage safe-mode dark"><aside className="relative z-40">侧边栏</aside><main className="isolate overflow-hidden"><GenHistory currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} chains={[]} notify={notify} onNavigateToPlayground={navigate} /></main></div>);
     await waitFor(() => expect(result.container.querySelectorAll('.mobile-gallery-item').length).toBe(expectedCount));
-    return { ...result, notify, cards: Array.from(result.container.querySelectorAll<HTMLElement>('.mobile-gallery-item')) };
+    return { ...result, notify, navigate, cards: Array.from(result.container.querySelectorAll<HTMLElement>('.mobile-gallery-item')) };
 };
 
 describe('历史缩略图就地操作', () => {
@@ -86,7 +88,6 @@ describe('历史缩略图就地操作', () => {
     it('加入灵感后的提示挂到根层，关闭提示不重复保存', async () => {
         const { container, cards } = await setup();
         fireEvent.click(cards[0]);
-        fireEvent.click(screen.getByText('加入灵感库'));
         fireEvent.change(screen.getByPlaceholderText('为这张图取个标题...'), { target: { value: '合成标题' } });
         fireEvent.click(screen.getByRole('button', { name: '加入' }));
         const dialog = await screen.findByRole('dialog', { name: '已加入灵感库' });
@@ -170,6 +171,81 @@ describe('历史缩略图就地操作', () => {
         await waitFor(() => expect(copySharedImage).toHaveBeenCalledWith(items[0].imageUrl, false, { prompt: items[0].prompt, negativePrompt: items[0].negativePrompt, params: items[0].params }));
         await act(async () => resolveFavorite(1));
         expect(within(cards[0]).getByRole('button', { name: '取消收藏' })).toBeTruthy();
+    });
+});
+
+describe('历史详情导入实验室', () => {
+    const openDetails = async (width = 1280) => {
+        const result = await setup(width);
+        fireEvent.click(result.cards[0]);
+        if (width < 768) fireEvent.click(screen.getByRole('button', { name: '图片详情' }));
+        return result;
+    };
+    it.each([1280, 390])('宽度 %s 操作在参数之前，灵感表单直接可用，模式默认文生图', async width => {
+        await openDetails(width);
+        const panel = screen.getByLabelText('图片详情面板');
+        const actions = within(panel).getByRole('group', { name: '历史图片操作' });
+        const params = within(panel).getByText('提示词与生成参数');
+        expect(actions.compareDocumentPosition(params) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(screen.getByLabelText('加入灵感库').closest('details')).toBeNull();
+        const select = screen.getByRole('combobox', { name: '实验室导入模式' }) as HTMLSelectElement;
+        expect(select.value).toBe('text-to-image');
+        expect(within(select).getAllByRole('option').map(option => option.textContent)).toEqual(['文生图', '图生图', '局部重绘', '扩图']);
+        expect(screen.queryByRole('button', { name: /编辑这张图片|导入到编辑器/ })).toBeNull();
+    });
+    it('默认导入显式进入文生图，只携带提示词和参数', async () => {
+        const { navigate, notify } = await openDetails();
+        fireEvent.click(screen.getByRole('button', { name: '导入到实验室' }));
+        await waitFor(() => expect(navigate).toHaveBeenCalledOnce());
+        const data = JSON.parse(sessionStorage.getItem('nai_pending_import')!);
+        expect(data).toEqual({ prompt: items[0].prompt, negativePrompt: '', params: items[0].params, targetMode: 'text-to-image' });
+        expect(notify).toHaveBeenCalledWith('正在导入到实验室 · 文生图');
+    });
+    it.each(['image-to-image', 'inpaint', 'outpaint'])('%s 使用历史原图和参数，默认清空旧蒙版', async mode => {
+        const { navigate } = await openDetails();
+        fireEvent.change(screen.getByRole('combobox', { name: '实验室导入模式' }), { target: { value: mode } });
+        fireEvent.click(screen.getByRole('button', { name: '导入到实验室' }));
+        await waitFor(() => expect(navigate).toHaveBeenCalledOnce());
+        expect(JSON.parse(sessionStorage.getItem('nai_pending_import')!)).toEqual({ prompt: items[0].prompt, negativePrompt: '', params: items[0].params,
+            mode: 'image-edit', baseImageUrl: items[0].imageUrl, parentHistoryId: items[0].id, imageEditOperation: mode, reuseEditMask: false });
+    });
+    it('只有匹配操作的历史蒙版可复用，切模式后取消勾选', async () => {
+        const edit = { operation: 'inpaint', maskAvailable: true, strength: 1, noise: 0, focused: true } as const;
+        vi.mocked(localHistory.getPage).mockResolvedValue({ items: [{ ...items[0], edit }, items[1]], count: 2 });
+        await openDetails();
+        const select = screen.getByRole('combobox', { name: '实验室导入模式' });
+        fireEvent.change(select, { target: { value: 'inpaint' } });
+        fireEvent.click(screen.getByRole('checkbox', { name: '复用原蒙版' }));
+        fireEvent.change(select, { target: { value: 'outpaint' } });
+        expect(screen.queryByRole('checkbox', { name: '复用原蒙版' })).toBeNull();
+        fireEvent.change(select, { target: { value: 'inpaint' } });
+        expect((screen.getByRole('checkbox', { name: '复用原蒙版' }) as HTMLInputElement).checked).toBe(false);
+        fireEvent.click(screen.getByRole('checkbox', { name: '复用原蒙版' }));
+        fireEvent.click(screen.getByRole('button', { name: '导入到实验室' }));
+        await waitFor(() => expect(sessionStorage.getItem('nai_pending_import')).toBeTruthy());
+        expect(JSON.parse(sessionStorage.getItem('nai_pending_import')!)).toMatchObject({ imageEditOperation: 'inpaint', reuseEditMask: true, editMetadata: edit });
+    });
+    it('换图清除模式选择，不沿用上一张的蒙版选项', async () => {
+        await openDetails();
+        fireEvent.change(screen.getByRole('combobox', { name: '实验室导入模式' }), { target: { value: 'outpaint' } });
+        fireEvent.click(screen.getByRole('button', { name: '下一张图片' }));
+        await waitFor(() => expect(screen.getByText('2 / 2')).toBeTruthy());
+        expect((screen.getByRole('combobox', { name: '实验室导入模式' }) as HTMLSelectElement).value).toBe('text-to-image');
+    });
+    it('低消耗只提供文生图与局部重绘，导入不携带其他编辑元数据', async () => {
+        low.enabled = true;
+        vi.mocked(localHistory.getPage).mockResolvedValue({ items: [{ ...items[0], edit: { operation: 'outpaint', maskAvailable: true, strength: 0.6, noise: 0.2 } }, items[1]], count: 2 });
+        const { navigate } = await openDetails();
+        const select = screen.getByRole('combobox', { name: '实验室导入模式' });
+        expect(within(select).getAllByRole('option').map(option => option.textContent)).toEqual(['文生图', '局部重绘']);
+        fireEvent.change(select, { target: { value: 'inpaint' } });
+        expect(screen.queryByRole('checkbox', { name: '复用原蒙版' })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: '导入到实验室' }));
+        await waitFor(() => expect(navigate).toHaveBeenCalledOnce());
+        const data = JSON.parse(sessionStorage.getItem('nai_pending_import')!);
+        expect(data.imageEditOperation).toBe('inpaint');
+        expect(data.editMetadata).toBeUndefined();
+        expect(data.reuseEditMask).toBe(false);
     });
 });
 

@@ -2,7 +2,7 @@
 import React, { useCallback, useContext, useMemo, useState, useEffect, useRef } from 'react';
 import { LocalHistoryDateRange, LocalHistoryPage, localHistory } from '../services/localHistory';
 import { db } from '../services/dbService';
-import { LocalGenItem, PromptChain, User } from '../types';
+import { GenerationMode, LocalGenItem, PromptChain, User } from '../types';
 import { PAGINATION_CONFIG } from '../config/pagination';
 import { MobileBottomSheet, useMobileHistoryLayer } from './MobileUI';
 import { extractMetadata, IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../services/metadataService';
@@ -13,11 +13,12 @@ import { ImageActivityContext, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, Layers, ListChecks, LoaderCircle, Pencil, Save, Trash2 } from 'lucide-react';
-import { CloseButton, EmptyState, FavoriteButton, IconButton, PageSpinner, ToolbarButton, WorkspaceToolbar } from './DesignSystem';
+import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, Layers, ListChecks, LoaderCircle, Save, Trash2 } from 'lucide-react';
+import { CloseButton, EmptyState, FavoriteButton, IconButton, PageSpinner, ToolbarButton, ToolbarSelect, WorkspaceToolbar } from './DesignSystem';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
-import { useLowConsumption } from '../services/lowConsumption';
+import { resolveLowConsumptionMode, useLowConsumption } from '../services/lowConsumption';
+import { getLabModeLabel } from '../services/labWorkspace';
 import { ImageShareActions } from './ImageShareActions';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ImageTaggerAction } from './ImageTaggerPanel';
@@ -270,6 +271,15 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     const [cleanCount, setCleanCount] = useState<number>(PAGINATION_CONFIG.CLEANUP.DEFAULT_COUNT);
     const [cleanPreviewCount, setCleanPreviewCount] = useState(0);
     const [isPreparingImport, setIsPreparingImport] = useState(false);
+    const [importMode, setImportMode] = useState<GenerationMode>('text-to-image');
+    const [reuseEditMask, setReuseEditMask] = useState(false);
+    const targetImportMode = resolveLowConsumptionMode(importMode, lowConsumption.enabled);
+    const canReuseEditMask = targetImportMode !== 'text-to-image' && targetImportMode !== 'image-to-image'
+        && lightbox?.edit?.operation === targetImportMode && lightbox.edit.maskAvailable;
+    useEffect(() => {
+        setImportMode('text-to-image');
+        setReuseEditMask(false);
+    }, [lightbox?.id]);
 
     const getHistoryNegativePrompt = (item: LocalGenItem) => {
         return item.negativePrompt ?? '';
@@ -976,38 +986,33 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         }
     };
 
-    const handleImportToEditor = async () => {
+    const handleImportToLab = async () => {
         if (!lightbox || isPreparingImport) return;
 
         setIsPreparingImport(true);
         try {
             const importData = await getImportDataFromHistoryItem(lightbox);
             if (lightboxRef.current?.id !== lightbox.id) return;
-            sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(importData));
+            const pendingImport = targetImportMode === 'text-to-image'
+                ? { ...importData, targetMode: 'text-to-image' }
+                : {
+                    ...importData,
+                    mode: 'image-edit',
+                    baseImageUrl: lightbox.imageUrl,
+                    parentHistoryId: lightbox.id,
+                    imageEditOperation: targetImportMode,
+                    editMetadata: lightbox.edit?.operation === targetImportMode ? lightbox.edit : undefined,
+                    reuseEditMask: Boolean(canReuseEditMask && reuseEditMask),
+                };
+            sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(pendingImport));
             setLightbox(null);
-            notify('参数已准备就绪，正在跳转到编辑器...');
+            notify(`正在导入到实验室 · ${getLabModeLabel(targetImportMode)}`);
             onNavigateToPlayground?.();
         } catch (e: any) {
             notify('导入失败: ' + e.message, 'error');
         } finally {
             setIsPreparingImport(false);
         }
-    };
-
-    const handleOpenImageEditor = (item: LocalGenItem, reuseEditMask = false) => {
-        sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify({
-            mode: 'image-edit',
-            prompt: item.prompt,
-            negativePrompt: item.negativePrompt || '',
-            params: item.params,
-            baseImageUrl: item.imageUrl,
-            parentHistoryId: item.id,
-            imageEditOperation: lowConsumption.enabled ? 'inpaint' : item.edit?.operation || 'image-to-image',
-            editMetadata: !lowConsumption.enabled || item.edit?.operation === 'inpaint' ? item.edit : undefined,
-            reuseEditMask: reuseEditMask && (!lowConsumption.enabled || item.edit?.operation === 'inpaint'),
-        }));
-        setLightbox(null);
-        onNavigateToPlayground?.();
     };
 
     const historyGroups = useMemo(() => {
@@ -1238,7 +1243,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 )}
             </div>
 
-            {/* 大图浏览保持同一查询索引，参数与操作按需展开。 */}
+            {/* 大图浏览保持同一查询索引，常用操作置顶，长参数可收起。 */}
             {lightbox && <HistoryImageViewer
                 item={lightbox}
                 index={Math.max(0, dateRangeRef.current.orderIds?.indexOf(lightbox.id) ?? 0)}
@@ -1254,6 +1259,42 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 filename={getDownloadFilename(lightbox.createdAt)}
                 notify={notify}
             >
+                            <div className="flex-shrink-0 space-y-3" role="group" aria-label="历史图片操作">
+                                <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
+                                    <span className="shrink-0 text-sm font-semibold">导入模式</span>
+                                    <ToolbarSelect label="实验室导入模式" containerClassName="min-w-0 w-full" value={targetImportMode} disabled={isPreparingImport || isPublishing} onChange={event => { setImportMode(event.target.value as GenerationMode); setReuseEditMask(false); }}>
+                                        <option value="text-to-image">文生图</option>
+                                        {!lowConsumption.enabled && <option value="image-to-image">图生图</option>}
+                                        <option value="inpaint">局部重绘</option>
+                                        {!lowConsumption.enabled && <option value="outpaint">扩图</option>}
+                                    </ToolbarSelect>
+                                </div>
+                                {canReuseEditMask && <label className="flex items-center gap-2 text-sm">
+                                    <input type="checkbox" checked={reuseEditMask} disabled={isPreparingImport || isPublishing} onChange={event => setReuseEditMask(event.target.checked)} />
+                                    复用原蒙版
+                                </label>}
+                                <ToolbarButton tone="primary" className="w-full" onClick={handleImportToLab} disabled={isPreparingImport || isPublishing}>
+                                    <Save />
+                                    {isPreparingImport ? '正在读取元数据...' : '导入到实验室'}
+                                </ToolbarButton>
+                                <div className="rounded-lg bg-indigo-50 p-3 dark:bg-indigo-900/20">
+                                    <label htmlFor="history-inspiration-title" className="mb-2 block text-sm font-semibold">加入灵感库</label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            id="history-inspiration-title"
+                                            type="text"
+                                            placeholder="为这张图取个标题..."
+                                            className="min-w-0 flex-1 px-3 py-2 rounded border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-gray-800 text-sm outline-none dark:text-white focus:border-indigo-500 transition-colors"
+                                            value={publishTitle}
+                                            disabled={isPublishing || isPreparingImport}
+                                            onChange={event => setPublishTitle(event.target.value)}
+                                        />
+                                        <ToolbarButton tone="primary" onClick={handlePublish} disabled={isPublishing || isPreparingImport} className="whitespace-nowrap">
+                                            {isPublishing ? '整理中' : '加入'}
+                                        </ToolbarButton>
+                                    </div>
+                                </div>
+                            </div>
                             <div className="space-y-4">
                                 {!lightbox.prompt?.trim() && <ImageTaggerAction notify={notify} imageUrl={buildMediaUrl(lightbox.imageUrl, 'original')} text label="识别图片 Tag" />}
                                 <details open className="rounded-lg border border-gray-200 p-3 dark:border-gray-700"><summary className="mb-3 cursor-pointer text-xs font-semibold">提示词与生成参数</summary><ParamsViewer
@@ -1265,36 +1306,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                 /></details>
                             </div>
 
-                            <div className="border-t border-gray-200 dark:border-gray-800 pt-4 mt-4 space-y-3 flex-shrink-0">
-                                {/* 导入到编辑器 */}
-                                <ToolbarButton tone="primary" className="w-full" onClick={handleImportToEditor} disabled={isPreparingImport}>
-                                    <Save />
-                                    {isPreparingImport ? '正在读取元数据...' : '导入到编辑器'}
-                                </ToolbarButton>
-                                <ToolbarButton className="w-full" onClick={() => handleOpenImageEditor(lightbox)}>
-                                    <Pencil />
-                                    {lowConsumption.enabled ? '局部重绘这张图片（清空旧蒙版）' : '编辑这张图片（清空旧蒙版）'}
-                                </ToolbarButton>
-                                {lightbox.edit?.maskAvailable && (!lowConsumption.enabled || lightbox.edit.operation === 'inpaint') && <ToolbarButton className="w-full" onClick={() => handleOpenImageEditor(lightbox, true)}>
-                                    <Pencil />
-                                    编辑并复用原蒙版
-                                </ToolbarButton>}
-
-                                <details className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg"><summary className="cursor-pointer text-sm font-semibold">加入灵感库</summary>
-                                    <div className="mt-3 flex gap-2">
-                                        <input
-                                            type="text"
-                                            placeholder="为这张图取个标题..."
-                                            className="flex-1 px-3 py-2 rounded border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-gray-800 text-sm outline-none dark:text-white focus:border-indigo-500 transition-colors"
-                                            value={publishTitle}
-                                            onChange={e => setPublishTitle(e.target.value)}
-                                        />
-                                        <ToolbarButton tone="primary" onClick={handlePublish} disabled={isPublishing} className="whitespace-nowrap">
-                                            {isPublishing ? '整理中' : '加入'}
-                                        </ToolbarButton>
-                                    </div>
-                                </details>
-                            </div>
             </HistoryImageViewer>}
 
             {/* Clean Modal */}

@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   history: vi.fn(async (): Promise<LocalGenItem[]> => []),
   addHistory: vi.fn(),
   unlinkHistory: vi.fn(async () => {}),
+  getEditMask: vi.fn(async (): Promise<Blob | null> => null),
   confirm: vi.fn(async () => true),
   generate: vi.fn(),
   assets: new Map<string, Blob>(),
@@ -36,7 +37,7 @@ vi.mock('../../services/anlasBudget', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/anlasBudget')>(),
   useAnlasBudget: () => ({ remaining: 1666 }),
 }));
-vi.mock('../../services/localHistory', () => ({ localHistory: { getBySourceChain: state.history, add: state.addHistory, unlinkFromSourceChain: state.unlinkHistory } }));
+vi.mock('../../services/localHistory', () => ({ localHistory: { getBySourceChain: state.history, add: state.addHistory, unlinkFromSourceChain: state.unlinkHistory, getEditMask: state.getEditMask } }));
 vi.mock('../../services/labWorkspace', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/labWorkspace')>(),
   cleanupLabWorkspaceAssets: async () => {},
@@ -111,6 +112,7 @@ beforeEach(() => {
   state.low.enabled = false;
   state.assets.clear();
   state.delayedAsset = null;
+  state.getEditMask.mockReset(); state.getEditMask.mockResolvedValue(null);
   state.confirm.mockClear(); state.history.mockReset(); state.history.mockResolvedValue([]); state.generate.mockReset(); state.addHistory.mockReset(); state.unlinkHistory.mockClear();
   state.addHistory.mockImplementation(async (_blob, prompt, params, negativePrompt, source) => ({
     ...source, id: `new-${state.addHistory.mock.calls.length}`, imageUrl: `/synthetic/new-${state.addHistory.mock.calls.length}.png`,
@@ -122,6 +124,48 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('测试禁止真实网络请求'); }));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+describe('历史明确指定实验室导入模式', () => {
+  it('已有局部重绘会话也切到文生图，恢复结构且保留其他模式草稿', async () => {
+    const session = fallback();
+    session.activeMode = 'inpaint';
+    session.edits.inpaint.prompt = 'retained edit prompt';
+    saveLabWorkspaceSession(chain.id, session);
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ targetMode: 'text-to-image', prompt: 'imported complete', basePrompt: 'imported base', subjectPrompt: 'imported subject',
+      modules: [{ id: 'imported-module', name: '合成模块', content: 'imported content', isActive: true, position: 'post' }], negativePrompt: '', params: chain.params }));
+    setup();
+    await waitFor(() => expect(textPrompt().value).toBe('imported base'));
+    const saved = loadLabWorkspaceSession(chain.id, fallback());
+    expect(saved.activeMode).toBe('text-to-image');
+    expect(saved.textToImage).toMatchObject({ basePrompt: 'imported base', subjectPrompt: 'imported subject', negativePrompt: '' });
+    expect(saved.edits.inpaint.prompt).toBe('retained edit prompt');
+    expect(sessionStorage.getItem('nai_pending_import')).toBeNull();
+  });
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 载入指定底图，空提示词和负面词保持为空', async operation => {
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'image-edit', imageEditOperation: operation,
+      baseImageUrl: 'data:image/png;base64,AQID', parentHistoryId: 'synthetic-parent', prompt: '', negativePrompt: '',
+      params: { ...chain.params, characters: [{ id: 'role', prompt: 'synthetic character', x: 0.5, y: 0.5 }] }, reuseEditMask: false }));
+    setup();
+    await waitFor(() => expect(screen.getByLabelText('编辑底图').textContent).toBe('data:image/png;base64,AQID'));
+    await waitFor(() => expect(loadLabWorkspaceSession(chain.id, fallback()).activeMode).toBe(operation));
+    const saved = loadLabWorkspaceSession(chain.id, fallback());
+    expect(saved.activeMode).toBe(operation);
+    expect(saved.edits[operation]).toMatchObject({ prompt: '', negativePrompt: '', parentHistoryId: 'synthetic-parent', baseImageSource: 'history', expansion: { top: 0, right: 0, bottom: 0, left: 0 } });
+    expect(saved.edits[operation].params.characters?.[0].prompt).toBe('synthetic character');
+    expect(saved.edits[operation].maskRef).toBeUndefined();
+    expect(saved.textToImage.basePrompt).toBe('saved style');
+    expect(state.getEditMask).not.toHaveBeenCalled();
+  });
+  it('明确选择复用时从对应历史读取原蒙版', async () => {
+    state.getEditMask.mockResolvedValue(new Blob(['synthetic mask'], { type: 'image/png' }));
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'image-edit', imageEditOperation: 'inpaint', baseImageUrl: 'data:image/png;base64,AQID',
+      parentHistoryId: 'synthetic-parent', prompt: 'imported edit', negativePrompt: '', params: chain.params, reuseEditMask: true }));
+    setup();
+    await waitFor(() => expect(screen.getByLabelText('编辑蒙版').textContent).toContain('data:image/png;base64,'));
+    expect(state.getEditMask).toHaveBeenCalledWith('synthetic-parent');
+    expect(loadLabWorkspaceSession(chain.id, fallback()).edits.inpaint.maskRef).toBeTruthy();
+  });
+});
 
 describe('自由实验室图片只保留本次打开', () => {
   const lab = { ...chain, id: 'playground' };

@@ -39,6 +39,8 @@ export type ImportMode = 'replace' | 'prompt-only' | 'negative-only' | 'params-o
 
 export interface PendingImportData extends ParsedNAIData {
     mode?: ImportMode;
+    /** 历史指定文生图；其他参数导入仍沿用当前模式。 */
+    targetMode?: 'text-to-image';
     basePrompt?: string;
     subjectPrompt?: string;
     modules?: import('../types').PromptModule[];

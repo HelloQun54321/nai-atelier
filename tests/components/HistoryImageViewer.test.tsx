@@ -24,6 +24,15 @@ const setup = (detailsOpen = true) => {
 };
 
 describe('历史图片缩放与手势', () => {
+  it('翻图后复用同一详情面板并回到顶部操作区', () => {
+    const props = { index: 1, total: 4, navigating: false, favoritePending: false, detailsOpen: true, onDetailsChange: vi.fn(), onNavigate: vi.fn(), onClose: vi.fn(), onFavorite: vi.fn(), onDelete: vi.fn(), filename: 'synthetic.png', notify: vi.fn() };
+    const result = render(<HistoryImageViewer {...props} item={item}><button>合成操作</button></HistoryImageViewer>);
+    const details = screen.getByLabelText('图片详情面板');
+    details.scrollTop = 500;
+    result.rerender(<HistoryImageViewer {...props} item={{ ...item, id: 'next-synthetic' }}><button>合成操作</button></HistoryImageViewer>);
+    expect(screen.getByLabelText('图片详情面板')).toBe(details);
+    expect(details.scrollTop).toBe(0);
+  });
   it('100% 使用实际像素尺寸，适应窗口复位，翻图快捷键不会抢输入/前景确认框', () => {
     const { image, dialog, onNavigate, onClose, container } = setup();
     expect(image.getAttribute('data-safe-mode-ignore')).toBe('true');

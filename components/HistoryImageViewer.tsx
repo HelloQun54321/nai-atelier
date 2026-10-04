@@ -41,6 +41,7 @@ export const HistoryImageViewer: React.FC<Props> = props => {
   const { item, index, total, navigating, onNavigate, onClose } = props;
   const dialogRef = useModalA11y<HTMLDivElement>(true);
   const stageRef = useRef<HTMLDivElement>(null);
+  const detailsRef = useRef<HTMLElement>(null);
   const [box, setBox] = useState({ width: 800, height: 600 });
   const [natural, setNatural] = useState(() => imageSize(item));
   const [zoom, setZoom] = useState(1);
@@ -67,6 +68,8 @@ export const HistoryImageViewer: React.FC<Props> = props => {
     setZoom(1); setPan({ x: 0, y: 0 }); setImageFailed(false); setRetry(0);
     setNatural(imageSize(item));
     pointers.current.clear(); gesture.current = null;
+    // 翻到另一张图时从详情操作区开始，避免沿用上一张长参数的滚动位置。
+    if (detailsRef.current) detailsRef.current.scrollTop = 0;
   }, [item.id, item.params?.width, item.params?.height]);
   useEffect(() => {
     const stage = stageRef.current;
@@ -184,7 +187,7 @@ export const HistoryImageViewer: React.FC<Props> = props => {
               <button className="history-viewer-button" onClick={() => zoomAt(1 / fit)} title="快捷键 1">100%</button>
             </footer>
           </div>
-          {props.detailsOpen && <aside className="history-viewer-details" aria-label="图片详情面板"><div className="history-viewer-details-heading"><strong>图片详情</strong><button className="history-viewer-button" aria-label="收起图片详情" onClick={() => props.onDetailsChange(false)}><ChevronRight /></button></div>{props.children}</aside>}
+          {props.detailsOpen && <aside ref={detailsRef} className="history-viewer-details" aria-label="图片详情面板"><div className="history-viewer-details-heading"><strong>图片详情</strong><button className="history-viewer-button" aria-label="收起图片详情" onClick={() => props.onDetailsChange(false)}><ChevronRight /></button></div>{props.children}</aside>}
         </div>
       </div>
     </div>
