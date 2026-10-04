@@ -90,7 +90,7 @@ export const AgentModelControl: React.FC<Props> = props => {
     {props.open && createPortal(<div ref={popover} role="dialog" data-agent-surface aria-label="模型与思考" data-ultra={ultra && actualView === 'thinking'} style={{ ...position, visibility: positioned ? 'visible' : 'hidden' }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }} className="appearance-panel agent-model-popover z-[1300] overflow-y-auto rounded-2xl border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-900">
       <div className="agent-model-heading">
         {actualView === 'models' ? <button type="button" aria-label="选择模型" onClick={() => setView('thinking')} disabled={!props.activeModel} className="flex items-center justify-center rounded-lg text-gray-500 disabled:opacity-50 dark:text-gray-400"><ArrowLeft className="h-4 w-4" /></button> : <span>{busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}</span>}
-        <span className="agent-thinking-title text-sm font-medium text-indigo-600 dark:text-indigo-400">{actualView === 'thinking' ? canThink ? ultra ? 'Ultra' : agentThinkingLabels[draftLevel] : '模型设置' : '选择模型'}</span>
+        <span className="agent-thinking-title text-sm font-medium text-indigo-600 dark:text-indigo-400">{actualView === 'thinking' ? canThink ? agentThinkingLabels[draftLevel] : '模型设置' : '选择模型'}</span>
         <button type="button" aria-label="关闭模型菜单" onClick={close} className="flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button>
       </div>
       {actualView === 'thinking' ? <>

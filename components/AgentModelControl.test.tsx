@@ -9,8 +9,8 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const first = { id: 'vendor/synthetic-model', provider: 'first', providerName: '合成服务甲', reasoning: true, thinkingLevels: ['off', 'low', 'high'], imageInput: true } as PromptAgentModel;
 const second = { ...first, provider: 'second', providerName: '合成服务乙', reasoning: false, thinkingLevels: ['off'], imageInput: false } as PromptAgentModel;
 const defaults = { choose: vi.fn(async (_model: PromptAgentModel) => {}), think: vi.fn(async (_level: PromptAgentThinkingLevel) => {}) };
-const Control = ({ disabled = false, choose = defaults.choose, think = defaults.think, model = first, configure = () => {} }: { disabled?: boolean; choose?: (model: PromptAgentModel) => Promise<void>; think?: (level: PromptAgentThinkingLevel) => Promise<void>; model?: PromptAgentModel; configure?: () => void }) => {
-  const [open, setOpen] = useState(false), [selected, setSelected] = useState(model), [level, setLevel] = useState<PromptAgentThinkingLevel>('low');
+const Control = ({ disabled = false, choose = defaults.choose, think = defaults.think, model = first, configure = () => {}, initialLevel = 'low' }: { disabled?: boolean; choose?: (model: PromptAgentModel) => Promise<void>; think?: (level: PromptAgentThinkingLevel) => Promise<void>; model?: PromptAgentModel; configure?: () => void; initialLevel?: PromptAgentThinkingLevel }) => {
+  const [open, setOpen] = useState(false), [selected, setSelected] = useState(model), [level, setLevel] = useState<PromptAgentThinkingLevel>(initialLevel);
   return <AgentModelControl models={[first, second]} activeModel={selected} thinkingLevels={selected.thinkingLevels} thinkingLevel={selected.thinkingLevels.includes(level) ? level : 'off'} disabled={disabled} open={open} onOpenChange={setOpen} onModelChange={async next => { await choose(next); setSelected(next); }} onThinkingChange={async next => { await think(next); setLevel(next); }} onBusyChange={() => {}} onConfigure={configure} />;
 };
 it('当前模型和强度直接可见，只展示本模型支持的思考档位', async () => {
@@ -107,7 +107,7 @@ it('有空间时卡片中心对准模型按钮，触发器尺寸改变后重新�
   act(() => window.dispatchEvent(new Event('resize')));
   expect(screen.getByRole('dialog').style.left).toBe('500px');
 });
-it('粒子密度与播放速率随强度增加，最高可用档位显示 Ultra 而不增加请求档位', async () => {
+it('粒子密度与播放速率随强度增加，最高档保留效果并显示真实强度', async () => {
     const model = { ...first, thinkingLevels: ['low', 'high', 'xhigh'] } as PromptAgentModel;
     const think = vi.fn(async () => {}); render(<Control model={model} think={think} />);
     fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
@@ -115,9 +115,20 @@ it('粒子密度与播放速率随强度增加，最高可用档位显示 Ultra 
     expect(flow.getAttribute('data-particles')).toBe('5'); expect(flow.getAttribute('data-speed')).toBe('12');
     fireEvent.change(slider, { target: { value: '1' } }); expect(Number(flow.getAttribute('data-particles'))).toBeGreaterThan(5); expect(flow.getAttribute('data-speed')).toBe('32');
     fireEvent.change(slider, { target: { value: '2' } }); expect(flow.getAttribute('data-particles')).toBe('24'); expect(flow.getAttribute('data-speed')).toBe('52');
-    expect(screen.getByText('Ultra')).toBeTruthy(); expect(screen.getByRole('dialog').getAttribute('data-ultra')).toBe('true'); expect(think).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog').querySelector('.agent-thinking-title')?.textContent).toBe('极高'); expect(screen.queryByText('Ultra')).toBeNull(); expect(screen.getByRole('dialog').getAttribute('data-ultra')).toBe('true'); expect(think).not.toHaveBeenCalled();
     fireEvent.pointerUp(slider); await waitFor(() => expect(think).toHaveBeenCalledWith('xhigh'));
     expect(slider.getAttribute('aria-valuetext')).toBe('极高');
+});
+it.each([['minimal', '极少'], ['low', '低'], ['medium', '中'], ['high', '高'], ['xhigh', '极高'], ['max', '最大']] as const)('最高支持档位 %s 的标题、触发器和请求保持一致', async (level, label) => {
+  const model = { ...first, thinkingLevels: ['off', level] } as PromptAgentModel;
+  const think = vi.fn(async () => {}); render(<Control model={model} think={think} initialLevel="off" />);
+  const trigger = screen.getByRole('button', { name: '模型与思考设置' }); fireEvent.click(trigger);
+  const slider = screen.getByRole('slider'); fireEvent.change(slider, { target: { value: '1' } });
+  const dialog = screen.getByRole('dialog');
+  expect(dialog.querySelector('.agent-thinking-title')?.textContent).toBe(label);
+  expect(dialog.getAttribute('data-ultra')).toBe('true'); expect(slider.getAttribute('aria-valuetext')).toBe(label);
+  fireEvent.pointerUp(slider); await waitFor(() => expect(think).toHaveBeenCalledWith(level));
+  expect(trigger.textContent).toContain(label); expect(screen.queryByText('Ultra')).toBeNull();
 });
 it('保存中保留滑条与卡片结构，状态提示不撑高卡片且没有快速模式标记', async () => {
   let resolve!: () => void;
