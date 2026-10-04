@@ -1,9 +1,11 @@
 import React from 'react';
-import { isNovelaiSubscriptionInactive, usageRemainingImages, usageRemainingPercent, useNovelaiUsage } from '../services/naiUsage';
+import { isNovelaiSubscriptionInactive, NOVELAI_USAGE_REFRESH_EVENT, usageRemainingImages, usageRemainingPercent, useNovelaiUsage } from '../services/naiUsage';
 import { useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 
 interface OpusUsageBarProps {
   collapsed: boolean;
+  /** 触屏完整视图直接显示异常与同步时间，不依赖悬停说明。 */
+  showDetails?: boolean;
 }
 
 const OPUS_RING_CIRCUMFERENCE = 2 * Math.PI * 16;
@@ -12,9 +14,14 @@ const OPUS_RING_CIRCUMFERENCE = 2 * Math.PI * 16;
  * NovelAI Opus 免费生成限额（V5 起生效），展示在侧栏 Anlas 预算下方。
  * 活跃非 Opus 订阅不显示用量条；过期订阅改为展示 Paid Anlas 状态。
  */
-export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
-  const { info, usage, loading, error, refresh } = useNovelaiUsage();
+export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetails = false }) => {
+  const { info, usage, loading, error, fetchedAt, refresh } = useNovelaiUsage();
   const runtime = useNaiRuntime();
+  const refreshAll = () => {
+    void refresh();
+    // 与 Anlas 行同源刷新；同 Key 的多个视图由共享驱动合并查询。
+    window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
+  };
   // 订阅过期不等于 Key 失效；隐藏残留的免费额度，明确 Paid Anlas 付费路径。
   const expired = isNovelaiSubscriptionInactive(info);
   if (expired) {
@@ -22,10 +29,10 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
     const balanceLabel = paid === undefined ? 'Paid Anlas 余额未知' : `Paid Anlas：${paid.toLocaleString()} 点`;
     const runtimeWarning = isNaiRuntimeSyncUnhealthy(runtime) ? describeNaiRuntimeSyncProblem(runtime) : '';
     return <button type="button" role="status" aria-label={`订阅已过期 · ${balanceLabel}`} aria-busy={loading}
-      onClick={() => void refresh()} title={`订阅已过期，Opus 免费权益不可用。${balanceLabel}。关闭低消耗模式后可确认付费生成，权限与扣费以官方响应为准；余额不会覆盖本地预算。${error ? `状态刷新失败：${error}` : ''}${runtimeWarning ? `官方计费规则同步异常：${runtimeWarning}` : ''}`}
+      onClick={refreshAll} title={`订阅已过期，Opus 免费权益不可用。${balanceLabel}。关闭低消耗模式后可确认付费生成，权限与扣费以官方响应为准；余额不会覆盖本地预算。${error ? `状态刷新失败：${error}` : ''}${runtimeWarning ? `官方计费规则同步异常：${runtimeWarning}` : ''}`}
       className={`flex min-h-14 w-full cursor-pointer select-none items-center border-b border-gray-200 text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:border-gray-800 dark:hover:bg-gray-800 ${error || runtimeWarning ? 'text-red-500 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'} ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}>
       <span className="flex h-9 w-9 shrink-0 items-center justify-center text-mini font-bold">付费</span>
-      {!collapsed && <span className="min-w-0 flex-1"><span className="block text-xs font-medium">订阅已过期</span><span className="mt-0.5 block text-micro">{error ? '状态刷新失败，点击重试' : '免费权益不可用'}</span>{runtimeWarning && <span className="mt-0.5 block text-micro">计费规则同步异常</span>}</span>}
+      {!collapsed && <span className="min-w-0 flex-1"><span className="block text-xs font-medium">订阅已过期</span><span className="mt-0.5 block text-micro">{error ? '状态刷新失败，点击重试' : '免费权益不可用'}</span>{showDetails && <span className="mt-1 block text-micro">{balanceLabel}</span>}{runtimeWarning && <span className="mt-0.5 block text-micro">计费规则同步异常</span>}{showDetails && error && <span className="mt-1 block break-words text-micro">{error}</span>}{showDetails && fetchedAt > 0 && <span className="mt-1 block text-micro">最近同步 {new Date(fetchedAt).toLocaleTimeString('zh-CN', { hour12: false })}</span>}</span>}
     </button>;
   }
   // 请求明确成功但没有 usage 时不展示 Opus 条；加载/失败保留状态行。
@@ -67,7 +74,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
     <button
       type="button"
       role="status"
-      onClick={() => void refresh()}
+      onClick={refreshAll}
       title={collapsed ? title : `${title}（点击立即刷新）`}
       aria-busy={loading}
       aria-label={`Opus 生成限额 ${syncBroken ? '同步失败' : !usage ? '正在同步' : negative ? '已用尽' : `${percent}%`}`}
@@ -112,6 +119,12 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed }) => {
         <span className={`mt-0.5 block text-micro font-normal tabular-nums ${error ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
           {error ? '同步失败，点击重试' : usage ? `≈${images} 张` : '正在同步…'}
         </span>
+        {showDetails && <span className="mt-1 block break-words text-micro text-gray-500 dark:text-gray-400">
+          {error && <span className="block">{usage ? `上次额度 ${percent}%（≈${images} 张）：${error}` : `额度未知：${error}`}</span>}
+          {runtimeSyncBroken ? <span className="block">计费规则同步异常，张数换算可能过期</span> : syncPending ? <span className="block">计费规则正在同步</span> : <span className="block">V5 等受限模型共用额度</span>}
+          {negative && <span className="block text-red-500 dark:text-red-400">额度已用尽，生成将消耗 Anlas</span>}
+          {fetchedAt > 0 && <span className="mt-1 block">最近同步 {new Date(fetchedAt).toLocaleTimeString('zh-CN', { hour12: false })}</span>}
+        </span>}
       </span>}
     </button>
   );

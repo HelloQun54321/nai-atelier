@@ -31,11 +31,11 @@ vi.mock('../../services/naiRuntime', async importOriginal => {
 });
 vi.mock('../../services/naiUsage', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/naiUsage')>(),
-  useNovelaiUsage: () => ({ info: null, usage: null, loading: false, refreshIfStale: async () => null }),
+  useNovelaiUsage: () => ({ info: null, usage: null, loading: false, error: null, fetchedAt: 0, refresh: async () => null, refreshIfStale: async () => null }),
 }));
 vi.mock('../../services/anlasBudget', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/anlasBudget')>(),
-  useAnlasBudget: () => ({ remaining: 1666 }),
+  useAnlasBudget: () => ({ remaining: 1666, loading: false }),
 }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { getBySourceChain: state.history, add: state.addHistory, unlinkFromSourceChain: state.unlinkHistory, getEditMask: state.getEditMask } }));
 vi.mock('../../services/labWorkspace', async importOriginal => ({
@@ -124,6 +124,23 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('测试禁止真实网络请求'); }));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+it('四模式共用手机资源入口，切 Key 时继续使用当前工作台状态，不触发生成', async () => {
+  vi.stubGlobal('innerWidth', 390);
+  setup();
+  for (const label of ['文生图', '图生图', '局部重绘', '扩图']) {
+    if (label !== '文生图') await switchTo(label);
+    const resources = screen.getByRole('button', { name: /查看账户资源：未配置 Key/ });
+    // 小于 md 显示；md 及以上保留桌面侧栏，不能把响应式方向写反。
+    expect(resources.className).toContain('md:hidden');
+    expect(resources.className.split(' ')).not.toContain('hidden');
+    expect(resources.closest('.lg\\:hidden')).toBeTruthy();
+    act(() => { sessionStorage.setItem('nai_api_key', 'mobile-workspace-fixture'); window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: 'mobile-workspace-fixture' })); });
+    expect(screen.getByRole('button', { name: /查看账户资源：预算 1666 · 余额 未知 · 额度未知/ })).toBeTruthy();
+    act(() => { sessionStorage.removeItem('nai_api_key'); window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: '' })); });
+  }
+  expect(state.generate).not.toHaveBeenCalled();
+});
 
 describe('历史明确指定实验室导入模式', () => {
   it('已有局部重绘会话也切到文生图，恢复结构且保留其他模式草稿', async () => {

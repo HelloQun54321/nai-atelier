@@ -3,6 +3,7 @@ import { Gem, LoaderCircle } from 'lucide-react';
 import type { useAnlasBudget } from '../services/anlasBudget';
 import type { useNovelaiUsage } from '../services/naiUsage';
 import { NOVELAI_USAGE_REFRESH_EVENT } from '../services/naiUsage';
+import type { NovelaiSubscriptionInfo } from '../services/naiUsage';
 
 interface AnlasBalanceBarProps {
   collapsed?: boolean;
@@ -11,20 +12,26 @@ interface AnlasBalanceBarProps {
   className?: string;
 }
 
-const compactPoints = (points: number) => points < 10_000
+export const compactPoints = (points: number) => points < 10_000
   ? String(points)
   : new Intl.NumberFormat('zh-CN', { notation: 'compact', useGrouping: false, minimumSignificantDigits: 3, maximumSignificantDigits: 3 }).format(points);
+
+/** 所有资源视图共用官方余额校验；未知、非法值与真实零分别表达。 */
+export const officialAnlasBalance = (info: NovelaiSubscriptionInfo | null) => {
+  const balance = info?.trainingStepsLeft;
+  if (!balance || !Number.isFinite(balance.fixedTrainingStepsLeft) || balance.fixedTrainingStepsLeft < 0
+    || !Number.isFinite(balance.purchasedTrainingSteps) || balance.purchasedTrainingSteps < 0) return null;
+  const total = balance.fixedTrainingStepsLeft + balance.purchasedTrainingSteps;
+  return Number.isFinite(total) ? total : null;
+};
 
 /** 个人预算与官方余额分别展示，共享同一 Key 的订阅查询，不互相覆盖。 */
 export const AnlasBalanceBar: React.FC<AnlasBalanceBarProps> = ({ collapsed = false, budget, subscription, className = '' }) => {
   const { info, loading, error, fetchedAt, refresh } = subscription;
   const balance = info?.trainingStepsLeft;
   // 只有两种余额都明确有效时才显示总数，字段缺失不能默认成 0。
-  const balanceKnown = balance != null
-    && Number.isFinite(balance.fixedTrainingStepsLeft) && balance.fixedTrainingStepsLeft >= 0
-    && Number.isFinite(balance.purchasedTrainingSteps) && balance.purchasedTrainingSteps >= 0
-    && Number.isFinite(balance.fixedTrainingStepsLeft + balance.purchasedTrainingSteps);
-  const total = balanceKnown ? balance!.fixedTrainingStepsLeft + balance!.purchasedTrainingSteps : null;
+  const total = officialAnlasBalance(info);
+  const balanceKnown = total !== null;
   const fullBudget = budget.loading ? '…' : String(budget.remaining);
   const fullBalance = total === null ? loading ? '…' : '—' : String(total);
   // 极大数值在窄侧栏保留单位；完整数值始终可从悬停说明和辅助标签读取。

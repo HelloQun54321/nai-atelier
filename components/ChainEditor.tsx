@@ -17,6 +17,7 @@ import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
 import { ImagePreviewActions } from './ImagePreviewActions';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { MobileGenerationResources } from './MobileGenerationResources';
 import { ImageEditPanel, ImageEditRequest } from './ImageEditPanel';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { dataUrlToBlob } from '../services/imageEdit';
@@ -89,7 +90,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // Default Seed to undefined (random), UC Preset to 4 (None)
     const [params, setParams] = useState<NAIParams>(() => normalizeParams(chain.params));
     // Opus 限额透支后，受限额模型（V5）的小图不再免费，费用估算需同步。
-    const { info: novelaiSubscription, usage: novelaiUsage, loading: novelaiSubscriptionLoading, refreshIfStale: refreshUsageIfStale } = useNovelaiUsage();
+    const novelaiStatus = useNovelaiUsage();
+    const { info: novelaiSubscription, usage: novelaiUsage, loading: novelaiSubscriptionLoading, refreshIfStale: refreshUsageIfStale } = novelaiStatus;
     // 本地 Anlas 预算（账号整体，手动校准）：用尽后扣费生成需要红色警告。
     const anlasBudget = useAnlasBudget();
     const lowConsumption = useLowConsumption();
@@ -2119,7 +2121,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             <div className="chain-editor-body flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden bg-white dark:bg-gray-900">
                 {/* Left Panel - Editor */}
                 <div className="chain-editor-main flex w-full lg:w-1/2 min-h-full flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
-                    <div className="flex w-full max-w-3xl flex-col gap-6 p-4 pb-24 md:p-6 md:pb-24 mx-auto">
+                    <div className="flex w-full max-w-3xl flex-col gap-6 p-4 pb-36 md:p-6 md:pb-24 mx-auto">
                         <ChainEditorPromptInputs
                             prompt={basePrompt}
                             setPrompt={setBasePrompt}
@@ -2404,12 +2406,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onGenerateBarChange={handleImageEditGenerateBarChange}
             /> : null}
 
-            {!lightboxImg && !showImportPreset && !importCandidate && <div className="flex fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] items-center gap-2 lg:hidden" style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + max(1rem, env(safe-area-inset-bottom)))` } : undefined}>
-                {errorMsg && <div role="alert" style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + 5.5rem + env(safe-area-inset-bottom))` } : undefined} className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] right-4 left-4 z-[900] rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-600 shadow-lg dark:border-red-900/60 dark:bg-red-950/80 dark:text-red-300">{errorMsg}</div>}
-                {mobileFloatingPreviewImage && <button type="button" onClick={() => setLightboxImg(mobileFloatingPreviewImage)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-800" aria-label="查看当前预览图"><SmartImage src={mobileFloatingPreviewImage || ''} alt="当前预览图" /></button>}
-                <div className="flex flex-col items-end gap-2">
-                    {queueStatus && <InlineCloudQueueStatus compact className="min-w-64 max-w-[calc(100vw-5rem)]" />}
-                    {!isCloudQueueTaskActive(queueStatus) && <button data-agent-action="business" onClick={activeEditOperation ? () => imageEditGenerateFnRef.current?.() : handleGenerate} disabled={isGenerating || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canGenerate)} className={`generation-action-button mobile-touch rounded-full px-6 text-sm font-bold text-white shadow-xl disabled:opacity-60 ${isGenerating ? 'generation-action-button--loading' : ''}`}><span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : activeEditOperation && !imageEditGenerateBar?.canGenerate ? imageEditGenerateBar?.unavailableLabel || '请先选择底图' : `生成 · ${activeEditOperation ? imageEditGenerateBar?.costLabel ?? '' : generationCostLabel}`}</span></button>}
+            {!lightboxImg && !showImportPreset && !importCandidate && <div className="flex fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] flex-col items-end gap-2 lg:hidden" style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + max(1rem, env(safe-area-inset-bottom)))` } : undefined}>
+                {errorMsg && <div role="alert" className="max-h-[30dvh] w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-600 shadow-lg dark:border-red-900/60 dark:bg-red-950/80 dark:text-red-300">{errorMsg}</div>}
+                <MobileGenerationResources apiKey={apiKey} budget={anlasBudget} subscription={novelaiStatus} runtime={naiRuntimeConfig} />
+                <div className="flex max-w-[calc(100vw-2rem)] items-center gap-2">
+                    {mobileFloatingPreviewImage && <button type="button" onClick={() => setLightboxImg(mobileFloatingPreviewImage)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-800" aria-label="查看当前预览图"><SmartImage src={mobileFloatingPreviewImage || ''} alt="当前预览图" /></button>}
+                    <div className="flex flex-col items-end gap-2">
+                        {queueStatus && <InlineCloudQueueStatus compact className="min-w-64 max-w-[calc(100vw-5rem)]" />}
+                        {!isCloudQueueTaskActive(queueStatus) && <button data-agent-action="business" onClick={activeEditOperation ? () => imageEditGenerateFnRef.current?.() : handleGenerate} disabled={isGenerating || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canGenerate)} className={`generation-action-button mobile-touch rounded-full px-6 text-sm font-bold text-white shadow-xl disabled:opacity-60 ${isGenerating ? 'generation-action-button--loading' : ''}`}><span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : activeEditOperation && !imageEditGenerateBar?.canGenerate ? imageEditGenerateBar?.unavailableLabel || '请先选择底图' : `生成 · ${activeEditOperation ? imageEditGenerateBar?.costLabel ?? '' : generationCostLabel}`}</span></button>}
+                    </div>
                 </div>
             </div>}
 

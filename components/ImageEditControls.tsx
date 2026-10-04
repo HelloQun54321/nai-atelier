@@ -141,7 +141,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   };
 
   return <><div className="chain-editor-main order-2 flex min-h-full w-full shrink-0 flex-col border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 lg:order-1 lg:w-1/2 lg:flex-1 lg:overflow-y-auto lg:border-b-0 lg:border-r">
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 pb-24 md:p-6 md:pb-24">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 pb-36 md:p-6 md:pb-24">
       <LabModuleSection moduleId="prompt" label="全局提示词" order={getModuleOrder(layout, 'prompt')} defaultCollapsed={isModuleCollapsed(layout, 'prompt')} className={mobileTab === 'prompt' ? 'block' : 'hidden lg:block'}>
         <section className="space-y-4">
           <div>

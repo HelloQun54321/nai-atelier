@@ -9,10 +9,10 @@ import { readAgentPage } from '../../services/agentWorkspace';
 import { getCleanSharedImages, IMAGE_SHARING_STORAGE_KEY } from '../../services/imageSharing';
 import { readActiveNaiKey, REMEMBER_NAI_KEY_STORAGE_KEY, setActiveNaiKey } from '../../services/naiKeyStorage';
 const lowMode = vi.hoisted(() => ({ enabled: false, save: vi.fn() }));
-const subscriptionFixture = vi.hoisted(() => ({ expired: false, balance: undefined as { fixedTrainingStepsLeft: number; purchasedTrainingSteps: number } | undefined, refresh: vi.fn(async () => null) }));
+const subscriptionFixture = vi.hoisted(() => ({ expired: false, balance: undefined as { fixedTrainingStepsLeft: number; purchasedTrainingSteps: number } | undefined, usage: undefined as import('../../services/naiUsage').NovelaiUsageState | undefined, refresh: vi.fn(async () => null) }));
 vi.mock('../../services/naiUsage', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/naiUsage')>(),
-  useNovelaiUsage: () => ({ info: subscriptionFixture.expired || subscriptionFixture.balance ? { active: !subscriptionFixture.expired, tier: 3, trainingStepsLeft: subscriptionFixture.balance } : null, usage: undefined, loading: false, error: null, fetchedAt: 0, refresh: subscriptionFixture.refresh }),
+  useNovelaiUsage: () => ({ info: subscriptionFixture.expired || subscriptionFixture.balance || subscriptionFixture.usage ? { active: !subscriptionFixture.expired, tier: 3, trainingStepsLeft: subscriptionFixture.balance } : null, usage: subscriptionFixture.usage, loading: false, error: null, fetchedAt: 0, refresh: subscriptionFixture.refresh }),
 }));
 vi.mock('../../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: lowMode.enabled }), setLowConsumption: lowMode.save }));
 
@@ -35,9 +35,11 @@ vi.mock('../../services/anlasBudget', () => ({
   useAnlasBudget: () => ({ remaining: 1666, personal: null, loading: false, refresh: vi.fn() }),
 }));
 
-vi.mock('../../services/naiRuntime', () => ({
-  getNaiRuntimeConfig: async () => ({ imagesPerPercent: 17.3 }),
-}));
+vi.mock('../../services/naiRuntime', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../services/naiRuntime')>();
+  const runtime = { ...actual.DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } };
+  return { ...actual, getNaiRuntimeConfig: async () => runtime, useNaiRuntime: () => runtime };
+});
 
 vi.mock('../../services/cloudQueue', () => {
   const preferences = { enabled: false, serviceUrl: 'https://example.invalid', greeting: '', showGreeting: true };
@@ -101,6 +103,7 @@ describe('GlobalSettings', () => {
   beforeEach(() => {
     subscriptionFixture.expired = false;
     subscriptionFixture.balance = undefined;
+    subscriptionFixture.usage = undefined;
     subscriptionFixture.refresh.mockClear();
     lowMode.enabled = false;
     lowMode.save.mockReset().mockImplementation(async (enabled: boolean) => { lowMode.enabled = enabled; return { enabled }; });
@@ -164,6 +167,17 @@ describe('GlobalSettings', () => {
     expect(badge.title).toContain('Paid Anlas');
     expect(screen.queryByText('已失效')).toBeNull();
     expect(screen.queryByText('非 Opus')).toBeNull();
+  });
+  it.each([false, true])('账户设置完整展示真实 Opus 百分比与换算张数，点按刷新，手机视图=%s', async mobile => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: mobile, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    subscriptionFixture.usage = { percent: 196, isNegative: false, timeUntilNextPercent: 0 };
+    sessionStorage.setItem('nai_api_key', 'settings-opus-fixture');
+    render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+    const quota = await screen.findByRole('status', { name: /Opus 生成限额 196%/ });
+    expect(screen.getByText('≈3391 张')).toBeTruthy();
+    expect(screen.getByText('V5 等受限模型共用额度')).toBeTruthy();
+    fireEvent.click(quota);
+    expect(subscriptionFixture.refresh).toHaveBeenCalledTimes(1);
   });
   it('设置页共用个人预算／官方总余额显示，可点按刷新且不改写预算输入', async () => {
     subscriptionFixture.balance = { fixedTrainingStepsLeft: 100, purchasedTrainingSteps: 200 };

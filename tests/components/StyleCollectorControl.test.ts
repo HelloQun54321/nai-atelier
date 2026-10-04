@@ -38,6 +38,16 @@ describe('风格串收集工具栏', () => {
     view.unmount(); expect(FakeEvents.instances[0].close).toHaveBeenCalled();
     expect(fetchMock.mock.calls.some(call => String(call[0]).endsWith('/stop'))).toBe(false);
   });
+  it('本机窄窗口仍可启停收集，仅收起文字，不按手机断点隐藏开关', async () => {
+    vi.stubGlobal('innerWidth', 390);
+    render(React.createElement(StyleCollectorControl, { onSaved: vi.fn(), notify: vi.fn() }));
+    const toggle = await screen.findByRole('switch');
+    expect(toggle.className).not.toMatch(/(?:^|\s)(?:hidden|md:hidden|lg:hidden)(?:\s|$)/);
+    expect(toggle.querySelector('span.hidden.xl\\:inline')).toBeTruthy();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
+    expect(fetchMock.mock.calls.some(call => call[0] === '/api/style-collector/start')).toBe(true);
+  });
   it('只有真实保存增加才刷新资料库；暂停和关闭由置顶窗双向同步', async () => {
     const saved = vi.fn(); render(React.createElement(StyleCollectorControl, { onSaved: saved, notify: vi.fn() }));
     await screen.findByRole('switch'); await waitFor(() => expect(FakeEvents.instances.length).toBe(1));

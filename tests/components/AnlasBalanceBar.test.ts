@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AnlasBalanceBar } from '../../components/AnlasBalanceBar';
@@ -7,6 +7,7 @@ import { OpusUsageBar } from '../../components/OpusUsageBar';
 import { hashNaiApiKey, useAnlasBudget } from '../../services/anlasBudget';
 import { useNovelaiUsage } from '../../services/naiUsage';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
+import { MobileGenerationResources } from '../../components/MobileGenerationResources';
 
 type Subscription = React.ComponentProps<typeof AnlasBalanceBar>['subscription'];
 const budget = { remaining: 1666, loading: false };
@@ -125,6 +126,46 @@ const opusInfo = (paid: number, percent: number) => ({ active: true, tier: 3,
 const runtimeResponse = () => responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } });
 
 describe('Anlas 官方余额与订阅驱动', () => {
+  it('打开手机资源详情不新增订阅请求，点按 Opus 同时更新余额和摘要且仅查询一次', async () => {
+    const key = 'mobile-shared-query-fixture';
+    sessionStorage.setItem('nai_api_key', key);
+    const MobileHarness = () => {
+      const budget = useAnlasBudget();
+      const subscription = useNovelaiUsage();
+      const [apiKey, setApiKey] = useState(key);
+      useEffect(() => {
+        const sync = () => setApiKey(sessionStorage.getItem('nai_api_key') || '');
+        window.addEventListener('nai-api-key-changed', sync);
+        return () => window.removeEventListener('nai-api-key-changed', sync);
+      }, []);
+      return React.createElement(MobileGenerationResources, { apiKey, budget, subscription,
+        runtime: { ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } } });
+    };
+    let queries = 0;
+    vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('/api/novelai-runtime')) return runtimeResponse();
+      if (url.startsWith('/api/anlas-budget')) return responseFor({ remaining: 1000 });
+      if (url.startsWith('/api/novelai-subscription')) return responseFor(++queries === 1 ? opusInfo(8000, 74) : opusInfo(7800, 73));
+      if (url.startsWith('/api/nai-key-vault')) return responseFor({ entries: [] });
+      throw new Error(`测试禁止其他接口：${url}`);
+    }));
+    render(React.createElement(MobileHarness));
+    const entry = await screen.findByRole('button', { name: /预算 1000 · 余额 8100 · Opus 74%/ });
+    fireEvent.click(entry);
+    await screen.findByText('74%');
+    expect(queries).toBe(1);
+    fireEvent.click(screen.getByRole('status', { name: /74%/ }));
+    await screen.findByRole('button', { name: /预算 1000 · 余额 7900 · Opus 73%/ });
+    expect(screen.getByText('73%')).toBeTruthy();
+    expect(screen.getByText('官方余额').nextElementSibling?.textContent).toBe('7,900 点');
+    expect(queries).toBe(2);
+    act(() => { sessionStorage.removeItem('nai_api_key'); window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: '' })); });
+    expect(screen.getByRole('button', { name: /查看账户资源：未配置 Key/ })).toBeTruthy();
+    expect(screen.queryByText('73%')).toBeNull();
+    expect(screen.getByText('官方余额').nextElementSibling?.textContent).toBe('未知');
+  });
   it('余额与 Opus 共用一次查询，手动刷新同时更新两行且不改写本地预算', async () => {
     sessionStorage.setItem('nai_api_key', 'balance-shared-query-test-key');
     let queries = 0;

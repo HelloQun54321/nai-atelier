@@ -20,6 +20,7 @@ import { anlasBudgetService, DEFAULT_ANLAS_BUDGET, getActiveKeyHash, useAnlasBud
 import { getNaiRuntimeConfig } from '../services/naiRuntime';
 import { isNovelaiSubscriptionActive, isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { AnlasBalanceBar } from './AnlasBalanceBar';
+import { OpusUsageBar } from './OpusUsageBar';
 import { getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 import { naiKeyVault, NaiKeyEntry } from '../services/naiKeyVault';
 import { readActiveNaiKey, getRememberNaiKey, setRememberNaiKey, NAI_KEY_REMEMBER_CHANGED } from '../services/naiKeyStorage';
@@ -1206,6 +1207,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </label>
               <div><h4 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">本地预算 ≠ 官方余额</p></div>
               <AnlasBalanceBar budget={anlasBudget} subscription={novelaiSubscription} className="mt-3 rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/70" />
+              <div className="mt-2 overflow-hidden rounded-xl border border-gray-200 bg-gray-50 empty:hidden dark:border-gray-700 dark:bg-gray-800/70"><OpusUsageBar collapsed={false} showDetails /></div>
               {subscriptionError && <p className="mt-1 text-meta text-amber-600 dark:text-amber-400">账号余额刷新失败{currentSubscription?.trainingStepsLeft ? '，显示上次同步值' : '，余额未知'}；点击余额行重试。</p>}
               <div className="mt-3 flex gap-2">
                 <input type="number" min="0" step="1" value={anlasInput} onChange={event => setAnlasInput(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-lg font-black tabular-nums outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900" aria-label="可支配 Anlas 点数" />
