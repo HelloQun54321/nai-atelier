@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.37.9-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.37.10-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -160,7 +160,7 @@ flowchart LR
 - **模块化解耦分层**：全局提示词、可独立开关的风格模块与全局负面词清晰分层，避免反复手动拼词；
 - **多角色独立图层**：每个角色拥有独立正负面词，文生图与编辑模式均支持直观的 X/Y 构图定位（V4/V4.5 格点吸附，V5 自由定位）；
 - **参数全套封存**：画面比例、尺寸、Steps、CFG、Variety+、采样器与 Seed 一并封存；
-- **风格串收集模式（Windows 懒人置顶窗）**：在 Discord 频道或推特刷到心仪作品时，开启置顶小窗后只需右键「复制图片链接」，工坊在后台自动静默下载并提取 NovelAI Alpha 透明通道隐藏的完整提示词、结构化角色与生成参数，无需切回工坊窗口即可自动沉淀为新预设。
+- **风格串收集模式（Windows 懒人置顶窗）**：在 Discord 频道或网页中浏览心仪作品时，开启置顶小窗后只需右键「复制图片链接」，工坊在后台自动静默下载并提取原图内嵌的隐写元数据（Stealth PNGInfo），完整还原提示词、结构化角色与生成参数，无需切回工坊窗口即可自动沉淀为新预设。
 
 <div align="center">
   <a href="./docs/screenshots/desktop-collection-float.webp">
@@ -329,14 +329,17 @@ flowchart TD
 
 ---
 
-## 🔗 生态互通与扩展
+## 🔗 生态互通与扩展（st-chatu8 联动）
 
-- **智慧姬同步（SillyTavern / st-chatu8 联动）**：
-  - 专门针对 SillyTavern 最流行的生图插件 [st-chatu8](https://github.com/damoshen123/st-chatu8) 定向开发；
-  - 支持工坊精选风格串、永久 Vibe 与历史原图的双向无缝桥接，打通酒馆 RP 角色扮演与工坊打磨之间的资产壁垒；
+- **智慧姬资产互通（SillyTavern 角色扮演无缝联动）**：
+  - 深度参考并对接 SillyTavern 生图扩展 [st-chatu8](https://github.com/damoshen123/st-chatu8)；
+  - 支持工坊精选风格串、永久 Vibe 画风编码与历史原图的双向无缝桥接，打通酒馆 RP 沉浸对话与工坊精细打磨之间的资产壁垒；
   - 详细同步规则、二进制去重与协议实现请参阅 [**SillyTavern 桥接技术指南**](./docs/SILLYTAVERN_BRIDGE.md)。
-- **多人拼车公共队列**：
-  - 支持接入与 st-chatu8 兼容的多人公共队列，通过 Key SHA-256 指纹协调生图顺序，减少多端并发冲突。
+- **👥 多人拼车公共排队（与 st-chatu8 队列协同）**：
+  - **并发冲突防护**：当多人共享拼车同一个 NovelAI Opus Key，或工坊与酒馆多端同时出图时，自动接入与 st-chatu8 兼容的云端公共队列服务，按序协调生图请求，防止触发官方并发报错；
+  - **Key 哈希安全隔离**：仅使用 Key 的 SHA-256 指纹参与排队握手，绝不向队列服务发送原始 API Key，杜绝凭据泄露；
+  - **排队状态实时感知**：生图时直观显示前方等待任务数与柔和渐变动效，支持自定义 15 字「排队个性语」；
+  - **随时无损取消**：等待期间随时一键取消排队，不占连接、不扣减额度、不浪费等待时间。
 
 ---
 
@@ -367,7 +370,7 @@ flowchart TD
 
 - 基于 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 二次开发并独立维护，保留原有 [MIT 许可证](./LICENSE)；
 - 感谢 [@ffdkj](https://github.com/ffdkj) 维护的高质量 [Danbooru 中英对照翻译数据库](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)；
-- 感谢 [@damoshen123](https://github.com/damoshen123) 的 [st-chatu8](https://github.com/damoshen123/st-chatu8) 项目提供的协议灵感与开源实践；
+- 特别感谢 [@damoshen123](https://github.com/damoshen123) 的开源项目 [st-chatu8](https://github.com/damoshen123/st-chatu8)：工坊的「智慧姬互通联动」与「多人拼车云端排队协同」功能的设计与实现均深度参考了该项目；
 - 本地反推模型：[SmilingWolf WD ViT Tagger V3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3) (Apache-2.0)。
 
 ### 一点个人吐槽

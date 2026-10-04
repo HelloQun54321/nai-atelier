@@ -6,6 +6,8 @@
 
 ## 2026-10-05
 
+- **Antigravity（Gemini 3.8 Flash）**：修正风格串收集模式中推特举例与隐写元数据（Stealth PNGInfo）表述；在 README 中补齐多人拼车公共排队机制的并发防护与交互体验介绍；校准致谢明确声明智慧姬与排队功能均深度参考 st-chatu8 实现；同步更新 CHANGELOG 并递增 patch 版本。
+
 - **Antigravity（Gemini 3.8 Flash）**：将手机端资源库局部截图替换为用户提供的完整全屏设备实机效果；运用中立索引定位重新校准 README 中的 AITag 叙述，强调公网生成案例与元数据索引对比，避免主观偏差；更新 CHANGELOG 并递增 patch 版本。
 
 - **Antigravity（Gemini 3.8 Flash）**：处理用户桌面新截屏，将 9 张截图经 Sharp 高清压缩并全部纳入 README（替换旧图并新增生成历史画廊、Agent 工作台、收集模式置顶窗、手机端资源库弹窗与外观治理设置），同步打磨对应图文排版，更新 CHANGELOG 并递增 patch 版本。
