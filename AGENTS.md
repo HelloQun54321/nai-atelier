@@ -68,9 +68,9 @@ AI 不得只机械修改用户明确指出的单个位置。开始实现前，�
 
 ## 测试目录与输出约定（强制）
 
-- 单一模块的单元测试继续与组件、服务或脚本相邻；跨模块回归集中到 `tests/integration/`，共用测试环境放 `tests/support/`，合成测试数据放 `tests/fixtures/`，显式联网检查放 `tests/live/`。不得仅为目录整齐将所有单元测试搬离被测模块。
+- 工程按 Agent 主导维护组织，所有正式测试集中在 `tests/`。模块测试分别位于 `tests/components/`、`tests/services/`、`tests/worker/`、`tests/scripts/`，保留对应源码的子目录与命名；无单一归属的跨模块回归放 `tests/integration/`，共用环境放 `tests/support/`，合成资料放 `tests/fixtures/`，显式联网检查放 `tests/live/`。不得在源码目录新增正式测试。
 - 测试优先使用上表的 npm 入口，完整输出自动写入 `logs/tests/`；一次性排查脚本与输出放 `tests/.tmp/`，结束后清理本次创建的内容。日志和临时文件均不入 Git，不在项目根目录散落。目录说明见 [tests/README.md](./tests/README.md)。
-- Node 入口自动发现 `scripts/` 与 `tests/` 下的 `*.test.mjs`，无需手工维护文件清单。新增跨模块 Vitest 测试沿用 `*.test.ts`／`*.test.tsx` 命名。
+- 修改模块时，必须同步检查 `tests/` 内对应路径及覆盖相关流程的集成测试；新增测试必须进入自动发现范围。Node 入口发现 `tests/` 下的 `*.test.mjs`，Vitest 发现其中的 `*.test.ts`／`*.test.tsx`，均排除临时目录，无需手工维护文件清单。
 - 会读写文件的测试必须使用独立临时工作区或内存模拟；默认数据路径在被测模块加载前隔离，只复制公开工程文件与合成资料，不以真实 `local-data/` 快照、缓存或凭据作为测试夹具。使用共用工作区工具只清理本次创建且核对边界的目录。
 
 ## 验证梯度与效率原则（强制）

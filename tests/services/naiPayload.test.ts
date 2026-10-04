@@ -1,0 +1,269 @@
+import { describe, expect, it } from 'vitest';
+import { buildNaiGenerationPayload, buildNaiImageEditPayload, withTransparentPromptTags } from '../../services/naiPayload';
+import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
+
+const baseParams = {
+  model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28,
+  scale: 5, sampler: 'k_euler_ancestral', qualityToggle: false, ucPreset: 4,
+};
+
+describe('NovelAI generation payload', () => {
+  it.each(['nai-diffusion-5-full', 'nai-diffusion-5-curated'])('%s 普通与流式将透明及质量标签放在 Text: 前，并发送同一权重', model => {
+    for (const stream of [false, true]) {
+      const prompt = '1girl, 0::transparent background::, Text: Hello\n\nWorld';
+      const payload = buildNaiGenerationPayload(prompt, '', { ...baseParams, model, transparent: true, transparentWeight: 2.1, qualityPresetId: 'standard' }, { stream });
+      expect(payload.input).toBe('1girl, 2.1::transparent background::, has alpha, very aesthetic, masterpiece, no text\nText: Hello\n\nWorld');
+      expect((payload.parameters.v4_prompt as any).caption.base_caption).toBe(payload.input);
+      expect((payload.parameters as Record<string, unknown>).tag_hint_transparent_background).toBe(true);
+      expect(payload.parameters.straight_alpha).toBe(true);
+      expect(payload.parameters.transparentWeight).toBeUndefined();
+      expect(prompt).toContain('0::transparent background::, Text:');
+    }
+  });
+
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 普通及流式编辑与文生图使用相同透明权重', operation => {
+    for (const stream of [false, true]) {
+      const payload = buildNaiImageEditPayload('1girl', '', { ...baseParams, transparent: true, transparentWeight: 1.8 }, {
+        operation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 0.8, noise: 0,
+        runtimeModels: ['nai-diffusion-5-full-inpainting'], stream,
+      });
+      expect(payload.input).toBe('1girl, 1.8::transparent background::, has alpha');
+      expect((payload.parameters as Record<string, unknown>).tag_hint_transparent_background).toBe(true);
+    }
+  });
+
+  it('透明关闭时独立权重不额外注入，质量后缀仍避开文字区', () => {
+    const payload = buildNaiGenerationPayload('1girl, Text: Hello', '', { ...baseParams, transparent: false, transparentWeight: 2.1, qualityPresetId: 'standard' });
+    expect(payload.input).toBe('1girl, very aesthetic, masterpiece, no text\nText: Hello');
+    expect(payload.parameters.tag_hint_transparent_background).toBeUndefined();
+  });
+  it.each(['nai-diffusion-4-full', 'nai-diffusion-4-5-full', 'nai-diffusion-5-full'])('%s 普通与流式请求一起过滤角色并按模型定位', model => {
+    const params = { ...baseParams, model, characters: [
+      { id: 'b', prompt: 'second first', negativePrompt: 'negative b', x: 0.222, y: 0.887 },
+      { id: 'paused', prompt: 'paused', negativePrompt: 'excluded negative', x: 0.5, y: 0.5, enabled: false },
+      { id: 'empty', prompt: '   ', negativePrompt: 'excluded empty', x: 0.5, y: 0.5 },
+      { id: 'a', prompt: 'first last', negativePrompt: 'negative a', x: NaN, y: 4 },
+    ] };
+    const centers = model.startsWith('nai-diffusion-5-') ? [[{ x: 0.222, y: 0.887 }], [{ x: 0.5, y: 1 }]] : [[{ x: 0.3, y: 0.9 }], [{ x: 0.5, y: 0.9 }]];
+    for (const stream of [false, true]) {
+      const payload = buildNaiGenerationPayload('2girls, landscape', '', params, { stream });
+      const positive = payload.parameters.v4_prompt as { caption: { char_captions: unknown[] }; use_coords: boolean; use_order: boolean };
+      const negative = payload.parameters.v4_negative_prompt as { caption: { char_captions: unknown[] } };
+      expect(positive.caption.char_captions).toEqual([{ char_caption: 'second first', centers: centers[0] }, { char_caption: 'first last', centers: centers[1] }]);
+      expect(negative.caption.char_captions).toEqual([{ char_caption: 'negative b', centers: centers[0] }, { char_caption: 'negative a', centers: centers[1] }]);
+      expect(positive.use_coords).toBe(false);
+      expect(positive.use_order).toBe(true);
+    }
+    expect(params.characters).toHaveLength(4);
+    expect(params.characters[0].x).toBe(0.222);
+  });
+  it('adds V5 alpha fields and transparent tags without changing the source prompt', () => {
+    const prompt = '1girl, solo';
+    const payload = buildNaiGenerationPayload(prompt, '', { ...baseParams, transparent: true });
+    expect(prompt).toBe('1girl, solo');
+    expect(payload.input).toBe('1girl, solo, transparent background, has alpha');
+    expect(payload.parameters.tag_hint_transparent_background).toBe(true);
+    expect(payload.parameters.straight_alpha).toBe(true);
+  });
+
+  it('does not duplicate existing transparent tags', () => {
+    expect(withTransparentPromptTags('1girl, 2.1::transparent background::, has alpha'))
+      .toBe('1girl, 2.1::transparent background::, has alpha');
+  });
+
+  it('strips unsupported alpha fields from older models while allowing their official stream capability', () => {
+    const payload = buildNaiGenerationPayload('1girl', '', {
+      ...baseParams, model: 'nai-diffusion-4-5-full', transparent: true,
+    }, { stream: true });
+    expect(payload.parameters.tag_hint_transparent_background).toBeUndefined();
+    expect(payload.parameters.straight_alpha).toBeUndefined();
+    expect(payload.parameters.stream).toBe('sse');
+  });
+
+  it('enables SSE only on streamed models', () => {
+    const payload = buildNaiGenerationPayload('1girl', '', baseParams, { stream: true });
+    expect(payload.parameters.stream).toBe('sse');
+  });
+
+  it('requires a runtime capability before streaming an unknown future model', () => {
+    const params = { ...baseParams, model: 'nai-diffusion-6-full' };
+    expect(buildNaiGenerationPayload('1girl', '', params, { stream: true }).parameters.stream).toBeUndefined();
+    expect(buildNaiGenerationPayload('1girl', '', params, { stream: true, runtimeStreamSupported: true }).parameters.stream).toBe('sse');
+  });
+
+  it('builds an img2img payload with strength and noise while preserving normal prompts', () => {
+    const payload = buildNaiImageEditPayload('1girl', 'bad hands', baseParams, {
+      operation: 'image-to-image', image: 'data:image/png;base64,aW1hZ2U=', strength: 0.65, noise: 0.2,
+      runtimeModels: ['nai-diffusion-5-full-inpainting'],
+    });
+    const editParameters = payload.parameters as Record<string, any>;
+    expect(payload.action).toBe('img2img');
+    expect(payload.model).toBe('nai-diffusion-5-full');
+    expect(editParameters.image).toBe('aW1hZ2U=');
+    expect(editParameters.strength).toBe(0.65);
+    expect(editParameters.color_correct).toBe(false);
+    expect(editParameters.noise).toBe(0.2);
+    expect(editParameters.add_original_image).toBe(true);
+    expect(editParameters.extra_noise_seed).toBe(editParameters.seed - 1);
+  });
+
+  it('builds an inpainting payload with a mask and inpainting model capability', () => {
+    const payload = buildNaiImageEditPayload('1girl', '', { ...baseParams, model: 'nai-diffusion-4-5-full' }, {
+      operation: 'inpaint', image: 'data:image/png;base64,aW1hZ2U=', mask: 'data:image/png;base64,bWFzaw==',
+      strength: 0.8, noise: 0.1, runtimeModels: ['nai-diffusion-4-5-full-inpainting'],
+    });
+    const editParameters = payload.parameters as Record<string, any>;
+    expect(payload.action).toBe('infill');
+    expect(payload.model).toBe('nai-diffusion-4-5-full-inpainting');
+    expect(editParameters.mask).toBe('bWFzaw==');
+    expect(editParameters.img2img).toEqual({ strength: 0.8, color_correct: true });
+    expect(editParameters.inpaintImg2ImgStrength).toBe(0.8);
+    expect(editParameters.add_original_image).toBe(false);
+    expect(editParameters.extra_noise_seed).toBe(editParameters.seed - 1);
+  });
+
+  it('builds outpainting as ordinary infill without the Focused marker', () => {
+    const payload = buildNaiImageEditPayload('landscape', '', baseParams, {
+      operation: 'outpaint', image: 'data:image/png;base64,aW1hZ2U=', mask: 'data:image/png;base64,bWFzaw==',
+      strength: 1, noise: 0, focused: true, minimumContextArea: 0.5, runtimeModels: ['nai-diffusion-5-full-inpainting'],
+    });
+    const editParameters = payload.parameters as Record<string, any>;
+    expect(payload.action).toBe('infill');
+    expect(payload.model).toBe('nai-diffusion-5-full-inpainting');
+    expect(editParameters.add_original_image).toBe(false);
+    expect(editParameters.img2img).toBeUndefined();
+    expect(editParameters._local_edit_operation).toBe('outpaint');
+    expect(editParameters._local_focused_inpainting).toBeUndefined();
+    expect(editParameters._local_minimum_context_area).toBeUndefined();
+  });
+
+  it('normalizes legacy Focused context values only for inpainting', () => {
+    const payload = buildNaiImageEditPayload('1girl', '', baseParams, {
+      operation: 'inpaint', image: 'data:image/png;base64,aW1hZ2U=', mask: 'data:image/png;base64,bWFzaw==',
+      strength: 1, noise: 0, focused: true, minimumContextArea: 0.5, runtimeModels: ['nai-diffusion-5-full-inpainting'],
+    });
+    const editParameters = payload.parameters as Record<string, any>;
+    expect(editParameters._local_focused_inpainting).toBe(true);
+    expect(editParameters._local_minimum_context_area).toBe(64);
+  });
+
+  it('enables SSE stream mode for image edit payloads when stream option is requested', () => {
+    const img2img = buildNaiImageEditPayload('1girl', '', baseParams, {
+      operation: 'image-to-image', image: 'data:image/png;base64,aW1hZ2U=', strength: 0.7, noise: 0,
+      stream: true,
+    });
+    expect((img2img.parameters as Record<string, unknown>).stream).toBe('sse');
+
+    const inpaint = buildNaiImageEditPayload('1girl', '', baseParams, {
+      operation: 'inpaint', image: 'data:image/png;base64,aW1hZ2U=', mask: 'data:image/png;base64,bWFzaw==',
+      strength: 0.8, noise: 0, runtimeModels: ['nai-diffusion-5-full-inpainting'],
+      stream: true,
+    });
+    expect((inpaint.parameters as Record<string, unknown>).stream).toBe('sse');
+  });
+
+  it('uses model-specific runtime presets and never injects the removed nsfw tag', () => {
+    const v5 = buildNaiGenerationPayload('1girl', '', {
+      ...baseParams,
+      qualityToggle: undefined,
+      ucPreset: undefined,
+      qualityPresetId: 'light',
+      ucPresetId: 'light',
+    });
+    expect(v5.parameters.qualityPresetId).toBe('light');
+    expect(v5.parameters.ucPresetId).toBe('light');
+    expect(v5.input).toContain('amazing quality');
+    const v5Negative = (v5.parameters.v4_negative_prompt as any).caption.base_caption as string;
+    expect(v5Negative).toContain('bad hands');
+    expect(v5Negative).not.toContain('nsfw');
+
+    const curated = buildNaiGenerationPayload('1girl', '', {
+      ...baseParams,
+      model: 'nai-diffusion-4-5-curated',
+      qualityToggle: undefined,
+      ucPreset: undefined,
+      qualityPresetId: 'standard',
+      ucPresetId: 'humanFocus',
+    });
+    expect(curated.input).toContain('rating:general');
+    expect((curated.parameters.v4_negative_prompt as any).caption.base_caption).toContain('bad anatomy');
+  });
+
+  it('keeps the independent quality toggle off when live presets do not contain none', () => {
+    const model = 'nai-diffusion-4-5-full';
+    const runtime = {
+      ...DEFAULT_NAI_RUNTIME,
+      modelCapabilities: {
+        ...DEFAULT_NAI_RUNTIME.modelCapabilities,
+        [model]: {
+          ...DEFAULT_NAI_RUNTIME.modelCapabilities[model],
+          qualityPresets: DEFAULT_NAI_RUNTIME.modelCapabilities[model].qualityPresets.filter(item => item.id !== 'none'),
+        },
+      },
+    };
+    const payload = buildNaiGenerationPayload('1girl', '', {
+      ...baseParams,
+      model,
+      qualityToggle: undefined,
+      qualityPresetId: 'none',
+    }, { runtime });
+
+    expect(payload.input).toBe('1girl');
+    expect(payload.parameters.qualityPresetId).toBe('none');
+  });
+
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('preserves character prompts and positioning in %s payloads', operation => {
+    const payload = buildNaiImageEditPayload('overall prompt', '', {
+      ...baseParams,
+      useCoords: true,
+      characters: [{ id: 'c1', prompt: 'retained text-to-image character', negativePrompt: 'character negative', x: 0.5, y: 0.5 }],
+    }, {
+      operation,
+      image: 'data:image/png;base64,aW1hZ2U=',
+      mask: operation === 'image-to-image' ? undefined : 'data:image/png;base64,bWFzaw==',
+      strength: 0.8,
+      noise: 0.1,
+      focused: operation === 'inpaint',
+      runtimeModels: ['nai-diffusion-5-full-inpainting'],
+    });
+    const parameters = payload.parameters as Record<string, unknown>;
+    const v4Prompt = parameters.v4_prompt as { caption: { base_caption: string; char_captions: unknown[] }; use_coords: boolean };
+    const v4NegativePrompt = parameters.v4_negative_prompt as { caption: { char_captions: unknown[] } };
+    expect(v4Prompt.caption.base_caption).toBe('overall prompt');
+    expect(v4Prompt.caption.char_captions).toEqual([{ char_caption: 'retained text-to-image character', centers: [{ x: 0.5, y: 0.5 }] }]);
+    expect(v4NegativePrompt.caption.char_captions).toEqual([{ char_caption: 'character negative', centers: [{ x: 0.5, y: 0.5 }] }]);
+    expect(v4Prompt.use_coords).toBe(true);
+  });
+
+  it('does not send retained Vibe selections for inpainting or outpainting', () => {
+    const payload = buildNaiImageEditPayload('1girl', '', {
+      ...baseParams,
+      vibes: { enabled: true, normalizeStrengths: true, slots: [{ vibeId: 'v1', encodingId: 'e1', informationExtracted: 1, strength: 0.6 }] },
+    }, {
+      operation: 'outpaint',
+      image: 'data:image/png;base64,aW1hZ2U=',
+      mask: 'data:image/png;base64,bWFzaw==',
+      strength: 1,
+      noise: 0,
+      runtimeModels: ['nai-diffusion-5-full-inpainting'],
+    });
+    expect((payload.parameters as any)._local_vibes).toBeUndefined();
+  });
+
+  it('rejects an edit when the runtime does not expose the inpainting variant', () => {
+    expect(() => buildNaiImageEditPayload('1girl', '', baseParams, {
+      operation: 'inpaint', image: 'data:image/png;base64,aW1hZ2U=', mask: 'data:image/png;base64,bWFzaw==',
+      strength: 1, noise: 0, runtimeModels: [],
+    })).toThrow('当前模型不支持图像编辑');
+  });
+
+  it('keeps fixed seed -1 server-side and omits extra_noise_seed in edits', () => {
+    const payload = buildNaiImageEditPayload('1girl', '', { ...baseParams, seed: -1 }, {
+      operation: 'image-to-image', image: 'data:image/png;base64,aW1hZ2U=', strength: 0.7, noise: 0,
+      runtimeModels: ['nai-diffusion-5-full-inpainting'],
+    });
+    // 固定 seed（-1）由服务端随机：请求不携带 seed，也不派生 extra_noise_seed
+    expect('seed' in payload.parameters).toBe(false);
+    expect('extra_noise_seed' in payload.parameters).toBe(false);
+  });
+});

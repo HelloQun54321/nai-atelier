@@ -1,0 +1,222 @@
+import { describe, expect, it } from 'vitest';
+import { blurImageEditMaskAlpha, buildImageEditCompositeMaskAlpha, buildImageEditParameters, buildOpaqueImageEditMaskRgba, calculateOutpaintTargetExpansion, dilateImageEditMaskAlpha, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, getOutpaintPreservedRect, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, resizeImageEditMaskAlpha, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForImageRect, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from '../../services/imageEdit';
+
+describe('image edit helpers', () => {
+  it('只在扩展侧保留 32px 接缝重绘，不扩展时不动原图蒙版', () => {
+    expect(getOutpaintPreservedRect(1344, 768, { top: 0, bottom: 0, left: 192, right: 256 }))
+      .toEqual({ x: 224, y: 0, width: 1280, height: 768 });
+    expect(getOutpaintPreservedRect(832, 1216, { top: 128, bottom: 192, left: 0, right: 0 }))
+      .toEqual({ x: 0, y: 160, width: 832, height: 1152 });
+    expect(getOutpaintPreservedRect(832, 1216, { top: 0, bottom: 0, left: 0, right: 0 }))
+      .toEqual({ x: 0, y: 0, width: 832, height: 1216 });
+    expect(getOutpaintPreservedRect(64, 64, { top: 64, bottom: 64, left: 64, right: 64 }))
+      .toEqual({ x: 96, y: 96, width: 0, height: 0 });
+  });
+
+  it('待调整与已应用的四边逐项比较，改变摆放也需重新应用', () => {
+    const applied = { top: 128, bottom: 192, left: 0, right: 0 };
+    expect(isSameOutpaintExpansion(applied, { ...applied })).toBe(true);
+    expect(isSameOutpaintExpansion(applied, { ...applied, top: 192, bottom: 128 })).toBe(false);
+  });
+  it('validates NovelAI canvas dimensions and 64 pixel alignment', () => {
+    expect(validateImageEditDimensions(832, 1216)).toBeNull();
+    expect(validateImageEditDimensions(833, 1216)).toContain('64');
+    expect(validateImageEditDimensions(2048, 2048)).toBeNull();
+    expect(validateImageEditDimensions(2048, 2112)).toContain('总像素');
+  });
+
+  it('resolves only runtime-advertised inpainting models', () => {
+    expect(resolveImageEditModel('nai-diffusion-5-full', ['nai-diffusion-5-full-inpainting'])).toBe('nai-diffusion-5-full-inpainting');
+    expect(() => resolveImageEditModel('nai-diffusion-5-full', [])).toThrow();
+  });
+
+  it('rejects samplers outside the current image edit capability set', () => {
+    expect(() => validateImageEditSampler('ddim')).toThrow('当前采样器不支持图像编辑');
+    expect(() => validateImageEditSampler('k_euler_ancestral')).not.toThrow();
+    expect(() => validateImageEditSampler('k_dpmpp_2m')).not.toThrow();
+  });
+
+  it('encodes image, mask, strength, noise, and focused flags without a data URL prefix', () => {
+    expect(buildImageEditParameters('inpaint', 'data:image/png;base64,aW1hZ2U=', 'data:image/png;base64,bWFzaw==', 0.7, 0.2, true)).toEqual({
+      image: 'aW1hZ2U=',
+      mask: 'bWFzaw==',
+      img2img: { strength: 0.7, color_correct: true },
+      inpaintImg2ImgStrength: 0.7,
+      noise: 0.2,
+      add_original_image: false,
+      _local_focused_inpainting: true,
+      _local_minimum_context_area: 64,
+    });
+    expect(buildImageEditParameters('image-to-image', 'data:image/png;base64,aW1hZ2U=', undefined, 0.7, 0.2, false)).toEqual({
+      image: 'aW1hZ2U=',
+      strength: 0.7,
+      color_correct: false,
+      noise: 0.2,
+      add_original_image: true,
+    });
+  });
+
+  it('normalizes legacy Focused context values to the official pixel range', () => {
+    expect(normalizeMinimumContextArea(undefined)).toBe(64);
+    expect(normalizeMinimumContextArea(0.5)).toBe(64);
+    expect(normalizeMinimumContextArea(32)).toBe(32);
+    expect(normalizeMinimumContextArea(100)).toBe(96);
+  });
+
+  it('limits Focused selections and keeps the generated request within one megapixel', () => {
+    const limited = limitFocusedImageEditRect(2048, 2048, { x: 0, y: 0, width: 2048, height: 2048 });
+    expect(limited.width * limited.height).toBeLessThanOrEqual(589824);
+    const geometry = getFocusedImageEditGeometry(2048, 2048, { x: 0, y: 0, width: 2048, height: 2048 }, 64);
+    expect(geometry.crop.width * geometry.crop.height).toBeLessThanOrEqual(589824);
+    expect(geometry.requestWidth * geometry.requestHeight).toBeLessThanOrEqual(1048576);
+    expect(geometry.inner.x).toBeGreaterThanOrEqual(geometry.crop.x);
+    expect(geometry.inner.y).toBeGreaterThanOrEqual(geometry.crop.y);
+  });
+
+  it('chooses aligned normalization targets and exposes crop/contain geometry', () => {
+    expect(getImageEditNormalizationTarget(833, 1216)).toEqual({ width: 832, height: 1216 });
+    expect(getImageEditNormalizationTarget(3000, 3000)).toEqual({ width: 2048, height: 2048 });
+    expect(getImageEditNormalizationTarget(1024, 1024)).toEqual({ width: 1024, height: 1024 });
+    const crop = getCenteredImageEditCrop(1600, 900, 1024, 1024);
+    expect(crop.width).toBe(900);
+    expect(crop.x).toBe(350);
+    const contained = getContainedImageEditRect(1600, 900, 1024, 1024);
+    expect(contained.width).toBe(1024);
+    expect(contained.height).toBe(576);
+    expect(contained.y).toBe(224);
+  });
+
+  it('transforms character centers into Focused and outpaint coordinate spaces', () => {
+    const character = { id: 'c1', prompt: 'girl', x: 0.5, y: 0.5 };
+    const geometry = {
+      crop: { x: 200, y: 100, width: 400, height: 300 },
+      inner: { x: 264, y: 164, width: 272, height: 172 },
+      requestWidth: 768,
+      requestHeight: 576,
+      fullSizeMask: false,
+    };
+    expect(transformCharacterCoordinatesForFocused([character], geometry, 1000, 800)?.[0]).toMatchObject({ x: 0.75, y: 1 });
+    const outpainted = transformCharacterCoordinatesForOutpaint([character], 1000, 800, { top: 64, right: 128, bottom: 0, left: 64 })?.[0];
+    expect(outpainted?.x).toBeCloseTo(0.473154, 5);
+    expect(outpainted?.y).toBeCloseTo(0.537037, 5);
+  });
+
+  it('角色定位随尺寸规范化裁剪、填充或缩放，原草稿不变', () => {
+    const characters = [{ id: 'c1', prompt: 'girl', negativePrompt: 'red hair', x: 0.25, y: 0.25 }];
+    const crop = transformCharacterCoordinatesForImageRect(characters, 1000, 800,
+      { x: 100, y: 0, width: 800, height: 800 }, { x: 0, y: 0, width: 800, height: 800 }, 800, 800);
+    expect(crop?.[0]).toMatchObject({ x: 0.1875, y: 0.25, prompt: 'girl', negativePrompt: 'red hair' });
+    const contain = transformCharacterCoordinatesForImageRect(characters, 1000, 800,
+      { x: 0, y: 0, width: 1000, height: 800 }, { x: 0, y: 100, width: 1000, height: 800 }, 1000, 1000);
+    expect(contain?.[0]).toMatchObject({ x: 0.25, y: 0.3 });
+    const stretch = transformCharacterCoordinatesForImageRect(characters, 1000, 800,
+      { x: 0, y: 0, width: 1000, height: 800 }, { x: 0, y: 0, width: 800, height: 1600 }, 800, 1600);
+    expect(stretch?.[0]).toMatchObject({ x: 0.25, y: 0.25 });
+    expect(characters[0]).toMatchObject({ x: 0.25, y: 0.25 });
+  });
+
+  it('calculates outpaint expansions accurately for various aspect ratios and 9-grid anchors', () => {
+    // 832x1216 (2:3) expanded to 16:9 -> target width 2176, deltaW = 1344, deltaH = 0
+    const leftAnchor = calculateOutpaintTargetExpansion(832, 1216, 16, 9, 'center-left');
+    expect(leftAnchor).toEqual({ top: 0, right: 1344, bottom: 0, left: 0 });
+    expect(832 + leftAnchor.left + leftAnchor.right).toBe(2176);
+
+    const rightAnchor = calculateOutpaintTargetExpansion(832, 1216, 16, 9, 'center-right');
+    expect(rightAnchor).toEqual({ top: 0, right: 0, bottom: 0, left: 1344 });
+
+    const centerAnchor = calculateOutpaintTargetExpansion(832, 1216, 16, 9, 'center');
+    expect(centerAnchor.left + 832 + centerAnchor.right).toBe(2176);
+    expect(centerAnchor.top).toBe(0);
+    expect(centerAnchor.bottom).toBe(0);
+
+    // 1216x832 (3:2) expanded to 9:16 -> target height 2176, deltaW = 0, deltaH = 1344
+    const topAnchor = calculateOutpaintTargetExpansion(1216, 832, 9, 16, 'top-center');
+    expect(topAnchor).toEqual({ top: 0, right: 0, bottom: 1344, left: 0 });
+    expect(832 + topAnchor.top + topAnchor.bottom).toBe(2176);
+
+    const bottomAnchor = calculateOutpaintTargetExpansion(1216, 832, 9, 16, 'bottom-center');
+    expect(bottomAnchor).toEqual({ top: 1344, right: 0, bottom: 0, left: 0 });
+
+    // 832x1216 expanded to 1:1 -> target width 1216, height 1216
+    const squareAnchor = calculateOutpaintTargetExpansion(832, 1216, 1, 1, 'center-left');
+    expect(squareAnchor).toEqual({ top: 0, right: 384, bottom: 0, left: 0 });
+    expect(832 + squareAnchor.left + squareAnchor.right).toBe(1216);
+  });
+
+  it('sets add_original_image to false for outpainting while preserving strength and noise', () => {
+    const params = buildImageEditParameters('outpaint', 'data:image/png;base64,aW1hZ2U=', 'data:image/png;base64,bWFzaw==', 1, 0, false) as Record<string, unknown>;
+    expect(params.add_original_image).toBe(false);
+    expect(params.img2img).toBeUndefined();
+    expect(params.inpaintImg2ImgStrength).toBe(1);
+    expect(params.noise).toBe(0);
+    expect(params.image).toBe('aW1hZ2U=');
+    expect(params.mask).toBe('bWFzaw==');
+  });
+
+  it('builds the official dilated and feathered composite mask from low-resolution alpha', () => {
+    const source = new Uint8ClampedArray(7 * 7);
+    source[3 * 7 + 3] = 255;
+    const dilated = dilateImageEditMaskAlpha(source, 7, 7, 1);
+    expect(dilated[2 * 7 + 2]).toBe(255);
+    expect(dilated[4 * 7 + 4]).toBe(255);
+    expect(dilated[0]).toBe(0);
+
+    const scaled = resizeImageEditMaskAlpha(new Uint8ClampedArray([0, 255]), 2, 1, 4, 1);
+    expect([...scaled]).toEqual([0, 0, 255, 255]);
+
+    const requestMask = buildOpaqueImageEditMaskRgba(new Uint8ClampedArray([0, 255]), 2, 1, 4, 1);
+    expect([...requestMask]).toEqual([
+      0, 0, 0, 255,
+      0, 0, 0, 255,
+      255, 255, 255, 255,
+      255, 255, 255, 255,
+    ]);
+
+    const blurred = blurImageEditMaskAlpha(new Uint8ClampedArray([0, 0, 255, 0, 0]), 5, 1);
+    expect([...blurred]).toEqual([6, 6, 6, 6, 6]);
+  });
+
+  it.each(['top', 'right', 'bottom', 'left', 'all'] as const)('扩图 %s 边及角落不把补白混入生成图，保留区仍平滑过渡', side => {
+    const width = 48, height = 48, targetWidth = width * 8, targetHeight = height * 8;
+    const mask = new Uint8ClampedArray(width * height);
+    const isPainted = (x: number, y: number) =>
+      ((side === 'top' || side === 'all') && y < 8) ||
+      ((side === 'right' || side === 'all') && x >= width - 8) ||
+      ((side === 'bottom' || side === 'all') && y >= height - 8) ||
+      ((side === 'left' || side === 'all') && x < 8);
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) if (isPainted(x, y)) mask[y * width + x] = 255;
+    const oldFeather = buildImageEditCompositeMaskAlpha(mask, width, height, targetWidth, targetHeight, 'inpaint');
+    const corrected = buildImageEditCompositeMaskAlpha(mask, width, height, targetWidth, targetHeight, 'outpaint');
+    let oldBrightPixels = 0, transitionPixels = 0, incorrectPadding = 0, changedPreservedPixels = 0;
+    for (let y = 0; y < targetHeight; y += 1) {
+      for (let x = 0; x < targetWidth; x += 1) {
+        const pixel = y * targetWidth + x;
+        if (isPainted(Math.floor(x / 8), Math.floor(y / 8))) {
+          // 生成图和原图都是灰度 20 时，补白不应制造出额外亮度或边界线。
+          const oldBrightness = Math.round((20 * oldFeather[pixel] + 255 * (255 - oldFeather[pixel])) / 255);
+          if (oldBrightness > 20) oldBrightPixels += 1;
+          if (corrected[pixel] !== 255) incorrectPadding += 1;
+        } else {
+          if (corrected[pixel] !== oldFeather[pixel]) changedPreservedPixels += 1;
+          if (corrected[pixel] > 0 && corrected[pixel] < 255) transitionPixels += 1;
+        }
+      }
+    }
+    expect(oldBrightPixels).toBeGreaterThan(0);
+    expect(incorrectPadding).toBe(0);
+    expect(changedPreservedPixels).toBe(0);
+    expect(transitionPixels).toBeGreaterThan(0);
+    expect(corrected[(targetHeight / 2) * targetWidth + targetWidth / 2]).toBe(0);
+  });
+
+  it('扩图手工小蒙版完整替换选区，普通重绘继续保留原羽化且未选远处不变', () => {
+    const mask = new Uint8ClampedArray(32 * 32);
+    mask[16 * 32 + 16] = 255;
+    const normal = buildImageEditCompositeMaskAlpha(mask, 32, 32, 256, 256, 'inpaint');
+    const outpaint = buildImageEditCompositeMaskAlpha(mask, 32, 32, 256, 256, 'outpaint');
+    expect(normal[128 * 256 + 128]).toBeLessThan(255);
+    expect(outpaint[128 * 256 + 128]).toBe(255);
+    expect(outpaint[0]).toBe(0);
+    expect(outpaint[127 * 256 + 127]).toBe(normal[127 * 256 + 127]);
+  });
+});

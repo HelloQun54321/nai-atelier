@@ -1,10 +1,13 @@
 # 测试组织与运行
 
-单元测试留在被测模块旁，便于修改组件、服务和脚本时一起维护；涉及多个模块的集成回归在这里集中管理。
+所有正式测试在这里集中管理，按源码模块保留对应结构，便于 Agent 按固定路径查找与维护。修改实现时同时检查对应测试目录，以及覆盖该模块的跨模块回归。
 
 | 位置 | 用途 |
 | --- | --- |
-| `components/`、`services/`、`worker/`、`scripts/` 下相邻测试 | 单一模块的单元测试 |
+| `tests/components/` | 对应 `components/`，保留 `chain/`、`inspiration/` 等子目录 |
+| `tests/services/` | 对应 `services/` 的服务与业务逻辑测试 |
+| `tests/worker/` | 对应 `worker/` 的校验、协议与 `routes/` 路由测试 |
+| `tests/scripts/` | 对应 `scripts/` 的后台服务、启动、备份与工程工具测试 |
 | `tests/integration/` | 应用保存流程、多个资源管理器、弹层、工具栏、全局主题、网关与桥接等跨模块回归 |
 | `tests/support/` | 临时工作区、Node 隔离环境等共用工具 |
 | `tests/fixtures/` | 合成的测试数据与生成器，不存私人资料或真实凭据 |
@@ -18,21 +21,25 @@
 
 ```powershell
 # Vitest：定向运行组件／服务测试或集中回归
-npm run test -- components/AgentModelControl.test.tsx
+npm run test -- tests/components/AgentModelControl.test.tsx
+npm run test -- tests/services
 npm run test -- tests/integration
 
-# Node：自动发现 scripts/ 和 tests/ 中所有 *.test.mjs
+# Node：自动发现 tests/ 中所有 *.test.mjs
 npm run test:gateway
 
 # Node：指定文件，也可传递 Node 测试筛选参数
 npm run test:gateway -- tests/integration/media-gateway.test.mjs
+npm run test:gateway -- tests/scripts/local-server-runtime.test.mjs
 npm run test:gateway -- --test-name-pattern="同步健康记录" tests/integration/media-gateway.test.mjs
 
 # 显式联网检查，不包含在上面的离线回归中
 npm run test:live-sync
 ```
 
-[run.mjs](./run.mjs) 保留终端输出，同时将日志写入 `unit.log`、`gateway.log` 或 `live-sync.log`，子进程失败的退出码原样传回。新增 Node 测试不需要再手动更新 `package.json` 的文件清单；Vitest 自动发现集中目录中的 `*.test.ts` 和 `*.test.tsx`。
+[run.mjs](./run.mjs) 保留终端输出，同时将日志写入 `unit.log`、`gateway.log` 或 `live-sync.log`，子进程失败的退出码原样传回。新增 Node 测试不需要再手动更新 `package.json` 的文件清单；Vitest 自动发现集中目录中的 `*.test.ts` 和 `*.test.tsx`。两类入口均排除 `tests/.tmp/`；目录回归检查防止正式测试重新散落到源码目录。
+
+例如 `components/AgentModelControl.tsx` 对应 `tests/components/AgentModelControl.test.tsx`；针对同一实现的多个测试变体也放在对应目录。分类依据是主要维护归属，模块目录可以包含集成验证，不强制把所有使用多个模块的测试移入 `integration/`。
 
 ## 文件隔离与临时内容
 

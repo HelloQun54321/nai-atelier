@@ -8,6 +8,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['services/**/*.test.ts', 'worker/**/*.test.ts', 'components/**/*.test.{ts,tsx}', 'tests/integration/**/*.test.{ts,tsx}'],
+    include: ['tests/**/*.test.{ts,tsx}'],
+    exclude: ['tests/.tmp/**'],
   },
 });

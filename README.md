@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.34.3-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.34.4-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -1009,7 +1009,7 @@ flowchart TD
 
 提交前的密钥扫描、ESLint 与 TypeScript 检查由 pre-commit 执行。按改动范围选择验证方式，详见 [AGENTS.md](./AGENTS.md)；纯文档修改无需运行全量构建。
 
-单元测试随所属模块维护，跨模块回归集中在 `tests/integration/`，共用环境与合成数据分别位于 `tests/support/` 和 `tests/fixtures/`。上表测试命令将完整输出保存到 `logs/tests/`；Node 测试在 `tests/.tmp/` 的独立工作区运行并在结束后清理，避免接触真实部署数据。定向参数与目录约定见 [测试说明](./tests/README.md)。
+所有正式测试集中在 `tests/`：组件、服务、Worker 与后台脚本分别对应 `tests/components/`、`tests/services/`、`tests/worker/`、`tests/scripts/`，保留源码子目录；跨模块回归位于 `tests/integration/`，共用环境与合成数据分别位于 `tests/support/` 和 `tests/fixtures/`。上表测试命令将完整输出保存到 `logs/tests/`；Node 测试在 `tests/.tmp/` 的独立工作区运行并在结束后清理，避免接触真实部署数据。定向参数与目录约定见 [测试说明](./tests/README.md)。
 
 产品文档按职责维护：[VIBER_INTENT.md](./VIBER_INTENT.md) 提炼长期目标、核心概念与设计原则，[AGENTS.md](./AGENTS.md) 规定如何随用户意图及时修订并保持精简；[产品决策记录](./docs/PRODUCT_DECISIONS.md) 保存影响后续维护的模块约定，相关任务开始前按需阅读。具体功能使用本 README，内置助手运行行为使用 [PROJECT_AGENT.md](./PROJECT_AGENT.md)，变更经过留在更新日志与 AI 工作日志。
 
@@ -1021,7 +1021,7 @@ NAI Atelier/
 ├─ services/            API、历史、元数据、AITag 与图片缓存服务
 ├─ worker/              本地 Worker、D1/R2、局域网和 AITag 缓存接口
 ├─ scripts/             启动、Tag 更新和本地服务脚本
-├─ tests/               跨模块回归、共用测试环境、合成数据与显式联网检查
+├─ tests/               全部正式测试，按源码模块与跨模块流程组织
 ├─ logs/tests/          测试命令输出与历史日志归档（Git 忽略）
 ├─ public/tag-data/     本地中英 Tag 分片与索引
 ├─ local-data/          重要个人数据（Git 忽略）

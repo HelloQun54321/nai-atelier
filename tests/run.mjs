@@ -16,7 +16,7 @@ export const discoverGatewayTests = (root = projectRoot) => {
       else if (entry.isFile() && entry.name.endsWith('.test.mjs')) files.push(path);
     }
   };
-  for (const directory of ['scripts', 'tests']) visit(join(root, directory));
+  visit(join(root, 'tests'));
   return files.sort();
 };
 
