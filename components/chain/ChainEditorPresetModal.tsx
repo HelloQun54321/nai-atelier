@@ -1,7 +1,7 @@
 import React from 'react';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
+import { InfoPopover } from '../InfoPopover';
 import { useModalA11y, isTopmostModal } from '../useModalA11y';
-import { Info } from 'lucide-react';
 import { PromptChain } from '../../types';
 import { LabPresetImportOptions } from '../../services/labModeTools';
 import { CloseButton } from '../DesignSystem';
@@ -76,11 +76,12 @@ export const ChainEditorPresetModal: React.FC<ChainEditorPresetModalProps> = ({
                         <h3 className="pr-10 font-bold dark:text-white md:pr-0">引用预设</h3>
 
                         {/* 快速导入开关 */}
-                        <label className="order-2 flex w-full flex-shrink-0 cursor-pointer select-none items-center gap-2 group md:order-none md:w-auto">
+                        <div className="order-2 flex w-full flex-shrink-0 select-none items-center gap-2 md:order-none md:w-auto">
                             <span className="text-xs text-gray-500 dark:text-gray-400">快速导入</span>
                             <button
                                 type="button"
                                 role="switch"
+                                aria-label="快速导入"
                                 aria-checked={quickImportMode}
                                 onClick={() => setQuickImportMode(!quickImportMode)}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setQuickImportMode(!quickImportMode); } }}
@@ -90,13 +91,8 @@ export const ChainEditorPresetModal: React.FC<ChainEditorPresetModalProps> = ({
                                     <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${quickImportMode ? 'left-5' : 'left-0.5'}`} />
                                 </span>
                             </button>
-                            <span className="relative">
-                                <Info className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-400 transition-colors" />
-                                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                                    开启后点击预设直接导入，关闭则显示详细选项
-                                </span>
-                            </span>
-                        </label>
+                            <InfoPopover label="快速导入说明" content="开启后点击预设直接导入，关闭则显示详细选项。" />
+                        </div>
 
                         <div className="order-3 flex w-full max-w-none rounded-lg bg-gray-100 p-1 dark:bg-gray-700/50 md:order-none md:max-w-xs md:flex-1">
                             <button

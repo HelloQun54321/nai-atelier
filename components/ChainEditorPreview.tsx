@@ -93,7 +93,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                                     e.stopPropagation();
                                     onPreviousHistory?.();
                                 }}
-                                className="absolute left-3 top-1/2 -translate-y-1/2 z-20 h-12 w-12 rounded-full bg-black/45 text-white flex items-center justify-center opacity-100 lg:opacity-0 group-hover:opacity-100 hover:bg-black/70 transition-all"
+                                className="hover-reveal-lg absolute left-3 top-1/2 -translate-y-1/2 z-20 h-12 w-12 rounded-full bg-black/45 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
                                 title="上一张"
                                 aria-label="上一张历史图"
                             >
@@ -106,7 +106,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                                     e.stopPropagation();
                                     onNextHistory?.();
                                 }}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 z-20 h-12 w-12 rounded-full bg-black/45 text-white flex items-center justify-center opacity-100 lg:opacity-0 group-hover:opacity-100 hover:bg-black/70 transition-all"
+                                className="hover-reveal-lg absolute right-3 top-1/2 -translate-y-1/2 z-20 h-12 w-12 rounded-full bg-black/45 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
                                 title="下一张"
                                 aria-label="下一张历史图"
                             >

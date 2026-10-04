@@ -1,6 +1,7 @@
 
 @import "tailwindcss";
 @import "./components/operationDialog.css";
+@import "./components/inputCapabilities.css";
 
 /* Agent 的语义悬停只显露已有卡片操作，不覆盖主题、颜色或真实鼠标状态。 */
 [data-agent-hover] .group-hover\:opacity-100,

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Languages, LoaderCircle } from 'lucide-react';
+import { InfoPopover } from './InfoPopover';
 import { normalizeTagQuery, preloadTagDictionary, searchTagDictionary, TagSuggestion } from '../services/tagDictionary';
 import {
   parsePromptTags,
@@ -486,6 +487,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             })()}
           </div>
           <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
+            <InfoPopover label="Tag 权重说明" preserveSelection content={'先点选 Tag 或整组，再调整权重。\n{ }：花括号增强；[ ]：方括号减弱；数值：1.1::tag::。\n“添加权重”将所选项转换成当前类型；“移除权重”保留 Tag 并去掉权重。\n数值权重时 − / + 每次调整 0.1，Shift + 点击调整 0.01；括号权重调整括号层级。手机可直接输入数值权重，回车或离开输入框后应用于所选整组。\n“翻译缺失项”使用当前 Agent 模型，可能产生模型调用费用。'} />
+            <InfoPopover label="Tag 完整对照" preserveSelection content={translations.map(item => `${item.displayTag}\n${item.chinese || '词库暂无翻译'}`).join('\n\n')} className="mobile-touch whitespace-nowrap rounded-md px-1 text-micro text-gray-500 underline decoration-dotted underline-offset-2 dark:text-gray-400">完整对照</InfoPopover>
             <div className="flex items-stretch overflow-hidden rounded-md border border-gray-300 dark:border-gray-600">
               <button
                 type="button"
@@ -553,7 +556,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               disabled={!selectedTokens.length}
               className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none disabled:opacity-40"
             >移除权重</button>
-            {translationError && <span className="min-w-0 flex-1 truncate text-micro text-red-500" title={translationError}>{translationError}</span>}
+            {translationError && <InfoPopover label="翻译失败详情" preserveSelection content={translationError} className="min-w-0 flex-1 truncate text-left text-micro text-red-500 underline decoration-dotted underline-offset-2">{translationError}</InfoPopover>}
             {allowAiTranslation && !disabled && missingTags.length > 0 && (
               <button
                 type="button"

@@ -5,6 +5,7 @@ import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetTagDictionaryCache } from '../../services/tagDictionary';
 import { findCompletionTarget, TagAutocompleteTextarea } from '../../components/TagAutocompleteTextarea';
+import * as tagTranslations from '../../services/tagTranslations';
 
 const manifest = {
   generatedAt: 'test',
@@ -243,6 +244,26 @@ describe('findCompletionTarget', () => {
 });
 
 describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
+  it('点按说明和完整对照不会改写或取消已选 Tag，失败原因可完整读取', async () => {
+    const longTag = 'very_long_synthetic_tag_'.repeat(5), failure = '合成模型未配置：详细的错误原因'.repeat(8);
+    const resolve = vi.spyOn(tagTranslations, 'resolvePromptTranslations').mockImplementation(async tokens => tokens.map(token => ({ ...token, source: 'missing' as const })));
+    const translate = vi.spyOn(tagTranslations, 'translateMissingPromptTags').mockRejectedValue(new Error(failure));
+    try {
+      render(React.createElement(Harness, { initial: longTag, showTranslations: true }));
+      const tag = await screen.findByRole('button', { name: new RegExp(longTag) }); fireEvent.click(tag);
+      fireEvent.click(screen.getByRole('button', { name: 'Tag 权重说明' }));
+      expect(screen.getByRole('dialog', { name: 'Tag 权重说明' }).textContent).toContain('手机可直接输入数值权重');
+      expect(translate).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('button', { name: '关闭说明' }));
+      expect(tag.getAttribute('aria-pressed')).toBe('true');
+      fireEvent.click(screen.getByRole('button', { name: 'Tag 完整对照' }));
+      expect(screen.getByRole('dialog', { name: 'Tag 完整对照' }).textContent).toContain(longTag);
+      fireEvent.click(screen.getByRole('button', { name: '关闭说明' }));
+      fireEvent.click(screen.getByRole('button', { name: '翻译缺失项 1' }));
+      const error = await screen.findByRole('button', { name: '翻译失败详情' }); fireEvent.click(error);
+      expect(screen.getByRole('dialog', { name: '翻译失败详情' }).textContent).toContain(failure);
+      expect((screen.getByRole('combobox') as HTMLTextAreaElement).value).toBe(longTag); expect(tag.getAttribute('aria-pressed')).toBe('true');
+    } finally { resolve.mockRestore(); translate.mockRestore(); }
+  });
   beforeEach(() => {
     resetTagDictionaryCache();
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {

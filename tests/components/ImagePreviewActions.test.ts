@@ -32,6 +32,8 @@ describe('小图和全屏大图的共用操作', () => {
     expect(right.classList.contains('right-4')).toBe(true);
     expect(right.classList.contains('w-28')).toBe(false);
     expect(right.classList.contains('md:w-32')).toBe(false);
+    expect(left.classList.contains('hover-reveal-lg')).toBe(!fullscreen);
+    expect(right.classList.contains('hover-reveal-lg')).toBe(!fullscreen);
     expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['复制', '下载', '设为封面']);
     expect(within(left).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(fullscreen ? ['返回小图', '删除', '清除'] : ['删除', '清除']);
     for (const button of [removeButton, clearButton, coverButton, screen.getByRole('button', { name: '复制' }), screen.getByRole('button', { name: '下载' })]) {

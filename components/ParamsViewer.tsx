@@ -2,6 +2,7 @@
 import React from 'react';
 import { ImageEditMetadata, NAIParams } from '../types';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
+import { InfoPopover } from './InfoPopover';
 
 /**
  * UC Preset 的人类可读标签映射
@@ -22,12 +23,9 @@ const ParamItem = ({ label, value }: { label: string; value: React.ReactNode }) 
         <div className="text-micro text-gray-400 uppercase font-bold text-ellipsis overflow-hidden mb-0.5">
             {label}
         </div>
-        <div
-            className="text-xs font-mono text-gray-800 dark:text-gray-200 font-medium truncate"
-            title={String(value)}
-        >
-            {value}
-        </div>
+        {typeof value === 'string' || typeof value === 'number'
+            ? <InfoPopover label={`查看${label}完整值`} content={String(value)} className="block w-full truncate text-left text-xs font-mono text-gray-800 dark:text-gray-200 font-medium underline decoration-dotted decoration-gray-400/50 underline-offset-2">{value}</InfoPopover>
+            : <div className="text-xs font-mono text-gray-800 dark:text-gray-200 font-medium break-words">{value}</div>}
     </div>
 );
 

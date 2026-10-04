@@ -275,6 +275,7 @@ it('自定义角色卡片信息编辑不选中条目，抽卡结果随名称更�
   await screen.findByText(/正在浏览随机抽取的 1 位角色/);
   const edit = screen.getByRole('button', { name: '编辑自定义角色信息' });
   expect(edit.className).not.toContain('md:hidden');
+  expect(edit.classList.contains('hover-reveal-md')).toBe(true);
   fireEvent.click(edit);
   expect(screen.queryByRole('button', { name: '复制' })).toBeNull();
   expect(p.onSelect).not.toHaveBeenCalled();

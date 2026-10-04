@@ -29,6 +29,16 @@ const renderPreview = (onGenerate: () => void, isGenerating = false) => render(R
 }));
 
 describe('四模式的分享入口', () => {
+  it('历史前后翻图共用触屏可见规则，按钮点击不误开大图', () => {
+    const previous = vi.fn(), next = vi.fn(), open = vi.fn();
+    render(React.createElement(ChainEditorPreview, { isGenerating: false, handleGenerate: vi.fn(), errorMsg: null, generatedImage: '/synthetic.png', previewImage: undefined,
+      setLightboxImg: open, isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png', generationCostLabel: '免费',
+      canNavigateHistory: true, onPreviousHistory: previous, onNextHistory: next }));
+    for (const label of ['上一张历史图', '下一张历史图']) {
+      const button = screen.getByRole('button', { name: label }); expect(button.classList.contains('hover-reveal-lg')).toBe(true); fireEvent.click(button);
+    }
+    expect(previous).toHaveBeenCalledOnce(); expect(next).toHaveBeenCalledOnce(); expect(open).not.toHaveBeenCalled();
+  });
   it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 空预览只说明当前状态，保留生成动作与费用', operation => {
     const generate = vi.fn();
     if (operation === 'text-to-image') renderPreview(generate);

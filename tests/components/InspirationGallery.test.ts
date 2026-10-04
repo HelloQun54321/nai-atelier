@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InspirationGallery } from '../../components/InspirationGallery';
 import { readAgentPage } from '../../services/agentWorkspace';
 import { Inspiration, User } from '../../types';
+import { db } from '../../services/dbService';
+const { confirmAction } = vi.hoisted(() => ({ confirmAction: vi.fn() }));
 
 vi.mock('../../services/dbService', () => ({
   db: {
@@ -13,6 +15,7 @@ vi.mock('../../services/dbService', () => ({
     ]),
     getAllInspirations: vi.fn(async () => []),
     updateInspiration: vi.fn(),
+    updateInspirationBoard: vi.fn(),
     deleteInspirationBoard: vi.fn(),
   },
 }));
@@ -23,7 +26,7 @@ vi.mock('../../components/SmartImage', () => ({
 }));
 
 vi.mock('../../components/ConfirmDialog', () => ({
-  useConfirmDialog: () => vi.fn(async () => true),
+  useConfirmDialog: () => confirmAction,
 }));
 
 vi.mock('../../services/appearancePreferences', () => ({
@@ -40,6 +43,7 @@ vi.mock('../../components/useKeepAliveScrollRestore', () => ({
 }));
 
 beforeEach(() => {
+  vi.clearAllMocks(); confirmAction.mockResolvedValue(true);
   vi.stubGlobal('innerWidth', 1280);
   vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
 });
@@ -209,4 +213,38 @@ it('实际新建灵感板窗口和颜色选择可被 Agent 读取', async () => 
   const page = readAgentPage({ limit: 20 }); expect(page.title).toBe('新建灵感板');
   expect(page.controls.some(item => item.label.includes('名称') || item.role === 'input')).toBe(true);
   expect(page.controls.filter(item => item.pressed !== undefined)).not.toHaveLength(0);
+});
+
+it('手机管理当前灵感板可修改名称与颜色，编辑焦点正确，关闭后回到原筛选面板', async () => {
+  vi.stubGlobal('innerWidth', 390);
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
+  await screen.findByRole('button', { name: '管理灵感板：角色设计' });
+  fireEvent.click(screen.getByRole('button', { name: '筛选' })); const filter = screen.getByRole('dialog', { name: '筛选灵感' });
+  fireEvent.change(within(filter).getByRole('combobox', { name: '灵感板' }), { target: { value: 'board-1' } });
+  fireEvent.click(within(filter).getByRole('button', { name: '管理灵感板：角色设计' }));
+  fireEvent.click(screen.getByRole('button', { name: '编辑名称 / 颜色' }));
+  const editor = screen.getByRole('dialog', { name: '编辑灵感板' }); const input = within(editor).getByRole('textbox');
+  expect(document.activeElement).toBe(input);
+  fireEvent.change(input, { target: { value: '新名称' } }); fireEvent.click(within(editor).getByRole('button', { name: '颜色 #ec4899' }));
+  fireEvent.click(within(editor).getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(db.updateInspirationBoard).toHaveBeenCalledWith('board-1', { name: '新名称', color: '#ec4899' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑灵感板' })).toBeNull());
+  expect(screen.getByRole('dialog', { name: '筛选灵感' })).toBe(filter);
+});
+it.each([390, 1280])('宽度 %s 的灵感板删除可发现且必须确认，取消不删除，确认后回到未整理语义', async width => {
+  vi.stubGlobal('innerWidth', width); const refresh = vi.fn();
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: refresh, notify: vi.fn() }));
+  await screen.findByRole('button', { name: '管理灵感板：角色设计' });
+  let root: HTMLElement = document.body;
+  if (width < 768) {
+    fireEvent.click(screen.getByRole('button', { name: '筛选' })); root = screen.getByRole('dialog', { name: '筛选灵感' });
+    fireEvent.change(within(root).getByRole('combobox', { name: '灵感板' }), { target: { value: 'board-1' } });
+  }
+  const remove = () => { fireEvent.click(within(root).getByRole('button', { name: '管理灵感板：角色设计' })); fireEvent.click(screen.getByRole('button', { name: '删除灵感板' })); };
+  confirmAction.mockResolvedValue(false); remove(); await waitFor(() => expect(confirmAction).toHaveBeenCalledOnce());
+  expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ message: '板内灵感不会删除，它们会回到“未整理”。' }));
+  expect(db.deleteInspirationBoard).not.toHaveBeenCalled();
+  confirmAction.mockResolvedValue(true); remove(); await waitFor(() => expect(db.deleteInspirationBoard).toHaveBeenCalledExactlyOnceWith('board-1'));
+  expect(refresh).toHaveBeenCalledOnce();
+  if (width < 768) expect((within(root).getByRole('combobox', { name: '灵感板' }) as HTMLSelectElement).value).toBe('');
 });

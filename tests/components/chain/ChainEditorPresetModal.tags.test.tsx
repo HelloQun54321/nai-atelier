@@ -25,6 +25,12 @@ it('工作台引用预设沿用用户标签筛选，不重新显示来源、类�
     return <ChainEditorPresetModal {...options} importModalSelectedTags={tags} setImportModalSelectedTags={setTags} />;
   };
   render(<Harness />);
+  fireEvent.click(screen.getByRole('button', { name: '快速导入说明' }));
+  expect(screen.getByRole('dialog', { name: '快速导入说明' }).textContent).toContain('开启后点击预设直接导入');
+  expect(options.setQuickImportMode).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByRole('button', { name: '关闭说明' }), { key: 'Escape' });
+  expect(options.setShowImportPreset).not.toHaveBeenCalled();
+  expect(screen.getByRole('dialog', { name: '引用预设' })).toBeTruthy();
   for (const tag of ['NAI', 'aitag', '待实测', '__character_catalog__']) expect(screen.queryByRole('button', { name: tag })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '星空' }));
   expect(screen.queryByText('其他预设')).toBeNull();

@@ -6,14 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
 import { ChainList } from '../../components/ChainList';
 
-const { get, post, preferences } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), preferences: { enabled: true } }));
+const { get, post, preferences, confirmAction } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), preferences: { enabled: true }, confirmAction: vi.fn() }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => preferences }));
 vi.mock('../../services/api', () => ({ api: { get, post } }));
 vi.mock('../../components/StyleCollectorControl', () => ({ StyleCollectorControl: () => React.createElement('button', { role: 'switch', 'aria-label': '收集模式' }) }));
 vi.mock('../../components/ImageTaggerPanel', () => ({ ImageTaggerAction: () => React.createElement('button', { 'aria-label': '图片反推' }) }));
 vi.mock('../../components/chain/FolderBatchImportModal', () => ({ FolderBatchImportModal: ({ isOpen, onSuccess }: { isOpen: boolean; onSuccess: () => void }) => isOpen ? React.createElement('button', { onClick: onSuccess }, '完成测试导入') : null }));
 vi.mock('../../components/SmartImage', () => ({ SmartImage: () => null }));
-vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn() }));
+vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
 vi.mock('../../services/imageDisplayPreferences', () => ({ useMobileImageDisplayPreferences: () => ({ layout: 'grid' }), mobileGalleryClassName: () => '', mobileGalleryStyle: () => ({}) }));
 vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 2, ShortestColumnMasonry: () => null }));
 vi.mock('../../components/useRestoreListAnchor', () => ({ useRestoreListAnchor: () => {} }));
@@ -29,6 +29,7 @@ const chains = [chain('a', '风格 A'), chain('b', '风格 B'), chain('v5', '风
 const props = () => ({ chains, type: 'style' as const, onCreate: vi.fn(), onSelect: vi.fn(), onDelete: vi.fn(), onRefresh: vi.fn(), onUpdateChain: vi.fn(), isLoading: false, notify: vi.fn() });
 beforeEach(() => {
   localStorage.clear(); preferences.enabled = true;
+  confirmAction.mockReset(); confirmAction.mockResolvedValue(false);
   get.mockReset(); post.mockReset(); get.mockResolvedValue({ entries: [], lastSnapshotAt: 0 });
   post.mockImplementation(async (_path, body) => ({ entries: body.chainIds.map((chainId: string) => ({ chainId, requestId: chainId, status: 'pending', requestedAt: 1, confirmedAt: 0, lastVerifiedAt: 0 })), lastSnapshotAt: 0 }));
   vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
@@ -126,7 +127,7 @@ describe('风格串列表的酒馆筛选交互', () => {
     const p = props(); render(React.createElement(ChainList, p));
     const edit = screen.getByRole('button', { name: '编辑风格串信息：风格 A' });
     expect(edit.className).not.toContain('hidden');
-    expect(edit.parentElement?.className).toContain('md:group-focus-within:opacity-100');
+    expect(edit.parentElement?.classList.contains('hover-reveal-md')).toBe(true);
     fireEvent.click(edit);
     expect(p.onSelect).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole('textbox', { name: '名称' }), { target: { value: '改名后的风格' } });
@@ -143,6 +144,36 @@ describe('风格串列表的酒馆筛选交互', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '智慧姬同步' }).hasAttribute('disabled')).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: '智慧姬同步' }));
     expect(screen.queryByRole('button', { name: /编辑风格串信息/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /更多操作：/ })).toBeNull();
+  });
+
+  it.each([390, 1024, 1280])('宽度 %s 的触屏菜单可查看并复制组合，子操作不打开工作台', async width => {
+    vi.stubGlobal('innerWidth', width);
+    const writeText = vi.fn(); Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const p = props(); render(React.createElement(ChainList, { ...p, chains: [{ ...chains[0], basePrompt: 'synthetic style', description: '完整组合说明' }] }));
+    const more = screen.getByRole('button', { name: '更多操作：风格 A' });
+    expect(more.classList.contains('touch-only-action')).toBe(true);
+    expect(more.classList.contains('bottom-2')).toBe(true);
+    fireEvent.click(more);
+    fireEvent.click(screen.getByRole('button', { name: '复制 / 查看组合详情' }));
+    const copy = screen.getByRole('dialog', { name: '复制风格串内容' });
+    expect(within(copy).getByText('完整组合说明')).toBeTruthy();
+    fireEvent.click(within(copy).getByRole('button', { name: /复制选中/ }));
+    expect(writeText).toHaveBeenCalledWith('synthetic style');
+    expect(p.onSelect).not.toHaveBeenCalled(); expect(p.onDelete).not.toHaveBeenCalled();
+  });
+
+  it('手机删除菜单先确认，取消无副作用；访客菜单只允许查看与复制', async () => {
+    vi.stubGlobal('innerWidth', 390);
+    const p = props(); const view = render(React.createElement(ChainList, p));
+    const remove = () => { fireEvent.click(screen.getByRole('button', { name: '更多操作：风格 A' })); fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作：风格 A' })).getByRole('button', { name: '删除' })); };
+    remove(); await waitFor(() => expect(confirmAction).toHaveBeenCalledOnce());
+    expect(p.onDelete).not.toHaveBeenCalled();
+    confirmAction.mockResolvedValue(true); remove(); await waitFor(() => expect(p.onDelete).toHaveBeenCalledExactlyOnceWith('a'));
+    view.rerender(React.createElement(ChainList, { ...p, isGuest: true }));
+    fireEvent.click(screen.getByRole('button', { name: '更多操作：风格 A' }));
+    expect(within(screen.getByRole('dialog', { name: '更多操作：风格 A' })).queryByRole('button', { name: '删除' })).toBeNull();
+    expect(p.onSelect).not.toHaveBeenCalled();
   });
 
   it('顶栏按查找、同步、添加排序；刷新与图片反推入口移除', async () => {

@@ -50,7 +50,7 @@ const formatHistoryDay = (key: string) => {
 };
 
 const HISTORY_THUMBNAIL_VARIANT = 'thumb-960';
-const HISTORY_CARD_HOVER_ACTIONS = 'opacity-100 pointer-events-auto md:opacity-0 md:pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto transition-opacity';
+const HISTORY_CARD_HOVER_ACTIONS = 'hover-reveal-md';
 
 const getDownloadFilename = (createdAt = Date.now()) => {
     const date = new Date(createdAt);
@@ -192,7 +192,7 @@ const HistoryCard = React.memo(function HistoryCard({
                         <Trash2 className="h-4 w-4" />
                     </button>
                 </div>}
-                <div className="absolute bottom-0 left-0 right-0 hidden p-2 bg-gradient-to-t from-black/80 to-transparent text-white text-micro md:block md:opacity-0 group-hover:opacity-100 transition-opacity truncate">
+                <div className="hover-reveal-md hover-reveal-info absolute bottom-0 left-0 right-0 hidden p-2 bg-gradient-to-t from-black/80 to-transparent text-white text-micro md:block truncate">
                     {createdAt}
                 </div>
             </div>

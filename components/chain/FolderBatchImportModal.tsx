@@ -1132,6 +1132,11 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       <span className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-mini font-mono text-gray-200 backdrop-blur-sm">
                         {item.params.width}×{item.params.height}
                       </span>
+                      <button type="button" onClick={event => { event.stopPropagation(); removeItem(item.id); }}
+                        className="hover-reveal-md mobile-touch absolute left-1.5 bottom-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-red-50 hover:text-red-500 dark:bg-black/70 dark:text-gray-300 dark:hover:bg-red-950/50"
+                        title="从本次导入列表移除，不删除原文件" aria-label={`移除导入候选：${item.name}`}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
 
                     <div className="mt-2 flex-1 min-w-0" onClick={e => e.stopPropagation()}>
@@ -1153,17 +1158,6 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={e => {
-                        e.stopPropagation();
-                        removeItem(item.id);
-                      }}
-                      className="absolute right-2 top-2 hidden h-7 w-7 items-center justify-center rounded-full bg-white/90 text-gray-400 shadow-sm backdrop-blur hover:bg-red-50 hover:text-red-500 dark:bg-black/70 dark:hover:bg-red-950/50 md:group-hover:flex"
-                      title="移除此项"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
                   </div>
                 ))}
               </div>

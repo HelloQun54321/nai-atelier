@@ -65,6 +65,17 @@ const renderParams = (props: Record<string, unknown> = {}) => render(React.creat
 afterEach(() => { cleanup(); lowMode.enabled = false; });
 
 describe('ChainEditorParams', () => {
+  it('重要提示可点按读取，保留完整预设来源、原种子及收费含义，不改写参数', () => {
+    const changed = vi.fn();
+    const name = '很长的预设名称'.repeat(10);
+    renderParams({ params: { ...params, seed: 987654321 }, presetSource: { name, modified: true }, forceEmptySeed: true, enforceFreeStepLimit: false, setParams: changed });
+    for (const [label, text] of [['预设来源详情', name], ['强制随机说明', '987654321'], ['步数上限说明', '将消耗 Anlas']] as const) {
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      expect(screen.getByRole('dialog', { name: label }).textContent).toContain(text);
+      fireEvent.click(screen.getByRole('button', { name: '关闭说明' }));
+    }
+    expect(changed).not.toHaveBeenCalled(); expect((screen.getByPlaceholderText('已强制置空 (随机)') as HTMLInputElement).value).toBe('');
+  });
   it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Agent 在 %s 填透明权重，数值失焦后真实参数与滑条同时生效', async mode => {
     let actual: NAIParams;
     const Harness = () => {

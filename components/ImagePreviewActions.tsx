@@ -26,7 +26,7 @@ export const ImagePreviewActions: React.FC<Props> = ({
   onSetCover, onUploadCover, isUploading = false, onBack, backButtonRef,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const visibility = onBack ? '' : 'opacity-100 lg:opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity';
+  const visibility = onBack ? '' : 'hover-reveal-lg';
   return <>
     {(onBack || (imageUrl && canManageHistoryGroup)) && <div className={`absolute top-4 left-4 z-30 flex flex-col items-start ${onBack ? 'gap-6' : 'gap-2'} ${visibility}`} onClick={event => event.stopPropagation()}>
       {onBack && <button ref={backButtonRef} type="button" onClick={onBack} aria-label="返回小图" title="返回小图" className="mobile-touch inline-flex h-12 w-12 items-center justify-center rounded-lg bg-black/70 text-white hover:bg-black/85">

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { InfoPopover } from './InfoPopover';
 import { ImageEditOperation, NAIParams } from '../types';
 import { DEFAULT_NAI_MODEL, getModelFollowDefaultSteps, getRuntimeNaiModelInfo, getSelectableNaiModels } from '../services/naiModels';
 import { getNaiRuntimeModelCapability, useNaiRuntime } from '../services/naiRuntime';
@@ -127,7 +128,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
 
             {presetSource && (
                 <div className="mb-3 flex min-w-0 items-center gap-2">
-                    <span className="max-w-48 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-micro font-medium normal-case tracking-normal text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-64" title={`来自：${presetSource.name}${presetSource.modified ? ' · 已修改' : ''}`}>来自：{presetSource.name}{presetSource.modified ? ' · 已修改' : ''}</span>
+                    <InfoPopover label="预设来源详情" content={`来自：${presetSource.name}${presetSource.modified ? ' · 已修改' : ''}`} className="max-w-48 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-micro font-medium normal-case tracking-normal text-emerald-700 underline decoration-dotted underline-offset-2 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-64">来自：{presetSource.name}{presetSource.modified ? ' · 已修改' : ''}</InfoPopover>
                 </div>
             )}
 
@@ -315,7 +316,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                     <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">
                         <span className="flex items-center justify-between">
                             生成步数
-                            {!enforceFreeStepLimit && !lowConsumption.enabled && <span className="text-micro text-amber-600 dark:text-amber-400 font-normal" title="已在全局设置中解除免费步数上限，超出免费门槛的步数将消耗 Anlas">已解除上限</span>}
+                            {!enforceFreeStepLimit && !lowConsumption.enabled && <InfoPopover label="步数上限说明" content="已在全局设置中解除免费步数上限，超出免费门槛的步数将消耗 Anlas。" className="text-micro text-amber-600 dark:text-amber-400 font-normal underline decoration-dotted underline-offset-2">已解除上限</InfoPopover>}
                         </span>
                     </label>
                     <input type="number" className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
@@ -334,9 +335,9 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                     <label className="text-xs text-gray-500 dark:text-gray-500 flex items-center justify-between font-medium">
                         <span>随机种子</span>
                         {forceEmptySeed && (
-                            <span className="text-micro text-amber-600 dark:text-amber-400 font-normal" title={params.seed !== undefined && params.seed !== null ? `原保存种子: ${params.seed}（关闭设置后恢复）` : '当前已在全局设置中强制随机'}>
+                            <InfoPopover label="强制随机说明" content={params.seed !== undefined && params.seed !== null ? `原保存种子: ${params.seed}（关闭设置后恢复）` : '当前已在全局设置中强制随机'} className="text-micro text-amber-600 dark:text-amber-400 font-normal underline decoration-dotted underline-offset-2">
                                 已强制置空
-                            </span>
+                            </InfoPopover>
                         )}
                     </label>
                     <input

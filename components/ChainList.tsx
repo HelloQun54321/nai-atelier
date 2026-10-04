@@ -19,6 +19,7 @@ import { useStChatu8Preferences } from '../services/stChatu8Preferences';
 import { isStChatu8ExportableChain } from '../worker/stChatu8Policy.mjs';
 import { WisdomSyncToolbar } from './WisdomSyncToolbar';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { ActionMenu } from './ActionMenu';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ChainInfoModal, UpdateChainInfo } from './chain/ChainInfoModal';
 import { getCustomChainTags } from '../services/chainTags';
@@ -341,6 +342,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     [previewRatios, syncSelection.open, syncSelection.entries],
   );
 
+  const deleteChain = async (chain: PromptChain) => {
+    if (await confirmAction({ title: `删除“${chain.name}”？`, message: `该${chain.type === 'character' ? '自定义角色' : '风格串'}及其配置将被永久删除，此操作无法撤销。`, confirmLabel: '确认删除', tone: 'danger' })) onDelete(chain.id);
+  };
   const renderChainCard = (chain: PromptChain) => (
     <div key={chain.id} data-safe-mode-work="true" data-return-item-id={chain.id}
       role={syncSelection.selecting ? 'checkbox' : 'button'}
@@ -352,21 +356,22 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       onKeyDown={event => { if (event.target === event.currentTarget && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); if (syncSelection.selecting) syncSelection.toggle(chain.id); else onSelect(chain.id); } }}
       onClick={() => syncSelection.selecting ? syncSelection.toggle(chain.id) : onSelect(chain.id)}
       className={`mobile-gallery-item group bg-white dark:bg-gray-850 border border-gray-200 dark:border-gray-800/80 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${syncSelection.selecting && syncSelection.selected.has(chain.id) ? '!border-indigo-500 ring-2 ring-indigo-500/20' : ''} ${syncSelection.selecting && !isStChatu8ExportableChain(chain) ? '!cursor-default opacity-60' : ''}`}>
-      {/* 桌面悬浮／键盘聚焦时显示卡片操作；手机保留可直接点击的信息编辑。 */}
-      {!syncSelection.open && <div className="absolute right-2 top-2 z-10 flex items-center gap-1 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+      {/* 编辑直接可用，触屏的低频操作统一收进更多；鼠标和键盘可显露桌面按钮。 */}
+      {!syncSelection.open && <div className="hover-reveal-md absolute right-2 top-2 z-10 flex items-center gap-1">
           {!isGuest && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-gray-100 hover:text-gray-900 dark:bg-black/70 dark:text-gray-300 dark:hover:bg-gray-800" title="编辑信息" aria-label={`编辑${chain.type === 'character' ? '自定义角色' : '风格串'}信息：${chain.name}`}><Pencil className="h-4 w-4" /></button>}
           {!isGuest && <button
             type="button"
             onClick={async event => {
               event.stopPropagation();
-              if (await confirmAction({ title: `删除“${chain.name}”？`, message: `该${chain.type === 'character' ? '自定义角色' : '风格串'}及其配置将被永久删除，此操作无法撤销。`, confirmLabel: '确认删除', tone: 'danger' })) onDelete(chain.id);
+              await deleteChain(chain);
             }}
-            className="hidden h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-red-50 hover:text-red-500 dark:bg-black/70 dark:text-gray-300 dark:hover:text-red-400 md:flex"
+            className="mouse-only-action h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-red-50 hover:text-red-500 dark:bg-black/70 dark:text-gray-300 dark:hover:text-red-400"
             title="删除"
+            aria-label={`删除：${chain.name}`}
           ><Trash2 className="h-4 w-4" /></button>}
           <button
               onClick={(e) => { e.stopPropagation(); setCopyModalChain(chain); }}
-          className="hidden h-9 w-9 items-center justify-center rounded-full bg-white/90 p-0 text-indigo-600 shadow-sm backdrop-blur hover:bg-indigo-50 dark:bg-black/70 dark:text-indigo-400 dark:hover:bg-indigo-900/50 md:flex"
+          className="mouse-only-action h-9 w-9 items-center justify-center rounded-full bg-white/90 p-0 text-indigo-600 shadow-sm backdrop-blur hover:bg-indigo-50 dark:bg-black/70 dark:text-indigo-400 dark:hover:bg-indigo-900/50"
               title="复制/查看详情"
           >
               <Copy className="h-4 w-4" />
@@ -411,6 +416,10 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                    )}
               </div>
           )}
+          {!syncSelection.open && <ActionMenu label={`更多操作：${chain.name}`} className="touch-only-action absolute right-2 bottom-2 z-10 bg-white/90 shadow-sm backdrop-blur dark:bg-black/70" actions={[
+            { label: '复制 / 查看组合详情', icon: <Copy />, onSelect: () => setCopyModalChain(chain) },
+            ...(!isGuest ? [{ label: '删除', icon: <Trash2 />, danger: true, onSelect: () => { void deleteChain(chain); } }] : []),
+          ]} />}
       </div>
 
       <div className="flex h-12 flex-col justify-center px-3">

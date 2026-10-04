@@ -29,7 +29,7 @@
 .dark .agent-thinking-thumb { background: var(--nai-panel-solid-surface, #171b24); border-color: var(--color-gray-300, #d1d5db); box-shadow: 0 2px 6px rgb(0 0 0 / 35%); }
 .agent-context-ring circle { fill: none; stroke-width: 2; }
 .agent-context-ring { width: 24px; min-height: 36px; }
-@media (max-width: 767px) { .agent-context-ring { min-height: 44px; } }
+@media (max-width: 767px), (any-pointer: coarse) { .agent-context-ring { width: 44px; min-height: 44px; } }
 .agent-context-ring-bed { stroke: currentColor; opacity: .2; }
 .agent-context-ring-value { stroke: currentColor; stroke-linecap: round; transform: rotate(-90deg); transform-origin: center; transition: stroke-dasharray 180ms ease; }
 @media (prefers-reduced-motion: reduce) { .agent-thinking-fill, .agent-thinking-thumb, .agent-thinking-ultra-wash { transition: none; } }

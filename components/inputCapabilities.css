@@ -1,0 +1,35 @@
+/* 宽度只决定布局；只有精确鼠标且没有触屏时，才收起辅助操作。 */
+.hover-reveal-md,
+.hover-reveal-lg { opacity: 1; pointer-events: auto; transition: opacity 150ms; }
+.touch-only-action { display: inline-flex; }
+.mouse-only-action { display: none; }
+.hover-reveal-info { pointer-events: none !important; }
+
+@media (min-width: 768px) and (hover: hover) and (pointer: fine) {
+  .hover-reveal-md { opacity: 0; pointer-events: none; }
+  .touch-only-action { display: none; }
+  .mouse-only-action { display: inline-flex; }
+}
+@media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
+  .hover-reveal-lg { opacity: 0; pointer-events: none; }
+}
+@media (hover: hover) and (pointer: fine) {
+  .group:hover .hover-reveal-md,
+  .group:hover .hover-reveal-lg,
+  .group:focus-within .hover-reveal-md,
+  .group:focus-within .hover-reveal-lg,
+  .hover-reveal-md:focus-within,
+  .hover-reveal-lg:focus-within { opacity: 1; pointer-events: auto; }
+}
+/* 混合输入设备即使当前使用鼠标，也始终保留手指可发现的入口。 */
+@media (any-pointer: coarse) {
+  .hover-reveal-md,
+  .hover-reveal-lg { opacity: 1; pointer-events: auto; }
+  .touch-only-action { display: inline-flex; }
+  .mouse-only-action { display: none; }
+  .hover-reveal-md.mobile-touch,
+  .hover-reveal-md .mobile-touch,
+  .touch-only-action { min-width: 2.75rem; min-height: 2.75rem; touch-action: manipulation; }
+}
+[data-agent-hover] .hover-reveal-md,
+[data-agent-hover] .hover-reveal-lg { opacity: 1; pointer-events: auto; }

@@ -111,9 +111,8 @@ describe('历史缩略图就地操作', () => {
         expect(remove.parentElement?.classList.contains('top-2')).toBe(true);
         for (const button of card.getAllByRole('button')) expect(button.textContent).toBe('');
         const share = card.getByRole('button', { name: '下载' }).parentElement!;
-        for (const className of ['opacity-100', 'md:opacity-0', 'md:pointer-events-none', 'group-hover:pointer-events-auto', 'group-focus-within:opacity-100', '[@media(hover:none)]:opacity-100']) {
-            expect(share.classList.contains(className)).toBe(true);
-        }
+        expect(share.classList.contains('hover-reveal-md')).toBe(true);
+        expect(remove.parentElement?.classList.contains('hover-reveal-md')).toBe(true);
     });
 
     it('分享使用各自原图并即时跟随清洗设置，不打开详情或进入多选', async () => {
