@@ -283,13 +283,15 @@ async function reuseExistingServer() {
       return false;
     } catch (error) {
       console.error(`\x1b[31m重启未完成：${error.message}\x1b[0m`);
-      process.exit(1);
+      process.exitCode = 1;
+      return true;
     }
   }
   if (!running.current) {
     console.error(`\x1b[33m已有服务仍运行 ${running.backendVersion || '旧版'}，当前项目版本为 ${version}。再次启动会复用原进程，不能加载更新。\x1b[0m`);
     console.error('\x1b[33m请先结束生图与 Agent 任务，再在原服务窗口按 Ctrl+C 并重新启动；也可执行 npm run dev:local -- --restart。\x1b[0m');
-    process.exit(2);
+    process.exitCode = 2;
+    return true;
   }
   console.log(`\x1b[32mNAI Atelier ${version} 已经在运行，直接打开现有页面。\x1b[0m`);
   if (process.env.NAI_NO_BROWSER !== '1') openBrowser(DISPLAY_URL);
@@ -481,8 +483,11 @@ async function startServer() {
 
 console.log('\x1b[36m=== NAI Atelier 本地部署 ===\x1b[0m');
 
-if (await reuseExistingServer()) process.exit(0);
-ensureDependencies();
-buildLatest();
-cleanupStaleWranglerTmp();
-await startServer();
+// 检查服务的 fetch 尚有异步句柄在收尾，Windows 上强制 process.exit 会触发 libuv 断言。
+// 已处理的分支保留退出码并自然结束，不能继续构建或启动第二份服务。
+if (!await reuseExistingServer()) {
+  ensureDependencies();
+  buildLatest();
+  cleanupStaleWranglerTmp();
+  await startServer();
+}

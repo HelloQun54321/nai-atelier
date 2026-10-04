@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.32.2-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.32.3-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -139,7 +139,7 @@ npm run dev:local
 
 启动器会按需构建；更新代码或切换版本后，应停止旧服务、安装该版本依赖后重新启动。更新前先备份数据。
 
-再次打开启动器会检查正在运行的后端。已同步时打开现有页面；旧进程尚未关闭时会明确提示，重复双击不能完成重启。先结束生图与 Agent 任务，再在原服务窗口按 Ctrl+C 并重新启动。也可在项目目录执行 `npm run dev:local -- --restart`：仅在核对项目目录、监听 PID 和服务入口后停止原服务，等待端口释放再构建与启动。此命令会结束原服务上的未完成任务；不是批量清理 Node 进程，也不会删除数据。更新过桌面脚本前需重新「发送启动器到桌面」，使桌面入口使用新的检查规则。
+再次打开启动器会检查正在运行的后端。已同步时打开现有页面并正常结束启动器；旧进程尚未关闭时会明确提示并保留原服务，以版本不匹配退出码结束，不继续构建或启动第二份服务。Windows 上检测后不会再出现异步句柄关闭断言；重复双击不能完成重启。先结束生图与 Agent 任务，再在原服务窗口按 Ctrl+C 并重新启动。也可在项目目录执行 `npm run dev:local -- --restart`：仅在核对项目目录、监听 PID 和服务入口后停止原服务，等待端口释放再构建与启动。此命令会结束原服务上的未完成任务；不是批量清理 Node 进程，也不会删除数据。更新过桌面脚本前需重新「发送启动器到桌面」，使桌面入口使用新的检查规则。
 
 <details>
 <summary>启动器自检与服务编排详情</summary>
