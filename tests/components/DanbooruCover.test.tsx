@@ -16,6 +16,21 @@ const candidate = (id: number): DanbooruCoverCandidate => ({ id, score: 20, prev
 const set = (candidates = [candidate(1)], hasMore = false, nextPage = 1) => ({ candidates, representative: candidates[0] || null, hasMore, nextPage });
 const image = () => screen.getByRole('img') as HTMLImageElement;
 const failImage = () => fireEvent.error(image());
+it('封面预取和可见性取同批最后记录，先离开后进入仍检索，最后离开时及时取消', async () => {
+  const callbacks: IntersectionObserverCallback[] = [];
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(callback: IntersectionObserverCallback) { callbacks.push(callback); }
+    observe() {} disconnect() {}
+  });
+  render(<DanbooruCover tag="synthetic-batched" kind="artist" alt="封面" />);
+  expect(covers).not.toHaveBeenCalled();
+  const emit = (callback: IntersectionObserverCallback, ...states: boolean[]) => callback(states.map(isIntersecting => ({ isIntersecting } as IntersectionObserverEntry)), {} as IntersectionObserver);
+  act(() => { emit(callbacks[0], false, true); emit(callbacks[1], false, true); });
+  await waitFor(() => expect(image().src).toBe(candidate(1).sampleUrl));
+  const signal = covers.mock.calls[0][2]?.signal;
+  act(() => { emit(callbacks[0], true, false); emit(callbacks[1], true, false); });
+  expect(signal?.aborted).toBe(true);
+});
 it('保存封面直接展示，一次翻图才检索并立即显示代表图', async () => {
   covers.mockResolvedValue({ ...set([candidate(1), candidate(2)]), representative: candidate(2) });
   render(<DanbooruCover tag="saved" kind="character" alt="封面" fixedSrc="/api/assets/synthetic" />);

@@ -369,7 +369,8 @@ export const acquireMobileThumbnailUrl = (url: string) => {
       if (released) return;
       released = true;
       const current = activeResources.get(url);
-      if (!current) return;
+      // 同地址失败后可能已建立新请求；旧消费者只释放自己取得的那一代资源。
+      if (current !== resource) return;
       current.references--;
       if (current.references > 0) return;
       activeResources.delete(url);

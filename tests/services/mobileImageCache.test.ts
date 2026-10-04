@@ -121,6 +121,25 @@ describe('acquireMobileThumbnailUrl 生命周期', () => {
     await expect(handle.promise).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  it('同地址失败后重建资源，旧消费者 release 不减少新资源引用或误取消重试', async () => {
+    let resolveRetry!: (response: Response) => void;
+    const fetchMock = vi.fn().mockRejectedValueOnce(new Error('合成网络失败'))
+      .mockImplementationOnce(() => new Promise<Response>(resolve => { resolveRetry = resolve; }));
+    vi.stubGlobal('fetch', fetchMock);
+    const url = '/api/media?source=synthetic-retry&variant=thumb-160';
+    const old = acquireMobileThumbnailUrl(url);
+    await expect(old.promise).rejects.toThrow('合成网络失败');
+    const retry = acquireMobileThumbnailUrl(url);
+    const signal = fetchMock.mock.calls[1][1].signal as AbortSignal;
+    old.release();
+    const wasAborted = signal.aborted;
+    resolveRetry(okImageResponse());
+    const outcome = await Promise.allSettled([retry.promise]);
+    expect(wasAborted).toBe(false);
+    expect(outcome[0].status).toBe('fulfilled');
+    retry.release();
+  });
+
   it('401 时只广播一次 nai-lan-access-required（并发多图节流）', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(unauthorizedResponse()));
     const listener = vi.fn();

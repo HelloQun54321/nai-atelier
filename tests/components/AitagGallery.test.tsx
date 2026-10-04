@@ -84,6 +84,48 @@ const noSelection = () => works.forEach(work => {
   expect(card(work.id).className).not.toContain('brightness-');
 });
 
+it('封面候选耗尽后显示失败、重试和原页入口，重试不误开详情', async () => {
+  await setup();
+  const preview = () => card(1).querySelector('img')!;
+  expect(preview().getAttribute('src')).toBe('/synthetic/1.png');
+  fireEvent.error(preview());
+  expect(preview().getAttribute('src')).toBe('/api/assets/aitag/1.png');
+  fireEvent.error(preview());
+  expect(within(card(1)).getByText('图片加载失败')).toBeTruthy();
+  expect(within(card(1)).getByRole('link', { name: '打开原页' }).getAttribute('href')).toContain('aitag.win');
+  const retry = within(card(1)).getByRole('button', { name: '重试' });
+  fireEvent.keyDown(retry, { key: 'Enter' }); fireEvent.click(retry);
+  expect(preview().getAttribute('src')).toBe('/synthetic/1.png');
+  expect(mocks.getWork).not.toHaveBeenCalled();
+  noSelection();
+});
+
+it('详情首图完成本地缓存后，封面立即改用本地地址而不保留旧远程失败进度', async () => {
+  const remote = 'https://ai-img.10118899.xyz/nai/1/synthetic.webp';
+  const work = { ...works[0], localFirstImageUrl: undefined, firstImage: { ...works[0].firstImage!, local_image_url: undefined, remote_image_url: remote } };
+  mocks.search.mockResolvedValue({ items: [work], total: 1, page: 1, page_size: 60 });
+  let resolve!: (value: unknown) => void;
+  mocks.getWork.mockImplementation(() => new Promise(done => { resolve = done; }));
+  await setup();
+  fireEvent.error(card(1).querySelector('img')!);
+  expect(within(card(1)).getByText('图片加载失败')).toBeTruthy();
+  fireEvent.click(card(1));
+  await act(async () => resolve({ work, images: [{ ...work.firstImage, local_image_url: '/api/assets/aitag/completed.png' }] }));
+  expect(card(1).querySelector('img')?.getAttribute('src')).toBe('/api/assets/aitag/completed.png');
+  expect(within(card(1)).queryByText('图片加载失败')).toBeNull();
+});
+
+it('封面候选推进后收藏等无关重渲染不倒退到已失败的地址', async () => {
+  await setup();
+  fireEvent.error(card(1).querySelector('img')!);
+  const preview = card(1).querySelector('img')!;
+  expect(preview.getAttribute('src')).toBe('/api/assets/aitag/1.png');
+  fireEvent.click(within(card(1)).getByRole('button', { name: '收藏' }));
+  await waitFor(() => expect(mocks.setFavorite).toHaveBeenCalled());
+  expect(card(1).querySelector('img')).toBe(preview);
+  expect(preview.getAttribute('src')).toBe('/api/assets/aitag/1.png');
+});
+
 it('Agent 读取实际打开的 AITag 详情和作品编号，切换或关闭后同步更新', async () => {
   const { container } = await setup(); container.dataset.agentView = 'aitag';
   const { readAgentPage } = await import('../../services/agentWorkspace');

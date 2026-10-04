@@ -170,59 +170,38 @@ const AitagPreviewFallback: React.FC<{ work: AitagWorkSummary; onRetry: () => vo
 );
 
 const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDetail; onImageLoad?: (width: number, height: number) => void }> = ({ work, detail, onImageLoad }) => {
-  // 候选源只由这些标量字段决定：本地/远程封面 URL、首图对象里 local/remote 就绪情况与文件名、
-  // work.id。合成一个值稳定的签名串作 useMemo 依赖——过去每次渲染新建数组 + join 依赖的
-  // useEffect 会在“列表项更新/比例状态变更”等无关重渲染时把 index 重置回 0，
-  // 已加载的图片因此反复重试闪断；现在只有在缓存推进（如首图本地化完成）时才重建候选。
   const firstImage = work.firstImage;
   const legacyFirstImage = work.first_image;
   const detailImage = detail?.images?.[0];
-  const candidatesKey = [
+  // 详情缓存完成后的本地首图优先于远程源；按实际地址建立签名，
+  // 无关的收藏／比例重渲染保留失败进度，新增本地源才重新选择。
+  const candidates = uniqueUrls([
     work.localFirstImageUrl || '',
     work.local_cover_url || '',
-    work.remoteFirstImageUrl || '',
-    work.remote_cover_url || '',
     firstImage?.local_image_url || '',
-    firstImage?.remote_image_url || '',
-    firstImage?.file_name || '',
     legacyFirstImage?.local_image_url || '',
-    legacyFirstImage?.file_name || '',
     detailImage?.local_image_url || '',
-    detailImage?.file_name || '',
-    work.id,
-  ].join('|');
-  // 依赖用上面的标量签名串 candidatesKey 表达；函数体内引用的 work/detail 字段全部被其覆盖，
-  // 不再逐字罗列（保持签名变化即重建的语义）
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const candidates = useMemo(() => uniqueUrls([
-    work.localFirstImageUrl || '',
-    work.local_cover_url || '',
     firstImage ? buildAitagImageUrl(firstImage) : '',
     legacyFirstImage ? buildAitagImageUrl(legacyFirstImage) : '',
     detailImage ? buildAitagImageUrl(detailImage) : '',
     work.remoteFirstImageUrl || '',
     work.remote_cover_url || '',
     buildAitagPreviewUrl(work),
-  ]), [candidatesKey]);
-  const [index, setIndex] = useState(0);
+  ]);
+  const candidatesKey = JSON.stringify(candidates);
+  const [candidatePosition, setCandidatePosition] = useState({ key: candidatesKey, index: 0 });
+  // 缓存完成后的新候选优先从本地首图开始，旧候选的失败进度不能挡住新源。
+  const index = candidatePosition.key === candidatesKey ? candidatePosition.index : 0;
   // 显式重试意图：候选源变化时重置 index；用户点「重试」时把 key 重置以清掉 SmartImage 失败态
   const [retryKey, setRetryKey] = useState(0);
 
-  // 候选列表（useMemo 身份稳定）真正变化时：当前 index 若已越界（如全部失败显示占位后，
-  // 某候选才完成本地缓存并入列表），回到 0 从头尝试新的最优源；仍在界内则保持不动，
-  // 交给 SmartImage 的 src 变化重置，避免把正在显示的图无谓重载。
-  useEffect(() => {
-    setIndex(current => (current >= candidates.length ? 0 : current));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidates]);
-
   const src = candidates[index] || '';
 
-  if (!src) {
+  if (!candidates.length) {
     return <div className="w-full h-full bg-gray-200 dark:bg-gray-800" />;
   }
   if (index >= candidates.length) {
-    return <AitagPreviewFallback work={work} onRetry={() => { setIndex(0); setRetryKey(value => value + 1); }} />;
+    return <AitagPreviewFallback work={work} onRetry={() => { setCandidatePosition({ key: candidatesKey, index: 0 }); setRetryKey(value => value + 1); }} />;
   }
   return (
     <SmartImage
@@ -238,7 +217,7 @@ const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDe
       }}
       onError={() => {
         // 只在候选内前进：耗尽后不再自增，渲染上面的占位而不是空白
-        setIndex(current => Math.min(current + 1, candidates.length));
+        setCandidatePosition(current => ({ key: candidatesKey, index: Math.min((current.key === candidatesKey ? current.index : 0) + 1, candidates.length) }));
       }}
     />
   );

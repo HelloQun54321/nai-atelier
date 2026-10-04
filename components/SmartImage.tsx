@@ -60,6 +60,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   const onErrorRef = useRef(onError);
   const [activatedSrc, setActivatedSrc] = useState('');
   const [displaySrc, setDisplaySrc] = useState('');
+  const displaySrcRef = useRef('');
   const [measuredWidth, setMeasuredWidth] = useState(160);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -92,6 +93,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     setFailed(false);
     setUseOriginal(false);
     setDisplaySrc('');
+    displaySrcRef.current = '';
     setActivatedSrc('');
   }, [src, retryToken]);
 
@@ -107,7 +109,8 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     // 提前约两屏预取缩略图：滚动到达时图已加载，避免“滚到哪卡到哪”。
     const preloadDistance = Math.max(root?.clientHeight || window.innerHeight, 1200);
     const observer = new IntersectionObserver(entries => {
-      if (!entries[0]?.isIntersecting) return;
+      // 同一目标可能在一批内先离开再进入；不能漏掉后续的进入记录。
+      if (!entries.some(entry => entry.isIntersecting)) return;
       setActivatedSrc(src);
       observer.disconnect();
     }, { root, rootMargin: `${preloadDistance}px 0px` });
@@ -145,7 +148,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     // 升级源只在卡片接近/进入视口时触发，避免与低清首屏同时抢带宽。
     const upgradeDistance = Math.max(root?.clientHeight ? Math.round(root.clientHeight * 0.2) : 0, 160);
     const observer = new IntersectionObserver(entries => {
-      if (!entries[0]?.isIntersecting) return;
+      if (!entries.some(entry => entry.isIntersecting)) return;
       setUpgradeActivatedSrc(upgradeTarget);
       observer.disconnect();
     }, { root, rootMargin: `${upgradeDistance}px 0px` });
@@ -157,26 +160,33 @@ export const SmartImage: React.FC<SmartImageProps> = ({
 
   useEffect(() => {
     if (!activated || !src) {
+      displaySrcRef.current = '';
       setDisplaySrc('');
       return;
     }
-    setLoaded(false);
-    setFailed(false);
+    const showImage = (url: string) => {
+      // 原图回退或非网关源的地址不随缩略档位变化；同地址不会再触发 load，不能重置为透明。
+      if (displaySrcRef.current === url) return;
+      displaySrcRef.current = url;
+      setLoaded(false);
+      setFailed(false);
+      setDisplaySrc(url);
+    };
     if (useOriginal || !canUseMediaGateway(src)) {
-      setDisplaySrc(src);
+      showImage(getMobileOriginalUrl(src));
       return;
     }
 
     const thumbnailUrl = buildMediaUrl(src, variant);
     const displayUrl = pin && thumbnailUrl.startsWith('/api/media') ? `${thumbnailUrl}&pin=1` : thumbnailUrl;
     if (!isMobileViewport()) {
-      setDisplaySrc(displayUrl);
+      showImage(displayUrl);
       return;
     }
     const resource = acquireMobileThumbnailUrl(displayUrl);
     let active = true;
     resource.promise.then(objectUrl => {
-      if (active) setDisplaySrc(objectUrl);
+      if (active) showImage(objectUrl);
     }).catch(error => {
       if (active && error?.name !== 'AbortError') setUseOriginal(true);
     });
@@ -184,7 +194,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
       active = false;
       resource.release();
     };
-  }, [activated, pin, src, useOriginal, variant]);
+  }, [activated, pin, src, useOriginal, variant, retryToken]);
 
   useEffect(() => {
     if (!upgradeActivated || !upgradeTarget) {
@@ -214,7 +224,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
       active = false;
       resource.release();
     };
-  }, [upgradeActivated, upgradeTarget, upgradeVariant]);
+  }, [upgradeActivated, upgradeTarget, upgradeVariant, retryToken]);
 
   const handleImageError = () => {
     if (!useOriginal && canUseMediaGateway(src)) {
@@ -229,6 +239,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     <div ref={containerRef} className={containerClassName}>
       {activated && displaySrc && !failed && (
         <img
+          key={`${displaySrc}:${retryToken}`}
           src={displaySrc}
           data-agent-original-src={getMobileOriginalUrl(src)}
           alt={alt}
@@ -236,12 +247,13 @@ export const SmartImage: React.FC<SmartImageProps> = ({
           onLoad={event => { setLoaded(true); onLoad?.(event); }}
           onError={handleImageError}
           decoding="async"
-          loading={eager ? 'eager' : 'lazy'}
+          loading="eager"
           fetchPriority={eager ? 'high' : 'auto'}
         />
       )}
       {upgradeActivated && upgradeDisplaySrc && !upgradeFailed && (
         <img
+          key={`${upgradeDisplaySrc}:${retryToken}`}
           src={upgradeDisplaySrc}
           alt={alt}
           aria-hidden="true"
@@ -249,7 +261,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
           onLoad={event => { setUpgradeLoaded(true); }}
           onError={() => setUpgradeFailed(true)}
           decoding="async"
-          loading={eager ? 'eager' : 'lazy'}
+          loading="eager"
         />
       )}
       {activated && !loaded && !failed && !upgradeLoaded && <div className="smart-image-shimmer absolute inset-0 flex items-center justify-center text-xs text-gray-400"><span className="animate-pulse">加载中…</span></div>}

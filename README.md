@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.34.8-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.34.9-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -256,6 +256,8 @@ flowchart LR
 - **移动端缓存池**：支持关闭或设定 25 MB、50 MB、100 MB 本地轻量小图缓存池（超出自动按 LRU 释放旧图）。
 
 > 💡 缓存与列数设置仅优化列表快速翻阅时的流畅度与流量占用；当你点击大图查看详情、下载或导入参数时，系统请求对应原图；能否提取参数取决于原文件是否保留生成元数据。
+
+历史与各图库的缩略图按可见范围加载，已显示图片在卡片宽度变化后保持可见，加载失败可就地重试。AITag 详情首图完成本地缓存后，列表封面优先使用本地图片；封面候选全部失败时显示重试与原页入口。
 
 </details>
 

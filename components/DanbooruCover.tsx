@@ -67,11 +67,13 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
       return null;
     })();
     const observer = new IntersectionObserver(entries => {
-      setActivated(Boolean(entries[0]?.isIntersecting));
+      const latest = entries[entries.length - 1];
+      if (latest) setActivated(latest.isIntersecting);
     }, { root, rootMargin: `${Math.max(root?.clientHeight || window.innerHeight, 600)}px 0px` });
     observer.observe(node);
     const visibleObserver = new IntersectionObserver(entries => {
-      const entry = entries[0];
+      const entry = entries[entries.length - 1];
+      if (!entry) return;
       const inView = Boolean(entry?.isIntersecting);
       const rect = entry?.boundingClientRect;
       const bounds = entry?.rootBounds;
