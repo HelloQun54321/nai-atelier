@@ -81,6 +81,7 @@ html[data-design-theme='nai-atelier'] {
   --nai-sidebar-surface: #fbfcff;
   --nai-toolbar-surface: rgb(255 255 255 / 0.92);
   --nai-panel-surface: #ffffff;
+  --nai-panel-solid-surface: #ffffff;
   --nai-panel-border: rgb(180 188 207 / 0.56);
   --nai-panel-shadow: 0 18px 55px rgb(30 39 73 / 0.11), 0 2px 8px rgb(30 39 73 / 0.05);
 
@@ -134,6 +135,7 @@ html[data-design-theme='nai-atelier'].dark {
   --nai-sidebar-surface: #12151c;
   --nai-toolbar-surface: rgb(18 21 28 / 0.88);
   --nai-panel-surface: #171b24;
+  --nai-panel-solid-surface: #171b24;
   --nai-panel-border: rgb(255 255 255 / 0.08);
   --nai-panel-shadow: 0 20px 50px rgb(0 0 0 / 0.45), 0 2px 10px rgb(0 0 0 / 0.25);
 
@@ -554,7 +556,7 @@ body,
 .workspace-inspiration-grid { --workspace-card-min: 190px; }
 .workspace-aitag-grid { --workspace-card-min: 175px; }
 
-/* 实验室命令栏与正文使用同一列结构：桌面左右等分，窄屏上下排列。 */
+/* 实验室命令栏在组件内按实际宽度收纳，宽栏左右等分，窄栏保持单行。 */
 .chain-editor-header {
   height: auto;
 }
@@ -607,10 +609,6 @@ body,
 }
 
 @container workspace (max-width: 1180px) {
-  .agent-panel-docked .chain-editor-header {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
-
   .agent-panel-docked .chain-editor-body {
     flex-direction: column !important;
     overflow-x: hidden !important;
@@ -669,10 +667,6 @@ body,
   flex-direction: column !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
-}
-
-.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-header {
-  grid-template-columns: minmax(0, 1fr) !important;
 }
 
 .agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-main {

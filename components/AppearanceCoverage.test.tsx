@@ -112,7 +112,15 @@ describe('全局外观覆盖审计', () => {
     expect(fields['border-color']).toBe('var(--nai-panel-border)');
     expect(rules['.agent-theme :where(header, .workspace-command-bar)']['background-color']).toBe('var(--nai-toolbar-surface)');
     const model = readFileSync(resolve('components/AgentModelControl.css'), 'utf8');
-    expect(model).toMatch(/\.agent-thinking-thumb\s*\{[^}]*background:\s*var\(--nai-panel-surface(?:,\s*white)?\)/);
+    expect(model).toMatch(/\.agent-thinking-thumb\s*\{[^}]*background:\s*var\(--nai-panel-solid-surface,\s*white\)/);
+    expect(model).toMatch(/\.dark \.agent-thinking-thumb\s*\{[^}]*background:\s*var\(--nai-panel-solid-surface,\s*#171b24\)/);
+    // 透光仅作用于面板；滑块圆钮仍使用对应主题的不透明底色。
+    expect(declarations("html[data-design-theme='nai-atelier']")['--nai-panel-solid-surface']).toBe('#ffffff');
+    expect(declarations("html[data-design-theme='nai-atelier'].dark")['--nai-panel-solid-surface']).toBe('#171b24');
+    for (const selector of ["html[data-surfaces='translucent']", "html[data-surfaces='translucent'].dark"]) {
+      expect(declarations(selector)['--nai-panel-surface']).toMatch(/rgb\(.+\/ 0\./);
+      expect(declarations(selector)['--nai-panel-solid-surface']).toBeUndefined();
+    }
   });
 
   it('Agent 手机圆角、拖拽强调色与手机详情栏使用主题变量，全屏边界保留直角', () => {
