@@ -6,6 +6,8 @@
 
 ## 2026-10-05
 
+- **Antigravity（Gemini 3.8 Flash）**：按用户反馈校准 README 中关于 AITag 的语境叙述，移除“反查”、“偷师”等负面用词，正向定调为公开分享社区的创作交流与提示词借鉴学习；更新 CHANGELOG 并递增 patch 版本。
+
 - **Antigravity（Gemini 3.8 Flash）**：处理用户桌面新截屏，将 9 张截图经 Sharp 高清压缩并全部纳入 README（替换旧图并新增生成历史画廊、Agent 工作台、收集模式置顶窗、手机端资源库弹窗与外观治理设置），同步打磨对应图文排版，更新 CHANGELOG 并递增 patch 版本。
 
 - **Antigravity（Gemini 3.8 Flash）**：在 README 中补充低消耗模式、角色框粘贴反推与收集模式置顶小窗体验；校准 Vibe 为官方能力复现与本地资产化增强；同步更新 CHANGELOG 并递增 patch 版本。
