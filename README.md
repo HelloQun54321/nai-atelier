@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.37.6-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.37.7-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -49,15 +49,23 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 本地创作工坊。�
   <a href="./docs/screenshots/desktop-presets-gallery.webp">
     <img src="./docs/screenshots/desktop-presets-gallery.webp" width="860" alt="桌面端风格串与预设资产库" />
   </a>
-  <p><em>自适应瀑布流、封面固定、模块化提示词管理</em></p>
+  <p><em>自适应瀑布流、展开式侧栏、Opus 电池实时换算、智慧姬同步与收集模式</em></p>
 </div>
 
 <div align="center">
-  <p><strong>🧪 生图实验室与项目 Agent 联动工作台</strong></p>
-  <a href="./docs/screenshots/desktop-lab-agent.webp">
-    <img src="./docs/screenshots/desktop-lab-agent.webp" width="860" alt="生图实验室与项目 Agent 工作台" />
+  <p><strong>🧪 生图实验室调参控制台</strong></p>
+  <a href="./docs/screenshots/desktop-lab-workbench.webp">
+    <img src="./docs/screenshots/desktop-lab-workbench.webp" width="860" alt="生图实验室调参控制台" />
   </a>
-  <p><em>调参控制台、官方免费尺寸适配、深度图像观察与 Agent 工具联动</em></p>
+  <p><em>四大模式切换、官方免费尺寸与步数适配、引导控制与零点数安全指示</em></p>
+</div>
+
+<div align="center">
+  <p><strong>🕘 本地原图生成历史画廊</strong></p>
+  <a href="./docs/screenshots/desktop-history-gallery.webp">
+    <img src="./docs/screenshots/desktop-history-gallery.webp" width="860" alt="本地原图生成历史画廊" />
+  </a>
+  <p><em>万张作品本地瞬间呈现、沉浸式大图浏览、收藏筛选与随机重新洗牌</em></p>
 </div>
 
 <div align="center">
@@ -65,16 +73,20 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 本地创作工坊。�
   <a href="./docs/screenshots/desktop-aitag-browser.webp">
     <img src="./docs/screenshots/desktop-aitag-browser.webp" width="860" alt="外部作品检索与参数反查" />
   </a>
-  <p><em>NovelAI 作品检索、可用生成参数提取、一键导入工坊</em></p>
+  <p><em>海量作品反查、原作者 Prompt 与角色提取、一键偷师导入工坊</em></p>
 </div>
 
 ### 📱 手机端：家庭局域网移动端触控界面
 
 <div align="center">
-  <a href="./docs/screenshots/mobile-touch-ui.webp">
-    <img src="./docs/screenshots/mobile-touch-ui.webp" width="340" alt="手机局域网独立触控界面" />
+  <a href="./docs/screenshots/mobile-presets-gallery.webp">
+    <img src="./docs/screenshots/mobile-presets-gallery.webp" width="300" alt="手机局域网双列瀑布流" />
   </a>
-  <p><em>44px 触控热区、底部单手手势导航、三段式工作流 Tab、电脑端网络与数据直通</em></p>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="./docs/screenshots/mobile-resources-modal.webp">
+    <img src="./docs/screenshots/mobile-resources-modal.webp" width="300" alt="手机端资源库一触即达" />
+  </a>
+  <p><em>44px 舒适触控、双列瀑布流、底部单手手势导航、全套资源库一触即达</em></p>
 </div>
 
 ---
@@ -150,6 +162,13 @@ flowchart LR
 - **参数全套封存**：画面比例、尺寸、Steps、CFG、Variety+、采样器与 Seed 一并封存；
 - **风格串收集模式（Windows 懒人置顶窗）**：在 Discord 频道或推特刷到心仪作品时，开启置顶小窗后只需右键「复制图片链接」，工坊在后台自动静默下载并提取 NovelAI Alpha 透明通道隐藏的完整提示词、结构化角色与生成参数，无需切回工坊窗口即可自动沉淀为新预设。
 
+<div align="center">
+  <a href="./docs/screenshots/desktop-collection-float.webp">
+    <img src="./docs/screenshots/desktop-collection-float.webp" width="360" alt="Windows 风格串收集模式置顶悬浮窗" />
+  </a>
+  <p><em>Windows 桌面置顶小窗：复制图片直链，后台静默解析参数入库</em></p>
+</div>
+
 ---
 
 ### 🧪 生图实验室：四大创作模式
@@ -193,6 +212,13 @@ flowchart LR
 - **三档权限安全掌控**：支持 **只读**、**标准**（首次写入目录时弹窗确认）、**完全访问** 三档权限模式；生图、删除与清空始终由创作者亲自确认；
 - **实时页面感知与画布命令**：Agent 自动感知当前正在浏览的作品或实验室模式，能够直接调用像素级画布工具绘制蒙版、设置选区、调整参数草稿；
 - **上下文与执行安全**：支持思考过程与工具折叠，具备多步任务超时与防上下文膨胀保护。
+
+<div align="center">
+  <a href="./docs/screenshots/desktop-agent-chat.webp">
+    <img src="./docs/screenshots/desktop-agent-chat.webp" width="460" alt="项目 Agent 业务联动工作台" />
+  </a>
+  <p><em>感知实验室状态、代写/优化提示词、本地素材读写与三档权限安全掌控</em></p>
+</div>
 
 ---
 
@@ -250,12 +276,21 @@ flowchart LR
 - **步数与能力严格封顶**：步数强制锁定在官方免费门槛内（V5 最多 23 步，V4/V4.5 最多 28 步），局部重绘临时固定为零点数的 Focused 模式；
 - **资产安全复用**：仅允许使用已有 Vibe 编码，关闭付费角色参考，点数不足或额度异常时直接拦截，杜绝任何意外扣费。
 
-### 🕶️ 沉浸式防窥（图片安全模式）
+### 🕶️ 沉浸式防窥（图片安全模式）与外观个性化
 
-在公共场合、办公室或与人合屏时，随时一键隐匿敏感画面：
+在公共场合、办公室或与人合屏时，随时一键隐匿敏感画面，并支持高度自由的外观治理：
 - **三重遮罩防护**：所有作品与封面默认应用高强度模糊、深度压暗与色彩归零；
 - **临时窥视机制**：点击单张图片仅临时解除遮罩预览，鼠标移开后立即恢复模糊；
-- **失焦自锁保护**：切换标签页、应用失去焦点或轻按 `Esc`，遮罩全自动重置闭合。
+- **失焦自锁保护**：切换标签页、应用失去焦点或轻按 `Esc`，遮罩全自动重置闭合；
+- **布局列数自由掌控**：桌面端支持 1~8 列（默认 5 列）、移动端支持单列或双列瀑布流自由切换；
+- **全站个性化主题**：内置明暗模式、透光毛玻璃材质、圆角与字号密度、自定义强调色。
+
+<div align="center">
+  <a href="./docs/screenshots/desktop-appearance-settings.webp">
+    <img src="./docs/screenshots/desktop-appearance-settings.webp" width="560" alt="外观治理与安全防窥配置" />
+  </a>
+  <p><em>全局安全模式配置、移动/桌面端瀑布流列数自定义与透光个性化主题</em></p>
+</div>
 
 ### 🗄️ 多密钥保管箱（Key Vault）
 
