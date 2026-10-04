@@ -7,13 +7,12 @@ export default {
   extraResources: [
     { from: '.desktop-build/runtime', to: 'runtime', filter: ['**/*'] },
     { from: '.desktop-build/runtime/node_modules', to: 'runtime/node_modules', filter: ['**/*'] },
-    { from: 'desktop/install-prerequisites.ps1', to: 'install-prerequisites.ps1' },
-    { from: 'desktop/uninstall-integration.ps1', to: 'uninstall-integration.ps1' },
   ],
   asar: true,
   npmRebuild: false,
   publish: null,
   electronVersion: '44.5.1',
+  electronLanguages: ['zh-CN', 'en-US'],
   win: {
     target: [{ target: 'nsis', arch: ['x64'] }],
     icon: 'public/nai-atelier.ico',

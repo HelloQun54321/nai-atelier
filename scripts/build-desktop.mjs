@@ -18,8 +18,14 @@ export const RUNTIME_FILES = [
   ...PUBLIC_ICONS.map(name => `public/${name}`),
 ];
 export const DESKTOP_FILES = ['main.mjs', 'preload.cjs', 'startup.html', 'startup.js'];
+// 前端依赖已经编译到 dist；只为实际运行的 Node 脚本安装这些直接依赖。
+export const RUNTIME_DEPENDENCIES = ['@earendil-works/pi-agent-core', '@earendil-works/pi-ai', 'fast-png', 'onnxruntime-node', 'sharp', 'undici'];
 export function createRuntimePackage(pkg, overrides) {
-  return { name: 'nai-atelier-runtime', private: true, version: pkg.version, type: 'module', scripts: {}, dependencies: { ...pkg.dependencies, ...overrides } };
+  const dependencies = Object.fromEntries(RUNTIME_DEPENDENCIES.map(name => {
+    if (!pkg.dependencies[name]) throw new Error(`根包未声明所需运行依赖：${name}`);
+    return [name, pkg.dependencies[name]];
+  }));
+  return { name: 'nai-atelier-runtime', private: true, version: pkg.version, type: 'module', scripts: {}, dependencies: { ...dependencies, ...overrides } };
 }
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const buildRoot = join(root, '.desktop-build');
@@ -99,6 +105,21 @@ async function inventory(directory, prefix = '') {
   return files;
 }
 
+export const isDistributionMetadata = file => /\.(?:[cm]?js|css)\.map$|\.d\.[cm]?ts(?:\.map)?$/i.test(file);
+export async function pruneRuntimeMetadata(nodeModules) {
+  const boundary = resolve(nodeModules);
+  const files = await inventory(boundary); // 先完整核对没有符号链接，再清理该目录内的单个元数据文件。
+  let removedBytes = 0, removedFiles = 0;
+  for (const file of files.filter(isDistributionMetadata)) {
+    const target = resolve(boundary, file);
+    if (!target.startsWith(boundary + sep)) throw new Error('拒绝清理依赖目录外的文件');
+    removedBytes += (await lstat(target)).size;
+    await rm(target);
+    removedFiles++;
+  }
+  return { removedFiles, removedBytes };
+}
+
 export async function buildDesktop({ unpacked = false, skipInstall = false } = {}) {
   if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('当前发布脚本需要 Windows x64 构建环境');
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
@@ -145,9 +166,11 @@ export async function buildDesktop({ unpacked = false, skipInstall = false } = {
       if (architecture !== 'x64') await pruneRuntimeDirectory(join(ortRoot, 'win32', architecture));
     }
   }
+  const metadata = await pruneRuntimeMetadata(join(runtime, 'node_modules'));
+  console.log(`精简依赖元数据：移除 ${metadata.removedFiles} 个文件，${(metadata.removedBytes / 1024 / 1024).toFixed(1)} MiB；保留执行文件与许可材料。`);
   console.log('校验并准备内置 Node.js…');
   await prepareNode();
-  await run(join(runtime, 'node.exe'), ['--no-warnings', '--input-type=module', '-e', "const sharp=(await import('sharp')).default; const ort=await import('onnxruntime-node'); await import('@earendil-works/pi-agent-core'); await sharp({create:{width:2,height:2,channels:4,background:'#fff'}}).png().toBuffer(); console.log('运行依赖验证通过：Node '+process.version+', sharp, ONNX, Agent');"], { cwd: runtime });
+  await run(join(runtime, 'node.exe'), ['--no-warnings', '--input-type=module', '-e', "const sharp=(await import('sharp')).default; const ort=await import('onnxruntime-node'); await import('@earendil-works/pi-agent-core'); for(const api of ['openai-completions','openai-responses','anthropic-messages']) await import('@earendil-works/pi-ai/api/'+api); await sharp({create:{width:2,height:2,channels:4,background:'#fff'}}).png().toBuffer(); console.log('运行依赖验证通过：Node '+process.version+', sharp, ONNX, Agent 与模型提供方');"], { cwd: runtime });
   await mkdir(join(appRoot, 'desktop'), { recursive: true });
   for (const file of DESKTOP_FILES) await copyFile(join(root, 'desktop', file), join(appRoot, 'desktop', file));
   await mkdir(join(appRoot, 'scripts'), { recursive: true });
@@ -157,7 +180,8 @@ export async function buildDesktop({ unpacked = false, skipInstall = false } = {
   const ownFiles = files.filter(file => !file.startsWith('node_modules/'));
   if (ownFiles.some(isPrivateDistributionPath)) throw new Error('分发资源包含禁止打包的目录或配置');
   if (files.some(file => file.startsWith('dist/tag-data/') || file.startsWith('public/tag-data/'))) throw new Error('分发资源意外包含本机词库');
-  await writeFile(join(buildRoot, 'distribution-audit.json'), JSON.stringify({ version: pkg.version, target: 'Windows 10/11 x64', ownFiles, runtimeFileCount: files.length, personalDataIncluded: false }, null, 2) + '\n');
+  if (files.some(isDistributionMetadata)) throw new Error('分发资源仍包含调试映射或类型声明');
+  await writeFile(join(buildRoot, 'distribution-audit.json'), JSON.stringify({ version: pkg.version, target: 'Windows 10/11 x64', ownFiles, runtimeFileCount: files.length, metadataPruned: metadata, personalDataIncluded: false }, null, 2) + '\n');
   console.log(`分发审计通过，${ownFiles.length} 个公开工程文件；生成 ${unpacked ? '解包应用' : '安装包'}…`);
   process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
   delete process.env.CSC_LINK;
@@ -166,7 +190,10 @@ export async function buildDesktop({ unpacked = false, skipInstall = false } = {
   const config = (await import('../desktop/builder.config.mjs')).default;
   const artifacts = await build({ projectDir: appRoot, config: { ...config, directories: { app: '.', output: join(root, 'release'), buildResources: join(root, 'desktop') }, extraResources: config.extraResources.map(entry => ({ ...entry, from: join(root, entry.from) })), win: { ...config.win, icon: join(root, 'public/nai-atelier.ico') }, nsis: { ...config.nsis, license: join(root, 'LICENSE'), include: join(root, 'desktop/installer.nsh') }, afterPack: async context => {
     const shipped = join(context.appOutDir, 'resources', 'runtime');
-    for (const helper of ['install-prerequisites.ps1', 'uninstall-integration.ps1']) await access(join(context.appOutDir, 'resources', helper));
+    const resources = await readdir(join(context.appOutDir, 'resources'));
+    for (const retired of ['install-prerequisites.ps1', 'uninstall-integration.ps1']) {
+      if (resources.includes(retired)) throw new Error(`分发资源仍包含已移除的安装脚本：${retired}`);
+    }
     await access(join(shipped, 'node.exe'));
     await access(join(shipped, 'node_modules', 'wrangler', 'wrangler-dist', 'cli.js'));
     await access(join(shipped, 'node_modules', 'onnxruntime-node', 'bin', 'napi-v3', 'win32', 'x64', 'onnxruntime_binding.node'));
