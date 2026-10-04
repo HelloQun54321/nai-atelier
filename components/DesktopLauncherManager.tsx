@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   CheckCircle2,
-  Download,
   FolderOpen,
   Info,
   Loader2,
@@ -13,7 +12,6 @@ import {
   getDesktopLauncherStatus,
   createDesktopLauncher,
   openDesktopFolder,
-  getLauncherDownloadUrl,
 } from '../services/desktopLauncher';
 
 interface DesktopLauncherManagerProps {
@@ -25,9 +23,6 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
   const [creating, setCreating] = useState(false);
   const [openingFolder, setOpeningFolder] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const [createShortcut, setCreateShortcut] = useState(true);
-  const [hideBat, setHideBat] = useState(true);
 
   const loadStatus = async () => {
     setError(null);
@@ -46,10 +41,7 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
   const handleCreate = async () => {
     setCreating(true);
     try {
-      const result = await createDesktopLauncher({
-        createShortcut,
-        hideBat,
-      });
+      const result = await createDesktopLauncher();
       notify(result.message || '桌面启动器已成功创建');
       await loadStatus();
     } catch (err) {
@@ -78,7 +70,7 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
         <div>
           <h4 className="font-semibold text-gray-900 dark:text-white">Windows 桌面启动器</h4>
           <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
-            一键在系统桌面创建或更新启动脚本（<code className="font-mono text-meta bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">NaiPromptManager.bat</code>）与专属图标快捷方式（<code className="font-mono text-meta bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">NAI Atelier.lnk</code>），双击秒开并自动复用已有服务。
+            Windows 安装依赖后自动创建调色盘快捷方式；桌面只保留 NAI Atelier 图标，启动脚本位于项目内。这里可以重新创建或修复入口。
           </p>
         </div>
         <div className="flex items-center gap-1.5 flex-none">
@@ -100,7 +92,7 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
               <div className="space-y-1">
                 <p>桌面启动器主要针对 Windows 本地宿主机系统（当前环境：{status.platform}）。</p>
                 <p className="text-meta text-amber-700 dark:text-amber-300">
-                  您仍可以直接下载批处理脚本文件，或在 Windows 电脑端打开工坊进行一键快捷创建。
+                  当前系统请在项目目录运行 npm run dev:local；Windows 部署会自动建立桌面入口。
                 </p>
               </div>
             </div>
@@ -130,14 +122,14 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-gray-200 dark:border-gray-700">
               <div className="flex items-center gap-2">
-                <span className="text-gray-400 dark:text-gray-500">启动脚本 (BAT):</span>
+                <span className="text-gray-400 dark:text-gray-500">项目内启动脚本:</span>
                 {status.batExists ? (
                   <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
                     <CheckCircle2 className="h-3.5 w-3.5 flex-none" />
                     已就绪
                   </span>
                 ) : (
-                  <span className="text-gray-400 dark:text-gray-500">未创建</span>
+                  <span className="text-gray-400 dark:text-gray-500">项目文件缺失</span>
                 )}
               </div>
 
@@ -155,31 +147,6 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
             </div>
           </div>
 
-          {/* 生成选项配置（仅限 Windows 宿主机） */}
-          {status.supported && (
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 text-xs text-gray-600 dark:text-gray-300">
-              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={createShortcut}
-                  onChange={e => setCreateShortcut(e.target.checked)}
-                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700"
-                />
-                <span>创建专属调色盘图标快捷方式（NAI Atelier.lnk）</span>
-              </label>
-
-              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={hideBat}
-                  onChange={e => setHideBat(e.target.checked)}
-                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700"
-                />
-                <span>隐藏底层 .bat 文件（桌面仅显示图标快捷方式）</span>
-              </label>
-            </div>
-          )}
-
           {/* 操作按钮栏 */}
           <div className="flex flex-wrap items-center gap-2.5 pt-1">
             {status.supported ? (
@@ -190,19 +157,10 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
                 className="mobile-touch flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-indigo-500 disabled:opacity-50 shadow-sm"
               >
                 {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-                <span>{status.batExists ? '更新桌面启动器' : '发送启动器到桌面'}</span>
+                <span>{status.shortcutExists ? '修复桌面快捷方式' : '创建桌面快捷方式'}</span>
               </button>
             ) : null}
 
-            <a
-              href={getLauncherDownloadUrl()}
-              download="NaiPromptManager.bat"
-              className="mobile-touch flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-              title="直接下载 NaiPromptManager.bat 批处理文件"
-            >
-              <Download className="h-3.5 w-3.5" />
-              <span>下载启动脚本 (.bat)</span>
-            </a>
           </div>
         </div>
       ) : (

@@ -79,7 +79,7 @@ test('真实启动入口检查 HTTP 后自然退出，旧版／代码变更／�
       await writeFile(preload, `const nativeFetch = globalThis.fetch; globalThis.fetch = (url, options) => nativeFetch(String(url).replace('127.0.0.1:3000', '127.0.0.1:${port}'), options);\n`);
       await writeFile(join(root, 'package.json'), JSON.stringify({ version: 'synthetic' }));
       const result = await new Promise((resolveChild, reject) => {
-        const child = spawn(process.execPath, ['--import', pathToFileURL(preload).href, script, ...(scenario.restart ? ['--restart'] : [])], { cwd: root, env: { ...process.env, NAI_NO_BROWSER: '1' }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        const child = spawn(process.execPath, ['--import', pathToFileURL(preload).href, script, ...(scenario.restart ? ['--restart'] : [])], { cwd: root, env: { ...process.env, NAI_NO_BROWSER: '1', NAI_NO_DESKTOP_SHORTCUT: '1' }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
         let output = '';
         const timeout = setTimeout(() => { child.kill(); reject(new Error('启动检查没有自然结束')); }, 10_000);
         child.stdout.on('data', data => { output += data; });

@@ -8,6 +8,7 @@ import { resolve as resolvePath } from 'node:path';
 import { startTagUpdateServer } from './tag-update-server.mjs';
 import { createMediaGateway } from './media-gateway.mjs';
 import { inspectExistingLocalServer, restartOwnedLocalServer } from './local-server-runtime.mjs';
+import { ensureDesktopLauncher } from './desktop-launcher.mjs';
 
 const IS_WINDOWS = platform() === 'win32';
 const IS_TERMUX = process.env.TERMUX_VERSION || existsSync('/data/data/com.termux');
@@ -294,6 +295,7 @@ async function reuseExistingServer() {
     return true;
   }
   console.log(`\x1b[32mNAI Atelier ${version} 已经在运行，直接打开现有页面。\x1b[0m`);
+  await ensureDesktopLauncher();
   if (process.env.NAI_NO_BROWSER !== '1') openBrowser(DISPLAY_URL);
   return true;
 }
@@ -473,6 +475,7 @@ async function startServer() {
     ]);
     console.log(`\x1b[32m图片网关已就绪（耗时 ${((Date.now() - gatewayStartedAt) / 1000).toFixed(1)} 秒），手机列表将按需使用缩略图。\x1b[0m`);
     console.log(`\x1b[32m全部就绪，总耗时 ${bootElapsedSec()} 秒。\x1b[0m`);
+    await ensureDesktopLauncher();
     openWhenReady();
   } catch (error) {
     console.error(`\x1b[31m本地服务启动失败: ${error.message}\x1b[0m`);

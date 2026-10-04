@@ -3405,11 +3405,8 @@ const serveDistFile = async (req, res, url) => {
       if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       try {
-        const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
-        const result = await createDesktopLauncher({
-          createShortcut: body.createShortcut !== false,
-          hideBat: Boolean(body.hideBat),
-        });
+        await readRequestBody(req, 4096);
+        const result = await createDesktopLauncher();
         return sendJson(res, 200, result);
       } catch (error) {
         return sendJson(res, Number(error.status) || 500, { error: error.message || '创建桌面启动器失败' });

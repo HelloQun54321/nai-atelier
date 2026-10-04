@@ -18,6 +18,8 @@ export interface CreateDesktopLauncherResult {
   success: boolean;
   batCreated: boolean;
   shortcutCreated: boolean;
+  changed?: boolean;
+  legacyBatRemoved?: boolean;
   batPath: string;
   shortcutPath: string | null;
   message: string;
@@ -38,14 +40,11 @@ export async function getDesktopLauncherStatus(): Promise<DesktopLauncherStatus>
 /**
  * 在用户桌面创建或更新启动器与快捷方式
  */
-export async function createDesktopLauncher(options: {
-  createShortcut?: boolean;
-  hideBat?: boolean;
-} = {}): Promise<CreateDesktopLauncherResult> {
+export async function createDesktopLauncher(): Promise<CreateDesktopLauncherResult> {
   const response = await fetch('/api/local-maintenance/desktop-launcher/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(options),
+    body: JSON.stringify({}),
   });
   const data = await response.json().catch(() => null);
   if (!response.ok || !data) {
@@ -68,11 +67,4 @@ export async function openDesktopFolder(): Promise<{ success: boolean; path: str
     throw new Error(data?.error || '无法打开桌面目录');
   }
   return data;
-}
-
-/**
- * 获取启动脚本直接下载链接
- */
-export function getLauncherDownloadUrl(): string {
-  return '/api/local-maintenance/desktop-launcher/download';
 }

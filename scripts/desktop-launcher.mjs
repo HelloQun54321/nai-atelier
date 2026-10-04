@@ -1,6 +1,6 @@
-import { spawn, execSync, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
-import { writeFile, readFile } from 'node:fs/promises';
+import { lstat, readFile, unlink } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import { join, normalize, resolve } from 'node:path';
 import { openInExplorer } from './local-backup.mjs';
@@ -13,6 +13,11 @@ export const IS_WINDOWS = platform() === 'win32';
  */
 export function getDesktopDir() {
   if (IS_WINDOWS) {
+    // 先读取系统实际桌面，兼容 OneDrive／用户重定向；不能先选一个碰巧存在的 Desktop。
+    try {
+      const desktop = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding; [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop)'], { encoding: 'utf8', windowsHide: true, timeout: 5000 }).trim();
+      if (desktop && existsSync(desktop)) return normalize(desktop);
+    } catch { /* 无法读取系统目录时使用下面的环境变量回退。 */ }
     const userProfile = process.env.USERPROFILE;
     if (userProfile) {
       const defaultDesktop = join(userProfile, 'Desktop');
@@ -25,17 +30,6 @@ export function getDesktopDir() {
         return normalize(oneDriveDesktop);
       }
     }
-    try {
-      const psOutput = execSync(
-        'powershell -NoProfile -Command "[Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop)"',
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }
-      ).trim();
-      if (psOutput && existsSync(psOutput)) {
-        return normalize(psOutput);
-      }
-    } catch {
-      // 忽略 powershell 探测异常，回退到用户根目录
-    }
   }
 
   const fallback = join(homedir() || '.', 'Desktop');
@@ -43,7 +37,7 @@ export function getDesktopDir() {
 }
 
 /**
- * 生成桌面专属启动器批处理脚本内容
+ * 兼容旧下载入口，也用于准确辨认可迁移的历史桌面脚本。
  * @param {object} options
  * @param {string} options.projectDir 项目绝对根目录
  * @returns {string}
@@ -122,7 +116,7 @@ endlocal
 export function getDesktopLauncherStatus({ projectDir = process.cwd(), desktopDir = getDesktopDir() } = {}) {
   const normProjectDir = normalize(resolve(projectDir));
   const normDesktopDir = desktopDir ? normalize(resolve(desktopDir)) : '';
-  const batPath = normDesktopDir ? join(normDesktopDir, 'NaiPromptManager.bat') : '';
+  const batPath = join(normProjectDir, 'NaiPromptManager.bat');
   const shortcutPath = normDesktopDir ? join(normDesktopDir, 'NAI Atelier.lnk') : '';
   const iconPath = join(normProjectDir, 'public', 'nai-atelier.ico');
 
@@ -164,20 +158,19 @@ export function getDesktopLauncherStatus({ projectDir = process.cwd(), desktopDi
 }
 
 /**
- * 在桌面生成或更新启动器脚本与快捷方式
+ * 桌面只创建快捷方式，启动脚本始终使用项目自带文件。
  * @param {object} options
  * @param {string} [options.projectDir]
  * @param {string} [options.desktopDir]
- * @param {boolean} [options.createShortcut=true]
- * @param {boolean} [options.hideBat=false]
  * @returns {Promise<object>}
  */
 export async function createDesktopLauncher({
   projectDir = process.cwd(),
   desktopDir = getDesktopDir(),
-  createShortcut = true,
-  hideBat = false,
+  os = platform(),
+  execFile = execFileSync,
 } = {}) {
+  if (os !== 'win32') return { success: false, supported: false, message: '当前系统请使用命令行启动 Atelier' };
   const status = getDesktopLauncherStatus({ projectDir, desktopDir });
   if (!status.desktopExists) {
     const error = new Error(`桌面目录不存在或无法访问: ${status.desktopDir}`);
@@ -185,69 +178,74 @@ export async function createDesktopLauncher({
     throw error;
   }
 
-  // 如果目标脚本已存在，先移除可能的隐藏与只读属性，避免 writeFile 出现 EPERM
-  if (IS_WINDOWS && existsSync(status.batPath)) {
+  if (!status.batExists || !status.iconExists) throw Object.assign(new Error('项目启动脚本或图标缺失，请检查项目文件完整性'), { status: 400 });
+  // 路径通过环境变量传递，中文、空格、单引号和命令字符都不会进入 PowerShell 代码。
+  const result = JSON.parse(execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', shortcutScript], {
+    encoding: 'utf8', windowsHide: true, timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, NAI_SHORTCUT_PATH: status.shortcutPath, NAI_SHORTCUT_TARGET: status.batPath, NAI_SHORTCUT_PROJECT: status.projectDir, NAI_SHORTCUT_ICON: status.iconPath },
+  }));
+  if (normalize(result.targetPath || '').toLowerCase() !== status.batPath.toLowerCase()) throw new Error('快捷方式目标校验失败，已保留旧桌面脚本');
+
+  let legacyBatRemoved = false;
+  const legacyBatPath = join(status.desktopDir, 'NaiPromptManager.bat');
+  // 新快捷方式已保存并复读确认后，才清理与本项目旧模板完全相同的副本。
+  if (resolve(legacyBatPath).toLowerCase() !== resolve(status.batPath).toLowerCase()) {
     try {
-      execSync(`attrib -h -r "${status.batPath}"`, { stdio: 'ignore', timeout: 3000 });
-    } catch {
-      // 忽略属性修改失败
-    }
-  }
-
-  const batContent = generateLauncherBatContent({ projectDir: status.projectDir });
-  await writeFile(status.batPath, batContent, 'utf8');
-
-  // 如果在 Windows 下，处理隐藏属性和快捷方式生成
-  if (IS_WINDOWS) {
-    if (hideBat) {
-      try {
-        execSync(`attrib +h "${status.batPath}"`, { stdio: 'ignore', timeout: 3000 });
-      } catch {
-        // 忽略属性修改失败
+      const file = await lstat(legacyBatPath);
+      const normalizeText = value => value.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').trim();
+      if (file.isFile() && !file.isSymbolicLink() && normalizeText(await readFile(legacyBatPath, 'utf8')) === normalizeText(generateLauncherBatContent({ projectDir: status.projectDir }))) {
+        await unlink(legacyBatPath);
+        legacyBatRemoved = true;
       }
-    }
-
-    if (createShortcut) {
-      try {
-        const psScript = [
-          '$wsh = New-Object -ComObject WScript.Shell;',
-          `$s = $wsh.CreateShortcut('${status.shortcutPath.replace(/'/g, "''")}');`,
-          `$s.TargetPath = '${status.batPath.replace(/'/g, "''")}';`,
-          `$s.WorkingDirectory = '${status.projectDir.replace(/'/g, "''")}';`,
-          `if (Test-Path '${status.iconPath.replace(/'/g, "''")}') { $s.IconLocation = '${status.iconPath.replace(/'/g, "''")},0' };`,
-          '$s.Description = "NAI Atelier Launcher";',
-          '$s.Save();',
-          '[System.Runtime.InteropServices.Marshal]::ReleaseComObject($wsh) | Out-Null;',
-        ].join(' ');
-
-        execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', psScript], {
-          stdio: 'ignore',
-          timeout: 5000,
-        });
-      } catch (err) {
-        // 如果创建 lnk 失败，不中断主流程，返回提示
-        return {
-          success: true,
-          batCreated: true,
-          shortcutCreated: false,
-          batPath: status.batPath,
-          shortcutPath: status.shortcutPath,
-          message: '启动脚本创建成功，但快捷方式生成失败: ' + (err?.message || '未知异常'),
-        };
-      }
-    }
+    } catch (error) { if (error.code !== 'ENOENT') console.warn('旧桌面脚本未清理，快捷方式已指向项目内启动器。'); }
   }
 
   return {
     success: true,
-    batCreated: true,
-    shortcutCreated: Boolean(createShortcut && IS_WINDOWS),
+    batCreated: false,
+    shortcutCreated: true,
+    changed: result.changed === true,
+    legacyBatRemoved,
     batPath: status.batPath,
-    shortcutPath: createShortcut && IS_WINDOWS ? status.shortcutPath : null,
-    message: createShortcut && IS_WINDOWS
-      ? '桌面启动脚本与专属图标快捷方式已成功创建/更新'
-      : '桌面启动脚本已成功创建/更新',
+    shortcutPath: status.shortcutPath,
+    message: '桌面快捷方式已就绪，启动脚本保留在项目内',
   };
+}
+
+const shortcutScript = String.raw`
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding
+$shell = New-Object -ComObject WScript.Shell
+try {
+  $path = $env:NAI_SHORTCUT_PATH
+  $exists = Test-Path -LiteralPath $path
+  $shortcut = $shell.CreateShortcut($path)
+  if ($exists -and $shortcut.Description -ne 'NAI Atelier Launcher') { throw 'A custom desktop shortcut already exists; it has been preserved' }
+  $icon = $env:NAI_SHORTCUT_ICON + ',0'
+  $changed = -not $exists -or $shortcut.TargetPath -ne $env:NAI_SHORTCUT_TARGET -or $shortcut.WorkingDirectory -ne $env:NAI_SHORTCUT_PROJECT -or $shortcut.IconLocation -ne $icon
+  if ($changed) {
+    $shortcut.TargetPath = $env:NAI_SHORTCUT_TARGET
+    $shortcut.WorkingDirectory = $env:NAI_SHORTCUT_PROJECT
+    $shortcut.IconLocation = $icon
+    $shortcut.Description = 'NAI Atelier Launcher'
+    $shortcut.Save()
+  }
+  [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($shortcut)
+  $verified = $shell.CreateShortcut($path)
+  if ($verified.TargetPath -ne $env:NAI_SHORTCUT_TARGET -or $verified.WorkingDirectory -ne $env:NAI_SHORTCUT_PROJECT -or $verified.IconLocation -ne $icon) { throw 'Desktop shortcut verification failed' }
+  @{ changed = [bool]$changed; targetPath = $verified.TargetPath } | ConvertTo-Json -Compress
+  [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($verified)
+} finally { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($shell) }
+`;
+
+/** 安装和日常启动共用；创建失败只提示，不阻断依赖安装或本地服务。 */
+export async function ensureDesktopLauncher(options = {}) {
+  if (platform() !== 'win32' || process.env.CI || process.env.NAI_NO_DESKTOP_SHORTCUT === '1') return;
+  try {
+    const result = await createDesktopLauncher(options);
+    if (result.changed || result.legacyBatRemoved) console.log('NAI Atelier 桌面快捷方式已创建／更新，启动脚本位于项目内。');
+    return result;
+  } catch (error) { console.warn(`无法自动创建桌面快捷方式，可在「设置 → 数据与维护」重试：${error.message}`); }
 }
 
 /**
