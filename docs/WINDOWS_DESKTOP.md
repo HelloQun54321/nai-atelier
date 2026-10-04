@@ -1,6 +1,6 @@
 # Windows 安装版
 
-安装版面向 Windows 10／11 x64，将完整工坊交给没有开发环境的使用者。源码版仍保留现有部署流程；Android 独立 APK 继续属于已确认但尚未交付的方向。
+安装版面向 Windows 10／11 x64，将完整工坊交给没有开发环境的使用者。源码版仍保留现有部署流程；Android 独立 APK 已暂停，手机继续使用局域网入口。GitHub 下载页与版本附件的维护流程见 [GitHub Release 发布](./GITHUB_RELEASE.md)。
 
 ## 安装、打开与卸载
 

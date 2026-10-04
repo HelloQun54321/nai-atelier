@@ -24,6 +24,7 @@ node_modules
 dist
 dist-ssr
 .desktop-build/
+.android-build/
 release/
 *.local
 

@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.37.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.37.2-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -93,6 +93,8 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 创作工坊。它不�
 
 ### Windows 安装版（无需部署工具）
 
+安装包通过项目的 [GitHub Releases](https://github.com/HelloQun54321/nai-atelier/releases) 分发；首次 Release 发布前由维护者直接提供。下载对应版本的 `NAI-Atelier-Setup-<版本>-x64.exe`，GitHub 自动附带的 `Source code` 是源码归档。维护者发布流程见 [GitHub Release 发布](./docs/GITHUB_RELEASE.md)。
+
 Windows 10／11 **64 位**电脑可使用单独分发的 `NAI-Atelier-Setup-<版本>-x64.exe`：双击安装包，在安装向导中选择程序位置，完成后从桌面或开始菜单打开 **NAI Atelier**。窗口与完整本地服务均已内置，不需要安装 Node.js、npm 或 Git。安装器直接检查微软 Visual C++ x64 运行库（14.44 或更新版本）；缺少时，在安装程序文件前提示到[微软官方下载页面](https://learn.microsoft.com/zh-cn/cpp/windows/latest-supported-vc-redist)选择 X64，安装运行库后重新运行工坊安装包。运行库安装可能要求管理员授权，工坊安装器不下载或执行联网 PowerShell 脚本。
 
 安装版首次运行是独立空工坊，添加使用者自己的 NovelAI Key，并在「Tag 补全词库」安装所需词库；原图、历史、账户、密钥、已下载词库和反推模型均不随安装包分发。个人数据保存在 `%LOCALAPPDATA%\NAI Atelier\workspace\local-data`，程序目录可以自选，数据目录保持独立；卸载默认保留个人数据。关闭窗口后托盘继续运行，通过托盘「退出工坊」停止后台。更完整的安装、升级、数据路径与发布验证说明见 [Windows 安装版](./docs/WINDOWS_DESKTOP.md)。
@@ -169,7 +171,7 @@ npm run dev:local
 ## 📱 手机局域网访问
 
 > [!NOTE]
-> 本节描述当前已提供的电脑工坊与手机局域网访问。独立 Android APK 已确认为产品目标，面向没有电脑的创作者；目前尚未提供可安装 APK，技术路线与适配范围见 [独立 Android 方案评估](./docs/ANDROID_STANDALONE.md)。
+> 本节描述当前已提供的电脑工坊与手机局域网访问。独立 Android APK 已暂停，目前不提供可安装 APK；原技术评估保留在 [独立 Android 方案评估](./docs/ANDROID_STANDALONE.md)，当前优先维护与分发 Windows 安装版。
 
 随时随地窝在沙发或床上用手机搓图、挑图是最高频的心流体验。电脑负责充当本地工作站（运行 Worker、网关与存储核心），手机只要连上同一个 Wi-Fi，就能无缝操控电脑里的所有预设、原图与历史。
 
