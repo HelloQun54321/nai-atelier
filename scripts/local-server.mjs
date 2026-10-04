@@ -7,7 +7,7 @@ import { networkInterfaces, platform } from 'os';
 import { resolve as resolvePath } from 'node:path';
 import { startTagUpdateServer } from './tag-update-server.mjs';
 import { createMediaGateway } from './media-gateway.mjs';
-import { inspectExistingLocalServer, restartOwnedLocalServer } from './local-server-runtime.mjs';
+import { LOCAL_LAUNCHER_PORT, prepareLocalServerLaunch } from './local-server-runtime.mjs';
 import { ensureDesktopLauncher } from './desktop-launcher.mjs';
 
 const IS_WINDOWS = platform() === 'win32';
@@ -16,6 +16,7 @@ const LOCAL_URL = 'http://127.0.0.1:3000';
 const DISPLAY_URL = 'http://localhost:3000';
 const LAN_CONFIG_FILE = 'local-data/lan-access.json';
 const BOOT_T0 = Date.now();
+let launcherGuard = null;
 
 /** 启动至今的秒数，用于各阶段耗时提示。 */
 const bootElapsedSec = () => ((Date.now() - BOOT_T0) / 1000).toFixed(1);
@@ -133,16 +134,23 @@ async function resolveGatewayProxyUrl(systemProxyUrl) {
   return port ? `http://127.0.0.1:${port}` : systemProxyUrl;
 }
 
-function ensureDependencies() {
+// 构建与安装不阻塞启动身份接口，连续点击可以快速识别“启动中”。
+const runStartupCommand = command => new Promise((done, reject) => {
+  const child = spawn(command, { stdio: 'inherit', shell: IS_WINDOWS ? process.env.ComSpec || 'cmd.exe' : '/bin/sh', windowsHide: true });
+  child.once('error', reject);
+  child.once('exit', (code, signal) => code === 0 ? done() : reject(new Error(`启动步骤失败（${signal || code}）`)));
+});
+
+async function ensureDependencies() {
   if (IS_TERMUX && !process.env.SKIP_TERMUX_SETUP) {
     console.log('\x1b[36m[Termux]\x1b[0m 检测到 Termux 环境');
     if (!checkCommand('node')) {
       console.log('\x1b[33m[Termux]\x1b[0m 正在安装 nodejs-lts...');
       try {
-        execSync('pkg install nodejs-lts -y', { stdio: 'inherit', shell: '/bin/sh' });
+        await runStartupCommand('pkg install nodejs-lts -y');
       } catch {
         console.error('\x1b[31m[Termux]\x1b[0m 安装失败，请手动执行: pkg install nodejs-lts');
-        process.exit(1);
+        throw new Error('Termux Node.js 安装失败');
       }
     }
   }
@@ -150,8 +158,7 @@ function ensureDependencies() {
   const localWrangler = IS_WINDOWS ? 'node_modules/.bin/wrangler.cmd' : 'node_modules/.bin/wrangler';
   if (!existsSync(localWrangler)) {
     console.log('\x1b[33mwrangler 未安装，正在安装...\x1b[0m');
-    const installCmd = IS_WINDOWS ? 'npm.cmd' : 'npm';
-    execSync(`${installCmd} install wrangler --save-dev`, { stdio: 'inherit', shell: IS_WINDOWS });
+    await runStartupCommand('npm install wrangler --save-dev');
   }
 }
 
@@ -215,19 +222,18 @@ function fullWranglerLog(stream, seen = {}) {
   });
 }
 
-function buildLatest() {
+async function buildLatest() {
   if (!needsBuild()) {
     console.log('\x1b[90m代码未变化，跳过构建。\x1b[0m');
     return;
   }
   console.log('\x1b[33m正在构建最新版本（本地快速构建，跳过类型检查）...\x1b[0m');
   const startedAt = Date.now();
-  const buildCmd = IS_WINDOWS ? 'npm.cmd' : 'npm';
   try {
-    execSync(`${buildCmd} run build:local`, { stdio: 'inherit', shell: IS_WINDOWS });
+    await runStartupCommand('npm run build:local');
   } catch {
     console.error('\x1b[31m构建失败\x1b[0m');
-    process.exit(1);
+    throw new Error('构建失败');
   }
   console.log(`\x1b[90m构建完成，耗时 ${((Date.now() - startedAt) / 1000).toFixed(1)} 秒。\x1b[0m`);
 }
@@ -270,34 +276,6 @@ async function openWhenReady() {
   }
 
   console.log(`Please open manually: ${DISPLAY_URL}`);
-}
-
-async function reuseExistingServer() {
-  const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
-  const running = await inspectExistingLocalServer(version);
-  if (!running) return false;
-  if (process.argv.includes('--restart')) {
-    console.log('\x1b[33m正在重启当前项目的本地服务（会结束原服务上的未完成任务）...\x1b[0m');
-    try {
-      const pid = await restartOwnedLocalServer(process.cwd());
-      console.log(`\x1b[32m原服务进程 ${pid} 已停止，将构建并启动最新版本。\x1b[0m`);
-      return false;
-    } catch (error) {
-      console.error(`\x1b[31m重启未完成：${error.message}\x1b[0m`);
-      process.exitCode = 1;
-      return true;
-    }
-  }
-  if (!running.current) {
-    console.error(`\x1b[33m已有服务仍运行 ${running.backendVersion || '旧版'}，当前项目版本为 ${version}。再次启动会复用原进程，不能加载更新。\x1b[0m`);
-    console.error('\x1b[33m请先结束生图与 Agent 任务，再在原服务窗口按 Ctrl+C 并重新启动；也可执行 npm run dev:local -- --restart。\x1b[0m');
-    process.exitCode = 2;
-    return true;
-  }
-  console.log(`\x1b[32mNAI Atelier ${version} 已经在运行，直接打开现有页面。\x1b[0m`);
-  await ensureDesktopLauncher();
-  if (process.env.NAI_NO_BROWSER !== '1') openBrowser(DISPLAY_URL);
-  return true;
 }
 
 async function waitForWorker(port, { outputSeen = () => true, onWranglerRestart = null } = {}) {
@@ -356,7 +334,7 @@ function isPortAvailable(port, host = '127.0.0.1') {
 
 async function findAvailableWorkerPort(preferredPort = 3001) {
   for (let port = preferredPort; port < preferredPort + 50; port++) {
-    if (port === 3000 || port === 3002) continue;
+    if (port === 3000 || port === 3002 || port === LOCAL_LAUNCHER_PORT) continue;
     if (await isPortAvailable(port)) return port;
   }
   return preferredPort;
@@ -427,6 +405,7 @@ async function startServer() {
       if (child.isRetired) return;
       mediaGateway?.close();
       tagUpdateServer.close();
+      launcherGuard?.close();
       if (shuttingDown) return;
       if (code !== 0 && code !== null) {
         console.error(`\x1b[31m服务异常退出，退出码: ${code}\x1b[0m`);
@@ -443,6 +422,7 @@ async function startServer() {
   const cleanup = () => {
     if (shuttingDown) return;
     shuttingDown = true;
+    launcherGuard?.close();
     mediaGateway?.close();
     tagUpdateServer.close();
     terminateProcessTree(child.pid);
@@ -475,6 +455,7 @@ async function startServer() {
     ]);
     console.log(`\x1b[32m图片网关已就绪（耗时 ${((Date.now() - gatewayStartedAt) / 1000).toFixed(1)} 秒），手机列表将按需使用缩略图。\x1b[0m`);
     console.log(`\x1b[32m全部就绪，总耗时 ${bootElapsedSec()} 秒。\x1b[0m`);
+    launcherGuard.markRunning();
     await ensureDesktopLauncher();
     openWhenReady();
   } catch (error) {
@@ -487,10 +468,17 @@ async function startServer() {
 console.log('\x1b[36m=== NAI Atelier 本地部署 ===\x1b[0m');
 
 // 检查服务的 fetch 尚有异步句柄在收尾，Windows 上强制 process.exit 会触发 libuv 断言。
-// 已处理的分支保留退出码并自然结束，不能继续构建或启动第二份服务。
-if (!await reuseExistingServer()) {
-  ensureDependencies();
-  buildLatest();
-  cleanupStaleWranglerTmp();
-  await startServer();
+// 默认定向重启已运行的实例；旧 --restart 参数仍兼容，不再要求手工传入。
+try {
+  launcherGuard = await prepareLocalServerLaunch(process.cwd());
+  if (launcherGuard) {
+    await ensureDependencies();
+    await buildLatest();
+    cleanupStaleWranglerTmp();
+    await startServer();
+  }
+} catch (error) {
+  await launcherGuard?.close();
+  console.error(`\x1b[31m重启未完成：${error.message}\x1b[0m`);
+  process.exitCode = 1;
 }

@@ -58,8 +58,8 @@ call npm run dev:local -- %*
 echo.
 if errorlevel 1 (
   echo The launcher did not start a new server. Read the message above.
+  pause
 ) else (
   echo Launcher finished.
 )
-pause
 endlocal
