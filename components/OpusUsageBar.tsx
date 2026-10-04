@@ -1,4 +1,5 @@
 import React from 'react';
+import { RefreshCw } from 'lucide-react';
 import { isNovelaiSubscriptionInactive, NOVELAI_USAGE_REFRESH_EVENT, usageRemainingImages, usageRemainingPercent, useNovelaiUsage } from '../services/naiUsage';
 import { useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 
@@ -6,6 +7,8 @@ interface OpusUsageBarProps {
   collapsed: boolean;
   /** 触屏完整视图直接显示异常与同步时间，不依赖悬停说明。 */
   showDetails?: boolean;
+  /** 资源面板集中显示一次账户同步时间，设置内保留行内时间。 */
+  showSyncTime?: boolean;
 }
 
 const OPUS_RING_CIRCUMFERENCE = 2 * Math.PI * 16;
@@ -14,7 +17,7 @@ const OPUS_RING_CIRCUMFERENCE = 2 * Math.PI * 16;
  * NovelAI Opus 免费生成限额（V5 起生效），展示在侧栏 Anlas 预算下方。
  * 活跃非 Opus 订阅不显示用量条；过期订阅改为展示 Paid Anlas 状态。
  */
-export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetails = false }) => {
+export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetails = false, showSyncTime = true }) => {
   const { info, usage, loading, error, fetchedAt, refresh } = useNovelaiUsage();
   const runtime = useNaiRuntime();
   const refreshAll = () => {
@@ -30,9 +33,17 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
     const runtimeWarning = isNaiRuntimeSyncUnhealthy(runtime) ? describeNaiRuntimeSyncProblem(runtime) : '';
     return <button type="button" role="status" aria-label={`订阅已过期 · ${balanceLabel}`} aria-busy={loading}
       onClick={refreshAll} title={`订阅已过期，Opus 免费权益不可用。${balanceLabel}。关闭低消耗模式后可确认付费生成，权限与扣费以官方响应为准；余额不会覆盖本地预算。${error ? `状态刷新失败：${error}` : ''}${runtimeWarning ? `官方计费规则同步异常：${runtimeWarning}` : ''}`}
-      className={`flex min-h-14 w-full cursor-pointer select-none items-center border-b border-gray-200 text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:border-gray-800 dark:hover:bg-gray-800 ${error || runtimeWarning ? 'text-red-500 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'} ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}>
+      className={`min-h-14 w-full cursor-pointer select-none text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:hover:bg-gray-800 ${error || runtimeWarning ? 'text-red-500 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'} ${showDetails && !collapsed ? 'rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70' : `flex items-center border-b border-gray-200 dark:border-gray-800 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}`}>
+      {showDetails && !collapsed ? <>
+        <span className="flex items-center justify-between gap-2 text-xs font-medium"><span>订阅已过期</span><RefreshCw aria-hidden="true" className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /></span>
+        <span className="mt-3 grid grid-cols-2 gap-3 text-xs"><span className="min-w-0">免费权益不可用</span><span className="min-w-0 break-words border-l border-gray-200 pl-3 tabular-nums dark:border-gray-700">{balanceLabel}</span></span>
+        {runtimeWarning && <span className="mt-2 block text-micro">计费规则同步异常</span>}
+        {error && <span className="mt-2 block break-words text-micro">状态刷新失败：{error}，点按重试</span>}
+        {showSyncTime && fetchedAt > 0 && <span className="mt-2 block text-micro text-gray-500 dark:text-gray-400">最近同步 {new Date(fetchedAt).toLocaleTimeString('zh-CN', { hour12: false })}</span>}
+      </> : <>
       <span className="flex h-9 w-9 shrink-0 items-center justify-center text-mini font-bold">付费</span>
-      {!collapsed && <span className="min-w-0 flex-1"><span className="block text-xs font-medium">订阅已过期</span><span className="mt-0.5 block text-micro">{error ? '状态刷新失败，点击重试' : '免费权益不可用'}</span>{showDetails && <span className="mt-1 block text-micro">{balanceLabel}</span>}{runtimeWarning && <span className="mt-0.5 block text-micro">计费规则同步异常</span>}{showDetails && error && <span className="mt-1 block break-words text-micro">{error}</span>}{showDetails && fetchedAt > 0 && <span className="mt-1 block text-micro">最近同步 {new Date(fetchedAt).toLocaleTimeString('zh-CN', { hour12: false })}</span>}</span>}
+      {!collapsed && <span className="min-w-0 flex-1"><span className="block text-xs font-medium">订阅已过期</span><span className="mt-0.5 block text-micro">{error ? '状态刷新失败，点击重试' : '免费权益不可用'}</span>{runtimeWarning && <span className="mt-0.5 block text-micro">计费规则同步异常</span>}</span>}
+      </>}
     </button>;
   }
   // 请求明确成功但没有 usage 时不展示 Opus 条；加载/失败保留状态行。
@@ -70,17 +81,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
     : negative
     ? 'Opus 限额已用尽：所有生图将消耗 Anlas，额度恢复后自动回到免费生成'
     : `Opus 免费生成限额：剩余 ${percent}%（约 ${images} 张）`} · 仅 V5 等新模型受限，V4.5 及以下不限\n拼车账号额度全员共享，每分钟自动同步，点击立即刷新\n${syncSummary}`;
-  return (
-    <button
-      type="button"
-      role="status"
-      onClick={refreshAll}
-      title={collapsed ? title : `${title}（点击立即刷新）`}
-      aria-busy={loading}
-      aria-label={`Opus 生成限额 ${syncBroken ? '同步失败' : !usage ? '正在同步' : negative ? '已用尽' : `${percent}%`}`}
-      className={`group relative flex min-h-14 w-full cursor-pointer select-none items-center border-b border-gray-200 text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:border-gray-800 dark:hover:bg-gray-800 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}
-    >
-      <span className={`relative flex h-9 w-9 flex-none items-center justify-center rounded-full ${ringClass}`}>
+  const ring = <span className={`relative flex flex-none items-center justify-center rounded-full ${showDetails && !collapsed ? 'h-11 w-11' : 'h-9 w-9'} ${ringClass}`}>
         <svg viewBox="0 0 36 36" className="absolute inset-0 h-full w-full -rotate-90" aria-hidden="true">
           <circle cx="18" cy="18" r="16" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-gray-200 dark:text-gray-700" />
           <circle
@@ -110,22 +111,42 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
             />
           </svg>
         )}
-        <span className={`relative font-bold tabular-nums ${syncBroken ? 'text-lg leading-none' : percent > 99 ? 'text-mini' : 'text-micro'}`}>
+        <span className={`relative font-bold tabular-nums ${syncBroken ? 'text-lg leading-none' : showDetails && !collapsed ? 'text-meta' : percent > 99 ? 'text-mini' : 'text-micro'}`}>
           {syncBroken ? '×' : usage ? `${percent}%` : ''}
         </span>
-      </span>
+      </span>;
+  return (
+    <button
+      type="button"
+      role="status"
+      onClick={refreshAll}
+      title={collapsed ? title : `${title}（点击立即刷新）`}
+      aria-busy={loading}
+      aria-label={`Opus 生成限额 ${syncBroken ? '同步失败' : !usage ? '正在同步' : negative ? '已用尽' : `${percent}%`}`}
+      className={`group relative min-h-14 w-full cursor-pointer select-none text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:hover:bg-gray-800 ${showDetails && !collapsed ? 'rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70' : `flex items-center border-b border-gray-200 dark:border-gray-800 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}`}
+    >
+      {showDetails && !collapsed ? <>
+        <span className="flex items-center justify-between gap-2 text-xs font-medium text-gray-600 dark:text-gray-300"><span>Opus 限额</span><RefreshCw aria-hidden="true" className={`h-3.5 w-3.5 text-gray-500 dark:text-gray-400 ${loading ? 'animate-spin' : ''}`} /></span>
+        <span className="mt-3 grid grid-cols-2 items-center gap-3">
+          <span className="flex min-w-0 items-center gap-2">{ring}<span className="text-micro text-gray-500 dark:text-gray-400">剩余额度</span></span>
+          <span className="min-w-0 border-l border-gray-200 pl-3 dark:border-gray-700"><span className="block text-micro text-gray-500 dark:text-gray-400">估算可生成</span><span className="mt-1 block break-words text-lg font-semibold leading-6 tabular-nums text-gray-800 dark:text-gray-100">{usage ? `≈${images} 张` : '—'}</span></span>
+        </span>
+        <span className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-micro text-gray-500 dark:text-gray-400">
+          <span>{runtimeSyncBroken ? '计费规则同步异常，张数换算可能过期' : syncPending ? '计费规则正在同步' : 'V5 等受限模型共用额度'}</span>
+          {showSyncTime && fetchedAt > 0 && <span>最近同步 {new Date(fetchedAt).toLocaleTimeString('zh-CN', { hour12: false })}</span>}
+        </span>
+        {loading && <span className="mt-2 block text-micro text-gray-500 dark:text-gray-400">正在同步…</span>}
+        {error && <span className="mt-2 block break-words text-micro text-red-500 dark:text-red-400">{usage ? `上次额度 ${percent}%（≈${images} 张）：${error}` : `额度未知：${error}`}</span>}
+        {negative && <span className="mt-2 block text-micro text-red-500 dark:text-red-400">额度已用尽，生成将消耗 Anlas</span>}
+      </> : <>
+      {ring}
       {!collapsed && <span className="min-w-0 flex-1">
         <span className="block text-xs font-medium text-gray-600 dark:text-gray-300">Opus 限额</span>
         <span className={`mt-0.5 block text-micro font-normal tabular-nums ${error ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
           {error ? '同步失败，点击重试' : usage ? `≈${images} 张` : '正在同步…'}
         </span>
-        {showDetails && <span className="mt-1 block break-words text-micro text-gray-500 dark:text-gray-400">
-          {error && <span className="block">{usage ? `上次额度 ${percent}%（≈${images} 张）：${error}` : `额度未知：${error}`}</span>}
-          {runtimeSyncBroken ? <span className="block">计费规则同步异常，张数换算可能过期</span> : syncPending ? <span className="block">计费规则正在同步</span> : <span className="block">V5 等受限模型共用额度</span>}
-          {negative && <span className="block text-red-500 dark:text-red-400">额度已用尽，生成将消耗 Anlas</span>}
-          {fetchedAt > 0 && <span className="mt-1 block">最近同步 {new Date(fetchedAt).toLocaleTimeString('zh-CN', { hour12: false })}</span>}
-        </span>}
       </span>}
+      </>}
     </button>
   );
 };

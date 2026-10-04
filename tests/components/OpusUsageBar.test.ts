@@ -21,6 +21,24 @@ describe('OpusUsageBar', () => {
     cleanup();
     vi.unstubAllGlobals();
   });
+  it('详情把额度与估算张数放入等宽两列，同步信息另起公共行，显式提示刷新', async () => {
+    sessionStorage.setItem('nai_api_key', 'opus-details-synthetic-key');
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
+      ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } })
+      : responseFor({ tier: 3, active: true, usage: { percent: 100, isNegative: false, timeUntilNextPercent: 0 } })));
+    const view = render(React.createElement(OpusUsageBar, { collapsed: false, showDetails: true }));
+    const count = await screen.findByText('≈1730 张');
+    const quota = screen.getByText('剩余额度');
+    const columns = quota.parentElement?.parentElement;
+    expect(columns?.className).toContain('grid-cols-2');
+    expect(count.parentElement?.parentElement).toBe(columns);
+    expect(columns?.contains(screen.getByText('V5 等受限模型共用额度'))).toBe(false);
+    expect(screen.getByRole('status').querySelector('.lucide-refresh-cw')).toBeTruthy();
+    expect(screen.getByText(/最近同步/)).toBeTruthy();
+    view.rerender(React.createElement(OpusUsageBar, { collapsed: false, showDetails: true, showSyncTime: false }));
+    expect(screen.queryByText(/最近同步/)).toBeNull();
+    expect(screen.getByText('100%')).toBeTruthy();
+  });
 
   it('切 Key 后同步失败保留红色错误行，点击后可重试恢复', async () => {
     sessionStorage.setItem('nai_api_key', 'pst-opus-error-key');

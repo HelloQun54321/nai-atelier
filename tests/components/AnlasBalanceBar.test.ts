@@ -20,6 +20,22 @@ beforeEach(() => { sessionStorage.clear(); localStorage.clear(); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('Anlas 预算／余额布局', () => {
+  it('设置与触屏详情将标签放在数值上方，以等宽两列保留完整余额和显式刷新入口', () => {
+    const account = subscription(68420);
+    render(React.createElement(AnlasBalanceBar, { variant: 'details', budget, subscription: account }));
+    const label = screen.getByText('本地预算');
+    const official = screen.getByText('官方余额');
+    expect(label.nextElementSibling?.textContent).toBe('1,666 点');
+    expect(official.nextElementSibling?.textContent).toBe('68,420 点');
+    expect(label.parentElement?.parentElement?.className).toContain('grid-cols-2');
+    expect(label.parentElement?.parentElement).toBe(official.parentElement?.parentElement);
+    expect(official.parentElement?.className).toContain('min-w-0');
+    expect(screen.queryByText('6.84万')).toBeNull();
+    const refresh = screen.getByRole('button', { name: /刷新 Anlas 余额/ });
+    expect(refresh.querySelector('svg')?.classList.contains('lucide-refresh-cw')).toBe(true);
+    fireEvent.click(refresh);
+    expect(account.refresh).toHaveBeenCalledTimes(1);
+  });
   it('展开时横排个人预算与两种官方点数之和，说明明细和同步时间', () => {
     const account = subscription(200);
     account.info!.trainingStepsLeft!.fixedTrainingStepsLeft = 100;

@@ -1205,10 +1205,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   finally { setSavingLowConsumption(false); }
                 }} className="mt-1 h-5 w-5 shrink-0 rounded border-gray-300 text-indigo-600 disabled:opacity-50" />
               </label>
-              <div><h4 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">本地预算 ≠ 官方余额</p></div>
-              <AnlasBalanceBar budget={anlasBudget} subscription={novelaiSubscription} className="mt-3 rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/70" />
-              <div className="mt-2 overflow-hidden rounded-xl border border-gray-200 bg-gray-50 empty:hidden dark:border-gray-700 dark:bg-gray-800/70"><OpusUsageBar collapsed={false} showDetails /></div>
-              {subscriptionError && <p className="mt-1 text-meta text-amber-600 dark:text-amber-400">账号余额刷新失败{currentSubscription?.trainingStepsLeft ? '，显示上次同步值' : '，余额未知'}；点击余额行重试。</p>}
+              <h4 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h4>
+              <div className="mt-3 space-y-3">
+                <AnlasBalanceBar variant="details" budget={anlasBudget} subscription={novelaiSubscription} />
+                <OpusUsageBar collapsed={false} showDetails />
+              </div>
               <div className="mt-3 flex gap-2">
                 <input type="number" min="0" step="1" value={anlasInput} onChange={event => setAnlasInput(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-lg font-black tabular-nums outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900" aria-label="可支配 Anlas 点数" />
                 <button type="button" onClick={async () => { const next = await anlasBudgetService.set(Number(anlasInput)); setAnlasInput(String(next.remaining)); notify('Anlas 预算已更新'); }} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white">保存</button>

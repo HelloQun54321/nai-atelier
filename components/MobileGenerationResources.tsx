@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { ChevronUp } from 'lucide-react';
 import type { useAnlasBudget } from '../services/anlasBudget';
 import { isActiveOpusSubscription, usageRemainingPercent, type useNovelaiUsage } from '../services/naiUsage';
 import { describeNaiRuntimeSyncProblem, isNaiRuntimeSyncUnhealthy, type NaiRuntimeConfig } from '../services/naiRuntime';
@@ -68,7 +69,6 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
   const footerTone = warning ? 'text-amber-600 dark:text-amber-400'
     : usage?.isNegative ? 'text-red-600 dark:text-red-400'
       : usage && usageRemainingPercent(usage) <= 20 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400';
-  const balance = info?.trainingStepsLeft;
   const openSettings = () => {
     const navigate = () => {
       settingsAfterBackRef.current = null;
@@ -86,27 +86,22 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
   return <>
     <button type="button" aria-label={`查看账户资源：${summary}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}
       style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + env(safe-area-inset-bottom))` } : undefined}
-      className="mobile-touch fixed inset-x-0 bottom-[env(safe-area-inset-bottom)] z-[900] mx-auto inline-flex h-11 w-max max-w-[calc(100vw-2rem)] items-end justify-center gap-3 rounded-md border-0 bg-transparent px-2 pb-1 text-meta leading-4 shadow-none outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 md:hidden">
-      <span className={`whitespace-nowrap tabular-nums ${footerTone}`}>Anlas {footerBudget}/{footerBalance}</span>
-      <span className={`whitespace-nowrap tabular-nums ${footerTone}`}>Opus额度 {footerQuota}{warning && <span aria-hidden="true" className="ml-1">!</span>}</span>
+      className="mobile-touch group fixed inset-x-0 bottom-[env(safe-area-inset-bottom)] z-[900] mx-auto inline-flex h-11 w-max max-w-[calc(100vw-2rem)] cursor-pointer items-end justify-center gap-3 rounded-md border-0 bg-transparent px-2 pb-1 text-meta leading-4 shadow-none outline-none transition-opacity active:opacity-60 focus-visible:ring-2 focus-visible:ring-indigo-500 md:hidden">
+      <span className={`whitespace-nowrap tabular-nums underline decoration-dotted decoration-gray-400/60 underline-offset-4 group-hover:decoration-current ${footerTone}`}>Anlas {footerBudget}/{footerBalance}</span>
+      <span className={`inline-flex items-center gap-1 whitespace-nowrap tabular-nums ${footerTone}`}><span className="underline decoration-dotted decoration-gray-400/60 underline-offset-4 group-hover:decoration-current">Opus额度 {footerQuota}{warning && <span aria-hidden="true" className="ml-1">!</span>}</span><ChevronUp aria-hidden="true" className="h-3 w-3 shrink-0" /></span>
     </button>
     <ImagePreviewPortal>
       <MobileBottomSheet open={open} title="账户资源" onClose={() => setOpen(false)} footer={<button type="button" onClick={openSettings} className="mobile-touch w-full rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white">账户设置</button>}>
-        <div ref={contentRef}>
+        <div ref={contentRef} className="mx-auto w-full max-w-sm">
           <p className="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">{!apiKey ? '未配置 Key' : keyName?.key === apiKey ? keyName.name : '当前 Key'}</p>
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/70">
-            <AnlasBalanceBar budget={budget} subscription={subscription} />
-            <OpusUsageBar collapsed={false} showDetails />
+          <div className="space-y-3">
+            <AnlasBalanceBar variant="details" budget={budget} subscription={subscription} />
+            <OpusUsageBar collapsed={false} showDetails showSyncTime={false} />
           </div>
-          <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-xs text-gray-500 dark:text-gray-400">
-            <dt>本地预算</dt><dd className="text-right tabular-nums">{budget.loading ? '加载中' : `${budget.remaining.toLocaleString('zh-CN')} 点`}</dd>
-            <dt>官方余额</dt><dd className="text-right tabular-nums">{total === null ? '未知' : `${total.toLocaleString('zh-CN')} 点`}</dd>
-            <dt>订阅状态</dt><dd className="text-right">{!apiKey ? '未配置 Key' : !info ? '尚未同步' : info.active === false ? '订阅过期' : isActiveOpusSubscription(info) ? 'Opus' : '非 Opus'}</dd>
-            {total !== null && balance && <><dt>订阅赠送 / Paid</dt><dd className="text-right tabular-nums">{balance.fixedTrainingStepsLeft.toLocaleString('zh-CN')} / {balance.purchasedTrainingSteps.toLocaleString('zh-CN')}</dd></>}
-            <dt>最近成功同步</dt><dd className="text-right">{fetchedAt > 0 ? new Date(fetchedAt).toLocaleString('zh-CN', { hour12: false }) : '尚未同步'}</dd>
+          <dl className="mt-4 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3 gap-y-2 text-meta text-gray-500 dark:text-gray-400">
+            <dt>订阅状态</dt><dd className="min-w-0 break-words text-gray-700 dark:text-gray-300">{!apiKey ? '未配置 Key' : !info ? '尚未同步' : info.active === false ? '订阅过期' : isActiveOpusSubscription(info) ? 'Opus' : '非 Opus'}</dd>
+            <dt>最近成功同步</dt><dd className="min-w-0 break-words tabular-nums">{fetchedAt > 0 ? new Date(fetchedAt).toLocaleString('zh-CN', { hour12: false }) : '尚未同步'}</dd>
           </dl>
-          <p className="mt-3 text-micro text-gray-500 dark:text-gray-400">本地预算 ≠ 官方余额</p>
-          {error && <p role="status" className="mt-2 break-words text-xs text-amber-600 dark:text-amber-400">{total === null ? '余额未知' : '显示上次余额'}：{error}</p>}
           {runtimeBroken && runtime && <p role="status" className="mt-2 text-xs text-amber-600 dark:text-amber-400">{describeNaiRuntimeSyncProblem(runtime)}，费用估算可能过期</p>}
         </div>
       </MobileBottomSheet>

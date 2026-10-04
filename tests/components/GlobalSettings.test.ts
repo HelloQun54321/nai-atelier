@@ -176,6 +176,9 @@ describe('GlobalSettings', () => {
     const quota = await screen.findByRole('status', { name: /Opus 生成限额 196%/ });
     expect(screen.getByText('≈3391 张')).toBeTruthy();
     expect(screen.getByText('V5 等受限模型共用额度')).toBeTruthy();
+    const columns = screen.getByText('剩余额度').parentElement?.parentElement;
+    expect(columns?.className).toContain('grid-cols-2');
+    expect(screen.getByText('≈3391 张').parentElement?.parentElement).toBe(columns);
     fireEvent.click(quota);
     expect(subscriptionFixture.refresh).toHaveBeenCalledTimes(1);
   });
