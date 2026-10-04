@@ -6,7 +6,7 @@
  * 任何一项未命中（官方改版或提取器被改坏）即以非零码退出。
  * 用法：npm run test:live-sync
  */
-import { computeNaiRuntimeSync, DEFAULT_NAI_RUNTIME, fetchNaiRuntimeText } from './media-gateway.mjs';
+import { computeNaiRuntimeSync, DEFAULT_NAI_RUNTIME, fetchNaiRuntimeText } from '../../scripts/media-gateway.mjs';
 
 const SOURCE = 'https://novelai.net/image';
 

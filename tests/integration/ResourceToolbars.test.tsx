@@ -2,46 +2,46 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ArtistLibrary } from './ArtistLibrary';
-import { CharacterLibrary } from './CharacterLibrary';
-import { DanbooruGallery } from './DanbooruGallery';
-import { GenHistory } from './GenHistory';
-import { getArtistDictionaryPage, getCharacterDictionaryPage } from '../services/tagDictionary';
-import { danbooruService } from '../services/danbooruService';
-import { generateImage } from '../services/naiService';
+import { ArtistLibrary } from '../../components/ArtistLibrary';
+import { CharacterLibrary } from '../../components/CharacterLibrary';
+import { DanbooruGallery } from '../../components/DanbooruGallery';
+import { GenHistory } from '../../components/GenHistory';
+import { getArtistDictionaryPage, getCharacterDictionaryPage } from '../../services/tagDictionary';
+import { danbooruService } from '../../services/danbooruService';
+import { generateImage } from '../../services/naiService';
 
 const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo');
 
 // 目录与生成服务隔离，验证精简后的入口及真实筛选行为。
-vi.mock('./ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => false) }));
-vi.mock('../services/lowConsumption', async importOriginal => ({
-  ...await importOriginal<typeof import('../services/lowConsumption')>(), useLowConsumption: () => ({ enabled: false }),
+vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => false) }));
+vi.mock('../../services/lowConsumption', async importOriginal => ({
+  ...await importOriginal<typeof import('../../services/lowConsumption')>(), useLowConsumption: () => ({ enabled: false }),
 }));
-vi.mock('../services/localHistory', () => ({ localHistory: {
+vi.mock('../../services/localHistory', () => ({ localHistory: {
   prepare: vi.fn(async () => 0), subscribe: () => () => {},
   getBrowseOrder: vi.fn(async () => ({ ids: [], models: [], sources: [] })),
   getPage: vi.fn(async () => ({ items: [], count: 0, hasMore: false })),
 } }));
-vi.mock('../services/naiService', () => ({ generateImage: vi.fn() }));
-vi.mock('../services/tagDictionary', async importOriginal => ({
-  ...await importOriginal<typeof import('../services/tagDictionary')>(),
+vi.mock('../../services/naiService', () => ({ generateImage: vi.fn() }));
+vi.mock('../../services/tagDictionary', async importOriginal => ({
+  ...await importOriginal<typeof import('../../services/tagDictionary')>(),
   getArtistDictionaryPage: vi.fn(async () => ({ entries: [], total: 12, page: 0, pageCount: 1 })),
   getCharacterDictionaryPage: vi.fn(async () => ({ entries: [], total: 12, page: 0, pageCount: 1 })),
 }));
-vi.mock('../services/naiRuntime', async importOriginal => {
-  const actual = await importOriginal<typeof import('../services/naiRuntime')>();
+vi.mock('../../services/naiRuntime', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../services/naiRuntime')>();
   return { ...actual, getNaiRuntimeConfig: vi.fn(async () => actual.DEFAULT_NAI_RUNTIME) };
 });
-vi.mock('../services/naiUsage', async importOriginal => ({
-  ...await importOriginal<typeof import('../services/naiUsage')>(),
+vi.mock('../../services/naiUsage', async importOriginal => ({
+  ...await importOriginal<typeof import('../../services/naiUsage')>(),
   useNovelaiUsage: () => ({ usage: null, refreshIfStale: vi.fn() }),
 }));
-vi.mock('../services/anlasBudget', async importOriginal => ({
-  ...await importOriginal<typeof import('../services/anlasBudget')>(),
+vi.mock('../../services/anlasBudget', async importOriginal => ({
+  ...await importOriginal<typeof import('../../services/anlasBudget')>(),
   useAnlasBudget: () => ({ remaining: 1666 }),
 }));
-vi.mock('../services/danbooruService', async importOriginal => {
-  const actual = await importOriginal<typeof import('../services/danbooruService')>();
+vi.mock('../../services/danbooruService', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../services/danbooruService')>();
   return { ...actual, resolveDanbooruQuery: vi.fn(async (query: string) => query), danbooruService: {
     ...actual.danbooruService,
     search: vi.fn(async ({ query, page }: { query: string; page: number }) => ({ items: [], query, page, hasMore: false })),

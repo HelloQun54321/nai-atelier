@@ -5,9 +5,9 @@ import { resolve } from 'node:path';
 import { compile } from '@tailwindcss/node';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HistoryBrowseControls } from './HistoryBrowseControls';
-import { TOOLBAR_CONTROL_CLASS } from './DesignSystem';
-import { applyAppearancePreferences, DEFAULT_APPEARANCE_PREFERENCES } from '../services/appearancePreferences';
+import { HistoryBrowseControls } from '../../components/HistoryBrowseControls';
+import { TOOLBAR_CONTROL_CLASS } from '../../components/DesignSystem';
+import { applyAppearancePreferences, DEFAULT_APPEARANCE_PREFERENCES } from '../../services/appearancePreferences';
 
 const appCss = readFileSync(resolve('index.css'), 'utf8');
 const toolbarCss = readFileSync(resolve('components/historyToolbar.css'), 'utf8');

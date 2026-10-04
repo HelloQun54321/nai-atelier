@@ -7,11 +7,11 @@ import { compile } from '@tailwindcss/node';
 import { parse } from 'postcss';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LanAccessGate } from './LanAccessGate';
+import { LanAccessGate } from '../../components/LanAccessGate';
 import {
   applyAppearancePreferences, appearanceScrollBehavior, DEFAULT_APPEARANCE_PREFERENCES,
   restoreAppearancePreferences, saveAppearancePreferences,
-} from '../services/appearancePreferences';
+} from '../../services/appearancePreferences';
 
 const files = ['App.tsx', ...readdirSync('components', { recursive: true })
   .filter(file => typeof file === 'string' && file.endsWith('.tsx') && !file.includes('.test.'))

@@ -26,5 +26,6 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": ["node_modules", "dist", "dist-ssr", "local-data", "local-cache", "tests/.tmp", "logs"]
 }

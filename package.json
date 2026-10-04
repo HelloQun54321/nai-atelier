@@ -1,16 +1,16 @@
 {
   "name": "nai-atelier",
   "private": true,
-  "version": "1.34.2",
+  "version": "1.34.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && npm run build:worker",
     "build:worker": "esbuild worker/index.ts --bundle --format=esm --outfile=dist/_worker.js --platform=browser",
-    "test:gateway": "node --test scripts/media-gateway.test.mjs scripts/danbooru-loading.test.mjs scripts/image-tagger.test.mjs scripts/cloud-queue.test.mjs scripts/low-consumption.test.mjs scripts/nai-usage.test.mjs scripts/st-chatu8-bridge.test.mjs scripts/pixiv-local.test.mjs scripts/pixiv-web-login.test.mjs scripts/secret-scan.test.mjs scripts/local-backup.test.mjs scripts/desktop-launcher.test.mjs scripts/style-collector.test.mjs scripts/style-collector-window.test.mjs scripts/prompt-agent.test.mjs scripts/agent-web.test.mjs scripts/agent-runtime.test.mjs scripts/agent-local-images.test.mjs scripts/local-server-runtime.test.mjs",
+    "test:gateway": "node tests/run.mjs gateway",
     "test:secrets": "node scripts/secret-scan.mjs",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "node tests/run.mjs unit",
     "prepare": "node scripts/setup-local-install.mjs",
     "update:tags": "node --no-warnings scripts/update-tag-dictionary.mjs",
     "preview": "vite preview",
@@ -19,7 +19,7 @@
     "dev:local:watch": "concurrently -k \"vite build --watch\" \"esbuild worker/index.ts --bundle --format=esm --outfile=dist/_worker.js --platform=browser --watch\" \"npm run dev:local:quick\"",
     "dev:local:win": "scripts\\local-server.bat",
     "dev:local:linux": "sh scripts/local-server.sh",
-    "test:live-sync": "node scripts/nai-live-sync.mjs",
+    "test:live-sync": "node tests/run.mjs live-sync",
     "build:local": "vite build && npm run build:worker"
   },
   "overrides": {

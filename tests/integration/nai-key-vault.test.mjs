@@ -14,6 +14,8 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import test from 'node:test';
+import { join } from 'node:path';
+import { projectRoot } from '../support/workspace.mjs';
 
 const require = createRequire(import.meta.url);
 
@@ -21,7 +23,7 @@ const require = createRequire(import.meta.url);
 const loadModule = async (entryPoint) => {
   const esbuild = require('esbuild');
   const result = await esbuild.build({
-    entryPoints: [entryPoint],
+    entryPoints: [join(projectRoot, entryPoint)],
     bundle: true,
     format: 'esm',
     platform: 'browser',
@@ -247,9 +249,12 @@ const installBrowserGlobals = () => {
   let dispatches = [];
   globalThis.localStorage = localStorage;
   globalThis.sessionStorage = sessionStorage;
-  globalThis.window = {
-    dispatchEvent: (event) => void dispatches.push(event),
+  const window = new EventTarget();
+  window.dispatchEvent = (event) => {
+    dispatches.push(event);
+    return EventTarget.prototype.dispatchEvent.call(window, event);
   };
+  globalThis.window = window;
   const resetBrowser = () => {
     localStorage._map.clear();
     sessionStorage._map.clear();

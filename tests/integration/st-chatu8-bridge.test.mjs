@@ -6,6 +6,7 @@ import test from 'node:test';
 import { webcrypto } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
+import { copyPublicFixtures } from '../support/workspace.mjs';
 import {
   canonicalVibeSourceHash,
   collectStHistoryCandidates,
@@ -13,7 +14,7 @@ import {
   installSillyTavernBridgeExtension,
   resolveStUserFile,
   StChatu8Bridge,
-} from './st-chatu8-bridge.mjs';
+} from '../../scripts/st-chatu8-bridge.mjs';
 
 const tempRoot = name => join(tmpdir(), `npm-st-bridge-${name}-${process.pid}-${Date.now()}`);
 
@@ -192,7 +193,7 @@ test('late preference reads cannot reopen a closed bridge; unknown settings fail
 const extensionFixture = async (dom = null) => {
   const st = { yushe: {}, configImageStorage: {} };
   const extensionSettings = { 'st-chatu8': st };
-  const source = (await readFile(new URL('../sillytavern-extension/npm-bridge/index.js', import.meta.url), 'utf8')).replace(/^import .*;\r?\n/gm, '');
+  const source = (await readFile(new URL('../../sillytavern-extension/npm-bridge/index.js', import.meta.url), 'utf8')).replace(/^import .*;\r?\n/gm, '');
   let fetchImpl = async () => { throw new Error('Synthetic request must be declared'); };
   let initialize;
   const timeouts = [];
@@ -582,7 +583,10 @@ test('computeSillyTavernExtensionTargetDir 智能补全不同层级的酒馆安�
 
 test('installSillyTavernBridgeExtension 正常安装扩展、注入服务地址并执行安全阻断', async () => {
   const fakeStRoot = tempRoot('st-install-target');
+  const fakeProject = tempRoot('st-install-source');
   try {
+    // 合成工坊与酒馆使用相邻目录，保留“不可安装到工坊内部”的真实保护语义。
+    copyPublicFixtures(fakeProject);
     // 1. 未指定或相对路径防护
     await assert.rejects(async () => installSillyTavernBridgeExtension({ sillyTavernRoot: '' }), { status: 400 });
     await assert.rejects(async () => installSillyTavernBridgeExtension({ sillyTavernRoot: 'relative/path' }), { status: 400 });
@@ -593,7 +597,7 @@ test('installSillyTavernBridgeExtension 正常安装扩展、注入服务地址�
     // 3. 核心保护区阻断
     await mkdir(fakeStRoot, { recursive: true });
     await assert.rejects(
-      async () => installSillyTavernBridgeExtension({ sillyTavernRoot: process.cwd() }),
+      async () => installSillyTavernBridgeExtension({ sillyTavernRoot: fakeProject, projectRoot: fakeProject }),
       { status: 403 }
     );
 
@@ -602,7 +606,7 @@ test('installSillyTavernBridgeExtension 正常安装扩展、注入服务地址�
     const result = await installSillyTavernBridgeExtension({
       sillyTavernRoot: fakeStRoot,
       targetUrl: customUrl,
-      projectRoot: process.cwd(),
+      projectRoot: fakeProject,
     });
 
     assert.equal(result.success, true);
@@ -611,7 +615,7 @@ test('installSillyTavernBridgeExtension 正常安装扩展、注入服务地址�
     // 验证文件存在且正确注入自定义服务地址
     const installedManifest = JSON.parse(await readFile(join(result.targetPath, 'manifest.json'), 'utf8'));
     assert.equal(installedManifest.display_name, '智慧姬同步');
-    const projectVersion = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
+    const projectVersion = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')).version;
     assert.equal(installedManifest.version, projectVersion);
     assert.equal(installedManifest.js, `index.js?v=${projectVersion}`);
     assert.equal(installedManifest.css, `style.css?v=${projectVersion}`);
@@ -620,5 +624,6 @@ test('installSillyTavernBridgeExtension 正常安装扩展、注入服务地址�
     assert.match(installedIndex, /const DEFAULT_URL = 'http:\/\/192\.168\.1\.100:3000';/);
   } finally {
     await rm(fakeStRoot, { recursive: true, force: true });
+    await rm(fakeProject, { recursive: true, force: true });
   }
 });

@@ -2,22 +2,22 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { PromptChain } from '../types';
+import type { PromptChain } from '../../types';
 
 const mocks = vi.hoisted(() => ({
   getMe: vi.fn(), getAllChains: vi.fn(), getAllArtists: vi.fn(), getAllInspirations: vi.fn(),
   createChain: vi.fn(), createChainWithData: vi.fn(),
 }));
-vi.mock('../services/dbService', () => ({ db: mocks }));
-vi.mock('../services/collectorAppearance', () => ({ useCollectorAppearance: () => {} }));
-vi.mock('./ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => true) }));
-vi.mock('./Layout', () => ({ Layout: ({ children, onNavigate, currentView, toast }: any) => <>
+vi.mock('../../services/dbService', () => ({ db: mocks }));
+vi.mock('../../services/collectorAppearance', () => ({ useCollectorAppearance: () => {} }));
+vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => true) }));
+vi.mock('../../components/Layout', () => ({ Layout: ({ children, onNavigate, currentView, toast }: any) => <>
   <div data-testid="view">{currentView}</div>
   {['aitag', 'inspiration', 'list'].map(view => <button key={view} onClick={() => onNavigate(view)}>{view}</button>)}
   {toast && <div role="status" data-type={toast.type}>{toast.message}</div>}{children}
 </> }));
-vi.mock('./ChainList', () => ({ ChainList: ({ chains }: { chains: PromptChain[] }) => <div data-testid="list">{chains.map(chain => chain.id).join(',')}</div> }));
-vi.mock('./ChainEditor', () => ({ ChainEditor: ({ chain, onBack }: any) => <div data-testid="editor">{chain.id}|{chain.basePrompt}|{chain.previewImage}<button onClick={onBack}>返回资料库</button></div> }));
+vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains }: { chains: PromptChain[] }) => <div data-testid="list">{chains.map(chain => chain.id).join(',')}</div> }));
+vi.mock('../../components/ChainEditor', () => ({ ChainEditor: ({ chain, onBack }: any) => <div data-testid="editor">{chain.id}|{chain.basePrompt}|{chain.previewImage}<button onClick={onBack}>返回资料库</button></div> }));
 // 这里验证 App 的共享保存回调；AITag 实际按钮的元数据与连点行为在图库组件测试中覆盖。
 const source: PromptChain = {
   id: 'aitag-synthetic', type: 'style', userId: 'owner', name: '合成作品 P1', description: '', tags: [],
@@ -30,8 +30,8 @@ const ExternalGallery = ({ onCreateArtistChain, notify }: any) => <button onClic
   try { await onCreateArtistChain(source); notify('已保存到风格串'); }
   catch (error: any) { notify(error.message, 'error'); }
 }}>保存合成作品</button>;
-vi.mock('./AitagGallery', () => ({ AitagGallery: (props: any) => <ExternalGallery {...props} /> }));
-vi.mock('./InspirationGallery', () => ({ InspirationGallery: (props: any) => <ExternalGallery {...props} /> }));
+vi.mock('../../components/AitagGallery', () => ({ AitagGallery: (props: any) => <ExternalGallery {...props} /> }));
+vi.mock('../../components/InspirationGallery', () => ({ InspirationGallery: (props: any) => <ExternalGallery {...props} /> }));
 
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
@@ -42,7 +42,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const setup = async (entry = 'aitag') => {
-  const { default: App } = await import('../App');
+  const { default: App } = await import('../../App');
   render(<App />);
   await screen.findByTestId('list');
   await waitFor(() => expect(mocks.getAllChains).toHaveBeenCalledTimes(1));

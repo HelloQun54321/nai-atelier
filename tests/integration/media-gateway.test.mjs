@@ -1,4 +1,5 @@
-import { createResponseMemoryCache, danbooruResponseTtl } from './media-memory-cache.mjs';
+import '../support/node-environment.mjs';
+import { createResponseMemoryCache, danbooruResponseTtl } from '../../scripts/media-memory-cache.mjs';
 test('公开封面磁盘命中不消耗联网预算，跨内存会话复用仍逐次鉴权', async () => {
   const target = 'https://danbooru.donmai.us/posts.json?tags=synthetic+order:score+-status:banned';
   const url = new URL(`http://localhost/__internal/danbooru-fetch?url=${encodeURIComponent(target)}`);
@@ -170,10 +171,10 @@ import {
   readLanPin,
   selectThumbnailConcurrency,
   writeLanPin,
-} from './media-gateway.mjs';
-import { PromptAgentService as RuntimePromptAgentService, calculateAgentContextBudget, customProviderRuntime, detectModelCapabilities, estimateContextTokens, parseTranslationResponse, parseWebSearchResponse, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from './prompt-agent.mjs';
-import { getNovelAiModelProfile, readNovelAiOfficialKnowledge, resolveNovelAiModelFamily, searchNovelAiOfficialKnowledge } from './novelai-agent-knowledge.mjs';
-import { readImageDimensions } from '../worker/imageDimensions.mjs';
+} from '../../scripts/media-gateway.mjs';
+import { PromptAgentService as RuntimePromptAgentService, calculateAgentContextBudget, customProviderRuntime, detectModelCapabilities, estimateContextTokens, parseTranslationResponse, parseWebSearchResponse, sanitizeCustomProvider, trimContextMessages, validatePublicWebUrl } from '../../scripts/prompt-agent.mjs';
+import { getNovelAiModelProfile, readNovelAiOfficialKnowledge, resolveNovelAiModelFamily, searchNovelAiOfficialKnowledge } from '../../scripts/novelai-agent-knowledge.mjs';
+import { readImageDimensions } from '../../worker/imageDimensions.mjs';
 
 // 所有旧 Agent 用例也强制隔离；未调用 init 的登录步骤同样可能通过事务落盘。
 const gatewayAgentTestRoot = await mkdtemp(join(tmpdir(), 'nai-gateway-agent-'));

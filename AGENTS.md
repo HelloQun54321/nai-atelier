@@ -61,8 +61,17 @@ AI 不得只机械修改用户明确指出的单个位置。开始实现前，�
 | `npm run dev` | Vite 前端开发服务 |
 | `npm run dev:local` | 本地完整服务（Worker + D1/R2） |
 | `npm run build` | 完整构建（tsc + vite + worker 打包） |
-| `npm run test:gateway` | 网关 / st-chatu8 桥 / Pixiv 单元测试 |
+| `npm run test -- <文件或目录>` | Vitest 定向测试，省略路径则运行全部 |
+| `npm run test:gateway` | 自动发现 Node 测试：网关 / st-chatu8 桥 / Pixiv / 本地服务 |
+| `npm run test:live-sync` | 显式联网验证官方常量提取，不进入默认离线测试 |
 | `node scripts/bump-version.mjs <级别>` | 版本递增，见下方版本规则 |
+
+## 测试目录与输出约定（强制）
+
+- 单一模块的单元测试继续与组件、服务或脚本相邻；跨模块回归集中到 `tests/integration/`，共用测试环境放 `tests/support/`，合成测试数据放 `tests/fixtures/`，显式联网检查放 `tests/live/`。不得仅为目录整齐将所有单元测试搬离被测模块。
+- 测试优先使用上表的 npm 入口，完整输出自动写入 `logs/tests/`；一次性排查脚本与输出放 `tests/.tmp/`，结束后清理本次创建的内容。日志和临时文件均不入 Git，不在项目根目录散落。目录说明见 [tests/README.md](./tests/README.md)。
+- Node 入口自动发现 `scripts/` 与 `tests/` 下的 `*.test.mjs`，无需手工维护文件清单。新增跨模块 Vitest 测试沿用 `*.test.ts`／`*.test.tsx` 命名。
+- 会读写文件的测试必须使用独立临时工作区或内存模拟；默认数据路径在被测模块加载前隔离，只复制公开工程文件与合成资料，不以真实 `local-data/` 快照、缓存或凭据作为测试夹具。使用共用工作区工具只清理本次创建且核对边界的目录。
 
 ## 验证梯度与效率原则（强制）
 

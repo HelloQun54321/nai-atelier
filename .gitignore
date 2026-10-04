@@ -10,6 +10,7 @@ lerna-debug.log*
 # 临时/草稿文件（本地排查脚本与一次性输出，永不入库）
 *.tmp
 .tmp*
+tests/.tmp/
 *.bak
 *~
 

@@ -1,3 +1,4 @@
+import '../tests/support/node-environment.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';

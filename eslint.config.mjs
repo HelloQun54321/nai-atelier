@@ -5,7 +5,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'local-data/**', 'local-cache/**', 'public/**', 'browser-extension/**', '.wrangler/**'],
+    ignores: ['dist/**', 'node_modules/**', 'local-data/**', 'local-cache/**', 'public/**', 'browser-extension/**', '.wrangler/**', 'tests/.tmp/**', 'logs/**'],
   },
   ...tseslint.configs.recommended,
   {
@@ -31,7 +31,7 @@ export default tseslint.config(
   },
   {
     // Node 侧脚本（网关、桥接、Agent）不是 React 组件，hooks 规则不适用
-    files: ['scripts/**/*.mjs', '*.mjs'],
+    files: ['scripts/**/*.mjs', 'tests/**/*.mjs', '*.mjs'],
     rules: {
       'react-hooks/rules-of-hooks': 'off',
       'react-hooks/exhaustive-deps': 'off',

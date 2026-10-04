@@ -8,6 +8,6 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['services/**/*.test.ts', 'worker/**/*.test.ts', 'components/**/*.test.{ts,tsx}'],
+    include: ['services/**/*.test.ts', 'worker/**/*.test.ts', 'components/**/*.test.{ts,tsx}', 'tests/integration/**/*.test.{ts,tsx}'],
   },
 });

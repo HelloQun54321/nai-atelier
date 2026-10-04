@@ -2,27 +2,27 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import type { NAIParams, PromptChain } from '../types';
-import { VibeManager } from './VibeManager';
-import { CharacterReferenceManager } from './CharacterReferenceManager';
-import { ImageTaggerPanel } from './ImageTaggerPanel';
-import { HistoryImagePicker } from './HistoryImagePicker';
-import { InspirationImagePicker } from './InspirationImagePicker';
-import { ChainEditorForkModal } from './chain/ChainEditorForkModal';
-import { ChainEditorPresetModal, type ChainEditorPresetModalProps } from './chain/ChainEditorPresetModal';
+import type { NAIParams, PromptChain } from '../../types';
+import { VibeManager } from '../../components/VibeManager';
+import { CharacterReferenceManager } from '../../components/CharacterReferenceManager';
+import { ImageTaggerPanel } from '../../components/ImageTaggerPanel';
+import { HistoryImagePicker } from '../../components/HistoryImagePicker';
+import { InspirationImagePicker } from '../../components/InspirationImagePicker';
+import { ChainEditorForkModal } from '../../components/chain/ChainEditorForkModal';
+import { ChainEditorPresetModal, type ChainEditorPresetModalProps } from '../../components/chain/ChainEditorPresetModal';
 
 // 只读合成资料，不接触本地图片、编码或生成接口。
-vi.mock('./ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => false) }));
-vi.mock('../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: false }) }));
-vi.mock('../services/naiRuntime', () => ({ useNaiRuntime: () => ({}) }));
-vi.mock('../services/naiModels', () => ({ getRuntimeNaiModelInfo: () => ({ supportsVibes: true, supportsCharacterReferences: true }) }));
-vi.mock('../services/anlasBudget', () => ({ useAnlasBudget: () => ({ remaining: 0 }) }));
-vi.mock('../services/naiUsage', () => ({ useNovelaiUsage: () => ({ refreshIfStale: vi.fn() }), isNovelaiSubscriptionInactive: () => false }));
-vi.mock('../services/vibeService', () => ({ vibeService: { list: async () => [], listGroups: async () => [] } }));
-vi.mock('../services/characterReferenceService', () => ({ characterReferenceService: { list: async () => [] } }));
-vi.mock('../services/imageTaggerService', () => ({ imageTaggerService: { getStatus: async () => ({ downloaded: false }) } }));
-vi.mock('../services/localHistory', () => ({ localHistory: { getPage: async () => ({ items: [], count: 0 }), subscribe: () => () => {} } }));
-vi.mock('../services/dbService', () => ({ db: { getAllInspirations: async () => [], getInspirationBoards: async () => [] } }));
+vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => false) }));
+vi.mock('../../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: false }) }));
+vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({}) }));
+vi.mock('../../services/naiModels', () => ({ getRuntimeNaiModelInfo: () => ({ supportsVibes: true, supportsCharacterReferences: true }) }));
+vi.mock('../../services/anlasBudget', () => ({ useAnlasBudget: () => ({ remaining: 0 }) }));
+vi.mock('../../services/naiUsage', () => ({ useNovelaiUsage: () => ({ refreshIfStale: vi.fn() }), isNovelaiSubscriptionInactive: () => false }));
+vi.mock('../../services/vibeService', () => ({ vibeService: { list: async () => [], listGroups: async () => [] } }));
+vi.mock('../../services/characterReferenceService', () => ({ characterReferenceService: { list: async () => [] } }));
+vi.mock('../../services/imageTaggerService', () => ({ imageTaggerService: { getStatus: async () => ({ downloaded: false }) } }));
+vi.mock('../../services/localHistory', () => ({ localHistory: { getPage: async () => ({ items: [], count: 0 }), subscribe: () => () => {} } }));
+vi.mock('../../services/dbService', () => ({ db: { getAllInspirations: async () => [], getInspirationBoards: async () => [] } }));
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const params: NAIParams = { model: 'nai-diffusion-4-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' };
