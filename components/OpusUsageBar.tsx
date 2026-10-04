@@ -5,7 +5,7 @@ import { useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem
 
 interface OpusUsageBarProps {
   collapsed: boolean;
-  /** 触屏完整视图直接显示异常与同步时间，不依赖悬停说明。 */
+  /** 触屏完整视图直接显示异常与同步时间；常规刷新复用原位动画，不另起加载文字行。 */
   showDetails?: boolean;
   /** 资源面板集中显示一次账户同步时间，设置内保留行内时间。 */
   showSyncTime?: boolean;
@@ -135,7 +135,6 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
           <span>{runtimeSyncBroken ? '计费规则同步异常，张数换算可能过期' : syncPending ? '计费规则正在同步' : 'V5 等受限模型共用额度'}</span>
           {showSyncTime && fetchedAt > 0 && <span>最近同步 {new Date(fetchedAt).toLocaleTimeString('zh-CN', { hour12: false })}</span>}
         </span>
-        {loading && <span className="mt-2 block text-micro text-gray-500 dark:text-gray-400">正在同步…</span>}
         {error && <span className="mt-2 block break-words text-micro text-red-500 dark:text-red-400">{usage ? `上次额度 ${percent}%（≈${images} 张）：${error}` : `额度未知：${error}`}</span>}
         {negative && <span className="mt-2 block text-micro text-red-500 dark:text-red-400">额度已用尽，生成将消耗 Anlas</span>}
       </> : <>

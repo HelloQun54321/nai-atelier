@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_NAI_RUNTIME, refreshNaiRuntimeConfig } from '../../services/naiRuntime';
 import { OpusUsageBar } from '../../components/OpusUsageBar';
@@ -38,6 +38,33 @@ describe('OpusUsageBar', () => {
     view.rerender(React.createElement(OpusUsageBar, { collapsed: false, showDetails: true, showSyncTime: false }));
     expect(screen.queryByText(/最近同步/)).toBeNull();
     expect(screen.getByText('100%')).toBeTruthy();
+  });
+  it.each([false, true])('详情刷新只改变原位动画，不新增文字行或改变内容结构，行内时间=%s', async showSyncTime => {
+    sessionStorage.setItem('nai_api_key', `opus-stable-refresh-synthetic-${showSyncTime ? 'inline-time' : 'panel-time'}`);
+    let finishRefresh!: (response: Response) => void;
+    let attempts = 0;
+    const payload = (percent: number) => ({ tier: 3, active: true, usage: { percent, isNegative: false, timeUntilNextPercent: 0 } });
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith('/api/novelai-runtime')) return responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } });
+      if (++attempts === 1) return responseFor(payload(100));
+      return new Promise<Response>(resolve => { finishRefresh = resolve; });
+    }));
+    await refreshNaiRuntimeConfig();
+    render(React.createElement(OpusUsageBar, { collapsed: false, showDetails: true, showSyncTime }));
+    const card = await screen.findByRole('status', { name: /100%/ });
+    const beforeText = card.textContent;
+    const beforeRows = card.querySelectorAll('span').length;
+    fireEvent.click(card);
+    await waitFor(() => expect(card.getAttribute('aria-busy')).toBe('true'));
+    expect(card.textContent).toBe(beforeText);
+    expect(card.querySelectorAll('span')).toHaveLength(beforeRows);
+    expect(screen.queryByText('正在同步…')).toBeNull();
+    expect(card.querySelector('.lucide-refresh-cw')?.classList.contains('animate-spin')).toBe(true);
+    expect(screen.getByLabelText('正在刷新 Opus 限额')).toBeTruthy();
+    await act(async () => finishRefresh(responseFor(payload(99))));
+    await waitFor(() => expect(card.getAttribute('aria-busy')).toBe('false'));
+    expect(screen.getByText('99%')).toBeTruthy();
+    expect(card.querySelectorAll('span')).toHaveLength(beforeRows);
   });
 
   it('切 Key 后同步失败保留红色错误行，点击后可重试恢复', async () => {
